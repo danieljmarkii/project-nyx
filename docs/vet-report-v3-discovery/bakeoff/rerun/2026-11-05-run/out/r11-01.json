@@ -1,0 +1,245 @@
+{
+ "fixture": "r11",
+ "n": 1,
+ "result": {
+  "outcome": "printed",
+  "sentences": [
+   {
+    "text": "Itching is a live flag: itching over at least 49 days, with 15 episodes on 15 days, most recent 1 day ago.",
+    "cites": [
+     "band-r11"
+    ]
+   },
+   {
+    "text": "Itching: 15 entries on 15 of 56 logged days, the last Oct 15.",
+    "cites": [
+     "line-1"
+    ]
+   },
+   {
+    "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.",
+    "cites": [
+     "trial",
+     "trial-reading-2",
+     "confounder"
+    ]
+   }
+  ],
+  "text": "Itching is a live flag: itching over at least 49 days, with 15 episodes on 15 days, most recent 1 day ago. Itching: 15 entries on 15 of 56 logged days, the last Oct 15. The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.",
+  "cached": false
+ },
+ "stored": {
+  "text": "Itching is a live flag: itching over at least 49 days, with 15 episodes on 15 days, most recent 1 day ago. Itching: 15 entries on 15 of 56 logged days, the last Oct 15. The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.",
+  "verdict": {
+   "v": 1,
+   "outcome": "printed",
+   "reason": null,
+   "fact_hash": "d674286d503a0e4996b4e8705d0aefd2c382e2000752ec90299154d91a9c59f7",
+   "prompt": "vr2-lead-5",
+   "verifier": "vr2-6",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Itching is a live flag: itching over at least 49 days, with 15 episodes on 15 days, most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "Itching: 15 entries on 15 of 56 logged days, the last Oct 15.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.",
+     "cites": [
+      "trial",
+      "trial-reading-2",
+      "confounder"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "A dog with persistent itching over at least 49 days (15 episodes on 15 of 56 logged days, last yesterday), on an owner-entered hydrolysed soy trial at day 61 of 84 that cannot be confirmed clean, with no overlapping medication recorded in this window.",
+    "levels": {
+     "H1": "none",
+     "H2": "none",
+     "H3": "none",
+     "H4": "none",
+     "H5": "none",
+     "H6": "none",
+     "H7": "none"
+    },
+    "quotes": {},
+    "omissions": []
+   },
+   "attempts": 2,
+   "at": "2026-11-05T19:37:33.018Z"
+  },
+  "model": "claude-opus-5-5"
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Itching is a live flag: itching over at least 49 days, with 15 episodes on 15 days, most recent 1 day ago.",
+      "cites": [
+       "band-r11"
+      ]
+     },
+     {
+      "text": "Itching: 15 entries on 15 of 56 logged days, the last Oct 15.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+      "cites": [
+       "trial",
+       "trial-reading-2",
+       "confounder"
+      ]
+     }
+    ]
+   },
+   "ms": 14341
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "The dog has ongoing itching (at least 49 days, 15 episodes on 15 of 56 logged days, last one yesterday), and the diet trial at day 61 of 84 cannot be confirmed clean. No overlapping medication or supplement is recorded, but the owner was not asked.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "no medication or supplement is recorded as overlapping the trial, not checked with the owner",
+      "why": "The summary gives the 'cannot be confirmed clean' bottom line, but it drops 'in this window' from the confounder line. It also omits that no allowed-food list exists, so nothing was checked against the trial. A careful reader would still not treat the trial as clean."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "The itching and the trial are in separate sentences, with no change, improvement or cause stated."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "Refusals and partial meals are not mentioned. The fact table records every rated meal as fully eaten."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "Nothing absent or unlogged is presented as normal or clear."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "no medication or supplement is recorded as overlapping the trial",
+      "why": "The 'in this window' scope from the confounder line is dropped. The 56-day denominator is missing from sentence 1 but given in sentence 2, and 'at least 49 days' keeps the floor."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every claim matches the fact table."
+     },
+     "H7": {
+      "level": "none",
+      "quote": "",
+      "why": "Sentence 1 opens on band item 1, the itching flag, with 'at least 49 days', 15 episodes on 15 days and most recent 1 day ago. It does not soften the flag. Dropping 'the trial's own sign' does not make it read calmer."
+     }
+    },
+    "omissions": []
+   },
+   "ms": 11265
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Itching is a live flag: itching over at least 49 days, with 15 episodes on 15 days, most recent 1 day ago.",
+      "cites": [
+       "band-r11"
+      ]
+     },
+     {
+      "text": "Itching: 15 entries on 15 of 56 logged days, the last Oct 15.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.",
+      "cites": [
+       "trial",
+       "trial-reading-2",
+       "confounder"
+      ]
+     }
+    ]
+   },
+   "ms": 9920
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "A dog with persistent itching over at least 49 days (15 episodes on 15 of 56 logged days, last yesterday), on an owner-entered hydrolysed soy trial at day 61 of 84 that cannot be confirmed clean, with no overlapping medication recorded in this window.",
+    "hazards": {
+     "H1": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary states 'cannot be confirmed clean from this record' and keeps the confounder scope ('in this window, not checked with the owner'). It does not imply adherence."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "The itching and the trial are reported separately with no causal or improvement wording and no early-versus-late comparison."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary makes no claim about refusals or intake."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary does not present absent entries or unlogged days as normal. It gives the logged-day denominator."
+     },
+     "H5": {
+      "level": "none",
+      "quote": "",
+      "why": "'At least 49 days', '15 of 56 logged days' and the confounder scope words are all kept."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every claim matches the band, line-1, trial, trial-reading-2 and confounder lines."
+     },
+     "H7": {
+      "level": "none",
+      "quote": "",
+      "why": "Sentence 1 states band item 1 (itching, at least 49 days, 15 episodes on 15 days, most recent 1 day ago) with its numbers and floor intact, and does not soften it."
+     }
+    },
+    "omissions": []
+   },
+   "ms": 11335
+  }
+ ],
+ "wall_ms": 47483
+}

@@ -44,10 +44,10 @@ import {
   bandSlotFor,
   hasPhonePreview,
   isBareV2Report,
-  isPreviewLoadAllowed,
+  REPORT_FRAME_PROPS,
   type PreviewView,
 } from '../lib/reportPreviewV2';
-import { EXAM_CSP, REPORT_WEBVIEW_ORIGINS, withExamCsp } from '../lib/examRoom';
+import { EXAM_CSP_META, PREFETCH_OFF_META, neutralizeRefusedTags } from '../lib/examRoom';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
 //
@@ -141,25 +141,32 @@ interface SendContext {
 type Status = 'loading' | 'ready' | 'error';
 export const V1_PREVIEW_TEST_ID = 'report-v1-preview';
 
-/** Android's new-window path, refused (CUL-2486): the v1 frame opens none, as the v2 frames don't. */
-function refuseWindow(): void {}
+/** The v1 frame's head (CUL-2486, CUL-2527): the room's CSP and DNS prefetch off. */
+const V1_HEAD = `${EXAM_CSP_META}${PREFETCH_OFF_META}`;
 
 /**
- * The v1 report with the room's CSP (CUL-2486), the way the v2 preview boxes its documents: in a
- * real `<head>` when there is one (`withExamCsp` alone would also take a `<header>`, CUL-2470),
- * else at the very top, after a doctype, where the parser places it in the implied head. Never
- * shown without it.
+ * The v1 report boxed the way the v2 preview boxes its documents (CUL-2486, CUL-2527): the room's
+ * CSP and the prefetch switch in a real `<head>` when there is one (never a `<header>`, CUL-2470),
+ * else at the very top, after a doctype, where the parser places them in the implied head; and
+ * every refused tag renamed inert (`neutralizeRefusedTags`). With JS off no lock script runs, so
+ * the rename is what stops an injected `<link rel=preconnect>` hint, and an `<iframe
+ * src=about:blank>` that iOS reports as the top frame. The v1 renderer emits none of those tags.
+ * Never shown without them.
  */
 export function boxedV1Html(html: string): string {
-  if (/<head(\s[^>]*)?>/i.test(html)) {
-    const withCsp = withExamCsp(html);
-    if (withCsp !== null) return withCsp;
+  return neutralizeRefusedTags(withV1Head(html));
+}
+
+function withV1Head(html: string): string {
+  const head = /<head(\s[^>]*)?>/i.exec(html);
+  if (head !== null) {
+    const at = head.index + head[0].length;
+    return `${html.slice(0, at)}${V1_HEAD}${html.slice(at)}`;
   }
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
   const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
-  if (doctype === null) return `${meta}${html}`;
+  if (doctype === null) return `${V1_HEAD}${html}`;
   const at = doctype.index + doctype[0].length;
-  return `${html.slice(0, at)}${meta}${html.slice(at)}`;
+  return `${html.slice(0, at)}${V1_HEAD}${html.slice(at)}`;
 }
 
 type RangeMode = 'default' | 'custom';
@@ -791,15 +798,15 @@ export default function ReportScreen() {
             <WebView
               testID={V1_PREVIEW_TEST_ID}
               style={styles.web}
-              // Boxed like every report frame (CUL-2486): every URL reaches the load check, which
-              // refuses all but the inline document; no new window; the room's CSP, so the page
-              // may load or send nothing. The v1 report is static, self-contained clinical HTML
-              // (photos are data: URIs, no web fonts), so the policy takes nothing it needs.
-              originWhitelist={REPORT_WEBVIEW_ORIGINS}
+              // Boxed like every report frame (CUL-2486, CUL-2527): it spreads the one set of
+              // frame props, so the load check admits the inline document as `about:blank` and
+              // refuses every `data:` URL, every sub-frame and every network or app scheme, and
+              // no window opens. A phone that reported the inline document as `data:` would get a
+              // blank frame above a working send bar, never a leak. JS stays off: the v1 report
+              // is static, self-contained clinical HTML (photos are data: URIs, no web fonts).
+              {...REPORT_FRAME_PROPS}
               source={{ html: v1Html ?? '' }}
               javaScriptEnabled={false}
-              onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
-              onOpenWindow={refuseWindow}
               showsVerticalScrollIndicator
             />
             )}

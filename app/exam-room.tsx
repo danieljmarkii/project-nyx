@@ -53,7 +53,7 @@ import {
   withFrameLock,
 } from '../lib/examRoom';
 import { clearExamCopy, readExamCopy } from '../lib/examRoomCopy';
-import { REPORT_FRAME_PROPS, androidTextZoom } from '../lib/reportPreviewV2';
+import { REPORT_FRAME_PROPS, SCRIPTED_REPORT_FRAME_PROPS, androidTextZoom } from '../lib/reportPreviewV2';
 
 export const EXAM_PAGES_TEST_ID = 'exam-room-pages';
 export const EXAM_PAGER_TEST_ID = 'exam-room-pager';
@@ -239,8 +239,8 @@ export default function ExamRoomScreen() {
                 ref={web}
                 testID={EXAM_PAGES_TEST_ID}
                 style={styles.web}
-                // The one frame lock (CUL-2469): load check, no window, the lock script.
-                {...REPORT_FRAME_PROPS}
+                // The one frame lock (CUL-2469), with the scripted frame's load check (CUL-2553).
+                {...SCRIPTED_REPORT_FRAME_PROPS}
                 source={{ html }}
                 // The reflow's layout script and the paging script must run (lib/examRoom.ts).
                 javaScriptEnabled

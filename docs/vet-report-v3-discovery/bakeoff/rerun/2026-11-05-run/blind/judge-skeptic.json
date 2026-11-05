@@ -1,0 +1,542 @@
+[
+  {
+    "summary_id": "S-362F",
+    "judge": "skeptic",
+    "takeaway": "Cat with a heavy week of vomiting (6 entries in 7 days, 16 entries on 12 of 45 logged days) during/after a broken diet trial that was confounded; nothing else alarming is mentioned.",
+    "would_do": "Work up the vomiting as a GI case at today's visit; ask what she ate outside the trial.",
+    "hazards": {
+      "H1": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H2": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H3": {
+        "level": "minor",
+        "quote": "the trial diet was not fed exclusively, and it is not a test of the diet alone",
+        "why": "The only intake statement frames the trial problem as off-list feeding. The record also has 2 of 4 rated trial-diet feedings left unfinished, which is a refusal flag in a cat, and the summary leaves it out. Read alone, it implies she was eating, just not only the trial food."
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "material",
+        "quote": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+        "why": "Six flags are live and only one, burden, is named. Dropped: a ~15% weight loss (4.40 to 3.73 kg on home scales), the Sep 22 possible foreign material (AI read, unconfirmed), the trial-diet refusal with its hepatic-lipidosis window, cough chronicity, and the owner being told to call soon. My cold takeaway missed the weight loss and the possible foreign body. Both change the plan to imaging, bloods and weighing her today."
+      }
+    },
+    "usefulness": 2,
+    "usefulness_reason": "Capped by a material H7. Each number it gives is correct, but it hides a 15% weight loss and a possible foreign body, so I would walk in under-triaged."
+  },
+  {
+    "summary_id": "S-CC8E",
+    "judge": "skeptic",
+    "takeaway": "Cat with active, chronic vomiting (6 entries this week, at least 44 days), about 15% weight loss on single home-scale readings, one AI-flagged possible foreign material, a partly refused and broken diet trial, and a chronic cough.",
+    "would_do": "Weigh her, palpate and image the abdomen for the possible foreign material, and ask about appetite now, because the refused trial diet and the weight loss put a cat in the lipidosis window.",
+    "hazards": {
+      "H1": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H2": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H3": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      }
+    },
+    "usefulness": 3,
+    "usefulness_reason": "Accurate and every qualifier is intact, with the flags first. But it is all 21 record lines reprinted, so I have to assemble the picture myself and it does not fit 60 seconds."
+  },
+  {
+    "summary_id": "S-7874",
+    "judge": "skeptic",
+    "takeaway": "Cat on a venison diet trial (day 19 of 42) has eaten less over the last ~50 h, which is in the lipidosis window. The trial is broken by off-list beef, and beef preceded every vomit.",
+    "would_do": "Ask about appetite now and whether he is eating anything at all. Ask about the beef feedings and stop them.",
+    "hazards": {
+      "H1": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H2": {
+        "level": "minor",
+        "quote": "Beef was in the 12 h before 4 of 4 vomiting episodes (an early signal, not confirmed).",
+        "why": "The sentence reads as an effect (beef causes vomiting), and 4 of 4 with n=4 tempts a GP to blame beef. The limit 'an early signal, not confirmed' sits in the same sentence, and it is the record's own line."
+      },
+      "H3": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      }
+    },
+    "usefulness": 4,
+    "usefulness_reason": "The intake flag leads and the trial is plainly marked broken, with the off-list count read as a floor. It is long and the trial day comes last, so it takes a second read. The '1 consecutive day' beside '~50 h' needs a check."
+  },
+  {
+    "summary_id": "S-0510",
+    "judge": "skeptic",
+    "takeaway": "Cat with a heavy week of vomiting (6 entries in 7 days, 16 entries on 12 of 45 logged days) during/after a broken diet trial that was confounded; nothing else alarming is mentioned.",
+    "would_do": "Work up the vomiting as a GI case at today's visit; ask what she ate outside the trial.",
+    "hazards": {
+      "H1": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H2": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H3": {
+        "level": "minor",
+        "quote": "the trial diet was not fed exclusively, and it is not a test of the diet alone",
+        "why": "The only intake statement frames the trial problem as off-list feeding. The record also has 2 of 4 rated trial-diet feedings left unfinished, which is a refusal flag in a cat, and the summary leaves it out. Read alone, it implies she was eating, just not only the trial food."
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "material",
+        "quote": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+        "why": "Six flags are live and only one, burden, is named. Dropped: a ~15% weight loss (4.40 to 3.73 kg on home scales), the Sep 22 possible foreign material (AI read, unconfirmed), the trial-diet refusal with its hepatic-lipidosis window, cough chronicity, and the owner being told to call soon. My cold takeaway missed the weight loss and the possible foreign body. Both change the plan to imaging, bloods and weighing her today."
+      }
+    },
+    "usefulness": 2,
+    "usefulness_reason": "Capped by a material H7. Each number it gives is correct, but it hides a 15% weight loss and a possible foreign body, so I would walk in under-triaged."
+  },
+  {
+    "summary_id": "S-591A",
+    "judge": "skeptic",
+    "takeaway": "Cat finished a rabbit diet trial on Oct 20. Chicken foods were started Oct 21, and vomiting returned (6 entries on 4 days, Oct 26 to 31) after a week with none.",
+    "would_do": "Treat this as a possible chicken rechallenge. Ask what else changed, and ask how well the Oct 19 to 25 week was actually logged.",
+    "hazards": {
+      "H1": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H2": {
+        "level": "minor",
+        "quote": "Chicken foods first fed Oct 21; vomiting on 4 days Oct 26 to Oct 31, side by side, not as a cause.",
+        "why": "The ordering (trial end, then chicken, then a vomiting cluster after a zero week) reads as a positive rechallenge. The 'not as a cause' limit is in the same sentence, and the summary only repeats the record's line."
+      },
+      "H3": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H4": {
+        "level": "minor",
+        "quote": "0 entries Oct 19 to Oct 25",
+        "why": "The zero week is set against the cluster as if it were a vomit-free baseline. How many of those days were logged is not stated, so the absence's coverage is only implied."
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      }
+    },
+    "usefulness": 4,
+    "usefulness_reason": "Short and accurate, and the question to ask is obvious. The coverage of the zero-entry week is missing, and the comparison depends on it."
+  },
+  {
+    "summary_id": "S-48B3",
+    "judge": "skeptic",
+    "takeaway": "Dog on a venison diet trial (day 19 of 42) has eaten less for 2 days (~50 h with no full meal). The trial is broken by off-list beef, which preceded all 4 vomits; weight is down about 2%.",
+    "would_do": "Ask about appetite and energy now and any further vomiting. Ask about the beef feedings and stop them.",
+    "hazards": {
+      "H1": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H2": {
+        "level": "minor",
+        "quote": "Beef was in the 12 h before 4 of 4 vomiting episodes (an early signal, not confirmed).",
+        "why": "It reads as beef causing the vomiting on n=4. The limit is in the same sentence, and the line is verbatim."
+      },
+      "H3": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      }
+    },
+    "usefulness": 4,
+    "usefulness_reason": "The intake flag leads, the trial is marked broken with the off-list count read as a floor, and there are no unscoped numbers. It is long, and the trial line comes last."
+  },
+  {
+    "summary_id": "S-3DB2",
+    "judge": "skeptic",
+    "takeaway": "Dog on a hydrolysed soy trial at day 61 of 84 is still itching (15 of 56 logged days, latest yesterday), and the trial cannot be confirmed clean.",
+    "would_do": "Ask what else he is eating and what the owner thinks the allowed foods are, then decide whether the trial is worth finishing as it stands.",
+    "hazards": {
+      "H1": {
+        "level": "minor",
+        "quote": "the elimination cannot be confirmed clean from this record",
+        "why": "The reason behind this is dropped: no allowed-food list is recorded, so nothing has been checked against the trial at all. 'Cannot be confirmed clean' reads as partial checking with a gap. The scope is still in the same sentence, so I would ask the same question either way."
+      },
+      "H2": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H3": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "minor",
+        "quote": "Itching is a live flag: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+        "why": "The flag leads and keeps its numbers and its 'at least', but it drops 'the trial's own sign'. That phrase ties the itch to the trial being judged."
+      }
+    },
+    "usefulness": 4,
+    "usefulness_reason": "I get the case in three lines, and the one question it leaves open is clear. It is weaker than it needs to be on how unchecked the trial actually is."
+  },
+  {
+    "summary_id": "S-B912",
+    "judge": "skeptic",
+    "takeaway": "Dog at day 61 of 84 on a hydrolysed soy trial is still itching, the trial's own sign (15 of 56 logged days, latest yesterday). With no allowed-food list recorded, nothing has been checked against the trial.",
+    "would_do": "Ask the owner exactly what he eats, treats and chews included, and whether any meds were given. Only then judge the trial.",
+    "hazards": {
+      "H1": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H2": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H3": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      }
+    },
+    "usefulness": 4,
+    "usefulness_reason": "Everything I need is there and scoped, and the flag is first. But it is the record lines reprinted, so I connect itch to trial to an unchecked list myself."
+  },
+  {
+    "summary_id": "S-7B3B",
+    "judge": "skeptic",
+    "takeaway": "A 7-year-old DSH female with at least 47 days of vomiting, 4 of the last 7 days, and one unconfirmed AI read of a possible plastic fragment. She is free-fed chicken-containing kibble, so no food can be isolated, and weight was never recorded.",
+    "would_do": "Weigh her, palpate and consider imaging for the possible foreign material, and ask about appetite and access to plastic or string.",
+    "hazards": {
+      "H1": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H2": {
+        "level": "minor",
+        "quote": "undigested food 12 (to Jun 6), bile or foam 5 (Jun 9 to 18), hairball 1 (Jun 21)",
+        "why": "The dated sequence of photo-read categories invites a progression read, and the final 'hairball' could reassure. The 'AI PHOTO READ · UNCONFIRMED' label is in the same sentence, but nothing says it is not a trend."
+      },
+      "H3": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      }
+    },
+    "usefulness": 4,
+    "usefulness_reason": "The flag order is right (foreign material first, then burden, then chronicity), and the not-recorded and unknown lines save me questions. At 14 lines it is too long for a top-of-sheet summary."
+  },
+  {
+    "summary_id": "S-79FB",
+    "judge": "skeptic",
+    "takeaway": "Cat with a heavy week of vomiting (6 entries in 7 days, 16 entries on 12 of 45 logged days) during/after a broken diet trial that was confounded; nothing else alarming is mentioned.",
+    "would_do": "Work up the vomiting as a GI case at today's visit; ask what she ate outside the trial.",
+    "hazards": {
+      "H1": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H2": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H3": {
+        "level": "minor",
+        "quote": "the trial diet was not fed exclusively, and it is not a test of the diet alone",
+        "why": "The only intake statement frames the trial problem as off-list feeding. The record also has 2 of 4 rated trial-diet feedings left unfinished, which is a refusal flag in a cat, and the summary leaves it out. Read alone, it implies she was eating, just not only the trial food."
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "material",
+        "quote": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+        "why": "Six flags are live and only one, burden, is named. Dropped: a ~15% weight loss (4.40 to 3.73 kg on home scales), the Sep 22 possible foreign material (AI read, unconfirmed), the trial-diet refusal with its hepatic-lipidosis window, cough chronicity, and the owner being told to call soon. My cold takeaway missed the weight loss and the possible foreign body. Both change the plan to imaging, bloods and weighing her today."
+      }
+    },
+    "usefulness": 2,
+    "usefulness_reason": "Capped by a material H7. Each number it gives is correct, but it hides a 15% weight loss and a possible foreign body, so I would walk in under-triaged."
+  },
+  {
+    "summary_id": "S-D54B",
+    "judge": "skeptic",
+    "takeaway": "Dog at day 61 of 84 on a hydrolysed soy trial has chronic itching (at least 49 days, 18 of 56 logged days, latest yesterday). He eats every meal, and with no allowed-food list recorded nothing has been checked against the trial.",
+    "would_do": "Ask what he actually eats, treats included, and whether any meds were given, before judging the trial.",
+    "hazards": {
+      "H1": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H2": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H3": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      }
+    },
+    "usefulness": 4,
+    "usefulness_reason": "Accurate, every qualifier attached and the flag first, but it is a line dump. I have to connect 'still itching at day 61' to 'trial unchecked' myself."
+  },
+  {
+    "summary_id": "S-E9E1",
+    "judge": "skeptic",
+    "takeaway": "Dog on a hydrolysed soy trial at day 61 of 84 is still itching (15 of 56 logged days, latest yesterday), and the trial cannot be confirmed clean.",
+    "would_do": "Ask what else he is eating and what the owner's allowed foods are, then decide whether the trial is interpretable.",
+    "hazards": {
+      "H1": {
+        "level": "minor",
+        "quote": "the elimination cannot be confirmed clean from this record",
+        "why": "It drops 'no allowed-food list is recorded, so nothing here has been checked against the trial'. The sentence reads as partial checking rather than none. The scope is in the same sentence, so my action would not change."
+      },
+      "H2": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H3": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H4": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H5": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H6": {
+        "level": "none",
+        "quote": "",
+        "why": ""
+      },
+      "H7": {
+        "level": "minor",
+        "quote": "Itching is a live flag: itching over at least 49 days, with 15 episodes on 15 days, most recent 1 day ago.",
+        "why": "The flag leads and keeps its numbers and its floor, but it drops 'the trial's own sign'."
+      }
+    },
+    "usefulness": 4,
+    "usefulness_reason": "A three-line read that gives me the case and the question. It understates how unchecked the trial is."
+  }
+]

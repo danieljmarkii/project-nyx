@@ -1,0 +1,187 @@
+{
+ "fixture": "cooper",
+ "n": 3,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "d50f214ce974a4bfe33d3a5414c6975aeb0be19dc99a61a846f2a2b55285b0a4",
+   "prompt": "vr2-lead-5",
+   "verifier": "vr2-6",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Intake is a live flag: reduced intake below this pet's baseline for 2 consecutive days, baseline read over 22 recent rated meals, about 50 h without a full meal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "Meals: 44 logged; 4 not fully eaten, on 2 days.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The trial diet was not fed exclusively: the owner-entered diet trial, Cooper's Venison LID, from Sep 28, 2026, day 19 of 42, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "cites": [
+      "trial-reading-3",
+      "trial",
+      "confounder"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Cooper has a live reduced-intake flag (2 days below baseline, ~50 h without a full meal); 4 meals not fully eaten; the trial diet was not fed exclusively, and no meds overlap the trial.",
+    "levels": {
+     "H1": "minor",
+     "H2": "none",
+     "H3": "minor",
+     "H4": "none",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "minor"
+    },
+    "quotes": {
+     "H1": "The trial diet was not fed exclusively: the owner-entered diet trial, Cooper's Venison LID, from Sep 28, 2026, day 19 of 42",
+     "H3": "Meals: 44 logged; 4 not fully eaten, on 2 days.",
+     "H5": "no medication or supplement is recorded as overlapping the trial, not checked with the owner",
+     "H7": "about 50 h without a full meal"
+    },
+    "omissions": [
+     "The 4 off-trial feedings (Sep 30, Oct 4, Oct 8, Oct 13) are a floor, and the elimination cannot be confirmed clean because the ingredient panel was not read",
+     "Vomiting on 4 of 22 logged days, last Oct 13, with Beef in the 12 h before 4 of 4 episodes (early signal, not confirmed)",
+     "Weight down about 2% across the trial start"
+    ]
+   },
+   "attempts": 2,
+   "at": "2026-11-05T19:39:23.700Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Intake is a live flag: intake has been below this pet's baseline for 2 consecutive days, baseline read over 22 recent rated meals, about 50 h without a full meal.",
+      "cites": [
+       "band-1-intake_decline"
+      ]
+     },
+     {
+      "text": "Meals: 44 logged; 4 not fully eaten, on 2 days.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "The owner-entered diet trial, Cooper's Venison LID, from Sep 28, 2026, day 19 of 42: the trial diet was not fed exclusively, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+      "cites": [
+       "trial",
+       "trial-reading-3",
+       "confounder"
+      ]
+     }
+    ]
+   },
+   "ms": 23433
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Intake is a live flag: reduced intake below this pet's baseline for 2 consecutive days, baseline read over 22 recent rated meals, about 50 h without a full meal.",
+      "cites": [
+       "band-1-intake_decline"
+      ]
+     },
+     {
+      "text": "Meals: 44 logged; 4 not fully eaten, on 2 days.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "The trial diet was not fed exclusively: the owner-entered diet trial, Cooper's Venison LID, from Sep 28, 2026, day 19 of 42, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+      "cites": [
+       "trial-reading-3",
+       "trial",
+       "confounder"
+      ]
+     }
+    ]
+   },
+   "ms": 14357
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Cooper has a live reduced-intake flag (2 days below baseline, ~50 h without a full meal); 4 meals not fully eaten; the trial diet was not fed exclusively, and no meds overlap the trial.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "The trial diet was not fed exclusively: the owner-entered diet trial, Cooper's Venison LID, from Sep 28, 2026, day 19 of 42",
+      "why": "States not fed exclusively, but omits that 4 off-trial feedings is a floor and the elimination cannot be confirmed clean (ingredient panel not read); the confounder clause 'no medication or supplement is recorded' is scoped but the reader gets no 'cannot be confirmed clean' bottom line."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "No causal or improvement language."
+     },
+     "H3": {
+      "level": "minor",
+      "quote": "Meals: 44 logged; 4 not fully eaten, on 2 days.",
+      "why": "Reports not-fully-eaten count neutrally without saying the last 4 rated meals in a row were not fully eaten or that the decline is a health signal not picky; the flag sentence partly carries this, so reader is unlikely to read it as preference."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "No absence presented as reassurance."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "no medication or supplement is recorded as overlapping the trial, not checked with the owner",
+      "why": "Scope retained ('recorded', 'not checked with the owner'), but 'in this window' is dropped and the sentence is garbled; 'a floor' qualifier on off-trial feedings is not given."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "All claims trace to fact lines."
+     },
+     "H7": {
+      "level": "minor",
+      "quote": "about 50 h without a full meal",
+      "why": "Sentence 1 correctly leads with band item 1 and keeps the numbers, but drops the declining pattern (ate some, picked at it) and the 'not picky, a health signal' framing; not softened in a way that changes the urgency."
+     }
+    },
+    "omissions": [
+     "The 4 off-trial feedings (Sep 30, Oct 4, Oct 8, Oct 13) are a floor, and the elimination cannot be confirmed clean because the ingredient panel was not read",
+     "Vomiting on 4 of 22 logged days, last Oct 13, with Beef in the 12 h before 4 of 4 episodes (early signal, not confirmed)",
+     "Weight down about 2% across the trial start"
+    ]
+   },
+   "ms": 6753
+  }
+ ],
+ "wall_ms": 44556
+}

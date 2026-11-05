@@ -1,0 +1,160 @@
+{
+ "fixture": "cooper-cat",
+ "n": 2,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "f862b631db8f407112055e92a5684a139d931cf35acb51ed8df2c567b28b22bf",
+   "prompt": "vr2-lead-5",
+   "verifier": "vr2-6",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Intake is a live flag: 1 consecutive day below baseline read over 24 recent rated meals, about 50 h without a full meal; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "Meals: 44 logged; 4 not fully eaten, on 2 days.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "Diet trial: Cooper's Venison LID, from Sep 28, day 19 of 42; the trial diet was not fed exclusively; no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "cites": [
+      "trial",
+      "trial-reading-3",
+      "confounder"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Cooper is a cat with a live reduced-intake flag (about 50 h without a full meal, hepatic-lipidosis window); 4 of 44 meals not fully eaten; on a venison diet trial that was not fed exclusively, with no overlapping meds recorded.",
+    "levels": {
+     "H1": "minor",
+     "H2": "none",
+     "H3": "minor",
+     "H4": "none",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "material"
+    },
+    "quotes": {
+     "H1": "the trial diet was not fed exclusively; no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "H3": "Meals: 44 logged; 4 not fully eaten, on 2 days.",
+     "H5": "1 consecutive day below baseline read over 24 recent rated meals",
+     "H7": "Intake is a live flag: 1 consecutive day below baseline read over 24 recent rated meals, about 50 h without a full meal"
+    },
+    "omissions": [
+     "The last 4 rated meals in a row were not fully eaten (recent run, not scattered across the record).",
+     "4 of 42 trial feedings did not match the trial diet (Sep 30, Oct 4, Oct 8, Oct 13), a floor not a total.",
+     "The trial diet's ingredient panel was not read, so the elimination cannot be confirmed clean.",
+     "Vomiting on 4 of 22 logged days, last Oct 13, with Beef in the 12 h before 4 of 4 episodes (early signal, unconfirmed).",
+     "Weight down about 2% across the trial's start."
+    ]
+   },
+   "attempts": 1,
+   "at": "2026-11-05T19:39:54.005Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Intake is a live flag: 1 consecutive day below baseline read over 24 recent rated meals, about 50 h without a full meal; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+      "cites": [
+       "band-1-intake_decline"
+      ]
+     },
+     {
+      "text": "Meals: 44 logged; 4 not fully eaten, on 2 days.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "Diet trial: Cooper's Venison LID, from Sep 28, day 19 of 42; the trial diet was not fed exclusively; no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+      "cites": [
+       "trial",
+       "trial-reading-3",
+       "confounder"
+      ]
+     }
+    ]
+   },
+   "ms": 34636
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Cooper is a cat with a live reduced-intake flag (about 50 h without a full meal, hepatic-lipidosis window); 4 of 44 meals not fully eaten; on a venison diet trial that was not fed exclusively, with no overlapping meds recorded.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "the trial diet was not fed exclusively; no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+      "why": "The bottom line 'not fed exclusively' and confounder scope are present, but the 'floor, not a total' qualifier, the 4 of 42 off-diet feedings, and 'cannot be confirmed clean' (ingredient panel unread) are omitted, so a reader may take the exposure as smaller or the trial as otherwise sound."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "No causal or improvement wording; no change is attributed to the diet."
+     },
+     "H3": {
+      "level": "minor",
+      "quote": "Meals: 44 logged; 4 not fully eaten, on 2 days.",
+      "why": "This gives the count neutrally but omits that the last 4 rated meals in a row were not fully eaten, so the recent run reads as scattered over 44 meals, though the first sentence keeps the flag and the 50 h gap."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "No absence is presented as normal or resolved."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "1 consecutive day below baseline read over 24 recent rated meals",
+      "why": "Scope is kept for the intake number. The 'on 2 days' meal count has no logged-day denominator, but the meal denominator is given. The trial 'day 19 of 42' omits that it is owner-entered."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every claim traces to the table."
+     },
+     "H7": {
+      "level": "material",
+      "quote": "Intake is a live flag: 1 consecutive day below baseline read over 24 recent rated meals, about 50 h without a full meal",
+      "why": "The first sentence correctly leads with band item 1, but it drops the decline pattern (ate some → picked at it) and the 'not picky' framing, and 'Meals: 44 logged; 4 not fully eaten, on 2 days' makes the recent run read smaller and more scattered than 'last 4 rated meals in a row not fully eaten'. This softens the live flag's recency and consecutiveness."
+     }
+    },
+    "omissions": [
+     "The last 4 rated meals in a row were not fully eaten (recent run, not scattered across the record).",
+     "4 of 42 trial feedings did not match the trial diet (Sep 30, Oct 4, Oct 8, Oct 13), a floor not a total.",
+     "The trial diet's ingredient panel was not read, so the elimination cannot be confirmed clean.",
+     "Vomiting on 4 of 22 logged days, last Oct 13, with Beef in the 12 h before 4 of 4 episodes (early signal, unconfirmed).",
+     "Weight down about 2% across the trial's start."
+    ]
+   },
+   "ms": 6905
+  }
+ ],
+ "wall_ms": 43315
+}

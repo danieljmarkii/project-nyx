@@ -38,8 +38,11 @@
 // its own inline script and draw its own inline styles, fonts and images, and may load or send
 // nothing), DNS prefetch off, and the lock script (no WebRTC, no `window.open`, no frame or link
 // put in by script); frame and link tags are renamed inert before the parser sees them. Both
-// spread REPORT_FRAME_PROPS (lib/reportPreviewV2.ts): every navigation reaches the one load check,
-// which refuses all but the inline document, `data:` included, and no window ever opens.
+// spread the frame props (lib/reportPreviewV2.ts): every navigation reaches the one load check,
+// which refuses all but the inline document, `data:` included, and no window ever opens. The
+// phone frame runs script, so it spreads SCRIPTED_REPORT_FRAME_PROPS, whose check also refuses
+// `about:blank` on Android (CUL-2553); every `<meta>` but a plain name/content/charset one is
+// renamed inert, so no refresh can blank either frame.
 //
 // PHONE ↔ PRINTED (spec §14). The swap happens in place, in this frame: no push, no flight. The
 // printed frame mounts on first ask and then stays mounted, so a second swap is a crossfade with
@@ -63,6 +66,7 @@ import { ThemedText } from '../ui/ThemedText';
 import {
   PREVIEW_READY_ANNOUNCEMENT,
   REPORT_FRAME_PROPS,
+  SCRIPTED_REPORT_FRAME_PROPS,
   androidTextZoom,
   type PreviewView,
 } from '../../lib/reportPreviewV2';
@@ -212,8 +216,8 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
             key={docKey}
             testID={PREVIEW_PHONE_TEST_ID}
             style={styles.web}
-            // The one frame lock (CUL-2469): load check, no window, the lock script.
-            {...REPORT_FRAME_PROPS}
+            // The one frame lock (CUL-2469), with the scripted frame's load check (CUL-2553).
+            {...SCRIPTED_REPORT_FRAME_PROPS}
             source={{ html: lockedPhoneHtml }}
             // CUL-2383: the reflow's layout script must run (header above).
             javaScriptEnabled

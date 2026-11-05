@@ -43,6 +43,8 @@
 //   script      CUL-2380: no letter outside A to Z a cited line does not print, no format character
 //   tense       CUL-2380: a sentence that touches a flag is never past ("had been a live flag"), and
 //               "over" is followed by a count, never left as an ending ("the flag is over")
+//   floor       CUL-2532: a count from a line that says "a floor, not a total" keeps the clause
+//   bottom-line CUL-2532: a trial's bottom line or confounder scope prints only after its own line's words
 //   date-anchor CUL-2380: in any sentence citing more than the trial, every date keeps the word its
 //               line prints before it and its recency words, so dates cannot swap or be rebuilt
 
@@ -53,10 +55,16 @@ import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type F
 export type LeadSentence = { text: string; cites: string[] }
 export type LeadSummary = { sentences: LeadSentence[] }
 
-export const LEAD_VERIFIER_VERSION = 'vr2-5'
+export const LEAD_VERIFIER_VERSION = 'vr2-6'
 export const LEAD_MAX_SENTENCES = 3
-export const LEAD_MAX_WORDS = 60
+/** PM ruling 2026-11-05 on CUL-2550 (was 60, 2026-10-31): the smoke bake-off's drafts sat at a
+ *  median of 57 words and the cap squeezed out the trial's confounder and denominators first. */
+export const LEAD_MAX_WORDS = 80
 export const PERIOD_RUN_MAX = 2
+/** The clause that makes a count a floor. A sentence that keeps a number from a line printing it
+ *  keeps the clause too (the `floor` check); a sentence that drops the number may drop it. */
+export const FLOOR_PHRASE = 'a floor, not a total'
+
 
 export interface LeadVerdict {
   verifier: typeof LEAD_VERIFIER_VERSION
@@ -176,7 +184,7 @@ const MONTHS_AND_DAYS = new Set([
 
 /** An exposure: something given or fed. An observation: something seen or counted. */
 function isExposure(id: string): boolean {
-  return id === 'trial' || id === 'confounder' || id.startsWith('medication-')
+  return id === 'trial' || id === 'confounder' || id.startsWith('trial-reading-') || id.startsWith('medication-')
 }
 function isObservation(id: string): boolean {
   return id === 'line-1' || id === 'intake' || id === 'coverage' || id === 'noticed' || id.startsWith('sign-') || id.startsWith('band-')
@@ -236,11 +244,32 @@ export function printedLeadText(summary: LeadSummary): string {
   return printedSentences(summary).join(' ')
 }
 
+/** band-first: sentence 1 cites band item 1 and its first clause names that item's label. One
+ *  function, read by the verifier AND by the checker's decision (leadPipeline.ts `checkerDecision`,
+ *  CUL-2548), so the order hazard the checker model missed twice (October's S-arm Nyx drafts, the
+ *  smoke bake-off's cr-a) is refused by the checker on every run, whatever the model says, and by the
+ *  verifier on its own. Removing it from either does not remove it from the other. */
+export function bandOrderIssues(table: FactTable, summary: LeadSummary): VerifyIssue[] {
+  const band = table.facts.filter((f) => f.role === 'band')
+  if (band.length === 0) return []
+  const first = summary.sentences[0]
+  if (!first || !first.cites.includes(band[0].id)) {
+    return [{ sentence: 1, check: 'band-first', detail: `sentence 1 must cite band item 1 (${band[0].id})` }]
+  }
+  const raw = (band[0] as { label?: unknown }).label
+  const label = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  // No label is no way to check the first clause, so it rejects (a missing label is a bug).
+  if (label === '' || !firstClause(norm(first.text)).includes(label)) {
+    return [{ sentence: 1, check: 'band-first', detail: `sentence 1's first clause does not name band item 1 (${label})` }]
+  }
+  return []
+}
+
 export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict {
   // The core judges the printed form, never the model's raw strings.
   const printed: LeadSummary = { sentences: summary.sentences.map((s, i) => ({ text: printedSentences(summary)[i], cites: s.cites })) }
   const core = verifyBakeoff(table, printed, { minSentences: 1, maxSentences: LEAD_MAX_SENTENCES, maxWordsPerSentence: LEAD_MAX_WORDS })
-  const errors: VerifyIssue[] = waiveSideBySide(core.errors, printed, table)
+  const errors: VerifyIssue[] = waiveNotClean(waiveSideBySide(core.errors, printed, table), printed, table)
   const err = (sentence: number | null, check: string, detail: string) => errors.push({ sentence, check, detail })
   const facts = new Map(table.facts.map((f) => [f.id, f]))
   const sents = printed.sentences
@@ -254,20 +283,8 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
   const total = sents.reduce((n, s) => n + words(s.text), 0)
   if (total > LEAD_MAX_WORDS) err(null, 'structure', `the lead has ${total} words (max ${LEAD_MAX_WORDS})`)
 
+  for (const e of bandOrderIssues(table, printed)) errors.push(e)
   const band = table.facts.filter((f) => f.role === 'band')
-  if (band.length > 0) {
-    const first = sents[0]
-    if (!first || !first.cites.includes(band[0].id)) {
-      err(1, 'band-first', `sentence 1 must cite band item 1 (${band[0].id})`)
-    } else {
-      const raw = (band[0] as { label?: unknown }).label
-      const label = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
-      // No label is no way to check the first clause, so it rejects (a missing label is a bug).
-      if (label === '' || !firstClause(first.text).includes(label)) {
-        err(1, 'band-first', `sentence 1's first clause does not name band item 1 (${label})`)
-      }
-    }
-  }
   const bandSentences = sents.filter((s) => s.cites.some((c) => facts.get(c)?.role === 'band')).length
   if (bandSentences > 1) err(null, 'band-once', `${bandSentences} sentences cite band facts (max 1)`)
 
@@ -346,6 +363,50 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
       if (!allowed.has(m[0].toLowerCase())) err(i, 'intake-positive', `${JSON.stringify(m[0])}: no cited line says intake was adequate in these words (H3)`)
       else if (!citedFlat.includes(ctx)) err(i, 'intake-positive', `${JSON.stringify(ctx.trim())}: an adequacy phrase moved from where its line prints it (H3)`)
     }
+    // floor (CUL-2532): a count lifted from a line that calls it "a floor, not a total" keeps the
+    // clause, so an off-list tally never prints as the whole of it (H1, H5).
+    for (const c of s.cites) {
+      const text = norm(facts.get(c)?.text ?? '')
+      if (!text.toLowerCase().includes(FLOOR_PHRASE)) continue
+      // A count is the floor line's when it keeps the word that line prints after it ("4 of", "42
+      // feedings"). No other cited line excuses it: a line citing the same binding is no licence to
+      // drop the floor (adversarial pass 1 on PR-35, break 2: an unused cite stripped the clause).
+      const lineBindings = new Set(numberBindings(text, year))
+      // And its dates: the off-list days listed with no count are the whole tally read as complete
+      // (pass 2, B4). The trial line's own dates ("ran Jul 26, 2026 to Oct 20, 2026") do not count.
+      const trialDates = new Set(s.cites.includes('trial') ? dateTokens(facts.get('trial')?.text ?? '').filter((t) => t.startsWith('@')) : [])
+      const lineDates = new Set(dateTokens(text).filter((t) => t.startsWith('@') && !trialDates.has(t)))
+      const kept = numberBindings(s.text, year).some((b) => lineBindings.has(b)) || dateTokens(s.text).some((t) => lineDates.has(t))
+      if (kept && !norm(s.text).toLowerCase().includes(FLOOR_PHRASE)) err(i, 'floor', `a count from ${c} prints without "${FLOOR_PHRASE}"`)
+    }
+    // bottom-line (adversarial passes 1 and 2 on PR-35): a trial reading's bottom-line phrase, and a
+    // confounder's scope phrase, print only after words their own line prints just before them. The
+    // lead-in is read back from the phrase to the sentence's start, a semicolon or ", and" (never a
+    // comma or a bracket, which a wrapper can sit behind: "this record cannot show (the trial diet was
+    // not fed exclusively)"); its leading frame words are dropped, and what is left must be a run of
+    // the words the cited line prints before the phrase. So a negating wrapper ("this record cannot
+    // show the trial is not a test of the diet alone") never prints.
+    for (const c of s.cites) {
+      const f = facts.get(c)
+      if (!f || (f.role !== 'trial_reading' && f.role !== 'confounder')) continue
+      const lineLower = norm(f.text ?? '').toLowerCase()
+      const lower = norm(s.text).toLowerCase()
+      for (const phrase of PROTECTED_PHRASES) {
+        const inLine = lineLower.indexOf(phrase)
+        if (inLine < 0) continue
+        const before = ` ${flatWords(lineLower.slice(0, inLine))} `
+        let at = lower.indexOf(phrase)
+        while (at >= 0) {
+          const head = lower.slice(0, at)
+          const start = Math.max(head.lastIndexOf(';'), head.lastIndexOf(', and ') >= 0 ? head.lastIndexOf(', and ') + ', and'.length : -1, -1) + 1
+          const lead = flatWords(head.slice(start)).split(' ').filter(Boolean)
+          while (lead.length > 0 && (FRAME.has(lead[0]) || lead[0] === 'it')) lead.shift()
+          const run = lead.join(' ')
+          if (run !== '' && !before.includes(` ${run} `)) err(i, 'bottom-line', `"${run}" is not what ${c} prints before "${phrase}"`)
+          at = lower.indexOf(phrase, at + phrase.length)
+        }
+      }
+    }
     const spelled = s.text.match(SPELLED_NUMBERS)
     if (spelled) err(i, 'numbers', `${JSON.stringify(spelled[0])}: counts are written as digits`)
 
@@ -396,7 +457,10 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     const touchesFlag = s.cites.some((c) => facts.get(c)?.role === 'band') || /\bflags?\b/i.test(s.text) ||
       bandLabelWords.some((w) => new RegExp(`\\b${w}\\b`, 'i').test(s.text))
     if (touchesFlag) {
-      for (const past of norm(s.text).matchAll(/\b(?:was|were|had|been|used to|formerly|once)\b/gi)) err(i, 'tense', `${JSON.stringify(past[0])}: a live flag set in the past`)
+      for (const past of norm(s.text).matchAll(/\b(?:was|were|had|been|used to|formerly|once)\b/gi)) {
+        if (pastExcused(norm(s.text), past.index ?? 0, past[0], s.cites, facts)) continue
+        err(i, 'tense', `${JSON.stringify(past[0])}: a live flag set in the past`)
+      }
     }
     for (const m of norm(s.text).matchAll(/\bover\b\s*([^\s,.;:]*)/gi)) {
       const follower = m[1].toLowerCase()
@@ -427,6 +491,10 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     // first entry cannot be called its latest ("the most recent logged Aug 27").
     if (s.cites.some((c) => c !== 'trial')) {
       const lines = s.cites.map((c) => dateTokens(facts.get(c)?.text ?? ''))
+      // An ended trial's sanctioned shape ("ran Jul 26, 2026 to Oct 20, 2026": "ended" is an absence
+      // word the lead never prints) anchors its two dates like the line's own words would.
+      const ended = s.cites.includes('trial') ? /\bfrom ([A-Z][a-z]{2} \d{1,2}, \d{4}), ended ([A-Z][a-z]{2} \d{1,2}, \d{4})/.exec(facts.get('trial')?.text ?? '') : null
+      if (ended) lines.push(dateTokens(`ran ${ended[1]} to ${ended[2]}`))
       const lead = dateTokens(s.text)
       lead.forEach((t, k) => {
         if (!t.startsWith('@')) return
@@ -478,4 +546,60 @@ function waiveSideBySide(errors: VerifyIssue[], summary: LeadSummary, table: Fac
     budget.set(e.sentence, left - 1)
     return false
   })
+}
+
+/** The trial reading's bottom lines that say a trial is NOT clean (CUL-2532), each with the word the
+ *  core's H1 ban refuses inside it. The ban exempts only "not clean" and "not a clean", so "the
+ *  elimination cannot be confirmed clean" and "the trial diet was not fed exclusively" (the very
+ *  clauses the lead must carry) would fail it. Waived like `waiveSideBySide`: one H1 hit on that word
+ *  per occurrence of its phrase in the sentence, and only when a fact the sentence cites prints the
+ *  phrase. Any other "clean" or "exclusively" in the sentence is still refused. */
+export const NOT_CLEAN_PHRASES: ReadonlyArray<readonly [phrase: string, word: string]> = [
+  ['cannot be confirmed clean', 'clean'],
+  ['cannot establish that the elimination was clean', 'clean'],
+  ['not fed exclusively', 'exclusively'],
+]
+
+function waiveNotClean(errors: VerifyIssue[], summary: LeadSummary, table: FactTable): VerifyIssue[] {
+  const facts = new Map(table.facts.map((f) => [f.id, f]))
+  const budget = new Map<string, number>()
+  summary.sentences.forEach((s, idx) => {
+    const cited = s.cites.map((c) => norm(facts.get(c)?.text ?? '').toLowerCase()).join(' | ')
+    const text = norm(s.text).toLowerCase()
+    for (const [phrase, word] of NOT_CLEAN_PHRASES) {
+      if (!cited.includes(phrase)) continue
+      const key = `${idx + 1}|${word}`
+      budget.set(key, (budget.get(key) ?? 0) + text.split(phrase).length - 1)
+    }
+  })
+  return errors.filter((e) => {
+    if (e.check !== 'banned:H1' || e.sentence === null) return true
+    const key = `${e.sentence}|${e.detail.toLowerCase().replace(/^'|'$/g, '')}`
+    const left = budget.get(key) ?? 0
+    if (left === 0) return true
+    budget.set(key, left - 1)
+    return false
+  })
+}
+
+/** A past-tense word in a sentence that touches a flag is excused only inside a trial reading's own
+ *  words: the word with the two words either side of it printed together in a cited trial-reading
+ *  line, in a sentence that cites no band item ("the trial diet was not fed exclusively": the band's
+ *  "Diet not eaten" label makes every trial sentence touch a flag). "The flag was" is never printed
+ *  in a trial reading, so it is still refused. */
+/** The trial reading's bottom-line phrases (facts.ts `BOTTOM_LINE_PHRASES`, mirrored: the same
+ *  question, which clause says the trial is not clean). */
+export const BOTTOM_LINE_PHRASES: readonly string[] = ['not fed exclusively', 'cannot be confirmed clean', 'not a clean one', 'cannot establish that the elimination was clean']
+
+/** The phrases `bottom-line` guards: the bottom lines, and the confounder's scope words. */
+export const PROTECTED_PHRASES: readonly string[] = [...BOTTOM_LINE_PHRASES, 'not a test of the diet', 'not checked with the owner']
+
+export const TENSE_SPAN = 2
+function pastExcused(text: string, at: number, word: string, cites: string[], facts: Map<string, { role?: string; text?: string }>): boolean {
+  if (cites.some((c) => facts.get(c)?.role === 'band')) return false
+  const before = flatWords(text.slice(0, at)).split(' ').filter(Boolean).slice(-TENSE_SPAN)
+  const after = flatWords(text.slice(at + word.length)).split(' ').filter(Boolean).slice(0, TENSE_SPAN)
+  if (before.length < TENSE_SPAN || after.length < TENSE_SPAN) return false
+  const span = ` ${[...before, word.toLowerCase(), ...after].join(' ')} `
+  return cites.some((c) => c.startsWith('trial-reading-') && ` ${flatWords(facts.get(c)?.text ?? '')} `.includes(span))
 }

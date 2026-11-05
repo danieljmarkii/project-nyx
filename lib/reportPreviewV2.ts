@@ -1,6 +1,7 @@
 // The v2 preview's rules (Vet report v2 PR-17, CUL-2297 + CUL-2383; spec §10.2, §6.3). Pure, so
 // each one is unit-tested without a WebView.
 
+import { Platform } from 'react-native';
 import type { ComposerLive } from './reportComposer';
 import type { VetReport } from './pdf';
 import { FRAME_LOCK_SCRIPT, REPORT_WEBVIEW_ORIGINS } from './examRoom';
@@ -35,21 +36,6 @@ export function isBareV2Report(report: Pick<VetReport, 'reportVersion' | 'phoneH
  */
 export function bandSlotFor(live: ComposerLive | null | undefined): boolean {
   return live?.state === 'flags';
-}
-
-/**
- * CUL-2383 — the phone document runs its own inline layout script (compaction at font scale 1.6,
- * the keep-together spacer, the pinned warning's scroll padding, `data-tight`), so its WebView has
- * JavaScript ON. What makes that safe is that the WebView can go nowhere: the document is our own
- * server render with no external scripts or links that load, and every navigation away from the
- * inline document is refused here. `about:blank` (and `about:srcdoc`) is the inline document
- * itself on both platforms; a `data:` URL is how some Android builds report it.
- *
- * The v1 preview's check only (`app/report.tsx`, CUL-2527). Every v2 report frame passes
- * `reportFrameLoadAllowed`, which refuses `data:`.
- */
-export function isPreviewLoadAllowed(url: string): boolean {
-  return url === 'about:blank' || url === 'about:srcdoc' || url.startsWith('data:');
 }
 
 /** The part of a navigation the frame check reads. `isTopFrame` is iOS only. */
@@ -104,6 +90,29 @@ export const REPORT_FRAME_PROPS = {
   javaScriptCanOpenWindowsAutomatically: false,
   injectedJavaScriptBeforeContentLoaded: `${FRAME_LOCK_SCRIPT}\ntrue;`,
   injectedJavaScriptBeforeContentLoadedForMainFrameOnly: false,
+} as const;
+
+/**
+ * THE LOAD CHECK OF A FRAME THAT RUNS SCRIPT (CUL-2553): the v2 preview's phone frame and the exam
+ * room's pages. Everything `reportFrameLoadAllowed` refuses, and on Android `about:blank` too. A
+ * script can send the page to `about:blank` through `location`, which no page script can lock
+ * (it is unforgeable), and the shared check must admit `about:blank` because iOS reports the inline
+ * document that way. Android never asks: the inline document is an app-initiated
+ * `loadDataWithBaseURL`, which `shouldOverrideUrlLoading` is never told about (installed 14.0.1
+ * source, pinned by `lib/reportPreviewV2.test.ts`), so on Android an `about:blank` request can
+ * only be the page leaving itself. A refusal leaves the report on screen. Wrong about some build,
+ * this fails closed: that frame shows blank (a device check on every cut). iOS keeps the shared
+ * check; there the frame lock's Navigation API listener is the guard where the engine has one.
+ */
+export function scriptedReportFrameLoadAllowed(os: string): (req: ReportFrameRequest) => boolean {
+  if (os !== 'android') return reportFrameLoadAllowed;
+  return (req) => req.url !== 'about:blank' && reportFrameLoadAllowed(req);
+}
+
+/** The props a report WebView that runs script spreads instead of REPORT_FRAME_PROPS (CUL-2553). */
+export const SCRIPTED_REPORT_FRAME_PROPS = {
+  ...REPORT_FRAME_PROPS,
+  onShouldStartLoadWithRequest: scriptedReportFrameLoadAllowed(Platform.OS),
 } as const;
 
 /**

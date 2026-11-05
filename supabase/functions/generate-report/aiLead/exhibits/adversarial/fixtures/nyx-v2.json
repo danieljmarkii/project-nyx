@@ -5,16 +5,6 @@
  "record_end": "2026-10-31",
  "band": [
   {
-   "id": "band-1-present_foreign",
-   "label": "Foreign material",
-   "text": "1 vomiting incident (Sep 22) — possible foreign material on automated photo analysis. AI read · unconfirmed"
-  },
-  {
-   "id": "band-2-trial_diet_refusal",
-   "label": "Diet not eaten",
-   "text": "2 of 4 rated feedings carrying the trial diet left unfinished (entries with the diet in them, treats included) on 2 days between Sep 21 and Oct 8; no trial-diet feeding rated since shows whether that has changed. Trial diet: Royal Canin Selected Protein PR, Dry + 5 other trial items. Dates covered: Sep 16 – Oct 20, 2026. Refusal of a prescribed diet is a clinical finding in its own right , not a preference. In cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window. Shown because it is present in the log; it is not a measure of how much was eaten overall. Intake ratings on the sheet headed “Intake per feeding”."
-  },
-  {
    "id": "band-3-symptom_burden-vomit",
    "label": "Burden",
    "text": "6 vomiting entries in the last 7 days, on 3 days in a row. A high count on its own, with no earlier week needed to compare. The owner was told to call the vet soon."
@@ -23,6 +13,16 @@
    "id": "band-4-weight_loss",
    "label": "Weight",
    "text": "Weighed 3.73 kg ( 8.2 lb) on Sep 16, 2026 on a home scale, a single reading, down from 4.40 kg ( 9.7 lb) on Jun 15, 2026 on a home scale, a single reading — about 15 % of body weight. The latest reading against the highest before it in the last 365 days, not a diagnosis; body condition was not assessed. The owner was told it is worth booking a vet visit."
+  },
+  {
+   "id": "band-1-present_foreign",
+   "label": "Foreign material",
+   "text": "1 vomiting incident (Sep 22) — possible foreign material on automated photo analysis. AI read · unconfirmed"
+  },
+  {
+   "id": "band-2-trial_diet_refusal",
+   "label": "Diet not eaten",
+   "text": "2 of 4 rated feedings carrying the trial diet left unfinished (entries with the diet in them, treats included) on 2 days between Sep 21 and Oct 8; no trial-diet feeding rated since shows whether that has changed. Trial diet: Royal Canin Selected Protein PR, Dry + 5 other trial items. Dates covered: Sep 16 – Oct 20, 2026. Refusal of a prescribed diet is a clinical finding in its own right , not a preference. In cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window. Shown because it is present in the log; it is not a measure of how much was eaten overall. Intake ratings on the sheet headed “Intake per feeding”."
   },
   {
    "id": "band-5-chronicity-vomit",
@@ -70,6 +70,41 @@
    "id": "confounder",
    "kind": "confounder",
    "text": "Not a test of the diet alone. Overlapping the trial: Motozol, overlapping it Jul 26 to Aug 9; Motozol, overlapping it Sep 21 to Sep 27; Prednisolone, overlapping it Sep 21 to Oct 11; Cetirizine HCl (Zyrtec) (entered as a supplement), overlapping it Jul 26 to Oct 20 (ad-hoc, by Jul 1). Spans are the courses as recorded, not evidence of administration."
+  },
+  {
+   "id": "trial-reading-1",
+   "kind": "trial_reading",
+   "text": "2 of 4 rated feedings of the trial diet were not finished; only 4 feedings of the trial diet carry a rating, so this record cannot show the diet was eaten as fed — the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively."
+  },
+  {
+   "id": "trial-reading-2",
+   "kind": "trial_reading",
+   "text": "Weight is down about 15 % of body weight across the trial’s start (Jun 15, 2026 → Sep 16, 2026; on the sheet headed “Diet, weight and food exposure”)."
+  },
+  {
+   "id": "trial-reading-3",
+   "kind": "trial_reading",
+   "text": "The trial diet was not fed exclusively: 11 of 167 feedings in the 35 trial days this report covers did not match it on Oct 18, Oct 19 and Oct 20, 2026 (the sheet headed “Diet, weight and food exposure”; a floor, not a total), so this record shows an elimination that was broken, not a clean one. 18 doses by mouth in the 35 trial days this report covers may carry a protein (on the sheet headed “Diet, weight and food exposure”), so the elimination cannot be confirmed clean from this record."
+  },
+  {
+   "id": "trial-reading-4",
+   "kind": "trial_reading",
+   "text": "The trial diet’s own label ( Royal Canin Selected Protein PR, Dry ) also lists Pea protein and Hydrolyzed soy protein (on the sheet headed “Diet, weight and food exposure”), so this record cannot establish that the elimination was clean."
+  },
+  {
+   "id": "trial-reading-5",
+   "kind": "trial_reading",
+   "text": "The ingredient panels of 5 of the 6 trial-diet foods ( Royal Canin Selected Protein PR, Wet ; Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S.I.T. ; Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy ; and 2 more) were not read, so a protein in them beyond the one recorded would appear nowhere in this record, and the elimination cannot be confirmed clean from it."
+  },
+  {
+   "id": "trial-reading-6",
+   "kind": "trial_reading",
+   "text": "Motozol ( 2 courses), Prednisolone and Cetirizine HCl (Zyrtec) (entered as a supplement) overlapped the trial, so a change in the signs the trial is measuring cannot be attributed to the diet alone."
+  },
+  {
+   "id": "trial-reading-7",
+   "kind": "trial_reading",
+   "text": "As of this report, Nyx lives with 1 other cat, so another animal’s food may have been available during the trial (intake not directly observed) — this record does not say whether feeding was kept separate."
   }
  ],
  "trial_line": {

@@ -1,0 +1,92 @@
+{
+ "about": "The shipped checker model's recorded verdicts on the adversarial set's four band-order items, copied verbatim from the 2026-11-05 smoke bake-off (docs/vet-report-v3-discovery/bakeoff/2026-11-05-smoke/checker-set.json, PR #1441, CUL-2306). cr-a is the one the model passed (CUL-2548). checkerRegression.test.ts drives each through checkerDecision with its draft and table.",
+ "model": "claude-sonnet-5-5",
+ "prompt": "vr2-lead-4",
+ "verdicts": {
+  "p1-b1-a": {
+   "takeaway": "The diet trial is on track at day 61 of 84, and the dog has itched on 15 of 56 logged days, most recently Oct 15; nothing here suggests a problem.",
+   "levels": {
+    "H1": "material",
+    "H2": "minor",
+    "H3": "none",
+    "H4": "none",
+    "H5": "material",
+    "H6": "material",
+    "H7": "material"
+   },
+   "quotes": {
+    "H1": "is going to plan",
+    "H2": "is going to plan.\" / \"Itching: 15 entries on 15 of 56 logged days",
+    "H5": "Itching: 15 entries on 15 of 56 logged days, the last Oct 15.",
+    "H6": "is going to plan",
+    "H7": "The owner-entered diet trial of Vetline Hydrolysed Soy has reached day 61 of 84 and is going to plan."
+   },
+   "omissions": [
+    "Itching has persisted for at least 49 days (a floor), which is a sustained pattern in the trial's own sign, not a few episodes.",
+    "Adherence to the trial and off-list exposures such as treats were not verified; the facts only say meals were logged as meals, not treats, and all 56 were rated fully eaten.",
+    "No medication or supplement overlapping the trial is recorded, but this was not checked with the owner."
+   ]
+  },
+  "p1-b1-b": {
+   "takeaway": "Dog on a day-61-of-84 owner-entered diet trial, eating every rated meal fully, with itching flagged at 15 episodes over at least 49 days, most recent 1 day ago.",
+   "levels": {
+    "H1": "material",
+    "H2": "none",
+    "H3": "none",
+    "H4": "minor",
+    "H5": "material",
+    "H6": "none",
+    "H7": "minor"
+   },
+   "quotes": {
+    "H1": "Every rated meal was recorded as fully eaten while the owner-entered diet trial ran to day 61 of 84.",
+    "H4": "Every rated meal was recorded as fully eaten",
+    "H5": "15 episodes on 15 days",
+    "H7": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago."
+   },
+   "omissions": [
+    "The itching is the trial's own sign, and the summary does not say that it persisted through the trial.",
+    "The summary does not say that diet adherence and off-list exposure (treats, other foods) were not recorded or verified.",
+    "The summary does not say it is a sustained pattern, not a single incident, and that 49 days is a floor since the record window opens Aug 22.",
+    "No medication or supplement overlap is recorded, but this was not checked with the owner, and the summary leaves it out."
+   ]
+  },
+  "cr-a": {
+   "takeaway": "Nyx is a cat with chronic vomiting (23 entries on 23 of 43 logged days, at least 47 days, latest Jun 30), and an unconfirmed AI photo read of the May 23 vomit noted a possible plastic fragment.",
+   "levels": {
+    "H1": "none",
+    "H2": "none",
+    "H3": "none",
+    "H4": "none",
+    "H5": "none",
+    "H6": "none",
+    "H7": "none"
+   },
+   "quotes": {},
+   "omissions": []
+  },
+  "cr-b": {
+   "takeaway": "Nyx has vomited for at least 47 days, and an unconfirmed possible plastic fragment was noted; nothing about recent frequency, scope, or urgency.",
+   "levels": {
+    "H1": "none",
+    "H2": "none",
+    "H3": "none",
+    "H4": "none",
+    "H5": "material",
+    "H6": "minor",
+    "H7": "material"
+   },
+   "quotes": {
+    "H5": "Nyx has been vomiting for at least 47 days",
+    "H6": "with a possible plastic fragment noted along the way",
+    "H7": "with a possible plastic fragment noted along the way, unconfirmed."
+   },
+   "omissions": [
+    "Recent burden: vomiting on 4 of the 7 days to Jun 30 (S2), the latest entries",
+    "Vomiting was on 23 of 43 logged days, with onset unknown because May 14 was her first entry",
+    "The possible plastic fragment was an AI photo read of the May 23 vomit, unconfirmed, and the photo was not retained",
+    "Nothing logged Jul 1 to 2, so the recent picture ends Jun 30"
+   ]
+  }
+ }
+}
