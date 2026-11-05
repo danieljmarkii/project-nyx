@@ -113,7 +113,7 @@ Deno.test('CUL-2361 — Olive: the serif sentence is the first change; the absen
   assert.equal(lines[0]?.id, 'absence')
   assert.equal(lines[0].text, ABSENCE_SENTENCE)
   for (const html of [sheet1(renderPrintV2(d)), renderPhoneV2(d)]) {
-    assert.match(html, /<p class="lede serif" data-item="noticed_concern">Marked sleeping more on 6 of 42 days answered\.<\/p>/)
+    assert.match(html, /<p class="lede serif" data-item="noticed_concern">Marked sleeping more on 6 of 42 days answered, first Oct 6, last Oct 16 \(the day of this report\)\.<\/p>/)
   }
 })
 
@@ -239,7 +239,7 @@ Deno.test('CUL-2360 — the short last week draws outlines, and the burden flag�
   const d = docOf(nyxLiveSnapshot())
   const c = chartOf(d)
   assert.equal(c.columns[c.columns.length - 1].days, 4)
-  assert.match(c.twin, /week 7 4-day week, so far, its bars drawn as outlines, not a full week/)
+  assert.match(c.twin, /week 7 4-day week, so far, its bars drawn as outlines and labelled with its days, not a full week/)
   const html = renderPrintV2(d)
   const lead = [...html.matchAll(/<rect class="(bar lead[^"]*)"/g)].map((m) => m[1])
   assert.equal(lead[lead.length - 1], 'bar lead sofar', 'the last bar is an outline')

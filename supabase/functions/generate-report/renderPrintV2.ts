@@ -93,7 +93,8 @@ function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], to
     // CUL-2360: the short last column's bar is an outline, "so far", never a filled fall.
     const soFar = i === soFar_ ? ' sofar' : ''
     parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}${soFar}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
-    parts.push(haloText(x + w / 2, Math.max(top + 8, base - bh - 2), String(count)))
+    // CUL-2360: the short week's count carries its days ("2 in 4 d"), so it reads as a rate, never a fall.
+    parts.push(haloText(x + w / 2, Math.max(top + 8, base - bh - 2), soFar ? `${count} in ${c.days} d` : String(count)))
   })
   return parts.join('')
 }

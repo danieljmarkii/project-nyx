@@ -281,6 +281,7 @@ const TWIN_WORDS: Record<LeadChart['marks'][number], RegExp> = {
   intake_partly: /partly eaten/,
   open_end: /Dotted after the last logged dose, no end recorded/,
   off_diet_ticks: /Ticks, one per day a feeding off the trial diet was logged/,
+  change_ticks: /Ticks, one per day a change was marked/,
   recent_bracket: /Bracket under the axis: the last \d+ days, \d+ .+ entr(y|ies), as the burden flag counts them/,
 }
 
@@ -396,9 +397,10 @@ Deno.test('questions — verbatim, at most 5, each at most 200 characters, point
 // ── The word budget (ruling B, spec §5.7, AC 6) ─────────────────────────────
 
 /**
- * THE RATCHET. Each fixture's cuttable count as of this PR; a change that grows one reds here and
- * must lower something else or argue the new number in its PR. Lower a number when a change
- * shrinks it. Never raise one to go green. The fixed parts are reported beside, never budgeted.
+ * THE RATCHET, RETIRED AS A CAP (PM ruling (a) on the v2 document fork, brief 1a, CUL-2551, 2026-11-05).
+ * Sheet 1 now carries every v1 page-1 block, and density beats omission: a cap on the cuttable prose
+ * would push the fixes for CUL-2536 and CUL-2349 (the meals line's true total, the dates) off the
+ * sheet. Each fixture's count as of PR-29 stays here as the reference the report prints beside.
  */
 const CUTTABLE_RATCHET: Record<string, number> = {
   'nyx-live': 191,
@@ -420,15 +422,14 @@ const CUTTABLE_RATCHET: Record<string, number> = {
   'stool-photo-dog': 31,
 }
 
-Deno.test('word budget — the cuttable prose stays within its ratchet and about 200 words on every fixture', () => {
+Deno.test('word budget — the cuttable prose is counted and reported beside its PR-29 reference on every fixture (ruling 1a: reported, not capped)', () => {
   const report: string[] = []
   for (const [name, s] of fixtures()) {
     const w = wordCountOf(docOf(s))
     const cap = CUTTABLE_RATCHET[name]
-    report.push(`${name}: cuttable ${w.cuttable} · outside ${JSON.stringify(w.fixed)}`)
-    assert.ok(cap !== undefined, `${name} has a ratchet row`)
-    assert.ok(w.cuttable <= cap, `${name}: ${w.cuttable} cuttable words, ratchet ${cap}`)
-    assert.ok(w.cuttable <= SHEET1_CUTTABLE_BUDGET, `${name}: ${w.cuttable} over the ${SHEET1_CUTTABLE_BUDGET}-word budget`)
+    assert.ok(cap !== undefined, `${name} has a reference row`)
+    report.push(`${name}: cuttable ${w.cuttable} (PR-29 ${cap}, budget ${SHEET1_CUTTABLE_BUDGET}) · outside ${JSON.stringify(w.fixed)}`)
+    assert.ok(w.cuttable > 0 && w.fixed.carried > 0, `${name}: counted, v1's carried blocks included`)
   }
   console.log(`sheet 1 words (ruling B)\n${report.join('\n')}`)
 })
@@ -513,7 +514,7 @@ Deno.test('adversarial 3 — v1’s run of unfinished meals prints on the meals 
   const s = assembleReport(baseInput({ requestedWindow: { startDate: dayKey(40), endDate: dayKey(0) }, events }))
   const d = docOf(s)
   const all = [block(d, 'lead_sentence')?.text, ...(block(d, 'record_lines')?.lines.map((l) => l.text) ?? [])]
-  assert.ok(all.some((t) => t?.includes('): The last 4 rated meals in a row were not fully eaten.')), JSON.stringify(all))
+  assert.ok(all.some((t) => t?.includes('): The last 4 rated meals in a row were not fully eaten, the most recent on ')), JSON.stringify(all))
 })
 
 Deno.test('adversarial 4 — bowl ratings the intake check never reads are disclosed beside the intake row', () => {
@@ -629,7 +630,7 @@ Deno.test('adversarial 2.1 — an intake-flag lead on a zero-sign sheet opens on
   const d = docOf(refusingCat())
   const lede = block(d, 'lead_sentence')
   assert.ok(lede)
-  assert.match(lede.text, /^Meals \(logged as meals, not treats\): The last 6 rated meals in a row were not fully eaten\./)
+  assert.match(lede.text, /^Meals \(logged as meals, not treats\): The last 6 rated meals in a row were not fully eaten, the most recent on /)
   const lines = block(d, 'record_lines')?.lines ?? []
   assert.equal(lines[0]?.id, 'coverage')
   // CUL-2361 ruling (a): the absence sentence is its own line, straight after the coverage count.

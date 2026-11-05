@@ -14,7 +14,7 @@
   {
    "id": "line-1",
    "kind": "lead",
-   "text": "Meals (logged as meals, not treats): The last 4 rated meals in a row were not fully eaten. 44 logged; 44 rated; 4 not fully eaten, on 2 days."
+   "text": "Meals (logged as meals, not treats): The last 4 rated meals in a row were not fully eaten, the most recent on Oct 16. 44 logged; 44 rated; 4 not fully eaten, on 2 days, first Oct 15, last Oct 16 (the day of this report)."
   },
   {
    "id": "sign-vomit",

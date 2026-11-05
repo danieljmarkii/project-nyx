@@ -113,7 +113,8 @@ function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], ax
     // CUL-2360: the short last column's bar is an outline, "so far", never a filled fall.
     const soFar = i === soFarCol(cols, unit) ? ' sofar' : ''
     parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}${soFar}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
-    parts.push(haloText(x + w / 2, base - bh - 2, String(count)))
+    // CUL-2360: the short week's count carries its days ("2 in 4 d"), so it reads as a rate, never a fall.
+    parts.push(haloText(x + w / 2, base - bh - 2, soFar ? `${count} in ${c.days} d` : String(count)))
   })
   return rowWrap(r.label, r.lead ? 'rl lead' : 'rl', rowSvg(pid, base + 2, parts.join(''), hatched))
 }
@@ -186,12 +187,14 @@ function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], pi
   return rowWrap(r.label, 'rl span-l', rowSvg(pid, SPAN_ROW_H, parts.join(''), false))
 }
 
-/** The axis as HTML: the first and last column's dates, then each part column named by its date. */
+/** The axis as HTML: the window's first and last day at the frame's two ends, then each part column
+ *  named by its date. CUL-2546: the right end is the last column's LAST day (the window's end), never
+ *  its first: "Oct 28" at the edge read as a window that stopped three days before the newest entries. */
 function axisHtml(chart: LeadChart): string {
   const cols = chart.columns
   const n = cols.length
   const ends = n > 1
-    ? `<span>${fmtDay(cols[0].start)}</span><span>${fmtDay(cols[n - 1].start)}</span>`
+    ? `<span>${fmtDay(cols[0].start)}</span><span>${fmtDay(cols[n - 1].end)}</span>`
     : `<span>${fmtDay(cols[0]?.start ?? null)}</span>`
   const notes: string[] = []
   cols.forEach((c, i) => {
@@ -302,6 +305,14 @@ function block(b: BlockV2, lead: string | null): string {
   }
 }
 
+/**
+ * CUL-2539: the keep-together spacer can leave most of a screen blank (about 600px after Cooper's
+ * meals line), which a vet scrolling reads as the end of sheet 1. Where the spacer is taller than a
+ * quarter of the frame it prints this line at its top. A part, never a block: it is navigation, the
+ * PDF has no spacer, and it never prints.
+ */
+export const PUSH_NOTE = 'Sheet 1 continues below with the chart for this window.'
+
 /** The blocks, with the lead chart, the lines under it and the confounder wrapped as one unit. */
 function body(doc: DocumentV2): string {
   const conf = doc.blocks.find((b): b is Extract<BlockV2, { kind: 'confounder' }> => b.kind === 'confounder')
@@ -312,7 +323,8 @@ function body(doc: DocumentV2): string {
   const confAt = doc.blocks.findIndex((b) => b.kind === 'confounder')
   const last = confAt > lead ? confAt : lead
   doc.blocks.forEach((b, i) => {
-    if (i === lead) out.push(`<div class="keep-push" aria-hidden="true"></div><div class="keep" data-keep="lead">`)
+    // CUL-2539: a spacer tall enough to read as the sheet's end says it is not one (`PUSH_NOTE`).
+    if (i === lead) out.push(`<div class="keep-push" aria-hidden="true"><p class="pushnote" data-part="push-note" hidden>${h(PUSH_NOTE)}</p></div><div class="keep" data-keep="lead">`)
     out.push(block(b, warning))
     if (i === last && lead >= 0) out.push('</div>')
   })
@@ -357,6 +369,8 @@ ul,ol{margin:0;padding:0;list-style:none;}
 .changes .lede{margin:0.2rem 0 0.4rem;}
 .trialread .trow{margin:0.35rem 0 0;}
 .keep{margin:1rem 0 0;}
+.keep-push{overflow:hidden;}
+.pushnote{margin:0;padding:1rem 0 0;text-align:center;color:var(--ink2);font-size:0.875rem;}
 .keep > section:first-child{margin-top:0;}
 .leadchart .flagh{color:var(--concern);}
 .leadchart.flagged{border:1.5px solid var(--ink);padding:0.6rem 10px;}
@@ -451,6 +465,8 @@ const SCRIPT_PHONE = `
   // same page (adversarial pass 2 on PR-17: a spacer left from the last call flipped the pointer).
   function pushUnit(unit, push){
     push.style.height = '0px';
+    var note = push.querySelector('.pushnote');
+    if (note) note.hidden = true;
     var frame = window.innerHeight;
     if (!frame) return;
     if (unit.getBoundingClientRect().height > frame) return;
@@ -458,6 +474,8 @@ const SCRIPT_PHONE = `
     var k = Math.floor(top / frame);
     var end = top + unit.getBoundingClientRect().height;
     if (end > (k + 1) * frame) push.style.height = ((k + 1) * frame - top) + 'px';
+    // CUL-2539: a spacer over a quarter of the frame says the sheet continues.
+    if (note && parseFloat(push.style.height) > 0.25 * frame) note.hidden = false;
   }
   function lay(){
     // Every layout starts from the same page: no fold, no pointer, no spacer, no padding.

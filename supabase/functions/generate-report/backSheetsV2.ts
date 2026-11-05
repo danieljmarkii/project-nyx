@@ -648,6 +648,8 @@ function medicationPointers(html: string): string {
 const SHEET1_RELATIVE: ReadonlyArray<readonly [string, string]> = [
   ['the charts below span the report&rsquo;s', 'the chart above spans the report&rsquo;s'],
   [' (named among the concurrent changes on page&nbsp;1)', ''],
+  // v1's Noticed line in At a glance: sheet 1 carries v1's page 1, so it lists no activity word either.
+  ['only an activity word, which page 1 never lists', 'only an activity word, which this sheet never lists'],
 ]
 
 /**
