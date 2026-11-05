@@ -372,8 +372,8 @@ ul,ol{margin:0;padding:0;list-style:none;}
 .carry .kv,.trialread .kv{display:block;}
 .carry .kv .k,.trialread .kv .k{display:block;font-weight:650;}
 /* CUL-2551: v1's Noticed strip, carried in At a glance, wraps at large text rather than run past the
-   screen (28 day cells in one row clipped at 320pt × 2.35); its key labels may break. `.carry.back`
-   outranks the back sheets' `.back .ns-key{nowrap}`, which this stylesheet loads after. */
+   screen (28 day cells in one row clipped at 320pt × 2.35); its key labels may break. .carry.back
+   outranks the back sheets .back .ns-key rule (nowrap), which this stylesheet loads after. */
 @media screen{.carry.back .ns-row{flex-wrap:wrap;row-gap:0.25rem;}.carry.back .ns-cell{flex:0 0 auto;min-width:1.4rem;}.carry.back .ns-key{white-space:normal;}.carry.back .ns,.carry.back .ns-legend{overflow-wrap:anywhere;}}
 .keep-push{overflow:hidden;}
 .pushnote{margin:0;padding:1rem 0 0;text-align:center;color:var(--ink2);font-size:0.875rem;}
