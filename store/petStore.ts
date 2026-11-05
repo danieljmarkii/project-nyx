@@ -131,8 +131,13 @@ interface PetState {
    */
   archivedPetIds: string[];
   /**
-   * Add ids to the archived-pet list (usePet's `is_active = false` read). A union, never
-   * a replace: a read that started before an in-app archive must not drop that id.
+   * Whether usePet's archived read has answered this session. Until it has, an empty
+   * `archivedPetIds` means "unknown", not "none", and the inbox errs loud. Cleared by `reset`.
+   */
+  archivedPetIdsLoaded: boolean;
+  /**
+   * The archived read answered: add its ids (a union, never a replace, so a read that
+   * started before an in-app archive cannot drop that id) and mark the list loaded.
    */
   addArchivedPetIds: (ids: string[]) => void;
   /** Replace the active-pet list (oldest-first) and resolve the selection against it. */
@@ -180,8 +185,14 @@ export const usePetStore = create<PetState>((set, get) => ({
   isOnboarded: false,
   petsLoaded: false,
   archivedPetIds: [],
-  addArchivedPetIds: (ids) =>
-    set((state) => ({ archivedPetIds: [...new Set([...state.archivedPetIds, ...ids])] })),
+  archivedPetIdsLoaded: false,
+  addArchivedPetIds: (ids) => {
+    const state = get();
+    const fresh = ids.filter((id) => !state.archivedPetIds.includes(id));
+    // No-op when nothing changes: every subscriber of this store re-renders on a set.
+    if (fresh.length === 0 && state.archivedPetIdsLoaded) return;
+    set({ archivedPetIds: [...state.archivedPetIds, ...new Set(fresh)], archivedPetIdsLoaded: true });
+  },
   // INVARIANT: `pets` holds only NON-archived pets. Every loader filters
   // `is_active = true` (usePet) and archiving calls removePet, so an archived pet
   // never enters the list. The cross-pet safety banner (multi-pet §4) relies on
@@ -278,5 +289,5 @@ export const usePetStore = create<PetState>((set, get) => ({
   },
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
   reset: () =>
-    set({ pets: [], activePet: null, isOnboarded: false, petsLoaded: false, archivedPetIds: [] }),
+    set({ pets: [], activePet: null, isOnboarded: false, petsLoaded: false, archivedPetIds: [], archivedPetIdsLoaded: false }),
 }));

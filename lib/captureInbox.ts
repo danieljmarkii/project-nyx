@@ -70,6 +70,9 @@ export const INBOX_MAX_AGE_DAYS = 45;
 // applied or dropped, and an orphan (no record beside it) is deleted.
 export const INBOX_DEFERRAL_STAMP_SUFFIX = '.deferred';
 
+// The one stamp form the wrapper writes (`toISOString()`); anything else reads as no stamp.
+const INBOX_STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 /**
  * CUL-2542: the pet ids an inbox pass treats as this account's: the set the caller hands
  * over (the active pets) plus the account's ARCHIVED pets (`usePetStore.archivedPetIds`).
@@ -80,9 +83,35 @@ export const INBOX_DEFERRAL_STAMP_SUFFIX = '.deferred';
  */
 export function withArchivedPetIds(petIds: ReadonlySet<string>): ReadonlySet<string> {
   if (petIds.size === 0) return petIds;
-  const archived = usePetStore.getState().archivedPetIds;
-  if (archived.length === 0) return petIds;
-  return new Set([...petIds, ...archived]);
+  const archived = new Set(usePetStore.getState().archivedPetIds);
+  if (archived.size === 0) return petIds;
+  // A LIVE view, never a copy: the caller's set may itself be a view that goes empty once a
+  // sign-out starts (lib/widgetBridge.ts `fencedAllowlist`). An archived id counts only
+  // while the caller's set still yields a member, so that fence holds for it too
+  // (adversarial review, CUL-2542).
+  const live = () => !petIds[Symbol.iterator]().next().done;
+  const union = (): Set<string> => (live() ? new Set([...petIds, ...archived]) : new Set<string>());
+  return {
+    get size() {
+      return union().size;
+    },
+    has: (id: string) => petIds.has(id) || (archived.has(id) && live()),
+    forEach: (cb, thisArg) => union().forEach((v) => cb.call(thisArg, v, v, union())),
+    entries: () => union().entries(),
+    keys: () => union().keys(),
+    values: () => union().values(),
+    [Symbol.iterator]: () => union()[Symbol.iterator](),
+  } as ReadonlySet<string>;
+}
+
+/**
+ * CUL-2542 (adversarial pass 1): whether the account's archived pets have been read. Until
+ * they have, a record naming a pet outside the active set may be an archived pet's, so it
+ * is never shown to be foreign: the counts count it (errs loud) and its deferral starts no
+ * age-out clock.
+ */
+export function archivedPetIdsKnown(): boolean {
+  return usePetStore.getState().archivedPetIdsLoaded;
 }
 
 // Defense against a runaway writer filling the inbox: one pass APPLIES at most
@@ -314,7 +343,13 @@ export async function ingestCaptureRecords(
     // never from its tap, so a record is dropped only after 45 days in which every pass
     // found it unusable. With no readable stamp it defers (the wrapper writes one), and a
     // stamp in the future never ages: both err toward keeping a capture.
-    const firstDeferredMs = file.firstDeferredAt ? Date.parse(file.firstDeferredAt) : NaN;
+    //
+    // Only a whole stamp in the exact form the wrapper writes counts (a cut-off "2026" parses
+    // as January), and never one earlier than the tap: the record cannot have deferred before
+    // it existed, so the later of the two is the clock (adversarial pass 1).
+    const stampMs =
+      file.firstDeferredAt && INBOX_STAMP_RE.test(file.firstDeferredAt) ? Date.parse(file.firstDeferredAt) : NaN;
+    const firstDeferredMs = Number.isNaN(stampMs) ? NaN : Math.max(stampMs, Date.parse(record.createdAt));
     const aged = !Number.isNaN(firstDeferredMs) && now.getTime() - firstDeferredMs > maxAgeMs;
     const unusable = (reason: string): InboxDecision =>
       aged
@@ -526,7 +561,7 @@ export async function ingestCaptureInbox(
       let at: string | null = null;
       try {
         const text = entry.textSync().trim();
-        at = Number.isNaN(Date.parse(text)) ? null : text;
+        at = INBOX_STAMP_RE.test(text) && !Number.isNaN(Date.parse(text)) ? text : null;
       } catch (e) {
         console.warn(`[captureInbox] stamp read failed for ${entry.name}:`, e);
       }
@@ -577,6 +612,9 @@ export async function ingestCaptureInbox(
 
   const regenPets = new Set<string>();
   const stampAt = new Date().toISOString();
+  // A capture for a pet outside the active set may be an archived pet's while the archived
+  // ids are unread: no age-out clock starts on it until they are.
+  const archivedKnown = archivedPetIdsKnown();
   for (const d of decisions) {
     if (d.action === 'deferred') {
       // Deferrals are expected to be transient; log so a stuck record (e.g. a
@@ -585,7 +623,8 @@ export async function ingestCaptureInbox(
       // CUL-2542: the first unusable pass starts the 45 days. An existing readable stamp
       // is never rewritten (that would restart the clock); an unreadable one is replaced.
       // A failed write leaves the record unstamped, so it defers again and never ages.
-      if (d.unusable && !stamps.get(d.name)?.at) {
+      const mayBeArchived = d.reason === 'pet not in account' && !archivedKnown;
+      if (d.unusable && !mayBeArchived && !stamps.get(d.name)?.at) {
         try {
           new File(inbox, `${d.name}${INBOX_DEFERRAL_STAMP_SUFFIX}`).write(stampAt);
         } catch (e) {
@@ -721,7 +760,12 @@ export function readUnclaimedInbox(petIds: ReadonlySet<string>): UnclaimedInboxS
   }
   // CUL-2542: the account's archived pets count as its own here too, the same set the
   // ingest applies for, so the two cannot disagree about whose capture this is.
-  const s = summarizeUnclaimedInboxPayloads(raws, withArchivedPetIds(petIds));
+  // Until the archived ids are read, nothing can be shown to be another pet's, so every
+  // record that will not drop counts (the empty set's "unknown is ours").
+  const s = summarizeUnclaimedInboxPayloads(
+    raws,
+    archivedPetIdsKnown() ? withArchivedPetIds(petIds) : new Set<string>(),
+  );
   return { count: s.count + unreadable, oldestAt: s.oldestAt, unknownAge: s.unknownAge + unreadable };
 }
 

@@ -462,11 +462,18 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
       expect(gone[0]).toMatchObject({ action: 'dropped', reason: 'aged out (food not in cache)' });
     });
 
-    it('a stamp it cannot read, or one in the future, never ages the record', async () => {
-      for (const stamp of ['not-a-date', '', daysBefore(-400)]) {
+    it('a stamp it cannot read, cut off, or in the future never ages the record', async () => {
+      // '2026' and '1' parse as dates (Jan 2026, 2001): a truncated write must not age a record.
+      for (const stamp of ['not-a-date', '', '2026', '1', daysBefore(400).slice(0, 10), daysBefore(-400)]) {
         const d = await ingestCaptureRecords(db, stampedFiles(stamp, tappedLongAgo()), new Set([PET]), NOW);
         expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
       }
+    });
+
+    it('never ages from a stamp earlier than the tap (the record did not exist yet)', async () => {
+      const recent = validRecord({ foodItemId: MISSING_FOOD, createdAt: daysBefore(2), occurredAt: daysBefore(2) });
+      const d = await ingestCaptureRecords(db, stampedFiles(daysBefore(400), recent), new Set([PET]), NOW);
+      expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
     });
 
     it('applies a long-deferred capture the moment its food arrives, however old the stamp', async () => {
@@ -1231,6 +1238,12 @@ describe('ingestCaptureInbox: the first-deferral stamp (CUL-2542)', () => {
     expect(stamp.deleted).toBe(false);
   });
 
+  it('replaces a cut-off stamp (a truncated write) rather than keeping it', async () => {
+    install([recordFile('w.json', { foodItemId: MISSING_FOOD }), stampFile('w.json', '2026')]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites.map((w) => w.name)).toEqual([`w.json${INBOX_DEFERRAL_STAMP_SUFFIX}`]);
+  });
+
   it('drops a record 46 days after its first deferral, with its stamp', async () => {
     const record = recordFile('w.json', { foodItemId: MISSING_FOOD });
     const stamp = stampFile('w.json', daysAgo(INBOX_MAX_AGE_DAYS + 1));
@@ -1337,6 +1350,47 @@ describe('archived pets count as the account (CUL-2542)', () => {
     expect(usePetStore.getState().archivedPetIds).toEqual([ARCHIVED]);
     usePetStore.getState().reset();
     expect(usePetStore.getState().archivedPetIds).toEqual([]);
+  });
+
+  it('until the archived ids are read, the count treats an unknown pet as ours (errs loud)', () => {
+    const at = new Date().toISOString();
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({
+      list: () => [fakeFile('s.json', JSON.stringify(validRecord({ petId: STRANGER, createdAt: at })))],
+    });
+    expect(usePetStore.getState().archivedPetIdsLoaded).toBe(false);
+    expect(countUnclaimedInbox(new Set([PET]))).toBe(1);
+    usePetStore.getState().addArchivedPetIds([]);
+    expect(countUnclaimedInbox(new Set([PET]))).toBe(0);
+  });
+
+  it('until the archived ids are read, an unknown pet starts no age-out clock', async () => {
+    mockStampWrites.length = 0;
+    const entry = fakeFile('s.json', JSON.stringify(validRecord({ petId: STRANGER, createdAt: new Date().toISOString() })));
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({ list: () => [entry] });
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites).toHaveLength(0);
+    usePetStore.getState().addArchivedPetIds([]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites.map((w) => w.name)).toEqual([`s.json${INBOX_DEFERRAL_STAMP_SUFFIX}`]);
+    expect(entry.deleted).toBe(false);
+  });
+
+  it("keeps the caller's fence live: once the caller's set goes empty, no archived id matches", () => {
+    usePetStore.getState().addArchivedPetIds([ARCHIVED]);
+    let signedOut = false;
+    const fencedView = {
+      get size() {
+        return 1;
+      },
+      has: (id: string) => !signedOut && id === PET,
+      [Symbol.iterator]: () => (signedOut ? new Set<string>() : new Set([PET]))[Symbol.iterator](),
+    } as unknown as ReadonlySet<string>;
+    const view = withArchivedPetIds(fencedView);
+    expect(view.has(ARCHIVED)).toBe(true);
+    signedOut = true;
+    expect(view.has(ARCHIVED)).toBe(false);
+    expect(view.has(PET)).toBe(false);
+    expect([...view]).toEqual([]);
   });
 
   it('the inbox count counts an archived pet’s capture and still skips a stranger’s', () => {

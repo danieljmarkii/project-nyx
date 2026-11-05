@@ -50,7 +50,7 @@ export function usePet() {
           return;
         }
         const ids = ((data ?? []) as { id: string }[]).map((p) => p.id);
-        if (ids.length > 0) usePetStore.getState().addArchivedPetIds(ids);
+        usePetStore.getState().addArchivedPetIds(ids);
       } catch (e) {
         console.warn('[usePet] archived pet ids fetch threw:', e);
       }
