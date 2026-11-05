@@ -34,9 +34,9 @@
 //    The system's own Zoom and Magnification stay outside any app (acknowledged by the PM).
 //
 // BOXED IN LIKE THE EXAM ROOM (CUL-2428, CUL-2469). Both frames open with the one frame lock
-// (`FRAME_LOCK_HEAD`, lib/examRoom.ts): the room's Content-Security-Policy (the document may run
-// its own inline script and draw its own inline styles, fonts and images, and may load or send
-// nothing), DNS prefetch off, and the lock script (no WebRTC, no `window.open`, no frame or link
+// (`withFrameLock`, lib/examRoom.ts): the room's Content-Security-Policy (the document may run
+// only its own scripts, each named by hash (CUL-2531), draw its own inline styles, fonts and
+// images, and load or send nothing), DNS prefetch off, and the lock script (no WebRTC, no `window.open`, no frame or link
 // put in by script); frame and link tags are renamed inert before the parser sees them. Both
 // spread the frame props (lib/reportPreviewV2.ts): every navigation reaches the one load check,
 // which refuses all but the inline document, `data:` included, and no window ever opens. The
@@ -54,9 +54,8 @@ import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import {
   EXAM_VIEWPORT,
-  FRAME_LOCK_HEAD,
+  boxedFrameHtml,
   lockedViewportHtml,
-  neutralizeRefusedTags,
   printedViewAllowed,
   printedWarningOf,
   withFrameLock,
@@ -102,10 +101,7 @@ export function boxedPreviewHtml(html: string): string {
     const withCsp = withFrameLock(html);
     if (withCsp !== null) return withCsp;
   }
-  const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
-  if (doctype === null) return neutralizeRefusedTags(`${FRAME_LOCK_HEAD}${html}`);
-  const at = doctype.index + doctype[0].length;
-  return neutralizeRefusedTags(`${html.slice(0, at)}${FRAME_LOCK_HEAD}${html.slice(at)}`);
+  return boxedFrameHtml(html);
 }
 
 export interface ReportPreviewV2Props {
