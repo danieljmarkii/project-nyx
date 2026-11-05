@@ -35,14 +35,18 @@ Deno.test('every fixture payload passes the payload allowlist, and carries no ow
   }
 })
 
-Deno.test('the band leads the payload in the band\'s order, with each item\'s label', () => {
+Deno.test('the band leads the payload in the snapshot\'s safety order, with each item\'s label', () => {
   const doc = buildDocumentV2(nyx, OPTS)
   const band = doc.blocks.find((b) => b.kind === 'band')
   if (!band || band.kind !== 'band') throw new Error('the Nyx record has a band')
   const f = eligible(doc, nyx)
-  assert.deepEqual(f.payload.band.map((b) => [b.id, b.label]), band.items.map((i) => [i.id, i.tag]))
+  // CUL-2381 ruling (a) reorders the PRINTED band; the payload keeps the snapshot's order (each id's
+  // index), the order the lead's band-first rule and its corpus were written against. Same members.
+  const bySnapshot = [...band.items].sort((a, b) => Number(/^band-(\d+)-/.exec(a.id)![1]) - Number(/^band-(\d+)-/.exec(b.id)![1]))
+  assert.deepEqual(f.payload.band.map((b) => [b.id, b.label]), bySnapshot.map((i) => [i.id, i.tag]))
+  assert.notDeepEqual(bySnapshot.map((i) => i.id), band.items.map((i) => i.id), 'Nyx exercises the reorder')
   assert.equal(f.table.safety_live, true)
-  assert.equal(f.table.facts.find((x) => x.id === band.items[0].id)?.required, true)
+  assert.equal(f.table.facts.find((x) => x.id === bySnapshot[0].id)?.required, true)
 })
 
 Deno.test('line 1 and the record lines go in; the gap lines and the owner\'s questions never do', () => {

@@ -161,7 +161,8 @@ Deno.test('R-11 condition 5 — any other flag on the sign keeps the flag in the
     assert.equal(r11ConditionsOf(t, f).onlyFlagOnSign, false, o.kind)
     const m = bandMembersOf(t)
     assert.equal(m.leadFlag, null, o.kind)
-    assert.deepEqual(m.band, [f, o], `${o.kind}: both print in the band`)
+    // CUL-2381 ruling (a): a burden flag leads the band; worsening keeps the snapshot's order.
+    assert.deepEqual(m.band, o.kind === 'symptom_burden' ? [o, f] : [f, o], `${o.kind}: both print in the band`)
   }
 })
 

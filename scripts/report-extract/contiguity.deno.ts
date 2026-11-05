@@ -47,7 +47,7 @@ const INLINE = new Set(['a', 'abbr', 'b', 'bdi', 'bdo', 'cite', 'code', 'em', 'i
 const cp = (n: number): string => String.fromCodePoint(n)
 const ENTITIES: Record<string, string> = {
   nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'",
-  rsquo: cp(0x2019), lsquo: cp(0x2018), ldquo: cp(0x201c), rdquo: cp(0x201d), mdash: cp(0x2014), ndash: cp(0x2013), middot: cp(0xb7), hellip: cp(0x2026), times: cp(0xd7),
+  rsquo: cp(0x2019), lsquo: cp(0x2018), ldquo: cp(0x201c), rdquo: cp(0x201d), mdash: cp(0x2014), ndash: cp(0x2013), middot: cp(0xb7), hellip: cp(0x2026), times: cp(0xd7), rarr: cp(0x2192), dagger: cp(0x2020), asymp: cp(0x2248),
 }
 
 function decode(s: string): string {

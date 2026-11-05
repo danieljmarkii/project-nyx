@@ -28,7 +28,7 @@
 // each is followed by its citations, named by the lines' own nouns.
 import { BACK_STYLE_PRINT, backSheetHtml, bandPhotosHtml, pageHeadCss } from './renderBackV2.ts'
 import type { LeadSentence } from './aiLead/verify.ts'
-import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
+import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
 
 /** Never fewer than this many counts on the axis, so a single entry draws at a quarter height. */
@@ -40,6 +40,7 @@ const SIGN_ROW_H = 40
 const BAR_H = 26
 const SPAN_ROW_H = 16
 const AXIS_H = 26
+const BRACKET_H = 16
 
 function x0(i: number, n: number): number {
   return LABEL_W + (i * PLOT_W) / n
@@ -68,6 +69,7 @@ function haloText(x: number, y: number, text: string, cls = 'cnt'): string {
 
 function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], top: number, axisMax: number, unit: LeadChart['unit']): string {
   const n = cols.length
+  const soFar_ = soFarCol(cols, unit)
   const base = top + SIGN_ROW_H - 4
   const parts: string[] = [rowLabel(r.label, base - 2, r.lead ? 'rl lead' : 'rl')]
   parts.push(`<line class="base" x1="${LABEL_W}" x2="${LABEL_W + PLOT_W}" y1="${base}" y2="${base}"/>`)
@@ -88,7 +90,9 @@ function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], to
     const full = unit === 'day' ? 1 : unit === 'week' ? 7 : 14
     const w = Math.max(2, colW(n) * 0.62 * Math.min(1, c.days / full))
     const x = x0(i, n) + colW(n) * 0.19 // a part bar starts where a full one does
-    parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
+    // CUL-2360: the short last column's bar is an outline, "so far", never a filled fall.
+    const soFar = i === soFar_ ? ' sofar' : ''
+    parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}${soFar}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
     parts.push(haloText(x + w / 2, Math.max(top + 8, base - bh - 2), String(count)))
   })
   return parts.join('')
@@ -110,6 +114,8 @@ function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[]
     const x = x0(i, n) + (colW(n) - w) / 2
     const refusedH = (cell.refused / cell.rated) * BAR_H
     const partlyH = ((cell.notFinished - cell.refused) / cell.rated) * BAR_H
+    // An intake bar is a share of the meals rated, so a short week does not shorten it: it stays
+    // filled, refused solid, never hollowed (adversarial pass 1 on PR-29: Cooper's newest column).
     if (refusedH > 0) parts.push(`<rect class="bar lead" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)
     if (partlyH > 0) parts.push(`<rect class="bar partly" x="${x.toFixed(1)}" y="${(base - refusedH - partlyH).toFixed(1)}" width="${w.toFixed(1)}" height="${partlyH.toFixed(1)}"/>`)
     parts.push(haloText(x + w / 2, Math.max(top + 8, base - refusedH - partlyH - 2), `${cell.notFinished} of ${cell.rated}`))
@@ -132,27 +138,51 @@ function coverageRow(r: Extract<ChartRow, { kind: 'coverage' }>, cols: ChartColu
   return parts.join('')
 }
 
-function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], top: number): string {
+/** A position in column units (`dayPos`) as an x on the plot, clamped to the frame (N9). */
+export function posX(pos: number, n: number): number {
+  return LABEL_W + Math.min(PLOT_W, Math.max(0, (pos * PLOT_W) / Math.max(1, n)))
+}
+
+function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], top: number, endPos: number): string {
   const n = cols.length
   const y = top + SPAN_ROW_H / 2
-  const xa = r.openStart ? LABEL_W : x0(r.fromCol, n) + colW(n) / 2
-  const xb = r.openEnd ? LABEL_W + PLOT_W : x0(r.toCol, n) + colW(n) / 2
+  // CUL-2360: on the span's own days, never a column's centre.
+  const xa = posX(r.openStart ? 0 : r.fromPos, n)
+  const xb = posX(r.toPos, n)
   const cls = r.hollow ? 'span hollow' : 'span'
-  // CUL-2480 instance 1: ad-hoc doses are ticks on the columns that hold one, never a bar.
+  // CUL-2480 instance 1 and CUL-2514: ad-hoc doses and off-diet feedings are ticks, never a bar.
   if (r.doseCols) {
     return [
       rowLabel(r.label, y + 3, 'rl span-l'),
-      ...r.doseCols.map((i) => {
-        const x = (x0(Math.floor(i), n) + (i - Math.floor(i)) * colW(n)).toFixed(1)
+      ...r.doseCols.map((p) => {
+        const x = posX(p, n).toFixed(1)
         return `<line class="span dose" x1="${x}" x2="${x}" y1="${y - 4}" y2="${y + 4}"/>`
       }),
     ].join('')
   }
   const parts = [rowLabel(r.label, y + 3, 'rl span-l'), `<line class="${cls}" x1="${xa.toFixed(1)}" x2="${Math.max(xa + 2, xb).toFixed(1)}" y1="${y}" y2="${y}"/>`]
+  // CUL-2360: no recorded end, so the course carries on dotted from its last logged dose to the edge.
+  if (r.openCourse) parts.push(`<line class="span open" x1="${Math.max(xa + 2, xb).toFixed(1)}" x2="${posX(endPos, n).toFixed(1)}" y1="${y}" y2="${y}"/>`)
   // The bracket ends: a tick where the record dates a start or an end, none where it runs off the edge.
   if (!r.openStart) parts.push(`<line class="${cls}" x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
   if (!r.openEnd && r.endDeclared) parts.push(`<line class="${cls}" x1="${xb.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
   return parts.join('')
+}
+
+/** CUL-2360: the burden flag's window, bracketed under the axis, with its words beside it. */
+function bracketRow(chart: LeadChart, top: number): string {
+  const b = chart.recentBracket
+  if (!b) return ''
+  const n = chart.columns.length
+  const xa = posX(b.fromPos, n)
+  const xb = posX(b.toPos, n)
+  const y = top + 4
+  return [
+    `<line class="bracket" x1="${xa.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y}" y2="${y}"/>`,
+    `<line class="bracket" x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="${y - 3}" y2="${y}"/>`,
+    `<line class="bracket" x1="${xb.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y - 3}" y2="${y}"/>`,
+    `<text class="ax part" x="${xb.toFixed(1)}" y="${y + 9}" text-anchor="end">${h(b.label.replace(/, as the burden flag counts them$/, ', flagged'))}</text>`,
+  ].join('')
 }
 
 function axis(chart: LeadChart, top: number): string {
@@ -172,7 +202,13 @@ function axis(chart: LeadChart, top: number): string {
       if (c.days < full) label = `${c.days}-day ${chart.unit === 'week' ? 'week' : 'bin'}${i === n - 1 ? ', so far' : ''}`
       else if (c.loggedDays > 0 && c.loggedDays < c.days) label = `logged ${c.loggedDays} of ${c.days}`
     }
-    if (label) parts.push(`<text class="ax part" x="${(x0(i, n) + 1).toFixed(1)}" y="${top + 21}">${h(label)}</text>`)
+    // N9 (CUL-2360): the last column's label ends at the frame's right edge, never past it.
+    if (label)
+      parts.push(
+        i === n - 1 && n > 1
+          ? `<text class="ax part" x="${(LABEL_W + PLOT_W).toFixed(1)}" y="${top + 21}" text-anchor="end">${h(label)}</text>`
+          : `<text class="ax part" x="${(x0(i, n) + 1).toFixed(1)}" y="${top + 21}">${h(label)}</text>`,
+      )
   })
   return parts.join('')
 }
@@ -192,11 +228,15 @@ export function chartSvg(chart: LeadChart): string {
     y += SIGN_ROW_H
   }
   for (const r of spans) {
-    body.push(spanRow(r, chart.columns, y))
+    body.push(spanRow(r, chart.columns, y, chart.endPos))
     y += SPAN_ROW_H
   }
   body.push(axis(chart, y))
   y += AXIS_H
+  if (chart.recentBracket) {
+    body.push(bracketRow(chart, y))
+    y += BRACKET_H
+  }
   const hatch = `<defs><pattern id="v2hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" class="hatchline"/></pattern></defs>`
   return `<svg class="chart" aria-hidden="true" focusable="false" viewBox="0 0 ${LABEL_W + PLOT_W} ${y}" width="${LABEL_W + PLOT_W}pt" height="${y}pt">${hatch}${body.join('')}</svg>`
 }
@@ -254,20 +294,28 @@ function block(b: BlockV2, aiLead: string | null = null): string {
       return `${open('p', 'scope')}${h(b.text)}</p>`
     case 'changes':
       // Never framed like the band, never called a flag (PM ruling (a) on CUL-2323).
-      return `${open('section', `changes ${b.placement === 'band_slot' ? 'slot' : 'under'}`)}<h2 class="sech">${h(b.heading)}</h2><ul>${b.lines
+      return `${open('section', `changes ${b.placement === 'band_slot' ? 'slot' : 'under'}`)}<h2 class="sech">${h(b.heading)}</h2>${
+        // CUL-2361 ruling (a): on a zero-sign sheet the first change is the sheet's serif sentence.
+        b.serifLead && aiLead === null ? `<p class="lede serif" data-item="${h(b.lines[0].id)}">${h(b.lines[0].text)}.</p>` : ''
+      }${(b.serifLead && aiLead === null ? b.lines.slice(1) : b.lines).length > 0 ? `<ul>${(b.serifLead && aiLead === null ? b.lines.slice(1) : b.lines)
         .map((l) => `<li data-item="${h(l.id)}">${h(l.text)}.</li>`)
-        .join('')}</ul></section>`
+        .join('')}</ul>` : ''}</section>`
     case 'record_edge':
       return `${open('div', 'edge')}${b.lines.map((l) => `<p>${h(l)}</p>`).join('')}</div>`
     case 'lead_sentence':
       // With a lead, line 1 drops to body under it (spec §5.3: one serif sentence per sheet).
-      return aiLead === null ? `${open('p', 'lede serif')}${h(b.text)}</p>` : `${aiLead}\n${open('p', 'lede body')}${h(b.text)}</p>`
+      return aiLead === null ? `${open('p', b.serif ? 'lede serif' : 'lede body')}${h(b.text)}</p>` : `${aiLead}\n${open('p', 'lede body')}${h(b.text)}</p>`
     case 'lead_chart': {
       const c = b.chart
       return `${open('section', c.flagHtml ? 'leadchart flagged' : 'leadchart')}<h2 class="${c.flagHtml ? 'flagh' : 'charth'}">${h(c.heading)}</h2>${
         c.flagHtml ? `<p class="flagrow">${c.flagHtml}</p>` : ''
       }${c.reasonLine ? `<p class="why">${h(c.reasonLine)}</p>` : ''}${chartSvg(c)}<p class="twin">${h(c.twin)}</p></section>`
     }
+    case 'trial_reading':
+      // v1's callout label, then its sentences as v1 wrote them (already-escaped html).
+      return `${open('section', 'trialread')}<h2 class="sech">${h(b.label)}</h2>${b.html !== null ? `<p>${b.html}</p>` : ''}${b.rows
+        .map((r) => `<p class="trow"><b>${r.labelHtml}:</b> ${r.html}</p>`)
+        .join('')}</section>`
     case 'confounder':
       return `${open('p', 'conf')}${h(b.text)}</p>`
     case 'record_lines':
@@ -324,6 +372,8 @@ h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .edge p{font-size:10.5pt;font-weight:600;margin:8pt 0 0;}
 .lede{font-size:13pt;line-height:1.3;margin:10pt 0 0;}
 .lede.body{font-size:9.5pt;line-height:1.38;margin:6pt 0 0;}
+.changes .lede{margin:2pt 0 4pt;}
+.trialread .trow{margin:3pt 0 0;}
 .ailead{margin:10pt 0 0;}
 .ailead .ailabel{font-size:7.5pt;letter-spacing:.04em;color:var(--ink2);margin:0;}
 .ailead .beta{text-transform:uppercase;letter-spacing:.1em;border:.5pt solid var(--ink2);padding:0 2pt;}
@@ -339,7 +389,7 @@ svg .cnt.nr{fill:var(--ink2);font-weight:400;}
 .lines li{margin:0 0 2pt;}
 .qs .ptr{color:var(--ink2);font-size:8pt;}
 .colo{margin-top:14pt;padding-top:5pt;border-top:.5pt solid var(--hair);font-size:7.5pt;color:var(--ink2);}
-svg.chart{display:block;margin:2pt 0 0;overflow:visible;}
+svg.chart{display:block;margin:2pt 0 0;overflow:visible;max-width:100%;height:auto;}
 svg .rl{font-size:8.5px;fill:var(--ink2);}
 svg .rl.lead{fill:var(--concern);font-weight:650;}
 svg .rl.sub{font-size:7px;}
@@ -351,6 +401,11 @@ svg .cov{fill:var(--cov);}
 svg .hatchline{stroke:var(--faint);stroke-width:1;}
 svg .span{stroke:var(--ink2);stroke-width:1.5;}
 svg .span.hollow{stroke-dasharray:3 2;stroke-width:1;fill:none;}
+svg .span.open{stroke-dasharray:1.5 2.5;}
+svg .bar.sofar{fill:none;stroke:var(--ink2);stroke-width:1.2;}
+svg .bar.lead.sofar{stroke:var(--concern);}
+svg .bar.partly.sofar{stroke:var(--partly);}
+svg .bracket{stroke:var(--ink);stroke-width:1;fill:none;}
 svg .cnt{font-size:8px;fill:var(--ink);font-weight:600;}
 svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linejoin:round;}
 svg .ax{font-size:7.5px;fill:var(--ink2);}
