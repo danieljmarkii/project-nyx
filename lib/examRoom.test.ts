@@ -447,6 +447,24 @@ describe('no report frame can be blanked by its own content', () => {
     for (const m of metas) expect(neutralizeRefusedTags(m)).toBe(m);
   });
 
+  it('renames MathML inert: WebKit makes a math element with an href a link (privacy pass F4)', () => {
+    const out = neutralizeRefusedTags('<math href="about:blank" style="position:fixed;inset:0"><mtext>x</mtext></MATH>');
+    expect(out).toBe('<x-refused-math href="about:blank" style="position:fixed;inset:0"><mtext>x</mtext></x-refused-MATH>');
+    const doc = new JSDOM(`<!DOCTYPE html><body>${out}</body>`).window.document;
+    expect(doc.querySelectorAll('math').length).toBe(0);
+    for (const s of ['<mathml>', '&lt;math href=x&gt;', '<p>math</p>']) expect(neutralizeRefusedTags(s)).toBe(s);
+  });
+
+  it('keeps only the first viewport meta: a later one would undo the locked page scale (privacy pass F5)', () => {
+    const locked = examRoomHtml(PHONE.replace('<body>', '<body><meta name="viewport" content="initial-scale=5" />'), '#0A0A0A') as string;
+    expect(locked.match(/<meta name="viewport"/g)).toHaveLength(1);
+    expect(locked).toContain('<x-refused-meta name="viewport" content="initial-scale=5" />');
+    // Each call starts afresh: one viewport per document.
+    const v = '<meta name="viewport" content="width=1" />';
+    expect(neutralizeRefusedTags(v)).toBe(v);
+    expect(neutralizeRefusedTags(v)).toBe(v);
+  });
+
   it('each frame\'s document goes through the rename: the exam room\'s pages and its printed view', () => {
     const injected = PHONE.replace('<body>', '<body><meta http-equiv=refresh content="0;url=about:blank">');
     expect(examRoomHtml(injected, '#0A0A0A')).not.toMatch(/<meta http-equiv=refresh/i);

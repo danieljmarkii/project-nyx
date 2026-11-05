@@ -161,9 +161,11 @@ export const EXAM_CSP_META = `<meta http-equiv="Content-Security-Policy" content
  * hook never reaches a sub-frame, and the load check is never told one is asking); a `<link>` is a
  * dns-prefetch / preconnect / prefetch hint, which the browser acts on as the element lands; an
  * `<a>` or `<area>` host is an anchor DNS prefetch where an engine ignores the prefetch switch, and
- * a tap target besides.
+ * a tap target besides; `<math>` because WebKit makes any MathML element with an `href` a link, so
+ * one tap would send a JS-off frame to `about:blank`, which the load check admits (CUL-2552
+ * privacy pass, F4).
  */
-export const FRAME_REFUSED_TAGS = ['iframe', 'frame', 'frameset', 'object', 'embed', 'portal', 'fencedframe', 'link', 'a', 'area'] as const;
+export const FRAME_REFUSED_TAGS = ['iframe', 'frame', 'frameset', 'object', 'embed', 'portal', 'fencedframe', 'link', 'a', 'area', 'math'] as const;
 
 /**
  * The one script start tag with attributes a report document may carry: the room's own. Every
@@ -263,7 +265,24 @@ export function neutralizeRefusedTags(html: string): string {
   return html
     .replace(new RegExp(`<(/?)(${FRAME_REFUSED_TAGS.join('|')})(?=[\\s/>]|$)`, 'gi'), '<$1x-refused-$2')
     .replace(/<script(?=[\s/])[^>]*>?/gi, (tag) => (tag === EXAM_SCRIPT_OPEN ? tag : `<x-refused-script${tag.slice(7)}`))
-    .replace(/<meta(?=[\t\n\f\r />]|$)[^>]*>?/gi, (tag) => (metaKept(tag) ? tag : `<x-refused-meta${tag.slice(5)}`));
+    .replace(/<meta(?=[\t\n\f\r />]|$)[^>]*>?/gi, keptMetaOnce());
+}
+
+/**
+ * The meta rename, one document at a time: a kept meta stays unless it is a SECOND viewport. The
+ * last viewport meta wins, so an injected one after the document's own would undo a locked page
+ * scale (EXAM_VIEWPORT) and could push a pinned warning off the first screen (privacy pass F5).
+ */
+function keptMetaOnce(): (tag: string) => string {
+  let viewport = false;
+  return (tag) => {
+    const isViewport = /^<meta[\t\n\f\r ]+name="viewport"/i.test(tag);
+    if (metaKept(tag) && !(isViewport && viewport)) {
+      if (isViewport) viewport = true;
+      return tag;
+    }
+    return `<x-refused-meta${tag.slice(5)}`;
+  };
 }
 
 /**
