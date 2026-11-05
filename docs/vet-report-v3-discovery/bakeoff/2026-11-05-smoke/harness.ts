@@ -1,3 +1,4 @@
+// @ts-nocheck
 // The smoke bake-off of the shipping AI-lead configuration (CUL-2306, Vet report v2 PR-26).
 //
 // Runs the SHIPPED code, unedited: `runAiLead` (aiLead/leadPipeline.ts) with the real
@@ -12,12 +13,25 @@
 //   deno run -A docs/vet-report-v3-discovery/bakeoff/2026-11-05-smoke/harness.ts thin
 //   deno run -A docs/vet-report-v3-discovery/bakeoff/2026-11-05-smoke/harness.ts writers 5
 //   deno run -A docs/vet-report-v3-discovery/bakeoff/2026-11-05-smoke/harness.ts checker
-import { assembleReport } from '../../../../supabase/functions/generate-report/report.ts'
-import { juniper } from '../../../../supabase/functions/generate-report/v2Fixtures.testutil.ts'
-import { buildLeadFacts, documentForLead, tableFromPayload, type LeadFactPayload, type LeadFacts } from '../../../../supabase/functions/generate-report/aiLead/facts.ts'
-import { requestBody, sendChecked, ticketFor, type ModelResult } from '../../../../supabase/functions/generate-report/aiLead/model.ts'
-import { checkerDecision, parseChecker, runAiLead, type LeadIO, type StoredVerdict } from '../../../../supabase/functions/generate-report/aiLead/leadPipeline.ts'
-import { verifyLead, type LeadSentence } from '../../../../supabase/functions/generate-report/aiLead/verify.ts'
+// The shipped modules are loaded at runtime, by a specifier the app's `tsc` cannot follow: this
+// file sits under docs/, which the root tsconfig type-checks, and the Edge Function graph is
+// Deno-typed (tsconfig.json keeps it out by excluding supabase/functions and scripts/**/*.deno.ts,
+// neither of which this folder is). Deno does not type-check `deno run`, so nothing about what
+// runs changes; the types below are the shipped ones in name only.
+const FN = new URL('../../../../supabase/functions/generate-report/', import.meta.url)
+const load = (rel: string) => import(new URL(rel, FN).href)
+const { assembleReport } = await load('report.ts')
+const { juniper } = await load('v2Fixtures.testutil.ts')
+const { buildLeadFacts, documentForLead, tableFromPayload } = await load('aiLead/facts.ts')
+const { requestBody, sendChecked, ticketFor } = await load('aiLead/model.ts')
+const { checkerDecision, parseChecker, runAiLead } = await load('aiLead/leadPipeline.ts')
+const { verifyLead } = await load('aiLead/verify.ts')
+type LeadFactPayload = Record<string, unknown>
+type LeadFacts = { eligible: boolean; payload?: LeadFactPayload; table?: unknown; reason?: string }
+type ModelResult = { ok: boolean; reason?: string; servedModel: string | null; json?: unknown }
+type LeadIO = Record<string, (...args: never[]) => unknown>
+type StoredVerdict = { sentences: LeadSentence[] | null; checker: unknown }
+type LeadSentence = { text: string; cites: string[] }
 
 const HERE = new URL('./', import.meta.url)
 const SET_DIR = new URL('../../../../supabase/functions/generate-report/aiLead/exhibits/adversarial/', import.meta.url)
