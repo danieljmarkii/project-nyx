@@ -3581,8 +3581,18 @@ export function headlineMedicationBit(snap: ReportSnapshot, t: NonNullable<Repor
       .filter((r): r is MedicationAdherence => r !== undefined)
     // Cold read at f8acadc: what the drug was for, from its own course(s) — a steroid given for the
     // cough the trial is also measuring is the confound a vet weighs first.
-    const indications = [...new Set(matched.map((r) => r.indication?.trim().toLowerCase()).filter((x): x is string => !!x))]
-    if (indications.length > 0) bits.splice(route ? 1 : 0, 0, `for ${h(indications.join(' and '))}`)
+    const withInd = matched.filter((r) => !!r.indication?.trim())
+    const indications = [...new Set(withInd.map((r) => r.indication!.trim().toLowerCase()))]
+    // Every course carries it → "for X"; only some → say how many, so one course's indication is
+    // never lent to another (final cold read: Motozol's second course has none on record).
+    if (indications.length > 0 && withInd.length === g.rows.length) {
+      bits.splice(route ? 1 : 0, 0, `for ${h(indications.join(' and '))}`)
+    } else if (indications.length > 0) {
+      const at = bits.findIndex((b) => b.endsWith(' courses'))
+      const note = `${num(withInd.length)} for ${h(indications.join(' and '))}`
+      if (at >= 0) bits[at] = `${bits[at]}, ${note}`
+      else bits.push(`${note} of ${num(g.rows.length)}`)
+    }
     const parts = matched.map((r) => ({ r, p: partialOf(r) })).filter((x) => x.p !== null)
     if (parts.length > 0) {
       const n = parts.reduce((a, x) => a + x.p!.n, 0)

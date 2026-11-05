@@ -67,11 +67,13 @@ Deno.test('CUL-2529 — the first sheet names the off-diet protein with its days
   const html = renderReport(fixture('nyx-live'))
   const head = headlineOf(html)
   assert.match(head, /11 of 167 logged feedings did not match the trial diet, carrying Chicken \(11\) on Oct 18, Oct 19 and Oct 20, 2026 \(/, head)
-  assert.match(head, /Medication overlapping the trial: Motozol \([^)]*2 courses\), Prednisolone \([^)]*Sep 21–Oct 11[^)]*\) and Cetirizine HCl \(Zyrtec\) \(entered as a supplement[^)]*\), so a change in the signs cannot be attributed to the diet alone/, head)
+  assert.match(head, /Medication overlapping the trial: Motozol \([^)]*2 courses[^)]*\), Prednisolone \([^)]*Sep 21–Oct 11[^)]*\) and Cetirizine HCl \(Zyrtec\) \(entered as a supplement[^)]*\), so a change in the signs cannot be attributed to the diet alone/, head)
   // Cold read at f8acadc: what each course was for rides with it (prednisolone was for the cough).
   assert.match(head, /Prednisolone \(by mouth, for coughing, Sep 21–Oct 11/, head)
   // Final cold read: every indication the headline names has a row to trace to in the trial block.
   const t = plain(html)
+  // A drug with several courses names its indication only for the courses that carry one.
+  assert.match(head, /Motozol \(in the ear, 2 courses, 1 for ear infection\)/, head)
   const named = [...head.matchAll(/(\w[\w ()]*?) \([^)]*?for ([a-z ]+?)(?:,|\))/g)]
   assert.ok(named.length >= 2, `the headline names an indication for each course that has one (${named.length})`)
   for (const m of named) {
