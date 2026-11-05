@@ -694,6 +694,7 @@ export function sampleLine(finding: SignalFinding): string {
   }
   // CUL-2405: only the consecutive-low card compares with a usual; an unknown trigger never does.
   if (finding.trigger !== 'consecutive_low') return UNKNOWN_INTAKE_COPY.sample;
+  if (intakeAllRefused(finding)) return allRefusedSample(finding.daysBelowBaseline, finding.ratedMealsConsidered);
   return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, across ${count(
     finding.ratedMealsConsidered,
     'recent meal',
@@ -1212,6 +1213,15 @@ export function evidenceText(
   }
   // CUL-2405: an unknown trigger reads at its most cautious, never as the consecutive-low card.
   if (finding.trigger !== 'consecutive_low') return `${unknownIntakeSentence(petName)}${i5Tail}`;
+  if (intakeAllRefused(finding)) {
+    // CUL-2424: the mirror of phrasing.ts templateIntakeDecline's all-refused sentence, with the
+    // comparison this card's expanded text always carries.
+    return (
+      `${petName} refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)}, compared with ` +
+      `${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Refusing food can be an early sign ` +
+      `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`
+    );
+  }
   return (
     `${petName} has eaten less than usual for ${count(finding.daysBelowBaseline, 'day', 'days')}, ` +
     `compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Eating less can be ` +
@@ -1938,6 +1948,25 @@ export function sustainedRefusalOf(finding: SignalFinding): SustainedRefusalFact
   return ok(r.meals) && ok(r.days) && ok(r.windowHours) && okZero(r.refused) && okZero(r.picked) && (r.some === undefined || okZero(r.some)) ? r : null;
 }
 
+/**
+ * CUL-2424 (PM ruling (a) + option 1, 2026-11-05): a consecutive-low card whose recent rated meals
+ * were all refused. The engine sets the fact (`allRefused`); no surface infers it from a score.
+ * Such a card is worded as refusal on every surface, never "eating less".
+ */
+export function intakeAllRefused(finding: SignalFinding): boolean {
+  return finding.type === 'intake_decline' && finding.trigger === 'consecutive_low' && finding.allRefused === true;
+}
+
+/** "today" or "over the last two days": the span an all-refused card names. */
+function allRefusedSpan(days: number): string {
+  return days <= 1 ? 'today' : `over the last ${days} days`;
+}
+
+/** The sample and count lines of an all-refused card: the days of refusals, and what they were compared with. */
+function allRefusedSample(days: number, compared: number): string {
+  return `${count(days, 'day', 'days')} of refused meals, against ${count(compared, 'recent meal', 'recent meals')}`;
+}
+
 /** The window, the mirror of phrasing.ts `sustainedRefusalSpan`. */
 function sustainedRefusalSpan(r: SustainedRefusalFacts): string {
   return r.anchoredToLastRating && r.endLocalDay
@@ -2492,6 +2521,14 @@ function phoneScriptFacts(
       // CUL-2405: an unknown trigger states no duration and no comparison it cannot back.
       return [{ label: 'Concern', value: UNKNOWN_INTAKE_COPY.concern }, ...i5Rows];
     }
+    if (intakeAllRefused(finding)) {
+      return [
+        { label: 'Concern', value: 'refused every meal you rated' },
+        { label: 'How long', value: count(finding.daysBelowBaseline, 'day', 'days') },
+        { label: 'Compared with', value: count(finding.ratedMealsConsidered, 'recent meal', 'recent meals') },
+        ...i5Rows,
+      ];
+    }
     return [
       { label: 'Concern', value: 'eating less than usual' },
       { label: 'How long', value: `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual` },
@@ -2750,6 +2787,10 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
       // CUL-2405: an unknown trigger; no "less than usual", and the ask kept on the banner.
       return `: something in recent meals stood out — ${UNKNOWN_INTAKE_COPY.ask}.`;
     }
+    if (intakeAllRefused(finding)) {
+      // CUL-2424: a refusal reads as one on the banner too.
+      return ` refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)} — worth a look.`;
+    }
     const span =
       finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;
     return ` has eaten less than usual ${span} — worth a look.`;
@@ -2965,7 +3006,9 @@ export function stripNameLine(finding: SignalFinding): string | null {
           : finding.trigger === 'sustained_refusal'
             ? 'No meal eaten well'
             : finding.trigger === 'consecutive_low'
-              ? 'Eating less than usual'
+              ? intakeAllRefused(finding)
+                ? 'Refused every meal'
+                : 'Eating less than usual'
               : UNKNOWN_INTAKE_COPY.name;
     case 'incident_red_flag':
       // Blood leads when both flags are set (the engine's own stable order, and the more
@@ -3086,6 +3129,7 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
         return `${body}${since}`;
       }
       if (finding.trigger !== 'consecutive_low') return UNKNOWN_INTAKE_COPY.sample;
+      if (intakeAllRefused(finding)) return allRefusedSample(finding.daysBelowBaseline, finding.ratedMealsConsidered);
       return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`;
     case 'incident_red_flag':
       // "AI read" keeps it an unconfirmed read (the detail-screen register); the date is the

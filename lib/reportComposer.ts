@@ -69,6 +69,9 @@ export interface ComposerFlag {
   kind: string;
   sign: string | null;
   trigger: string | null;
+  /** CUL-2424: the engine's refusal fact on an intake flag (every recent rated meal refused).
+   *  Optional so a flag built in code need not name it; absent reads as false. */
+  allRefused?: boolean;
 }
 
 export interface ComposerLive {
@@ -120,6 +123,8 @@ function parseFlags(raw: unknown): ComposerFlag[] {
       kind: f.kind as string,
       sign: typeof f.sign === 'string' ? f.sign : null,
       trigger: typeof f.trigger === 'string' ? f.trigger : null,
+      // Only an explicit true is the fact; anything else (absent, an older server) is not.
+      allRefused: f.allRefused === true,
     }));
 }
 
@@ -376,8 +381,10 @@ export function afterDisclosure(after: ComposerAfter, windowEnd: string, today: 
 }
 
 /** A flag's identity across two snapshots. An intake flag's trigger is part of it: a September
- *  "eating less" is not today's "refusing food, then vomiting" (adversarial pass 2, B2). */
-const flagKey = (f: ComposerFlag): string => `${f.kind}:${f.sign ?? ''}:${f.kind === 'intake_decline' ? f.trigger ?? '' : ''}`;
+ *  "eating less" is not today's "refusing food, then vomiting" (adversarial pass 2, B2). So is its
+ *  refusal fact (CUL-2424): a dip in the chosen dates does not cover today's day of refusals. */
+const flagKey = (f: ComposerFlag): string =>
+  `${f.kind}:${f.sign ?? ''}:${f.kind === 'intake_decline' ? `${f.trigger ?? ''}:${f.allRefused === true ? 'refused' : ''}` : ''}`;
 
 /**
  * The live set a send-time read hands the sheet, before `liveForSend` (CUL-2425). A partial read
@@ -488,7 +495,10 @@ function flagWords(f: ComposerFlag): string {
       if (f.trigger === 'refused_then_vomited') return 'refusing food, then vomiting';
       if (f.trigger === 'refused_normal_food') return 'refusing a usual food';
       if (f.trigger === 'sustained_refusal') return 'no meal eaten well for days';
-      return 'eating less than usual';
+      // CUL-2424 (PM ruling (a) + option 1): every recent rated meal refused is a refusal.
+      if (f.trigger === 'consecutive_low') return f.allRefused === true ? 'refusing every meal rated' : 'eating less than usual';
+      // CUL-2415: a null or unknown trigger states no baseline it cannot back (PM default, 2026-11-02).
+      return 'not eating normally';
     case 'trial_diet_refusal':
       return 'the trial diet not finished';
     case 'chronicity':

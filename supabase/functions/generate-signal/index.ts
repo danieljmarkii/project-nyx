@@ -234,6 +234,9 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled:
     // The sustained-refusal floor: counts and a call, with no baseline the model could turn into
     // "less than usual" or soften into "picky". Template-only, like the other intake safety facts.
     (finding.type === 'intake_decline' && finding.trigger === 'sustained_refusal') ||
+    // CUL-2424: a day of nothing but refusals is worded as refusal; the model's payload says
+    // "days eating less", so it would soften it. Template-only.
+    (finding.type === 'intake_decline' && finding.allRefused === true) ||
     // Engines v3 PR-30s (I5, CUL-1725): an intake card carrying the refused-then-vomited facts, on
     // its own card or riding ②'s. The load is a sequence the model would turn into a cause ("because
     // she refused") or a mechanism ("nausea", "an empty stomach"), and the intake screens catch
