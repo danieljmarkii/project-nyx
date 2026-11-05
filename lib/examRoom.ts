@@ -161,9 +161,11 @@ export const EXAM_CSP_META = `<meta http-equiv="Content-Security-Policy" content
  * hook never reaches a sub-frame, and the load check is never told one is asking); a `<link>` is a
  * dns-prefetch / preconnect / prefetch hint, which the browser acts on as the element lands; an
  * `<a>` or `<area>` host is an anchor DNS prefetch where an engine ignores the prefetch switch, and
- * a tap target besides.
+ * a tap target besides; `<math>` because WebKit makes any MathML element with an `href` a link, so
+ * one tap would send a JS-off frame to `about:blank`, which the load check admits (CUL-2552
+ * privacy pass, F4).
  */
-export const FRAME_REFUSED_TAGS = ['iframe', 'frame', 'frameset', 'object', 'embed', 'portal', 'fencedframe', 'link', 'a', 'area'] as const;
+export const FRAME_REFUSED_TAGS = ['iframe', 'frame', 'frameset', 'object', 'embed', 'portal', 'fencedframe', 'link', 'a', 'area', 'math'] as const;
 
 /**
  * The one script start tag with attributes a report document may carry: the room's own. Every
@@ -188,6 +190,14 @@ const EXAM_SCRIPT_OPEN = '<script id="nyx-exam-script">';
  *    throw: another document can carry a declarative shadow root (closed ones included) whose
  *    frame no check from outside can see (privacy pass 2 on PR-31, A1). The parser's own copies
  *    never exist, because `withFrameLock` renames those tags before the page loads.
+ *  - No navigation to `about:` from the page (CUL-2553). `about:blank` is how the inline document
+ *    itself is reported, so the load check admits it, and a page sent there is a blank frame: the
+ *    report and its warnings gone. `history.back` / `forward` / `go` and the Navigation API's
+ *    methods throw; the lock's own `navigate` listener, registered before any other script runs,
+ *    cancels a navigation to an `about:` URL where the engine has that API; a `<meta
+ *    http-equiv>` cannot be inserted by script. `location` is unforgeable, so no page script can
+ *    lock it: on Android the scripted frames' load check refuses `about:blank` instead
+ *    (`SCRIPTED_REPORT_FRAME_PROPS`); on an iOS without the Navigation API it stays open (filed).
  * Every lock is non-writable and non-configurable, so a later script cannot undo it. The server's
  * scripts insert no nodes at all (`lib/examRoom.test.ts` reads them), so nothing they do is lost.
  */
@@ -198,7 +208,7 @@ function lock(o,k,v){try{O.defineProperty(o,k,{value:v,writable:false,configurab
 var rtc=['RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection','RTCDataChannel','RTCIceCandidate','RTCIceTransport','RTCDtlsTransport','RTCSctpTransport','RTCSessionDescription','RTCRtpSender','RTCRtpReceiver','RTCRtpTransceiver','RTCCertificate','RTCDTMFSender','RTCRtpScriptTransform'];
 for(var i=0;i<rtc.length;i++)lock(w,rtc[i],undefined);
 lock(w,'open',function(){return null;});
-var SEL='${FRAME_REFUSED_TAGS.join(',')},script';
+var SEL='${FRAME_REFUSED_TAGS.join(',')},script,meta[http-equiv]';
 function refused(n){return !!n&&n.nodeType===1&&typeof n.matches==='function'&&n.matches(SEL);}
 function sweep(n){
 if((n.nodeType===1||n.nodeType===11)&&n.querySelectorAll){var q=n.querySelectorAll(SEL);for(var j=q.length-1;j>=0;j--){if(q[j].parentNode)q[j].parentNode.removeChild(q[j]);}}
@@ -230,6 +240,10 @@ lock(Element.prototype,'attachShadow',no);lock(Element.prototype,'setHTMLUnsafe'
 if(w.ShadowRoot){lock(ShadowRoot.prototype,'setHTMLUnsafe',no);lock(ShadowRoot.prototype,'setHTML',no);}
 ['write','writeln','open','execCommand','importNode','adoptNode'].forEach(function(k){lock(Document.prototype,k,no);});
 lock(Document,'parseHTMLUnsafe',no);lock(Document,'parseHTML',no);
+if(w.History){['back','forward','go'].forEach(function(k){lock(History.prototype,k,no);});}
+var nav=w.navigation;
+if(nav&&typeof nav.addEventListener==='function'){nav.addEventListener('navigate',function(e){var u=e&&e.destination&&e.destination.url;if(typeof u==='string'&&/^about:/i.test(u)&&e.cancelable)e.preventDefault();});}
+if(w.Navigation){['navigate','reload','back','forward','traverseTo'].forEach(function(k){lock(Navigation.prototype,k,no);});}
 var mkRaw=Document.prototype.createElement;
 lock(Document.prototype,'createElement',function(){var e=mkRaw.apply(this,arguments);if(refused(e))throw new TypeError('refused');return e;});
 var mkNS=Document.prototype.createElementNS;
@@ -250,7 +264,45 @@ export const FRAME_LOCK_HEAD = `${EXAM_CSP_META}${PREFETCH_OFF_META}<script>${FR
 export function neutralizeRefusedTags(html: string): string {
   return html
     .replace(new RegExp(`<(/?)(${FRAME_REFUSED_TAGS.join('|')})(?=[\\s/>]|$)`, 'gi'), '<$1x-refused-$2')
-    .replace(/<script(?=[\s/])[^>]*>?/gi, (tag) => (tag === EXAM_SCRIPT_OPEN ? tag : `<x-refused-script${tag.slice(7)}`));
+    .replace(/<script(?=[\s/])[^>]*>?/gi, (tag) => (tag === EXAM_SCRIPT_OPEN ? tag : `<x-refused-script${tag.slice(7)}`))
+    .replace(/<meta(?=[\t\n\f\r />]|$)[^>]*>?/gi, keptMetaOnce());
+}
+
+/**
+ * The meta rename, one document at a time: a kept meta stays unless it is a SECOND viewport. The
+ * last viewport meta wins, so an injected one after the document's own would undo a locked page
+ * scale (EXAM_VIEWPORT) and could push a pinned warning off the first screen (privacy pass F5).
+ */
+function keptMetaOnce(): (tag: string) => string {
+  let viewport = false;
+  return (tag) => {
+    // Any attribute position: KEPT_META admits name/content/charset in any order, and its values
+    // hold no quote, so ` name="viewport"` cannot be faked from inside one (privacy pass D1).
+    const isViewport = /[\t\n\f\r ]name="viewport"/i.test(tag);
+    if (metaKept(tag) && !(isViewport && viewport)) {
+      if (isViewport) viewport = true;
+      return tag;
+    }
+    return `<x-refused-meta${tag.slice(5)}`;
+  };
+}
+
+/**
+ * A `<meta>` a report document may keep (CUL-2552, CUL-2553): the room's two head metas exactly,
+ * or one whose only attributes are `name`, `content` and `charset`, each double-quoted with no
+ * quote or angle bracket inside. Anything else is renamed inert, an injected `<meta
+ * http-equiv=refresh content="0;url=about:blank">` first: the load check must admit `about:blank`
+ * (it is how the inline document is reported), so a refresh there would blank the report. An
+ * allowlist, never a search for `http-equiv`: the tokenizer decodes character references in a
+ * value and a stray quote can hide an attribute from a pattern, but it never decodes an attribute
+ * NAME, and a tag this grammar matches is read by the tokenizer exactly as written. Every meta the
+ * renderers emit fits it (`lib/examRoom.test.ts` reads them); one that did not would only lose its
+ * effect, never blank the frame.
+ */
+const KEPT_META = /^<meta(?:[\t\n\f\r ]+(?:name|content|charset)="[^"<>]*")+[\t\n\f\r ]*\/?>$/i;
+
+function metaKept(tag: string): boolean {
+  return tag === EXAM_CSP_META || tag === PREFETCH_OFF_META || KEPT_META.test(tag);
 }
 
 /**

@@ -248,6 +248,16 @@ it('CUL-2428: both frames load or send nothing (the room\'s CSP, first in the he
   }
 });
 
+// CUL-2553: both preview frames and the saved copy (app/reports/[id].tsx) box through here.
+it('boxedPreviewHtml renames a meta refresh inert, with a head or without one', () => {
+  for (const doc of ['<html><head></head><body>R</body></html>', '<!DOCTYPE html><body>R</body>', '<body>R</body>']) {
+    const out = boxedPreviewHtml(doc.replace('R', '<meta http-equiv=refresh content="0;url=about:blank">'));
+    expect(out).toContain('<x-refused-meta http-equiv=refresh');
+    expect(out).not.toMatch(/<meta http-equiv=refresh/i);
+    expect(out).toContain(CSP_META);
+  }
+});
+
 it('CUL-2428: a document with no <head> is still boxed (the preview cannot refuse it the way the room does)', () => {
   expect(boxedPreviewHtml('<html><body>x</body></html>')).toBe(`${CSP_META}<html><body>x</body></html>`);
   // After a leading doctype, so the page keeps its standards mode.
