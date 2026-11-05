@@ -52,12 +52,13 @@ Deno.test('CUL-2514 — Cooper’s sheet 1 states the beef jerky days and the ti
 
 Deno.test('CUL-2514 — the reading is v1’s page-1 callout word for word, only its pointers moved to v2’s sheets', () => {
   // Every pointer either side, reduced to one token: what is left must be the same words.
-  const DIET = 'the sheet headed “Diet, weight and food exposure”'
+  const DIET = 'the sheet headed “Diet history and food exposure”'
   const norm = (x: string): string =>
     textOf(x)
       .replaceAll(`on ${DIET}`, '@')
       .replaceAll(DIET, '@')
-      .replace(/in the flags above|\babove\b|appendix C/g, '@')
+      .replace(/(?:in|on) appendix [A-G]|appendix [A-G]/g, '@')
+      .replace(/in the flags above|\babove\b/g, '@')
   let compared = 0
   for (const [name, s] of v2DocFixtures()) {
     const html = trialReadingOf(s)
@@ -66,7 +67,7 @@ Deno.test('CUL-2514 — the reading is v1’s page-1 callout word for word, only
     if (html === null || v1 === null) continue
     assert.equal(norm(html), norm(v1[1]), `${name}: v1’s words`)
     assert.doesNotMatch(textOf(html), /\bappendix\b/i, `${name}: no appendix pointer`)
-    assert.doesNotMatch(textOf(html).replace(/in the flags above/g, ''), /\babove\b/, `${name}: no “above” sheet 1 cannot honour`)
+    // CUL-2551: the callout follows its own rows on sheet 1, so v1's "(above)" is true as written.
     compared++
   }
   assert.ok(compared >= 5, `compared ${compared}`)
@@ -112,7 +113,7 @@ Deno.test('CUL-2361 — Olive: the serif sentence is the first change; the absen
   assert.equal(lines[0]?.id, 'absence')
   assert.equal(lines[0].text, ABSENCE_SENTENCE)
   for (const html of [sheet1(renderPrintV2(d)), renderPhoneV2(d)]) {
-    assert.match(html, /<p class="lede serif" data-item="noticed_concern">Marked sleeping more on 6 of 42 days answered\.<\/p>/)
+    assert.match(html, /<p class="lede serif" data-item="noticed_concern">Marked sleeping more on 6 of 42 days answered, first Oct 6, last Oct 16 \(the day of this report\)\.<\/p>/)
   }
 })
 
@@ -238,7 +239,7 @@ Deno.test('CUL-2360 — the short last week draws outlines, and the burden flag�
   const d = docOf(nyxLiveSnapshot())
   const c = chartOf(d)
   assert.equal(c.columns[c.columns.length - 1].days, 4)
-  assert.match(c.twin, /week 7 4-day week, so far, its bars drawn as outlines, not a full week/)
+  assert.match(c.twin, /week 7 4-day week, so far, its bars drawn as outlines and labelled with its days, not a full week/)
   const html = renderPrintV2(d)
   const lead = [...html.matchAll(/<rect class="(bar lead[^"]*)"/g)].map((m) => m[1])
   assert.equal(lead[lead.length - 1], 'bar lead sofar', 'the last bar is an outline')
@@ -300,32 +301,31 @@ Deno.test('cold read — sheet 1 names the off-diet protein, the doses given in 
   const squash = (x: string): string => textOf(x).replace(/×\s+/g, '×').replace(/\s+([.,;:)])/g, '$1').replace(/\(\s+/g, '(')
   for (const html of [sheet1(renderPrintV2(d)), renderPhoneV2(d)]) {
     const t = squash(html)
-    assert.match(t, /Antigen exposure: Chicken ×11\. Proteins fed in the 35 trial days this report covers that the trial diet does not contain/)
-    assert.match(t, /trial days this report covers: 18 doses by mouth were logged as given inside a food off the allowed list or not identified \(Prednisolone, Zyrtec\)/)
+    assert.match(t, /Antigen exposure Chicken ×11\. Proteins fed in the 35 trial days this report covers that the trial diet does not contain/)
+    assert.match(t, /trial days this report covers 18 doses by mouth were logged as given inside a food off the allowed list or not identified \(Prednisolone, Zyrtec\)/)
     assert.match(t, /so these exposures are not in the antigen tally above/)
-    assert.match(t, /Off-list foods after the trial: Applaws Chicken Breast in broth: 12 feedings on 8 days after the trial, Oct 21 – Oct 28/)
+    assert.match(t, /Off-list foods after the trial Applaws Chicken Breast in broth: 12 feedings on 8 days after the trial, Oct 21 – Oct 28/)
     assert.match(t, /Vomiting ×6/)
   }
-  assert.match(squash(sheet1(renderPrintV2(docOf(cooper())))), /Antigen exposure: Beef ×4\./)
+  assert.match(squash(sheet1(renderPrintV2(docOf(cooper())))), /Antigen exposure Beef ×4\./)
 })
 
-Deno.test('cold read — the rows are v1’s words, only pointers moved; nothing on sheet 1 points up or down at a v1 neighbour', () => {
-  const DIET = 'the sheet headed “Diet, weight and food exposure”'
+Deno.test('cold read, CUL-2551 — the rows are every v1 trial row, v1’s words in v1’s order, only appendix and page pointers moved', () => {
+  // CUL-2551 (brief 2a) moves the whole trial section to sheet 1 in v1's order, so v1's own "above"
+  // and "below" stay true where v1 wrote them (the tally, the counts that follow); only appendix and
+  // page pointers move.
   let rows = 0
   for (const [name, s] of v2DocFixtures()) {
-    for (const r of trialRowsOf(s)) {
+    const v1 = [...dietTrialSection(s).matchAll(/<div class="kv"><span class="k">([\s\S]*?)<\/span><span>/g)].map((m) => textOf(m[1]))
+    const got = trialRowsOf(s)
+    assert.deepEqual(got.map((r) => textOf(r.labelHtml)), v1, `${name}: every row, in v1’s order`)
+    for (const r of got) {
       const t = textOf(r.html)
       assert.doesNotMatch(t, /\bappendix\b|\bpage 1\b/i, `${name}: ${textOf(r.labelHtml)}`)
-      assert.doesNotMatch(t.replace(/the antigen tally above/g, ''), /\b(above|below)\b/, `${name}: ${textOf(r.labelHtml)}: “${t}”`)
-      assert.ok(!t.includes(`the antigen tally ${DIET}`) || !trialRowsOf(s).some((x) => /^Antigen exposure/.test(textOf(x.labelHtml))), `${name}: the tally points up only when it prints above`)
-      // v1's own words: the section still holds this row with the same text but its pointers.
-      const v1 = textOf(dietTrialSection(s))
-      const core = t.replace(/\s*\((?:on |dated )?[^()]*sheet headed “[^”]+”\)/g, '').slice(0, 60)
-      assert.ok(v1.includes(core.slice(0, 40)), `${name}: “${core}” is v1’s`)
       rows++
     }
   }
-  assert.ok(rows >= 6, `rows exercised (${rows})`)
+  assert.ok(rows >= 60, `rows exercised (${rows})`)
 })
 
 Deno.test('cold read — inside a short last column a day keeps a full week’s width, and the window ends inside the column, not past it', () => {

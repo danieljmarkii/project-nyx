@@ -93,7 +93,8 @@ function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], to
     // CUL-2360: the short last column's bar is an outline, "so far", never a filled fall.
     const soFar = i === soFar_ ? ' sofar' : ''
     parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}${soFar}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
-    parts.push(haloText(x + w / 2, Math.max(top + 8, base - bh - 2), String(count)))
+    // CUL-2360: the short week's count carries its days ("2 in 4 d"), so it reads as a rate, never a fall.
+    parts.push(haloText(x + w / 2, Math.max(top + 8, base - bh - 2), soFar ? `${count} in ${c.days} d` : String(count)))
   })
   return parts.join('')
 }
@@ -279,7 +280,7 @@ function block(b: BlockV2, aiLead: string | null = null): string {
   const open = (tag: string, cls: string) => `<${tag} class="${cls}" data-block="${b.id}">`
   switch (b.kind) {
     case 'masthead':
-      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><h1>${h(b.name)}</h1><p class="sig">${h(b.signalment)}</p>${
+      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><p class="stamp">${h(b.stamp)}</p><h1>${h(b.name)}</h1><p class="sig">${h(b.signalment)}</p>${
         b.conditions ? `<p class="cond">${h(b.conditions)}</p>` : ''
       }<p class="win">${h(b.window)}</p><p class="last">${b.lastEntryHtml}.</p></header>`
     case 'disclosure':
@@ -312,10 +313,14 @@ function block(b: BlockV2, aiLead: string | null = null): string {
       }${c.reasonLine ? `<p class="why">${h(c.reasonLine)}</p>` : ''}${chartSvg(c)}<p class="twin">${h(c.twin)}</p></section>`
     }
     case 'trial_reading':
-      // v1's callout label, then its sentences as v1 wrote them (already-escaped html).
-      return `${open('section', 'trialread')}<h2 class="sech">${h(b.label)}</h2>${b.html !== null ? `<p>${b.html}</p>` : ''}${b.rows
-        .map((r) => `<p class="trow"><b>${r.labelHtml}:</b> ${r.html}</p>`)
-        .join('')}</section>`
+      // CUL-2551: v1's trial section as v1 prints it: its heading, every row in v1's order, then
+      // "Interpreting this record", so v1's own "(above)" stays true (already-escaped html).
+      return `${open('section', 'back trialread')}${b.heading !== null ? `<h2>${b.heading}</h2>` : ''}<div class="kvcol">${b.rows
+        .map((r) => `<div class="kv"><span class="k">${r.labelHtml}</span> <span>${r.html}</span></div>`)
+        .join('')}</div>${b.html !== null ? `<div class="callout"><span class="k">${h(b.label)}</span> ${b.html}</div>` : ''}</section>`
+    case 'carried':
+      // CUL-2551: a v1 page-1 section word for word; the back sheets' v1 styles dress it (`.back`).
+      return `${open('section', `back v1sec carry v1-${b.id}`)}${b.html}</section>`
     case 'confounder':
       return `${open('p', 'conf')}${h(b.text)}</p>`
     case 'record_lines':
@@ -351,6 +356,7 @@ html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
 body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:9.5pt;line-height:1.38;orphans:3;widows:3;}
 .sheet{width:515pt;margin:0 auto;}
 .serif{font-family:"Newsreader",Georgia,"Iowan Old Style",serif;}
+.mast .stamp{font-size:7.5pt;color:var(--ink2);margin:0;}
 .mast .eyebrow{font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);}
 .mast h1{font-size:20pt;line-height:1.1;margin:2pt 0 3pt;font-weight:650;}
 .mast p{margin:0 0 1.5pt;}
@@ -374,6 +380,32 @@ h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .lede.body{font-size:9.5pt;line-height:1.38;margin:6pt 0 0;}
 .changes .lede{margin:2pt 0 4pt;}
 .trialread .trow{margin:3pt 0 0;}
+/* CUL-2551: v1's two-column rows on sheet 1 read label, then words, so a PDF extractor (pdfminer)
+   never interleaves a row with its neighbour. */
+.carry .kv,.trialread .kv{display:block;}
+/* CUL-2585 ruling (a): v1's own trend and tile styles, so a carried block keeps v1's weight (a
+   rising halves count reads as loud as it does on v1). Scoped to .carry; v1's --muted is --ink2. */
+.carry .tiles{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);}
+.carry .tile{padding:6pt 8pt;}
+.carry .tile + .tile{border-left:1px solid var(--hair);}
+.carry .tile .v{font-size:16pt;font-weight:600;line-height:1.05;}
+.carry .tile .v small{font-size:9pt;color:var(--ink2);font-weight:600;}
+.carry .tile .v .arw{color:var(--faint);font-weight:400;}
+.carry .tile .l{font-size:8pt;color:var(--ink2);margin-top:3pt;line-height:1.35;}
+.carry .trend + .trend{margin-top:7pt;border-top:1px solid var(--hair);padding-top:7pt;}
+/* The name and its window stay one line, and the count drops under it when both don't fit: a
+   window wrapped beside the count is read out of order by a PDF's text layer. */
+.carry .trend .top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:2pt 12pt;}
+.carry .trend .who{font-size:10pt;font-weight:700;white-space:nowrap;}
+.carry .trend .who .win{font-weight:500;color:var(--ink2);font-size:8pt;margin-left:2px;}
+.carry .trend .big{text-align:right;line-height:1.1;}
+.carry .trend .big .n{font-size:16pt;font-weight:600;}
+.carry .trend .big .n small{font-size:9pt;color:var(--ink2);font-weight:600;}
+.carry .trend .big .delta{font-size:8pt;color:var(--ink2);margin-top:1px;}
+.carry .trend .big .delta b{color:var(--ink);font-weight:700;}
+.carry .trend .big .delta-caveat{font-size:7.5pt;color:var(--ink2);margin-top:1px;font-style:italic;}
+.carry .trend .subnote{font-size:8pt;color:var(--ink2);margin:2px 0 4pt;}
+.carry .kv .k,.trialread .kv .k{display:block;font-weight:650;}
 .ailead{margin:10pt 0 0;}
 .ailead .ailabel{font-size:7.5pt;letter-spacing:.04em;color:var(--ink2);margin:0;}
 .ailead .beta{text-transform:uppercase;letter-spacing:.1em;border:.5pt solid var(--ink2);padding:0 2pt;}

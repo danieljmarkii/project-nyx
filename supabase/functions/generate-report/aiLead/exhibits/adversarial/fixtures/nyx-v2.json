@@ -12,7 +12,7 @@
   {
    "id": "band-4-weight_loss",
    "label": "Weight",
-   "text": "Weighed 3.73 kg ( 8.2 lb) on Sep 16, 2026 on a home scale, a single reading, down from 4.40 kg ( 9.7 lb) on Jun 15, 2026 on a home scale, a single reading — about 15 % of body weight. The latest reading against the highest before it in the last 365 days, not a diagnosis; body condition was not assessed. The owner was told it is worth booking a vet visit."
+   "text": "Weighed 3.73 kg ( 8.2 lb) on Sep 16, 2026 on a home scale, a single reading, down from 4.40 kg ( 9.7 lb) on Jun 15, 2026 on a home scale, a single reading — about 15 % of body weight. No weigh-in is recorded after it: it is 45 days ( 6 weeks) before Oct 31, 2026, when this report was generated. The latest reading against the highest before it in the last 365 days, not a diagnosis; body condition was not assessed. The owner was told it is worth booking a vet visit. Intake was recorded for 3 of 219 meals logged in this window , so this record cannot show how much Nyx is eating."
   },
   {
    "id": "band-1-present_foreign",
@@ -44,7 +44,7 @@
   {
    "id": "intake",
    "kind": "record",
-   "text": "Meals (logged as meals, not treats): 3 logged; 3 rated; 2 not fully eaten, on 2 days."
+   "text": "Meals (logged as meals, not treats): 219 logged; 3 rated, intake not recorded for 216; 2 not fully eaten, on 2 days, first Sep 21, last Oct 2 (29 days before this report)."
   },
   {
    "id": "sign-cough",
@@ -79,17 +79,17 @@
   {
    "id": "trial-reading-2",
    "kind": "trial_reading",
-   "text": "Weight is down about 15 % of body weight across the trial’s start (Jun 15, 2026 → Sep 16, 2026; on the sheet headed “Diet, weight and food exposure”)."
+   "text": "Weight is down about 15 % of body weight across the trial’s start (Jun 15, 2026 → Sep 16, 2026; above)."
   },
   {
    "id": "trial-reading-3",
    "kind": "trial_reading",
-   "text": "The trial diet was not fed exclusively: 11 of 167 feedings in the 35 trial days this report covers did not match it on Oct 18, Oct 19 and Oct 20, 2026 (the sheet headed “Diet, weight and food exposure”; a floor, not a total), so this record shows an elimination that was broken, not a clean one. 18 doses by mouth in the 35 trial days this report covers may carry a protein (on the sheet headed “Diet, weight and food exposure”), so the elimination cannot be confirmed clean from this record."
+   "text": "The trial diet was not fed exclusively: 11 of 167 feedings in the 35 trial days this report covers did not match it on Oct 18, Oct 19 and Oct 20, 2026 (the sheet headed “Diet history and food exposure”; a floor, not a total), so this record shows an elimination that was broken, not a clean one. 18 doses by mouth in the 35 trial days this report covers may carry a protein (above), so the elimination cannot be confirmed clean from this record."
   },
   {
    "id": "trial-reading-4",
    "kind": "trial_reading",
-   "text": "The trial diet’s own label ( Royal Canin Selected Protein PR, Dry ) also lists Pea protein and Hydrolyzed soy protein (on the sheet headed “Diet, weight and food exposure”), so this record cannot establish that the elimination was clean."
+   "text": "The trial diet’s own label ( Royal Canin Selected Protein PR, Dry ) also lists Pea protein and Hydrolyzed soy protein (above), so this record cannot establish that the elimination was clean."
   },
   {
    "id": "trial-reading-5",

@@ -188,7 +188,7 @@ Deno.test('keep — the lead chart, the lines under it and the confounder are on
     const conf = d.blocks.findIndex((b) => b.kind === 'confounder')
     const want = d.blocks.slice(lead, (conf > lead ? conf : lead) + 1).map((b) => b.id)
     assert.deepEqual(ids, want, name)
-    assert.ok(html.indexOf('<div class="keep-push" aria-hidden="true"></div><div class="keep"') >= 0, `${name}: the spacer sits before the unit`)
+    assert.ok(html.search(/<div class="keep-push" aria-hidden="true">(?:<p class="pushnote"[^>]*>[^<]*<\/p>)?<\/div><div class="keep"/) >= 0, `${name}: the spacer sits before the unit`)
     if (conf >= 0) withConf++
   }
   assert.ok(withConf >= 2, 'the confounder is exercised')

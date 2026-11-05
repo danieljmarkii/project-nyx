@@ -49,7 +49,7 @@ export const MUST_CARRY: readonly MustCarryRow[] = [
   { v1: '§3.6', what: 'Vomit characteristics', inV1: v1Has('<h2>Vomit characteristics'), all: ['episodes'] },
   { v1: '§3.7', what: 'Stool characteristics', inV1: v1Has('<h2>Stool characteristics'), all: ['episodes'] },
   { v1: '§3.8', what: 'Diet, feeding, medications and supplements', inV1: always, all: ['diet-meds'] },
-  { v1: '§3.8 trial', what: 'The diet trial block', inV1: v1Has('<h2>Diet trial <span class="aside">'), all: ['diet-trial'] },
+  { v1: '§3.8 trial', what: 'The diet trial block', inV1: v1Has('<h2>Diet trial <span class="aside">'), all: ['trial-reading'] },
   {
     v1: '§3.8 protein',
     what: 'Off-diet protein exposure over time: the chart is not reprinted (v2 floor, chart-standard row first); the exposures table keeps each food with its count and date span, not the weekly shape (filed)',

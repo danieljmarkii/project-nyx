@@ -27,7 +27,7 @@
 // scroll can rest anywhere, and only the pinned sentence is beside the bars at every position
 // (adversarial pass on CUL-2295; the PM rules whether it may hide).
 // Frames are known only on the device (its height and text size), so the script measures there.
-import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, backSheetHtml, bandPhotosHtml } from './renderBackV2.ts'
+import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, backSheetHtml, bandPhotosHtml, labelTableCells } from './renderBackV2.ts'
 import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { COUNT_AXIS_MIN_MAX } from './renderPrintV2.ts'
 import { fmtDay } from './render.ts'
@@ -113,7 +113,8 @@ function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], ax
     // CUL-2360: the short last column's bar is an outline, "so far", never a filled fall.
     const soFar = i === soFarCol(cols, unit) ? ' sofar' : ''
     parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}${soFar}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
-    parts.push(haloText(x + w / 2, base - bh - 2, String(count)))
+    // CUL-2360: the short week's count carries its days ("2 in 4 d"), so it reads as a rate, never a fall.
+    parts.push(haloText(x + w / 2, base - bh - 2, soFar ? `${count} in ${c.days} d` : String(count)))
   })
   return rowWrap(r.label, r.lead ? 'rl lead' : 'rl', rowSvg(pid, base + 2, parts.join(''), hatched))
 }
@@ -186,12 +187,14 @@ function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], pi
   return rowWrap(r.label, 'rl span-l', rowSvg(pid, SPAN_ROW_H, parts.join(''), false))
 }
 
-/** The axis as HTML: the first and last column's dates, then each part column named by its date. */
+/** The axis as HTML: the window's first and last day at the frame's two ends, then each part column
+ *  named by its date. CUL-2546: the right end is the last column's LAST day (the window's end), never
+ *  its first: "Oct 28" at the edge read as a window that stopped three days before the newest entries. */
 function axisHtml(chart: LeadChart): string {
   const cols = chart.columns
   const n = cols.length
   const ends = n > 1
-    ? `<span>${fmtDay(cols[0].start)}</span><span>${fmtDay(cols[n - 1].start)}</span>`
+    ? `<span>${fmtDay(cols[0].start)}</span><span>${fmtDay(cols[n - 1].end)}</span>`
     : `<span>${fmtDay(cols[0]?.start ?? null)}</span>`
   const notes: string[] = []
   cols.forEach((c, i) => {
@@ -242,7 +245,7 @@ function block(b: BlockV2, lead: string | null): string {
       // At font scale 1.6 the full signalment, the conditions and the window fold behind one line
       // (spec §6.3), so the band still starts in the first frame. What decides urgency never folds:
       // species, sex, age and weight (the model's brief; cold read on CUL-2295), and the last entry.
-      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><h1>${h(b.name)}</h1><p class="brief">${h(b.signalmentBrief)}</p><button class="more" type="button" aria-expanded="false" aria-controls="v2more">More details</button><div class="fold" id="v2more"><p class="sig">${h(b.signalment)}</p>${
+      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><p class="stamp">${h(b.stamp)}</p><h1>${h(b.name)}</h1><p class="brief">${h(b.signalmentBrief)}</p><button class="more" type="button" aria-expanded="false" aria-controls="v2more">More details</button><div class="fold" id="v2more"><p class="sig">${h(b.signalment)}</p>${
         b.conditions ? `<p class="cond">${h(b.conditions)}</p>` : ''
       }<p class="win">${h(b.window)}</p></div><p class="last">${b.lastEntryHtml}.</p></header>`
     case 'disclosure':
@@ -276,10 +279,14 @@ function block(b: BlockV2, lead: string | null): string {
       }${c.reasonLine ? `<p class="why">${h(c.reasonLine)}</p>` : ''}${rep}${chartHtml(c)}<p class="twin">${h(c.twin)}</p></section>`
     }
     case 'trial_reading':
-      // v1's callout label, then its sentences as v1 wrote them (already-escaped html).
-      return `${open('section', 'trialread')}<h2 class="sech">${h(b.label)}</h2>${b.html !== null ? `<p>${b.html}</p>` : ''}${b.rows
-        .map((r) => `<p class="trow"><b>${r.labelHtml}:</b> ${r.html}</p>`)
-        .join('')}</section>`
+      // CUL-2551: v1's trial section as v1 prints it: its heading, every row in v1's order, then
+      // "Interpreting this record", so v1's own "(above)" stays true (already-escaped html).
+      return `${open('section', 'back trialread')}${b.heading !== null ? `<h2>${b.heading}</h2>` : ''}<div class="kvcol">${b.rows
+        .map((r) => `<div class="kv"><span class="k">${r.labelHtml}</span> <span>${r.html}</span></div>`)
+        .join('')}</div>${b.html !== null ? `<div class="callout"><span class="k">${h(b.label)}</span> ${b.html}</div>` : ''}</section>`
+    case 'carried':
+      // CUL-2551: a v1 page-1 section word for word; the back sheets' v1 styles dress it (`.back`).
+      return `${open('section', `back v1sec carry v1-${b.id}`)}${labelTableCells(b.html)}</section>`
     case 'confounder':
       return `${open('p', 'conf')}${h(b.text)}</p>`
     case 'record_lines':
@@ -298,6 +305,14 @@ function block(b: BlockV2, lead: string | null): string {
   }
 }
 
+/**
+ * CUL-2539: the keep-together spacer can leave most of a screen blank (about 600px after Cooper's
+ * meals line), which a vet scrolling reads as the end of sheet 1. Where the spacer is taller than a
+ * quarter of the frame it prints this line at its top. A part, never a block: it is navigation, the
+ * PDF has no spacer, and it never prints.
+ */
+export const PUSH_NOTE = 'Sheet 1 continues below with the chart for this window.'
+
 /** The blocks, with the lead chart, the lines under it and the confounder wrapped as one unit. */
 function body(doc: DocumentV2): string {
   const conf = doc.blocks.find((b): b is Extract<BlockV2, { kind: 'confounder' }> => b.kind === 'confounder')
@@ -308,7 +323,8 @@ function body(doc: DocumentV2): string {
   const confAt = doc.blocks.findIndex((b) => b.kind === 'confounder')
   const last = confAt > lead ? confAt : lead
   doc.blocks.forEach((b, i) => {
-    if (i === lead) out.push(`<div class="keep-push" aria-hidden="true"></div><div class="keep" data-keep="lead">`)
+    // CUL-2539: a spacer tall enough to read as the sheet's end says it is not one (`PUSH_NOTE`).
+    if (i === lead) out.push(`<div class="keep-push" aria-hidden="true"><p class="pushnote" data-part="push-note" hidden>${h(PUSH_NOTE)}</p></div><div class="keep" data-keep="lead">`)
     out.push(block(b, warning))
     if (i === last && lead >= 0) out.push('</div>')
   })
@@ -330,6 +346,7 @@ body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto
 .sheet{padding:1rem 16px 2rem;max-width:40rem;margin:0 auto;}
 #v2probe{position:absolute;left:-999rem;top:0;display:block;font-size:1rem;line-height:1;visibility:hidden;}
 .serif{font-family:"Newsreader",Georgia,"Iowan Old Style",serif;}
+.mast .stamp{font-size:0.75rem;color:var(--ink2);margin:0;}
 .mast .eyebrow{font-size:0.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);}
 .mast h1{font-size:1.6rem;line-height:1.15;margin:0.15rem 0 0.3rem;font-weight:650;}
 .mast p{margin:0 0 0.2rem;}
@@ -353,6 +370,37 @@ ul,ol{margin:0;padding:0;list-style:none;}
 .changes .lede{margin:0.2rem 0 0.4rem;}
 .trialread .trow{margin:0.35rem 0 0;}
 .keep{margin:1rem 0 0;}
+.carry .kv,.trialread .kv{display:block;}
+/* CUL-2585 ruling (a): v1's own trend and tile styles, so a carried block keeps v1's weight (a
+   rising halves count reads as loud as it does on v1). Scoped to .carry; v1's --muted is --ink2.
+   Tiles wrap to two columns, and a trend's count drops under its name, so nothing scrolls sideways
+   at 320pt and large text. */
+.carry .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);}
+.carry .tile{padding:0.5rem 0.6rem;min-width:0;overflow-wrap:anywhere;}
+.carry .tile:nth-child(even){border-left:1px solid var(--hair);}
+.carry .tile:nth-child(n+3){border-top:1px solid var(--hair);}
+.carry .tile .v{font-size:1.375rem;font-weight:600;line-height:1.05;}
+.carry .tile .v small{font-size:0.75rem;color:var(--ink2);font-weight:600;}
+.carry .tile .v .arw{color:var(--faint);font-weight:400;}
+.carry .tile .l{font-size:0.75rem;color:var(--ink2);margin-top:0.25rem;line-height:1.35;}
+.carry .trend + .trend{margin-top:0.6rem;border-top:1px solid var(--hair);padding-top:0.6rem;}
+.carry .trend .top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:0.25rem 1rem;}
+.carry .trend .who{font-size:0.9rem;font-weight:700;min-width:0;overflow-wrap:anywhere;}
+.carry .trend .who .win{font-weight:500;color:var(--ink2);font-size:0.75rem;margin-left:2px;}
+.carry .trend .big{text-align:right;line-height:1.1;min-width:0;overflow-wrap:anywhere;}
+.carry .trend .big .n{font-size:1.375rem;font-weight:600;}
+.carry .trend .big .n small{font-size:0.75rem;color:var(--ink2);font-weight:600;}
+.carry .trend .big .delta{font-size:0.75rem;color:var(--ink2);margin-top:1px;}
+.carry .trend .big .delta b{color:var(--ink);font-weight:700;}
+.carry .trend .big .delta-caveat{font-size:0.7rem;color:var(--ink2);margin-top:1px;font-style:italic;}
+.carry .trend .subnote{font-size:0.75rem;color:var(--ink2);margin:2px 0 0.4rem;}
+.carry .kv .k,.trialread .kv .k{display:block;font-weight:650;}
+/* CUL-2551: v1's Noticed strip, carried in At a glance, wraps at large text rather than run past the
+   screen (28 day cells in one row clipped at 320pt × 2.35); its key labels may break. .carry.back
+   outranks the back sheets .back .ns-key rule (nowrap), which this stylesheet loads after. */
+@media screen{.carry.back .ns-row{flex-wrap:wrap;row-gap:0.25rem;}.carry.back .ns-cell{flex:0 0 auto;min-width:1.4rem;}.carry.back .ns-key{white-space:normal;}.carry.back .ns,.carry.back .ns-legend{overflow-wrap:anywhere;}}
+.keep-push{overflow:hidden;}
+.pushnote{margin:0;padding:1rem 0 0;text-align:center;color:var(--ink2);font-size:0.875rem;}
 .keep > section:first-child{margin-top:0;}
 .leadchart .flagh{color:var(--concern);}
 .leadchart.flagged{border:1.5px solid var(--ink);padding:0.6rem 10px;}
@@ -447,6 +495,8 @@ const SCRIPT_PHONE = `
   // same page (adversarial pass 2 on PR-17: a spacer left from the last call flipped the pointer).
   function pushUnit(unit, push){
     push.style.height = '0px';
+    var note = push.querySelector('.pushnote');
+    if (note) note.hidden = true;
     var frame = window.innerHeight;
     if (!frame) return;
     if (unit.getBoundingClientRect().height > frame) return;
@@ -454,6 +504,8 @@ const SCRIPT_PHONE = `
     var k = Math.floor(top / frame);
     var end = top + unit.getBoundingClientRect().height;
     if (end > (k + 1) * frame) push.style.height = ((k + 1) * frame - top) + 'px';
+    // CUL-2539: a spacer over a quarter of the frame says the sheet continues.
+    if (note && parseFloat(push.style.height) > 0.25 * frame) note.hidden = false;
   }
   function lay(){
     // Every layout starts from the same page: no fold, no pointer, no spacer, no padding.

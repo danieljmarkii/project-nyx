@@ -66,6 +66,8 @@ const ORDER = [
   'disclosure',
   'band',
   'checks',
+  // CUL-2579 ruling (a): v1's headline, straight under the band.
+  'carried@headline',
   'scope-line',
   'changes@slot',
   'record-edge',
@@ -76,11 +78,14 @@ const ORDER = [
   'trial-reading',
   'record-lines',
   'gap-lines',
+  // CUL-2551: v1 page 1's other blocks, word for word in v1's order (`sheet1CarryV2.ts`).
+  'carried',
   'questions',
   'colophon',
 ]
 
 function orderKey(b: BlockV2): string {
+  if (b.kind === 'carried') return b.id === 'headline' ? 'carried@headline' : 'carried'
   return b.kind === 'changes' ? `changes@${b.placement === 'band_slot' ? 'slot' : 'under'}` : b.id
 }
 
@@ -90,7 +95,7 @@ Deno.test('order — every fixture prints its blocks in spec §5 order, each id 
   for (const [name, s] of fixtures()) {
     const d = docOf(s)
     const keys = d.blocks.map(orderKey)
-    assert.equal(new Set(keys).size, keys.length, `${name}: no block twice`)
+    assert.equal(new Set(d.blocks.map((b) => b.id)).size, keys.length, `${name}: no block twice`)
     const idx = keys.map((k) => ORDER.indexOf(k))
     assert.ok(idx.every((i) => i >= 0), `${name}: only known blocks (${keys})`)
     assert.deepEqual(idx, [...idx].sort((a, b) => a - b), `${name}: spec order (${keys})`)
@@ -125,10 +130,11 @@ Deno.test('band — the first heading after the masthead, "Flag:" written as tex
  *  beside the line instead, R-10). The pointers are v1's own. */
 function v1RowOf(f: SafetyFlag, s: ReportSnapshot): string {
   let body = ''
+  // v1's first-sheet row (CUL-2529's fixes included), which v2's band carries since CUL-2551.
   safetyFlagRow(f, { ...s, incidentPhotos: [] }, (_t, b) => {
     body = b
     return ''
-  })
+  }, V1_FLAG_POINTERS, true)
   return body
 }
 
@@ -153,14 +159,15 @@ Deno.test('superset — every v1 page-1 band finding prints on v2 sheet 1, word 
     const ptr = v2FlagPointersOf(d.backSheets, s)
     for (const f of s.safetyFlags) {
       // CUL-2381 part 2: a refusal row with a long trial-food list prints it short; the rest of the
-      // row is v1's, and every name the band leaves out prints on the diet sheet (below).
+      // row is v1's, and every name the band leaves out prints in the trial block's rows on sheet 1
+      // (CUL-2551 brief 2a; it printed on the diet sheet before).
       const v1 = v1RowOf(bandFlagOf(f), s)
       const want = swapPointers(v1, V1_FLAG_POINTERS, ptr)
       if (want !== v1) swapped++
       assert.ok(html.includes(want), `${name}: the ${f.kind} finding prints on sheet 1`)
       if (f.kind === 'trial_diet_refusal') {
-        const back = html.slice(html.indexOf('</main>'))
-        for (const l of f.trialDietLabels) assert.ok(back.includes(h(l)), `${name}: trial food “${l}” prints on a back sheet`)
+        const rows = html.slice(html.indexOf('data-block="trial-reading"'), html.indexOf('</main>'))
+        for (const l of f.trialDietLabels) assert.ok(rows.includes(h(l)), `${name}: trial food “${l}” prints in sheet 1’s trial rows`)
       }
       flags++
     }
@@ -277,6 +284,7 @@ const TWIN_WORDS: Record<LeadChart['marks'][number], RegExp> = {
   intake_partly: /partly eaten/,
   open_end: /Dotted after the last logged dose, no end recorded/,
   off_diet_ticks: /Ticks, one per day a feeding off the trial diet was logged/,
+  change_ticks: /Ticks, one per day a change was marked/,
   recent_bracket: /Bracket under the axis: the last \d+ days, \d+ .+ entr(y|ies), as the burden flag counts them/,
 }
 
@@ -363,7 +371,7 @@ Deno.test('colophon — the surname only from last_name, never the email; no id 
   assert.doesNotMatch(none.text, /@|report [0-9A-Z]{4}/)
   const named = block(docOf(s, { owner: { firstName: 'Zoë', lastName: 'Müller-Ñúñez' }, shortId: 'N3XR', questions: [] }), 'colophon')
   assert.ok(named)
-  assert.equal(named.text, 'Kept by Zoë Müller-Ñúñez · owner-reported, not a diagnosis · generated Oct 31, 2026 · report N3XR · sheet 1 of 8')
+  assert.equal(named.text, 'Kept by Zoë Müller-Ñúñez · owner-reported observations · associational, not a diagnosis · generated Oct 31, 2026 · report N3XR · sheet 1 of 8')
 })
 
 Deno.test('colophon — the sheet count is the sheets printed, on every fixture (computed, never typed: WBC-11)', () => {
@@ -392,9 +400,10 @@ Deno.test('questions — verbatim, at most 5, each at most 200 characters, point
 // ── The word budget (ruling B, spec §5.7, AC 6) ─────────────────────────────
 
 /**
- * THE RATCHET. Each fixture's cuttable count as of this PR; a change that grows one reds here and
- * must lower something else or argue the new number in its PR. Lower a number when a change
- * shrinks it. Never raise one to go green. The fixed parts are reported beside, never budgeted.
+ * THE RATCHET, RETIRED AS A CAP (PM ruling (a) on the v2 document fork, brief 1a, CUL-2551, 2026-11-05).
+ * Sheet 1 now carries every v1 page-1 block, and density beats omission: a cap on the cuttable prose
+ * would push the fixes for CUL-2536 and CUL-2349 (the meals line's true total, the dates) off the
+ * sheet. Each fixture's count as of PR-29 stays here as the reference the report prints beside.
  */
 const CUTTABLE_RATCHET: Record<string, number> = {
   'nyx-live': 191,
@@ -416,15 +425,14 @@ const CUTTABLE_RATCHET: Record<string, number> = {
   'stool-photo-dog': 31,
 }
 
-Deno.test('word budget — the cuttable prose stays within its ratchet and about 200 words on every fixture', () => {
+Deno.test('word budget — the cuttable prose is counted and reported beside its PR-29 reference on every fixture (ruling 1a: reported, not capped)', () => {
   const report: string[] = []
   for (const [name, s] of fixtures()) {
     const w = wordCountOf(docOf(s))
     const cap = CUTTABLE_RATCHET[name]
-    report.push(`${name}: cuttable ${w.cuttable} · outside ${JSON.stringify(w.fixed)}`)
-    assert.ok(cap !== undefined, `${name} has a ratchet row`)
-    assert.ok(w.cuttable <= cap, `${name}: ${w.cuttable} cuttable words, ratchet ${cap}`)
-    assert.ok(w.cuttable <= SHEET1_CUTTABLE_BUDGET, `${name}: ${w.cuttable} over the ${SHEET1_CUTTABLE_BUDGET}-word budget`)
+    assert.ok(cap !== undefined, `${name} has a reference row`)
+    report.push(`${name}: cuttable ${w.cuttable} (PR-29 ${cap}, budget ${SHEET1_CUTTABLE_BUDGET}) · outside ${JSON.stringify(w.fixed)}`)
+    assert.ok(w.cuttable > 0 && w.fixed.carried > 0, `${name}: counted, v1's carried blocks included`)
   }
   console.log(`sheet 1 words (ruling B)\n${report.join('\n')}`)
 })
@@ -509,7 +517,7 @@ Deno.test('adversarial 3 — v1’s run of unfinished meals prints on the meals 
   const s = assembleReport(baseInput({ requestedWindow: { startDate: dayKey(40), endDate: dayKey(0) }, events }))
   const d = docOf(s)
   const all = [block(d, 'lead_sentence')?.text, ...(block(d, 'record_lines')?.lines.map((l) => l.text) ?? [])]
-  assert.ok(all.some((t) => t?.includes('): The last 4 rated meals in a row were not fully eaten.')), JSON.stringify(all))
+  assert.ok(all.some((t) => t?.includes('): The last 4 rated meals in a row were not fully eaten, the most recent on ')), JSON.stringify(all))
 })
 
 Deno.test('adversarial 4 — bowl ratings the intake check never reads are disclosed beside the intake row', () => {
@@ -625,7 +633,7 @@ Deno.test('adversarial 2.1 — an intake-flag lead on a zero-sign sheet opens on
   const d = docOf(refusingCat())
   const lede = block(d, 'lead_sentence')
   assert.ok(lede)
-  assert.match(lede.text, /^Meals \(logged as meals, not treats\): The last 6 rated meals in a row were not fully eaten\./)
+  assert.match(lede.text, /^Meals \(logged as meals, not treats\): The last 6 rated meals in a row were not fully eaten, the most recent on /)
   const lines = block(d, 'record_lines')?.lines ?? []
   assert.equal(lines[0]?.id, 'coverage')
   // CUL-2361 ruling (a): the absence sentence is its own line, straight after the coverage count.

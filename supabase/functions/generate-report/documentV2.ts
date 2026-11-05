@@ -49,6 +49,10 @@ import {
 import {
   bandMembersOf,
   changesInWindowOf,
+  concernWordDaysOf,
+  datesClauseOf,
+  mealTotalsOf,
+  unfinishedMealDaysOf,
   flagSign,
   gapLinesOf,
   isZeroSignSheet,
@@ -62,7 +66,8 @@ import {
   type LeadSign,
 } from './v2Predicates.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
-import { backSheetsOf, TRIAL_READING_LABEL, trialReadingOf, trialRowsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
+import { backSheetsOf, episodesBlock, TRIAL_READING_LABEL, trialHeadingOf, trialReadingOf, trialRowsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
+import { carriedSectionsOf } from './sheet1CarryV2.ts'
 import { adHocGroupOf, withRecordOverlaps } from './medicationFacts.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -154,8 +159,9 @@ export type ChartRow =
        * draw as seven ticks, not one (cold read recheck). Absent on a course.
        */
       doseCols?: number[]
-      /** What the ticks are: ad-hoc doses, or (CUL-2514) feedings off the trial diet. */
-      tickKind?: 'dose' | 'off_diet'
+      /** What the ticks are: ad-hoc doses, (CUL-2514) feedings off the trial diet, or (CUL-2535, a
+       *  zero-sign sheet) the days a Noticed concern word was marked or a meal was not finished. */
+      tickKind?: 'dose' | 'off_diet' | 'change'
     }
 
 /** Every mark kind the chart can draw. The twin must name each one it draws (spec §5.4). */
@@ -174,6 +180,8 @@ export type MarkKind =
   | 'open_end'
   /** CUL-2514: a tick per day a feeding off the trial diet was logged. */
   | 'off_diet_ticks'
+  /** CUL-2535: on a zero-sign sheet, a tick per day a change was marked (a concern word, a meal not finished). */
+  | 'change_ticks'
   /** CUL-2360: the burden flag's own window, bracketed under the axis. */
   | 'recent_bracket'
 
@@ -223,6 +231,9 @@ export type BlockV2 =
       kind: 'masthead'
       id: 'masthead'
       eyebrow: string
+      /** v1's letterhead stamp, word for word (CUL-2579 ruling (a)): the sheet says what it is
+       *  before it says anything else. */
+      stamp: string
       name: string
       signalment: string
       /** Species, sex, age and the latest weight: the part of the signalment that decides urgency,
@@ -271,10 +282,14 @@ export type BlockV2 =
       label: string
       /** The callout's sentences; null when v1 prints the rows but no callout. */
       html: string | null
-      /** v1's trial rows that name the breaks (`trialRowsOf`), word for word, after the callout. */
+      /** CUL-2551: every v1 trial row (`trialRowsOf`), word for word in v1's order, before the callout. */
       rows: Array<{ labelHtml: string; html: string }>
+      /** v1's section heading ("Diet trial" and its aside), already-escaped html. */
+      heading: string | null
     }
   | { kind: 'record_lines'; id: 'record-lines'; lines: RecordLine[] }
+  /** CUL-2551: a v1 page-1 section, word for word with v2's pointers (`sheet1CarryV2.ts`). */
+  | { kind: 'carried'; id: string; html: string }
   | { kind: 'gap_lines'; id: 'gap-lines'; heading: string; lines: GapLine[] }
   | { kind: 'questions'; id: 'questions'; heading: string; items: QuestionItem[] }
   | { kind: 'colophon'; id: 'colophon'; text: string }
@@ -439,13 +454,18 @@ export function ownerNameOf(owner: DocumentV2Options['owner']): string | null {
   return name === '' ? null : name
 }
 
+/** v1's letterhead stamp, its first two lines (the third, the generated date, is the colophon's). */
+export const MASTHEAD_STAMP = 'Prepared for veterinary review · Not a diagnosis · owner-reported observations'
+
 /** The ONE colophon template (spec §5.10). The sheet count is computed from the sheets printed. */
 export function colophonOf(snap: ReportSnapshot, opts: DocumentV2Options, sheets = 1): string {
   const owner = ownerNameOf(opts.owner)
   const generated = textOf(fmtDayYear(snap.atAGlance.recordEdge.reportDate))
   return [
     `Kept by ${owner ?? 'the owner'}`,
-    'owner-reported, not a diagnosis',
+    // CUL-2579 ruling (a): v1's page footer, word for word ("associational" included).
+    'owner-reported observations',
+    'associational, not a diagnosis',
     `generated ${generated}`,
     ...(opts.shortId ? [`report ${opts.shortId}`] : []),
     `sheet 1 of ${sheets}`,
@@ -470,6 +490,9 @@ export function flagRowOf(f: SafetyFlag, snap: ReportSnapshot, ptr: FlagPointers
       return ''
     },
     ptr,
+    // CUL-2551: sheet 1 carries every v1 page-1 block, so v2's band takes v1's first-sheet fixes
+    // (CUL-2529: the weight reading's age and intake coverage, the refusal's named feedings).
+    true,
   )
   if (captured === null) throw new Error(`safetyFlagRow wrote no row for ${f.kind}`)
   return captured
@@ -683,6 +706,8 @@ export function chartEndPos(cols: ChartColumn[]): number {
 function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<ChartRow, { kind: 'span' }>[]; overflow: string[] } {
   const rows: Extract<ChartRow, { kind: 'span' }>[] = []
   const overflow: string[] = []
+  const trialRows: Extract<ChartRow, { kind: 'span' }>[] = []
+  const courseRows: Extract<ChartRow, { kind: 'span' }>[] = []
   const windowStart = snap.scope.startDate
   for (const c of snap.concurrentChanges) {
     const start = c.startDate && c.startDate.slice(0, 10) >= windowStart ? c.startDate.slice(0, 10) : null
@@ -716,7 +741,9 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
     const startsInChart = start !== null && start >= first
     const row: Extract<ChartRow, { kind: 'span' }> = {
       kind: 'span',
-      label: c.label,
+      // CUL-2537: the trial's line is the trial's dates, never its food's: "Trial:" says whose end
+      // the bracket is, and the foods fed on after it are their own rows (`postTrialFoodRows`).
+      label: c.kind === 'diet_trial' ? `Trial: ${c.label}` : c.label,
       fromCol: startsInChart ? colOf(cols, start) : 0,
       toCol: end === null ? cols.length - 1 : colOf(cols, end),
       fromPos: startsInChart ? dayPos(cols, start) : 0,
@@ -733,18 +760,89 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
       row.doseCols = [...new Set(doseDays.filter((d) => d >= first))].sort().map((d) => dayPos(cols, d))
       row.tickKind = 'dose'
     }
-    if (rows.length < SPAN_ROWS_MAX) rows.push(row)
-    else overflow.push(`${c.label} ${when}`)
+    if (c.kind === 'diet_trial') trialRows.push(row)
+    else courseRows.push(row)
   }
+  // The trial, then the courses; past the cap, named below. What was fed after the trial (CUL-2537)
+  // takes its own row beside the cap, so a food never pushes a course off the chart.
+  for (const row of [...trialRows, ...courseRows]) {
+    if (rows.length < SPAN_ROWS_MAX) rows.push(row)
+    else overflow.push(`${row.label} ${row.when}`)
+  }
+  const foods = postTrialFoodRows(snap, cols)
+  rows.splice(trialRows.length > 0 ? Math.min(trialRows.length, rows.length) : 0, 0, ...foods.rows)
+  overflow.push(...foods.overflow)
   const off = offDietRow(snap, cols)
   if (off) {
     // The trial's breaks lead the intervention rows: on a full chart a course is named under it
     // rather than the off-diet days (a course already prints on the confounder line).
-    if (rows.length >= SPAN_ROWS_MAX) {
+    if (rows.length - foods.rows.length >= SPAN_ROWS_MAX) {
       const bumped = rows.pop() as Extract<ChartRow, { kind: 'span' }>
       overflow.push(`${bumped.label} ${bumped.when}`)
     }
     rows.unshift(off)
+  }
+  return { rows, overflow }
+}
+
+/** Foods fed after a trial ended that get a row of their own; the rest are named under the chart. */
+// One row beside the course cap (`SPAN_ROWS_MAX`), so a food never pushes a course off the chart;
+// every other food is named under the chart.
+export const POST_TRIAL_FOOD_ROWS_MAX = 1
+
+/**
+ * CUL-2537: what was fed after a trial that ended inside the window. Nyx's chart closed the trial's
+ * bracket on Oct 20 and drew no food after it, while the trial food carried on to Oct 31 and chicken
+ * came back Oct 21 to 28, before the vomiting rose. Each meal food logged after the trial's end is a
+ * line from the day after the end (or its first feeding, if later) to its last logged feeding, with
+ * no end bracket (a food is not a course). Foods off the trial's list come first, then those carrying
+ * an off-trial protein, then by feedings; past `POST_TRIAL_FOOD_ROWS_MAX`, each is named under the chart. Dates are the
+ * snapshot's own (`diet.mealItems`), never derived.
+ */
+function postTrialFoodRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<ChartRow, { kind: 'span' }>[]; overflow: string[] } {
+  const t = snap.trial
+  const ended = t?.endedAt ? t.endedAt.slice(0, 10) : null
+  if (!t || ended === null || cols.length === 0 || ended >= snap.scope.endDate) return { rows: [], overflow: [] }
+  const after = addDays(ended, 1)
+  // A food off the trial's list first (what came back after it), then one carrying an off-trial
+  // protein, then by feedings.
+  const onList = (label: string | null) => label !== null && t.trialDietLabels.some((l) => label.startsWith(l))
+  const items = snap.diet.mealItems
+    .filter((m) => m.lastDate !== null && m.lastDate >= after)
+    .sort(
+      (a, b) =>
+        Number(onList(a.foodLabel)) - Number(onList(b.foodLabel)) ||
+        Number(b.proteinSet.offTrial.length > 0) - Number(a.proteinSet.offTrial.length > 0) ||
+        b.count - a.count,
+    )
+  const rows: Extract<ChartRow, { kind: 'span' }>[] = []
+  const overflow: string[] = []
+  for (const m of items) {
+    const from = m.firstDate !== null && m.firstDate > after ? m.firstDate : after
+    const to = m.lastDate as string
+    const label = m.foodLabel ?? 'A food not named'
+    // The snapshot's own dates only (adversarial pass 2: "logged from <the day after the trial>" was a
+    // date no feeding carried). A food first logged before the trial ended says so.
+    const span = m.firstDate !== null && m.firstDate >= after ? `logged from ${plainDay(m.firstDate)} to ${plainDay(to)}` : `logged until ${plainDay(to)} (first logged ${m.firstDate ? plainDay(m.firstDate) : 'date not recorded'}, before the trial ended)`
+    const when = `fed after the trial, ${span}${m.proteinSet.offTrial.length > 0 ? ` (${m.proteinSet.offTrial.join(', ')}, off the trial)` : ''}`
+    if (rows.length >= POST_TRIAL_FOOD_ROWS_MAX) {
+      overflow.push(`${label} ${when}`)
+      continue
+    }
+    rows.push({
+      kind: 'span',
+      label,
+      fromCol: colOf(cols, from),
+      toCol: colOf(cols, to),
+      fromPos: dayPos(cols, from),
+      toPos: dayPos(cols, to),
+      openStart: false,
+      openEnd: false,
+      hollow: false,
+      endDeclared: false,
+      openCourse: false,
+      when,
+    })
   }
   return { rows, overflow }
 }
@@ -781,6 +879,58 @@ function offDietRow(snap: ReportSnapshot, cols: ChartColumn[]): Extract<ChartRow
     doseCols: days.map((d) => dayPos(cols, d)),
     tickKind: 'off_diet',
   }
+}
+
+/**
+ * CUL-2535 (brief 4a): on a zero-sign sheet the chart draws what the "Changes in this window" lines
+ * state, by day: a tick row per Noticed concern word the changes list names, and one for the days a
+ * meal was not finished. 42 identical "logged" bars said nothing clinical while Olive's six sleepy
+ * days sat in the last eleven. The same days the lines print (`concernWordDaysOf`,
+ * `unfinishedMealDaysOf`), never re-derived.
+ */
+/** Every day a change tick row would draw, oldest first (the row's start must reach the first). */
+function changeDaysOf(snap: ReportSnapshot): string[] {
+  const days: string[] = []
+  for (const c of changesInWindowOf(snap) ?? []) {
+    if (c.id !== 'noticed_concern' || !snap.noticed) continue
+    const word = snap.noticed.concernWords.find((w) => c.text.startsWith(`Marked ${w.label.toLowerCase()} on `))
+    if (word) days.push(...concernWordDaysOf(snap, word.key))
+  }
+  if (snap.v2.mealNotFinishedDays > 0) days.push(...(unfinishedMealDaysOf(snap) ?? []))
+  return [...new Set(days)].sort()
+}
+
+function changeTickRows(snap: ReportSnapshot, cols: ChartColumn[]): Array<Extract<ChartRow, { kind: 'span' }>> {
+  if (cols.length === 0) return []
+  const rows: Array<Extract<ChartRow, { kind: 'span' }>> = []
+  const tick = (label: string, all: string[]) => {
+    const days = all.filter((d) => d >= cols[0].start && d <= cols[cols.length - 1].end)
+    if (days.length === 0) return
+    rows.push({
+      kind: 'span',
+      label,
+      fromCol: colOf(cols, days[0]),
+      toCol: colOf(cols, days[days.length - 1]),
+      fromPos: dayPos(cols, days[0]),
+      toPos: dayPos(cols, days[days.length - 1]),
+      openStart: false,
+      openEnd: false,
+      hollow: false,
+      endDeclared: false,
+      openCourse: false,
+      when: `on ${days.map(plainDay).join(', ')}`,
+      doseCols: days.map((d) => dayPos(cols, d)),
+      tickKind: 'change',
+    })
+  }
+  for (const c of changesInWindowOf(snap) ?? []) {
+    if (c.id !== 'noticed_concern' || !snap.noticed) continue
+    const word = snap.noticed.concernWords.find((w) => c.text.startsWith(`Marked ${w.label.toLowerCase()} on `))
+    if (word) tick(`Marked ${word.label.toLowerCase()}`, concernWordDaysOf(snap, word.key))
+  }
+  const meals = unfinishedMealDaysOf(snap)
+  if (meals && snap.v2.mealNotFinishedDays > 0) tick('Meals not finished', meals)
+  return rows
 }
 
 /** The short last column a reader could take for a fall: a part week (or bin) at the window's end.
@@ -870,7 +1020,13 @@ function buildLeadChart(
   if (((windowDays < THIN_RECORD_DAYS || fewLogged) && lead?.sign !== 'intake') || zeroSign) {
     unit = 'day'
     const days = windowDayKeys(snap)
-    const first = fewLogged ? snap.v2.loggedDayKeys[0] : null
+    let first = fewLogged ? snap.v2.loggedDayKeys[0] : null
+    // Adversarial pass 2 (QUIET, the chart): on a zero-sign sheet the row starts no later than the
+    // first day a change was marked, or ticks before it were dropped and the rest drawn as the set.
+    if (zeroSign && first !== null) {
+      const changed = changeDaysOf(snap)
+      if (changed.length > 0 && changed[0] < first) first = changed[0]
+    }
     dayRowFrom = first !== null && first > snap.scope.startDate ? first : null
     columns = days
       .filter((d) => dayRowFrom === null || d >= dayRowFrom)
@@ -902,6 +1058,12 @@ function buildLeadChart(
       `${snap.atAGlance.loggedDays} of ${plural(columns.length, 'day carries', 'days carry')} an entry` +
         (hatched.length > 0 ? `; hatched, nothing logged: ${hatched.join(', ')}` : ''),
     )
+    const changes = changeTickRows(snap, columns)
+    for (const r of changes) rows.push(r)
+    if (changes.length > 0) {
+      marks.add('change_ticks')
+      twinParts.push(`Ticks, one per day a change was marked: ${changes.map((r) => `${r.label.toLowerCase()} ${r.when}`).join('; ')}`)
+    }
   } else {
     if (lead?.sign === 'intake') {
       const weeks = snap.v2.intakeWeeks
@@ -934,7 +1096,9 @@ function buildLeadChart(
       if (counts.some((n) => n > 0)) marks.add('bar')
       if (counts.some((n, i) => n === 0 && columns[i].loggedDays > 0 && !notReadCol(columns[i], unit))) marks.add('empty')
       if (counts.some((n, i) => n === 0 && notReadCol(columns[i], unit))) marks.add('not_read')
-      twinParts.push(`${symptomLabel(s.type).toLowerCase()} ${counts.map((n, i) => cellWord(n, columns[i], unit)).join(', ')}`)
+      // CUL-2360: the short last week's count is said with its days ("2 in 4 days"), as its bar is labelled.
+      const short = soFarCol(columns, unit)
+      twinParts.push(`${symptomLabel(s.type).toLowerCase()} ${counts.map((n, i) => (i === short && n > 0 ? `${n} in ${plural(columns[i].days, 'day', 'days')}` : cellWord(n, columns[i], unit))).join(', ')}`)
     }
     if (overflow.length > 0) {
       overflowParts.push(`also logged: ${overflow.map((s) => `${symptomLabel(s.type).toLowerCase()} ${plural(s.count, 'entry', 'entries')}`).join('; ')}`)
@@ -979,7 +1143,7 @@ function buildLeadChart(
           .map(
             (x) =>
               `${unit === 'day' ? 'day' : unit === 'week' ? 'week' : 'bin'} ${x.i + 1} ${x.l}${
-                x.i === soFarIdx ? `, so far${soFarDrawn ? ', its bars drawn as outlines, not a full week' : ''}` : ''
+                x.i === soFarIdx ? `, so far${soFarDrawn ? ', its bars drawn as outlines and labelled with its days, not a full week' : ''}` : ''
               }`,
           )
           .join('; ')})`
@@ -1042,25 +1206,76 @@ function signLine(snap: ReportSnapshot, s: SymptomAggregate): RecordLine {
   }
 }
 
+/** A free-fed bowl as the meals and confounder lines name it: its label and what it carries (CUL-2540). */
+function bowlText(b: ReportSnapshot['diet']['freeFed'][number]): string {
+  const proteins = b.proteinSet.proteins.length > 0 ? b.proteinSet.proteins : b.primaryProtein ? [b.primaryProtein] : []
+  const carries = proteins.length === 0 ? 'protein not recorded' : `${proteins.join(', ')}${b.proteinSet.complete ? '' : '; list not complete'}`
+  return `${b.foodLabel ?? 'a food not named'} (${carries})`
+}
+
+/**
+ * CUL-2540: the run of refusals reaching the newest rated meal, read off the intake log (newest
+ * first), and the meal before it. Only rows the not-fully-eaten run already covers are counted, so a
+ * fully eaten meal the log leaves out can never sit inside the run.
+ *
+ * ADVERSARIAL PASS 1 (two breaks). QUIET: the log's pinned last-full-meal row sits after the capped
+ * rows, so "reached the cap" is reaching the last row that is not pinned, and with older rows hidden
+ * the run says "at least" (60 refusals read as "the last 40"). LOUD: the meal before the run is named
+ * only when it is inside the not-fully-eaten run too (`k < run`); past it, the next listed row can be
+ * an older meal across a fully eaten one the log's scope leaves out.
+ */
+function refusalRunText(snap: ReportSnapshot, run: number): string {
+  // ADVERSARIAL PASS 2: the run (`recentNotFullyEatenRun`) counts a free-fed bowl's ratings, so the
+  // rows read here count them too (never filtered, or `k` and `run` index different lists and the
+  // "meal before" could sit behind a fully eaten bowl rating); and the cap needs `k < run` (an exact
+  // run of 40 ending at a capped log is not "at least").
+  const rows = snap.provenance.intakeLog.filter((r) => !r.pinned)
+  let k = 0
+  while (k < rows.length && k < run && rows[k].intakeRating === 'refused') k++
+  if (k < 2) return ''
+  const day = (iso: string) => textOf(fmtLocalDay(iso, snap.timezone))
+  const capped = k === rows.length && k < run && snap.provenance.intakeLogHiddenOlder > 0
+  const next = k < run && k < rows.length ? rows[k] : null
+  const before =
+    next && !next.notCountedFreeFed && next.intakeRating !== 'all' && next.intakeRating !== 'refused'
+      ? ` The meal before them, on ${day(next.occurredAt)}, was partly eaten.`
+      : ''
+  return ` ${capped ? 'At least the last' : 'The last'} ${k} were refused outright, from ${day(rows[k - 1].occurredAt)} to ${day(rows[0].occurredAt)}.${before}`
+}
+
 function intakeLine(snap: ReportSnapshot): RecordLine | null {
-  const v = snap.v2
-  if (v.loggedMeals === 0) return null
+  // CUL-2536: v1's meal count (`mealTotalsOf`), never `snap.v2.loggedMeals` (3 beside v1's 219).
+  const meals = mealTotalsOf(snap)
+  if (meals.logged === 0) return null
   const freeFed = snap.diet.freeFed.length > 0
   const mc = snap.diet.mealCompletion
   const notFinished = mc ? mc.ratedMeals - mc.finishedMeals : null
-  const parts = [`${v.loggedMeals} logged`, `${v.ratedMeals} rated`]
+  const parts = [`${meals.logged} logged`, meals.rated < meals.logged ? `${meals.rated} rated, intake not recorded for ${meals.logged - meals.rated}` : `${meals.rated} rated`]
   // v1's run (CUL-1978): "40 of 44 fully eaten" read as a dog who eats fine while the last four
-  // were not. The same floor as v1's `recentNotFullyEatenRun`: 2 or more, and not every meal.
+  // were not. The same floor as v1's `recentNotFullyEatenRun`: 2 or more. CUL-2540: a run that is
+  // every rated meal says so, with its newest day, so an unbroken refusal never reads as a count.
   const run = mc?.recentNotFullyEatenRun ?? 0
-  const runText = mc && run >= 2 && run < mc.ratedMeals ? `The last ${run} rated meals in a row were not fully eaten. ` : ''
+  // The newest rated row, a bowl's included, as the run counts them (adversarial pass 2, QUIET: a run
+  // reaching today was dated by the newest meal behind two bowl ratings, days earlier).
+  const newest = snap.provenance.intakeLog.find((r) => !r.pinned)
+  const newestDay = newest ? textOf(fmtLocalDay(newest.occurredAt, snap.timezone)) : null
+  const runText =
+    mc && run >= 2 && run < mc.ratedMeals
+      ? `The last ${run} rated meals in a row were not fully eaten${newestDay ? `, the most recent on ${newestDay}` : ''}.${refusalRunText(snap, run)} `
+      : mc && run >= 2 && run === mc.ratedMeals
+        ? `Every rated meal, ${run} of ${run}, was not fully eaten${newestDay ? `, through the most recent on ${newestDay}` : ''}.${refusalRunText(snap, run)} `
+        : ''
   // Refused outright is said apart from "not fully eaten" (cold read 3, Mira: 34 of 38 refused read
   // as partial intake). Same population as `finishedMeals`, from `intakeBreakdown`.
   const refused = mc?.intakeBreakdown.find((b) => b.rating === 'refused')?.count ?? 0
   const refusedText = refused > 0 ? ` (${refused} refused outright)` : ''
-  if (notFinished !== null && notFinished > 0) parts.push(`${notFinished} not fully eaten${refusedText}, on ${plural(v.mealNotFinishedDays, 'day', 'days')}`)
-  else if (notFinished === 0 && v.ratedMeals > 0) parts.push('every rated meal recorded as fully eaten')
+  // CUL-2349 (N2): the unfinished days themselves, as every sign line gives its last day.
+  const dates = unfinishedMealDaysOf(snap)
+  const when = dates ? datesClauseOf(dates, snap.atAGlance.recordEdge.reportDate) : ''
+  if (notFinished !== null && notFinished > 0) parts.push(`${notFinished} not fully eaten${refusedText}, on ${plural(snap.v2.mealNotFinishedDays, 'day', 'days')}${when}`)
+  else if (notFinished === 0 && meals.rated > 0) parts.push('every rated meal recorded as fully eaten')
   // B-040's words, verbatim: a bowl left down means no one watched what was eaten from it.
-  const bowls = snap.diet.freeFed.map((b) => b.foodLabel ?? 'a food not named').join(', ')
+  const bowls = snap.diet.freeFed.map(bowlText).join(', ')
   return { id: 'intake', text: `Meals (logged as meals, not treats): ${runText}${parts.join('; ')}.${freeFed ? ` Free-fed: ${bowls}. Intake not directly observed.` : ''}` }
 }
 
@@ -1178,7 +1393,7 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
   if (!t) return null
   // A bowl left down beside a trial is a competing food the trial cannot exclude (cold read on
   // CUL-2290, Mira): named here, beside the trial, not only on the meals line.
-  const bowls = snap.diet.freeFed.map((b) => b.foodLabel ?? 'a food not named')
+  const bowls = snap.diet.freeFed.map(bowlText)
   // The warning is a fixed sentence and the owner's labels follow it (adversarial pass 2 on
   // CUL-2295): a surface that pins the warning beside the chart pins a bounded sentence, never a
   // list of free-text names that can grow past the screen.
@@ -1241,6 +1456,7 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
     kind: 'masthead',
     id: 'masthead',
     eyebrow: 'Owner’s home log',
+    stamp: MASTHEAD_STAMP,
     name: snap.signalment.name,
     signalment: signalmentLineOf(snap),
     signalmentBrief: signalmentBriefOf(snap),
@@ -1271,6 +1487,14 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
   } else if (checks !== null) {
     blocks.push({ kind: 'checks', id: 'checks', html: checks })
   }
+
+  // CUL-2551 (PM ruling (a), briefs 1a to 5a): every other block of v1's page 1, word for word in
+  // v1's order, so sheet 1 never says less than v1's page 1 (`sheet1MustCarry.test.ts`). v1's
+  // headline prints straight under the band, where v1 put it (CUL-2579 ruling (a)).
+  const ep = episodesBlock(snap)
+  const episodes = ep ? `<h2>${h(ep.heading)}</h2>${ep.html}` : null
+  const carried = carriedSectionsOf(input, episodes)
+  for (const c of carried) if (c.id === 'headline') blocks.push({ kind: 'carried', id: c.id, html: c.html })
 
   const thin = thinRecordLineOf(snap)
   if (thin) blocks.push({ kind: 'scope_line', id: 'scope-line', text: thin.text })
@@ -1313,13 +1537,15 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
   const reading = trialReadingOf(snap)
   const trialRows = trialRowsOf(snap)
   if (reading !== null || trialRows.length > 0) {
-    blocks.push({ kind: 'trial_reading', id: 'trial-reading', label: TRIAL_READING_LABEL, html: reading, rows: trialRows })
+    blocks.push({ kind: 'trial_reading', id: 'trial-reading', label: TRIAL_READING_LABEL, html: reading, rows: trialRows, heading: trialHeadingOf(snap) })
   }
 
   if (lines.length > 1) blocks.push({ kind: 'record_lines', id: 'record-lines', lines: lines.slice(1) })
 
   const gaps = gapLinesOf(snap)
   if (gaps.length > 0) blocks.push({ kind: 'gap_lines', id: 'gap-lines', heading: 'Not in this record', lines: gaps })
+
+  for (const c of carried) if (c.id !== 'headline') blocks.push({ kind: 'carried', id: c.id, html: c.html })
 
   const questions = opts.questions
     .map((q) => q.trim())
@@ -1356,6 +1582,8 @@ export interface WordCount {
     questions: number
     /** v1's trial bottom line (CUL-2514): never cut, so never in the cuttable budget. */
     trialReading: number
+    /** v1 page 1's carried sections (CUL-2551): never cut. */
+    carried: number
   }
 }
 
@@ -1366,7 +1594,7 @@ function words(text: string): number {
 
 export function wordCountOf(doc: DocumentV2): WordCount {
   let cuttable = 0
-  const fixed = { masthead: 0, band: 0, scopeLine: 0, twin: 0, colophon: 0, changes: 0, recordEdge: 0, disclosure: 0, questions: 0, trialReading: 0 }
+  const fixed = { masthead: 0, band: 0, scopeLine: 0, twin: 0, colophon: 0, changes: 0, recordEdge: 0, disclosure: 0, questions: 0, trialReading: 0, carried: 0 }
   for (const b of doc.blocks) {
     switch (b.kind) {
       case 'lead_sentence':
@@ -1380,7 +1608,7 @@ export function wordCountOf(doc: DocumentV2): WordCount {
         cuttable += b.lines.reduce((n, l) => n + words(l.text), 0)
         break
       case 'masthead':
-        fixed.masthead += words([b.eyebrow, b.name, b.signalment, b.conditions ?? '', b.window, textOf(b.lastEntryHtml)].join(' '))
+        fixed.masthead += words([b.eyebrow, b.stamp, b.name, b.signalment, b.conditions ?? '', b.window, textOf(b.lastEntryHtml)].join(' '))
         break
       case 'band':
         fixed.band += words([b.heading, ...b.items.map((i) => `${i.tag} ${textOf(i.html)}`), textOf(b.checksHtml ?? '')].join(' '))
@@ -1405,7 +1633,10 @@ export function wordCountOf(doc: DocumentV2): WordCount {
         fixed.disclosure += words(textOf(b.html))
         break
       case 'trial_reading':
-        fixed.trialReading += words(`${b.label} ${textOf(b.html ?? '')} ${b.rows.map((r) => `${textOf(r.labelHtml)} ${textOf(r.html)}`).join(' ')}`)
+        fixed.trialReading += words(`${textOf(b.heading ?? '')} ${b.label} ${textOf(b.html ?? '')} ${b.rows.map((r) => `${textOf(r.labelHtml)} ${textOf(r.html)}`).join(' ')}`)
+        break
+      case 'carried':
+        fixed.carried += words(textOf(b.html))
         break
       case 'questions':
         fixed.questions += words(b.items.map((q) => q.text).join(' '))

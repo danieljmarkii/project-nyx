@@ -155,7 +155,8 @@ for (const { name, snap, doc, aiLead } of docs) {
   Deno.test(`contiguity — ${name}: no sentence states a decline for the trial's own sign`, () => {
     const want = expectationsOf(doc, snap, aiLead)
     const html = renderPrintV2(doc, aiLead).replace(/<style>[\s\S]*?<\/style>/g, ' ').replace(/<svg[\s\S]*?<\/svg>/g, ' ')
-    assertEquals(declineSentences(textRuns(html).join(' '), want.trialSigns, want.lineLabels, want.spanWords), [])
+    // Each block a sentence boundary (CUL-2551): the HTML knows where v1's tiles end.
+    assertEquals(declineSentences(textRuns(html).join(' \u2029 '), want.trialSigns, want.lineLabels, want.spanWords), [])
   })
 }
 
@@ -319,6 +320,8 @@ Deno.test('declineSentences — dates, times and the measured carve-outs are not
   assertEquals(declineSentences('9 of 14 timed vomiting episodes fell within ~30 min of eating.', ['vomit']), [])
   assertEquals(declineSentences('Vomiting fell within two weeks of the switch.', ['vomit']).length, 1)
   assertEquals(declineSentences('Diarrhoea (active). No weigh-in falls inside this window.', ['diarrhea']), [])
+  assertEquals(declineSentences('Ongoing vomiting: not checked, too few episodes (1 episode in 31 logged days). 15.40 kg (34.0 lb) No weigh-ins fell inside this window.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting episodes fell inside this window to 2.', ['vomit']).length, 1)
   assertEquals(declineSentences('Vomiting in 4 of 4 episodes, vs 0 of 4 matched control windows.', ['vomit']), [])
   assertEquals(declineSentences('Vomiting went from 4 of 4 days to 0 of 4.', ['vomit']).length, 1)
   assertEquals(declineSentences('For pruritus. The highest before it in the last 365 days: 31.80 kg, down from 32.40 kg.', ['itch']), [])
@@ -327,6 +330,30 @@ Deno.test('declineSentences — dates, times and the measured carve-outs are not
   assertEquals(declineSentences('Vomiting has cleared.', ['vomit']).length, 1)
   assertEquals(declineSentences('Vomiting 6 days. The denser the symptom record, the less this marker means.', ['vomit']), [])
   assertEquals(declineSentences('Vomiting: less this week.', ['vomit']).length, 1)
+  // CUL-2551: v1's page 1 on sheet 1. A rising or flat halves pair is no decline; a falling one is.
+  assertEquals(declineSentences('Vomiting Sep 16 → Oct 31 16 entries / 46 d first 23 d 22 logged 6 → last 23 d 10', ['vomit']), [])
+  assertEquals(declineSentences('Itching first 25 d 3 → last 25 d 3', ['itch']), [])
+  assertEquals(declineSentences('Itching first 23 d 20 logged 11 → last 23 d 5', ['itch']).length, 1)
+  assertEquals(declineSentences('Itching first 28 d 7 → last 28 d 2', ['itch']).length, 1)
+  assertEquals(declineSentences('Primary sign logged: itching (15 logged). 5 of the trial’s 61 days fall outside it, so the count above is over that window.', ['itch']), [])
+  assertEquals(declineSentences('Vomiting not compared — a fall here may be less logging, not fewer entries.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting: a fall here.', ['vomit']).length, 1)
+  assertEquals(declineSentences('A flat-headed vertical marks the week one stopped: itching.', ['itch']), [])
+  assertEquals(declineSentences('Itching stopped.', ['itch']).length, 1)
+  // v1's coverage beside its halves is logged days, not a course (the PDF has no block boundaries).
+  assertEquals(declineSentences('Vomiting 5 entries / 32 d · 19 of 32 days logged · trend halves: Jun 1 – Jun 16, 2026 (16 of 16 d logged) vs Jun 17 – Jul 2, 2026 (3 of 16 d logged).', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting later window sparsely logged (3 of 16 d); Jun 22 – Jun 28 had a log on 0 of 7 days.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting went from 16 to 3.', ['vomit']).length, 1)
+  // A next sentence headed by another sign is that sign's own line; one headed by the trial's sign still counts.
+  assertEquals(declineSentences('Vomiting 16 entries / 46 d. Coughing 5 entries / 46 d 4 → 1.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting 16 entries / 46 d. Vomiting 4 → 1.', ['vomit']).length > 0, true)
+  assertEquals(declineSentences('Vomiting 16 entries / 46 d. It fell to 1.', ['vomit']).length, 1)
+  assertEquals(declineSentences('Itching 12 entries. Reading the trend: the trial diet (started May 8, stopped Jun 25).', ['itch']), [])
+  assertEquals(declineSentences('Itching stopped Jun 25.', ['itch']).length, 1)
+  assertEquals(declineSentences('42 of the trial\u02BCs 73 days fall outside it, vomiting (1 logged).', ['vomit']), [])
+  // A block boundary ends a sentence: a tile's sign never borrows the next tile's words.
+  assertEquals(declineSentences('15 itching \u2029 Weight no weigh-ins \u2029 Off-diet: down to none', ['itch']), [])
+  assertEquals(declineSentences('15 itching, down to 2', ['itch']).length, 1)
 })
 
 Deno.test('fold — whitespace between digits is never dropped', () => {
