@@ -1352,7 +1352,7 @@
      ]
     },
     {
-     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026; the trial diet was not fed exclusively, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "text": "The owner-entered diet trial, Cooper's Venison LID, from Sep 28, 2026, is at day 19 of 42; the trial diet was not fed exclusively, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
      "cites": [
       "trial",
       "trial-reading-3",
@@ -1389,7 +1389,7 @@
      ]
     },
     {
-     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026; the trial diet was not fed exclusively, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "text": "The owner-entered diet trial, Cooper's Venison LID, from Sep 28, 2026, is at day 19 of 42; the trial diet was not fed exclusively, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
      "cites": [
       "trial",
       "trial-reading-3",
@@ -1612,7 +1612,7 @@
      ]
     },
     {
-     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
      "cites": [
       "trial",
       "trial-reading-2",
@@ -2691,6 +2691,239 @@
     "verifier": "pass",
     "checker": "reject"
    }
+  },
+  {
+   "id": "pr35-dneg-a",
+   "fixture": "nyx-v2",
+   "class": "recombined",
+   "hazard": "H1",
+   "level": "material",
+   "source": "adversarial-reviewer pass 1 on PR-35 (CUL-2532), break 1: printed through vr2-6 before its fix",
+   "sentences": [
+    {
+     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "cites": [
+      "band-3-symptom_burden-vomit"
+     ]
+    },
+    {
+     "text": "Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026; this record cannot show the trial diet was not fed exclusively, and it is not a test of the diet alone.",
+     "cites": [
+      "trial",
+      "trial-reading-1",
+      "trial-reading-3",
+      "confounder"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "bottom-line"
+   ]
+  },
+  {
+   "id": "pr35-dneg-b",
+   "fixture": "cooper-cat",
+   "class": "recombined",
+   "hazard": "H1",
+   "level": "material",
+   "source": "adversarial-reviewer pass 1 on PR-35 (CUL-2532), break 1: printed through vr2-6 before its fix",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h without a full meal; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42; this record cannot show the trial diet was not fed exclusively, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "cites": [
+      "trial",
+      "trial-reading-1",
+      "trial-reading-3",
+      "confounder"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "bottom-line"
+   ]
+  },
+  {
+   "id": "pr35-dneg-c",
+   "fixture": "nyx-v2",
+   "class": "recombined",
+   "hazard": "H1",
+   "level": "material",
+   "source": "adversarial-reviewer pass 1 on PR-35 (CUL-2532), break 1: printed through vr2-6 before its fix",
+   "sentences": [
+    {
+     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "cites": [
+      "band-3-symptom_burden-vomit"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026; this record cannot show the elimination cannot be confirmed clean, and it is not a test of the diet alone.",
+     "cites": [
+      "trial",
+      "trial-reading-1",
+      "trial-reading-3",
+      "confounder"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "bottom-line"
+   ]
+  },
+  {
+   "id": "pr35-floor-a",
+   "fixture": "cooper",
+   "class": "recombined",
+   "hazard": "H5",
+   "level": "material",
+   "source": "adversarial-reviewer pass 1 on PR-35 (CUL-2532), break 2: printed through vr2-6 before its fix",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42; the trial diet was not fed exclusively: 4 of 42 feedings during the trial did not match it, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "cites": [
+      "trial",
+      "trial-reading-3",
+      "trial-reading-4",
+      "confounder"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "floor"
+   ]
+  },
+  {
+   "id": "pr35-floor-b",
+   "fixture": "nyx-v2",
+   "class": "recombined",
+   "hazard": "H5",
+   "level": "material",
+   "source": "adversarial-reviewer pass 1 on PR-35 (CUL-2532), break 2: printed through vr2-6 before its fix",
+   "sentences": [
+    {
+     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "cites": [
+      "band-3-symptom_burden-vomit"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026; the trial diet was not fed exclusively: 11 of the feedings in the trial days did not match it, and it is not a test of the diet alone.",
+     "cites": [
+      "trial",
+      "trial-reading-3",
+      "confounder",
+      "medication-00000000-0000-4000-8000-000000000001"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "floor"
+   ]
+  },
+  {
+   "id": "pr35-date-a",
+   "fixture": "cooper",
+   "class": "recombined",
+   "hazard": "H6",
+   "level": "material",
+   "source": "adversarial-reviewer pass 1 on PR-35 (CUL-2532), break 3: printed through vr2-6 before its fix",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42; the trial diet was not fed exclusively: 4 of 42 feedings during the trial did not match it on Sep 28, 2026, a floor, not a total.",
+     "cites": [
+      "trial",
+      "trial-reading-3"
+     ]
+    },
+    {
+     "text": "No medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "cites": [
+      "confounder"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "pr35-date-b",
+   "fixture": "h2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarial-reviewer pass 1 on PR-35 (CUL-2532), break 4: printed through vr2-6 before its fix",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Vomiting: 0 entries Sep 17 to Oct 20, and 6 entries on 4 days from Oct 26 to Oct 31; Chicken foods first fed Oct 21, side by side, not as a cause.",
+     "cites": [
+      "line-1",
+      "new-foods",
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
   }
  ],
  "controls": [
@@ -2806,7 +3039,7 @@
      ]
     },
     {
-     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
      "cites": [
       "trial",
       "trial-reading-2",
@@ -2868,7 +3101,7 @@
      ]
     },
     {
-     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026; the trial diet was not fed exclusively, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "text": "The owner-entered diet trial, Cooper's Venison LID, from Sep 28, 2026, is at day 19 of 42; the trial diet was not fed exclusively, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
      "cites": [
       "trial",
       "trial-reading-3",
@@ -2970,7 +3203,7 @@
      ]
     },
     {
-     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026; the trial diet was not fed exclusively, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "text": "The owner-entered diet trial, Cooper's Venison LID, from Sep 28, 2026, is at day 19 of 42; the trial diet was not fed exclusively, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
      "cites": [
       "trial",
       "trial-reading-3",
@@ -3015,6 +3248,7 @@
   }
  ],
  "revised": [
-  "v2 (2026-11-05, CUL-2532, CUL-2550): the fact table follows sheet 1, so nyx-v2's band item 1 is the burden flag. Every nyx-v2 item that opened on band-1-present_foreign opens on band-3-symptom_burden-vomit; the 16 whose hazard sat in sentence 1 carry the same hazard on the burden flag. Every item that cites a trial with a trial reading and a confounder now cites the reading's bottom line and the confounder, which the table now requires, so each item is still refused by its own rule."
+  "v2 (2026-11-05, CUL-2532, CUL-2550): the fact table follows sheet 1, so nyx-v2's band item 1 is the burden flag. Every nyx-v2 item that opened on band-1-present_foreign opens on band-3-symptom_burden-vomit; the 16 whose hazard sat in sentence 1 carry the same hazard on the burden flag. Every item that cites a trial with a trial reading and a confounder now cites the reading's bottom line and the confounder, which the table now requires, so each item is still refused by its own rule.",
+  "v2, after adversarial pass 1 on PR-35: seven items from that pass's four breaks (a double negative around the trial's bottom line; an unused cite stripping 'a floor, not a total'; off-list dates moved onto the trial start; a zero week set across the whole trial through the side-by-side waiver). Each is refused by the rule that closes it alone."
  ]
 }

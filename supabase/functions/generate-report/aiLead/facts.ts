@@ -24,6 +24,7 @@ import { buildDocumentV2, textOf } from '../documentV2.ts'
 import type { ReportSnapshot } from '../report.ts'
 import type { Fact, FactTable } from './verifyCore.ts'
 import { PROMPT_VERSION, WRITER_MODEL, CHECKER_MODEL } from './prompts.ts'
+import { BOTTOM_LINE_PHRASES } from './verify.ts'
 
 /** `trial_reading`: a sentence of sheet 1's trial reading (CUL-2532). */
 export type RecordLineKind = 'lead' | 'record' | 'confounder' | 'trial_reading'
@@ -80,7 +81,6 @@ function readingMustSay(text: string): string[][] {
   const bottom = BOTTOM_LINE_PHRASES.filter((p) => lower.includes(p))
   return [...mustSayOf(text).filter((g) => !BOTTOM_LINE_PHRASES.includes(g[0])), ...(bottom.length > 0 ? [bottom] : [])]
 }
-const BOTTOM_LINE_PHRASES: readonly string[] = ['not fed exclusively', 'cannot be confirmed clean', 'not a clean one', 'cannot establish that the elimination was clean']
 
 /** The id of the trial reading's bottom-line sentence among the payload's lines, or null. */
 export function bottomLineId(lines: ReadonlyArray<{ id: string; kind: string; text: string }>): string | null {

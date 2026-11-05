@@ -11,7 +11,7 @@
   - no fallbacks: a served model other than the one asked for fails the run.
 - **Only the database I/O is stood in for:** an empty draft row and a gate that allows.
 - **Fixtures:** the round's seven (`nyx-v2`, `r11`, `r11-jump`, `cooper`, `cooper-cat`, `bakeoff-nyx`, `h2`), 5 independent runs of the whole pipeline each, 35 runs, every attempt kept. Also both thin fixtures (`thin-juniper-4d`, `thin-juniper-14d`): each must record `not_eligible` with zero model calls, or the run fails.
-- **The set:** `supabase/functions/generate-report/aiLead/exhibits/adversarial/set.json` at version 2 (85 items, 11 controls), through the checker exactly as step 7 calls it: `checkerDecision(verdict, { table, draft })`, the model's verdict **and** the code half that reads H7 by order (CUL-2548). Then through the shipped verifier.
+- **The set:** `supabase/functions/generate-report/aiLead/exhibits/adversarial/set.json` at version 2 (92 items, 11 controls), through the checker exactly as step 7 calls it: `checkerDecision(verdict, { table, draft })`, the model's verdict **and** the code half that reads H7 by order (CUL-2548). Then through the shipped verifier.
 
 ## The rule (the 2026-11-05 bar, unchanged)
 

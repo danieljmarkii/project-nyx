@@ -44,6 +44,7 @@
 //   tense       CUL-2380: a sentence that touches a flag is never past ("had been a live flag"), and
 //               "over" is followed by a count, never left as an ending ("the flag is over")
 //   floor       CUL-2532: a count from a line that says "a floor, not a total" keeps the clause
+//   bottom-line CUL-2532: a trial reading's bottom line prints in its own clause, word for word
 //   date-anchor CUL-2380: in any sentence citing more than the trial, every date keeps the word its
 //               line prints before it and its recency words, so dates cannot swap or be rebuilt
 
@@ -367,11 +368,26 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     for (const c of s.cites) {
       const text = norm(facts.get(c)?.text ?? '')
       if (!text.toLowerCase().includes(FLOOR_PHRASE)) continue
-      // Only the floor line's own numbers: "day 19 of 42" beside "4 of 42 feedings" keeps no count.
-      const elsewhere = new Set(s.cites.filter((o) => o !== c).flatMap((o) => numbersOf(facts.get(o)?.text ?? '', year)))
-      const nums = numbersOf(text, year).filter((n) => !elsewhere.has(n))
-      const kept = numbersOf(s.text, year).some((n) => nums.includes(n))
+      // A count is the floor line's when it keeps the word that line prints after it ("4 of", "42
+      // feedings"). No other cited line excuses it: a line citing the same binding is no licence to
+      // drop the floor (adversarial pass 1 on PR-35, break 2: an unused cite stripped the clause).
+      const lineBindings = new Set(numberBindings(text, year))
+      const kept = numberBindings(s.text, year).some((b) => lineBindings.has(b))
       if (kept && !norm(s.text).toLowerCase().includes(FLOOR_PHRASE)) err(i, 'floor', `a count from ${c} prints without "${FLOOR_PHRASE}"`)
+    }
+    // bottom-line (adversarial pass 1 on PR-35, break 1): a trial reading's bottom-line phrase prints
+    // only inside the clause its line prints it in, word for word from the clause's start, so it
+    // cannot be wrapped ("this record cannot show the trial diet was not fed exclusively").
+    for (const phrase of BOTTOM_LINE_PHRASES) {
+      const lower = norm(s.text).toLowerCase()
+      let at = lower.indexOf(phrase)
+      while (at >= 0) {
+        const clauseStart = Math.max(...[',', ';', ':', '—', '–', '(', ')'].map((c) => lower.lastIndexOf(c, at)), -1) + 1
+        const clause = flatWords(lower.slice(clauseStart, at + phrase.length))
+        const printed = s.cites.some((c) => ` ${flatWords(facts.get(c)?.text ?? '')} `.includes(` ${clause} `))
+        if (!printed) err(i, 'bottom-line', `"${clause}" is not the clause a cited line prints "${phrase}" in`)
+        at = lower.indexOf(phrase, at + phrase.length)
+      }
     }
     const spelled = s.text.match(SPELLED_NUMBERS)
     if (spelled) err(i, 'numbers', `${JSON.stringify(spelled[0])}: counts are written as digits`)
@@ -461,16 +477,9 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
       // word the lead never prints) anchors its two dates like the line's own words would.
       const ended = s.cites.includes('trial') ? /\bfrom ([A-Z][a-z]{2} \d{1,2}, \d{4}), ended ([A-Z][a-z]{2} \d{1,2}, \d{4})/.exec(facts.get('trial')?.text ?? '') : null
       if (ended) lines.push(dateTokens(`ran ${ended[1]} to ${ended[2]}`))
-      // A date only the trial line prints keeps the trial-only freedom ("ran Jul 26, 2026 to Oct 20,
-      // 2026", CUL-2532: the trial's sentence now carries its reading and its confounder). It cannot
-      // move onto a sign: exposure and observation never share a sentence (the order rule). A date
-      // another cited line also prints is anchored as before, so it cannot swap between them.
-      const trialOnly = s.cites.includes('trial')
-        ? new Set(dateTokens(facts.get('trial')?.text ?? '').filter((t) => t.startsWith('@') && s.cites.every((c) => c === 'trial' || !dateTokens(facts.get(c)?.text ?? '').includes(t))))
-        : new Set<string>()
       const lead = dateTokens(s.text)
       lead.forEach((t, k) => {
-        if (!t.startsWith('@') || trialOnly.has(t)) return
+        if (!t.startsWith('@')) return
         const prev = prevContent(lead, k)
         const near = recencyNear(lead, k)
         // A date or number before it must match exactly (a range stays a pair); a word before it must
@@ -560,6 +569,10 @@ function waiveNotClean(errors: VerifyIssue[], summary: LeadSummary, table: FactT
  *  line, in a sentence that cites no band item ("the trial diet was not fed exclusively": the band's
  *  "Diet not eaten" label makes every trial sentence touch a flag). "The flag was" is never printed
  *  in a trial reading, so it is still refused. */
+/** The trial reading's bottom-line phrases (facts.ts `BOTTOM_LINE_PHRASES`, mirrored: the same
+ *  question, which clause says the trial is not clean). */
+export const BOTTOM_LINE_PHRASES: readonly string[] = ['not fed exclusively', 'cannot be confirmed clean', 'not a clean one', 'cannot establish that the elimination was clean']
+
 export const TENSE_SPAN = 2
 function pastExcused(text: string, at: number, word: string, cites: string[], facts: Map<string, { role?: string; text?: string }>): boolean {
   if (cites.some((c) => facts.get(c)?.role === 'band')) return false
