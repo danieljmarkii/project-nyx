@@ -2607,6 +2607,38 @@ export interface MedicationAdherence {
   refusedDoses: number
   /** Unconfirmed ≠ missed ≠ refused (adherence null) — kept distinct (spec §4). */
   unconfirmedDoses: number
+  /**
+   * CUL-2529 instance 5 — WHERE THE PARTIAL DOSES WENT, AND WHAT IS KNOWN OF THAT MEAL'S INTAKE.
+   * Over the whole record, the same population as `lifetimePartialDoses`. Nyx's prednisolone read
+   * "15 of 15 given, 11 partial" with nothing joining a dose to the meal it rode in, whose intake was
+   * unrecorded on 65 of 66 meals: in a cat losing weight, repeated partial doses may mean she is not
+   * finishing the dosed food, and the page could not say. Optional and additive: a stored copy
+   * without it renders nothing new (never a zero).
+   */
+  partialDoseVehicles?: PartialDoseVehicles
+}
+
+/** CUL-2529 — the partial doses of one course, sorted by what carried them. Counts partition `partial`. */
+/** CUL-2529 — one rated feeding that carried the trial diet (`trialDietRatings`). */
+export interface TrialDietRating {
+  eventId: string
+  occurredAt: string
+  foodLabel: string | null
+  intakeRating: IntakeRating
+  isTreat: boolean
+}
+
+export interface PartialDoseVehicles {
+  partial: number
+  /** Logged as given inside a meal or treat this report read. */
+  inMeal: number
+  /** Of `inMeal`: the meal's intake rating, each with its count, worst first; unrated counted apart. */
+  rated: Array<{ rating: IntakeRating; n: number }>
+  unrated: number
+  /** Paired to an event this report did not read (deleted, or before its lookback). */
+  pairedUnread: number
+  /** Not paired to any meal or treat. */
+  notPaired: number
 }
 
 export interface EstablishedCorrelation {
@@ -3010,6 +3042,14 @@ export interface Provenance {
    * on a stored copy from before it (read as unknown).
    */
   intakeFlagTrialMeals?: IntakeFlagTrialMeals | null
+  /**
+   * CUL-2529 instance 7 — every RATED feeding that carried the trial diet, treats included, oldest
+   * first: the Diet-not-eaten flag's population, listed. The flag read "2 of 4 rated feedings …
+   * between Sep 21 and Oct 8" while appendix E (meals only) held two trial-diet ratings and nothing
+   * on Oct 8, so two of the four appeared nowhere. Optional: absent on a stored copy, and the
+   * appendix then prints nothing new.
+   */
+  trialDietRatings?: TrialDietRating[]
   /** Appendix B — off-diet exposures (treats + human food). */
   confounders: ConfounderExposure[]
   /**
@@ -4945,15 +4985,23 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // sections deliberately do NOT use this: attribution must see every dose a drug ever had, or a
   // course configured after dosing began loses its early doses — the CUL-976 defect.
   const windowLookbackDoses = input.doses.filter((d) => !droppedEventIds.has(d.eventId))
-  const medications = input.medications.map((m) =>
-    buildMedicationAdherence(
+  const mealIntakeOf = new Map<string, IntakeRating | null>()
+  for (const e of input.events) {
+    // Every meal read, twins included: a dose paired to a de-duplicated twin still rode in that meal.
+    if (e.type === 'meal' && e.meal) mealIntakeOf.set(e.id, e.meal.intakeRating)
+  }
+  const medications = input.medications.map((m) => {
+    const attributed = medPass.byRegimen.get(m.id) ?? []
+    const adherence = buildMedicationAdherence(
       m,
-      medPass.byRegimen.get(m.id) ?? [],
+      attributed,
       medPass.courseByRegimen.get(m.id) ?? null,
       scope,
       tz,
-    ),
-  )
+    )
+    const vehicles = partialDoseVehiclesOf(attributed, mealIntakeOf)
+    return vehicles ? { ...adherence, partialDoseVehicles: vehicles } : adherence
+  })
   // Ad-hoc / OTC doses that belong to no configured regimen — surfaced separately so a drug the
   // owner logged (but never set up as a regimen) is still reported, not silently dropped (§3.8).
   // The set is the pass's OWN `unattributed` bucket, so this section and the regimen sections
@@ -6549,6 +6597,23 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     }))
   }
 
+  // CUL-2529 instance 7: the flag's population, from the same classification the trial block keyed.
+  const trialDietIds = trialBlock && Array.isArray(trialBlock.trialDietFeedingEventIds)
+    ? new Set(trialBlock.trialDietFeedingEventIds)
+    : null
+  const trialDietRatings: TrialDietRating[] | undefined = trialDietIds
+    ? windowMeals
+        .filter((e) => trialDietIds.has(e.id) && e.meal!.intakeRating != null)
+        .sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .map((e) => ({
+          eventId: e.id,
+          occurredAt: e.occurredAt,
+          foodLabel: mealFoodLabel(e.meal!),
+          intakeRating: e.meal!.intakeRating as IntakeRating,
+          isTreat: e.meal!.foodType === 'treat' || e.meal!.format === 'treat',
+        }))
+    : undefined
+
   const provenance: Provenance = {
     ownerReported: true,
     totalSymptomIncidents,
@@ -6562,6 +6627,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     intakeLogFreeFedAfterAnchor,
     intakeLogScope,
     intakeFlagTrialMeals,
+    ...(trialDietRatings ? { trialDietRatings } : {}),
     confounders,
     proteinExposureTally,
     proteinUnknownCount,
@@ -7497,6 +7563,42 @@ export function partitionCourseDays(rows: readonly PartitionRow[], spanStart: nu
     outsideCourseGivenDays: [...outsideGivenDays].sort(),
     outsideCourseNotGivenDays: [...outsideNotGivenDays].sort(),
   }
+}
+
+/**
+ * CUL-2529 instance 5 — the partial doses of one course, each joined to the meal or treat it was
+ * logged inside (`paired_event_id`) and that meal's intake rating. Null when the course has no
+ * partial dose. Same population as `lifetimePartialDoses`; the four buckets partition it, so the
+ * render can never state more doses than there were.
+ */
+export function partialDoseVehiclesOf(
+  doses: readonly ReportDoseInput[],
+  mealIntakeOf: ReadonlyMap<string, IntakeRating | null>,
+): PartialDoseVehicles | null {
+  const partials = doses.filter((d) => d.adherence === 'partial')
+  if (partials.length === 0) return null
+  const byRating = new Map<IntakeRating, number>()
+  let inMeal = 0
+  let unrated = 0
+  let pairedUnread = 0
+  let notPaired = 0
+  for (const d of partials) {
+    if (!d.pairedEventId) {
+      notPaired++
+      continue
+    }
+    if (!mealIntakeOf.has(d.pairedEventId)) {
+      pairedUnread++
+      continue
+    }
+    inMeal++
+    const r = mealIntakeOf.get(d.pairedEventId) ?? null
+    if (r === null) unrated++
+    else byRating.set(r, (byRating.get(r) ?? 0) + 1)
+  }
+  const WORST_FIRST: readonly IntakeRating[] = ['refused', 'picked', 'some', 'most', 'all']
+  const rated = WORST_FIRST.filter((r) => byRating.has(r)).map((r) => ({ rating: r, n: byRating.get(r)! }))
+  return { partial: partials.length, inMeal, rated, unrated, pairedUnread, notPaired }
 }
 
 /**
