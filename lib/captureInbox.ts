@@ -537,32 +537,64 @@ export async function ingestCaptureInbox(
 // ages out over 45 days, and a "waiting to upload" line standing that long would be a lie).
 // An empty `petIds` counts nothing, as the ingest applies nothing.
 export function countUnclaimedInboxPayloads(raws: readonly string[], petIds: ReadonlySet<string>): number {
-  let n = 0;
+  return summarizeUnclaimedInboxPayloads(raws, petIds).count;
+}
+
+/**
+ * CUL-2489: what the inbox still holds for this account, with WHEN. The SyncBanner's pending line
+ * keys on the oldest unsent entry being over a day old, not on the count, so a count alone would
+ * change nothing it says. Same population as `countUnclaimedInboxPayloads` (that function is
+ * this one's `.count`). `oldestAt` is the earliest counted capture's `createdAt`, the tap time
+ * the extension stamped; a counted record whose `createdAt` cannot be read is in `unknownAge`.
+ */
+export interface UnclaimedInboxSummary {
+  count: number;
+  /** Earliest `createdAt` among counted records whose time could be read; canonical UTC. */
+  oldestAt: string | null;
+  /** Counted entries with no readable time (an unreadable file, a deferred record's bad stamp). */
+  unknownAge: number;
+}
+
+export function summarizeUnclaimedInboxPayloads(
+  raws: readonly string[],
+  petIds: ReadonlySet<string>,
+): UnclaimedInboxSummary {
+  let count = 0;
+  let unknownAge = 0;
+  let oldestMs = Number.POSITIVE_INFINITY;
   for (const raw of raws) {
     const c = classifyInboxPayload(raw);
     if (c.status === 'drop') continue;
-    const petId =
-      c.status === 'valid'
-        ? c.record.petId
-        : (() => {
-            try {
-              const p = (JSON.parse(raw) as { petId?: unknown }).petId;
-              return typeof p === 'string' ? p : null;
-            } catch {
-              return null;
-            }
-          })();
-    if (petId !== null && petIds.has(petId)) n += 1;
+    let petId: string | null;
+    let createdMs: number;
+    if (c.status === 'valid') {
+      petId = c.record.petId;
+      createdMs = Date.parse(c.record.createdAt);
+    } else {
+      // A classify-level defer (newer schema, unknown kind) parsed as JSON, or it would drop.
+      const p = JSON.parse(raw) as { petId?: unknown; createdAt?: unknown };
+      petId = typeof p.petId === 'string' ? p.petId : null;
+      createdMs = typeof p.createdAt === 'string' ? Date.parse(p.createdAt) : NaN;
+    }
+    if (petId === null || !petIds.has(petId)) continue;
+    count += 1;
+    if (Number.isNaN(createdMs)) unknownAge += 1;
+    else if (createdMs < oldestMs) oldestMs = createdMs;
   }
-  return n;
+  return {
+    count,
+    oldestAt: Number.isFinite(oldestMs) ? new Date(oldestMs).toISOString() : null,
+    unknownAge,
+  };
 }
 
-// The file-system half. A file that cannot be read counts: it is most likely a real capture,
-// and over-warning is the safe direction. A listing that fails THROWS, so the caller's count
-// fails as a whole and takes its own "no evidence" path. No inbox (Android, no entitlement) is 0.
-export function countUnclaimedInbox(petIds: ReadonlySet<string>): number {
+// The file-system half. A file that cannot be read counts (with no known age): it is most likely
+// a real capture, and over-warning is the safe direction. A listing that fails THROWS, so the
+// caller's count fails as a whole and takes its own "no evidence" path. No inbox (Android, no
+// entitlement) is empty.
+export function readUnclaimedInbox(petIds: ReadonlySet<string>): UnclaimedInboxSummary {
   const inbox = getCaptureInboxDirectory();
-  if (!inbox) return 0;
+  if (!inbox) return { count: 0, oldestAt: null, unknownAge: 0 };
   const raws: string[] = [];
   let unreadable = 0;
   for (const entry of inbox.list()) {
@@ -573,5 +605,45 @@ export function countUnclaimedInbox(petIds: ReadonlySet<string>): number {
       unreadable += 1;
     }
   }
-  return unreadable + countUnclaimedInboxPayloads(raws, petIds);
+  const s = summarizeUnclaimedInboxPayloads(raws, petIds);
+  return { count: s.count + unreadable, oldestAt: s.oldestAt, unknownAge: s.unknownAge + unreadable };
+}
+
+export function countUnclaimedInbox(petIds: ReadonlySet<string>): number {
+  return readUnclaimedInbox(petIds).count;
+}
+
+/**
+ * CUL-2489: the SyncBanner's pending status with the inbox counted. `inbox` is null when the
+ * listing could not be read: that counts as ONE pending entry, the stopgap the PM ruled for the
+ * report's freshness line (CUL-2507, ruling (a)), kept the same here.
+ *
+ * AN ENTRY OF UNKNOWN AGE READS AS PAST THE BANNER'S THRESHOLD. The banner shows its pending line
+ * only once the oldest unsent entry is over a day old; an entry whose time cannot be read has no
+ * honest age, and treating it as new would hold the banner silent for as long as it stays
+ * unreadable. So it reads as old, and the banner errs loud. The store carries only a timestamp, so
+ * that is spelled as the earliest instant (`UNKNOWN_AGE_PENDING_AT`); SyncBanner compares it as an
+ * age and never prints it.
+ */
+export const UNKNOWN_AGE_PENDING_AT = new Date(0).toISOString();
+
+export function withUnclaimedInbox(
+  rows: { pendingCount: number; oldestPendingAt: string | null; quarantinedCount: number },
+  inbox: UnclaimedInboxSummary | null,
+): { pendingCount: number; oldestPendingAt: string | null; quarantinedCount: number } {
+  const box = inbox ?? { count: 1, oldestAt: null, unknownAge: 1 };
+  if (box.count === 0) return rows;
+  let oldest = rows.oldestPendingAt;
+  if (box.unknownAge > 0) {
+    oldest = UNKNOWN_AGE_PENDING_AT;
+  } else if (box.oldestAt !== null) {
+    // Parsed, never compared as text (C-40): a row's stamp may be PostgREST's '+00:00' form.
+    const rowMs = oldest === null ? NaN : Date.parse(oldest);
+    if (Number.isNaN(rowMs) || Date.parse(box.oldestAt) < rowMs) oldest = box.oldestAt;
+  }
+  return {
+    pendingCount: rows.pendingCount + box.count,
+    oldestPendingAt: oldest,
+    quarantinedCount: rows.quarantinedCount,
+  };
 }

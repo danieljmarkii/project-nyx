@@ -39,6 +39,10 @@ import {
   classifyInboxPayload,
   countUnclaimedInbox,
   countUnclaimedInboxPayloads,
+  readUnclaimedInbox,
+  summarizeUnclaimedInboxPayloads,
+  withUnclaimedInbox,
+  UNKNOWN_AGE_PENDING_AT,
   ingestCaptureRecords,
   ingestCaptureInbox,
   inboxFileSortKey,
@@ -940,5 +944,124 @@ describe('countUnclaimedInboxPayloads / countUnclaimedInbox (CUL-2468)', () => {
       },
     });
     expect(() => countUnclaimedInbox(mine)).toThrow('list');
+  });
+});
+
+// CUL-2489: the SyncBanner's half. The banner's pending line keys on the OLDEST unsent entry being
+// over a day old, so the inbox has to hand over WHEN, not only how many.
+describe('summarizeUnclaimedInboxPayloads / readUnclaimedInbox / withUnclaimedInbox (CUL-2489)', () => {
+  const mine = new Set([PET]);
+  const OTHER_PET = '55555555-5555-4555-9555-555555555555';
+  const at = (createdAt: string, petId = PET) => JSON.stringify(validRecord({ kind: 'treat', petId, createdAt }));
+  const ROWS_NONE = { pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 };
+
+  afterEach(() => {
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue(null);
+  });
+
+  it('counts the same population as countUnclaimedInboxPayloads, and names the oldest counted capture', () => {
+    const raws = [
+      at('2026-07-10T08:00:00.000Z'),
+      at('2026-07-01T08:00:00.000Z', OTHER_PET), // not counted, so not the oldest either
+      at('2026-07-05T08:00:00.000Z'),
+      '{not json',
+    ];
+    expect(summarizeUnclaimedInboxPayloads(raws, mine)).toEqual({
+      count: countUnclaimedInboxPayloads(raws, mine),
+      oldestAt: '2026-07-05T08:00:00.000Z',
+      unknownAge: 0,
+    });
+    expect(countUnclaimedInboxPayloads(raws, mine)).toBe(2);
+  });
+
+  it('a version-skew deferral reads its own createdAt; an offset stamp is normalised to UTC', () => {
+    const newer = JSON.stringify({
+      ...validRecord(),
+      schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION + 1,
+      createdAt: '2026-07-01T04:00:00-04:00',
+    });
+    expect(summarizeUnclaimedInboxPayloads([newer], mine)).toEqual({
+      count: 1,
+      oldestAt: '2026-07-01T08:00:00.000Z',
+      unknownAge: 0,
+    });
+  });
+
+  it('a version-skew deferral with no readable time counts with unknown age', () => {
+    const newer = JSON.stringify({
+      ...validRecord(),
+      schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION + 1,
+      createdAt: 'later',
+    });
+    expect(summarizeUnclaimedInboxPayloads([newer], mine)).toEqual({ count: 1, oldestAt: null, unknownAge: 1 });
+  });
+
+  it('reads the directory: an unreadable file counts with unknown age', () => {
+    const unreadable = {
+      name: 'b.json',
+      textSync: () => {
+        throw new Error('io');
+      },
+      delete: () => undefined,
+    };
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({
+      list: () => [fakeFile('a.json', at('2026-07-05T08:00:00.000Z')), unreadable],
+    });
+    expect(readUnclaimedInbox(mine)).toEqual({ count: 2, oldestAt: '2026-07-05T08:00:00.000Z', unknownAge: 1 });
+    expect(countUnclaimedInbox(mine)).toBe(2);
+  });
+
+  it('no inbox (Android) is empty; a listing that fails throws for the caller', () => {
+    expect(readUnclaimedInbox(mine)).toEqual({ count: 0, oldestAt: null, unknownAge: 0 });
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({
+      list: () => {
+        throw new Error('list');
+      },
+    });
+    expect(() => readUnclaimedInbox(mine)).toThrow('list');
+  });
+
+  it('adds a deferred capture to an empty queue: the banner now has an oldest entry to age', () => {
+    const out = withUnclaimedInbox(ROWS_NONE, { count: 1, oldestAt: '2026-07-01T08:00:00.000Z', unknownAge: 0 });
+    expect(out).toEqual({ pendingCount: 1, oldestPendingAt: '2026-07-01T08:00:00.000Z', quarantinedCount: 0 });
+  });
+
+  it('takes the earlier of the two, comparing instants, never text (C-40)', () => {
+    // The same instant in both spellings: the row's PostgREST form must not lose to the inbox's Z
+    // form as text ('+' sorts before '.'), and an earlier inbox capture must win.
+    const rows = { pendingCount: 2, oldestPendingAt: '2026-07-03T08:00:00+00:00', quarantinedCount: 1 };
+    expect('2026-07-03T08:00:00+00:00' < '2026-07-03T08:00:00.000Z').toBe(true);
+    expect(withUnclaimedInbox(rows, { count: 1, oldestAt: '2026-07-03T08:00:00.000Z', unknownAge: 0 })).toEqual({
+      pendingCount: 3,
+      oldestPendingAt: '2026-07-03T08:00:00+00:00',
+      quarantinedCount: 1,
+    });
+    expect(
+      withUnclaimedInbox(rows, { count: 1, oldestAt: '2026-07-02T08:00:00.000Z', unknownAge: 0 }).oldestPendingAt,
+    ).toBe('2026-07-02T08:00:00.000Z');
+    expect(
+      withUnclaimedInbox(rows, { count: 1, oldestAt: '2026-07-04T08:00:00.000Z', unknownAge: 0 }).oldestPendingAt,
+    ).toBe('2026-07-03T08:00:00+00:00');
+  });
+
+  it('an entry of unknown age reads as old, so the banner errs loud', () => {
+    const out = withUnclaimedInbox(
+      { pendingCount: 1, oldestPendingAt: '2026-07-03T08:00:00.000Z', quarantinedCount: 0 },
+      { count: 1, oldestAt: null, unknownAge: 1 },
+    );
+    expect(out).toEqual({ pendingCount: 2, oldestPendingAt: UNKNOWN_AGE_PENDING_AT, quarantinedCount: 0 });
+  });
+
+  it('an unreadable listing counts as ONE pending entry of unknown age (CUL-2507 ruling (a))', () => {
+    expect(withUnclaimedInbox(ROWS_NONE, null)).toEqual({
+      pendingCount: 1,
+      oldestPendingAt: UNKNOWN_AGE_PENDING_AT,
+      quarantinedCount: 0,
+    });
+  });
+
+  it('an empty inbox changes nothing', () => {
+    const rows = { pendingCount: 2, oldestPendingAt: 'not-a-date', quarantinedCount: 3 };
+    expect(withUnclaimedInbox(rows, { count: 0, oldestAt: null, unknownAge: 0 })).toBe(rows);
   });
 });

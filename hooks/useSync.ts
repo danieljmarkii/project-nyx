@@ -5,7 +5,12 @@ import { syncNow } from '../lib/sync';
 import { getSyncStatus, isLocalDataEmpty } from '../lib/db';
 import { hasHydratedRecord, holdColdStartWait, shouldShowColdStartWait } from '../lib/coldStart';
 import { consumeForcedColdStart } from '../lib/devColdStart';
-import { ingestCaptureInbox } from '../lib/captureInbox';
+import {
+  ingestCaptureInbox,
+  readUnclaimedInbox,
+  withUnclaimedInbox,
+  type UnclaimedInboxSummary,
+} from '../lib/captureInbox';
 import { currentSignOutEpoch } from '../lib/signOutEpoch';
 import { getIsOnline, isOnlineFromState } from '../lib/network';
 import { useAuthStore } from '../store/authStore';
@@ -105,7 +110,20 @@ export function useSync() {
         // re-read whatever did land. Idempotent and cheap.
         bumpHydrationTick();
       }
-      const status = await getSyncStatus();
+      // CUL-2489: the widget's capture inbox counts as unsent. The ingest above leaves a record
+      // there when it cannot take it in yet (its food not on this phone, a newer schema or
+      // kind), and that capture is in neither SQLite nor the server. Read BEFORE the rows: an
+      // ingest only ever moves a record inbox → rows, so a record caught mid-move is counted
+      // twice (an over-warn), never by neither. Its own try, so an unreadable inbox never costs
+      // the row counts; null counts as one pending entry (CUL-2507's ruling, withUnclaimedInbox).
+      let inbox: UnclaimedInboxSummary | null;
+      try {
+        inbox = readUnclaimedInbox(new Set(usePetStore.getState().pets.map((p) => p.id)));
+      } catch (e) {
+        console.warn('[sync] capture inbox unreadable:', e);
+        inbox = null;
+      }
+      const status = withUnclaimedInbox(await getSyncStatus(), inbox);
       setPendingStatus(status.pendingCount, status.oldestPendingAt, status.quarantinedCount);
     }
 
