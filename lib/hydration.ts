@@ -408,4 +408,11 @@ export const LOCAL_WIPE_TABLES = [
   'notification_preferences',
   'food_items_cache',
   'sync_watermarks',
+  // Vet report v2 PR-32 (CUL-2522) pending_report_keeps — a sent report's keep still to
+  // answer. Names only its pet and report, so its position is free.
+  //
+  // A TRUST & SAFETY REQUIREMENT, not bookkeeping: a row says this household sent a named
+  // pet's vet report at a time. It must not survive a sign-out onto someone else's phone,
+  // and the next account's drain must never try a keep for a report it does not own.
+  'pending_report_keeps',
 ] as const;

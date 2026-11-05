@@ -37,6 +37,7 @@ import { currentSignOutEpoch } from '../lib/signOutEpoch';
 import { PASSWORD_RECOVERY_ENABLED } from '../constants/flags';
 import { purgeRetiredStorage } from '../lib/retiredStorage';
 import { useSync } from '../hooks/useSync';
+import { usePendingReportKeeps } from '../hooks/usePendingReportKeeps';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { useWidgetSnapshots } from '../hooks/useWidgetSnapshots';
 import { useNotificationScheduling } from '../hooks/useNotificationScheduling';
@@ -103,6 +104,8 @@ function RootLayoutTree() {
   const [fontsLoaded, fontError] = useFonts(fontMap);
 
   useSync();
+  // CUL-2522: a sent report's keep the app was closed on is tried again, or said once.
+  usePendingReportKeeps();
   // B-290: keep the App Group widget snapshots current — debounced re-publish on
   // event/pet-store changes + each hydration tick. Inert off iOS.
   useWidgetSnapshots();
