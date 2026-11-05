@@ -209,7 +209,8 @@ export interface InboxDecision {
 //   • petId must be one of the account's own pets — a record naming a foreign
 //     pet DEFERS (the pet list may simply not have loaded/hydrated yet; a truly
 //     foreign record ages out via INBOX_MAX_AGE_DAYS rather than being written
-//     into this account's record);
+//     into this account's record; CUL-2503: age is read only here and at the
+//     other unusable branches, never ahead of a record that can land);
 //   • foodItemId must exist in food_items_cache — otherwise the pushed meal
 //     would FK-fail against food_items forever (the pre-sync can only re-upsert
 //     foods the cache knows), poisoning the queue. Defers for the same
@@ -259,16 +260,25 @@ export async function ingestCaptureRecords(
     }
     const record = classified.record;
 
-    // Age-out: a record that has deferred past the window is unclaimable.
-    // Checked before the defer paths below so a stale foreign-pet/missing-food
-    // record eventually leaves the inbox instead of deferring forever.
-    if (now.getTime() - Date.parse(record.createdAt) > maxAgeMs) {
-      decisions.push({ name: file.name, action: 'dropped', reason: 'aged out' });
-      continue;
-    }
+    // Age-out (CUL-2503): only a record that CANNOT land ages out. A record the
+    // app can apply (its pet in this account, its food cached, or its free-fed
+    // bowl active) is applied however old it is: before this, the age check ran
+    // first, and a 46-day-old treat for the owner's own pet with its food cached
+    // was dropped, a lost tap the record and the report then never mentioned.
+    // So age is read only at the three "unusable" defer branches below (foreign
+    // pet, no arrangement, food not cached), where it turns a defer into a drop
+    // so a stale record eventually leaves the inbox instead of deferring forever.
+    // The pass cap and the sign-out fence never age a record out: neither says
+    // anything about the record, and it applies on the next pass. A classify-level
+    // defer (newer schema, unknown kind) returned above and never ages out either.
+    const aged = now.getTime() - Date.parse(record.createdAt) > maxAgeMs;
+    const unusable = (reason: string): InboxDecision =>
+      aged
+        ? { name: file.name, action: 'dropped', reason: `aged out (${reason})` }
+        : { name: file.name, action: 'deferred', reason };
 
     if (!validPetIds.has(record.petId)) {
-      decisions.push({ name: file.name, action: 'deferred', reason: 'pet not in account' });
+      decisions.push(unusable('pet not in account'));
       continue;
     }
 
@@ -294,7 +304,7 @@ export async function ingestCaptureRecords(
       if (arrangements.length === 0) {
         // Usually transient (arrangements not yet hydrated on a fresh install);
         // a tap on a genuinely-ended bowl ages out via INBOX_MAX_AGE_DAYS.
-        decisions.push({ name: file.name, action: 'deferred', reason: 'no active free-fed arrangement' });
+        decisions.push(unusable('no active free-fed arrangement'));
         continue;
       }
       if (applied >= maxApplies) {
@@ -335,7 +345,7 @@ export async function ingestCaptureRecords(
       [record.foodItemId],
     );
     if (!food) {
-      decisions.push({ name: file.name, action: 'deferred', reason: 'food not in cache' });
+      decisions.push(unusable('food not in cache'));
       continue;
     }
 

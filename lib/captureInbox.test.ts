@@ -318,6 +318,77 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
     expect(decisions[0].action).toBe('dropped');
   });
 
+  // CUL-2503: the age check used to run FIRST, so a capture the app could apply was dropped
+  // once it was 45 days old. Only a record that cannot land ages out now.
+  describe('age-out drops only what cannot land (CUL-2503)', () => {
+    const staleCreated = () =>
+      new Date(NOW.getTime() - (INBOX_MAX_AGE_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString();
+
+    it("applies a 46-day-old treat for the account's own pet whose food is cached", async () => {
+      const old = validRecord({ kind: 'treat', createdAt: staleCreated(), occurredAt: staleCreated() });
+      const decisions = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
+      expect(decisions).toEqual([{ name: '0.json', action: 'applied', petId: PET }]);
+      expect((raw.prepare('SELECT COUNT(*) AS n FROM meals').get() as { n: number }).n).toBe(1);
+    });
+
+    it('drops the same record when its food is not cached (it cannot land)', async () => {
+      const old = validRecord({
+        createdAt: staleCreated(),
+        foodItemId: '55555555-5555-4555-9555-555555555555',
+      });
+      const decisions = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
+      expect(decisions[0].action).toBe('dropped');
+      expect(decisions[0].reason).toBe('aged out (food not in cache)');
+    });
+
+    it('defers, never drops, an old valid record held back only by the pass cap', async () => {
+      const second = validRecord({
+        id: '66666666-6666-4666-9666-666666666666',
+        mealId: '77777777-7777-4777-9777-777777777777',
+        createdAt: staleCreated(),
+      });
+      const decisions = await ingestCaptureRecords(
+        db,
+        files(validRecord({ createdAt: staleCreated() }), second),
+        new Set([PET]),
+        NOW,
+        1,
+      );
+      expect(decisions.map((d) => [d.action, d.reason])).toEqual([
+        ['applied', undefined],
+        ['deferred', 'pass cap'],
+      ]);
+    });
+
+    it('defers, never drops, an old valid record the sign-out fence stopped', async () => {
+      const decisions = await ingestCaptureRecords(
+        db,
+        files(validRecord({ createdAt: staleCreated() })),
+        new Set([PET]),
+        NOW,
+        MAX_INGEST_PER_PASS,
+        () => true,
+      );
+      expect(decisions).toEqual([{ name: '0.json', action: 'deferred', reason: 'signed out' }]);
+    });
+
+    it('keeps a classify-level deferral (a newer schema) however old it is', async () => {
+      const newer = validRecord({
+        schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION + 1,
+        createdAt: staleCreated(),
+      });
+      const decisions = await ingestCaptureRecords(db, files(newer), new Set([PET]), NOW);
+      expect(decisions[0].action).toBe('deferred');
+    });
+
+    it('a record one second inside the window still defers when it cannot land', async () => {
+      const edge = new Date(NOW.getTime() - INBOX_MAX_AGE_DAYS * 24 * 60 * 60 * 1000 + 1000).toISOString();
+      const foreign = validRecord({ petId: '99999999-9999-4999-9999-999999999999', createdAt: edge });
+      const decisions = await ingestCaptureRecords(db, files(foreign), new Set([PET]), NOW);
+      expect(decisions[0]).toMatchObject({ action: 'deferred', reason: 'pet not in account' });
+    });
+  });
+
   it('caps APPLIES per pass, not classification — a deferral never consumes the budget', async () => {
     const second = validRecord({
       id: '66666666-6666-4666-9666-666666666666',
@@ -355,6 +426,16 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
         )
         .run(ARR, PET, FOOD, overrides.active_until ?? null, overrides.deleted_at ?? null, OLD_STAMP, OLD_STAMP);
     }
+
+    it('CUL-2503: applies a 46-day-old top-up while its free-fed bowl is active, drops it once none is', async () => {
+      const stale = new Date(NOW.getTime() - (INBOX_MAX_AGE_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString();
+      const old = topUpRecord({ createdAt: stale, occurredAt: stale });
+      const none = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
+      expect(none[0]).toMatchObject({ action: 'dropped', reason: 'aged out (no active free-fed arrangement)' });
+      insertArrangement();
+      const some = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
+      expect(some[0].action).toBe('applied');
+    });
 
     it('bumps the active arrangement to the TAP time, queues the push, writes no event/meal/rating', async () => {
       insertArrangement();
