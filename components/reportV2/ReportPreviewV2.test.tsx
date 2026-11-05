@@ -27,10 +27,11 @@ import {
   lockedPreviewHtml,
   type ReportPreviewV2Props,
 } from './ReportPreviewV2';
-import { EXAM_CSP, EXAM_VIEWPORT } from '../../lib/examRoom';
+import { EXAM_CSP, EXAM_VIEWPORT, FRAME_LOCK_HEAD } from '../../lib/examRoom';
 
-const CSP_META = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
-/** The document a frame shows, with the CSP checked and taken back out: the rest is the server's. */
+// CUL-2469: every frame opens with the one lock (CSP, prefetch off, the lock script).
+const CSP_META = FRAME_LOCK_HEAD;
+/** The document a frame shows, with the lock checked and taken back out: the rest is the server's. */
 function unboxed(source: unknown): string {
   const html = (source as { html: string }).html;
   expect(html.split(CSP_META)).toHaveLength(2);

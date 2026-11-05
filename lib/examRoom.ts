@@ -144,12 +144,111 @@ export const EXAM_CSP =
  */
 export const REPORT_WEBVIEW_ORIGINS: string[] = ['*'];
 
-/** The document with the room's CSP as the first thing in its head; null when it has no head. */
+/**
+ * NO DNS PREFETCH FROM A REPORT DOCUMENT (CUL-2495, CUL-2469). A resolver lookup is not a fetch,
+ * so the CSP cannot stop one: an `<a href>` host or a `dns-prefetch` hint would ping a chosen
+ * name when the page opens. Both engines honour this switch from a meta in the document.
+ */
+export const PREFETCH_OFF_META = '<meta http-equiv="x-dns-prefetch-control" content="off">';
+
+/** The room's CSP as a head element. */
+export const EXAM_CSP_META = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
+
+/**
+ * Elements no report document carries (the renderers and this module emit none), each a path out
+ * a CSP does not close: a frame or object is a fresh realm (a pristine `RTCPeerConnection`, a
+ * `window.open`) the lock script cannot reach, and a `<link>` is a dns-prefetch / preconnect /
+ * prefetch hint, which the browser acts on as the element lands.
+ */
+export const FRAME_REFUSED_TAGS = ['iframe', 'frame', 'frameset', 'object', 'embed', 'portal', 'fencedframe', 'link'] as const;
+
+/**
+ * The frame lock (CUL-2469). It runs first in every report document, before any of the server's
+ * markup, so it holds against a script an escaping miss upstream let in:
+ *  - WebRTC is gone: a peer connection's STUN lookup leaves the frame by DNS/UDP, which no CSP
+ *    directive governs in either engine.
+ *  - `window.open` returns null, so no popup document exists to write into.
+ *  - No refused element can be put into the document by script: node insertions are checked
+ *    before they land (a frame's load event fires synchronously on insertion, so removing it
+ *    afterwards is too late) and HTML strings are parsed inert in a template first. The parser's
+ *    own copies never exist, because `withExamCsp` renames those tags before the page loads.
+ * Every lock is non-writable and non-configurable, so a later script cannot undo it. The server's
+ * scripts insert no nodes at all (`lib/examRoom.test.ts` reads them), so nothing they do is lost.
+ */
+export const FRAME_LOCK_SCRIPT = `(function(){
+'use strict';
+var w=window,d=document,O=Object;
+function lock(o,k,v){try{O.defineProperty(o,k,{value:v,writable:false,configurable:false});}catch(e){}}
+var rtc=['RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection','RTCDataChannel','RTCIceCandidate','RTCIceTransport','RTCDtlsTransport','RTCSctpTransport','RTCSessionDescription','RTCRtpSender','RTCRtpReceiver','RTCRtpTransceiver','RTCCertificate','RTCDTMFSender','RTCRtpScriptTransform'];
+for(var i=0;i<rtc.length;i++)lock(w,rtc[i],undefined);
+lock(w,'open',function(){return null;});
+var SEL='${FRAME_REFUSED_TAGS.join(',')}';
+function refused(n){return !!n&&n.nodeType===1&&typeof n.matches==='function'&&n.matches(SEL);}
+function clean(n){
+if(!n||typeof n!=='object')return n;
+if(refused(n))throw new TypeError('refused');
+if((n.nodeType===1||n.nodeType===11)&&n.querySelectorAll){var q=n.querySelectorAll(SEL);for(var j=q.length-1;j>=0;j--){if(q[j].parentNode)q[j].parentNode.removeChild(q[j]);}}
+return n;}
+function guardNodes(proto,names){if(!proto)return;names.forEach(function(k){var f=proto[k];if(typeof f!=='function')return;lock(proto,k,function(){for(var a=0;a<arguments.length;a++)clean(arguments[a]);return f.apply(this,arguments);});});}
+var NODE_INSERTS=['appendChild','insertBefore','replaceChild'];
+var CHILD_INSERTS=['append','prepend','after','before','replaceWith','replaceChildren','insertAdjacentElement','moveBefore'];
+guardNodes(w.Node&&Node.prototype,NODE_INSERTS);
+[w.Element,w.CharacterData,w.DocumentType,w.Document,w.DocumentFragment].forEach(function(C){if(C)guardNodes(C.prototype,CHILD_INSERTS);});
+if(w.Range){guardNodes(Range.prototype,['insertNode','surroundContents']);}
+var mk=d.createElement.bind(d);
+var tplSet=O.getOwnPropertyDescriptor(Element.prototype,'innerHTML').set;
+function frag(html){var t=mk('template');tplSet.call(t,String(html));return clean(t.content);}
+var ins=Element.prototype.insertBefore||Node.prototype.insertBefore;
+var rc=Element.prototype.replaceChildren;var rw=Element.prototype.replaceWith;
+function setter(proto,k,fn){if(!proto||!O.getOwnPropertyDescriptor(proto,k))return;try{O.defineProperty(proto,k,{get:O.getOwnPropertyDescriptor(proto,k).get,set:fn,configurable:false});}catch(e){}}
+setter(Element.prototype,'innerHTML',function(v){if(this.localName==='template'){tplSet.call(this,v);clean(this.content);return;}rc.call(this,frag(v));});
+setter(Element.prototype,'outerHTML',function(v){rw.call(this,frag(v));});
+if(w.ShadowRoot)setter(ShadowRoot.prototype,'innerHTML',function(){throw new TypeError('refused');});
+lock(Element.prototype,'insertAdjacentHTML',function(pos,v){var f=frag(v),p=String(pos).toLowerCase(),par=this.parentNode;
+if(p==='beforebegin'){if(par)ins.call(par,f,this);}else if(p==='afterbegin'){ins.call(this,f,this.firstChild);}else if(p==='beforeend'){ins.call(this,f,null);}else if(p==='afterend'){if(par)ins.call(par,f,this.nextSibling);}else{throw new TypeError('refused');}});
+function no(){throw new TypeError('refused');}
+lock(Element.prototype,'attachShadow',no);lock(Element.prototype,'setHTMLUnsafe',no);
+if(w.ShadowRoot)lock(ShadowRoot.prototype,'setHTMLUnsafe',no);
+['write','writeln','open','execCommand'].forEach(function(k){lock(Document.prototype,k,no);});
+lock(Document.prototype,'createElement',function(n){var e=mk(n);if(refused(e))throw new TypeError('refused');return e;});
+var mkNS=Document.prototype.createElementNS;
+lock(Document.prototype,'createElementNS',function(){var e=mkNS.apply(this,arguments);if(refused(e))throw new TypeError('refused');return e;});
+})();`;
+
+/** The lock every report frame's document opens its head with: CSP, prefetch off, the lock script. */
+export const FRAME_LOCK_HEAD = `${EXAM_CSP_META}${PREFETCH_OFF_META}<script>${FRAME_LOCK_SCRIPT}</script>`;
+
+/**
+ * The refused elements renamed inert before the parser sees them (CUL-2495, CUL-2469): a start
+ * or end tag the tokenizer would read as one becomes an unknown `x-refused-*` element, which
+ * loads, hints and opens nothing. The tokenizer folds ASCII case only, so `/i` matches exactly
+ * what it reads as the tag. Escaped text (`&lt;iframe`) is untouched.
+ */
+export function neutralizeRefusedTags(html: string): string {
+  return html.replace(new RegExp(`<(/?)(${FRAME_REFUSED_TAGS.join('|')})(?=[\\s/>]|$)`, 'gi'), '<$1x-refused-$2');
+}
+
+/**
+ * The document with the room's CSP as the first thing in its head; null when it has no head. The
+ * v1 preview's box only (`app/report.tsx`, CUL-2527): every v2 report frame takes `withFrameLock`.
+ */
 export function withExamCsp(html: string): string | null {
   const m = /<head[^>]*>/i.exec(html);
   if (!m) return null;
   const at = m.index + m[0].length;
-  return `${html.slice(0, at)}<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">${html.slice(at)}`;
+  return `${html.slice(0, at)}${EXAM_CSP_META}${html.slice(at)}`;
+}
+
+/**
+ * A v2 report document with the frame lock as the first thing in its head (CSP, prefetch off, the
+ * lock script) and its refused tags renamed inert; null when it has no head. Every v2 frame's
+ * document goes through here (`examRoomHtml`, the room's printed page, `boxedPreviewHtml`).
+ */
+export function withFrameLock(html: string): string | null {
+  const m = /<head[^>]*>/i.exec(html);
+  if (!m) return null;
+  const at = m.index + m[0].length;
+  return neutralizeRefusedTags(`${html.slice(0, at)}${FRAME_LOCK_HEAD}${html.slice(at)}`);
 }
 
 /**
@@ -289,5 +388,5 @@ export function examRoomHtml(phoneHtml: string, ground: string): string | null {
   const at = locked.lastIndexOf('</body>');
   const withScript = `${locked.slice(0, at)}${EXAM_SCRIPT}\n${locked.slice(at)}`;
   const head = withScript.indexOf('</head>');
-  return withExamCsp(`${withScript.slice(0, head)}${examStyle(ground)}\n${withScript.slice(head)}`);
+  return withFrameLock(`${withScript.slice(0, head)}${examStyle(ground)}\n${withScript.slice(head)}`);
 }
