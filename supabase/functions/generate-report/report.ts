@@ -4991,15 +4991,21 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const INTAKE_WORST: readonly IntakeRating[] = ['refused', 'picked', 'some', 'most', 'all']
   const worse = (a: IntakeRating | null, b: IntakeRating | null): IntakeRating | null =>
     a === null ? b : b === null ? a : INTAKE_WORST.indexOf(a) <= INTAKE_WORST.indexOf(b) ? a : b
+  // Normalised as `feedingWasFinished` reads them; a value outside the five is unrecorded, never
+  // ranked above "refused" (adversarial pass 2, hardening).
+  const norm = (r: string | null): IntakeRating | null => {
+    const k = r?.trim().toLowerCase() ?? null
+    return k !== null && (INTAKE_WORST as readonly string[]).includes(k) ? (k as IntakeRating) : null
+  }
   const rawIntake = new Map<string, IntakeRating | null>()
   for (const e of input.events) {
-    if (e.type === 'meal' && e.meal) rawIntake.set(e.id, e.meal.intakeRating)
+    if (e.type === 'meal' && e.meal) rawIntake.set(e.id, norm(e.meal.intakeRating))
   }
   const mealIntakeOf = new Map<string, IntakeRating | null>(rawIntake)
   for (const e of dedupedAll) {
     if (e.type !== 'meal' || !e.meal) continue
     const ids = [e.id, ...e.memberEventIds]
-    let r: IntakeRating | null = e.meal.intakeRating
+    let r: IntakeRating | null = norm(e.meal.intakeRating)
     for (const id of ids) r = worse(r, rawIntake.get(id) ?? null)
     for (const id of ids) mealIntakeOf.set(id, r)
   }

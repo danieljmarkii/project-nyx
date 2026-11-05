@@ -222,3 +222,21 @@ Deno.test('adversarial 1 (LOUD) — "ate most" is not "left unfinished" in the p
   const picked = plain(partialVehicleSentence({ partialDoseVehicles: { partial: 1, inMeal: 1, rated: [{ rating: 'picked', n: 1 }], unrated: 0, pairedUnread: 0, notPaired: 0 } }))
   assert.match(picked, /left unfinished/)
 })
+
+// ── Adversarial pass 2's QUIET breaks, held ─────────────────────────────────
+
+Deno.test('adversarial 2 (QUIET) — a weight loss with no meal logged says intake is unknown, never silence', () => {
+  const s = fixture('nyx-live')
+  s.diet.mealItems = []
+  assert.match(plain(weightFlagIntakeBit(s)), /No meal is logged in this window, so this record cannot show how much Nyx is eating\./)
+})
+
+Deno.test('adversarial 2 (QUIET) — a window-end row whose reading is still the latest on record counts its age to the generation day', () => {
+  const s = fixture('nyx-live')
+  const w = s.safetyFlags.find((f) => f.kind === 'weight_loss')!
+  if (w.kind !== 'weight_loss') throw new Error('fixture')
+  s.scope = { ...s.scope, endDate: '2026-09-25' }
+  const windowEnd = { ...w, asOf: 'window_end' as const }
+  const row = plain(safetyFlagRow(windowEnd, s, undefined, undefined, true))
+  assert.match(row, /No weigh-in is recorded after it: it is 45 days \(6 weeks\) before Oct 31, 2026, when this report was generated/, row)
+})

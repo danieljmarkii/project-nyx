@@ -3646,9 +3646,12 @@ export function weightRecencyBit(
 
 function weightFlagRecency(f: Extract<SafetyFlag, { kind: 'weight_loss' }>, snap: ReportSnapshot): string {
   const generated = localDayKeyOf(snap.generatedAt, snap.timezone)
-  const anchorDay = f.asOf === 'now' ? generated : snap.scope.endDate
   const latestOnRecord = !snap.weight.latest || snap.weight.latest.date <= f.latest.day
-  return weightRecencyBit(f.latest.day, anchorDay, f.asOf === 'now' ? 'generated' : 'window_end', latestOnRecord)
+  // Adversarial pass 2 (QUIET): a window-end row whose reading is still the latest on record counts
+  // to the generation day too, or a 93-day-old reading on a past window printed no age beside "it
+  // does not read so today". Only a reading a later one superseded is counted to the window's end.
+  const toGenerated = f.asOf === 'now' || latestOnRecord
+  return weightRecencyBit(f.latest.day, toGenerated ? generated : snap.scope.endDate, toGenerated ? 'generated' : 'window_end', latestOnRecord)
 }
 
 /**
@@ -3660,7 +3663,11 @@ function weightFlagRecency(f: Extract<SafetyFlag, { kind: 'weight_loss' }>, snap
  */
 export function weightFlagIntakeBit(snap: ReportSnapshot): string {
   const { logged, rated } = mealCounts(snap.diet)
-  if (logged === 0 || rated >= logged) return ''
+  // Adversarial pass 2 (QUIET): no meal logged at all is the extreme case, never a silence.
+  if (logged === 0) {
+    return ` <b>No meal is logged in this window</b>, so this record cannot show how much ${h(snap.signalment.name)} is eating.`
+  }
+  if (rated >= logged) return ''
   return ` <b>Intake was recorded for ${num(rated)} of ${num(logged)} meal${logged === 1 ? '' : 's'} logged in this window</b>, so this record cannot show how much ${h(
     snap.signalment.name,
   )} is eating.`
@@ -9190,7 +9197,9 @@ export function partialVehicleSentence(m: Pick<MedicationAdherence, 'partialDose
   const notFinished = v.rated.filter((r) => flagCountsUnfinished(r.rating)).reduce((a, r) => a + r.n, 0)
   const why =
     notFinished > 0 || unknownIntake > 0
-      ? ` A partial dose inside food that was ${notFinished > 0 ? 'left unfinished' : 'never rated'} may be the food going uneaten, not a smaller dose${
+      ? ` A partial dose inside food that was ${
+          notFinished > 0 ? 'left unfinished' : v.unrated > 0 ? 'never rated' : 'not read by this report'
+        } may be the food going uneaten, not a smaller dose${
           notFinished > 0 && unknownIntake > 0 ? '; where intake was not recorded, this record cannot tell the two apart' : ''
         }.`
       : ''
@@ -10097,7 +10106,8 @@ function narrowTrialRefusal(snap: ReportSnapshot): { refused: number; rated: num
 
 /** Below "ate most": the flag's unfinished threshold (`feedingWasFinished` reads most/all as finished). */
 function flagCountsUnfinished(r: string): boolean {
-  return r !== 'all' && r !== 'most'
+  const k = r.trim().toLowerCase()
+  return k !== 'all' && k !== 'most'
 }
 
 /**
