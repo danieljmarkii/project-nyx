@@ -1,0 +1,93 @@
+{
+ "fixture": "bakeoff-nyx",
+ "n": 4,
+ "result": {
+  "outcome": "rejected",
+  "reason": "verifier"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "verifier",
+   "fact_hash": "d386ab6c33cafe0d3d2cfa13fa4a2d13842637356f536cb4053fa7cf69f0926c",
+   "prompt": "vr2-lead-5",
+   "verifier": "vr2-6",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": null,
+   "sentences": null,
+   "verifier_errors": [
+    {
+     "sentence": 3,
+     "check": "order"
+    }
+   ],
+   "checker": null,
+   "attempts": 2,
+   "at": "2026-11-05T19:40:43.682Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+      "cites": [
+       "S1"
+      ]
+     },
+     {
+      "text": "Free-fed all day: Nature's Variety Duck and Royal Canin Weight Care, intake not directly observed.",
+      "cites": [
+       "L2"
+      ]
+     },
+     {
+      "text": "The record was logged on 43 of 90 days, with nothing logged Jul 1 to 2.",
+      "cites": [
+       "W"
+      ]
+     }
+    ]
+   },
+   "ms": 13771
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+      "cites": [
+       "S1"
+      ]
+     },
+     {
+      "text": "Nyx was logged on 43 of 90 days, and her first entry of any kind is May 14; nothing logged Jul 1 to 2.",
+      "cites": [
+       "W"
+      ]
+     },
+     {
+      "text": "Unknown: what she ate from the free-fed bowls.",
+      "cites": [
+       "U2"
+      ]
+     }
+    ]
+   },
+   "ms": 13267
+  }
+ ],
+ "wall_ms": 27059
+}
