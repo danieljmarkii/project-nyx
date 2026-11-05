@@ -589,8 +589,18 @@ export const CHECK_BLIND_REASONS: ReadonlyArray<LeftReason> = [
   'folder_not_reached',
 ]
 
+// File reasons counted only inside a folder already PROVED gone: every such file belongs to
+// a deleted pet, food or account, and no run will ever remove it (its key has a depth the
+// bucket's writer does not produce, or it has no timestamp). That is the writer/rule
+// mismatch CUL-2311 guards against, so it reads as overdue, every day, until a person
+// looks (rls-privacy-reviewer F2 on CUL-2521). The folder-level anomalies
+// (`folder_unknown_shape`, `file_at_root`, `folder_not_retired`, `bucket_unknown`) are
+// left out: their owner was never proved gone.
+export const CHECK_STUCK_REASONS: ReadonlyArray<LeftReason> = ['file_unknown_shape', 'file_no_timestamp']
+
 export interface CheckVerdict {
-  // At least one file of a proved-gone owner was due at the run's start and is still here.
+  // At least one file of a proved-gone owner was due at the run's start and is still here,
+  // or is in a shape no run can remove.
   overdue: boolean
   // The check could not read everything, so a clean answer would prove nothing.
   incomplete: boolean
@@ -600,7 +610,9 @@ export interface CheckVerdict {
 // counter answers every key as removed), so any count there is a file the morning run
 // left behind.
 export function checkVerdict(report: SweepReport): CheckVerdict {
-  const overdue = Object.values(report.removed).some((n) => n > 0)
+  const overdue =
+    Object.values(report.removed).some((n) => n > 0) ||
+    Object.values(report.left).some((reasons) => CHECK_STUCK_REASONS.some((r) => (reasons[r] ?? 0) > 0))
   const incomplete = Object.values(report.left).some((reasons) =>
     CHECK_BLIND_REASONS.some((r) => (reasons[r] ?? 0) > 0),
   )

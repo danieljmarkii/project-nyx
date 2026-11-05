@@ -12,6 +12,7 @@ import { STORAGE_BUCKETS, type UserProbe } from '../delete-account/plan.ts'
 import {
   BUCKET_RULES,
   CHECK_BLIND_REASONS,
+  CHECK_STUCK_REASONS,
   CHECK_HOUR_UTC,
   CHECK_MARKER,
   CHECK_MINUTE_UTC,
@@ -669,7 +670,10 @@ Deno.test('CUL-2521: checkVerdict reads every blind reason, and only those', () 
   for (const r of CHECK_BLIND_REASONS) {
     assertEquals(checkVerdict({ removed: {}, folders: {}, left: { b: { [r]: 1 } } }).incomplete, true, r)
   }
-  for (const r of ['file_in_grace', 'folder_owner_may_return', 'bucket_unknown', 'file_unknown_shape'] as const) {
+  for (const r of CHECK_STUCK_REASONS) {
+    assertEquals(checkVerdict({ removed: {}, folders: {}, left: { b: { [r]: 1 } } }), { overdue: true, incomplete: false }, r)
+  }
+  for (const r of ['file_in_grace', 'folder_owner_may_return', 'bucket_unknown', 'folder_unknown_shape'] as const) {
     assertEquals(checkVerdict({ removed: {}, folders: {}, left: { b: { [r]: 3 } } }), { overdue: false, incomplete: false }, r)
   }
   assertEquals(checkVerdict({ removed: { b: 0 }, folders: {}, left: {} }).overdue, false)
@@ -694,4 +698,22 @@ Deno.test('index.ts — CUL-2521: the check runs on an IO whose remove deletes n
   assert(branch.includes('runSweep(checkIO(admin)'), branch)
   assert(branch.includes('asOf: runStartOf(startedAt)'), branch)
   assert(!branch.includes('sweepIO('), 'the check branch reaches the deleting IO')
+})
+
+Deno.test('CUL-2521 F2: a deleted pet\'s file at a depth its bucket never writes is overdue, not clean', async () => {
+  const runStart = atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC)
+  const w: World = {
+    // nyx-vet-documents is two segments; a drifted writer's three-segment key no run removes.
+    objects: { [STORAGE_BUCKETS.vetDocuments]: { [`${DEAD_PET}/r1/report.pdf`]: obj(OLD) } },
+    pets: [],
+    foods: [],
+    users: {},
+    retired: {},
+  }
+  // The morning run leaves it (it cannot remove an unknown shape)...
+  const calls: Calls = { removed: [], listed: [] }
+  await runSweep(fakeIO(w, calls), { now: () => runStart + 60_000 })
+  assertEquals(removedKeys(calls), [])
+  // ...and the check says so.
+  assertEquals((await check(w, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 5))).verdict, { overdue: true, incomplete: false })
 })

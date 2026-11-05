@@ -14,7 +14,8 @@
 // down with it.
 //
 // WHAT IT CANNOT SEE, stated. A stopped sweep with nothing to remove raises nothing, because nothing is at risk;
-// the first file past due raises it the same day. And a folder whose owner was deleted after the morning run
+// the first file past due raises it the same day. Folder-level oddities whose owner was never proved gone (a
+// non-uuid top-level folder, a file at a bucket's root, an unknown bucket) do not alert. And a folder whose owner was deleted after the morning run
 // started, still holding files delete-account's own sweep missed, reads as overdue: a louder answer about a
 // real leftover, never a quieter one.
 //
@@ -84,7 +85,8 @@ export function findingText(outcome: Exclude<CheckOutcome, { kind: 'none' }>, da
   }
   const parts: string[] = []
   if (outcome.overdue) {
-    parts.push('files of a deleted pet, food or account that were due for removal at this morning\'s 09:23 UTC run are still stored')
+    parts.push('files of a deleted pet, food or account that were due for removal at this morning\'s 09:23 UTC run are still stored, ' +
+      'or are stored in a shape the sweep cannot remove (the run line\'s `file_unknown_shape` / `file_no_timestamp`)')
   }
   if (outcome.incomplete) parts.push('the check could not read every bucket or owner, so it cannot vouch for the rest')
   return `**${dayIso}: ${parts.join('; and ')}.**${run}`
