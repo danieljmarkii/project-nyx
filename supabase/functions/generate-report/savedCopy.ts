@@ -84,8 +84,9 @@ export function snapshotForCopy(snapshot: unknown): Record<string, unknown> {
   return out as Record<string, unknown>
 }
 
-/** What a keep request names. `sharedAt`: set only by the phone's retry of a keep the app was
- *  closed on (lib/reportKeep.ts drainPendingKeeps, CUL-2522), the time the report left the phone. */
+/** What a keep request names. `sharedAt`: when the report left the phone, which the app sends on
+ *  every try since CUL-2522 (a retry can land hours after the send). Absent from an older app,
+ *  whose keep is stamped now. Bounded to [the Preview, now] (`clampSentAt`). */
 export interface KeepRequest {
   reportId: string | null
   sharedVia: SharedVia | null
@@ -140,6 +141,9 @@ export interface StoredRow {
   storage_path: string
   content_sha256: string | null
   created_at: string
+  /** The latest departure stamp; null on a draft. Optional: a reader that predates the replay
+   *  (CUL-2522) may not carry it, and a replay then reads as later. */
+  shared_at?: string | null
 }
 
 export interface SavedCopyIO {
@@ -223,7 +227,7 @@ export function savedCopyIO(admin: SupabaseClient, key: CopyKey): SavedCopyIO {
       return !error
     },
     readRow: async (id) => {
-      const { data, error } = await admin.from('vet_reports').select('status, storage_path, content_sha256, created_at')
+      const { data, error } = await admin.from('vet_reports').select('status, storage_path, content_sha256, created_at, shared_at')
         .eq('id', id).eq('pet_id', key.petId).eq('generated_by', key.uid).maybeSingle()
       if (error) {
         warn('row read failed', error)
@@ -389,14 +393,19 @@ export async function keepCopy(
   const row = await io.readRow(req.reportId)
   if (row === 'error') return { status: 500, body: { error: 'Saved copy could not be read' } }
   if (row === null) return { status: 404, body: { error: 'Saved copy not found' } }
-  // A replay's departure is the phone's own send time, held between the Preview and now; a live
-  // keep's is now. So a keep the phone retries at the next open never stamps that open as the
-  // send (rls-privacy-reviewer F3, CUL-2522).
+  // A keep that names its send time is stamped with it, held between the Preview and now; one
+  // that does not (an older app) is stamped now. So a keep the phone retries at the next open, or
+  // after a background pause, never stamps that moment as the send (rls-privacy-reviewer F3).
   const at = new Date(replay ? clampSentAt(req.sharedAt as string, row.created_at, io.now()) : io.now()).toISOString()
   if (row.status === 'kept') {
-    // A replay of a keep that already landed (the app died before it cleared its row) changes
-    // nothing: this departure, or a later one, is already stamped.
-    if (replay) return { status: 200, body: { kept: true, first: false } }
+    // A timed keep of a copy already kept (a second send, or a retry of one that landed before
+    // the app could clear its row) stamps only a departure LATER than the one on the copy: an
+    // earlier one is already logged, and a later send must still reach 119's departures
+    // (rls-privacy-reviewer R1).
+    if (replay) {
+      const stamped = row.shared_at ? Date.parse(row.shared_at) : Number.NaN
+      if (Number.isFinite(stamped) && Date.parse(at) <= stamped) return { status: 200, body: { kept: true, first: false } }
+    }
     return (await io.restamp(req.reportId, req.sharedVia, at))
       ? { status: 200, body: { kept: true, first: false } }
       : { status: 500, body: { error: 'Saved copy could not be updated' } }

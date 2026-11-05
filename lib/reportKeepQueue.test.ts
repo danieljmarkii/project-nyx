@@ -29,10 +29,7 @@ const T0 = Date.parse('2026-11-05T12:00:00.000Z');
 function memoryLedger(seed: PendingKeep[] = []) {
   const rows = new Map(seed.map((r) => [r.reportId, r]));
   const ledger: KeepLedger = {
-    record: async (e) => {
-      const prior = rows.get(e.reportId);
-      rows.set(e.reportId, prior ? { ...e, queuedAt: prior.queuedAt } : e);
-    },
+    record: async (e) => void rows.set(e.reportId, e),
     clear: async (id) => void rows.delete(id),
     list: async () => [...rows.values()],
   };
@@ -223,6 +220,21 @@ describe('drainPendingKeeps', () => {
     const broken: KeepLedger = { record: async () => undefined, clear: async () => undefined, list: async () => { throw new Error('disk'); } };
     expect(await pendingKeepsBeforeSignOut(jest.fn(ok), broken, at(T0))).toBe(1);
   });
+
+  it('the sign-out drain is the last chance: it retries a row this launch already answered (adversarial pass 2, S1)', async () => {
+    const { ledger, rows } = memoryLedger();
+    expect(await keepReportCopy(report, 'email', jest.fn(err(null)), KEEP_RETRY_DELAYS_MS, noWait, ledger, at(T0))).toBe('failed');
+    const online = jest.fn(ok);
+    expect(await pendingKeepsBeforeSignOut(online, ledger, at(T0 + 1000))).toBe(0);
+    expect(online).toHaveBeenCalledTimes(1);
+    expect(rows.size).toBe(0);
+  });
+
+  it('a miss found before sign-out is still said if the owner stays signed in (rls R3)', async () => {
+    const { ledger } = memoryLedger([row()]);
+    expect(await pendingKeepsBeforeSignOut(jest.fn(err(404)), ledger, at(T0))).toBe(1);
+    expect(await drainPendingKeeps(jest.fn(err(404)), ledger, at(T0))).toEqual([missOf(row())]);
+  });
 });
 
 describe('pendingKeepMissNotice', () => {
@@ -259,14 +271,15 @@ describe('the sqlite ledger, over the shipped DDL', () => {
     };
   });
 
-  it('records, lists oldest first, keeps the first queue time on a second send, clears', async () => {
+  it('records, lists oldest first, takes the latest send of a report, clears', async () => {
     const ledger = sqliteKeepLedger(() => db);
     await ledger.record({ reportId: ID2, petId: PET, sharedVia: 'email', queuedAt: '2026-11-05T12:05:00.000Z' });
     await ledger.record({ reportId: ID, petId: PET, sharedVia: 'email', queuedAt: '2026-11-05T12:00:00.000Z' });
     await ledger.record({ reportId: ID, petId: PET, sharedVia: 'print', queuedAt: '2026-11-05T13:00:00.000Z' });
+    // The route and its time travel together, so a replay stamps the later departure (rls R1).
     expect(await ledger.list()).toEqual([
-      { reportId: ID, petId: PET, sharedVia: 'print', queuedAt: '2026-11-05T12:00:00.000Z' },
       { reportId: ID2, petId: PET, sharedVia: 'email', queuedAt: '2026-11-05T12:05:00.000Z' },
+      { reportId: ID, petId: PET, sharedVia: 'print', queuedAt: '2026-11-05T13:00:00.000Z' },
     ]);
     await ledger.clear(ID);
     expect((await ledger.list()).map((r) => r.reportId)).toEqual([ID2]);

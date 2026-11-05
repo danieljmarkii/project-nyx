@@ -601,13 +601,24 @@ describe('flushForSignOut (B-430)', () => {
     (getSyncStatus as jest.Mock).mockResolvedValue({
       pendingCount: 3, oldestPendingAt: '2026-07-01T08:00:00.000Z', quarantinedCount: 2,
     });
-    expect(await flushForSignOut()).toEqual({ pendingCount: 3, quarantinedCount: 2 });
+    expect(await flushForSignOut()).toEqual({ pendingCount: 3, quarantinedCount: 2, keepCount: 0 });
   });
 
   it('counts a sent report whose copy is still waiting to be kept as unsent (CUL-2522, rls F2)', async () => {
     (getSyncStatus as jest.Mock).mockResolvedValue({ pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 });
     mockPendingKeeps.mockResolvedValueOnce(2);
-    expect(await flushForSignOut()).toEqual({ pendingCount: 2, quarantinedCount: 0 });
+    expect(await flushForSignOut()).toEqual({ pendingCount: 0, quarantinedCount: 0, keepCount: 2 });
+  });
+
+  it('names an unkept report copy as what it is, never as an "entry" (adversarial pass 2, S1)', () => {
+    const only = unsentSignOutWarning({ pendingCount: 0, quarantinedCount: 0, keepCount: 1 });
+    expect(only?.title).toBe('A report copy isn’t saved yet');
+    expect(only?.message).toMatch(/^A copy of a vet report you sent isn’t saved to your vet reports yet\. /);
+    expect(only?.message).not.toMatch(/entr/);
+    const both = unsentSignOutWarning({ pendingCount: 2, quarantinedCount: 0, keepCount: 3 });
+    expect(both?.message).toMatch(/2 entries haven't reached your records yet\. 3 copies of vet reports you sent aren’t saved/);
+    expect(unsentSignOutWarning({ pendingCount: 0, quarantinedCount: 0, keepCount: 0 })).toBeNull();
+    expect(JSON.stringify([only, both])).not.toMatch(/!/);
   });
 
   it('never blocks sign-out when the flush itself fails', async () => {
@@ -617,7 +628,7 @@ describe('flushForSignOut (B-430)', () => {
     (getSyncStatus as jest.Mock).mockResolvedValue({
       pendingCount: 4, oldestPendingAt: null, quarantinedCount: 0,
     });
-    await expect(flushForSignOut()).resolves.toEqual({ pendingCount: 4, quarantinedCount: 0 });
+    await expect(flushForSignOut()).resolves.toEqual({ pendingCount: 4, quarantinedCount: 0, keepCount: 0 });
   });
 
   it('FAILS TOWARD WARNING when it cannot tell — silence would read as all-clear', async () => {

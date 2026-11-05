@@ -110,7 +110,7 @@ function fakeIO(opts: { failInsert?: boolean; failUpload?: boolean; failStamp?: 
     },
     readRow: async (id) => {
       const r = rows.get(id)
-      return r ? { status: r.status, storage_path: r.storage_path, content_sha256: r.content_sha256, created_at: r.created_at } : null
+      return r ? { status: r.status, storage_path: r.storage_path, content_sha256: r.content_sha256, created_at: r.created_at, shared_at: r.shared_at } : null
     },
     download: async (path) => objects.get(path) ?? null,
     markKept: async (id, via, at, sha, lead) => {
@@ -437,6 +437,18 @@ Deno.test('a replayed keep stamps the phone send time, bounded by the Preview an
   const k = await savedOne()
   await keepCopy(k.io, { reportId: ID, sharedVia: 'email', sharedAt: '2099-01-01T00:00:00.000Z' }, async () => NO_LEAD)
   assert.equal(Date.parse(k.rows.get(ID)!.shared_at as string), NOW)
+})
+
+Deno.test('a replay of a LATER send the app died on still stamps that departure (rls R1)', async () => {
+  const f = await savedOne()
+  f.rows.get(ID)!.created_at = new Date(NOW - 600_000).toISOString()
+  // Email kept a while ago, then a share whose keep the app died on.
+  await keepCopy(f.io, { reportId: ID, sharedVia: 'email', sharedAt: new Date(NOW - 300_000).toISOString() }, async () => NO_LEAD)
+  const later = new Date(NOW - 60_000).toISOString()
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'share', sharedAt: later }, async () => NO_LEAD)
+  assert.deepEqual(out, { status: 200, body: { kept: true, first: false } })
+  assert.equal(f.rows.get(ID)!.shared_at, later)
+  assert.equal(f.rows.get(ID)!.shared_via, 'share')
 })
 
 Deno.test('a replay of a keep that already landed changes nothing on the kept copy (rls F3)', async () => {

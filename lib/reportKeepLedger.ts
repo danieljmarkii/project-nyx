@@ -35,12 +35,13 @@ export interface LedgerDb {
 export function sqliteKeepLedger(db: () => LedgerDb = getDb): KeepLedger {
   return {
     record: async (e) => {
-      // A second keep of the same report (sent again by another route) keeps the FIRST queue
-      // time: the server's window runs from the Preview, and the earlier time is the nearer
-      // bound to it.
+      // A second send of the same report replaces the row with ITS route and time: a replay
+      // stamps one departure, and the latest is the one the copy's stamp shows (the server only
+      // ever moves it later; rls-privacy-reviewer R1). The window is the server's, from the
+      // Preview, so a later queue time never extends it.
       await db().runAsync(
         `INSERT INTO pending_report_keeps (report_id, pet_id, shared_via, queued_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(report_id) DO UPDATE SET shared_via = excluded.shared_via`,
+         ON CONFLICT(report_id) DO UPDATE SET shared_via = excluded.shared_via, queued_at = excluded.queued_at`,
         e.reportId, e.petId, e.sharedVia, e.queuedAt,
       );
     },

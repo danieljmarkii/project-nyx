@@ -98,6 +98,8 @@ export async function purgeStoredAuthSession(): Promise<boolean> {
 export async function flushForSignOut(): Promise<{
   pendingCount: number;
   quarantinedCount: number;
+  /** Sent vet reports whose copy is not yet kept (CUL-2522), named apart in the warning. */
+  keepCount: number;
 }> {
   await flushPendingForSignOut().catch((e) =>
     console.warn('[session] pre-sign-out flush failed:', e));
@@ -107,8 +109,9 @@ export async function flushForSignOut(): Promise<{
   try {
     const status = await getSyncStatus();
     return {
-      pendingCount: status.pendingCount + keeps,
+      pendingCount: status.pendingCount,
       quarantinedCount: status.quarantinedCount,
+      keepCount: keeps,
     };
   } catch (e) {
     // A status read that fails tells us nothing, and "nothing" must not read as
@@ -116,7 +119,7 @@ export async function flushForSignOut(): Promise<{
     // device most likely to be holding unsent rows. Report one unsent item so the
     // owner is asked rather than assumed-at.
     console.warn('[session] pre-sign-out status read failed:', e);
-    return { pendingCount: 1, quarantinedCount: 0 };
+    return { pendingCount: 1, quarantinedCount: 0, keepCount: keeps };
   }
 }
 
@@ -133,14 +136,26 @@ export async function flushForSignOut(): Promise<{
 export function unsentSignOutWarning(counts: {
   pendingCount: number;
   quarantinedCount: number;
+  keepCount?: number;
 }): { title: string; message: string } | null {
   const total = counts.pendingCount + counts.quarantinedCount;
-  if (total <= 0) return null;
+  const keeps = counts.keepCount ?? 0;
+  if (total <= 0 && keeps <= 0) return null;
+  // CUL-2522: a sent report whose copy is not kept is named as what it is, never as an "entry".
+  const copies = keeps === 1
+    ? 'A copy of a vet report you sent isn’t saved to your vet reports yet.'
+    : `${keeps} copies of vet reports you sent aren’t saved to your vet reports yet.`;
+  if (total <= 0) {
+    return {
+      title: 'A report copy isn’t saved yet',
+      message: `${copies} Signing out clears this phone, so it would be lost. You can stay signed in and try again later.`,
+    };
+  }
   const entries = total === 1 ? '1 entry' : `${total} entries`;
   return {
     title: 'Some entries are still on this phone',
     message:
-      `${entries} haven't reached your records yet. Signing out clears this ` +
+      `${entries} haven't reached your records yet.` + (keeps > 0 ? ` ${copies}` : '') + ' Signing out clears this ' +
       'phone, so they would be lost. You can stay signed in and try again later.',
   };
 }
