@@ -2,12 +2,12 @@
 // that what it builds is what the payload allowlist accepts.
 import assert from 'node:assert/strict'
 import { checkSummaryPayload, OWNER_WORDS_KEYS } from '../../_shared/reportSummaryGate.ts'
-import { buildDocumentV2, type DocumentV2 } from '../documentV2.ts'
+import { buildDocumentV2, textOf, type DocumentV2 } from '../documentV2.ts'
 import { assembleReport, type ReportSnapshot } from '../report.ts'
 import { cooperInput } from '../cooperDemo.testutil.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
 import { juniper } from '../v2Fixtures.testutil.ts'
-import { buildLeadFacts, canonicalJson, factTableHash } from './facts.ts'
+import { bottomLineId, buildLeadFacts, canonicalJson, factTableHash, trialReadingSentences } from './facts.ts'
 
 const OPTS = { owner: null, shortId: null, questions: [] as string[] }
 const ctxOf = (s: ReportSnapshot) => ({
@@ -35,18 +35,50 @@ Deno.test('every fixture payload passes the payload allowlist, and carries no ow
   }
 })
 
-Deno.test('the band leads the payload in the snapshot\'s safety order, with each item\'s label', () => {
+Deno.test('the band leads the payload in the order sheet 1 prints it, with each item\'s label (CUL-2532)', () => {
   const doc = buildDocumentV2(nyx, OPTS)
   const band = doc.blocks.find((b) => b.kind === 'band')
   if (!band || band.kind !== 'band') throw new Error('the Nyx record has a band')
   const f = eligible(doc, nyx)
-  // CUL-2381 ruling (a) reorders the PRINTED band; the payload keeps the snapshot's order (each id's
-  // index), the order the lead's band-first rule and its corpus were written against. Same members.
+  // CUL-2381 ruling (a) prints burden, weight loss and intake decline first; band item 1 of the lead
+  // is the band's first PRINTED row, so band-first opens the lead where the band opens.
+  assert.deepEqual(f.payload.band.map((b) => [b.id, b.label]), band.items.map((i) => [i.id, i.tag]))
   const bySnapshot = [...band.items].sort((a, b) => Number(/^band-(\d+)-/.exec(a.id)![1]) - Number(/^band-(\d+)-/.exec(b.id)![1]))
-  assert.deepEqual(f.payload.band.map((b) => [b.id, b.label]), bySnapshot.map((i) => [i.id, i.tag]))
   assert.notDeepEqual(bySnapshot.map((i) => i.id), band.items.map((i) => i.id), 'Nyx exercises the reorder')
+  assert.equal(f.payload.band[0].label, 'Burden')
   assert.equal(f.table.safety_live, true)
-  assert.equal(f.table.facts.find((x) => x.id === bySnapshot[0].id)?.required, true)
+  assert.equal(f.table.facts.find((x) => x.id === band.items[0].id)?.required, true)
+  assert.equal(f.table.facts.filter((x) => x.role === 'band' && x.required).length, 1)
+})
+
+Deno.test('sheet 1\'s trial reading goes in, sentence by sentence, its bottom line required (CUL-2532)', () => {
+  for (const s of [cooper, nyx]) {
+    const doc = buildDocumentV2(s, OPTS)
+    const reading = doc.blocks.find((b) => b.kind === 'trial_reading')
+    if (!reading || reading.kind !== 'trial_reading' || !reading.html) throw new Error(`${s.signalment.name} prints a trial reading`)
+    const f = eligible(doc, s)
+    const lines = f.payload.record_lines.filter((l) => l.kind === 'trial_reading')
+    assert.ok(lines.length > 1, 'one line per sentence')
+    // Word for word: the sentences joined are the callout's text.
+    assert.equal(lines.map((l) => l.text).join(' '), textOf(reading.html).trim().replace(/\s+/g, ' ').replace(/\s+(?=\S)/g, ' '))
+    const required = f.table.facts.filter((x) => x.id.startsWith('trial-reading-') && x.required)
+    assert.equal(required.length, 1)
+    assert.match(String(required[0].text), /^The trial diet was not fed exclusively/)
+    assert.ok(required[0].must_say?.some((g) => g.includes('not fed exclusively')))
+    // The confounder is required beside the trial (the smoke bake-off's commonest omission).
+    assert.equal(f.table.facts.find((x) => x.id === 'confounder')?.required, true)
+  }
+})
+
+Deno.test('the bottom line falls back to "cannot be confirmed clean" when the diet was not shown broken', () => {
+  const lines = [
+    { id: 'trial-reading-1', kind: 'trial_reading', text: 'No allowed-food list is recorded, so nothing here has been checked against the trial.' },
+    { id: 'trial-reading-2', kind: 'trial_reading', text: 'For part of this window no trial diet was recorded, so the elimination cannot be confirmed clean from this record.' },
+  ]
+  assert.equal(bottomLineId(lines), 'trial-reading-2')
+  assert.equal(bottomLineId([lines[0]]), 'trial-reading-1')
+  assert.equal(bottomLineId([]), null)
+  assert.deepEqual(trialReadingSentences('One (a, b). Two 2.5 kg. Three.'), ['One (a, b).', 'Two 2.5 kg.', 'Three.'])
 })
 
 Deno.test('line 1 and the record lines go in; the gap lines and the owner\'s questions never do', () => {

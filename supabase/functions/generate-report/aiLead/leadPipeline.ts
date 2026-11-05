@@ -13,8 +13,8 @@
 //      turned off clears the stored lead instead of serving it.
 //   5. The gate, spending one count.
 //   6. The writer; the verifier on the printed sentences; one repair if it fails.
-//   7. The checker (Anthropic, another model); a material finding, or a minor one on H3 or H7,
-//      rejects; another minor finding gets the repair if it is unspent, then both checks again.
+//   7. The checker (Anthropic, another model, plus a code half that reads H7 by order, CUL-2548);
+//      a material finding, or a minor one on H3 or H7, rejects; another minor finding gets the repair if it is unspent, then both checks again.
 //   8. Keep the lead, its verdict and the served model on the draft row, and nowhere else.
 //
 // Every failure records its reason on the row and prints the lines alone. A 60 s wall clock
@@ -29,8 +29,8 @@ import { consentDecision, flagDecision, type SummaryGate } from '../../_shared/r
 import { factTableHash, type LeadFacts, type LeadFactPayload } from './facts.ts'
 import { modelFor, requestBody, ticketFor, type GateTicket, type ModelResult, type Role } from './model.ts'
 import { HAZARDS, PROMPT_VERSION, type Hazard, type HazardLevel } from './prompts.ts'
-import { LEAD_VERIFIER_VERSION, printedLeadText, printedSentences, verifyLead, type LeadSentence, type LeadSummary } from './verify.ts'
-import type { VerifyIssue } from './verifyCore.ts'
+import { bandOrderIssues, LEAD_VERIFIER_VERSION, printedLeadText, printedSentences, verifyLead, type LeadSentence, type LeadSummary } from './verify.ts'
+import type { FactTable, VerifyIssue } from './verifyCore.ts'
 
 export const LEAD_WALL_CLOCK_MS = 60_000
 const ROLE_TIMEOUT_MS: Record<Role, number> = { writer: 40_000, repair: 40_000, checker: 25_000 }
@@ -142,14 +142,26 @@ export function parseChecker(json: unknown): CheckerVerdict | null {
   return { takeaway: o.takeaway.slice(0, QUOTE_MAX), levels, quotes, omissions }
 }
 
-/** Bake-off spec §5's rule, plus omissions. 'reject': any material, or a minor on the safety
- *  direction (H3, H7). 'repair': another minor, or any omission. 'pass': none and no omission. */
-export function checkerDecision(v: CheckerVerdict): 'pass' | 'repair' | 'reject' {
+/** The checker model's verdict alone: bake-off spec §5's rule, plus omissions. 'reject': any
+ *  material, or a minor on the safety direction (H3, H7). 'repair': another minor, or any omission.
+ *  'pass': none and no omission. The recorded October verdicts replay through this. */
+export function modelDecision(v: CheckerVerdict): 'pass' | 'repair' | 'reject' {
   const ls = HAZARDS.map((h) => [h, v.levels[h]] as const)
   if (ls.some(([, l]) => l === 'material')) return 'reject'
   if (ls.some(([h, l]) => l === 'minor' && (h === 'H3' || h === 'H7'))) return 'reject'
   if (ls.some(([, l]) => l === 'minor') || v.omissions.length > 0) return 'repair'
   return 'pass'
+}
+
+/** The checker's decision (step 7): the model's verdict, and a code half that reads H7 by order.
+ *  The model passed a lead that buried a live flag under a count twice (October's S-arm Nyx drafts;
+ *  the smoke bake-off's cr-a, CUL-2548), so a draft whose sentence 1 is not band item 1 is H7
+ *  material here whatever the model said. The draft and the table are required: no caller can ask
+ *  for the model's half alone and call it the checker. The verifier's band-first rule reads the same
+ *  function and stays on; neither net depends on the other. */
+export function checkerDecision(v: CheckerVerdict, ctx: { table: FactTable; draft: LeadSummary }): 'pass' | 'repair' | 'reject' {
+  if (bandOrderIssues(ctx.table, { sentences: printedSentences(ctx.draft).map((text, i) => ({ text, cites: ctx.draft.sentences[i].cites })) }).length > 0) return 'reject'
+  return modelDecision(v)
 }
 
 /** Withdrawal at send (CUL-2331 promise 4, recommendation (a)): a draft's stored lead prints on a
@@ -255,7 +267,7 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
     const cv = parseChecker(r.json)
     if (!cv) return fail('checker_unparseable')
     verdict.checker = cv
-    const decision = checkerDecision(cv)
+    const decision = checkerDecision(cv, { table: facts.table, draft: summary })
     if (decision === 'reject') return reject('checker')
     if (decision === 'repair') {
       if (repairSpent) return reject('checker')

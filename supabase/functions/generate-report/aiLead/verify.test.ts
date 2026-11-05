@@ -19,10 +19,12 @@ const nyxFacts = buildLeadFacts(buildDocumentV2(nyxSnap, { owner: null, shortId:
 if (!nyxFacts.eligible) throw new Error('the live Nyx record is eligible for a lead')
 const nyxTable = nyxFacts.table
 
+// Band item 1 is the band's first PRINTED row: on Nyx, the burden flag (CUL-2381 ruling (a), CUL-2532).
+// The trial sentence carries the reading's bottom line and the confounder, both required beside it.
 const GOOD: LeadSentence[] = [
-  { text: 'Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.', cites: ['band-1-present_foreign'] },
+  { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] },
   { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] },
-  { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.', cites: ['trial'] },
+  { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026; the trial diet was not fed exclusively, and it is not a test of the diet alone.', cites: ['trial', 'trial-reading-3', 'confounder'] },
 ]
 
 function checks(sentences: LeadSentence[], table = nyxTable): string[] {
@@ -35,9 +37,9 @@ Deno.test('a careful three-sentence lead over the live Nyx record passes', () =>
   assert.equal(v.pass, true)
 })
 
-Deno.test('structure: four sentences, or more than 60 words in all, reject', () => {
+Deno.test('structure: four sentences, or more than 80 words in all, reject', () => {
   assert.ok(checks([...GOOD, { text: 'Vomiting was logged on 12 of 45 logged days.', cites: ['line-1'] }]).includes('structure'))
-  const long = { ...GOOD[1], text: `${GOOD[1].text.slice(0, -1)}, with 16 entries on 12 of 45 logged days and 16 entries on 12 of 45 logged days.` }
+  const long = { ...GOOD[1], text: `${GOOD[1].text.slice(0, -1)}, with 16 entries on 12 of 45 logged days and 16 entries on 12 of 45 logged days and 16 entries on 12 of 45 logged days.` }
   assert.ok(checks([GOOD[0], long, GOOD[2]]).includes('structure'))
 })
 
@@ -48,7 +50,7 @@ Deno.test('quotes: any quotation mark rejects, owner words or not', () => {
 
 Deno.test('band-first: band item 1 must lead, cited, its label in the first clause', () => {
   assert.ok(checks([GOOD[1], GOOD[0], GOOD[2]]).includes('band-first'))
-  const buried = { ...GOOD[0], text: 'On Sep 22, 1 vomiting incident showed possible foreign material on automated photo analysis, an AI read, unconfirmed.' }
+  const buried = { ...GOOD[0], text: 'In the last 7 days, 6 vomiting entries, on 3 days in a row, a burden.' }
   assert.ok(checks([buried, GOOD[1], GOOD[2]]).includes('band-first'))
   const uncited = { ...GOOD[0], cites: ['line-1'] }
   assert.ok(checks([uncited, GOOD[1], GOOD[2]]).includes('band-first'))
@@ -59,9 +61,42 @@ Deno.test('band-once: the band is restated in one sentence, no more', () => {
   assert.ok(checks([GOOD[0], again, GOOD[2]]).includes('band-once'))
 })
 
-Deno.test('scope: a cited line that says unconfirmed is never cited without it', () => {
-  const bare = { ...GOOD[0], text: 'Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis.' }
-  assert.ok(checks([bare, GOOD[1], GOOD[2]]).includes('required-clause'))
+Deno.test('scope: a cited line\'s scope words are never dropped (the confounder, the trial\'s bottom line)', () => {
+  const noConfounderScope = { ...GOOD[2], text: GOOD[2].text.replace(', and it is not a test of the diet alone', ', and Prednisolone overlapped') }
+  assert.ok(checks([GOOD[0], GOOD[1], noConfounderScope]).includes('required-clause'))
+  const noBottomLine = { ...GOOD[2], text: GOOD[2].text.replace('the trial diet was not fed exclusively, and ', '') }
+  assert.ok(checks([GOOD[0], GOOD[1], noBottomLine]).includes('required-clause'))
+})
+
+Deno.test('required: with a trial, the reading\'s bottom line and the confounder are cited (CUL-2532)', () => {
+  const trialAlone = { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.', cites: ['trial'] }
+  const v = verifyLead(nyxTable, { sentences: [GOOD[0], GOOD[1], trialAlone] })
+  assert.deepEqual(v.errors.filter((e) => e.check === 'required').map((e) => e.detail.split(' ')[2]).sort(), ['confounder', 'trial-reading-3'])
+})
+
+Deno.test('waivers are narrow: "not fed exclusively" and "cannot be confirmed clean" pass, a bare "clean" does not', () => {
+  const clean = { ...GOOD[2], text: GOOD[2].text.replace('the trial diet was not fed exclusively', 'the trial diet was clean') }
+  assert.ok(checks([GOOD[0], GOOD[1], clean]).includes('banned:H1'))
+  const twice = { ...GOOD[2], text: GOOD[2].text.replace('not fed exclusively', 'not fed exclusively, fed exclusively') }
+  assert.ok(checks([GOOD[0], GOOD[1], twice]).includes('banned:H1'))
+  // The waived phrase must be printed in a cited line: not cited, not waived.
+  const uncited = { ...GOOD[2], cites: ['trial', 'confounder'] }
+  assert.ok(checks([GOOD[0], GOOD[1], uncited]).includes('banned:H1'))
+})
+
+Deno.test('tense: a reading\'s own past tense passes; a flag set in the past beside it does not', () => {
+  const flagPast = { ...GOOD[2], text: `${GOOD[2].text.slice(0, -1)}, and the flag was over.` }
+  assert.ok(checks([GOOD[0], GOOD[1], flagPast]).includes('tense'))
+  // Beside a band citation the reading's "was" is never excused.
+  const withBand = { ...GOOD[2], cites: [...GOOD[2].cites, 'band-2-trial_diet_refusal'] }
+  assert.ok(checks([GOOD[0], GOOD[1], withBand]).includes('tense'))
+})
+
+Deno.test('floor: a count kept from a floor line keeps "a floor, not a total"', () => {
+  const counted = { ...GOOD[2], text: GOOD[2].text.replace('the trial diet was not fed exclusively', 'the trial diet was not fed exclusively: 11 of 167 feedings did not match it') }
+  assert.ok(checks([GOOD[0], GOOD[1], counted]).includes('floor'))
+  const floored = { ...GOOD[2], text: GOOD[2].text.replace('the trial diet was not fed exclusively', 'the trial diet was not fed exclusively: 11 of 167 feedings did not match it, a floor, not a total') }
+  assert.ok(!checks([GOOD[0], GOOD[1], floored]).includes('floor'))
 })
 
 Deno.test('required: the trial line must be cited when there is one', () => {

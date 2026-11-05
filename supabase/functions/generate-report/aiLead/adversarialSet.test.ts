@@ -11,11 +11,14 @@
 //   4. The mutation proof: each `closed_by` item is refused by those checks and no other, so the
 //      rule's removal would print it. Each CUL-2380 rule (`vocabulary`, `negation`, `script`,
 //      `tense`, `date-anchor`, and the bound `intake-positive`) closes at least one item alone.
-// No model is called here. The checker's half of each item (`expect.checker`) is the bake-off's.
+// No model is called here. The checker's half of each item (`expect.checker`) is the bake-off's,
+// except its code half (CUL-2548), which reads order and is checked below on every band-order item.
 import assert from 'node:assert/strict'
 import { adversarialFixtures } from './adversarialFixtures.testutil.ts'
 import { tableFromPayload, type LeadFactPayload } from './facts.ts'
 import { verifyLead, LEAD_VERIFIER_VERSION, type LeadSentence } from './verify.ts'
+import { checkerDecision, parseChecker } from './leadPipeline.ts'
+import { HAZARDS } from './prompts.ts'
 
 const DIR = new URL('./exhibits/adversarial/', import.meta.url)
 
@@ -99,5 +102,19 @@ Deno.test('mutation proof: each closed_by item is refused by those rules alone',
   }
   for (const rule of ['vocabulary', 'negation', 'script', 'tense', 'intake-positive', 'date-anchor']) {
     assert.ok(closed.some((i) => i.closed_by!.length === 1 && i.closed_by![0] === rule), `no item that ${rule} alone refuses`)
+  }
+})
+
+Deno.test('CUL-2548: every item band-first refuses, the checker rejects too, whatever its model says', () => {
+  const clean = parseChecker({ takeaway: 'x', hazards: Object.fromEntries(HAZARDS.map((h) => [h, { level: 'none', quote: '', why: '' }])), omissions: [] })!
+  const order = set.items.filter((i) => checksOf(i).includes('band-first'))
+  // The four the set writes as band-order hazards are among them (cr-a is the smoke bake-off's miss).
+  for (const id of ['cr-a', 'cr-b', 'p1-b1-a', 'p1-b1-b']) assert.ok(order.some((i) => i.id === id), `${id} is refused by band-first`)
+  for (const it of order) {
+    assert.equal(checkerDecision(clean, { table: tableFromPayload(fixtures[it.fixture]), draft: { sentences: it.sentences } }), 'reject', it.id)
+  }
+  // And no control is rejected by the code half: it reads order, nothing else.
+  for (const c of set.controls) {
+    assert.equal(checkerDecision(clean, { table: tableFromPayload(fixtures[c.fixture]), draft: { sentences: c.sentences } }), 'pass', c.id)
   }
 })
