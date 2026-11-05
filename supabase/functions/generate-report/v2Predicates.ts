@@ -145,7 +145,7 @@ export function r11Holds(c: R11Conditions): boolean {
 }
 
 export interface BandMembers {
-  /** The band's items, one per flag, in the snapshot's safety order. Two flags of one kind (a
+  /** The band's items, one per flag, in `bandOrder` (CUL-2381's ruling). Two flags of one kind (a
    *  vomiting and a cough chronicity flag) are two items: one sign per line, the cough↔vomit
    *  caveat riding on the flag that carries `coughVomitAdjacent`. */
   band: SafetyFlag[]
@@ -161,15 +161,35 @@ export interface BandMembers {
   leadFlag: ChronicityFlag | null
 }
 
+/**
+ * PM ruling (a) on CUL-2381 (2026-11-05): the flags measured over the last days, the ones that set
+ * how soon a vet acts, lead the band; every other flag follows in the snapshot's own safety order.
+ * Nyx's "6 vomits in 7 days" and "weight down about 15%" sat third and fourth, under an unconfirmed
+ * AI photo read and a refusal row listing six trial foods, and fell below the phone's first screen.
+ * Order only: the band's members are unchanged, and the lead sign keeps the snapshot's order
+ * (`leadSignOf`), so the ruling moves no chart.
+ */
+export const BAND_LEAD_KINDS: readonly SafetyFlag['kind'][] = ['symptom_burden', 'weight_loss', 'intake_decline']
+
+/** The band's order: `BAND_LEAD_KINDS` first, in that order, then the rest as the snapshot holds
+ *  them. Stable, so two flags of one kind keep their snapshot order. */
+export function bandOrder(flags: readonly SafetyFlag[]): SafetyFlag[] {
+  const rank = (f: SafetyFlag): number => {
+    const i = BAND_LEAD_KINDS.indexOf(f.kind)
+    return i === -1 ? BAND_LEAD_KINDS.length : i
+  }
+  return flags.map((f, i) => ({ f, i })).sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i).map((x) => x.f)
+}
+
 export function bandMembersOf(snap: ReportSnapshot): BandMembers {
   const flags = snap.safetyFlags
   for (const f of flags) {
     if (f.kind !== 'chronicity' || !r11Holds(r11ConditionsOf(snap, f))) continue
     const rest = flags.filter((o) => o !== f)
     if (rest.some((o) => flagSign(o) !== null)) continue
-    return { band: rest, leadFlag: f }
+    return { band: bandOrder(rest), leadFlag: f }
   }
-  return { band: [...flags], leadFlag: null }
+  return { band: bandOrder(flags), leadFlag: null }
 }
 
 // ── The lead (v2 spec §4) ────────────────────────────────────────────────────
@@ -234,7 +254,10 @@ function lead(sign: LeadSign, reason: LeadReason): Lead {
 export function leadSignOf(snap: ReportSnapshot): Lead | null {
   const { band, leadFlag } = bandMembersOf(snap)
   if (leadFlag) return lead(leadFlag.symptomType as ReportSymptomType, 'flag')
-  for (const f of band) {
+  // The snapshot's safety order, never the band's display order (CUL-2381): the ruling reorders
+  // the band only, so a refusing cat with a blood flag keeps the chart the record led with.
+  const members = new Set(band)
+  for (const f of snap.safetyFlags.filter((x) => members.has(x))) {
     const s = flagSign(f)
     if (s !== null) return lead(s, 'flag')
   }

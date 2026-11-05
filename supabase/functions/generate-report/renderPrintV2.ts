@@ -254,14 +254,17 @@ function block(b: BlockV2, aiLead: string | null = null): string {
       return `${open('p', 'scope')}${h(b.text)}</p>`
     case 'changes':
       // Never framed like the band, never called a flag (PM ruling (a) on CUL-2323).
-      return `${open('section', `changes ${b.placement === 'band_slot' ? 'slot' : 'under'}`)}<h2 class="sech">${h(b.heading)}</h2><ul>${b.lines
+      return `${open('section', `changes ${b.placement === 'band_slot' ? 'slot' : 'under'}`)}<h2 class="sech">${h(b.heading)}</h2>${
+        // CUL-2361 ruling (a): on a zero-sign sheet the first change is the sheet's serif sentence.
+        b.serifLead && aiLead === null ? `<p class="lede serif" data-item="${h(b.lines[0].id)}">${h(b.lines[0].text)}.</p>` : ''
+      }${(b.serifLead && aiLead === null ? b.lines.slice(1) : b.lines).length > 0 ? `<ul>${(b.serifLead && aiLead === null ? b.lines.slice(1) : b.lines)
         .map((l) => `<li data-item="${h(l.id)}">${h(l.text)}.</li>`)
-        .join('')}</ul></section>`
+        .join('')}</ul>` : ''}</section>`
     case 'record_edge':
       return `${open('div', 'edge')}${b.lines.map((l) => `<p>${h(l)}</p>`).join('')}</div>`
     case 'lead_sentence':
       // With a lead, line 1 drops to body under it (spec §5.3: one serif sentence per sheet).
-      return aiLead === null ? `${open('p', 'lede serif')}${h(b.text)}</p>` : `${aiLead}\n${open('p', 'lede body')}${h(b.text)}</p>`
+      return aiLead === null ? `${open('p', b.serif ? 'lede serif' : 'lede body')}${h(b.text)}</p>` : `${aiLead}\n${open('p', 'lede body')}${h(b.text)}</p>`
     case 'lead_chart': {
       const c = b.chart
       return `${open('section', c.flagHtml ? 'leadchart flagged' : 'leadchart')}<h2 class="${c.flagHtml ? 'flagh' : 'charth'}">${h(c.heading)}</h2>${
@@ -324,6 +327,7 @@ h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .edge p{font-size:10.5pt;font-weight:600;margin:8pt 0 0;}
 .lede{font-size:13pt;line-height:1.3;margin:10pt 0 0;}
 .lede.body{font-size:9.5pt;line-height:1.38;margin:6pt 0 0;}
+.changes .lede{margin:2pt 0 4pt;}
 .ailead{margin:10pt 0 0;}
 .ailead .ailabel{font-size:7.5pt;letter-spacing:.04em;color:var(--ink2);margin:0;}
 .ailead .beta{text-transform:uppercase;letter-spacing:.1em;border:.5pt solid var(--ink2);padding:0 2pt;}

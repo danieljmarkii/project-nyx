@@ -233,13 +233,16 @@ function block(b: BlockV2, lead: string | null): string {
     case 'scope_line':
       return `${open('p', 'scope')}${h(b.text)}</p>`
     case 'changes':
-      return `${open('section', `changes ${b.placement === 'band_slot' ? 'slot' : 'under'}`)}<h2 class="sech">${h(b.heading)}</h2><ul role="list">${b.lines
+      return `${open('section', `changes ${b.placement === 'band_slot' ? 'slot' : 'under'}`)}<h2 class="sech">${h(b.heading)}</h2>${
+        // CUL-2361 ruling (a): on a zero-sign sheet the first change is the sheet's serif sentence.
+        b.serifLead ? `<p class="lede serif" data-item="${h(b.lines[0].id)}">${h(b.lines[0].text)}.</p>` : ''
+      }${(b.serifLead ? b.lines.slice(1) : b.lines).length > 0 ? `<ul role="list">${(b.serifLead ? b.lines.slice(1) : b.lines)
         .map((l) => `<li data-item="${h(l.id)}">${h(l.text)}.</li>`)
-        .join('')}</ul></section>`
+        .join('')}</ul>` : ''}</section>`
     case 'record_edge':
       return `${open('div', 'edge')}${b.lines.map((l) => `<p>${h(l)}</p>`).join('')}</div>`
     case 'lead_sentence':
-      return `${open('p', 'lede serif')}${h(b.text)}</p>`
+      return `${open('p', b.serif ? 'lede serif' : 'lede body')}${h(b.text)}</p>`
     case 'lead_chart': {
       const c = b.chart
       // The repeat is `aria-hidden`: it exists for the eye that sees bars, and a screen reader
@@ -318,6 +321,8 @@ ul,ol{margin:0;padding:0;list-style:none;}
 .changes li,.gaps li{margin:0 0 0.3rem;}
 .edge p{font-weight:600;margin:0.8rem 0 0;}
 .lede{font-size:1.2rem;line-height:1.3;margin:1rem 0 0;}
+.lede.body{font-size:1rem;line-height:1.4;margin:0.6rem 0 0;}
+.changes .lede{margin:0.2rem 0 0.4rem;}
 .keep{margin:1rem 0 0;}
 .keep > section:first-child{margin-top:0;}
 .leadchart .flagh{color:var(--concern);}
@@ -382,6 +387,7 @@ html,body{font-size:9.5pt;}
 h2{font-size:9pt;}
 .changes h2,.sech,.colo{font-size:7.5pt;}
 .lede{font-size:13pt;}
+.lede.body{font-size:9.5pt;}
 .rl,.axis,.parts,.qs .ptr{font-size:8pt;}
 .rl.sub{font-size:7pt;}
 .verdict{display:none;}

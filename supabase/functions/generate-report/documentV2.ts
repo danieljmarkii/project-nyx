@@ -191,9 +191,25 @@ export type BlockV2 =
   | { kind: 'band'; id: 'band'; heading: string; items: BandItem[]; checksHtml: string | null }
   | { kind: 'checks'; id: 'checks'; html: string }
   | { kind: 'scope_line'; id: 'scope-line'; text: string }
-  | { kind: 'changes'; id: 'changes'; placement: 'band_slot' | 'under_chart'; heading: string; lines: ChangeLine[] }
+  | {
+      kind: 'changes'
+      id: 'changes'
+      placement: 'band_slot' | 'under_chart'
+      heading: string
+      lines: ChangeLine[]
+      /** CUL-2361 ruling (a): on a zero-sign sheet the first line is the sheet's one serif sentence.
+       *  A renderer that prints an AI lead drops it to body, as it drops line 1 (spec §5.3). */
+      serifLead: boolean
+    }
   | { kind: 'record_edge'; id: 'record-edge'; lines: string[] }
-  | { kind: 'lead_sentence'; id: 'lead-sentence'; text: string }
+  | {
+      kind: 'lead_sentence'
+      id: 'lead-sentence'
+      text: string
+      /** The sheet's one serif sentence (spec §5.3). False only on a zero-sign sheet whose
+       *  "Changes in this window" lead takes the serif instead (CUL-2361 ruling (a)). */
+      serif: boolean
+    }
   | { kind: 'lead_chart'; id: 'lead-chart'; chart: LeadChart }
   | {
       kind: 'confounder'
@@ -396,6 +412,22 @@ export function flagRowOf(f: SafetyFlag, snap: ReportSnapshot, ptr: FlagPointers
   )
   if (captured === null) throw new Error(`safetyFlagRow wrote no row for ${f.kind}`)
   return captured
+}
+
+/** CUL-2381 part 2: past this many trial foods, the refusal row names the first and counts the rest. */
+export const BAND_TRIAL_FOODS_MAX = 2
+
+/**
+ * The flag as the band prints it. A trial-refusal row that lists every trial-diet food in full
+ * (Nyx's six) pushed the burden and weight flags below the phone's first screen (cold read, F3); past
+ * `BAND_TRIAL_FOODS_MAX` the row names the first food and counts the others. The full list stays on
+ * the diet sheet (v1's diet-trial section, reprinted whole). Only the refusal row: the protein row
+ * says which food's label it read, so its list is the finding itself and is never cut.
+ */
+export function bandFlagOf(f: SafetyFlag): SafetyFlag {
+  if (f.kind !== 'trial_diet_refusal' || f.trialDietLabels.length <= BAND_TRIAL_FOODS_MAX) return f
+  const n = f.trialDietLabels.length - 1
+  return { ...f, trialDietLabels: [`${f.trialDietLabels[0]} + ${n} other trial item${n === 1 ? '' : 's'}`] }
 }
 
 /** v1's "ran and did not trigger" sentence, word for word (CUL-2003; PM ruling 2026-10-19). */
@@ -803,7 +835,7 @@ function buildLeadChart(
 // ── Record lines (spec §4's line ranker, §5.7) ──────────────────────────────
 
 /** v1's absence sentence, verbatim (render.ts `symptomPanel`'s empty state). */
-const ABSENCE_SENTENCE = 'No symptom events were logged in this window. Absence of a log is not evidence a symptom did not occur.'
+export const ABSENCE_SENTENCE = 'No symptom events were logged in this window. Absence of a log is not evidence a symptom did not occur.'
 
 function signLine(snap: ReportSnapshot, s: SymptomAggregate): RecordLine {
   const last = s.lastOnset ? textOf(fmtLocalDay(s.lastOnset, snap.timezone)) : null
@@ -901,9 +933,21 @@ function noticedLine(snap: ReportSnapshot): RecordLine | null {
   }
 }
 
-function coverageLine(snap: ReportSnapshot, zeroSign: boolean): RecordLine {
+function coverageLine(snap: ReportSnapshot): RecordLine {
   const ag = snap.atAGlance
-  return { id: 'coverage', text: `${ag.loggedDays} of ${plural(ag.windowDays, 'day', 'days')} logged.${zeroSign ? ` ${ABSENCE_SENTENCE}` : ''}` }
+  return { id: 'coverage', text: `${ag.loggedDays} of ${plural(ag.windowDays, 'day', 'days')} logged.` }
+}
+
+/**
+ * CUL-2361 ruling (a): v1's absence sentence keeps every word but is its own ordinary record line,
+ * never the serif sentence. As the largest line on a zero-sign sheet it read as a clean bill of
+ * health ("symptom events" is the app's term; it leaves out the daily look answers).
+ */
+const ABSENCE_LINE: RecordLine = { id: 'absence', text: ABSENCE_SENTENCE }
+
+/** The coverage count, and on a zero-sign sheet the absence sentence straight after it. */
+function coverageLines(snap: ReportSnapshot, zeroSign: boolean): RecordLine[] {
+  return zeroSign ? [coverageLine(snap), ABSENCE_LINE] : [coverageLine(snap)]
 }
 
 /**
@@ -918,13 +962,13 @@ function recordLinesOf(snap: ReportSnapshot, lead: Lead | null, edgeHolds: boole
   // events were logged"). The coverage line, absence sentence included, still prints, second.
   const intakeFlagLead = lead?.sign === 'intake' && lead.reason === 'flag'
   const out: RecordLine[] = []
-  if ((zeroSign || edgeHolds) && !intakeFlagLead) out.push(coverageLine(snap, zeroSign))
+  if ((zeroSign || edgeHolds) && !intakeFlagLead) out.push(...coverageLines(snap, zeroSign))
   const signs = snap.symptoms.filter((s) => s.count > 0)
   const leadAgg = signs.find((s) => s.type === lead?.sign)
   if (leadAgg) out.push(signLine(snap, leadAgg))
   const intake = intakeLine(snap)
   if (intake) out.splice(intakeFlagLead ? 0 : Math.min(out.length, 2), 0, intake)
-  if (intakeFlagLead && (zeroSign || edgeHolds)) out.splice(intake ? 1 : 0, 0, coverageLine(snap, zeroSign))
+  if (intakeFlagLead && (zeroSign || edgeHolds)) out.splice(intake ? 1 : 0, 0, ...coverageLines(snap, zeroSign))
   const { rows, overflow } = chartSigns(snap, lead)
   for (const s of [...rows, ...overflow]) if (s !== leadAgg) out.push(signLine(snap, s))
   const trial = trialLine(snap)
@@ -1027,7 +1071,7 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
       kind: 'band',
       id: 'band',
       heading: `Flags for the vet · ${band.length}`,
-      items: band.map((f, i) => ({ id: flagId(f, i), ...flagRowOf(f, snap, ptr), photos: bandPhotosOf(f, snap), photosLeftOutLine: bandLeftOutLineOf(f, snap) })),
+      items: band.map((f, i) => ({ id: flagId(f, i), ...flagRowOf(bandFlagOf(f), snap, ptr), photos: bandPhotosOf(f, snap), photosLeftOutLine: bandLeftOutLineOf(f, snap) })),
       checksHtml: checks,
     })
   } else if (checks !== null) {
@@ -1041,17 +1085,29 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
   // `isZeroSignSheet` chooses only WHERE: the band's slot on a zero-sign sheet, under the lead chart
   // otherwise. Never framed like the band, never called a flag.
   const changes = changesInWindowOf(snap)
+  const lead = leadSignOf(snap)
+  // CUL-2361 ruling (a): on a zero-sign sheet the serif sentence is the changes line's lead, or the
+  // coverage count when no change holds; never v1's absence sentence. A flagged intake lead keeps
+  // the meals line as its sentence (adversarial pass 2 on CUL-2290, break 1).
+  const intakeFlagLead = lead?.sign === 'intake' && lead.reason === 'flag'
+  const changesSerif = zeroSign && !intakeFlagLead && changes !== null && changes.length > 0
   const changesBlock: BlockV2 | null = changes
-    ? { kind: 'changes', id: 'changes', placement: zeroSign ? 'band_slot' : 'under_chart', heading: 'Changes in this window', lines: changes }
+    ? {
+        kind: 'changes',
+        id: 'changes',
+        placement: zeroSign ? 'band_slot' : 'under_chart',
+        heading: 'Changes in this window',
+        lines: changes,
+        serifLead: changesSerif,
+      }
     : null
   if (changesBlock && zeroSign) blocks.push(changesBlock)
 
   const edge = recordEdgeLinesOf(snap)
   if (edge.length > 0) blocks.push({ kind: 'record_edge', id: 'record-edge', lines: edge.map((l) => l.text) })
 
-  const lead = leadSignOf(snap)
   const lines = recordLinesOf(snap, lead, edge.length > 0)
-  if (lines.length > 0) blocks.push({ kind: 'lead_sentence', id: 'lead-sentence', text: lines[0].text })
+  if (lines.length > 0) blocks.push({ kind: 'lead_sentence', id: 'lead-sentence', text: lines[0].text, serif: !changesSerif })
 
   blocks.push({ kind: 'lead_chart', id: 'lead-chart', chart: buildLeadChart(snap, lead, leadFlag, ptr) })
   if (changesBlock && !zeroSign) blocks.push(changesBlock)

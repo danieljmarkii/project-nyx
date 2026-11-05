@@ -9,6 +9,8 @@ import assert from 'node:assert/strict'
 import { assembleReport, type ReportInput, type ReportSnapshot, type SafetyFlag } from './report.ts'
 import { renderReport, safetyFlagRow } from './render.ts'
 import {
+  bandFlagOf,
+  h,
   buildDocumentV2,
   flagRowOf,
   notReadCol,
@@ -149,10 +151,16 @@ Deno.test('superset — every v1 page-1 band finding prints on v2 sheet 1, word 
     const html = renderPrintV2(d)
     const ptr = v2FlagPointersOf(d.backSheets, s)
     for (const f of s.safetyFlags) {
-      const v1 = v1RowOf(f, s)
+      // CUL-2381 part 2: a refusal row with a long trial-food list prints it short; the rest of the
+      // row is v1's, and every name the band leaves out prints on the diet sheet (below).
+      const v1 = v1RowOf(bandFlagOf(f), s)
       const want = swapPointers(v1, V1_FLAG_POINTERS, ptr)
       if (want !== v1) swapped++
       assert.ok(html.includes(want), `${name}: the ${f.kind} finding prints on sheet 1`)
+      if (f.kind === 'trial_diet_refusal') {
+        const back = html.slice(html.indexOf('</main>'))
+        for (const l of f.trialDietLabels) assert.ok(back.includes(h(l)), `${name}: trial food “${l}” prints on a back sheet`)
+      }
       flags++
     }
   }
@@ -616,7 +624,9 @@ Deno.test('adversarial 2.1 — an intake-flag lead on a zero-sign sheet opens on
   assert.match(lede.text, /^Meals \(logged as meals, not treats\): The last 6 rated meals in a row were not fully eaten\./)
   const lines = block(d, 'record_lines')?.lines ?? []
   assert.equal(lines[0]?.id, 'coverage')
-  assert.match(lines[0].text, /No symptom events were logged in this window\. Absence of a log is not evidence a symptom did not occur\./)
+  // CUL-2361 ruling (a): the absence sentence is its own line, straight after the coverage count.
+  assert.equal(lines[1]?.id, 'absence')
+  assert.equal(lines[1].text, 'No symptom events were logged in this window. Absence of a log is not evidence a symptom did not occur.')
 })
 
 Deno.test('adversarial 2.2 — the read floor applies to each week in a 2-week bin, never to the bin’s sum', () => {
