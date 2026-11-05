@@ -143,12 +143,12 @@ export function posX(pos: number, n: number): number {
   return LABEL_W + Math.min(PLOT_W, Math.max(0, (pos * PLOT_W) / Math.max(1, n)))
 }
 
-function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], top: number): string {
+function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], top: number, endPos: number): string {
   const n = cols.length
   const y = top + SPAN_ROW_H / 2
   // CUL-2360: on the span's own days, never a column's centre.
   const xa = posX(r.openStart ? 0 : r.fromPos, n)
-  const xb = posX(r.openEnd ? n : r.toPos, n)
+  const xb = posX(r.toPos, n)
   const cls = r.hollow ? 'span hollow' : 'span'
   // CUL-2480 instance 1 and CUL-2514: ad-hoc doses and off-diet feedings are ticks, never a bar.
   if (r.doseCols) {
@@ -162,7 +162,7 @@ function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], to
   }
   const parts = [rowLabel(r.label, y + 3, 'rl span-l'), `<line class="${cls}" x1="${xa.toFixed(1)}" x2="${Math.max(xa + 2, xb).toFixed(1)}" y1="${y}" y2="${y}"/>`]
   // CUL-2360: no recorded end, so the course carries on dotted from its last logged dose to the edge.
-  if (r.openCourse) parts.push(`<line class="span open" x1="${Math.max(xa + 2, xb).toFixed(1)}" x2="${(LABEL_W + PLOT_W).toFixed(1)}" y1="${y}" y2="${y}"/>`)
+  if (r.openCourse) parts.push(`<line class="span open" x1="${Math.max(xa + 2, xb).toFixed(1)}" x2="${posX(endPos, n).toFixed(1)}" y1="${y}" y2="${y}"/>`)
   // The bracket ends: a tick where the record dates a start or an end, none where it runs off the edge.
   if (!r.openStart) parts.push(`<line class="${cls}" x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
   if (!r.openEnd && r.endDeclared) parts.push(`<line class="${cls}" x1="${xb.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
@@ -228,7 +228,7 @@ export function chartSvg(chart: LeadChart): string {
     y += SIGN_ROW_H
   }
   for (const r of spans) {
-    body.push(spanRow(r, chart.columns, y))
+    body.push(spanRow(r, chart.columns, y, chart.endPos))
     y += SPAN_ROW_H
   }
   body.push(axis(chart, y))

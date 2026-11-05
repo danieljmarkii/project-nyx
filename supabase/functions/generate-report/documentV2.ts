@@ -200,6 +200,8 @@ export interface LeadChart {
   overflow: string | null
   /** CUL-2360: the burden flag's window, when one fired on a drawn sign; null otherwise. */
   recentBracket: RecentBracket | null
+  /** Where the window ends, in column units (`chartEndPos`): the edge a line running on reaches. */
+  endPos: number
   /** The text twin: the only carrier of the chart's facts. */
   twin: string
   marks: MarkKind[]
@@ -656,11 +658,26 @@ function colOf(cols: ChartColumn[], day: string): number {
 export function dayPos(cols: ChartColumn[], day: string): number {
   if (cols.length === 0) return 0
   if (day < cols[0].start) return 0
-  if (day > cols[cols.length - 1].end) return cols.length
+  const end = chartEndPos(cols)
+  if (day > cols[cols.length - 1].end) return end
   const i = colOf(cols, day)
   const col = cols[i]
+  // A day's width is a full column's share, never a short column's: a 4-day last week holds its
+  // days where a full week would, and the window ends inside the column (cold read at 7025c6d: the
+  // bracket ran three days past Oct 31 and Cooper's Oct 13 tick sat late).
   const within = Math.min(Math.max(daysBetween(col.start, day), 0), col.days - 1)
-  return Math.min(cols.length, Math.max(0, i + (within + 0.5) / col.days))
+  return Math.min(end, Math.max(0, i + (within + 0.5) / fullDaysOf(cols)))
+}
+
+/** A full column's days: 7 for weeks, 14 for bins, 1 for days (only the last column runs short). */
+export function fullDaysOf(cols: ChartColumn[]): number {
+  return Math.max(1, ...cols.map((c) => c.days))
+}
+
+/** Where the window ends on the chart, in column units: inside a short last column, never past it. */
+export function chartEndPos(cols: ChartColumn[]): number {
+  if (cols.length === 0) return 0
+  return cols.length - 1 + cols[cols.length - 1].days / fullDaysOf(cols)
 }
 
 function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<ChartRow, { kind: 'span' }>[]; overflow: string[] } {
@@ -703,7 +720,7 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
       fromCol: startsInChart ? colOf(cols, start) : 0,
       toCol: end === null ? cols.length - 1 : colOf(cols, end),
       fromPos: startsInChart ? dayPos(cols, start) : 0,
-      toPos: end === null ? cols.length : dayPos(cols, end),
+      toPos: end === null ? chartEndPos(cols) : dayPos(cols, end),
       openStart: !startsInChart,
       openEnd: end === null,
       hollow: none,
@@ -790,8 +807,8 @@ function recentBracketOf(snap: ReportSnapshot, cols: ChartColumn[], rows: ChartR
   const from = addDays(snap.scope.endDate, -(pick.windowDays - 1))
   const label = `the last ${pick.windowDays} days, ${pick.count} ${symptomLabel(pick.symptomType).toLowerCase()} ${pick.count === 1 ? 'entry' : 'entries'}, as the burden flag counts them`
   // The bracket opens at the start of its first day, never before the chart's left edge.
-  const left = from < cols[0].start ? 0 : dayPos(cols, from) - 0.5 / cols[colOf(cols, from)].days
-  return { fromPos: Math.max(0, left), toPos: cols.length, label }
+  const left = from < cols[0].start ? 0 : dayPos(cols, from) - 0.5 / fullDaysOf(cols)
+  return { fromPos: Math.max(0, left), toPos: chartEndPos(cols), label }
 }
 
 function colLabel(c: ChartColumn, unit: LeadChart['unit']): string | null {
@@ -999,6 +1016,7 @@ function buildLeadChart(
     rows,
     overflow: overflowParts.length > 0 ? overflowParts.join('; ') : null,
     recentBracket,
+    endPos: chartEndPos(columns),
     twin,
     marks: [...marks],
   }

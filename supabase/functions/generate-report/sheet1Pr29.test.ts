@@ -327,3 +327,20 @@ Deno.test('cold read — the rows are v1’s words, only pointers moved; nothing
   }
   assert.ok(rows >= 6, `rows exercised (${rows})`)
 })
+
+Deno.test('cold read — inside a short last column a day keeps a full week’s width, and the window ends inside the column, not past it', () => {
+  const c = chartOf(docOf(nyxLiveSnapshot()))
+  assert.equal(c.columns.length, 7)
+  assert.equal(c.columns[6].days, 4)
+  assert.ok(Math.abs(c.endPos - (6 + 4 / 7)) < 1e-9, `end ${c.endPos}`)
+  assert.ok(c.recentBracket && Math.abs(c.recentBracket.toPos - c.endPos) < 1e-9, 'the bracket stops at Oct 31')
+  for (const r of c.rows) if (r.kind === 'span') assert.ok(r.toPos <= c.endPos + 1e-9 && (r.doseCols ?? []).every((p) => p <= c.endPos + 1e-9), `${r.label} stays inside the window`)
+  // Cooper's Oct 13 off-diet tick sits in his 6-day last week at a seventh of a column per day,
+  // never a sixth.
+  const k = chartOf(docOf(cooper()))
+  const off = k.rows.find((r) => r.kind === 'span' && r.tickKind === 'off_diet')
+  assert.ok(off && off.kind === 'span' && off.doseCols)
+  const last = k.columns.length - 1
+  const within = (Date.parse('2026-10-13') - Date.parse(k.columns[last].start)) / 86_400_000
+  assert.ok(Math.abs(off.doseCols[off.doseCols.length - 1] - (last + (within + 0.5) / 7)) < 1e-9)
+})

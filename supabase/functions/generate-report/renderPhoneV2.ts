@@ -162,12 +162,12 @@ function coverageRow(r: Extract<ChartRow, { kind: 'coverage' }>, cols: ChartColu
   return rowWrap(r.label, 'rl', rowSvg(pid, SIGN_ROW_H - 8, parts.join(''), hatched))
 }
 
-function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], pid: string): string {
+function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], pid: string, endPos: number): string {
   const n = cols.length
   const y = SPAN_ROW_H / 2
   // CUL-2360: on the span's own days, never a column's centre; clamped to the frame (N9).
   const xa = posX(r.openStart ? 0 : r.fromPos, n)
-  const xb = posX(r.openEnd ? n : r.toPos, n)
+  const xb = posX(r.toPos, n)
   const cls = r.hollow ? 'span hollow' : 'span'
   // CUL-2480 instance 1 and CUL-2514: ad-hoc doses and off-diet feedings are ticks, never a bar.
   if (r.doseCols) {
@@ -179,7 +179,7 @@ function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], pi
   }
   const parts = [`<line class="${cls}" x1="${xa.toFixed(1)}" x2="${Math.max(xa + 2, xb).toFixed(1)}" y1="${y}" y2="${y}"/>`]
   // CUL-2360: no recorded end, so the course carries on dotted from its last logged dose to the edge.
-  if (r.openCourse) parts.push(`<line class="span open" x1="${Math.max(xa + 2, xb).toFixed(1)}" x2="${PLOT_W}" y1="${y}" y2="${y}"/>`)
+  if (r.openCourse) parts.push(`<line class="span open" x1="${Math.max(xa + 2, xb).toFixed(1)}" x2="${posX(endPos, n).toFixed(1)}" y1="${y}" y2="${y}"/>`)
   // The bracket ends: a tick where the record dates a start or an end, none where it runs off the edge.
   if (!r.openStart) parts.push(`<line class="${cls}" x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
   if (!r.openEnd && r.endDeclared) parts.push(`<line class="${cls}" x1="${xb.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
@@ -228,7 +228,7 @@ export function chartHtml(chart: LeadChart): string {
     if (r.kind === 'sign') rows.push(signRow(r, chart.columns, axisMax, chart.unit, pid))
     else if (r.kind === 'intake') rows.push(intakeRow(r, chart.columns, pid))
     else if (r.kind === 'coverage') rows.push(coverageRow(r, chart.columns, pid))
-    else rows.push(spanRow(r, chart.columns, pid))
+    else rows.push(spanRow(r, chart.columns, pid, chart.endPos))
   })
   // `aria-hidden` over the whole drawing, labels included: the twin is the only carrier of the
   // chart's facts (spec §5.4), so a screen reader hears it once, in words.
