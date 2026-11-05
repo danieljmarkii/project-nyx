@@ -229,11 +229,24 @@ function onListDosesSentence(t: NonNullable<ReportSnapshot['trial']>): string | 
     .join('; ')
   const drugs = [...new Set(on.map((o) => o.drugLabel ?? 'a medication'))].map((d) => h(d)).join(', ')
   const span = days[0] === days[days.length - 1] ? `on ${h(fmtDayYear(days[0]))}` : h(fmtSpanFromTo(days[0], days[days.length - 1]))
+  // NO CLAIM ABOUT THE VEHICLE'S PROTEIN (adversarial pass 1, QUIET). The first cut closed on "a
+  // food on the list carries no protein the trial excludes": false beside a permitted jerky whose
+  // label lists chicken, a trial diet whose label does, or a diet nobody read. Being on the list is
+  // what keeps a dose out of the count; whether the list is clean is the contamination fact's
+  // question, so where a vehicle is named there the sentence points at it, and otherwise says
+  // nothing about protein at all.
+  const flagged = [...byFood.keys()].filter((label) => t.contamination.some((c) => c.food.label === label))
+  const flaggedBit =
+    flagged.length > 0
+      ? ` <b>${flagged.map((l) => h(l)).join(', ')} ${flagged.length === 1 ? 'is' : 'are'} named above as listing a protein beyond the trial&rsquo;s</b>, so the doses given in ${
+          flagged.length === 1 ? 'it' : 'them'
+        } went in with that protein.`
+      : ''
   return `<b>${num(on.length)} dose${on.length === 1 ? '' : 's'} by mouth</b> ${
     on.length === 1 ? 'was' : 'were'
-  } logged as given inside a food on the allowed list (${foods}), ${span} (${drugs}). A food on the list carries no protein the trial excludes, so ${
-    on.length === 1 ? 'it is' : 'they are'
-  } not counted as exposures.`
+  } logged as given inside a food on the allowed list (${foods}), ${span} (${drugs}). Being on the list, ${on.length === 1 ? 'it is' : 'they are'} not counted as ${
+    on.length === 1 ? 'an exposure' : 'exposures'
+  }.${flaggedBit}`
 }
 
 /**
@@ -11376,8 +11389,10 @@ export function dietHistoryAppendix(snap: ReportSnapshot): string {
       // paired food directly, including a pairing to a meal this row cannot resolve, so on the
       // live record page 1 counted 18 doses given inside a food while this row said none was.
       // The louder of the two stands.
-      // CUL-2525: a tie is the same doses read twice (an unpaired dose in food now reaches rung 4
-      // too), so the row keeps its own window's words and quotes page 1's count after them.
+      // CUL-2525: on a tie the row keeps its own window's words and quotes page 1's count after them.
+      // The two are different populations (this row: the report window, any adherence; page 1: the
+      // trial days, missed and refused excluded), so both numbers are printed and neither replaces
+      // the other.
       unresolved > 0 && unresolved >= vehicleDosesOf(snap)
       ? `${unresolvedBit}${trialVehicleSplit(snap)}`
       : vehicleDosesOf(snap) > 0

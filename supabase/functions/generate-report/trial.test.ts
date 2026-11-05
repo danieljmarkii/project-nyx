@@ -877,6 +877,24 @@ Deno.test('CUL-2525 — page 1 names the doses given in food, and appendix B quo
   assert.ok(/During the trial, page 1 counts 3 doses given inside a food on the allowed list and 1 dose given in a food off the list or not identified\./.test(row), row)
 })
 
+Deno.test('CUL-2525 pass 1 (QUIET) — a pill in an allowed food whose label lists another protein is never reassured about', () => {
+  // ADV-7: the trial diet's own label lists chicken. Being on the list keeps the dose out of the
+  // count; it never licenses "carries no protein the trial excludes" beside the contamination fact.
+  const input = nyxVehicleShape()
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, proteins: ['soy', 'chicken'], ingredientsNotes: 'Hydrolysed soy protein, chicken fat, rice' }]
+  const snap = assembleReport(input)
+  assert.ok(snap.trial!.contamination.some((c) => c.food.label === 'Royal Canin Hydrolyzed HP'), 'precondition: the vehicle is a contamination fact')
+  const text = plain(renderReport(snap))
+  assert.doesNotMatch(text, /carries no protein/)
+  assert.match(text, /Being on the list, they are not counted as exposures\. Royal Canin Hydrolyzed HP is named above as listing a protein beyond the trial’s, so the doses given in it went in with that protein\./)
+})
+
+Deno.test('CUL-2525 pass 1 — a clean allowed vehicle states the rule and nothing about protein', () => {
+  const text = plain(renderReport(assembleReport(nyxVehicleShape())))
+  assert.match(text, /\(prednisolone\)\. Being on the list, they are not counted as exposures\./)
+  assert.doesNotMatch(text, /carries no protein|named above as listing a protein beyond/)
+})
+
 Deno.test('CUL-2525 — mutation: a pill in the trial diet with no dose in food leaves both lines silent', () => {
   const input = nyxVehicleShape()
   input.doses = input.doses.filter((d) => d.eventId === 'dose-direct')
