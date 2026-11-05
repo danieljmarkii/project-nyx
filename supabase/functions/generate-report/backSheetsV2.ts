@@ -683,6 +683,42 @@ export function assertNoV1Pointer(html: string, where: string): void {
 }
 
 /** A v1 section as a v2 block: pointers swapped, then held to the guard. Null when v1 prints nothing. */
+/** The opening of v1's bottom-line callout inside `dietTrialSection`, the one place v1's page 1 states
+ *  why a trial record is not clean (render.ts, "Interpreting this record"). */
+export const TRIAL_READING_LABEL = 'Interpreting this record'
+
+/**
+ * CUL-2514: v1 page 1's bottom line on the trial, word for word, for sheet 1. It is where v1 states
+ * the off-diet feedings with their days ("The trial diet was not fed exclusively: 11 of 167
+ * feedings … Oct 18, Oct 19 and Oct 20"), the timing clause ("Beef was in the 12 h before 4 of 4
+ * vomiting episodes"), the doses by mouth, the trial label's other proteins and the unread panels.
+ * v2's sheet 1 printed the trial as one line and left all of it sheets later, so sheet 1 read a
+ * cleaner trial than the report holds.
+ *
+ * Lifted out of `dietTrialSection` rather than re-worded (rule 2): the sentences are v1's and change
+ * with v1. Its pointers land on the diet sheet, which reprints the whole section; "(above)" there
+ * meant a v1 page-1 neighbour the diet sheet holds. The reduced-intake flag it points up at is in
+ * sheet 1's band, above this block, so that "(above)" stays. Null when v1 prints no callout. Throws
+ * when v1 prints the label but the callout cannot be lifted whole, so a change to v1's markup can
+ * never silently drop the bottom line from sheet 1.
+ */
+export function trialReadingOf(snap: ReportSnapshot): string | null {
+  const section = dietTrialSection(snap)
+  if (!section.includes(TRIAL_READING_LABEL)) return null
+  const m = /<div class="callout"><span class="k">Interpreting this record<\/span>([\s\S]*?)<\/div>/.exec(section)
+  if (!m || m[1].includes('<div')) throw new Error('trialReadingOf: v1 printed “Interpreting this record” but its callout could not be lifted whole')
+  const diet = `on ${sheetHeaded(DIET_SHEET_TITLE)}`
+  const body = m[1]
+    .trim()
+    .replace(/(flag fires (?:on the trial diet|over meals inside the trial)) \(above\)/g, '$1 (in the flags above)')
+    .replace(/; above\)/g, `; ${diet})`)
+    .replace(/ \(above\)/g, ` (${diet})`)
+  const html = v2Pointers(body, snap, null).trim()
+  assertNoV1Pointer(html, 'trial-reading')
+  if (/\babove\b/.test(html.replace(/in the flags above/g, ''))) throw new Error('trialReadingOf: an “above” sheet 1 cannot honour')
+  return html
+}
+
 function sectionBlock(id: SectionBlockId, heading: string | null, v1Html: string, snap: ReportSnapshot, here: string): BackBlockV2 | null {
   if (v1Html.trim() === '') return null
   const html = v2Pointers(v1Html, snap, here).trim()
@@ -784,7 +820,7 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
   const entries: KeptEntry[] = [
     {
       term: 'No flag is not an all-clear',
-      text: 'Flags for review print on sheet 1 only when a check fired, and they rest on the owner’s record, not a diagnosis. The checks look for chronicity, symptom burden, worsening, reduced intake, a prescribed diet going uneaten, weight loss or a weight left unchecked, possible blood or foreign material, a protein the trial diet does not list, and other patterns the detection engine raises. When no flag prints, no check fired; that is not the same as nothing being wrong.',
+      text: 'Flags for review print on sheet 1 only when a check fired, and they rest on the owner’s record, not a diagnosis. The checks look for chronicity, symptom burden, worsening, reduced intake, a prescribed diet going uneaten, weight loss or a weight left unchecked, possible blood or foreign material, a trial protein the owner recorded that is not the main protein on the trial food’s label, and other patterns the detection engine raises. A feeding off the trial diet is not a flag: sheet 1 states those feedings under the trial, with their days, and marks them on its chart. When no flag prints, no check fired; that is not the same as nothing being wrong.',
     },
     {
       term: 'Owner-reported',

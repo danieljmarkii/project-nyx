@@ -73,6 +73,7 @@ const ORDER = [
   'lead-chart',
   'changes@under',
   'confounder',
+  'trial-reading',
   'record-lines',
   'gap-lines',
   'questions',
@@ -274,6 +275,9 @@ const TWIN_WORDS: Record<LeadChart['marks'][number], RegExp> = {
   dose_ticks: /Ticks, one per day an ad-hoc dose was logged/,
   intake_refused: /refused/,
   intake_partly: /partly eaten/,
+  open_end: /Dotted after the last logged dose, no end recorded/,
+  off_diet_ticks: /Ticks, one per day a feeding off the trial diet was logged/,
+  recent_bracket: /Bracket under the axis: the last \d+ days, \d+ .+ entr(y|ies), as the burden flag counts them/,
 }
 
 Deno.test('twin — names every mark kind its chart draws, on every fixture', () => {
@@ -595,7 +599,7 @@ Deno.test('cold read 2 — the trailing part week draws at its days’ width and
   assert.equal(last.days, 4)
   assert.match(c.twin, /week 7 4-day week, so far/)
   const html = renderPrintV2(d)
-  const widths = [...html.matchAll(/class="bar lead"[^>]*width="([\d.]+)"/g)].map((m) => Number(m[1]))
+  const widths = [...html.matchAll(/class="bar lead(?: sofar)?"[^>]*width="([\d.]+)"/g)].map((m) => Number(m[1]))
   assert.ok(widths[widths.length - 1] < Math.max(...widths) * 0.7, `the last bar is narrower (${widths})`)
 })
 

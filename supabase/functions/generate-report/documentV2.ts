@@ -62,7 +62,7 @@ import {
   type LeadSign,
 } from './v2Predicates.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
-import { backSheetsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
+import { backSheetsOf, TRIAL_READING_LABEL, trialReadingOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
 import { adHocGroupOf, withRecordOverlaps } from './medicationFacts.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -123,6 +123,14 @@ export type ChartRow =
       /** First and last column the span touches; a span running past either edge is clipped. */
       fromCol: number
       toCol: number
+      /**
+       * CUL-2360: where the line starts and stops, in column units on the day's own place inside its
+       * column (`dayPos`), so a course drawn over weeks sits on its dates, never a column's centre
+       * (up to 3.5 days off what the twin says). 0 and `columns.length` are the chart's edges; every
+       * value is clamped to them, so no line runs past the frame (N9).
+       */
+      fromPos: number
+      toPos: number
       /** Starts before the window (no start mark) / runs past its end (no end mark). */
       openStart: boolean
       openEnd: boolean
@@ -131,6 +139,12 @@ export type ChartRow =
       /** The owner recorded the end. Otherwise the line stops at the last logged dose with no end
        *  bracket: a closed bracket would claim an end the record does not hold (cold read 3). */
       endDeclared: boolean
+      /**
+       * CUL-2360: the course has no recorded end and its line stops at the last logged dose inside
+       * the window. A line that simply stopped read as a course that stopped (Nyx's cetirizine), so
+       * it carries on dotted to the chart's edge, its own mark (`open_end`) with its own twin words.
+       */
+      openCourse: boolean
       /** The twin's words for this span ("Sep 21 to Oct 11", "prescribed, no doses logged"). */
       when: string
       /**
@@ -140,10 +154,37 @@ export type ChartRow =
        * draw as seven ticks, not one (cold read recheck). Absent on a course.
        */
       doseCols?: number[]
+      /** What the ticks are: ad-hoc doses, or (CUL-2514) feedings off the trial diet. */
+      tickKind?: 'dose' | 'off_diet'
     }
 
 /** Every mark kind the chart can draw. The twin must name each one it draws (spec §5.4). */
-export type MarkKind = 'bar' | 'empty' | 'not_read' | 'hatch' | 'partial' | 'span' | 'hollow_span' | 'dose_ticks' | 'intake_refused' | 'intake_partly'
+export type MarkKind =
+  | 'bar'
+  | 'empty'
+  | 'not_read'
+  | 'hatch'
+  | 'partial'
+  | 'span'
+  | 'hollow_span'
+  | 'dose_ticks'
+  | 'intake_refused'
+  | 'intake_partly'
+  /** CUL-2360: a course with no recorded end, dotted past its last logged dose. */
+  | 'open_end'
+  /** CUL-2514: a tick per day a feeding off the trial diet was logged. */
+  | 'off_diet_ticks'
+  /** CUL-2360: the burden flag's own window, bracketed under the axis. */
+  | 'recent_bracket'
+
+/** CUL-2360: the burden flag's window under the axis, so a short last week's bar cannot read as easing
+ *  while the band says the sign is high. Its words and count are the flag's own. */
+export interface RecentBracket {
+  fromPos: number
+  toPos: number
+  /** "last 7 days: 6 vomiting entries, flagged". */
+  label: string
+}
 
 export interface LeadChart {
   unit: 'week' | 'two_weeks' | 'day'
@@ -157,6 +198,8 @@ export interface LeadChart {
   rows: ChartRow[]
   /** Signs and spans that did not fit, named with their counts or dates; null when all fit. */
   overflow: string | null
+  /** CUL-2360: the burden flag's window, when one fired on a drawn sign; null otherwise. */
+  recentBracket: RecentBracket | null
   /** The text twin: the only carrier of the chart's facts. */
   twin: string
   marks: MarkKind[]
@@ -218,6 +261,13 @@ export type BlockV2 =
       /** The sentence of `text` that leads it as a warning: the one a surface that cannot show
        *  the whole line beside the chart shows there (the phone's pinned repeat, CUL-2295). */
       lead: string
+    }
+  | {
+      /** CUL-2514: v1 page 1's "Interpreting this record", word for word, its pointers on v2's sheets. */
+      kind: 'trial_reading'
+      id: 'trial-reading'
+      label: string
+      html: string
     }
   | { kind: 'record_lines'; id: 'record-lines'; lines: RecordLine[] }
   | { kind: 'gap_lines'; id: 'gap-lines'; heading: string; lines: GapLine[] }
@@ -589,6 +639,21 @@ function colOf(cols: ChartColumn[], day: string): number {
   return cols.length - 1
 }
 
+/**
+ * A day's place on the chart in column units: its column's index plus the centre of the day inside
+ * that column, clamped to the chart (CUL-2360). Seven daily doses in one week column sit at seven
+ * places; a course from a Thursday starts on the Thursday, not mid-week.
+ */
+export function dayPos(cols: ChartColumn[], day: string): number {
+  if (cols.length === 0) return 0
+  if (day < cols[0].start) return 0
+  if (day > cols[cols.length - 1].end) return cols.length
+  const i = colOf(cols, day)
+  const col = cols[i]
+  const within = Math.min(Math.max(daysBetween(col.start, day), 0), col.days - 1)
+  return Math.min(cols.length, Math.max(0, i + (within + 0.5) / col.days))
+}
+
 function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<ChartRow, { kind: 'span' }>[]; overflow: string[] } {
   const rows: Extract<ChartRow, { kind: 'span' }>[] = []
   const overflow: string[] = []
@@ -628,25 +693,96 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
       label: c.label,
       fromCol: startsInChart ? colOf(cols, start) : 0,
       toCol: end === null ? cols.length - 1 : colOf(cols, end),
+      fromPos: startsInChart ? dayPos(cols, start) : 0,
+      toPos: end === null ? cols.length : dayPos(cols, end),
       openStart: !startsInChart,
       openEnd: end === null,
       hollow: none,
       endDeclared: c.endIsDeclared,
+      // A hollow course drew no dose, so there is no last dose to continue from: it stays hollow.
+      openCourse: end !== null && !c.endIsDeclared && !none && !(adHoc && doseDays.length > 0),
       when,
     }
     if (adHoc && doseDays.length > 0) {
-      const dayNo = (k: string): number => Math.round(Date.parse(`${k}T00:00:00Z`) / 86_400_000)
-      row.doseCols = [...new Set(doseDays.filter((d) => d >= first))].sort().map((d) => {
-        const i = colOf(cols, d)
-        const col = cols[i]
-        const within = Math.min(Math.max(dayNo(d) - dayNo(col.start), 0), col.days - 1)
-        return i + (within + 0.5) / col.days
-      })
+      row.doseCols = [...new Set(doseDays.filter((d) => d >= first))].sort().map((d) => dayPos(cols, d))
+      row.tickKind = 'dose'
     }
     if (rows.length < SPAN_ROWS_MAX) rows.push(row)
     else overflow.push(`${c.label} ${when}`)
   }
+  const off = offDietRow(snap, cols)
+  if (off) {
+    // The trial's breaks lead the intervention rows: on a full chart a course is named under it
+    // rather than the off-diet days (a course already prints on the confounder line).
+    if (rows.length >= SPAN_ROWS_MAX) {
+      const bumped = rows.pop() as Extract<ChartRow, { kind: 'span' }>
+      overflow.push(`${bumped.label} ${bumped.when}`)
+    }
+    rows.unshift(off)
+  }
   return { rows, overflow }
+}
+
+/**
+ * CUL-2514: the days a feeding off the trial diet was logged, a tick each, so the chicken and beef
+ * days sit on the chart beside the vomits they may explain. The days are v1's own (the trial's
+ * off-diet itemisation, `offDietDetail`); a floor, never a total. Null with no trial or no such day
+ * in the drawn columns.
+ */
+function offDietRow(snap: ReportSnapshot, cols: ChartColumn[]): Extract<ChartRow, { kind: 'span' }> | null {
+  const t = snap.trial
+  if (!t || cols.length === 0) return null
+  const days = [
+    ...new Set(t.exposures.items.filter((x) => x.classification.offDiet).map((x) => new Date(x.dayIndex * MS_PER_DAY).toISOString().slice(0, 10))),
+  ]
+    .filter((d) => d >= cols[0].start && d <= cols[cols.length - 1].end)
+    .sort()
+  if (days.length === 0) return null
+  const named = days.length <= 6 ? days.map(plainDay).join(', ') : `${days.length} days from ${plainDay(days[0])} to ${plainDay(days[days.length - 1])}`
+  return {
+    kind: 'span',
+    label: 'Off the trial diet',
+    fromCol: colOf(cols, days[0]),
+    toCol: colOf(cols, days[days.length - 1]),
+    fromPos: dayPos(cols, days[0]),
+    toPos: dayPos(cols, days[days.length - 1]),
+    openStart: false,
+    openEnd: false,
+    hollow: false,
+    endDeclared: false,
+    openCourse: false,
+    when: `on ${named} (a floor, not a total)`,
+    doseCols: days.map((d) => dayPos(cols, d)),
+    tickKind: 'off_diet',
+  }
+}
+
+/** The short last column a reader could take for a fall: a part week (or bin) at the window's end.
+ *  Null on a day row, where every column is a whole day. */
+export function soFarCol(cols: ChartColumn[], unit: LeadChart['unit']): number | null {
+  if (unit === 'day' || cols.length === 0) return null
+  const last = cols.length - 1
+  return cols[last].days < (unit === 'week' ? 7 : 14) ? last : null
+}
+
+/**
+ * CUL-2360: the burden flag's own window, bracketed under the axis, on the sign the flag counts. A
+ * 4-day last week holding 4 vomits drew shorter than the 6-day week before it while the band said
+ * 6 vomits in 7 days; the bracket puts the flag's window and count on the chart. Its count and days
+ * are the flag's fields, worded as v1's burden row words them (rule 1: no number computed here).
+ * The lead row's flag first; null when no burden flag fired on a drawn sign row.
+ */
+function recentBracketOf(snap: ReportSnapshot, cols: ChartColumn[], rows: ChartRow[], zeroSign: boolean): RecentBracket | null {
+  if (zeroSign || cols.length === 0) return null
+  const drawn = rows.filter((r): r is Extract<ChartRow, { kind: 'sign' }> => r.kind === 'sign')
+  const burdens = snap.safetyFlags.filter((f): f is Extract<SafetyFlag, { kind: 'symptom_burden' }> => f.kind === 'symptom_burden')
+  const pick = [...drawn].sort((a, b) => Number(b.lead) - Number(a.lead)).map((r) => burdens.find((f) => f.symptomType === r.sign)).find((f) => f !== undefined)
+  if (!pick) return null
+  const from = addDays(snap.scope.endDate, -(pick.windowDays - 1))
+  const label = `the last ${pick.windowDays} days, ${pick.count} ${symptomLabel(pick.symptomType).toLowerCase()} ${pick.count === 1 ? 'entry' : 'entries'}, as the burden flag counts them`
+  // The bracket opens at the start of its first day, never before the chart's left edge.
+  const left = from < cols[0].start ? 0 : dayPos(cols, from) - 0.5 / cols[colOf(cols, from)].days
+  return { fromPos: Math.max(0, left), toPos: cols.length, label }
 }
 
 function colLabel(c: ChartColumn, unit: LeadChart['unit']): string | null {
@@ -784,13 +920,18 @@ function buildLeadChart(
   const spans = spanRows(snap, columns)
   for (const r of spans.rows) {
     rows.push(r)
-    marks.add(r.doseCols ? 'dose_ticks' : r.hollow ? 'hollow_span' : 'span')
+    marks.add(r.doseCols ? (r.tickKind === 'off_diet' ? 'off_diet_ticks' : 'dose_ticks') : r.hollow ? 'hollow_span' : 'span')
+    if (r.openCourse) marks.add('open_end')
   }
   if (spans.overflow.length > 0) overflowParts.push(`also running: ${spans.overflow.join('; ')}`)
   const solid = spans.rows.filter((r) => !r.hollow && !r.doseCols)
   const hollow = spans.rows.filter((r) => r.hollow && !r.doseCols)
-  const ticks = spans.rows.filter((r) => r.doseCols)
+  const ticks = spans.rows.filter((r) => r.doseCols && r.tickKind !== 'off_diet')
+  const offDiet = spans.rows.filter((r) => r.tickKind === 'off_diet')
+  const open = solid.filter((r) => r.openCourse)
+  if (offDiet.length > 0) twinParts.push(`Ticks, one per day a feeding off the trial diet was logged: ${offDiet.map((r) => r.when).join('; ')}`)
   if (solid.length > 0) twinParts.push(`Bracketed lines, courses and foods: ${solid.map((r) => `${r.label} ${r.when}`).join('; ')}`)
+  if (open.length > 0) twinParts.push(`Dotted after the last logged dose, no end recorded: ${open.map((r) => r.label).join('; ')}`)
   if (hollow.length > 0) twinParts.push(`Hollow dashed line: ${hollow.map((r) => `${r.label}, ${r.when}`).join('; ')}`)
   if (ticks.length > 0) twinParts.push(`Ticks, one per day an ad-hoc dose was logged: ${ticks.map((r) => `${r.label}, ${r.when}`).join('; ')}`)
 
@@ -798,10 +939,30 @@ function buildLeadChart(
     .map((c, i) => ({ c, i, l: colLabel(c, unit) }))
     .filter((x) => x.l !== null)
   if (partials.length > 0) marks.add('partial')
+  // CUL-2360: a short last column draws its bars as outlines ("so far"), so fewer days can never
+  // read as fewer entries; the twin says so wherever such a bar is drawn.
+  const soFarIdx = soFarCol(columns, unit)
+  const soFarDrawn =
+    soFarIdx !== null &&
+    rows.some((r) => (r.kind === 'sign' && r.counts[soFarIdx] > 0) || (r.kind === 'intake' && (r.cells[soFarIdx]?.notFinished ?? 0) > 0))
   const fromNote = dayRowFrom !== null ? `, the first day with an entry in this window` : ''
   const head = `By ${unitWord} from ${startLabel}${fromNote}${
-    partials.length > 0 ? ` (${partials.map((x) => `${unit === 'day' ? 'day' : unit === 'week' ? 'week' : 'bin'} ${x.i + 1} ${x.l}${x.i === columns.length - 1 && x.c.days < (unit === 'week' ? 7 : 14) ? ', so far' : ''}`).join('; ')})` : ''
+    partials.length > 0
+      ? ` (${partials
+          .map(
+            (x) =>
+              `${unit === 'day' ? 'day' : unit === 'week' ? 'week' : 'bin'} ${x.i + 1} ${x.l}${
+                x.i === soFarIdx ? `, so far${soFarDrawn ? ', its bars drawn as outlines, not a full week' : ''}` : ''
+              }`,
+          )
+          .join('; ')})`
+      : ''
   }`
+  const recentBracket = recentBracketOf(snap, columns, rows, zeroSign)
+  if (recentBracket) {
+    marks.add('recent_bracket')
+    twinParts.push(`Bracket under the axis: ${recentBracket.label}`)
+  }
   const hatchNote =
     !zeroSign && columns.some((c) => c.loggedDays === 0)
       ? `; hatched, nothing logged: ${columns.filter((c) => c.loggedDays === 0).map((c) => plainDay(c.start)).join(', ')}`
@@ -827,6 +988,7 @@ function buildLeadChart(
     columns,
     rows,
     overflow: overflowParts.length > 0 ? overflowParts.join('; ') : null,
+    recentBracket,
     twin,
     marks: [...marks],
   }
@@ -1115,6 +1277,10 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
   const confounder = confounderOf(snap)
   if (confounder) blocks.push({ kind: 'confounder', id: 'confounder', ...confounder })
 
+  // CUL-2514: the trial's bottom line as v1's page 1 states it, beside the overlap it qualifies.
+  const reading = trialReadingOf(snap)
+  if (reading !== null) blocks.push({ kind: 'trial_reading', id: 'trial-reading', label: TRIAL_READING_LABEL, html: reading })
+
   if (lines.length > 1) blocks.push({ kind: 'record_lines', id: 'record-lines', lines: lines.slice(1) })
 
   const gaps = gapLinesOf(snap)
@@ -1153,6 +1319,8 @@ export interface WordCount {
     recordEdge: number
     disclosure: number
     questions: number
+    /** v1's trial bottom line (CUL-2514): never cut, so never in the cuttable budget. */
+    trialReading: number
   }
 }
 
@@ -1163,7 +1331,7 @@ function words(text: string): number {
 
 export function wordCountOf(doc: DocumentV2): WordCount {
   let cuttable = 0
-  const fixed = { masthead: 0, band: 0, scopeLine: 0, twin: 0, colophon: 0, changes: 0, recordEdge: 0, disclosure: 0, questions: 0 }
+  const fixed = { masthead: 0, band: 0, scopeLine: 0, twin: 0, colophon: 0, changes: 0, recordEdge: 0, disclosure: 0, questions: 0, trialReading: 0 }
   for (const b of doc.blocks) {
     switch (b.kind) {
       case 'lead_sentence':
@@ -1200,6 +1368,9 @@ export function wordCountOf(doc: DocumentV2): WordCount {
         break
       case 'disclosure':
         fixed.disclosure += words(textOf(b.html))
+        break
+      case 'trial_reading':
+        fixed.trialReading += words(`${b.label} ${textOf(b.html)}`)
         break
       case 'questions':
         fixed.questions += words(b.items.map((q) => q.text).join(' '))

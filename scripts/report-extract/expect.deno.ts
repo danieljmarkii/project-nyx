@@ -130,6 +130,11 @@ export function sheet1Lines(doc: DocumentV2): ExpectedLine[] {
       case 'confounder':
         add(b.id, b.text)
         break
+      case 'trial_reading':
+        // CUL-2514: v1 page 1's bottom line on the trial, carried on sheet 1 word for word.
+        add(b.id, b.label)
+        add(b.id, textOf(b.html))
+        break
       case 'record_lines':
         for (const l of b.lines) add(b.id, l.text)
         break
