@@ -8,6 +8,7 @@ import { renderPrintV2 } from './renderPrintV2.ts'
 import { PUSH_NOTE, renderPhoneV2 } from './renderPhoneV2.ts'
 import { v1PointerLeak } from './backSheetsV2.ts'
 import { fallingTrialSignLabels } from './sheet1CarryV2.ts'
+import { trialOwnSignsOf } from './v2Predicates.ts'
 import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
 
@@ -176,4 +177,58 @@ Deno.test('pending the PM — a trial’s own falling sign prints its count but 
   // Nyx's vomiting rose (6 → 10): v1's halves print.
   assert.deepEqual(fallingTrialSignLabels(nyxLiveSnapshot()), [])
   for (const t of sheet1Texts(docOf(nyxLiveSnapshot()))) assert.match(t, /first 23 d 22 logged 6 → last 23 d 10/)
+})
+
+// ── Adversarial pass 1 on PR-30: each break, reproduced ─────────────────────
+
+/** Cooper with an intake log and a meal-completion run a real record can hold, newest first. */
+function withLog(ratings: Array<'refused' | 'most' | 'all'>, opts: { run: number; hidden: number; pinnedAll?: boolean }): ReportSnapshot {
+  const s = structuredClone(fx('cooper'))
+  const t0 = Date.parse('2026-10-16T18:00:00Z')
+  const row = (i: number, r: 'refused' | 'most' | 'all', pinned = false) => ({
+    eventId: `e${i}`,
+    occurredAt: new Date(t0 - i * 8 * 3_600_000).toISOString(),
+    foodLabel: 'Venison LID',
+    intakeRating: r,
+    isLastFullMeal: pinned,
+    notCountedFreeFed: false,
+    pinned,
+  })
+  s.provenance.intakeLog = [...ratings.map((r, i) => row(i, r)), ...(opts.pinnedAll ? [row(ratings.length + 30, 'all', true)] : [])] as never
+  s.provenance.intakeLogHiddenOlder = opts.hidden
+  s.diet.mealCompletion = { ...s.diet.mealCompletion!, recentNotFullyEatenRun: opts.run, ratedMeals: Math.max(s.diet.mealCompletion!.ratedMeals, opts.run + 5) }
+  return s
+}
+
+Deno.test('pass 1, break 1 (QUIET) — a log capped before its pinned anchor says "at least", never a shorter run', () => {
+  const s = withLog(Array(40).fill('refused'), { run: 60, hidden: 20, pinnedAll: true })
+  const meals = lineOf(docOf(s), 'intake')
+  assert.match(meals, /The last 60 rated meals in a row were not fully eaten, the most recent on Oct 16\. At least the last 40 were refused outright/)
+  // Uncapped, the count is exact.
+  assert.match(lineOf(docOf(withLog(['refused', 'refused', 'refused', 'most'], { run: 4, hidden: 0 })), 'intake'), / The last 3 were refused outright/)
+})
+
+Deno.test('pass 1, break 2 (LOUD) — "the meal before them" is named only inside the unfinished run', () => {
+  // Run of 2: the next listed row is past the run (a fully eaten meal the log leaves out sits between).
+  const past = lineOf(docOf(withLog(['refused', 'refused', 'most'], { run: 2, hidden: 0 })), 'intake')
+  assert.match(past, /The last 2 were refused outright/)
+  assert.doesNotMatch(past, /The meal before them/)
+  // Run of 3: the partly eaten meal is inside the run, so it is the meal before them.
+  assert.match(lineOf(docOf(withLog(['refused', 'refused', 'most'], { run: 3, hidden: 0 })), 'intake'), /The meal before them, on Oct 15, was partly eaten\./)
+})
+
+Deno.test('pass 1, guard gap — on every fixture, no falling halves of a trial’s own sign print on sheet 1 (the cut, held by data)', () => {
+  let falling = 0
+  for (const [name, s] of [...v2DocFixtures(), ['nyx-live-real', nyxLiveSnapshot()] as const]) {
+    const texts = sheet1Texts(docOf(s))
+    const own = new Set<string>(trialOwnSignsOf(s))
+    for (const x of s.symptoms) {
+      const h = x.trendHalves
+      if (!h || !own.has(x.type) || h.lastCount >= h.firstCount) continue
+      falling++
+      const pair = new RegExp(`first ${h.days} d (?:\\d+ logged )?${h.firstCount} → last ${h.days} d (?:\\d+ logged )?${h.lastCount}\\b`)
+      for (const t of texts) assert.doesNotMatch(t, pair, `${name}: ${x.type}`)
+    }
+  }
+  assert.ok(falling >= 1, `fixtures with a falling trial sign (${falling})`)
 })

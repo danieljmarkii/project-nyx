@@ -155,16 +155,24 @@ function bandCarries(leaf: V1Leaf, c: Ctx): string[] {
  */
 function fallingHalvesCut(leaf: V1Leaf, c: Ctx): string[] {
   if (leaf.cls !== 'delta' && leaf.cls !== 'delta-caveat') return ['a trend leaf that is not a halves comparison']
-  const own = new Set<string>(trialOwnSignsOf(c.snap))
-  const falling = c.snap.symptoms.filter((s) => own.has(s.type) && s.trendHalves !== null && s.trendHalves.lastCount < s.trendHalves.firstCount)
+  const falling = fallingTrialSignLabels(c.snap)
   if (falling.length === 0) return ['no trial sign falls, so nothing may be cut']
-  if (leaf.cls === 'delta' && !leaf.text.includes('→')) return [`a "not compared" halves line, which is never cut: "${leaf.text}"`]
-  if (leaf.cls === 'delta' && !falling.some((s) => s.trendHalves !== null && leaf.text.includes(`${s.trendHalves.firstCount} → last ${s.trendHalves.days} d ${s.trendHalves.lastCount}`))) {
-    return [`a halves comparison that is not a falling trial sign's: "${leaf.text}"`]
+  // Exactly the leaves the cut removes (adversarial pass 1: any caveat passed once one sign fell):
+  // the delta and caveats of a falling trial sign's own trend block, and only where its delta states
+  // the two counts. Read off v1's html, block by block, never matched by text alone.
+  const trend = topLevelDivs(v1Page1Html(c.snap)).find((d) => /<h2>Symptom frequency/.test(d)) ?? ''
+  const cut = new Set<string>()
+  for (const m of trend.matchAll(/<div class="trend">[\s\S]*?(?=<div class="trend">|<div class="callout">|$)/g)) {
+    const who = /<div class="who">([^<]*)/.exec(m[0])?.[1].trim() ?? ''
+    const delta = /<div class="delta">([\s\S]*?)<\/div>/.exec(m[0])?.[1] ?? ''
+    if (!falling.includes(who) || !delta.includes('&rarr;')) continue
+    for (const d of m[0].matchAll(/<div class="delta(?:-caveat)?">[\s\S]*?<\/div>/g)) cut.add(fold(d[0]))
   }
+  if (!cut.has(leaf.text)) return [`a trend leaf the pending cut does not remove: "${leaf.text}"`]
   const chart = blockOf(c.doc, 'lead_chart')?.chart
+  const own = new Set<string>(trialOwnSignsOf(c.snap))
   const miss: string[] = []
-  for (const s of falling) {
+  for (const s of c.snap.symptoms.filter((x) => own.has(x.type) && falling.includes(symptomLabel(x.type)))) {
     if (!chart?.rows.some((r) => r.kind === 'sign' && r.sign === s.type) && !c.text.print.includes(fold(symptomLabel(s.type)))) miss.push(`${s.type} on the chart or a line`)
   }
   return miss

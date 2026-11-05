@@ -1184,17 +1184,24 @@ function bowlText(b: ReportSnapshot['diet']['freeFed'][number]): string {
 /**
  * CUL-2540: the run of refusals reaching the newest rated meal, read off the intake log (newest
  * first), and the meal before it. Only rows the not-fully-eaten run already covers are counted, so a
- * fully eaten meal the log leaves out can never sit inside the run; at the log's cap it says "at least".
+ * fully eaten meal the log leaves out can never sit inside the run.
+ *
+ * ADVERSARIAL PASS 1 (two breaks). QUIET: the log's pinned last-full-meal row sits after the capped
+ * rows, so "reached the cap" is reaching the last row that is not pinned, and with older rows hidden
+ * the run says "at least" (60 refusals read as "the last 40"). LOUD: the meal before the run is named
+ * only when it is inside the not-fully-eaten run too (`k < run`); past it, the next listed row can be
+ * an older meal across a fully eaten one the log's scope leaves out.
  */
 function refusalRunText(snap: ReportSnapshot, run: number): string {
-  const rows = snap.provenance.intakeLog.filter((r) => !r.notCountedFreeFed)
+  const rows = snap.provenance.intakeLog.filter((r) => !r.notCountedFreeFed && !r.pinned)
   let k = 0
   while (k < rows.length && k < run && rows[k].intakeRating === 'refused') k++
   if (k < 2) return ''
   const day = (iso: string) => textOf(fmtLocalDay(iso, snap.timezone))
   const capped = k === rows.length && snap.provenance.intakeLogHiddenOlder > 0
-  const before = rows[k] && rows[k].intakeRating !== 'all' && rows[k].intakeRating !== 'refused' ? ` The meal before them, on ${day(rows[k].occurredAt)}, was partly eaten.` : ''
-  return ` The last ${capped ? 'at least ' : ''}${k} were refused outright, from ${day(rows[k - 1].occurredAt)} to ${day(rows[0].occurredAt)}.${before}`
+  const next = k < run && k < rows.length ? rows[k] : null
+  const before = next && next.intakeRating !== 'all' && next.intakeRating !== 'refused' ? ` The meal before them, on ${day(next.occurredAt)}, was partly eaten.` : ''
+  return ` ${capped ? 'At least the last' : 'The last'} ${k} were refused outright, from ${day(rows[k - 1].occurredAt)} to ${day(rows[0].occurredAt)}.${before}`
 }
 
 function intakeLine(snap: ReportSnapshot): RecordLine | null {
@@ -1209,7 +1216,7 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   // were not. The same floor as v1's `recentNotFullyEatenRun`: 2 or more. CUL-2540: a run that is
   // every rated meal says so, with its newest day, so an unbroken refusal never reads as a count.
   const run = mc?.recentNotFullyEatenRun ?? 0
-  const newest = snap.provenance.intakeLog.find((r) => !r.notCountedFreeFed)
+  const newest = snap.provenance.intakeLog.find((r) => !r.notCountedFreeFed && !r.pinned)
   const newestDay = newest ? textOf(fmtLocalDay(newest.occurredAt, snap.timezone)) : null
   const runText =
     mc && run >= 2 && run < mc.ratedMeals
