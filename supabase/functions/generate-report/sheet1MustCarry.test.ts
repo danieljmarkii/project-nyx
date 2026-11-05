@@ -132,7 +132,12 @@ function bandCarries(leaf: V1Leaf, c: Ctx): string[] {
   const miss: string[] = []
   const list = BAND_FOOD_LIST.exec(body)
   if (list) {
-    for (const food of list[1].split(' / ')) if (!has(c.text, food.trim())) miss.push(`trial food "${food.trim()}"`)
+    // v1's first sheet may name the list by count ("the 6 trial-diet foods named in the diet-trial
+    // block", CUL-2529): then every trial food on the flag must print on sheet 1 (the trial rows).
+    const byCount = /^the \d+ trial-diet foods named in the diet-trial block$/.test(list[1].trim())
+    const flag = c.snap.safetyFlags.find((f) => f.kind === 'trial_diet_refusal')
+    const foods = byCount && flag && flag.kind === 'trial_diet_refusal' ? flag.trialDietLabels.map((l) => fold(l)) : list[1].split(' / ')
+    for (const food of foods) if (!has(c.text, food.trim())) miss.push(`trial food "${food.trim()}"`)
     body = body.replace(BAND_FOOD_LIST, ' dates covered:')
     // The band's own cut list: the words before and after it, each verbatim.
     for (const part of body.split(' dates covered:')) if (!has(c.text, part.trim().replace(/\.$/, ''))) miss.push(`"${part.trim().slice(0, 80)}"`)

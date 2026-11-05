@@ -128,10 +128,11 @@ Deno.test('band — the first heading after the masthead, "Flag:" written as tex
  *  beside the line instead, R-10). The pointers are v1's own. */
 function v1RowOf(f: SafetyFlag, s: ReportSnapshot): string {
   let body = ''
+  // v1's first-sheet row (CUL-2529's fixes included), which v2's band carries since CUL-2551.
   safetyFlagRow(f, { ...s, incidentPhotos: [] }, (_t, b) => {
     body = b
     return ''
-  })
+  }, V1_FLAG_POINTERS, true)
   return body
 }
 

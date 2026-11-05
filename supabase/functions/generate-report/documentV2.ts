@@ -482,6 +482,9 @@ export function flagRowOf(f: SafetyFlag, snap: ReportSnapshot, ptr: FlagPointers
       return ''
     },
     ptr,
+    // CUL-2551: sheet 1 carries every v1 page-1 block, so v2's band takes v1's first-sheet fixes
+    // (CUL-2529: the weight reading's age and intake coverage, the refusal's named feedings).
+    true,
   )
   if (captured === null) throw new Error(`safetyFlagRow wrote no row for ${f.kind}`)
   return captured
