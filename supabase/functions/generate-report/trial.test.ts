@@ -865,7 +865,9 @@ Deno.test('CUL-2525 — an unpaired dose logged in food is an oral-route exposur
 Deno.test('CUL-2525 — page 1 names the doses given in food, and appendix B quotes the same two counts', () => {
   const text = plain(renderReport(assembleReport(nyxVehicleShape())))
   // Page 1: both halves of the doses given in food during the trial.
-  assert.ok(/1 dose by mouth was logged as given inside a food off the allowed list or not identified \(Zyrtec\)/.test(text), 'the unpaired dose')
+  // Cold read: the record holds no food for it, so the page says no food, and dates it.
+  assert.ok(/1 dose by mouth was logged as given in food with no food recorded \(Jun 12\) \(Zyrtec\)/.test(text), 'the unpaired dose')
+  assert.doesNotMatch(text, /off the allowed list or not identified/, 'no paired off-list vehicle exists in the trial days')
   assert.ok(
     /3 doses by mouth were logged as given inside a food on the allowed list \(Royal Canin Hydrolyzed HP × 3\), from Jun 8 to Jun 10, 2026 \(prednisolone\)/.test(text),
     (text.match(/\d+ doses? by mouth were logged as given inside a food on the allowed list[^.]*/) ?? ['(absent)'])[0],
@@ -873,8 +875,9 @@ Deno.test('CUL-2525 — page 1 names the doses given in food, and appendix B quo
   assert.ok(/1 dose by mouth during the trial may carry a protein/.test(text), 'the caveat fires on the unknown vehicle')
   // Appendix B: the row's window-wide feedings, then page 1's split over the trial days.
   const row = text.slice(text.indexOf('Food used to give medication'), text.indexOf('Entered as supplements'))
-  assert.ok(/4 feedings carried a dose/.test(row), row)
-  assert.ok(/This row counts the whole report window, from \w+ \d+ to \w+ \d+, 2026; during the trial, page 1 counts 3 doses given inside a food on the allowed list and 1 dose given in a food off the list or not identified\./.test(row), row)
+  // Each vehicle dated, so the chicken treat dosed after the trial is placed against its last day.
+  assert.match(row, /Royal Canin Hydrolyzed HP × 3 \(from Jun 8 to Jun 10, 2026\); Blue Buffalo Chicken Puree × 1 \(Jun 28, 2026\) \(4 feedings carried a dose\)/)
+  assert.match(row, /This row counts the whole report window, from \w+ \d+ to \w+ \d+, 2026; during the trial \(to Jun 25, 2026\), page 1 counts 3 doses given inside a food on the allowed list and 1 dose logged as given in food with no food recorded\./)
 })
 
 Deno.test('CUL-2525 pass 1 (QUIET) — a pill in an allowed food whose label lists another protein is never reassured about', () => {

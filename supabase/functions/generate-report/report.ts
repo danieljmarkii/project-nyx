@@ -2479,6 +2479,12 @@ export interface DietSummary {
      * row then exists with `feedings: 0` when these are its only content. Optional on older copies.
      */
     unresolvedDoses?: number
+    /**
+     * CUL-2525 (cold read) — per vehicle food: its dosed feedings and the first and last of them,
+     * so the row can place each vehicle against the trial's end (a chicken treat dosed after the
+     * trial read as an in-trial exposure). Same labels and order as `labels`. Optional on older copies.
+     */
+    byFood?: Array<{ label: string; feedings: number; firstAt: string; lastAt: string }>
   } | null
 }
 
@@ -6238,6 +6244,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     if (paired.size === 0) return unresolvedVehicleDoses > 0 ? { labels: [], feedings: 0, countedInTally: 0, unresolvedDoses: unresolvedVehicleDoses } : null
     const inTally = new Set(confounderFeedings.map((e) => e.id))
     const counts = new Map<string, number>()
+    const spans = new Map<string, { firstAt: string; lastAt: string }>()
     let feedings = 0
     let countedInTally = 0
     for (const e of windowMeals) {
@@ -6245,13 +6252,24 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       feedings++
       if (inTally.has(e.id)) countedInTally++
       const label = mealFoodLabel(e.meal!)
-      if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
+      if (label) {
+        counts.set(label, (counts.get(label) ?? 0) + 1)
+        const sp = spans.get(label)
+        if (!sp) spans.set(label, { firstAt: e.occurredAt, lastAt: e.occurredAt })
+        else {
+          // Instants, never ISO strings (C-40): offsets and precision differ across rows.
+          const ms = Date.parse(e.occurredAt)
+          if (ms < Date.parse(sp.firstAt)) sp.firstAt = e.occurredAt
+          if (ms > Date.parse(sp.lastAt)) sp.lastAt = e.occurredAt
+        }
+      }
     }
     if (feedings === 0) return unresolvedVehicleDoses > 0 ? { labels: [], feedings: 0, countedInTally: 0, unresolvedDoses: unresolvedVehicleDoses } : null
     const labels = [...counts.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([label]) => label)
-    return { labels, feedings, countedInTally, unresolvedDoses: unresolvedVehicleDoses }
+    const byFood = labels.map((label) => ({ label, feedings: counts.get(label)!, ...spans.get(label)! }))
+    return { labels, feedings, countedInTally, unresolvedDoses: unresolvedVehicleDoses, byFood }
   })()
 
   const diet: DietSummary = {

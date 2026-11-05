@@ -1350,6 +1350,9 @@ export interface OralRouteExposure {
   occurredAt: string;
   drugLabel: string | null;
   trigger: OralRouteTrigger;
+  /** CUL-2525 — a `food_vehicle` dose logged as given in food with NO meal paired: the food
+   *  is unknown, not known to be off the list. Absent otherwise (older facts unchanged). */
+  noFoodRecorded?: true;
 }
 
 /**
@@ -1441,7 +1444,11 @@ export function doseRouteOf(ctx: TrialContext, dose: TrialDose): DoseRoute | nul
     // and the closed-world rule below ("an UNKNOWN vehicle still counts") applied only
     // to a PAIRED unknown: an unpaired one dropped off page 1 while appendix B named it.
     const how = dose.howGiven?.trim().toLowerCase() ?? null;
-    return how !== null && VEHICLE_HOW_GIVEN.has(how) ? exposure('food_vehicle') : null;
+    if (how === null || !VEHICLE_HOW_GIVEN.has(how)) return null;
+    return {
+      kind: 'exposure',
+      exposure: { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, trigger: 'food_vehicle', noFoodRecorded: true },
+    };
   }
 
   // THE VEHICLE HAS TO BE OFF THE LIST TO BE AN EXPOSURE. A daily pill hidden in

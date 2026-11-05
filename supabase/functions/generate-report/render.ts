@@ -194,18 +194,22 @@ function trialVehicleSplit(snap: ReportSnapshot): string {
   const t = snap.trial
   if (!t) return ''
   const on = onListDosesOf(snap)
-  const off = vehicleDosesOf(snap)
-  if (on + off === 0) return ''
+  const noFood = t.oralRoute.filter((o) => o.trigger === 'food_vehicle' && o.noFoodRecorded).length
+  const off = vehicleDosesOf(snap) - noFood
+  if (on + off + noFood === 0) return ''
   const doses = (n: number): string => `${num(n)} dose${n === 1 ? '' : 's'}`
   const parts = [
     ...(on > 0 ? [`${doses(on)} given inside a food on the allowed list`] : []),
     ...(off > 0 ? [`${doses(off)} given in a food off the list or not identified`] : []),
+    ...(noFood > 0 ? [`${doses(noFood)} logged as given in food with no food recorded`] : []),
   ]
   // COLD READ, 22cae53: the row's feedings and page 1's doses read as two unexplained numbers (20
   // beside 18 + 1), and a chicken-treat vehicle dosed after the trial read as an in-trial exposure. The
   // row says its own span first, so the difference is visibly a window, not a disagreement.
   const scope = trialCountScope(t)
-  return ` This row counts the whole report window, ${h(fmtSpanFromTo(snap.scope.startDate, snap.scope.endDate))}; ${scope}, page&nbsp;1 counts ${parts.join(' and ')}.`
+  return ` This row counts the whole report window, ${h(fmtSpanFromTo(snap.scope.startDate, snap.scope.endDate))}; ${scope} (to ${h(
+    fmtDayYear(t.rangeEndDate),
+  )}), page&nbsp;1 counts ${parts.join(' and ')}.`
 }
 
 /** CUL-2525 — doses the same detector read as given inside a food ON the allowed list. */
@@ -220,10 +224,11 @@ function onListDosesOf(snap: ReportSnapshot): number {
  * `doseRouteOf` decision feeds this and the oral-route sentence, so the two partition the doses
  * given in food in the trial days (C-4), and appendix B's split quotes both counts.
  */
-function onListDosesSentence(t: NonNullable<ReportSnapshot['trial']>): string | null {
+function onListDosesSentence(t: NonNullable<ReportSnapshot['trial']>, tz: string | null): string | null {
   const on = t.oralRouteOnList ?? []
   if (on.length === 0) return null
-  const days = on.map((o) => o.occurredAt.slice(0, 10)).sort()
+  // The owner's local day (C-10), never the UTC slice of the instant.
+  const days = on.map((o) => localDayKeyOf(o.occurredAt, tz)).sort()
   const byFood = new Map<string, number>()
   for (const o of on) byFood.set(o.vehicleLabel, (byFood.get(o.vehicleLabel) ?? 0) + 1)
   const foods = [...byFood.entries()]
@@ -4050,11 +4055,11 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       // "Dosing should continue exactly as prescribed", a treatment instruction in a document that
       // states it makes none. The instruction is removed, not softened: §6.8's rule (never a
       // reason to skip a dose) is kept by saying nothing about the next dose at all.
-      oralRouteSentence(t.oralRoute, pet, drugs),
+      oralRouteSentence(t.oralRoute, pet, drugs, snap.timezone),
     )
   }
   // CUL-2525: the doses given inside an ALLOWED food, beside the ones that were exposures.
-  const onList = onListDosesSentence(t)
+  const onList = onListDosesSentence(t, snap.timezone)
   if (onList) blind.push(onList)
   if (t.arrangementExposures.length > 0) {
     // §5.6. A free-choice bowl of something off the list is a CONTINUOUS exposure
@@ -5830,19 +5835,28 @@ function oralRouteSentence(
   oral: NonNullable<ReportSnapshot['trial']>['oralRoute'],
   pet: string,
   drugs: readonly string[],
+  tz: string | null,
 ): string {
   const chew = oral.filter((o) => o.trigger === 'chewable').length
-  const food = oral.length - chew
+  // CUL-2525 (cold read): a dose logged in food with NO food recorded is said as exactly that, and
+  // dated. "Off the allowed list or not identified" left a chicken treat dosed after the trial open
+  // as its vehicle; the record says no food, so the page says no food.
+  const noFood = oral.filter((o) => o.trigger === 'food_vehicle' && o.noFoodRecorded)
+  const offList = oral.length - chew - noFood.length
   const doses = (n: number): string => `${num(n)} dose${n === 1 ? '' : 's'}`
-  const how =
-    chew > 0 && food > 0
-      ? `${doses(chew)} ${chew === 1 ? 'was a chewable, which carries' : 'were chewables, which carry'} a flavour, and ${doses(food)} ${
-          food === 1 ? 'was' : 'were'
-        } logged as given inside a food off the allowed list or not identified`
-      : chew > 0
-        ? `${chew === 1 ? 'was a chewable, which carries' : 'were chewables, which carry'} a flavour`
-        : `${food === 1 ? 'was' : 'were'} logged as given inside a food off the allowed list or not identified`
-  const lead = chew > 0 && food > 0 ? `<b>${doses(oral.length)} by mouth</b> reached ${pet}: ${how}` : `<b>${doses(oral.length)} by mouth</b> ${how}`
+  const was = (n: number): string => (n === 1 ? 'was' : 'were')
+  const noFoodDays = [...new Set(noFood.map((o) => localDayKeyOf(o.occurredAt, tz)))].sort()
+  const noFoodWhen =
+    noFoodDays.length <= 3 ? noFoodDays.map((d) => h(fmtDay(d))).join(', ') : h(fmtSpanFromTo(noFoodDays[0], noFoodDays[noFoodDays.length - 1]))
+  const parts: Array<{ n: number; text: string }> = [
+    ...(chew > 0 ? [{ n: chew, text: `${chew === 1 ? 'was a chewable, which carries' : 'were chewables, which carry'} a flavour` }] : []),
+    ...(offList > 0 ? [{ n: offList, text: `${was(offList)} logged as given inside a food off the allowed list or not identified` }] : []),
+    ...(noFood.length > 0
+      ? [{ n: noFood.length, text: `${was(noFood.length)} logged as given in food with no food recorded (${noFoodWhen})` }]
+      : []),
+  ]
+  const how = parts.length === 1 ? parts[0].text : parts.map((p) => `${doses(p.n)} ${p.text}`).join(', and ')
+  const lead = parts.length > 1 ? `<b>${doses(oral.length)} by mouth</b> reached ${pet}: ${how}` : `<b>${doses(oral.length)} by mouth</b> ${how}`
   return `${lead} (${drugs.map((d) => h(d)).join(', ')}). <b>The protein ${
     oral.length === 1 ? 'it' : 'they'
   } carried is not recorded anywhere</b>, so ${
@@ -11386,11 +11400,19 @@ export function dietHistoryAppendix(snap: ReportSnapshot): string {
   const unresolved = veh?.unresolvedDoses ?? 0
   const unresolvedBit = `${num(unresolved)} dose${unresolved === 1 ? ' was' : 's were'} logged in this window as given in food or a treat that does not resolve to a meal logged here, so the food is not named.`
   const named = veh && veh.feedings > 0 ? veh : null
+  // CUL-2525 (cold read): each vehicle with its count and dates, so a chicken treat dosed after the
+  // trial can be placed against the trial's last day, which the split below names.
+  const byFoodBit = (v: NonNullable<typeof named>): string => {
+    if (!v.byFood || v.byFood.length === 0) return distinctLabels(v.labels.map((label) => ({ label })), 4)
+    const shown = v.byFood.slice(0, 4).map((f) => {
+      const a = localDayKeyOf(f.firstAt, snap.timezone)
+      const b = localDayKeyOf(f.lastAt, snap.timezone)
+      return `${h(f.label)} &times;&nbsp;${num(f.feedings)} (${a === b ? h(fmtDayYear(a)) : h(fmtSpanFromTo(a, b))})`
+    })
+    return `${shown.join('; ')}${v.byFood.length > 4 ? `; +${v.byFood.length - 4} more` : ''}`
+  }
   const vehicleBit = named
-    ? `${distinctLabels(
-        named.labels.map((label) => ({ label })),
-        4,
-      )} (${num(named.feedings)} feeding${named.feedings === 1 ? '' : 's'} carried a dose). ${
+    ? `${byFoodBit(named)} (${num(named.feedings)} feeding${named.feedings === 1 ? '' : 's'} carried a dose). ${
         named.countedInTally === 0
           ? 'Not counted among the off-diet exposures in appendix&nbsp;C, so the protein tally there does not describe them.'
           : named.countedInTally === named.feedings
