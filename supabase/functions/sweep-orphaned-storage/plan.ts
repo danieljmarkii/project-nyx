@@ -589,14 +589,23 @@ export const CHECK_BLIND_REASONS: ReadonlyArray<LeftReason> = [
   'folder_not_reached',
 ]
 
-// File reasons counted only inside a folder already PROVED gone: every such file belongs to
-// a deleted pet, food or account, and no run will ever remove it (its key has a depth the
-// bucket's writer does not produce, or it has no timestamp). That is the writer/rule
-// mismatch CUL-2311 guards against, so it reads as overdue, every day, until a person
-// looks (rls-privacy-reviewer F2 on CUL-2521). The folder-level anomalies
-// (`folder_unknown_shape`, `file_at_root`, `folder_not_retired`, `bucket_unknown`) are
-// left out: their owner was never proved gone.
-export const CHECK_STUCK_REASONS: ReadonlyArray<LeftReason> = ['file_unknown_shape', 'file_no_timestamp']
+// Reasons for files no run will EVER remove, so they read as overdue every day until a
+// person looks (rls-privacy-reviewer F2 on CUL-2521):
+//   • file_unknown_shape, file_no_timestamp: inside a folder already PROVED gone, so a
+//     deleted owner's file at a depth its bucket's writer does not produce, or with no
+//     timestamp. The writer/rule mismatch CUL-2311 guards against.
+//   • folder_unknown_shape, file_at_root, folder_not_retired, bucket_unknown: the owner
+//     was never proved gone, but nothing (this sweep or delete-account) can ever erase
+//     these files. Forced loud as the stopgap; whether a benign production state makes
+//     them noise, and whether to narrow, is the PM's ruling (filed with this PR).
+export const CHECK_STUCK_REASONS: ReadonlyArray<LeftReason> = [
+  'file_unknown_shape',
+  'file_no_timestamp',
+  'folder_unknown_shape',
+  'file_at_root',
+  'folder_not_retired',
+  'bucket_unknown',
+]
 
 export interface CheckVerdict {
   // At least one file of a proved-gone owner was due at the run's start and is still here,

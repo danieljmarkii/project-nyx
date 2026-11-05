@@ -673,7 +673,7 @@ Deno.test('CUL-2521: checkVerdict reads every blind reason, and only those', () 
   for (const r of CHECK_STUCK_REASONS) {
     assertEquals(checkVerdict({ removed: {}, folders: {}, left: { b: { [r]: 1 } } }), { overdue: true, incomplete: false }, r)
   }
-  for (const r of ['file_in_grace', 'folder_owner_may_return', 'bucket_unknown', 'folder_unknown_shape'] as const) {
+  for (const r of ['file_in_grace', 'folder_owner_may_return'] as const) {
     assertEquals(checkVerdict({ removed: {}, folders: {}, left: { b: { [r]: 3 } } }), { overdue: false, incomplete: false }, r)
   }
   assertEquals(checkVerdict({ removed: { b: 0 }, folders: {}, left: {} }).overdue, false)
@@ -716,4 +716,16 @@ Deno.test('CUL-2521 F2: a deleted pet\'s file at a depth its bucket never writes
   assertEquals(removedKeys(calls), [])
   // ...and the check says so.
   assertEquals((await check(w, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 5))).verdict, { overdue: true, incomplete: false })
+})
+
+Deno.test('CUL-2521 F2 stopgap: an unknown bucket and a non-uuid folder read as overdue', async () => {
+  const at = atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 5)
+  const w = baseWorld()
+  await runSweep(fakeIO(w), { now: () => atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC + 1) })
+  assertEquals((await check(w, at)).verdict, { overdue: false, incomplete: false })
+  assertEquals((await check({ ...w, extraBuckets: ['nyx-something-new'] }, at)).verdict.overdue, true)
+  const odd = baseWorld()
+  await runSweep(fakeIO(odd), { now: () => atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC + 1) })
+  odd.objects[STORAGE_BUCKETS.petPhotos]['not-a-uuid/x.jpg'] = obj()
+  assertEquals((await check(odd, at)).verdict.overdue, true)
 })
