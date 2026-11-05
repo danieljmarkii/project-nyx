@@ -119,6 +119,22 @@ interface PetState {
    * next account at "not answered" (FR-9 parity, `wipeLocalSession`).
    */
   petsLoaded: boolean;
+  /**
+   * CUL-2542: the ids of this account's ARCHIVED pets, kept apart from `pets` (whose
+   * invariant is active-only, below). The widget capture inbox needs them: a capture
+   * tapped for a pet that was archived before the app took it in is still the owner's,
+   * and treating it as foreign let it age out and be deleted. Read by the inbox ingest
+   * and the inbox count only (lib/captureInbox.ts `withArchivedPetIds`); never a list
+   * to render. Filled by usePet beside the active read, grown by `removePet` (archive),
+   * cleared by `reset`. A restored pet may stay listed here: the set only has to
+   * contain every pet of the account, and a restored pet still is one.
+   */
+  archivedPetIds: string[];
+  /**
+   * Add ids to the archived-pet list (usePet's `is_active = false` read). A union, never
+   * a replace: a read that started before an in-app archive must not drop that id.
+   */
+  addArchivedPetIds: (ids: string[]) => void;
   /** Replace the active-pet list (oldest-first) and resolve the selection against it. */
   setPets: (pets: Pet[], preferredId?: string | null) => void;
   /** The pet list read answered, possibly with nothing in it. */
@@ -163,6 +179,9 @@ export const usePetStore = create<PetState>((set, get) => ({
   activePet: null,
   isOnboarded: false,
   petsLoaded: false,
+  archivedPetIds: [],
+  addArchivedPetIds: (ids) =>
+    set((state) => ({ archivedPetIds: [...new Set([...state.archivedPetIds, ...ids])] })),
   // INVARIANT: `pets` holds only NON-archived pets. Every loader filters
   // `is_active = true` (usePet) and archiving calls removePet, so an archived pet
   // never enters the list. The cross-pet safety banner (multi-pet §4) relies on
@@ -248,10 +267,16 @@ export const usePetStore = create<PetState>((set, get) => ({
       return {
         pets,
         activePet: resolveActivePet(pets, state.activePet?.id ?? null),
+        // CUL-2542: archiving keeps the pet in the account, so its waiting widget
+        // captures stay the owner's (see `archivedPetIds`).
+        archivedPetIds: state.archivedPetIds.includes(petId)
+          ? state.archivedPetIds
+          : [...state.archivedPetIds, petId],
       };
     });
     notifyPetsChanged();
   },
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
-  reset: () => set({ pets: [], activePet: null, isOnboarded: false, petsLoaded: false }),
+  reset: () =>
+    set({ pets: [], activePet: null, isOnboarded: false, petsLoaded: false, archivedPetIds: [] }),
 }));

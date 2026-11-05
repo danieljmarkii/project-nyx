@@ -2,6 +2,7 @@ import type { AppBowl } from './mealBowls';
 import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
+import { INBOX_FOOD_ID_RE, readInboxFoodIds } from './inboxFoodRefs';
 import {
   LIBRARY_FOODS_QUERY,
   ARCHIVED_FOODS_QUERY,
@@ -84,14 +85,25 @@ interface CacheFlushDb {
 // internal integer constant, safe to interpolate into the PRAGMA (which can't take
 // a bound parameter); Math.trunc is belt-and-braces against a non-integer reaching
 // the SQL.
+//
+// CUL-2542: `keepFoodIds` is the widget capture inbox's foods (lib/inboxFoodRefs.ts). A capture
+// waiting there is not a row yet, so the unsynced-row keep-set cannot see it, and a food named
+// only by it was deleted: the capture then deferred until it aged out. Only ids of the
+// extension's uuid shape reach the SQL (the PRAGMA's interpolation reasoning: execAsync takes
+// no bound parameters); anything else is left out, never quoted in.
 export async function flushLegacyCatalogCachesIfNeeded(
   database: CacheFlushDb,
   targetVersion: number = CACHE_SCHEMA_VERSION,
+  keepFoodIds: readonly string[] = [],
 ): Promise<boolean> {
   const target = Math.trunc(targetVersion);
   const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   const current = row?.user_version ?? 0;
   if (current >= target) return false;
+  const inboxKeep = keepFoodIds
+    .filter((id) => INBOX_FOOD_ID_RE.test(id))
+    .map((id) => `\n         UNION\n         SELECT '${id}'`)
+    .join('');
   await database.execAsync(
     `DELETE FROM food_items_cache
        WHERE id NOT IN (
@@ -99,7 +111,7 @@ export async function flushLegacyCatalogCachesIfNeeded(
          UNION
          SELECT food_item_id FROM meal_components WHERE synced = 0 AND food_item_id IS NOT NULL
          UNION
-         SELECT food_item_id FROM feeding_arrangements WHERE synced = 0 AND food_item_id IS NOT NULL
+         SELECT food_item_id FROM feeding_arrangements WHERE synced = 0 AND food_item_id IS NOT NULL${inboxKeep}
        );
      DELETE FROM medication_items_cache
        WHERE id NOT IN (
@@ -233,8 +245,17 @@ export async function initDb(): Promise<void> {
   // here must not abort init (the caches self-heal — a stale foreign row is a
   // privacy/UX wart, not a crash; the next successful launch retries the flush
   // because user_version was never bumped).
+  //
+  // CUL-2542: the widget inbox's foods are kept too. An inbox that cannot be read skips the
+  // flush for this launch (user_version stays behind, so the next launch retries) rather
+  // than delete a food a capture it could not see is waiting on.
   try {
-    await flushLegacyCatalogCachesIfNeeded(database);
+    const inboxFoods = readInboxFoodIds();
+    if (inboxFoods === null) {
+      console.warn('[db] catalog cache flush skipped: widget inbox unreadable');
+    } else {
+      await flushLegacyCatalogCachesIfNeeded(database, CACHE_SCHEMA_VERSION, inboxFoods);
+    }
   } catch (e) {
     console.warn('[db] catalog cache flush failed:', e);
   }

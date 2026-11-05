@@ -1,6 +1,7 @@
 import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
 import { clearWidgetData } from './appGroup';
+import { countUnclaimedInbox, ingestCaptureInbox } from './captureInbox';
 import { fenceWidgetPublish } from './widgetSnapshot';
 import { clearWidgetTimeline } from './widgetBridge';
 import { clearRecoveryRequest } from './recoveryMarker';
@@ -94,16 +95,36 @@ export async function purgeStoredAuthSession(): Promise<boolean> {
  * the owner from signing out, so every failure degrades to "report what we know"
  * rather than throwing.
  */
+//
+// THE WIDGET INBOX (CUL-2508). A capture tapped on the iOS widget waits in the App Group
+// inbox until the app takes it in, and the wipe deletes that inbox (`clearWidgetData`). It is
+// in neither SQLite nor the server, so a count of rows alone let sign-out destroy it with the
+// warning silent. So, before the push, one ingest takes in whatever can land (it then rides
+// the push like any row); after it, what is STILL waiting is counted into `pendingCount`.
+// The inbox is counted BEFORE the rows: a record the ingest moves across between the two
+// reads is then counted twice, never zero. A listing that cannot be read counts one
+// (CUL-2507's ruling for the report's freshness line, kept the same here). The ingest runs
+// under the current sign-out epoch: it moves only inside `wipeLocalSession`, after this.
 export async function flushForSignOut(): Promise<{
   pendingCount: number;
   quarantinedCount: number;
 }> {
+  const petIds = new Set(usePetStore.getState().pets.map((p) => p.id));
+  await ingestCaptureInbox(petIds).catch((e: unknown) =>
+    console.warn('[session] pre-sign-out inbox ingest failed:', e));
   await flushPendingForSignOut().catch((e) =>
     console.warn('[session] pre-sign-out flush failed:', e));
+  let inboxCount: number;
+  try {
+    inboxCount = countUnclaimedInbox(petIds);
+  } catch (e) {
+    console.warn('[session] pre-sign-out inbox read failed:', e);
+    inboxCount = 1;
+  }
   try {
     const status = await getSyncStatus();
     return {
-      pendingCount: status.pendingCount,
+      pendingCount: status.pendingCount + inboxCount,
       quarantinedCount: status.quarantinedCount,
     };
   } catch (e) {
@@ -112,7 +133,7 @@ export async function flushForSignOut(): Promise<{
     // device most likely to be holding unsent rows. Report one unsent item so the
     // owner is asked rather than assumed-at.
     console.warn('[session] pre-sign-out status read failed:', e);
-    return { pendingCount: 1, quarantinedCount: 0 };
+    return { pendingCount: 1 + inboxCount, quarantinedCount: 0 };
   }
 }
 

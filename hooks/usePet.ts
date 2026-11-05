@@ -31,6 +31,25 @@ export function usePet() {
     // error, and retry once to absorb the cold-start token-attach race (RLS returns
     // empty-with-no-error before the token is attached) before trusting an
     // empty-and-uncompleted result — a false onboarding bounce risks a duplicate pet.
+    async function loadArchivedPetIds(): Promise<void> {
+      try {
+        const { data, error } = await supabase
+          .from('pets')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('is_active', false);
+        if (cancelled) return;
+        if (error) {
+          console.warn('[usePet] archived pet ids fetch failed:', error.message);
+          return;
+        }
+        const ids = ((data ?? []) as { id: string }[]).map((p) => p.id);
+        if (ids.length > 0) usePetStore.getState().addArchivedPetIds(ids);
+      } catch (e) {
+        console.warn('[usePet] archived pet ids fetch threw:', e);
+      }
+    }
+
     async function loadState(attempt: number): Promise<void> {
       const persistedId = await loadPersistedActivePetId();
 
@@ -66,6 +85,12 @@ export function usePet() {
         }
         return;
       }
+
+      // CUL-2542: the account's archived pet ids, for the widget capture inbox only (a
+      // capture for a pet archived before the app took it in is still the owner's). Off the
+      // gate's critical path on purpose: a failure here leaves the list as it was and never
+      // blocks or bounces the launch; the inbox then treats that pet as unknown, as before.
+      void loadArchivedPetIds();
 
       const [profileRes, petsRes] = reads;
       const { data: profile, error: profileError } = profileRes;
