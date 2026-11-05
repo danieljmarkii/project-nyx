@@ -877,7 +877,7 @@ Deno.test('CUL-2525 — page 1 names the doses given in food, and appendix B quo
   const row = text.slice(text.indexOf('Food used to give medication'), text.indexOf('Entered as supplements'))
   // Each vehicle dated, so the chicken treat dosed after the trial is placed against its last day.
   assert.match(row, /Royal Canin Hydrolyzed HP × 3 \(from Jun 8 to Jun 10, 2026\); Blue Buffalo Chicken Puree × 1 \(Jun 28, 2026\) \(4 feedings carried a dose\)/)
-  assert.match(row, /This row counts the whole report window, from \w+ \d+ to \w+ \d+, 2026; during the trial \(to Jun 25, 2026\), page 1 counts 3 doses given inside a food on the allowed list and 1 dose logged as given in food with no food recorded\./)
+  assert.match(row, /This row counts the whole report window, from \w+ \d+ to \w+ \d+, 2026; during the trial \(to Jun 25, 2026\), the clinical summary counts 3 doses given inside a food on the allowed list and 1 dose logged as given in food with no food recorded\./)
 })
 
 Deno.test('CUL-2525 pass 1 (QUIET) — a pill in an allowed food whose label lists another protein is never reassured about', () => {
@@ -1084,7 +1084,7 @@ Deno.test('the challenge-window marker is forward-only, species-keyed, and never
   assert.ok(/not an attribution/.test(text))
   // CUL-1978 cold read 2 — its same-day exclusion is the MARKER's rule, not page 1's test,
   // which now names associations over a 12–24 h window.
-  assert.ok(/not the association test on page.1: .*this marker deliberately excludes same-day pairs/.test(text), text.slice(text.indexOf('Timing only'), text.indexOf('Timing only') + 300))
+  assert.ok(/not the association test in the clinical summary: .*this marker deliberately excludes same-day pairs/.test(text), text.slice(text.indexOf('Timing only'), text.indexOf('Timing only') + 300))
 })
 
 Deno.test('the challenge window is 7 days for a cat, 14 for a dog (Olivry & Mueller)', () => {
@@ -5680,27 +5680,27 @@ for (const [tz, now] of [
 // Re-captured at CUL-2443, which names the middle day an odd span leaves in neither half: a text
 // diff of all 21 renders against the merge-base differed only in that "Symptoms vs logging" line.
 const CUL_2094_GOLDEN: Record<string, string> = {
-  'endedPast/America/Phoenix': 'cd5b6b8fb0e85a2d',
-  'endedPast/window/America/Phoenix': '857ee73830555eab',
-  'endedToday/America/Phoenix': 'f2e9823832db5920',
-  'endedToday/window/America/Phoenix': 'b4c2e0f1a6667f96',
-  'endedOnTarget/America/Phoenix': '25e5de5eb3117848',
-  'endedOnTarget/window/America/Phoenix': '719d9f6d3efd24ed',
-  'active/America/Phoenix': 'f8f887a36a5e2372',
-  'endedPast/Pacific/Noumea': 'cd5b6b8fb0e85a2d',
-  'endedPast/window/Pacific/Noumea': '857ee73830555eab',
-  'endedToday/Pacific/Noumea': 'f2e9823832db5920',
-  'endedToday/window/Pacific/Noumea': 'b4c2e0f1a6667f96',
-  'endedOnTarget/Pacific/Noumea': '25e5de5eb3117848',
-  'endedOnTarget/window/Pacific/Noumea': '719d9f6d3efd24ed',
-  'active/Pacific/Noumea': 'ded63778f07d5524',
-  'endedPast/UTC': 'cd5b6b8fb0e85a2d',
-  'endedPast/window/UTC': '857ee73830555eab',
-  'endedToday/UTC': 'f2e9823832db5920',
-  'endedToday/window/UTC': 'b4c2e0f1a6667f96',
-  'endedOnTarget/UTC': '25e5de5eb3117848',
-  'endedOnTarget/window/UTC': '719d9f6d3efd24ed',
-  'active/UTC': 'f8f887a36a5e2372',
+  'endedPast/America/Phoenix': '2af9f2fa7ffdda09',
+  'endedPast/window/America/Phoenix': '264129e3759e6b5b',
+  'endedToday/America/Phoenix': '584a6acba68e10bd',
+  'endedToday/window/America/Phoenix': '4ff3fd7fd71adebc',
+  'endedOnTarget/America/Phoenix': 'f6ed47a110851dca',
+  'endedOnTarget/window/America/Phoenix': '78c97c5fe24bfe2b',
+  'active/America/Phoenix': '3531145c16afd20c',
+  'endedPast/Pacific/Noumea': '2af9f2fa7ffdda09',
+  'endedPast/window/Pacific/Noumea': '264129e3759e6b5b',
+  'endedToday/Pacific/Noumea': '584a6acba68e10bd',
+  'endedToday/window/Pacific/Noumea': '4ff3fd7fd71adebc',
+  'endedOnTarget/Pacific/Noumea': 'f6ed47a110851dca',
+  'endedOnTarget/window/Pacific/Noumea': '78c97c5fe24bfe2b',
+  'active/Pacific/Noumea': '060dc0d0a7663a21',
+  'endedPast/UTC': '2af9f2fa7ffdda09',
+  'endedPast/window/UTC': '264129e3759e6b5b',
+  'endedToday/UTC': '584a6acba68e10bd',
+  'endedToday/window/UTC': '4ff3fd7fd71adebc',
+  'endedOnTarget/UTC': 'f6ed47a110851dca',
+  'endedOnTarget/window/UTC': '78c97c5fe24bfe2b',
+  'active/UTC': '3531145c16afd20c',
 }
 
 Deno.test('CUL-2094 — every trial the fix does not reach renders byte-identically (before/after)', async () => {

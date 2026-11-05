@@ -116,8 +116,10 @@ function v1AppendixRows(v1Html: string): string[] {
  * it by sheet ("the sheet headed …", "this sheet", "sheet 1": `v2Pointers`). Both sides fold every
  * pointer to one token, so the row is still compared word for word around it.
  */
-const POINTER_ROW = /\b(appendi(?:x|ces)|page 1)\b/
-const V1_POINTER = /\b(?:(?:in|on) )?(?:appendix [a-g]|page 1)\b/g
+// CUL-2529: v1 names its summary "the clinical summary" (it runs to several printed pages), where
+// it said "page 1"; the same pointer, one token either way.
+const POINTER_ROW = /\b(appendi(?:x|ces)|page 1|the clinical summary)\b/
+const V1_POINTER = /\b(?:(?:in|on) )?(?:appendix [a-g]|page 1|the clinical summary)\b/g
 const V2_POINTER = /\b(?:(?:in|on) )?(?:the sheet headed "[^"]+"|this sheet|sheet 1)/g
 const pointerToken = (t: string, re: RegExp): string => t.replace(re, '@')
 
