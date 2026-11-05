@@ -335,6 +335,18 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
       expect((raw.prepare('SELECT COUNT(*) AS n FROM meals').get() as { n: number }).n).toBe(1);
     });
 
+    it('stamps the TAP time as updated_at, so an old capture still pending ages from its tap (CUL-2489)', async () => {
+      // Every pending count (and the SyncBanner's over-a-day line) ages a row from updated_at.
+      // Stamped with the ingest time, a capture tapped days ago restarted that clock.
+      const tapped = '2026-07-21T08:00:00.000Z';
+      await ingestCaptureRecords(db, files(validRecord({ createdAt: tapped })), new Set([PET]), NOW);
+      const evt = raw.prepare('SELECT updated_at FROM events WHERE id = ?').get(EVT) as { updated_at: string };
+      const meal = raw.prepare('SELECT updated_at FROM meals WHERE id = ?').get(MEAL) as { updated_at: string };
+      expect(evt.updated_at).toBe(tapped);
+      expect(meal.updated_at).toBe(tapped);
+      expect(NOW.toISOString()).not.toBe(tapped);
+    });
+
     it('drops the same record when its food is not cached (it cannot land)', async () => {
       const old = validRecord({
         createdAt: staleCreated(),
@@ -919,8 +931,17 @@ describe('countUnclaimedInboxPayloads / countUnclaimedInbox (CUL-2468)', () => {
     expect(countUnclaimedInboxPayloads(['{not json', forged], mine)).toBe(0);
   });
 
-  it('an empty pet set counts nothing, as the ingest applies nothing', () => {
-    expect(countUnclaimedInboxPayloads([treat()], new Set())).toBe(0);
+  it('an empty pet set (the list not loaded yet) counts every record that will not drop (CUL-2489)', () => {
+    // An offline cold launch never fills the pet list; "unknown" is not "not ours".
+    expect(countUnclaimedInboxPayloads([treat(), treat(OTHER_PET), '{not json'], new Set())).toBe(2);
+  });
+
+  it('a deferred record with no readable pet id counts: it cannot be shown to be foreign', () => {
+    const { petId: _drop, ...rest } = validRecord();
+    void _drop;
+    const noPet = JSON.stringify({ ...rest, schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION + 1, petIds: [PET] });
+    expect(classifyInboxPayload(noPet).status).toBe('defer');
+    expect(countUnclaimedInboxPayloads([noPet], mine)).toBe(1);
   });
 
   it('reads the directory: .json files only, an unreadable one counts', () => {

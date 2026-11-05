@@ -371,6 +371,13 @@ export async function ingestCaptureRecords(
     // occurred_at_confidence 'witnessed' + occurred_at_source 'now': a widget
     // tap is the owner logging in the moment; the surface stamps the clock.
     const nowIso = now.toISOString();
+    // updated_at is the TAP time, not the ingest time (CUL-2489 adversarial pass 1): every
+    // pending count ages a row from its local updated_at (SYNC_QUEUES' pendingSince), and
+    // the SyncBanner speaks only once the oldest is over a day old. Stamped `now`, a capture
+    // tapped three days ago and still unsent restarted that clock here and silenced the
+    // banner for another day. The server restamps updated_at on INSERT (migration 107), and
+    // hydration never overwrites an unpushed row, so the local stamp only ages the row.
+    const tapIso = record.createdAt;
     if (fenced()) {
       stoppedAt = index;
       break;
@@ -381,7 +388,7 @@ export async function ingestCaptureRecords(
           occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
           logged_via, created_at, updated_at, synced)
        VALUES (?, ?, 'meal', ?, NULL, NULL, 'manual', 'now', 'witnessed', NULL, NULL, ?, ?, ?, 0)`,
-      [record.id, record.petId, record.occurredAt, record.loggedVia, record.createdAt, nowIso],
+      [record.id, record.petId, record.occurredAt, record.loggedVia, record.createdAt, tapIso],
     );
     // Assumed portion, unrated (spec §2.3): quantity 'unknown', no
     // intake_rating — a widget tap is not a witnessed rating, and the engine
@@ -394,7 +401,7 @@ export async function ingestCaptureRecords(
       `INSERT OR IGNORE INTO meals
          (id, event_id, pet_id, food_item_id, quantity, logged_via, created_at, updated_at, synced)
        VALUES (?, ?, ?, ?, 'unknown', ?, ?, ?, 0)`,
-      [record.mealId, record.id, record.petId, record.foodItemId, record.loggedVia, record.createdAt, nowIso],
+      [record.mealId, record.id, record.petId, record.foodItemId, record.loggedVia, record.createdAt, tapIso],
     );
     if (fenced()) {
       stoppedAt = index;
@@ -535,7 +542,8 @@ export async function ingestCaptureInbox(
 // Counted: anything that is, or may yet become, a record for one of `petIds`. Not counted: a
 // file the ingest will drop (it can never land), and one naming another pet (a foreign record
 // ages out over 45 days, and a "waiting to upload" line standing that long would be a lie).
-// An empty `petIds` counts nothing, as the ingest applies nothing.
+// An empty `petIds` means the pet list has not loaded, so every record that will not drop
+// counts (CUL-2489): unknown is never evidence of "not ours".
 export function countUnclaimedInboxPayloads(raws: readonly string[], petIds: ReadonlySet<string>): number {
   return summarizeUnclaimedInboxPayloads(raws, petIds).count;
 }
@@ -576,7 +584,11 @@ export function summarizeUnclaimedInboxPayloads(
       petId = typeof p.petId === 'string' ? p.petId : null;
       createdMs = typeof p.createdAt === 'string' ? Date.parse(p.createdAt) : NaN;
     }
-    if (petId === null || !petIds.has(petId)) continue;
+    // Not counted only when the record provably names ANOTHER pet. An empty pet list is "not
+    // loaded yet" (an offline cold launch never fills it), not "none of ours", and a deferred
+    // record with no readable pet id cannot be shown to be foreign: both count (adversarial
+    // pass 1, CUL-2489). Errs loud, as CUL-2507's ruling does for an unreadable inbox.
+    if (petId !== null && petIds.size > 0 && !petIds.has(petId)) continue;
     count += 1;
     if (Number.isNaN(createdMs)) unknownAge += 1;
     else if (createdMs < oldestMs) oldestMs = createdMs;
