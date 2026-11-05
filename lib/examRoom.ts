@@ -183,8 +183,11 @@ const EXAM_SCRIPT_OPEN = '<script id="nyx-exam-script">';
  *  - No refused element, and no script element at all (a `speculationrules` script inserted by
  *    script prefetches too), can be put into the document by script: node insertions are checked
  *    before they land (a frame's load event fires synchronously on insertion, so removing it
- *    afterwards is too late) and HTML strings are parsed inert in a template first. The parser's
- *    own copies never exist, because `withExamCsp` renames those tags before the page loads.
+ *    afterwards is too late) and HTML strings are parsed inert in a template first. A node from
+ *    any other document is refused outright, and `importNode` / `adoptNode` / `parseHTMLUnsafe`
+ *    throw: another document can carry a declarative shadow root (closed ones included) whose
+ *    frame no check from outside can see (privacy pass 2 on PR-31, A1). The parser's own copies
+ *    never exist, because `withFrameLock` renames those tags before the page loads.
  * Every lock is non-writable and non-configurable, so a later script cannot undo it. The server's
  * scripts insert no nodes at all (`lib/examRoom.test.ts` reads them), so nothing they do is lost.
  */
@@ -197,12 +200,16 @@ for(var i=0;i<rtc.length;i++)lock(w,rtc[i],undefined);
 lock(w,'open',function(){return null;});
 var SEL='${FRAME_REFUSED_TAGS.join(',')},script';
 function refused(n){return !!n&&n.nodeType===1&&typeof n.matches==='function'&&n.matches(SEL);}
-function clean(n){
-if(!n||typeof n!=='object')return n;
-if(refused(n))throw new TypeError('refused');
+function sweep(n){
 if((n.nodeType===1||n.nodeType===11)&&n.querySelectorAll){var q=n.querySelectorAll(SEL);for(var j=q.length-1;j>=0;j--){if(q[j].parentNode)q[j].parentNode.removeChild(q[j]);}}
 return n;}
+function clean(n){
+if(!n||typeof n!=='object')return n;
+if(n.nodeType&&n!==d&&n.ownerDocument!==d)throw new TypeError('refused');
+if(refused(n))throw new TypeError('refused');
+return sweep(n);}
 function guardNodes(proto,names){if(!proto)return;names.forEach(function(k){var f=proto[k];if(typeof f!=='function')return;lock(proto,k,function(){for(var a=0;a<arguments.length;a++)clean(arguments[a]);return f.apply(this,arguments);});});}
+var rawIns=Node.prototype.insertBefore,rawRc=Element.prototype.replaceChildren,rawRw=Element.prototype.replaceWith;
 var NODE_INSERTS=['appendChild','insertBefore','replaceChild'];
 var CHILD_INSERTS=['append','prepend','after','before','replaceWith','replaceChildren','insertAdjacentElement','moveBefore'];
 guardNodes(w.Node&&Node.prototype,NODE_INSERTS);
@@ -210,11 +217,10 @@ guardNodes(w.Node&&Node.prototype,NODE_INSERTS);
 if(w.Range){guardNodes(Range.prototype,['insertNode','surroundContents']);}
 var mk=d.createElement.bind(d);
 var tplSet=O.getOwnPropertyDescriptor(Element.prototype,'innerHTML').set;
-function frag(html){var t=mk('template');tplSet.call(t,String(html));return clean(t.content);}
-var ins=Element.prototype.insertBefore||Node.prototype.insertBefore;
-var rc=Element.prototype.replaceChildren;var rw=Element.prototype.replaceWith;
+function frag(html){var t=mk('template');tplSet.call(t,String(html));return sweep(t.content);}
+var ins=rawIns,rc=rawRc,rw=rawRw;
 function setter(proto,k,fn){if(!proto||!O.getOwnPropertyDescriptor(proto,k))return;try{O.defineProperty(proto,k,{get:O.getOwnPropertyDescriptor(proto,k).get,set:fn,configurable:false});}catch(e){}}
-setter(Element.prototype,'innerHTML',function(v){if(this.localName==='template'){tplSet.call(this,v);clean(this.content);return;}rc.call(this,frag(v));});
+setter(Element.prototype,'innerHTML',function(v){if(this.localName==='template'){tplSet.call(this,v);sweep(this.content);return;}rc.call(this,frag(v));});
 setter(Element.prototype,'outerHTML',function(v){rw.call(this,frag(v));});
 if(w.ShadowRoot)setter(ShadowRoot.prototype,'innerHTML',function(){throw new TypeError('refused');});
 lock(Element.prototype,'insertAdjacentHTML',function(pos,v){var f=frag(v),p=String(pos).toLowerCase(),par=this.parentNode;
@@ -222,8 +228,10 @@ if(p==='beforebegin'){if(par)ins.call(par,f,this);}else if(p==='afterbegin'){ins
 function no(){throw new TypeError('refused');}
 lock(Element.prototype,'attachShadow',no);lock(Element.prototype,'setHTMLUnsafe',no);lock(Element.prototype,'setHTML',no);
 if(w.ShadowRoot){lock(ShadowRoot.prototype,'setHTMLUnsafe',no);lock(ShadowRoot.prototype,'setHTML',no);}
-['write','writeln','open','execCommand'].forEach(function(k){lock(Document.prototype,k,no);});
-lock(Document.prototype,'createElement',function(n){var e=mk(n);if(refused(e))throw new TypeError('refused');return e;});
+['write','writeln','open','execCommand','importNode','adoptNode'].forEach(function(k){lock(Document.prototype,k,no);});
+lock(Document,'parseHTMLUnsafe',no);lock(Document,'parseHTML',no);
+var mkRaw=Document.prototype.createElement;
+lock(Document.prototype,'createElement',function(){var e=mkRaw.apply(this,arguments);if(refused(e))throw new TypeError('refused');return e;});
 var mkNS=Document.prototype.createElementNS;
 lock(Document.prototype,'createElementNS',function(){var e=mkNS.apply(this,arguments);if(refused(e))throw new TypeError('refused');return e;});
 })();`;

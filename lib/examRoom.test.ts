@@ -331,8 +331,19 @@ describe('the frame lock (CUL-2469, CUL-2495)', () => {
     expect(w.eval(`${parsed('<iframe></iframe>')}.nodeName`)).toBe('IFRAME');
     for (const insert of ['document.body.appendChild(N)', 'document.body.append(N)', 'document.body.insertBefore(N, null)', 'document.getElementById("m").after(N)', 'document.body.replaceChildren(N)']) {
       expect(refused(insert.replace('N', parsed('<iframe></iframe>')))).toBe('refused');
-      expect(refused(insert.replace('N', parsed('<p>x<link rel=preconnect href=//x></p>')).replace(/^/, 'var n = 0; ') + '; if (document.querySelector("link")) throw 0')).toBe('ran');
+      // A node from ANOTHER document never lands, however harmless it looks: another document can
+      // carry a declarative shadow root (closed included) whose frame no check can see from outside
+      // (privacy pass 2 on PR-31, A1).
+      expect(refused(insert.replace('N', parsed('<p>x</p>')))).toBe('refused');
+      expect(refused(insert.replace('N', 'document.implementation.createHTMLDocument("").createElement("p")'))).toBe('refused');
     }
+    // The ways to bring another document's nodes in, or to parse one with shadow roots, are locked
+    // (jsdom lacks some, so the descriptor is the proof).
+    for (const [owner, key] of [['Document.prototype', 'importNode'], ['Document.prototype', 'adoptNode'], ['Document', 'parseHTMLUnsafe'], ['Document', 'parseHTML']]) {
+      expect(w.eval(`var d = Object.getOwnPropertyDescriptor(${owner}, "${key}"); typeof d.value + d.writable + d.configurable`)).toBe('functionfalsefalse');
+    }
+    expect(refused('document.importNode(document.createElement("p"), true)')).toBe('refused');
+    expect(refused('document.adoptNode(new DOMParser().parseFromString("<p>x</p>", "text/html").body.firstChild)')).toBe('refused');
     w.eval('document.body.innerHTML = "<main id=m><p>record</p></main>"');
     // A template's content is cleaned as it is parsed.
     expect(w.eval('var t = document.createElement("template"); t.innerHTML = "<iframe></iframe><link rel=preconnect href=//x><b>y</b>"; t.content.childNodes.length')).toBe(1);
