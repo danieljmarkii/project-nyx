@@ -6661,3 +6661,58 @@ Deno.test('CUL-2529 — partial doses are joined to the meal each rode in, and t
 Deno.test('CUL-2529 — a course with no partial dose carries no vehicle fact (never a zero)', () => {
   assert.equal(partialDoseVehiclesOf([], new Map()), null)
 })
+
+Deno.test('CUL-2529 adversarial 1 (QUIET) — a dose paired to the unrated twin of a refused re-log reads the cluster’s worst rating', () => {
+  idSeq = 0
+  const meal = (id: string, time: string, rating: 'refused' | null): ReportEventInput =>
+    makeEvent({
+      id,
+      type: 'meal',
+      occurredAt: at('2026-06-20', time),
+      meal: {
+        foodItemId: 'food-1',
+        intakeRating: rating,
+        quantity: null,
+        foodType: 'meal',
+        format: null,
+        primaryProtein: 'rabbit',
+        proteins: ['rabbit'],
+        ingredientsNotes: null,
+        brand: 'RC',
+        productName: 'Wet',
+      },
+    })
+  const snap = assembleReport(
+    baseInput({
+      events: [meal('m1a', '08:00:00', null), meal('m1b', '08:00:30', 'refused')],
+      medications: [
+        {
+          id: 'reg-pred',
+          medicationItemId: 'mi-pred',
+          drugName: 'Prednisolone',
+          doseAmount: '5 mg',
+          route: 'oral',
+          dosesPerDay: 1,
+          scheduleNotes: null,
+          indication: null,
+          prescribedBy: null,
+          startedAt: '2026-06-20',
+          targetDurationDays: null,
+          status: 'active',
+          endedAt: null,
+          isPrescription: true,
+          strength: '5 mg',
+        },
+      ],
+      medicationItems: [
+        { id: 'mi-pred', genericName: 'prednisolone', brandName: null, strength: '5 mg', route: 'oral', isPrescription: true, form: 'tablet' },
+      ],
+      doses: [
+        { eventId: 'd1', occurredAt: at('2026-06-20', '08:05:00'), medicationId: 'reg-pred', medicationItemId: 'mi-pred', adherence: 'partial', doseAmount: '5 mg', pairedEventId: 'm1a' },
+      ],
+    }),
+  )
+  const v = snap.medications.find((x) => x.drugName === 'Prednisolone')!.partialDoseVehicles!
+  assert.deepEqual(v.rated, [{ rating: 'refused', n: 1 }], 'the twin pair is one refused meal, never "not recorded"')
+  assert.equal(v.unrated, 0)
+})

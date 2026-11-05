@@ -4985,10 +4985,23 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // sections deliberately do NOT use this: attribution must see every dose a drug ever had, or a
   // course configured after dosing began loses its early doses — the CUL-976 defect.
   const windowLookbackDoses = input.doses.filter((d) => !droppedEventIds.has(d.eventId))
-  const mealIntakeOf = new Map<string, IntakeRating | null>()
+  // Every meal read, twins included: a dose paired to a de-duplicated twin rode in that meal, and
+  // reads the CLUSTER's worst rating (adversarial pass 1, QUIET: a dose paired to the unrated twin
+  // of a "refused" re-log read "never rated" while the diet table said refused).
+  const INTAKE_WORST: readonly IntakeRating[] = ['refused', 'picked', 'some', 'most', 'all']
+  const worse = (a: IntakeRating | null, b: IntakeRating | null): IntakeRating | null =>
+    a === null ? b : b === null ? a : INTAKE_WORST.indexOf(a) <= INTAKE_WORST.indexOf(b) ? a : b
+  const rawIntake = new Map<string, IntakeRating | null>()
   for (const e of input.events) {
-    // Every meal read, twins included: a dose paired to a de-duplicated twin still rode in that meal.
-    if (e.type === 'meal' && e.meal) mealIntakeOf.set(e.id, e.meal.intakeRating)
+    if (e.type === 'meal' && e.meal) rawIntake.set(e.id, e.meal.intakeRating)
+  }
+  const mealIntakeOf = new Map<string, IntakeRating | null>(rawIntake)
+  for (const e of dedupedAll) {
+    if (e.type !== 'meal' || !e.meal) continue
+    const ids = [e.id, ...e.memberEventIds]
+    let r: IntakeRating | null = e.meal.intakeRating
+    for (const id of ids) r = worse(r, rawIntake.get(id) ?? null)
+    for (const id of ids) mealIntakeOf.set(id, r)
   }
   const medications = input.medications.map((m) => {
     const attributed = medPass.byRegimen.get(m.id) ?? []
@@ -7577,6 +7590,7 @@ export function partialDoseVehiclesOf(
 ): PartialDoseVehicles | null {
   const partials = doses.filter((d) => d.adherence === 'partial')
   if (partials.length === 0) return null
+  const WORST_FIRST: readonly IntakeRating[] = ['refused', 'picked', 'some', 'most', 'all']
   const byRating = new Map<IntakeRating, number>()
   let inMeal = 0
   let unrated = 0
@@ -7593,10 +7607,11 @@ export function partialDoseVehiclesOf(
     }
     inMeal++
     const r = mealIntakeOf.get(d.pairedEventId) ?? null
-    if (r === null) unrated++
+    // A rating outside the five is not a reading this sentence can state: counted as unrecorded, so
+    // the buckets still partition the partial doses (adversarial pass 1, hardening).
+    if (r === null || !WORST_FIRST.includes(r)) unrated++
     else byRating.set(r, (byRating.get(r) ?? 0) + 1)
   }
-  const WORST_FIRST: readonly IntakeRating[] = ['refused', 'picked', 'some', 'most', 'all']
   const rated = WORST_FIRST.filter((r) => byRating.has(r)).map((r) => ({ rating: r, n: byRating.get(r)! }))
   return { partial: partials.length, inMeal, rated, unrated, pairedUnread, notPaired }
 }

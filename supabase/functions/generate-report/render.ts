@@ -3245,7 +3245,7 @@ export function safetyFlagRow(
         `<b>Weighed ${reading(f.latest)}, down from ${reading(f.highBefore)} &mdash; ${weightLossPctText(
           f.latest.kg,
           f.highBefore.kg,
-        )}${plan}.</b>${v1FirstSheet ? weightRecencyBit(f.latest.day, snap.scope.endDate) : ''} The latest reading against the highest before it in the last ${num(
+        )}${plan}.</b>${v1FirstSheet ? weightFlagRecency(f, snap) : ''} The latest reading against the highest before it in the last ${num(
           f.windowDays,
         )} days, not a diagnosis; body condition was not assessed.${scales}${after} ${told}${v1FirstSheet && (f.asOf === 'now' || !todayRow) ? weightFlagIntakeBit(snap) : ''}`,
       )
@@ -3573,13 +3573,20 @@ export function headlineMedicationBit(snap: ReportSnapshot, t: NonNullable<Repor
         bits.push(`${h(fmtDay(start))}&ndash;${h(fmtDay(m.toDate))}${still}`)
       }
     }
-    const regimens = snap.medications.filter((r) => r.drugName === name)
-    const p = regimens.length === 1 ? partialOf(regimens[0]) : null
-    if (p) {
+    // Each overlap row's OWN regimen (same name and start day, as `routeOfOverlap` matches), never a
+    // same-name course that did not overlap (adversarial pass 1); an ad-hoc row has no course to count.
+    const matched = g.rows
+      .filter((m) => !m.recordStart && !m.adHocDoses && m.startedAt !== null)
+      .map((m) => snap.medications.find((r) => r.drugName === name && r.startedAt.slice(0, 10) === m.startedAt!.slice(0, 10)))
+      .filter((r): r is MedicationAdherence => r !== undefined)
+    const parts = matched.map((r) => ({ r, p: partialOf(r) })).filter((x) => x.p !== null)
+    if (parts.length > 0) {
+      const n = parts.reduce((a, x) => a + x.p!.n, 0)
+      const whole = parts.every((x) => x.p!.wholeCourse) && matched.length === g.rows.length
       bits.push(
-        p.wholeCourse
-          ? `${num(p.n)} of ${num(regimens[0].lifetimeDosesLogged)} doses partial`
-          : `${num(p.n)} partial doses in this window`,
+        whole
+          ? `${num(n)} of ${num(matched.reduce((a, r) => a + r.lifetimeDosesLogged, 0))} doses partial`
+          : `${num(n)} partial doses in this window`,
       )
     }
     if (g.supplement) bits.unshift('entered as a supplement')
@@ -3614,14 +3621,34 @@ export const WEIGHT_STALE_DAYS = 14
  * one weigh-in, 50 days before the report, and only the trial block's prose said none followed. A vet
  * reads "3.73 kg" as her weight today. Record-anchored dates, so a date may reach outside the window
  * (C-19); the gap is days between two named dates, never a duration re-derived from a detector.
+ *
+ * The anchor is the row's own tense (adversarial pass 1): a row about today counts to the day the
+ * report was generated (a past custom window silenced the line on a 50-day-old reading), and a
+ * window-end row counts to the window's end. "No weigh-in after it" is said only when this reading is
+ * the latest on record; otherwise the line names the gap and that a later reading exists.
  */
-export function weightRecencyBit(latestDay: string, reportEnd: string): string {
-  const gap = daysBetweenKeys(latestDay, reportEnd)
+export function weightRecencyBit(
+  latestDay: string,
+  anchorDay: string,
+  anchor: 'generated' | 'window_end',
+  latestOnRecord: boolean,
+): string {
+  const gap = daysBetweenKeys(latestDay, anchorDay)
   if (gap === null || gap <= WEIGHT_STALE_DAYS) return ''
   const weeks = Math.floor(gap / 7)
-  return ` <b>No weigh-in is recorded after it:</b> the latest is ${num(gap)} days (${num(weeks)} week${
-    weeks === 1 ? '' : 's'
-  }) before ${h(fmtDayYear(reportEnd))}, the end of this report.`
+  const span = `${num(gap)} days (${num(weeks)} week${weeks === 1 ? '' : 's'}) before ${h(fmtDayYear(anchorDay))}, ${
+    anchor === 'generated' ? 'when this report was generated' : 'the end of this report&rsquo;s window'
+  }`
+  return latestOnRecord
+    ? ` <b>No weigh-in is recorded after it:</b> it is ${span}.`
+    : ` <b>This reading is ${span}</b>; a later weigh-in is on record.`
+}
+
+function weightFlagRecency(f: Extract<SafetyFlag, { kind: 'weight_loss' }>, snap: ReportSnapshot): string {
+  const generated = localDayKeyOf(snap.generatedAt, snap.timezone)
+  const anchorDay = f.asOf === 'now' ? generated : snap.scope.endDate
+  const latestOnRecord = !snap.weight.latest || snap.weight.latest.date <= f.latest.day
+  return weightRecencyBit(f.latest.day, anchorDay, f.asOf === 'now' ? 'generated' : 'window_end', latestOnRecord)
 }
 
 /**
@@ -9159,7 +9186,8 @@ export function partialVehicleSentence(m: Pick<MedicationAdherence, 'partialDose
   if (v.notPaired > 0) parts.push(`${doses(v.notPaired)} not logged with a meal`)
   if (v.pairedUnread > 0) parts.push(`${doses(v.pairedUnread)} logged with a meal this report did not read`)
   const unknownIntake = v.unrated + v.pairedUnread
-  const notFinished = v.rated.filter((r) => r.rating !== 'all').reduce((a, r) => a + r.n, 0)
+  // Below "ate most", the threshold the flag and appendix E use (`feedingWasFinished`).
+  const notFinished = v.rated.filter((r) => flagCountsUnfinished(r.rating)).reduce((a, r) => a + r.n, 0)
   const why =
     notFinished > 0 || unknownIntake > 0
       ? ` A partial dose inside food that was ${notFinished > 0 ? 'left unfinished' : 'never rated'} may be the food going uneaten, not a smaller dose${
@@ -11345,9 +11373,9 @@ export function offDietAppendix(snap: ReportSnapshot): string {
         )} feedings logged ${h(
           fmtRange(snap.trial!.evidenceStartDate, snap.trial!.evidenceEndDate),
         )} matched the trial diet or a permitted food. This describes the record and is a floor, not a total.`
-      : 'No feeding in this window is listed here. See the diet-trial block on page 1 before reading that as a clean elimination.'
+      : 'No feeding in this window is listed here. See the diet-trial block on page&nbsp;1 before reading that as a clean elimination.'
     : hasTrial
-      ? 'Nothing is listed here. This report has no allowed-food list for the trial, so no feeding has been checked against one &mdash; see the diet-trial block on page 1.'
+      ? 'Nothing is listed here. This report has no allowed-food list for the trial, so no feeding has been checked against one &mdash; see the diet-trial block on page&nbsp;1.'
       : 'No treats or table food are recorded in this window.'
   return `
   <p class="appx-title serif">Appendix C — ${
@@ -12155,9 +12183,9 @@ function appendixF(snap: ReportSnapshot): string {
  * phrases first, then the grammatical forms; the render test pins that none survives.
  */
 export const V1_SUMMARY_POINTER_REWRITES: ReadonlyArray<readonly [RegExp, string]> = [
+  // The one plain-space phrase, kept because v2 rewrites it by this exact text; no owner writes it.
   [/only an activity word, which page 1 never lists/g, 'only an activity word, which this line never lists'],
   [/A page-1 &ldquo;time since/g, 'The clinical summary&rsquo;s &ldquo;time since'],
-  [/the diet-trial block on page 1\b/g, 'the diet-trial block in the clinical summary'],
   // The &nbsp; form only: the code writes every remaining pointer that way, and an owner's own note
   // (escaped, with an ordinary space) is never rewritten.
   [/\bon page&nbsp;1\b/g, 'in the clinical summary'],

@@ -117,14 +117,18 @@ Deno.test('CUL-2529 — a stored copy without the vehicle fact prints nothing ne
 Deno.test('CUL-2529 — v1’s weight flag says how old its reading is and how few meals carry an intake rating', () => {
   const s = fixture('nyx-live')
   const band = bandOf(renderReport(s))
-  assert.match(band, /No weigh-in is recorded after it: the latest is 45 days \(6 weeks\) before Oct 31, 2026, the end of this report\./, band)
+  assert.match(band, /No weigh-in is recorded after it: it is 45 days \(6 weeks\) before Oct 31, 2026, when this report was generated\./, band)
   assert.match(band, /Intake was recorded for \d+ of \d+ meals logged in this window, so this record cannot show how much Nyx is eating\./, band)
 })
 
 Deno.test('CUL-2529 — the recency line holds its threshold, and the intake line is silent when every meal is rated', () => {
-  assert.equal(weightRecencyBit('2026-10-17', '2026-10-31'), '', `${WEIGHT_STALE_DAYS} days is not stale`)
-  assert.match(plain(weightRecencyBit('2026-10-16', '2026-10-31')), /the latest is 15 days \(2 weeks\)/)
-  assert.equal(weightRecencyBit('2026-11-02', '2026-10-31'), '', 'a reading after the window end is not "before" it')
+  assert.equal(weightRecencyBit('2026-10-17', '2026-10-31', 'generated', true), '', `${WEIGHT_STALE_DAYS} days is not stale`)
+  assert.match(plain(weightRecencyBit('2026-10-16', '2026-10-31', 'generated', true)), /it is 15 days \(2 weeks\) before Oct 31, 2026, when this report was generated/)
+  assert.equal(weightRecencyBit('2026-11-02', '2026-10-31', 'window_end', true), '', 'a reading after the anchor is not "before" it')
+  // Adversarial pass 1 (LOUD, false): a later reading on record never reads "no weigh-in after it".
+  const later = plain(weightRecencyBit('2026-09-16', '2026-10-31', 'window_end', false))
+  assert.doesNotMatch(later, /No weigh-in is recorded after it/)
+  assert.match(later, /This reading is 45 days \(6 weeks\) before Oct 31, 2026, the end of this report’s window; a later weigh-in is on record\./)
   const s = fixture('nyx-live')
   for (const i of s.diet.mealItems) {
     i.intakeBreakdown = [{ rating: 'all', count: i.count }]
@@ -185,4 +189,36 @@ Deno.test('CUL-2529 — v1 never sends a reader to "page 1"; it names the clinic
 Deno.test('CUL-2529 — the rename never touches an owner’s own words (an ordinary space is left alone)', () => {
   assert.equal(v1SummaryPointers('Note: see page 1 of the discharge sheet'), 'Note: see page 1 of the discharge sheet')
   assert.equal(v1SummaryPointers('figures on page&nbsp;1 and page&nbsp;1&rsquo;s strip'), 'figures in the clinical summary and the clinical summary&rsquo;s strip')
+})
+
+// ── Adversarial pass 1's breaks, held ───────────────────────────────────────
+
+Deno.test('adversarial 1 (QUIET) — a "now" weight row counts to the day the report was generated, not a past window’s end', () => {
+  const s = fixture('nyx-live')
+  const w = s.safetyFlags.find((f) => f.kind === 'weight_loss')!
+  if (w.kind !== 'weight_loss') throw new Error('fixture')
+  assert.equal(w.asOf, 'now', 'the counterexample needs a row about today')
+  // A custom window that closed 9 days after the reading, generated 45 days after it.
+  s.scope = { ...s.scope, endDate: '2026-09-25' }
+  const row = plain(safetyFlagRow(w, s, undefined, undefined, true))
+  assert.match(row, /it is 45 days \(6 weeks\) before Oct 31, 2026, when this report was generated/, row)
+})
+
+Deno.test('adversarial 1 (LOUD) — the headline never borrows a partial count from a same-name course that did not overlap', () => {
+  const s = withRecordOverlaps(fixture('nyx-live'))
+  const pred = s.medications.find((m) => m.drugName === 'Prednisolone')!
+  const t = s.trial!
+  const row = t.medicationOverlap.find((m) => m.drugName === 'Prednisolone')!
+  // The overlap row now starts on a day no regimen starts: no course is its own.
+  const moved = { ...t, medicationOverlap: t.medicationOverlap.map((m) => (m === row ? { ...m, startedAt: '2026-09-25' } : m)) }
+  assert.ok(pred.partialDoses > 0, 'the course has partial doses to borrow')
+  assert.doesNotMatch(plain(headlineMedicationBit(s, moved)), /Prednisolone \([^)]*partial/)
+  assert.match(plain(headlineMedicationBit(s, t)), /Prednisolone \([^)]*of 15 doses partial\)/, 'its own course still counts')
+})
+
+Deno.test('adversarial 1 (LOUD) — "ate most" is not "left unfinished" in the partial-dose sentence', () => {
+  const most = plain(partialVehicleSentence({ partialDoseVehicles: { partial: 2, inMeal: 2, rated: [{ rating: 'most', n: 2 }], unrated: 0, pairedUnread: 0, notPaired: 0 } }))
+  assert.doesNotMatch(most, /left unfinished/)
+  const picked = plain(partialVehicleSentence({ partialDoseVehicles: { partial: 1, inMeal: 1, rated: [{ rating: 'picked', n: 1 }], unrated: 0, pairedUnread: 0, notPaired: 0 } }))
+  assert.match(picked, /left unfinished/)
 })
