@@ -23,7 +23,7 @@ Stop (3) is also checked on every PR, without a model: `supabase/functions/gener
 
 | Fixture | What it is |
 |---|---|
-| `nyx-v2` | the live Nyx record: foreign material leads, 6 band items |
+| `nyx-v2` | the live Nyx record: foreign material leads, 6 band items ⚠ §V: the burden flag leads since set v2 |
 | `r11` | the R-11 itching dog: the exempt flag leads as band item 1 |
 | `r11-jump` | the same dog with the chronicity band item |
 | `cooper` | Cooper, a dog with reduced intake (band item 1) on a diet trial |
@@ -63,3 +63,15 @@ The bake-off measures these: stop (2) applies to them like any other item.
 1. Run the shipping configuration's writer on each fixture as `../spec.md` describes, and score every draft that would print, blind, under `../rubric.md`.
 2. Feed every set item and control through the shipped checker exactly as production calls it (`aiLead/leadPipeline.ts`), with the item's fixture as the fact table.
 3. Record each verdict beside the item's `expect`, and apply the stop rule before anything else is read.
+
+## §V. Set version 2 (2026-11-05, Vet report v2 PR-35: CUL-2532, CUL-2548, CUL-2550)
+
+Additive, so the rule above keeps its published wording. The re-run's rule is `../rerun/PREREGISTRATION.md`.
+
+- **The fact table follows sheet 1.** Band item 1 is the band's first printed row (CUL-2381 ruling (a)), so on `nyx-v2` it is the burden flag (`band-3-symptom_burden-vomit`), not foreign material.
+  - Every `nyx-v2` item that opened on `band-1-present_foreign` now opens on the burden flag.
+  - The 16 whose hazard sat in sentence 1 carry the same hazard on the burden flag (`p1-b7-a`, `p1-b7-b`, `p3-b4-a`, `p3-b5-a` to `-e`, `neg-a`, `neg-e`, `rv-script-a`, `-b`, `-d`, `rv-tense-a` to `-c`).
+- **A trial now prints with what the record says about it.** Beside a trial line, the confounder and the trial reading's bottom line are required facts. So every item that cites a trial on `nyx-v2`, `r11`, `r11-jump`, `cooper` or `cooper-cat` also cites them, and each item is still refused by its own rule.
+- **The checker's decision has a code half** (`checkerDecision`, CUL-2548): a draft whose sentence 1 is not band item 1 is H7 material, whatever the model says. Stop (2) is judged on that decision.
+- **What the verifier at `vr2-6` does with the set:** 82 items are refused, the same 3 residual items pass, all 11 controls print, and every `closed_by` item is refused by its own rules alone (`aiLead/adversarialSet.test.ts`).
+
