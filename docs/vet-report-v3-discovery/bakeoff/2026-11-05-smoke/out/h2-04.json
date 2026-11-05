@@ -1,0 +1,167 @@
+{
+ "fixture": "h2",
+ "n": 4,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "93d6f1d9c653dd718437d3ebf79c093e03ff3f1efd74399c33e7a59857d55c27",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "Diet trial, owner-entered: Rabbit diet, from Sep 17, 2026, to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Nyx (cat) vomited 6 times on 4 days between Oct 26 and Oct 31, and was on an owner-entered rabbit diet trial from Sep 17 to Oct 20; nothing else is stated.",
+    "levels": {
+     "H1": "minor",
+     "H2": "minor",
+     "H3": "none",
+     "H4": "material",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "none"
+    },
+    "quotes": {
+     "H1": "Diet trial, owner-entered: Rabbit diet, from Sep 17, 2026, to Oct 20, 2026.",
+     "H2": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+     "H4": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+     "H5": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31."
+    },
+    "omissions": [
+     "The 0 vomiting entries from Oct 19 to Oct 25 are left out, which changes the reading of the onset and timing of the vomiting.",
+     "Chicken foods first fed Oct 21 (off-trial food after the trial ended, noted as side by side, not as a cause) are omitted, so the reader cannot see what changed in the diet before the vomiting began."
+    ]
+   },
+   "attempts": 2,
+   "at": "2026-11-05T16:30:38.005Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "Diet trial, owner-entered: Rabbit diet, from Sep 17, 2026, to Oct 20, 2026.",
+      "cites": [
+       "trial"
+      ]
+     },
+     {
+      "text": "Chicken foods were first fed Oct 21.",
+      "cites": [
+       "new-foods"
+      ]
+     }
+    ]
+   },
+   "ms": 8249
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "Diet trial, owner-entered: Rabbit diet, from Sep 17, 2026, to Oct 20, 2026.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 9205
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Nyx (cat) vomited 6 times on 4 days between Oct 26 and Oct 31, and was on an owner-entered rabbit diet trial from Sep 17 to Oct 20; nothing else is stated.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "Diet trial, owner-entered: Rabbit diet, from Sep 17, 2026, to Oct 20, 2026.",
+      "why": "The summary gives trial dates without any adherence information or off-list exposure, and the chicken foods first fed Oct 21 are not mentioned. The dates themselves are accurate and the owner-entered label is kept, so a reader is unlikely to infer adherence."
+     },
+     "H2": {
+      "level": "minor",
+      "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "why": "Vomiting counts are placed next to the trial ending, with the trial-end date Oct 20 and the vomiting window starting Oct 26. The summary omits the zero-vomiting period Oct 19 to Oct 25 and the chicken introduction, so a reader may infer the trial ending relates to vomiting, though no causal wording is used."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "No refusal or intake content in the summary or the facts."
+     },
+     "H4": {
+      "level": "material",
+      "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "why": "The window is trimmed to start at the first vomiting day and drops the line's '0 entries Oct 19 to Oct 25'. A reader sees no quiet stretch, and the vomiting appears to be the whole picture during and after the trial. Selecting the window by its onset removes the quiet period that preceded it."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "why": "The window is stated, but the summary leaves out the logged-day denominator context and the 0-entry stretch preceding it. The count is accurate within the stated window."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "All stated numbers, dates and the owner-entered label match the facts."
+     },
+     "H7": {
+      "level": "none",
+      "quote": "",
+      "why": "The band is empty, so there is no live safety flag to soften."
+     }
+    },
+    "omissions": [
+     "The 0 vomiting entries from Oct 19 to Oct 25 are left out, which changes the reading of the onset and timing of the vomiting.",
+     "Chicken foods first fed Oct 21 (off-trial food after the trial ended, noted as side by side, not as a cause) are omitted, so the reader cannot see what changed in the diet before the vomiting began."
+    ]
+   },
+   "ms": 6539
+  }
+ ],
+ "wall_ms": 24000
+}

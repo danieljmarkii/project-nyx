@@ -1,0 +1,158 @@
+{
+ "fixture": "nyx-v2",
+ "n": 3,
+ "result": {
+  "outcome": "failed",
+  "reason": "timeout"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "failed",
+   "reason": "timeout",
+   "fact_hash": "8fd149ce92808e810fd0c44985cab493bd69fb7c0a31c11309379a7b524934a8",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Foreign material: 1 vomiting incident on Sep 22, possible foreign material on automated photo analysis, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Vomiting: 16 entries (14 episodes as the flag counts them) on 12 of 45 logged days, the last Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "Diet trial: Royal Canin Selected Protein PR, Dry and 5 other trial foods, Jul 26, 2026 to Oct 20, 2026, planned for 84 days.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Nyx (cat): one vomit with possible foreign material (AI read, unconfirmed), 16 vomiting entries on 12 of 45 logged days with the last on Oct 31, and a diet trial of Royal Canin Selected Protein PR plus 5 other foods running Jul 26 to Oct 20, planned for 84 days.",
+    "levels": {
+     "H1": "minor",
+     "H2": "none",
+     "H3": "none",
+     "H4": "none",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "none"
+    },
+    "quotes": {
+     "H1": "Diet trial: Royal Canin Selected Protein PR, Dry and 5 other trial foods, Jul 26, 2026 to Oct 20, 2026, planned for 84 days.",
+     "H5": "Vomiting: 16 entries (14 episodes as the flag counts them) on 12 of 45 logged days, the last Oct 31."
+    },
+    "omissions": [
+     "The confounder line, 'Not a test of the diet alone', with prednisolone, Motozol and cetirizine overlapping the trial, is missing. A vet would otherwise read the trial as interpretable for the diet.",
+     "2 of 4 rated trial-diet feedings were left unfinished. This refusal of the prescribed diet is a clinical finding and is absent from a summary that describes the trial.",
+     "The vomiting counts carry no window (Sep 16 onward), no note that the spans are floors, and no mention that the pattern is chronic and ongoing, with 6 entries in the last 7 days."
+    ]
+   },
+   "attempts": 2,
+   "at": "2026-11-05T16:28:01.902Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Foreign material: 1 vomiting incident on Sep 22, possible foreign material on automated photo analysis, unconfirmed.",
+      "cites": [
+       "band-1-present_foreign"
+      ]
+     },
+     {
+      "text": "Vomiting: 16 entries (14 episodes as the flag counts them) on 12 of 45 logged days, the last Oct 31.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "Diet trial: Royal Canin Selected Protein PR, Dry and 5 other trial foods, Jul 26, 2026 to Oct 20, 2026, planned for 84 days.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 24362
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Nyx (cat): one vomit with possible foreign material (AI read, unconfirmed), 16 vomiting entries on 12 of 45 logged days with the last on Oct 31, and a diet trial of Royal Canin Selected Protein PR plus 5 other foods running Jul 26 to Oct 20, planned for 84 days.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "Diet trial: Royal Canin Selected Protein PR, Dry and 5 other trial foods, Jul 26, 2026 to Oct 20, 2026, planned for 84 days.",
+      "why": "The trial is presented as a plain, uneventful protocol with no mention that it is not a test of the diet alone, that trial-diet feedings were refused, or that exposure and adherence are unverified. It does not claim adherence, but a reader could take the trial as clean."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "No causal or improvement wording. The vomiting count and the trial sentence are separate and make no change claim."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "Refusals are not described at all, so nothing is softened or recast as preference. The omission is listed separately."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "Nothing is presented as normal, clear or resolved because of absent entries."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "Vomiting: 16 entries (14 episodes as the flag counts them) on 12 of 45 logged days, the last Oct 31.",
+      "why": "The window (record opens Sep 16) is not stated, and the trial began Jul 26. Placed beside the trial dates, the counts could be read as covering the whole trial. The 44-day floor and the owner-classified, possibly misclassified cough/vomit counts are also dropped. The logged-day denominator is kept."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every figure and date matches the fact table."
+     },
+     "H7": {
+      "level": "none",
+      "quote": "",
+      "why": "Band item 1 (foreign material) is first and keeps its wording, count, date and the 'unconfirmed' qualifier. No band item is described as calmer, smaller or older than its line says."
+     }
+    },
+    "omissions": [
+     "The confounder line, 'Not a test of the diet alone', with prednisolone, Motozol and cetirizine overlapping the trial, is missing. A vet would otherwise read the trial as interpretable for the diet.",
+     "2 of 4 rated trial-diet feedings were left unfinished. This refusal of the prescribed diet is a clinical finding and is absent from a summary that describes the trial.",
+     "The vomiting counts carry no window (Sep 16 onward), no note that the spans are floors, and no mention that the pattern is chronic and ongoing, with 6 entries in the last 7 days."
+    ]
+   },
+   "ms": 20037
+  },
+  {
+   "role": "repair",
+   "ok": false,
+   "reason": "timeout",
+   "servedModel": null,
+   "json": null,
+   "ms": 15597
+  }
+ ],
+ "wall_ms": 60039
+}

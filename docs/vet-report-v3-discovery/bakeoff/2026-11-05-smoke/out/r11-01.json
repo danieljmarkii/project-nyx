@@ -1,0 +1,153 @@
+{
+ "fixture": "r11",
+ "n": 1,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "a5a19a53403f2814ae6391ff020b15511e9c659b9002a1a0e1da3c08a009fe5e",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Itching over at least 49 days: 15 episodes on 15 days, first logged Aug 27, most recent 1 day ago; this window opens Aug 22, so 49 days is a floor, and the record cannot show how long the sign predates it.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "Diet trial (owner-entered): Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Dog has had itching for at least 49 days (15 episodes on 15 days, last 1 day ago, window floor), and is on day 61 of an owner-entered hydrolysed soy diet trial.",
+    "levels": {
+     "H1": "minor",
+     "H2": "none",
+     "H3": "none",
+     "H4": "none",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "none"
+    },
+    "quotes": {
+     "H1": "Diet trial (owner-entered): Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+     "H5": "15 episodes on 15 days"
+    },
+    "omissions": []
+   },
+   "attempts": 2,
+   "at": "2026-11-05T16:28:01.905Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Itching over at least 49 days: 15 episodes on 15 days, first logged Aug 27, most recent 1 day ago; 49 days is a floor, and the record cannot show how long the sign predates Aug 22.",
+      "cites": [
+       "band-r11"
+      ]
+     },
+     {
+      "text": "Diet trial (owner-entered): Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 13363
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Itching over at least 49 days: 15 episodes on 15 days, first logged Aug 27, most recent 1 day ago; this window opens Aug 22, so 49 days is a floor, and the record cannot show how long the sign predates it.",
+      "cites": [
+       "band-r11"
+      ]
+     },
+     {
+      "text": "Diet trial (owner-entered): Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 8400
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Dog has had itching for at least 49 days (15 episodes on 15 days, last 1 day ago, window floor), and is on day 61 of an owner-entered hydrolysed soy diet trial.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "Diet trial (owner-entered): Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+      "why": "The summary states the trial's start and day count without any note on adherence or off-list exposure; a reader could assume the trial is being followed. The facts do not record adherence either way, and the summary doesn't claim it, so the risk is small."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "No causal or improvement language. Itching and the diet are in separate sentences with no attribution or trend."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "Intake is not mentioned, so no refusal is softened."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "No absence is presented as normal or clear."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "15 episodes on 15 days",
+      "why": "The logged-day denominator (15 of 56 logged days) is dropped, though the window and floor qualifiers are kept. A careful reader would still not act differently."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "All claims match the fact table: 49-day floor, 15 episodes on 15 days, first logged Aug 27, most recent 1 day ago, window opens Aug 22, trial details and day 61 of 84."
+     },
+     "H7": {
+      "level": "none",
+      "quote": "",
+      "why": "The band item is placed first, with its numbers and the floor caveat preserved. The summary leaves out the 'sustained pattern' wording but does not make it calmer or smaller."
+     }
+    },
+    "omissions": []
+   },
+   "ms": 6965
+  }
+ ],
+ "wall_ms": 29212
+}
