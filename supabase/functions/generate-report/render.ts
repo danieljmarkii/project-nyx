@@ -254,7 +254,7 @@ function onListDosesSentence(t: NonNullable<ReportSnapshot['trial']>): string | 
   )
   const unreadBit =
     unread.length > 0
-      ? ` <b>The ingredient panel of ${unread.map((l) => h(l)).join(' and ')} ${unread.length === 1 ? 'was' : 'were'} never captured</b>, so this record cannot say what else the doses given in ${
+      ? ` <b>The ingredient panel${unread.length === 1 ? '' : 's'} of ${unread.map((l) => h(l)).join(' and ')} ${unread.length === 1 ? 'was' : 'were'} never captured</b>, so this record cannot say what else the doses given in ${
           unread.length === 1 ? 'it' : 'them'
         } went in with.`
       : ''
