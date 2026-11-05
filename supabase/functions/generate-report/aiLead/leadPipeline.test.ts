@@ -7,7 +7,7 @@ import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
 import { buildLeadFacts, factTableHash } from './facts.ts'
 import type { ModelResult, Role } from './model.ts'
 import { assertSendable } from './model.ts'
-import { checkerDecision, leadAllowedAtSend, parseChecker, runAiLead, type LeadIO, type StoredVerdict } from './leadPipeline.ts'
+import { modelDecision, leadAllowedAtSend, parseChecker, runAiLead, type LeadIO, type StoredVerdict } from './leadPipeline.ts'
 import { CHECKER_MODEL, HAZARDS, WRITER_MODEL } from './prompts.ts'
 import { LEAD_VERIFIER_VERSION, type LeadSentence } from './verify.ts'
 
@@ -212,12 +212,12 @@ Deno.test('a thin record records not_eligible and calls nothing', async () => {
   assert.deepEqual([f.gates.length, f.sends.length], [0, 0])
 })
 
-Deno.test('checkerDecision and parseChecker are bake-off spec §5\'s rule, and fail closed', () => {
+Deno.test('modelDecision and parseChecker are bake-off spec §5\'s rule, and fail closed', () => {
   const p = (o: Partial<Record<string, string>>) => parseChecker(checkerSays(o))
-  assert.equal(checkerDecision(p({})!), 'pass')
-  assert.equal(checkerDecision(p({ H1: 'minor' })!), 'repair')
-  assert.equal(checkerDecision(p({ H7: 'minor' })!), 'reject')
-  assert.equal(checkerDecision(p({ H4: 'material' })!), 'reject')
+  assert.equal(modelDecision(p({})!), 'pass')
+  assert.equal(modelDecision(p({ H1: 'minor' })!), 'repair')
+  assert.equal(modelDecision(p({ H7: 'minor' })!), 'reject')
+  assert.equal(modelDecision(p({ H4: 'material' })!), 'reject')
   assert.equal(parseChecker({ takeaway: 'x', hazards: { ...levels(), H6: { level: 'severe' } } }), null)
 })
 

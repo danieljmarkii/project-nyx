@@ -43,6 +43,7 @@
 //   script      CUL-2380: no letter outside A to Z a cited line does not print, no format character
 //   tense       CUL-2380: a sentence that touches a flag is never past ("had been a live flag"), and
 //               "over" is followed by a count, never left as an ending ("the flag is over")
+//   floor       CUL-2532: a count from a line that says "a floor, not a total" keeps the clause
 //   date-anchor CUL-2380: in any sentence citing more than the trial, every date keeps the word its
 //               line prints before it and its recency words, so dates cannot swap or be rebuilt
 
@@ -53,10 +54,16 @@ import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type F
 export type LeadSentence = { text: string; cites: string[] }
 export type LeadSummary = { sentences: LeadSentence[] }
 
-export const LEAD_VERIFIER_VERSION = 'vr2-5'
+export const LEAD_VERIFIER_VERSION = 'vr2-6'
 export const LEAD_MAX_SENTENCES = 3
-export const LEAD_MAX_WORDS = 60
+/** PM ruling 2026-11-05 on CUL-2550 (was 60, 2026-10-31): the smoke bake-off's drafts sat at a
+ *  median of 57 words and the cap squeezed out the trial's confounder and denominators first. */
+export const LEAD_MAX_WORDS = 80
 export const PERIOD_RUN_MAX = 2
+/** The clause that makes a count a floor. A sentence that keeps a number from a line printing it
+ *  keeps the clause too (the `floor` check); a sentence that drops the number may drop it. */
+export const FLOOR_PHRASE = 'a floor, not a total'
+
 
 export interface LeadVerdict {
   verifier: typeof LEAD_VERIFIER_VERSION
@@ -176,7 +183,7 @@ const MONTHS_AND_DAYS = new Set([
 
 /** An exposure: something given or fed. An observation: something seen or counted. */
 function isExposure(id: string): boolean {
-  return id === 'trial' || id === 'confounder' || id.startsWith('medication-')
+  return id === 'trial' || id === 'confounder' || id.startsWith('trial-reading-') || id.startsWith('medication-')
 }
 function isObservation(id: string): boolean {
   return id === 'line-1' || id === 'intake' || id === 'coverage' || id === 'noticed' || id.startsWith('sign-') || id.startsWith('band-')
@@ -236,6 +243,27 @@ export function printedLeadText(summary: LeadSummary): string {
   return printedSentences(summary).join(' ')
 }
 
+/** band-first: sentence 1 cites band item 1 and its first clause names that item's label. One
+ *  function, read by the verifier AND by the checker's decision (leadPipeline.ts `checkerDecision`,
+ *  CUL-2548), so the order hazard the checker model missed twice (October's S-arm Nyx drafts, the
+ *  smoke bake-off's cr-a) is refused by the checker on every run, whatever the model says, and by the
+ *  verifier on its own. Removing it from either does not remove it from the other. */
+export function bandOrderIssues(table: FactTable, summary: LeadSummary): VerifyIssue[] {
+  const band = table.facts.filter((f) => f.role === 'band')
+  if (band.length === 0) return []
+  const first = summary.sentences[0]
+  if (!first || !first.cites.includes(band[0].id)) {
+    return [{ sentence: 1, check: 'band-first', detail: `sentence 1 must cite band item 1 (${band[0].id})` }]
+  }
+  const raw = (band[0] as { label?: unknown }).label
+  const label = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  // No label is no way to check the first clause, so it rejects (a missing label is a bug).
+  if (label === '' || !firstClause(norm(first.text)).includes(label)) {
+    return [{ sentence: 1, check: 'band-first', detail: `sentence 1's first clause does not name band item 1 (${label})` }]
+  }
+  return []
+}
+
 export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict {
   // The core judges the printed form, never the model's raw strings.
   const printed: LeadSummary = { sentences: summary.sentences.map((s, i) => ({ text: printedSentences(summary)[i], cites: s.cites })) }
@@ -254,20 +282,8 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
   const total = sents.reduce((n, s) => n + words(s.text), 0)
   if (total > LEAD_MAX_WORDS) err(null, 'structure', `the lead has ${total} words (max ${LEAD_MAX_WORDS})`)
 
+  for (const e of bandOrderIssues(table, printed)) errors.push(e)
   const band = table.facts.filter((f) => f.role === 'band')
-  if (band.length > 0) {
-    const first = sents[0]
-    if (!first || !first.cites.includes(band[0].id)) {
-      err(1, 'band-first', `sentence 1 must cite band item 1 (${band[0].id})`)
-    } else {
-      const raw = (band[0] as { label?: unknown }).label
-      const label = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
-      // No label is no way to check the first clause, so it rejects (a missing label is a bug).
-      if (label === '' || !firstClause(first.text).includes(label)) {
-        err(1, 'band-first', `sentence 1's first clause does not name band item 1 (${label})`)
-      }
-    }
-  }
   const bandSentences = sents.filter((s) => s.cites.some((c) => facts.get(c)?.role === 'band')).length
   if (bandSentences > 1) err(null, 'band-once', `${bandSentences} sentences cite band facts (max 1)`)
 
@@ -345,6 +361,15 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
       const ctx = ` ${[before, flatWords(m[0]), after].filter(Boolean).join(' ')} `
       if (!allowed.has(m[0].toLowerCase())) err(i, 'intake-positive', `${JSON.stringify(m[0])}: no cited line says intake was adequate in these words (H3)`)
       else if (!citedFlat.includes(ctx)) err(i, 'intake-positive', `${JSON.stringify(ctx.trim())}: an adequacy phrase moved from where its line prints it (H3)`)
+    }
+    // floor (CUL-2532): a count lifted from a line that calls it "a floor, not a total" keeps the
+    // clause, so an off-list tally never prints as the whole of it (H1, H5).
+    for (const c of s.cites) {
+      const text = norm(facts.get(c)?.text ?? '')
+      if (!text.toLowerCase().includes(FLOOR_PHRASE)) continue
+      const nums = numbersOf(text, year)
+      const kept = numbersOf(s.text, year).some((n) => nums.includes(n))
+      if (kept && !norm(s.text).toLowerCase().includes(FLOOR_PHRASE)) err(i, 'floor', `a count from ${c} prints without "${FLOOR_PHRASE}"`)
     }
     const spelled = s.text.match(SPELLED_NUMBERS)
     if (spelled) err(i, 'numbers', `${JSON.stringify(spelled[0])}: counts are written as digits`)

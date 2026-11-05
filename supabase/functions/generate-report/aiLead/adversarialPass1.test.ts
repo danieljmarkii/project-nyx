@@ -7,7 +7,7 @@ import { cooperInput } from '../cooperDemo.testutil.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
 import { itchingSkinTrial } from '../v2Fixtures.testutil.ts'
 import { buildLeadFacts, canonicalJson, documentForLead } from './facts.ts'
-import { checkerDecision, parseChecker } from './leadPipeline.ts'
+import { modelDecision, parseChecker } from './leadPipeline.ts'
 import { HAZARDS } from './prompts.ts'
 import { verifyLead, type LeadSentence } from './verify.ts'
 
@@ -51,8 +51,8 @@ Deno.test('break 1, R-11: the exempt flag is band item 1, safety-live, and must 
 
 Deno.test('break 2: an omission the checker lists is never thrown away', () => {
   const base = { takeaway: 'x', hazards: Object.fromEntries(HAZARDS.map((h) => [h, { level: 'none', quote: '', why: '' }])) }
-  assert.equal(checkerDecision(parseChecker({ ...base, omissions: [] })!), 'pass')
-  assert.equal(checkerDecision(parseChecker({ ...base, omissions: ['the burden flag'] })!), 'repair')
+  assert.equal(modelDecision(parseChecker({ ...base, omissions: [] })!), 'pass')
+  assert.equal(modelDecision(parseChecker({ ...base, omissions: ['the burden flag'] })!), 'repair')
   assert.equal(parseChecker({ ...base }), null, 'no omissions list is a checker we cannot read')
 })
 

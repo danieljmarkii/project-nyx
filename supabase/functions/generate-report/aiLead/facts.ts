@@ -25,6 +25,9 @@ import type { ReportSnapshot } from '../report.ts'
 import type { Fact, FactTable } from './verifyCore.ts'
 import { PROMPT_VERSION, WRITER_MODEL, CHECKER_MODEL } from './prompts.ts'
 
+/** `trial_reading`: a sentence of sheet 1's trial reading (CUL-2532). */
+export type RecordLineKind = 'lead' | 'record' | 'confounder' | 'trial_reading'
+
 export interface PayloadLine {
   id: string
   text: string
@@ -36,7 +39,7 @@ export interface LeadFactPayload {
   record_start: string
   record_end: string
   band: Array<{ id: string; label: string; text: string }>
-  record_lines: Array<{ id: string; kind: 'lead' | 'record' | 'confounder'; text: string }>
+  record_lines: Array<{ id: string; kind: RecordLineKind; text: string }>
   trial_line: PayloadLine | null
   record_edge: PayloadLine[]
 }
@@ -54,7 +57,30 @@ export const SCOPE_PHRASES: readonly string[] = [
   'not checked with the owner',
   'at least',
   'not as a cause',
+  // The trial reading's bottom lines (CUL-2532): each is the clause that says the trial is not clean.
+  'not fed exclusively',
+  'cannot be confirmed clean',
+  'not a clean one',
 ]
+
+/** The trial reading's bottom line, in order of preference: the sentence that says the diet was
+ *  not fed exclusively, else one that says the elimination cannot be confirmed clean, else its first. */
+const BOTTOM_LINE: readonly RegExp[] = [/\bThe trial diet was not fed exclusively\b/, /\b(?:cannot be confirmed clean|not a clean one|cannot establish that the elimination was clean)\b/]
+
+/** A callout's sentences: split after a full stop that a capital letter follows. */
+export function trialReadingSentences(text: string): string[] {
+  return text.trim().split(/(?<=\.)\s+(?=[A-Z])/).map((t) => t.trim()).filter((t) => t !== '')
+}
+
+/** The id of the trial reading's bottom-line sentence among the payload's lines, or null. */
+export function bottomLineId(lines: ReadonlyArray<{ id: string; kind: string; text: string }>): string | null {
+  const reading = lines.filter((l) => l.kind === 'trial_reading')
+  for (const re of BOTTOM_LINE) {
+    const hit = reading.find((l) => re.test(l.text))
+    if (hit) return hit.id
+  }
+  return reading[0]?.id ?? null
+}
 
 /** A trial line's printed prefix (documentV2.ts `trialLine`). Line 1 can be the trial line; this
  *  is how it is recognised once the lead sentence has dropped its id. */
@@ -106,14 +132,11 @@ export function buildLeadFacts(
   if (!leadSentence) return { eligible: false, reason: 'no_record_lines' }
 
   const bandBlock = blockOf(doc, 'band')
-  // The snapshot's safety order, by the id's index, not the band's printed order (CUL-2381 ruling
-  // (a) moved burden, weight loss and intake decline to the top of the printed band). The lead's
-  // band-first rule and its adversarial corpus were written against this order; moving them onto
-  // the printed order is its own row (filed from PR-29), so the lead does not change here.
-  const bandIndex = (id: string): number => Number(/^band-(\d+)-/.exec(id)?.[1] ?? Number.MAX_SAFE_INTEGER)
-  const bandItems = [...(bandBlock?.items ?? [])]
-    .sort((a, b) => bandIndex(a.id) - bandIndex(b.id))
-    .map((i) => ({ id: i.id, label: i.tag, text: textOf(i.html) }))
+  // The band in the order sheet 1 PRINTS it (CUL-2381 ruling (a): burden, weight loss and intake
+  // decline first; CUL-2532). The ids keep the snapshot's order so a stored lead's citations still
+  // resolve, but band item 1 here is the band's first printed row, so band-first makes the lead open
+  // where the vet's eye already is. Never re-sorted by id: that was the drift CUL-2532 found.
+  const bandItems = (bandBlock?.items ?? []).map((i) => ({ id: i.id, label: i.tag, text: textOf(i.html) }))
   // R-11 (spec §5.2): the exempt flag leaves the band and leads as the chart's heading, and "stays
   // safety_live, so the AI lead's first sentence still cites it". So it is band item 1 here, with
   // its heading and v1's own row (adversarial pass 1, break 1: without it the lead could open on
@@ -135,6 +158,14 @@ export function buildLeadFacts(
     .map((l, i) => ({ id: l.id, kind: i === 0 && l.id === 'line-1' ? 'lead' : 'record', text: l.text }))
   const confounder = blockOf(doc, 'confounder')
   if (confounder) recordLines.push({ id: 'confounder', kind: 'confounder', text: confounder.text })
+  // Sheet 1's trial reading (CUL-2514's block; CUL-2532 instance 2): v1's bottom line on the trial,
+  // one record line per sentence of its callout, word for word. Without it the lead held the trial as
+  // its one dated line and could print it without "The trial diet was not fed exclusively". Its rows
+  // stay out: they set off-list feedings beside the symptoms that followed, the shape H2 forbids.
+  const reading = blockOf(doc, 'trial_reading')
+  if (reading?.html) {
+    trialReadingSentences(textOf(reading.html)).forEach((text, i) => recordLines.push({ id: `trial-reading-${i + 1}`, kind: 'trial_reading', text }))
+  }
   const edge = (blockOf(doc, 'record_edge')?.lines ?? []).map((text, i) => ({ id: `edge-${i + 1}`, text }))
 
   const payload: LeadFactPayload = {
@@ -155,9 +186,16 @@ export function buildLeadFacts(
  *  function, so a hand-built payload in a test is judged exactly as production's is. */
 export function tableFromPayload(payload: LeadFactPayload): FactTable {
   const { band, record_lines: recordLines, trial_line: trial, record_edge: edge } = payload
+  const bottomLine = bottomLineId(recordLines)
   const facts: Fact[] = [
     ...band.map((b, i) => ({ id: b.id, text: b.text, label: b.label, role: 'band', live: true, required: i === 0, must_say: mustSayOf(b.text) })),
-    ...recordLines.map((l) => ({ id: l.id, text: l.text, role: l.kind, must_say: mustSayOf(l.text) })),
+    // With a trial on the sheet, the confounder and the trial reading's bottom line are required
+    // (CUL-2550: the smoke bake-off's commonest checker findings were the trial printed alone, H1
+    // 17 of 23, and the not-checked confounder left out, 14 of 23).
+    ...recordLines.map((l) => ({
+      id: l.id, text: l.text, role: l.kind, must_say: mustSayOf(l.text),
+      ...(trial && (l.id === 'confounder' || l.id === bottomLine) ? { required: true } : {}),
+    })),
     // An ended trial is said to have ended, or to have run (CUL-2380 pass 2: "is at Oct 20").
     ...(trial ? [{ id: 'trial', text: trial.text, role: 'record', required: true, must_say: [...mustSayOf(trial.text), ...(/\bended\b/i.test(trial.text) ? [['ended', ' ran ', ' to ']] : [])] }] : []),
     ...edge.map((e) => ({ id: e.id, text: e.text, role: 'edge', required: true, must_say: [...mustSayOf(e.text), ...edgeDate(e.text)] })),

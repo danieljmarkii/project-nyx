@@ -14,7 +14,7 @@
 //   before the flag reaches anyone (CUL-2306, spec §9.4).
 import assert from 'node:assert/strict'
 import { tableFromPayload, type LeadFactPayload } from './facts.ts'
-import { checkerDecision, parseChecker } from './leadPipeline.ts'
+import { checkerDecision, modelDecision, parseChecker } from './leadPipeline.ts'
 import { verifyLead, type LeadSentence } from './verify.ts'
 
 const DIR = new URL('./exhibits/', import.meta.url)
@@ -29,7 +29,7 @@ Deno.test('replay: the recorded checker verdicts reproduce the bake-off\'s shipp
   for (const [id, raw] of Object.entries(verdicts)) {
     const v = parseChecker(raw)
     assert.ok(v, `${id} does not parse`)
-    const d = checkerDecision(v)
+    const d = modelDecision(v)
     const arm = key[id][0]
     tally[`${arm}:${d}`] = (tally[`${arm}:${d}`] ?? 0) + 1
     if (d === 'reject') rejected.push(id)
