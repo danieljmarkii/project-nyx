@@ -388,3 +388,131 @@ describe('the frame lock (CUL-2469, CUL-2495)', () => {
     }
   });
 });
+
+// CUL-2552, CUL-2553: the load check admits `about:blank` (it is how the inline document is
+// reported), so a page that sends itself there blanks the report, warnings included.
+describe('no report frame can be blanked by its own content', () => {
+  const REFRESHES = [
+    '<meta http-equiv=refresh content="0;url=about:blank">',
+    '<META HTTP-EQUIV="Refresh" CONTENT="0; URL=about:blank">',
+    '<meta content="0;url=about:blank" http-equiv="refresh">',
+    '<meta\thttp-equiv=refresh content=0>',
+    '<meta/http-equiv=refresh content=0>',
+    '<meta name="x" http-equiv="refresh" content="0">',
+    '<meta name="x" content="a>b" http-equiv=refresh>',
+    '<meta name=\'x\' content=\'0\'>',
+    '<meta name="viewport" content="width=1"x http-equiv=refresh>',
+    '<meta http-equiv="set-cookie" content="a=b">',
+    '<meta http-equiv=refresh',
+  ];
+
+  it('renames every meta outside the kept grammar inert, in any ASCII case or spelling', () => {
+    for (const tag of REFRESHES) {
+      const out = neutralizeRefusedTags(`<p>a</p>${tag}<p>b</p>`);
+      expect(out).toContain('<x-refused-');
+      expect(out).not.toMatch(/<meta(?=[\t\n\f\r />]|$)/i);
+    }
+    // Parsed, none of them is a meta at all, so no refresh exists to run.
+    for (const tag of REFRESHES) {
+      const doc = new JSDOM(`<!DOCTYPE html><html><head>${neutralizeRefusedTags(tag)}</head><body></body></html>`).window.document;
+      expect(doc.querySelectorAll('meta').length).toBe(0);
+    }
+  });
+
+  it('keeps the room\'s own head metas and every plain name / content / charset meta', () => {
+    for (const tag of [
+      EXAM_CSP_META,
+      PREFETCH_OFF_META,
+      '<meta charset="utf-8" />',
+      '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />',
+      '<META NAME="referrer" CONTENT="no-referrer">',
+      '<meta name="report-version" content="v2" />',
+    ]) {
+      expect(neutralizeRefusedTags(tag)).toBe(tag);
+    }
+    // Not a meta tag, or escaped text: untouched.
+    for (const s of ['<metadata>', '<meta-x>', '&lt;meta http-equiv=refresh&gt;', '<p>meta</p>']) {
+      expect(neutralizeRefusedTags(s)).toBe(s);
+    }
+  });
+
+  it('every meta the renderers and this module emit survives the rename', () => {
+    const dir = join(__dirname, '../supabase/functions/generate-report');
+    const files = ['render.ts', 'renderPrintV2.ts', 'renderPhoneV2.ts', 'documentV2.ts', 'backSheetsV2.ts']
+      .map((f) => join(dir, f))
+      .concat([join(__dirname, 'examRoom.ts')]);
+    // EXAM_CSP_META is a template here; it is kept by exact match (the test above).
+    const metas = files.flatMap((f) => readFileSync(f, 'utf8').match(/<meta [^>]*>/gi) ?? []).filter((m) => !m.includes('${'));
+    expect(metas.length).toBeGreaterThan(3);
+    for (const m of metas) expect(neutralizeRefusedTags(m)).toBe(m);
+  });
+
+  it('each frame\'s document goes through the rename: the exam room\'s pages and its printed view', () => {
+    const injected = PHONE.replace('<body>', '<body><meta http-equiv=refresh content="0;url=about:blank">');
+    expect(examRoomHtml(injected, '#0A0A0A')).not.toMatch(/<meta http-equiv=refresh/i);
+    expect(withFrameLock(`<html><head></head><body>${REFRESHES[0]}</body></html>`)).not.toMatch(/<meta http-equiv=refresh/i);
+    // Still holds the lock's own metas.
+    expect(examRoomHtml(injected, '#0A0A0A')).toContain(EXAM_CSP_META);
+  });
+
+  /** A locked window with stand-ins for the Navigation API, which jsdom lacks. */
+  function navWindow() {
+    const dom = new JSDOM('<!DOCTYPE html><html><head></head><body><p>record</p></body></html>', { runScripts: 'outside-only' });
+    const w = dom.window as unknown as { eval: (s: string) => unknown; document: Document };
+    w.eval(`function Navigation(){}
+      Navigation.prototype = Object.create(EventTarget.prototype);
+      ['navigate','reload','back','forward','traverseTo'].forEach(function(k){ Navigation.prototype[k] = function(){ return 'navigated'; }; });
+      window.Navigation = Navigation;
+      window.navigation = new EventTarget();
+      Object.setPrototypeOf(window.navigation, Navigation.prototype);`);
+    w.eval(FRAME_LOCK_SCRIPT);
+    return w;
+  }
+
+  it('history and Navigation API navigation throw, and a later script cannot undo it', () => {
+    const w = navWindow();
+    const refused = (js: string) => w.eval(`try { ${js}; "ran"; } catch (e) { "refused"; }`);
+    for (const js of ['history.back()', 'history.forward()', 'history.go(-1)', 'history.go(0)']) expect(refused(js)).toBe('refused');
+    for (const js of ['navigation.navigate("about:blank")', 'navigation.reload()', 'navigation.back()', 'navigation.forward()', 'navigation.traverseTo("k")']) {
+      expect(refused(js)).toBe('refused');
+    }
+    expect(refused('History.prototype.back = function(){}; history.back()')).toBe('refused');
+    expect(w.eval('var d = Object.getOwnPropertyDescriptor(History.prototype, "go"); d.writable + "" + d.configurable')).toBe('falsefalse');
+    expect(w.eval('var d = Object.getOwnPropertyDescriptor(Navigation.prototype, "navigate"); d.writable + "" + d.configurable')).toBe('falsefalse');
+  });
+
+  it('the lock cancels any navigation to an about: URL, a meta refresh or a location assignment included', () => {
+    const w = navWindow();
+    const fire = (url: string, cancelable = true) =>
+      w.eval(`var e = new Event('navigate', { cancelable: ${cancelable} }); e.destination = { url: ${JSON.stringify(url)} }; navigation.dispatchEvent(e); e.defaultPrevented`);
+    expect(fire('about:blank')).toBe(true);
+    expect(fire('ABOUT:srcdoc')).toBe(true);
+    // Not ours to cancel: the load check refuses every other URL itself.
+    expect(fire('https://x.test/')).toBe(false);
+    expect(fire('about:blank', false)).toBe(false);
+    // A later script's own listener changes nothing: the lock's ran first.
+    w.eval('navigation.addEventListener("navigate", function(e){ e.stopImmediatePropagation(); })');
+    expect(fire('about:blank')).toBe(true);
+  });
+
+  it('no script can insert a meta that refreshes, by node or by HTML string', () => {
+    const w = navWindow();
+    const refused = (js: string) => w.eval(`try { ${js}; "ran"; } catch (e) { "refused"; }`);
+    expect(refused('var m = document.createElement("meta"); m.setAttribute("http-equiv", "refresh"); m.content = "0;url=about:blank"; document.head.appendChild(m)')).toBe('refused');
+    w.eval('document.head.insertAdjacentHTML("beforeend", "<meta http-equiv=refresh content=0>")');
+    w.eval('document.body.innerHTML = "<p>x</p><meta http-equiv=refresh content=0>"');
+    expect(w.document.querySelectorAll('meta[http-equiv]').length).toBe(0);
+    // A plain meta still goes in.
+    expect(refused('var m = document.createElement("meta"); m.name = "x"; document.head.appendChild(m)')).toBe('ran');
+  });
+
+  it('the report scripts the lock sits under never navigate', () => {
+    const phone = readFileSync(join(__dirname, '../supabase/functions/generate-report/renderPhoneV2.ts'), 'utf8');
+    const start = phone.indexOf('const SCRIPT_PHONE = `');
+    const scripts = [phone.slice(start, phone.indexOf('`', start + 22)), readFileSync(join(__dirname, 'examRoom.ts'), 'utf8').split('const EXAM_SCRIPT')[1]?.split('</script>`')[0] ?? ''];
+    for (const s of scripts) {
+      expect(s.length).toBeGreaterThan(100);
+      expect(s).not.toMatch(/\blocation\b|\bhistory\b|\bnavigation\b|http-equiv/);
+    }
+  });
+});
