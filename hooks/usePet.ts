@@ -14,6 +14,9 @@ export function usePet() {
     if (!user) return;
     const userId = user.id;
     let cancelled = false;
+    // The sign-out epoch this effect runs under, read once: a retry timer that fires after a
+    // sign-out began must not capture the new epoch (adversarial pass 2, CUL-2542).
+    const effectEpoch = currentSignOutEpoch();
 
     // Decide onboarding from the DURABLE flag (user_profiles.onboarding_completed_at,
     // migration 027) instead of inferring it from "has >=1 pet" (B-251 PR 4 / §6,
@@ -37,14 +40,14 @@ export function usePet() {
       // and only later clears the session, so `cancelled` stays false through it, and a
       // read answering in that gap would put this account's ids into the next one's store
       // (the add is a union, so they would stay). rls-privacy-reviewer, CUL-2542.
-      const epoch = currentSignOutEpoch();
+      if (currentSignOutEpoch() !== effectEpoch) return;
       try {
         const { data, error } = await supabase
           .from('pets')
           .select('id')
           .eq('user_id', userId)
           .eq('is_active', false);
-        if (cancelled || currentSignOutEpoch() !== epoch) return;
+        if (cancelled || currentSignOutEpoch() !== effectEpoch) return;
         if (error) {
           console.warn('[usePet] archived pet ids fetch failed:', error.message);
           return;

@@ -1375,6 +1375,25 @@ describe('archived pets count as the account (CUL-2542)', () => {
     expect(entry.deleted).toBe(false);
   });
 
+  it('never ages out an already-stamped capture for an unknown pet while the archived ids are unread (pass 2)', async () => {
+    // Stamped while its pet was active (a food miss), the pet archived since, the archived
+    // read not answered on this pass: it may be the owner's, so it stays.
+    const entry = fakeFile(
+      'a.json',
+      JSON.stringify(validRecord({ petId: ARCHIVED, createdAt: new Date(Date.now() - 200 * 86_400_000).toISOString() })),
+    );
+    const stamp = fakeFile(
+      `a.json${INBOX_DEFERRAL_STAMP_SUFFIX}`,
+      new Date(Date.now() - (INBOX_MAX_AGE_DAYS + 5) * 86_400_000).toISOString(),
+    );
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({ list: () => [entry, stamp] });
+    await ingestCaptureInbox(new Set([PET]));
+    expect(entry.deleted).toBe(false);
+    usePetStore.getState().addArchivedPetIds([ARCHIVED]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(raw.prepare('SELECT pet_id FROM events').all()).toEqual([{ pet_id: ARCHIVED }]);
+  });
+
   it("keeps the caller's fence live: once the caller's set goes empty, no archived id matches", () => {
     usePetStore.getState().addArchivedPetIds([ARCHIVED]);
     let signedOut = false;

@@ -304,6 +304,10 @@ export async function ingestCaptureRecords(
   now: Date = new Date(),
   maxApplies: number = MAX_INGEST_PER_PASS,
   fenced: () => boolean = () => false,
+  // CUL-2542 (adversarial pass 2): whether the account's archived pets are known. Until they
+  // are, a record naming a pet outside `validPetIds` may be an archived pet's, so that branch
+  // never ages out, whatever its stamp says. Defaults to known for direct callers and tests.
+  archivedKnown: boolean = true,
 ): Promise<InboxDecision[]> {
   if (validPetIds.size === 0) {
     return files.map((f) => ({ name: f.name, action: 'deferred', reason: 'no pets loaded' }));
@@ -357,7 +361,11 @@ export async function ingestCaptureRecords(
         : { name: file.name, action: 'deferred', reason, unusable: true };
 
     if (!validPetIds.has(record.petId)) {
-      decisions.push(unusable('pet not in account'));
+      decisions.push(
+        archivedKnown
+          ? unusable('pet not in account')
+          : { name: file.name, action: 'deferred', reason: 'pet not in account (archived pets not read)' },
+      );
       continue;
     }
 
@@ -538,6 +546,8 @@ export async function ingestCaptureInbox(
 ): Promise<void> {
   const epoch = currentSignOutEpoch();
   const fenced = () => currentSignOutEpoch() !== epoch || callerFenced();
+  // Read once, with the allowlist below, so the age check and the stamp agree on one answer.
+  const archivedKnown = archivedPetIdsKnown();
   const inbox = getCaptureInboxDirectory();
   if (!inbox) return; // Android / no entitlement — the surface doesn't exist here.
 
@@ -599,6 +609,7 @@ export async function ingestCaptureInbox(
       new Date(),
       MAX_INGEST_PER_PASS,
       fenced,
+      archivedKnown,
     );
   } catch (e) {
     // A throw mid-pass leaves every file in place; the next foreground retries
@@ -612,9 +623,6 @@ export async function ingestCaptureInbox(
 
   const regenPets = new Set<string>();
   const stampAt = new Date().toISOString();
-  // A capture for a pet outside the active set may be an archived pet's while the archived
-  // ids are unread: no age-out clock starts on it until they are.
-  const archivedKnown = archivedPetIdsKnown();
   for (const d of decisions) {
     if (d.action === 'deferred') {
       // Deferrals are expected to be transient; log so a stuck record (e.g. a
@@ -623,8 +631,9 @@ export async function ingestCaptureInbox(
       // CUL-2542: the first unusable pass starts the 45 days. An existing readable stamp
       // is never rewritten (that would restart the clock); an unreadable one is replaced.
       // A failed write leaves the record unstamped, so it defers again and never ages.
-      const mayBeArchived = d.reason === 'pet not in account' && !archivedKnown;
-      if (d.unusable && !mayBeArchived && !stamps.get(d.name)?.at) {
+      // A pet outside the active set while the archived ids are unread is not marked
+      // unusable by the ingest, so no clock starts on it until they are read.
+      if (d.unusable && !stamps.get(d.name)?.at) {
         try {
           new File(inbox, `${d.name}${INBOX_DEFERRAL_STAMP_SUFFIX}`).write(stampAt);
         } catch (e) {
