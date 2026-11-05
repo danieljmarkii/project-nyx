@@ -24,7 +24,7 @@
 // and `markKept` carries its result into the keep's one UPDATE without reading it (CUL-2436).
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import type { KeepLead } from './aiLead/run.ts'
+import type { KeepLead, KeepRefusal } from './aiLead/run.ts'
 
 export const VET_REPORTS_BUCKET = 'nyx-vet-reports'
 
@@ -232,7 +232,9 @@ export function savedCopyIO(admin: SupabaseClient, key: CopyKey): SavedCopyIO {
         .update({ ...lead.set, status: 'kept', shared_via: via, shared_at: atIso, content_sha256: sha })
         .eq('id', id).eq('pet_id', key.petId).eq('generated_by', key.uid).eq('status', 'draft')
         .eq('content_sha256', sha)
-      for (const [column, value] of Object.entries(lead.unchanged)) q = q.eq(column, value)
+      // A null pin is `IS NULL` (CUL-2523): `= NULL` matches nothing, which would refuse every
+      // keep over a cleared column rather than pin it.
+      for (const [column, value] of Object.entries(lead.unchanged)) q = value === null ? q.is(column, null) : q.eq(column, value)
       const { data, error } = await q.select('id')
       if (error) warn('keep failed', error)
       return !error && Array.isArray(data) && data.length === 1
@@ -357,7 +359,7 @@ export type KeepOutcome =
 export async function keepCopy(
   io: SavedCopyIO,
   req: { reportId: string | null; sharedVia: SharedVia | null },
-  settleLead: (storedHtml: string) => Promise<KeepLead | null>,
+  settleLead: (storedHtml: string) => Promise<KeepLead | KeepRefusal | null>,
 ): Promise<KeepOutcome> {
   if (req.reportId === null || req.sharedVia === null) return { status: 400, body: { error: 'reportId and sharedVia required' } }
   const at = new Date(io.now()).toISOString()
@@ -380,6 +382,9 @@ export async function keepCopy(
   }
   const lead = await settleLead(new TextDecoder().decode(bytes))
   if (lead === null) return { status: 500, body: { error: 'Saved copy could not be kept' } }
+  // A copy whose summary no record can make true, or whose summary the owner has since withdrawn
+  // (CUL-2523, PM ruling (a)): refused for good, so the owner is told now and resends without it.
+  if ('refused' in lead) return { status: 409, body: { error: 'Saved copy unavailable' } }
   if (await io.markKept(req.reportId, req.sharedVia, at, row.content_sha256, lead)) return { status: 200, body: { kept: true, first: true } }
   // Two sends racing: the other one kept it. Anything else is a failure, said as one.
   const again = await io.readRow(req.reportId)

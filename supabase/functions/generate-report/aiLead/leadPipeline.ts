@@ -72,6 +72,8 @@ export interface DraftRead {
   found: boolean
   text: string | null
   verdict: unknown
+  /** `ai_lead_model` as read. Optional: only the keep's settle pins it (CUL-2523). */
+  model?: string | null
 }
 
 export interface LeadIO {
