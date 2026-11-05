@@ -1,6 +1,6 @@
 # The smoke bake-off's re-run: the pre-registered rule (CUL-2306, after Vet report v2 PR-35)
 
-**Written 2026-11-05, before the re-run and before any model call against the configuration it judges. Approved by the PM in PR-35's build session on 2026-11-05 ("rule approved"; "80 words, no print floor").** It is never edited after a result is seen. Anything learned afterwards goes in the re-run's own `RESULT.md`. PR-26 runs it, in a run folder of its own beside this file, with a harness of its own. This file fixes the rule; the run folder fixes only the run's parameters, as `../2026-11-05-smoke/PREREGISTRATION.md` did.
+**Written 2026-11-05, before the re-run and before any model call against the configuration it judges. Approved by the PM in PR-35's build session on 2026-11-05 ("rule approved", "80 words"), with the print floor added on the PM's later word in the same session ("floor", which settled the conflict with the dispatcher session's 17:51Z ruling the same way).** It is never edited after a result is seen. Anything learned afterwards goes in the re-run's own `RESULT.md`. PR-26 runs it, in a run folder of its own beside this file, with a harness of its own. This file fixes the rule; the run folder fixes only the run's parameters, as `../2026-11-05-smoke/PREREGISTRATION.md` did.
 
 ## What it judges
 
@@ -26,15 +26,16 @@
 3. Median usefulness at least arm A's plus 0.5.
 4. The checker passed nothing a judge scored material.
 
-**Verdict:** PASS only if no stop fires and all four §12 conditions hold. Anything else is FAIL.
+**Print floor** (PM, 2026-11-05):
+5. At least 12 of the 35 round-fixture runs print a lead (outcome `printed`). A run that fails for any reason, a timeout included, does not print.
+
+**Verdict:** PASS only if no stop fires and all five conditions hold (§12's four and the print floor). Anything else is FAIL.
 
 **Judges:** the same two isolated reviewers, a GP (Dr. Chen) and a skeptical GP, as model personas. Each reads every printed lead and every arm A item blind: random ids, the fixture payload shown, no arm, model, verifier or checker output. Each scores `../rubric.md`'s sheet. Higher level wins per hazard; no averaging, and no exclusion after scoring.
 
-**No print-rate floor** (PM, 2026-11-05). How many leads print is reported, not judged.
-
 ## Also reported, not part of the verdict
 
-- **The print rate:** n of 35, with each failure's cause (checker reject, checker repair spent, verifier reject after repair, timeout).
+- **Each failure's cause** beside the print count (condition 5) (checker reject, checker repair spent, verifier reject after repair, timeout).
 - **The model-only H7 reading** on the set's four band-order items (`cr-a`, `cr-b`, `p1-b1-a`, `p1-b1-b`): `modelDecision(verdict)` beside `checkerDecision`. This shows whether the checker model reads order on its own, or only the code half does.
 - **Each printed lead's opening** against the printed band order (CUL-2532).
 - The raw first drafts' verifier pass rate, repairs, latency, and word counts.
