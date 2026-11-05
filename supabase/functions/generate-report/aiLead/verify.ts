@@ -44,7 +44,7 @@
 //   tense       CUL-2380: a sentence that touches a flag is never past ("had been a live flag"), and
 //               "over" is followed by a count, never left as an ending ("the flag is over")
 //   floor       CUL-2532: a count from a line that says "a floor, not a total" keeps the clause
-//   bottom-line CUL-2532: a trial reading's bottom line prints in its own clause, word for word
+//   bottom-line CUL-2532: a trial's bottom line or confounder scope prints only after its own line's words
 //   date-anchor CUL-2380: in any sentence citing more than the trial, every date keeps the word its
 //               line prints before it and its recency words, so dates cannot swap or be rebuilt
 
@@ -372,21 +372,39 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
       // feedings"). No other cited line excuses it: a line citing the same binding is no licence to
       // drop the floor (adversarial pass 1 on PR-35, break 2: an unused cite stripped the clause).
       const lineBindings = new Set(numberBindings(text, year))
-      const kept = numberBindings(s.text, year).some((b) => lineBindings.has(b))
+      // And its dates: the off-list days listed with no count are the whole tally read as complete
+      // (pass 2, B4). The trial line's own dates ("ran Jul 26, 2026 to Oct 20, 2026") do not count.
+      const trialDates = new Set(s.cites.includes('trial') ? dateTokens(facts.get('trial')?.text ?? '').filter((t) => t.startsWith('@')) : [])
+      const lineDates = new Set(dateTokens(text).filter((t) => t.startsWith('@') && !trialDates.has(t)))
+      const kept = numberBindings(s.text, year).some((b) => lineBindings.has(b)) || dateTokens(s.text).some((t) => lineDates.has(t))
       if (kept && !norm(s.text).toLowerCase().includes(FLOOR_PHRASE)) err(i, 'floor', `a count from ${c} prints without "${FLOOR_PHRASE}"`)
     }
-    // bottom-line (adversarial pass 1 on PR-35, break 1): a trial reading's bottom-line phrase prints
-    // only inside the clause its line prints it in, word for word from the clause's start, so it
-    // cannot be wrapped ("this record cannot show the trial diet was not fed exclusively").
-    for (const phrase of BOTTOM_LINE_PHRASES) {
+    // bottom-line (adversarial passes 1 and 2 on PR-35): a trial reading's bottom-line phrase, and a
+    // confounder's scope phrase, print only after words their own line prints just before them. The
+    // lead-in is read back from the phrase to the sentence's start, a semicolon or ", and" (never a
+    // comma or a bracket, which a wrapper can sit behind: "this record cannot show (the trial diet was
+    // not fed exclusively)"); its leading frame words are dropped, and what is left must be a run of
+    // the words the cited line prints before the phrase. So a negating wrapper ("this record cannot
+    // show the trial is not a test of the diet alone") never prints.
+    for (const c of s.cites) {
+      const f = facts.get(c)
+      if (!f || (f.role !== 'trial_reading' && f.role !== 'confounder')) continue
+      const lineLower = norm(f.text ?? '').toLowerCase()
       const lower = norm(s.text).toLowerCase()
-      let at = lower.indexOf(phrase)
-      while (at >= 0) {
-        const clauseStart = Math.max(...[',', ';', ':', '—', '–', '(', ')'].map((c) => lower.lastIndexOf(c, at)), -1) + 1
-        const clause = flatWords(lower.slice(clauseStart, at + phrase.length))
-        const printed = s.cites.some((c) => ` ${flatWords(facts.get(c)?.text ?? '')} `.includes(` ${clause} `))
-        if (!printed) err(i, 'bottom-line', `"${clause}" is not the clause a cited line prints "${phrase}" in`)
-        at = lower.indexOf(phrase, at + phrase.length)
+      for (const phrase of PROTECTED_PHRASES) {
+        const inLine = lineLower.indexOf(phrase)
+        if (inLine < 0) continue
+        const before = ` ${flatWords(lineLower.slice(0, inLine))} `
+        let at = lower.indexOf(phrase)
+        while (at >= 0) {
+          const head = lower.slice(0, at)
+          const start = Math.max(head.lastIndexOf(';'), head.lastIndexOf(', and ') >= 0 ? head.lastIndexOf(', and ') + ', and'.length : -1, -1) + 1
+          const lead = flatWords(head.slice(start)).split(' ').filter(Boolean)
+          while (lead.length > 0 && (FRAME.has(lead[0]) || lead[0] === 'it')) lead.shift()
+          const run = lead.join(' ')
+          if (run !== '' && !before.includes(` ${run} `)) err(i, 'bottom-line', `"${run}" is not what ${c} prints before "${phrase}"`)
+          at = lower.indexOf(phrase, at + phrase.length)
+        }
       }
     }
     const spelled = s.text.match(SPELLED_NUMBERS)
@@ -572,6 +590,9 @@ function waiveNotClean(errors: VerifyIssue[], summary: LeadSummary, table: FactT
 /** The trial reading's bottom-line phrases (facts.ts `BOTTOM_LINE_PHRASES`, mirrored: the same
  *  question, which clause says the trial is not clean). */
 export const BOTTOM_LINE_PHRASES: readonly string[] = ['not fed exclusively', 'cannot be confirmed clean', 'not a clean one', 'cannot establish that the elimination was clean']
+
+/** The phrases `bottom-line` guards: the bottom lines, and the confounder's scope words. */
+export const PROTECTED_PHRASES: readonly string[] = [...BOTTOM_LINE_PHRASES, 'not a test of the diet', 'not checked with the owner']
 
 export const TENSE_SPAN = 2
 function pastExcused(text: string, at: number, word: string, cites: string[], facts: Map<string, { role?: string; text?: string }>): boolean {
