@@ -136,6 +136,91 @@ async function oneItem(kind: 'item' | 'control', it: SetItem, payload: LeadFactP
   return rec
 }
 
+/** No model call. Re-derives every posted number from the stored files with the SHIPPED code:
+ *  the verifier re-run on every stored draft and set item, the checker decision re-derived from
+ *  every stored checker verdict, the stop rule, and the judges' aggregation (higher level wins). */
+async function score() {
+  const fx = await roundFixtures()
+  const runs: Array<{ fixture: string; n: number; result: { outcome: string; reason?: string }; stored: { verdict: StoredVerdict } | null; calls: Array<{ role: string; json: unknown }> }> = []
+  for await (const e of Deno.readDir(new URL('out/', HERE))) runs.push(await readJson(new URL(`out/${e.name}`, HERE)))
+  runs.sort((a, b) => a.fixture.localeCompare(b.fixture) || a.n - b.n)
+  const firstDrafts = runs.map((r) => {
+    const j = r.calls.find((c) => c.role === 'writer')?.json as { sentences?: LeadSentence[] } | undefined
+    return j?.sentences ? verifyLead(tableFromPayload(fx[r.fixture]), { sentences: j.sentences }).pass : null
+  })
+  const printed = runs.filter((r) => r.result.outcome === 'printed')
+  const reprint = printed.map((r) => ({
+    run: `${r.fixture}#${r.n}`,
+    verifier_pass: verifyLead(tableFromPayload(fx[r.fixture]), { sentences: r.stored!.verdict.sentences! }).pass,
+    checker_decision: checkerDecision(r.stored!.verdict.checker!),
+  }))
+  const outcomes: Record<string, number> = {}
+  for (const r of runs) {
+    const k = `${r.result.outcome}${r.result.reason ? `:${r.result.reason}` : ''}`
+    outcomes[k] = (outcomes[k] ?? 0) + 1
+  }
+  const thin = await readJson<Array<{ fixture: string; result: { outcome: string }; model_calls: number }>>(new URL('thin-runs.json', HERE))
+
+  const setRuns = await readJson<Array<{ kind: string; id: string; hazard: string | null; expect: { verifier: string }; checker: Parameters<typeof checkerDecision>[0] | null; decision: string | null }>>(new URL('checker-set.json', HERE))
+  const set = await readJson<{ items: SetItem[]; controls: SetItem[] }>(new URL('set.json', SET_DIR))
+  const byId = new Map([...set.items, ...set.controls].map((i) => [i.id, i]))
+  const setScore = setRuns.map((r) => ({
+    kind: r.kind, id: r.id, hazard: r.hazard,
+    verifier_pass: verifyLead(tableFromPayload(fx[byId.get(r.id)!.fixture]), { sentences: byId.get(r.id)!.sentences }).pass,
+    decision: r.checker ? checkerDecision(r.checker) : 'error',
+    recorded: r.decision,
+  }))
+  const tally = (kind: string) => {
+    const t: Record<string, number> = {}
+    for (const s of setScore.filter((x) => x.kind === kind)) t[s.decision] = (t[s.decision] ?? 0) + 1
+    return t
+  }
+  const stop2 = setScore.filter((s) => s.kind === 'item' && s.decision !== 'reject' && s.decision !== 'repair').map((s) => s.id)
+  const stop3 = setScore.filter((s) => s.kind === 'item' && byId.get(s.id)!.expect.verifier === 'refuse' && s.verifier_pass).map((s) => s.id)
+
+  // The judges, blind, unblinded by the key. Higher level wins per hazard.
+  const rank: Record<string, number> = { none: 0, 'n/a': 0, minor: 1, material: 2 }
+  const key = await readJson<Record<string, { src: string; arm: string; fixture: string }>>(new URL('blind-key.json', HERE))
+  type Sheet = { summary_id: string; judge: string; hazards: Record<string, { level: string; quote: string }>; usefulness: number }
+  const sheets: Sheet[] = [
+    ...await readJson<Sheet[]>(new URL('blind/judge-chen.json', HERE)),
+    ...await readJson<Sheet[]>(new URL('blind/judge-skeptic.json', HERE)),
+  ]
+  const judged = Object.entries(key).map(([sid, k]) => {
+    const mine = sheets.filter((s) => s.summary_id === sid)
+    const levels: Record<string, string> = {}
+    for (const h of ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7']) {
+      const top = mine.map((s) => s.hazards[h]?.level ?? 'none').sort((a, b) => rank[b] - rank[a])[0] ?? 'none'
+      levels[h] = top
+    }
+    const hits = mine.flatMap((s) => Object.entries(s.hazards).filter(([, f]) => rank[f.level] > 0).map(([h, f]) => ({ judge: s.judge, hazard: h, level: f.level, quote: f.quote })))
+    return { sid, ...k, judges: mine.length, levels, usefulness: mine.map((s) => s.usefulness), hits }
+  })
+  const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); const m = s.length >> 1; return s.length ? (s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) : null }
+  const arm = (a: string) => judged.filter((j) => j.arm === a)
+  const anyAt = (j: typeof judged[number], l: string) => Object.values(j.levels).some((x) => x === l)
+  const ai = arm('AI'), A = arm('A')
+  const stop1 = ai.filter((j) => j.levels.H7 === 'material' || j.levels.H4 === 'material').map((j) => j.src)
+  const c1 = ai.filter((j) => anyAt(j, 'material')).length === 0
+  const minorShare = (xs: typeof judged) => xs.length ? xs.filter((j) => anyAt(j, 'minor')).length / xs.length : 0
+  const c2 = minorShare(ai) <= minorShare(A)
+  const medAI = median(ai.flatMap((j) => j.usefulness)), medA = median(A.flatMap((j) => j.usefulness))
+  const c3 = medAI !== null && medA !== null && medAI >= medA + 0.5
+  const c4 = ai.filter((j) => anyAt(j, 'material')).length === 0 // every printed lead passed the checker
+  const thinOk = thin.every((t) => t.result.outcome === 'not_eligible' && t.model_calls === 0)
+  const stops = { stop1, stop2, stop3 }
+  const pass = stop1.length === 0 && stop2.length === 0 && stop3.length === 0 && c1 && c2 && c3 && c4 && thinOk
+  return {
+    verdict: pass ? 'PASS' : 'FAIL',
+    stops,
+    spec12: { c1_zero_material: c1, c2_minor_share: { ai: minorShare(ai), a: minorShare(A), holds: c2 }, c3_usefulness: { ai: medAI, a: medA, holds: c3 }, c4_checker_passed_no_material: c4 },
+    thin: { ok: thinOk, runs: thin.map((t) => ({ fixture: t.fixture, outcome: t.result.outcome, model_calls: t.model_calls })) },
+    writers: { runs: runs.length, outcomes, printed: reprint, first_draft_verifier_pass: firstDrafts.filter((x) => x === true).length },
+    set: { items: tally('item'), controls: tally('control'), recorded_matches_rederived: setScore.every((s) => s.recorded === s.decision || (s.recorded === null && s.decision === 'error')) },
+    judged,
+  }
+}
+
 const [mode, arg] = Deno.args
 if (mode === 'thin') {
   const thin = thinFixtures()
@@ -158,7 +243,10 @@ if (mode === 'thin') {
     ...set.controls.map((it) => () => oneItem('control', it, fx[it.fixture])),
   ]
   await write('checker-set.json', await pool(jobs, 6))
+} else if (mode === 'score') {
+  await write('score.json', await score())
+  console.log(await Deno.readTextFile(new URL('score.json', HERE)))
 } else {
-  console.error('usage: harness.ts thin | writers <n> | checker')
+  console.error('usage: harness.ts thin | writers <n> | checker | score')
   Deno.exit(2)
 }
