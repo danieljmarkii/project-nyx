@@ -201,8 +201,11 @@ function trialVehicleSplit(snap: ReportSnapshot): string {
     ...(on > 0 ? [`${doses(on)} given inside a food on the allowed list`] : []),
     ...(off > 0 ? [`${doses(off)} given in a food off the list or not identified`] : []),
   ]
+  // COLD READ, 22cae53: the row's feedings and page 1's doses read as two unexplained numbers (20
+  // beside 18 + 1), and a chicken-treat vehicle dosed after the trial read as an in-trial exposure. The
+  // row says its own span first, so the difference is visibly a window, not a disagreement.
   const scope = trialCountScope(t)
-  return ` ${scope.charAt(0).toUpperCase()}${scope.slice(1)}, page&nbsp;1 counts ${parts.join(' and ')}.`
+  return ` This row counts the whole report window, ${h(fmtSpanFromTo(snap.scope.startDate, snap.scope.endDate))}; ${scope}, page&nbsp;1 counts ${parts.join(' and ')}.`
 }
 
 /** CUL-2525 — doses the same detector read as given inside a food ON the allowed list. */
@@ -242,11 +245,24 @@ function onListDosesSentence(t: NonNullable<ReportSnapshot['trial']>): string | 
           flagged.length === 1 ? 'it' : 'them'
         } went in with that protein.`
       : ''
+  // COLD READ, 22cae53 (QUIET): on Nyx both vehicles were foods whose ingredient panel was never
+  // captured, and the sentence said "on the list" with nothing beside it, so "on the list" read as
+  // "clean". The same test as the trial block's own "panel read for N of M" line (`panelComplete`);
+  // a vehicle with no matching entry is unread, the louder reading.
+  const unread = [...byFood.keys()].filter(
+    (label) => !flagged.includes(label) && t.permittedFoods.find((f) => f.label === label)?.panelComplete !== true,
+  )
+  const unreadBit =
+    unread.length > 0
+      ? ` <b>The ingredient panel of ${unread.map((l) => h(l)).join(' and ')} ${unread.length === 1 ? 'was' : 'were'} never captured</b>, so this record cannot say what else the doses given in ${
+          unread.length === 1 ? 'it' : 'them'
+        } went in with.`
+      : ''
   return `<b>${num(on.length)} dose${on.length === 1 ? '' : 's'} by mouth</b> ${
     on.length === 1 ? 'was' : 'were'
   } logged as given inside a food on the allowed list (${foods}), ${span} (${drugs}). Being on the list, ${on.length === 1 ? 'it is' : 'they are'} not counted as ${
     on.length === 1 ? 'an exposure' : 'exposures'
-  }.${flaggedBit}`
+  }.${flaggedBit}${unreadBit}`
 }
 
 /**

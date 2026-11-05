@@ -874,7 +874,7 @@ Deno.test('CUL-2525 — page 1 names the doses given in food, and appendix B quo
   // Appendix B: the row's window-wide feedings, then page 1's split over the trial days.
   const row = text.slice(text.indexOf('Food used to give medication'), text.indexOf('Entered as supplements'))
   assert.ok(/4 feedings carried a dose/.test(row), row)
-  assert.ok(/During the trial, page 1 counts 3 doses given inside a food on the allowed list and 1 dose given in a food off the list or not identified\./.test(row), row)
+  assert.ok(/This row counts the whole report window, from \w+ \d+ to \w+ \d+, 2026; during the trial, page 1 counts 3 doses given inside a food on the allowed list and 1 dose given in a food off the list or not identified\./.test(row), row)
 })
 
 Deno.test('CUL-2525 pass 1 (QUIET) — a pill in an allowed food whose label lists another protein is never reassured about', () => {
@@ -893,6 +893,16 @@ Deno.test('CUL-2525 pass 1 — a clean allowed vehicle states the rule and nothi
   const text = plain(renderReport(assembleReport(nyxVehicleShape())))
   assert.match(text, /\(prednisolone\)\. Being on the list, they are not counted as exposures\./)
   assert.doesNotMatch(text, /carries no protein|named above as listing a protein beyond/)
+})
+
+Deno.test('CUL-2525 cold read (QUIET) — a pill in an allowed food whose panel was never captured says so beside the count', () => {
+  // Nyx: both vehicles were foods with no captured ingredient panel, and "on the list" read as "clean".
+  const input = nyxVehicleShape()
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, ingredientsNotes: null, extractionConfidence: null }]
+  const snap = assembleReport(input)
+  assert.equal(snap.trial!.permittedFoods[0].panelComplete, false, 'precondition: the vehicle panel is unread')
+  const text = plain(renderReport(snap))
+  assert.match(text, /not counted as exposures\. The ingredient panel of Royal Canin Hydrolyzed HP was never captured, so this record cannot say what else the doses given in it went in with\./)
 })
 
 Deno.test('CUL-2525 — mutation: a pill in the trial diet with no dose in food leaves both lines silent', () => {
