@@ -1227,13 +1227,17 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
   if (disclosure !== '') blocks.push({ kind: 'disclosure', id: 'disclosure', html: disclosure })
 
   const { band, leadFlag } = bandMembersOf(snap)
+  const inBand = new Set(band)
+  const snapshotBand = snap.safetyFlags.filter((f) => inBand.has(f))
   const checks = checksHtmlOf(snap)
   if (band.length > 0) {
     blocks.push({
       kind: 'band',
       id: 'band',
       heading: `Flags for the vet · ${band.length}`,
-      items: band.map((f, i) => ({ id: flagId(f, i), ...flagRowOf(bandFlagOf(f), snap, ptr), photos: bandPhotosOf(f, snap), photosLeftOutLine: bandLeftOutLineOf(f, snap) })),
+      // Ids keep the snapshot's order (CUL-2381): the band's ruled display order moves where an
+      // item prints, never its id, so a stored AI lead's citations still resolve.
+      items: band.map((f) => ({ id: flagId(f, snapshotBand.indexOf(f)), ...flagRowOf(bandFlagOf(f), snap, ptr), photos: bandPhotosOf(f, snap), photosLeftOutLine: bandLeftOutLineOf(f, snap) })),
       checksHtml: checks,
     })
   } else if (checks !== null) {

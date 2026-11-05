@@ -106,7 +106,14 @@ export function buildLeadFacts(
   if (!leadSentence) return { eligible: false, reason: 'no_record_lines' }
 
   const bandBlock = blockOf(doc, 'band')
-  const bandItems = (bandBlock?.items ?? []).map((i) => ({ id: i.id, label: i.tag, text: textOf(i.html) }))
+  // The snapshot's safety order, by the id's index, not the band's printed order (CUL-2381 ruling
+  // (a) moved burden, weight loss and intake decline to the top of the printed band). The lead's
+  // band-first rule and its adversarial corpus were written against this order; moving them onto
+  // the printed order is its own row (filed from PR-29), so the lead does not change here.
+  const bandIndex = (id: string): number => Number(/^band-(\d+)-/.exec(id)?.[1] ?? Number.MAX_SAFE_INTEGER)
+  const bandItems = [...(bandBlock?.items ?? [])]
+    .sort((a, b) => bandIndex(a.id) - bandIndex(b.id))
+    .map((i) => ({ id: i.id, label: i.tag, text: textOf(i.html) }))
   // R-11 (spec §5.2): the exempt flag leaves the band and leads as the chart's heading, and "stays
   // safety_live, so the AI lead's first sentence still cites it". So it is band item 1 here, with
   // its heading and v1's own row (adversarial pass 1, break 1: without it the lead could open on
