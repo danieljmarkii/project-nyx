@@ -3,9 +3,9 @@
 // A sent report's keep used to live only in memory, so a keep still retrying when the app was
 // closed (Mail and the share sheet hand control to another app, and the phone may kill this one)
 // was lost with no line. Now `keepReportCopy` writes a row here before its first try and deletes
-// it on its final answer in the same session. A row that is still here at the next open is a keep
-// the app was closed on: `drainPendingKeeps` (lib/reportKeep.ts) tries it again, and tells the
-// owner once when it cannot be kept.
+// it only once the copy is kept. Any other row is a keep the next launch's drain
+// (`drainPendingKeeps`, lib/reportKeep.ts) tries again; one it cannot keep is said, and the row
+// goes only when the owner dismisses that notice.
 //
 // The table's DDL is in BASE_SCHEMA_SQL (lib/localSchema.ts) and it is in LOCAL_WIPE_TABLES, so a
 // sign-out takes every row with it.
@@ -61,3 +61,10 @@ export function sqliteKeepLedger(db: () => LedgerDb = getDb): KeepLedger {
  * owns its row and its line, and a second try beside it would race it to the same answer.
  */
 export const keepsInFlight = new Set<string>();
+
+/** Report ids this JS session's keep answered without keeping (the screen had its chance to say
+ *  it). Their rows wait for the next launch's drain, which says them once if they still miss. */
+export const keepsAnswered = new Set<string>();
+
+/** Report ids whose miss notice is up and not yet dismissed: no second drain says them again. */
+export const missesAwaitingAck = new Set<string>();

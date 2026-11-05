@@ -1,5 +1,6 @@
 import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
+import { pendingKeepsBeforeSignOut } from './reportKeep';
 import { clearWidgetData } from './appGroup';
 import { fenceWidgetPublish } from './widgetSnapshot';
 import { clearWidgetTimeline } from './widgetBridge';
@@ -100,10 +101,13 @@ export async function flushForSignOut(): Promise<{
 }> {
   await flushPendingForSignOut().catch((e) =>
     console.warn('[session] pre-sign-out flush failed:', e));
+  // CUL-2522: a sent report's keep the app was closed on lives in a local ledger the wipe takes
+  // with it; try it now, and count what still waits as unsent (it never throws).
+  const keeps = await pendingKeepsBeforeSignOut();
   try {
     const status = await getSyncStatus();
     return {
-      pendingCount: status.pendingCount,
+      pendingCount: status.pendingCount + keeps,
       quarantinedCount: status.quarantinedCount,
     };
   } catch (e) {

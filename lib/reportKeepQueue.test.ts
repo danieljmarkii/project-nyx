@@ -11,12 +11,14 @@ import type { VetReport } from './pdf';
 import {
   KEEP_RETRY_DELAYS_MS,
   KEEP_WINDOW_MS,
+  acknowledgeKeepMisses,
   drainPendingKeeps,
+  pendingKeepsBeforeSignOut,
   keepReportCopy,
   pendingKeepMissNotice,
   type KeepAnswer,
 } from './reportKeep';
-import { keepsInFlight, sqliteKeepLedger, type KeepLedger, type LedgerDb, type PendingKeep } from './reportKeepLedger';
+import { keepsAnswered, keepsInFlight, missesAwaitingAck, sqliteKeepLedger, type KeepLedger, type LedgerDb, type PendingKeep } from './reportKeepLedger';
 
 const PET = '11111111-2222-4333-8444-555555555555';
 const ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -46,7 +48,16 @@ beforeEach(() => jest.spyOn(console, 'warn').mockImplementation(() => undefined)
 afterEach(() => {
   jest.restoreAllMocks();
   keepsInFlight.clear();
+  keepsAnswered.clear();
+  missesAwaitingAck.clear();
 });
+
+/** A fresh launch: no keep of this JS session is running or answered. */
+function relaunch() {
+  keepsInFlight.clear();
+  keepsAnswered.clear();
+  missesAwaitingAck.clear();
+}
 
 describe('keepReportCopy writes the ledger before its first try and clears it on its final answer', () => {
   it('the row exists while the first call is out', async () => {
@@ -61,15 +72,28 @@ describe('keepReportCopy writes the ledger before its first try and clears it on
     expect(rows.size).toBe(0);
   });
 
+  it('a kept copy clears its row', async () => {
+    const { ledger, rows } = memoryLedger();
+    expect(await keepReportCopy(report, 'print', jest.fn(ok), KEEP_RETRY_DELAYS_MS, noWait, ledger, at(T0))).toBe('kept');
+    expect(rows.size).toBe(0);
+  });
+
   it.each([
-    ['kept', ok],
-    ['failed', err(503)],
-    ['failed', err(409)],
-    ['expired', err(409, true)],
-  ] as const)('a final %s in the session leaves no row (the screen already said it)', async (outcome, answer) => {
+    ['failed', err(503), 'retried'],
+    ['failed', err(409), 'said'],
+    ['expired', err(409, true), 'said'],
+  ] as const)('a %s answer leaves its row for the NEXT launch, which has it %s (the screen may be gone: adversarial 1, 2)', async (outcome, answer, next) => {
     const { ledger, rows } = memoryLedger();
     expect(await keepReportCopy(report, 'print', jest.fn(answer), KEEP_RETRY_DELAYS_MS, noWait, ledger, at(T0))).toBe(outcome);
-    expect(rows.size).toBe(0);
+    expect(rows.size).toBe(1);
+    // This launch's drain leaves it alone: the screen has its line.
+    const sameLaunch = jest.fn(ok);
+    expect(await drainPendingKeeps(sameLaunch, ledger, at(T0 + 1000))).toEqual([]);
+    expect(sameLaunch).not.toHaveBeenCalled();
+    relaunch();
+    const misses = await drainPendingKeeps(jest.fn(answer), ledger, at(T0 + 2000));
+    expect(misses).toHaveLength(next === 'said' ? 1 : 0);
+    expect(rows.size).toBe(1);
   });
 
   it('the app closed mid-retry: the row stays, and the next open keeps it silently', async () => {
@@ -78,10 +102,11 @@ describe('keepReportCopy writes the ledger before its first try and clears it on
     void keepReportCopy(report, 'share', jest.fn(err(null)), KEEP_RETRY_DELAYS_MS, () => new Promise(() => undefined), ledger, at(T0));
     await new Promise((r) => setImmediate(r));
     expect([...rows.values()]).toEqual([{ reportId: ID, petId: PET, sharedVia: 'share', queuedAt: new Date(T0).toISOString() }]);
-    keepsInFlight.clear(); // a fresh launch has no in-flight keeps
+    relaunch();
     const invoke = jest.fn(ok);
     expect(await drainPendingKeeps(invoke, ledger, at(T0 + 60_000))).toEqual([]);
-    expect(invoke).toHaveBeenCalledWith({ mode: 'keep', petId: PET, reportId: ID, sharedVia: 'share' });
+    // The retry names the send's own time, so the copy never says it left at this open (rls F3).
+    expect(invoke).toHaveBeenCalledWith({ mode: 'keep', petId: PET, reportId: ID, sharedVia: 'share', sharedAt: new Date(T0).toISOString() });
     expect(rows.size).toBe(0);
   });
 
@@ -100,12 +125,13 @@ describe('keepReportCopy writes the ledger before its first try and clears it on
 
 describe('drainPendingKeeps', () => {
   const row = (over: Partial<PendingKeep> = {}): PendingKeep => ({ reportId: ID, petId: PET, sharedVia: 'email', queuedAt: new Date(T0).toISOString(), ...over });
+  const missOf = (r: PendingKeep) => ({ reportId: r.reportId, petId: r.petId, sharedVia: r.sharedVia });
 
   it.each([
     ['offline', err(null)],
     ['a server error', err(503)],
     ['a session mid-refresh (401)', err(401)],
-  ])('%s keeps the row for the next drain and says nothing', async (_label, answer) => {
+  ])('%s inside the window keeps the row for the next drain and says nothing', async (_label, answer) => {
     const { ledger, rows } = memoryLedger([row()]);
     expect(await drainPendingKeeps(jest.fn(answer), ledger, at(T0 + 1000))).toEqual([]);
     expect(rows.size).toBe(1);
@@ -113,30 +139,38 @@ describe('drainPendingKeeps', () => {
 
   it.each([
     ['a refusal (404: the draft is gone)', err(404)],
-    ['a refusal (409: unavailable, or the AI summary was withdrawn)', err(409)],
-    ['expired', err(409, true)],
-  ])('%s is a miss, said once: the row is gone after', async (_label, answer) => {
+    ['a refusal (409: unavailable)', err(409)],
+    ['expired, or a copy that needs a new preview', err(409, true)],
+  ])('%s is a miss; its row goes only when the owner dismisses the notice', async (_label, answer) => {
     const { ledger, rows } = memoryLedger([row()]);
-    expect(await drainPendingKeeps(jest.fn(answer), ledger, at(T0 + 1000))).toEqual([{ petId: PET, sharedVia: 'email' }]);
-    expect(rows.size).toBe(0);
+    const misses = await drainPendingKeeps(jest.fn(answer), ledger, at(T0 + 1000));
+    expect(misses).toEqual([missOf(row())]);
+    expect(rows.size).toBe(1);
+    // A second drain while the notice is up says nothing more.
     expect(await drainPendingKeeps(jest.fn(answer), ledger, at(T0 + 2000))).toEqual([]);
-  });
-
-  it('past the keep window: a miss with no call; at the window edge it is still tried', async () => {
-    const { ledger } = memoryLedger([row()]);
-    const invoke = jest.fn(ok);
-    expect(await drainPendingKeeps(invoke, ledger, at(T0 + KEEP_WINDOW_MS))).toEqual([]);
-    expect(invoke).toHaveBeenCalledTimes(1);
-    const late = memoryLedger([row()]);
-    const none = jest.fn(ok);
-    expect(await drainPendingKeeps(none, late.ledger, at(T0 + KEEP_WINDOW_MS + 1))).toEqual([{ petId: PET, sharedVia: 'email' }]);
-    expect(none).not.toHaveBeenCalled();
-  });
-
-  it('an unreadable queue time is a miss, never retried forever', async () => {
-    const { ledger, rows } = memoryLedger([row({ queuedAt: 'garbage' })]);
-    expect(await drainPendingKeeps(jest.fn(ok), ledger, at(T0))).toHaveLength(1);
+    await acknowledgeKeepMisses(misses, ledger);
     expect(rows.size).toBe(0);
+  });
+
+  it('a notice that never showed is said again at the next launch (adversarial 3)', async () => {
+    const { ledger } = memoryLedger([row()]);
+    expect(await drainPendingKeeps(jest.fn(err(404)), ledger, at(T0))).toHaveLength(1);
+    relaunch(); // killed before OK
+    expect(await drainPendingKeeps(jest.fn(err(404)), ledger, at(T0))).toHaveLength(1);
+  });
+
+  it('past the window the server is still asked: a copy that was kept is never called unsaved (adversarial 6)', async () => {
+    const kept = memoryLedger([row()]);
+    const invoke = jest.fn(ok);
+    expect(await drainPendingKeeps(invoke, kept.ledger, at(T0 + KEEP_WINDOW_MS + 1))).toEqual([]);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(kept.rows.size).toBe(0);
+    // A passing failure past the window is a miss, said once, never retried forever.
+    const late = memoryLedger([row()]);
+    expect(await drainPendingKeeps(jest.fn(err(null)), late.ledger, at(T0 + KEEP_WINDOW_MS + 1))).toEqual([missOf(row())]);
+    relaunch();
+    const bad = memoryLedger([row({ queuedAt: 'garbage' })]);
+    expect(await drainPendingKeeps(jest.fn(err(503)), bad.ledger, at(T0))).toHaveLength(1);
   });
 
   it('skips a keep this session is still making', async () => {
@@ -148,7 +182,7 @@ describe('drainPendingKeeps', () => {
     expect(rows.size).toBe(1);
   });
 
-  it('one drain at a time: a second caller shares the first answer, each row is tried once', async () => {
+  it('one drain at a time: a second caller waits and says nothing, each row is tried once (adversarial 8)', async () => {
     const { ledger } = memoryLedger([row(), row({ reportId: ID2 })]);
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
@@ -158,23 +192,45 @@ describe('drainPendingKeeps', () => {
     });
     const a = drainPendingKeeps(invoke, ledger, at(T0));
     const b = drainPendingKeeps(invoke, ledger, at(T0));
-    expect(b).toBe(a);
     release();
     expect(await a).toHaveLength(2);
+    expect(await b).toEqual([]);
     expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it('a sign-out mid-drain sends nothing more and says nothing (rls F1)', async () => {
+    const epoch = jest.requireActual('./signOutEpoch') as { notifySignedOut?: () => void; bumpSignOutEpoch?: () => void };
+    const bump = epoch.notifySignedOut ?? epoch.bumpSignOutEpoch;
+    if (!bump) throw new Error('no sign-out epoch bump exported');
+    const { ledger } = memoryLedger([row(), row({ reportId: ID2 })]);
+    const invoke = jest.fn(async () => {
+      bump();
+      return { error: { message: 'x', status: 404, expired: false } };
+    });
+    expect(await drainPendingKeeps(invoke, ledger, at(T0))).toEqual([]);
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 
   it('an unreadable ledger is no drain, never a throw', async () => {
     const broken: KeepLedger = { record: async () => undefined, clear: async () => undefined, list: async () => { throw new Error('disk'); } };
     expect(await drainPendingKeeps(jest.fn(ok), broken, at(T0))).toEqual([]);
   });
+
+  it('before sign-out: one drain, then what still waits is counted as unsent (rls F2)', async () => {
+    const { ledger } = memoryLedger([row(), row({ reportId: ID2 })]);
+    const invoke = jest.fn(async (body: Record<string, unknown>) => (body.reportId === ID ? { error: null } : { error: { message: 'x', status: null, expired: false } }));
+    expect(await pendingKeepsBeforeSignOut(invoke, ledger, at(T0))).toBe(1);
+    const broken: KeepLedger = { record: async () => undefined, clear: async () => undefined, list: async () => { throw new Error('disk'); } };
+    expect(await pendingKeepsBeforeSignOut(jest.fn(ok), broken, at(T0))).toBe(1);
+  });
 });
 
 describe('pendingKeepMissNotice', () => {
+  const m = (petId: string, sharedVia = 'email') => ({ reportId: `r-${petId}-${sharedVia}`, petId, sharedVia });
   const name = (id: string) => (id === PET ? 'Cooper' : id === 'p2' ? 'Juniper' : '');
   it('none is null; one names the pet and one action; no exclamation', () => {
     expect(pendingKeepMissNotice([], name)).toBeNull();
-    const one = pendingKeepMissNotice([{ petId: PET, sharedVia: 'email' }], name);
+    const one = pendingKeepMissNotice([m(PET)], name);
     expect(one).toEqual({
       title: 'A report copy wasn’t saved',
       body: 'A copy of a vet report you sent wasn’t saved to Cooper’s vet reports. Preview the report again and send it to save one.',
@@ -182,10 +238,10 @@ describe('pendingKeepMissNotice', () => {
     expect(JSON.stringify(one)).not.toMatch(/!/);
   });
   it('several of one pet count; two pets, or an unknown one, say "your vet reports"', () => {
-    expect(pendingKeepMissNotice([{ petId: PET, sharedVia: 'email' }, { petId: PET, sharedVia: 'print' }], name)?.body)
+    expect(pendingKeepMissNotice([m(PET), m(PET, 'print')], name)?.body)
       .toBe('2 copies of vet reports you sent weren’t saved to Cooper’s vet reports. Preview the report again and send it to save one.');
-    expect(pendingKeepMissNotice([{ petId: PET, sharedVia: 'email' }, { petId: 'p2', sharedVia: 'print' }], name)?.body).toMatch(/to your vet reports\./);
-    expect(pendingKeepMissNotice([{ petId: 'gone', sharedVia: 'email' }], name)?.body).toMatch(/to your vet reports\./);
+    expect(pendingKeepMissNotice([m(PET), m('p2', 'print')], name)?.body).toMatch(/to your vet reports\./);
+    expect(pendingKeepMissNotice([m('gone')], name)?.body).toMatch(/to your vet reports\./);
   });
 });
 

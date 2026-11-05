@@ -26,6 +26,7 @@ import {
   type SavedCopyIO,
   type SharedVia,
 } from './savedCopy.ts'
+import { NEW_PREVIEW_ERROR } from './savedCopy.ts'
 import { LEAD_SLOT_MARK, PIN_TEXT_URL_BUDGET, settleLeadForKeep, type KeepLead, type KeepRefusal } from './aiLead/run.ts'
 import { h } from './documentV2.ts'
 
@@ -170,10 +171,13 @@ Deno.test('the stored snapshot drops photo bytes and keeps everything else', () 
 
 Deno.test('a keep request names a well-formed id and a known route, or is refused', () => {
   assert.equal(parseKeepRequest({ mode: 'ai_lead' }), null)
-  assert.deepEqual(parseKeepRequest({ mode: 'keep', reportId: ID.toUpperCase(), sharedVia: 'email' }), { reportId: ID, sharedVia: 'email' })
-  assert.deepEqual(parseKeepRequest({ mode: 'keep', report_id: 'nope', shared_via: 'fax' }), { reportId: null, sharedVia: null })
+  assert.deepEqual(parseKeepRequest({ mode: 'keep', reportId: ID.toUpperCase(), sharedVia: 'email' }), { reportId: ID, sharedVia: 'email', sharedAt: null })
+  assert.deepEqual(parseKeepRequest({ mode: 'keep', report_id: 'nope', shared_via: 'fax' }), { reportId: null, sharedVia: null, sharedAt: null })
   // Exam-room mode is a departure (CUL-2434, PM go (a) 2026-11-04).
-  assert.deepEqual(parseKeepRequest({ mode: 'keep', reportId: ID, sharedVia: 'shown' }), { reportId: ID, sharedVia: 'shown' })
+  assert.deepEqual(parseKeepRequest({ mode: 'keep', reportId: ID, sharedVia: 'shown' }), { reportId: ID, sharedVia: 'shown', sharedAt: null })
+  // The phone's retry names its send time (CUL-2522); a malformed one reads as none.
+  assert.equal(parseKeepRequest({ mode: 'keep', reportId: ID, sharedVia: 'email', sharedAt: '2026-11-05T12:00:00.000Z' })?.sharedAt, '2026-11-05T12:00:00.000Z')
+  assert.equal(parseKeepRequest({ mode: 'keep', reportId: ID, sharedVia: 'email', sharedAt: 'soon' })?.sharedAt, null)
 })
 
 // ── Saving at Preview ────────────────────────────────────────────────────────
@@ -412,9 +416,37 @@ Deno.test('a refused settle answers 409 and leaves the draft a draft', async () 
   const f = await savedOne()
   for (const refused of ['withdrawn', 'mismatch'] as const) {
     const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'email' }, async () => ({ refused }))
-    assert.deepEqual(out, { status: 409, body: { error: 'Saved copy unavailable' } })
+    assert.deepEqual(out, { status: 409, body: { error: NEW_PREVIEW_ERROR } }, 'the phone says "Preview the report again"')
     assert.equal(f.rows.get(ID)!.status, 'draft')
   }
+})
+
+Deno.test('a replayed keep stamps the phone send time, bounded by the Preview and now (rls F3, CUL-2522)', async () => {
+  const f = await savedOne()
+  f.rows.get(ID)!.created_at = new Date(NOW - 60_000).toISOString()
+  const created = Date.parse(f.rows.get(ID)!.created_at)
+  const sent = new Date(created + 5_000).toISOString()
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'email', sharedAt: sent }, async () => NO_LEAD)
+  assert.deepEqual(out, { status: 200, body: { kept: true, first: true } })
+  assert.equal(f.rows.get(ID)!.shared_at, sent, 'the departure is the send, not the next open')
+  // A claimed time before the Preview, or in the future, is clamped into the window.
+  const g = await savedOne()
+  g.rows.get(ID)!.created_at = new Date(NOW - 60_000).toISOString()
+  await keepCopy(g.io, { reportId: ID, sharedVia: 'email', sharedAt: '2000-01-01T00:00:00.000Z' }, async () => NO_LEAD)
+  assert.equal(Date.parse(g.rows.get(ID)!.shared_at as string), Date.parse(g.rows.get(ID)!.created_at))
+  const k = await savedOne()
+  await keepCopy(k.io, { reportId: ID, sharedVia: 'email', sharedAt: '2099-01-01T00:00:00.000Z' }, async () => NO_LEAD)
+  assert.equal(Date.parse(k.rows.get(ID)!.shared_at as string), NOW)
+})
+
+Deno.test('a replay of a keep that already landed changes nothing on the kept copy (rls F3)', async () => {
+  const f = await savedOne()
+  await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, async () => NO_LEAD)
+  const before = { ...f.rows.get(ID)! }
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'email', sharedAt: new Date(NOW - 60_000).toISOString() }, async () => NO_LEAD)
+  assert.deepEqual(out, { status: 200, body: { kept: true, first: false } })
+  assert.equal(f.rows.get(ID)!.shared_at, before.shared_at)
+  assert.equal(f.rows.get(ID)!.shared_via, 'print')
 })
 
 Deno.test('an unreadable verdict is no pin: the keep is refused rather than guessed', async () => {

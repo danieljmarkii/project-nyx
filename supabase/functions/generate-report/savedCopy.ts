@@ -84,23 +84,39 @@ export function snapshotForCopy(snapshot: unknown): Record<string, unknown> {
   return out as Record<string, unknown>
 }
 
-/** `{ mode: 'keep', reportId, sharedVia }`. Null for any other mode. A keep request with a
- *  malformed id or an unknown route is refused by the caller (400), never run against a guess. */
+/** What a keep request names. `sharedAt`: set only by the phone's retry of a keep the app was
+ *  closed on (lib/reportKeep.ts drainPendingKeeps, CUL-2522), the time the report left the phone. */
+export interface KeepRequest {
+  reportId: string | null
+  sharedVia: SharedVia | null
+  sharedAt?: string | null
+}
+
+/** `{ mode: 'keep', reportId, sharedVia, sharedAt? }`. Null for any other mode. A keep request
+ *  with a malformed id or an unknown route is refused by the caller (400), never run against a
+ *  guess; a malformed `sharedAt` reads as none. */
 export function parseKeepRequest(body: {
   mode?: unknown
   reportId?: unknown
   report_id?: unknown
   sharedVia?: unknown
   shared_via?: unknown
-}): { reportId: string | null; sharedVia: SharedVia | null } | null {
+  sharedAt?: unknown
+}): KeepRequest | null {
   if (body.mode !== 'keep') return null
   const id = body.reportId ?? body.report_id
   const via = body.sharedVia ?? body.shared_via
+  const at = typeof body.sharedAt === 'string' && Number.isFinite(Date.parse(body.sharedAt)) ? body.sharedAt : null
   return {
     reportId: typeof id === 'string' && UUID.test(id) ? id.toLowerCase() : null,
     sharedVia: typeof via === 'string' && (SHARED_VIA as readonly string[]).includes(via) ? (via as SharedVia) : null,
+    sharedAt: at,
   }
 }
+
+/** The answer that tells the phone a new Preview is the only way to a kept copy (its "Preview the
+ *  report again" line): the stored copy's AI summary can no longer be kept (CUL-2523). */
+export const NEW_PREVIEW_ERROR = 'Saved copy needs a new preview'
 
 // ── The I/O, bound to one pet and one verified maker ─────────────────────────
 
@@ -356,17 +372,31 @@ export type KeepOutcome =
  * `settleLead`; CUL-2436), because the freeze starts with the keep. A copy already kept only
  * moves its departure stamp.
  */
+/** The phone's send time, never before the Preview that made the draft nor after now. */
+function clampSentAt(sentAt: string, createdAt: string, now: number): number {
+  const sent = Date.parse(sentAt)
+  const created = Date.parse(createdAt)
+  return Math.min(now, Math.max(Number.isFinite(created) ? created : now, sent))
+}
+
 export async function keepCopy(
   io: SavedCopyIO,
-  req: { reportId: string | null; sharedVia: SharedVia | null },
+  req: KeepRequest,
   settleLead: (storedHtml: string) => Promise<KeepLead | KeepRefusal | null>,
 ): Promise<KeepOutcome> {
   if (req.reportId === null || req.sharedVia === null) return { status: 400, body: { error: 'reportId and sharedVia required' } }
-  const at = new Date(io.now()).toISOString()
+  const replay = typeof req.sharedAt === 'string'
   const row = await io.readRow(req.reportId)
   if (row === 'error') return { status: 500, body: { error: 'Saved copy could not be read' } }
   if (row === null) return { status: 404, body: { error: 'Saved copy not found' } }
+  // A replay's departure is the phone's own send time, held between the Preview and now; a live
+  // keep's is now. So a keep the phone retries at the next open never stamps that open as the
+  // send (rls-privacy-reviewer F3, CUL-2522).
+  const at = new Date(replay ? clampSentAt(req.sharedAt as string, row.created_at, io.now()) : io.now()).toISOString()
   if (row.status === 'kept') {
+    // A replay of a keep that already landed (the app died before it cleared its row) changes
+    // nothing: this departure, or a later one, is already stamped.
+    if (replay) return { status: 200, body: { kept: true, first: false } }
     return (await io.restamp(req.reportId, req.sharedVia, at))
       ? { status: 200, body: { kept: true, first: false } }
       : { status: 500, body: { error: 'Saved copy could not be updated' } }
@@ -384,7 +414,7 @@ export async function keepCopy(
   if (lead === null) return { status: 500, body: { error: 'Saved copy could not be kept' } }
   // A copy whose summary no record can make true, or whose summary the owner has since withdrawn
   // (CUL-2523, PM ruling (a)): refused for good, so the owner is told now and resends without it.
-  if ('refused' in lead) return { status: 409, body: { error: 'Saved copy unavailable' } }
+  if ('refused' in lead) return { status: 409, body: { error: NEW_PREVIEW_ERROR } }
   if (await io.markKept(req.reportId, req.sharedVia, at, row.content_sha256, lead)) return { status: 200, body: { kept: true, first: true } }
   // Two sends racing: the other one kept it. Anything else is a failure, said as one.
   const again = await io.readRow(req.reportId)

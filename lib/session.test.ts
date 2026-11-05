@@ -23,6 +23,9 @@ jest.mock('./db', () => ({
   }),
 }));
 jest.mock('./appGroup', () => ({ clearWidgetData: jest.fn() }));
+// CUL-2522: the sent-report keeps still waiting on this phone, counted with the unsent entries.
+const mockPendingKeeps = jest.fn(async () => 0);
+jest.mock('./reportKeep', () => ({ pendingKeepsBeforeSignOut: () => mockPendingKeeps() }));
 jest.mock('./widgetBridge', () => ({ clearWidgetTimeline: jest.fn() }));
 jest.mock('./widgetSnapshot', () => ({ fenceWidgetPublish: jest.fn() }));
 // lib/notifications imports expo-notifications (throws at import without the
@@ -599,6 +602,12 @@ describe('flushForSignOut (B-430)', () => {
       pendingCount: 3, oldestPendingAt: '2026-07-01T08:00:00.000Z', quarantinedCount: 2,
     });
     expect(await flushForSignOut()).toEqual({ pendingCount: 3, quarantinedCount: 2 });
+  });
+
+  it('counts a sent report whose copy is still waiting to be kept as unsent (CUL-2522, rls F2)', async () => {
+    (getSyncStatus as jest.Mock).mockResolvedValue({ pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 });
+    mockPendingKeeps.mockResolvedValueOnce(2);
+    expect(await flushForSignOut()).toEqual({ pendingCount: 2, quarantinedCount: 0 });
   });
 
   it('never blocks sign-out when the flush itself fails', async () => {

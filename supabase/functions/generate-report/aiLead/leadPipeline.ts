@@ -187,7 +187,11 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
     v: 1, outcome, reason, fact_hash: hash, prompt: PROMPT_VERSION, verifier: LEAD_VERIFIER_VERSION,
     writer_model: null, checker_model: null, sentences: null, verifier_errors: [], checker: null, attempts: 0, at: at(),
   })
-  const record = async (v: StoredVerdict, text: string | null = null, model: string | null = null): Promise<LeadResult> => {
+  const record = async (built: StoredVerdict, text: string | null = null, model: string | null = null): Promise<LeadResult> => {
+    // `at` is stamped at the WRITE, not when the verdict was built (up to the wall clock earlier):
+    // the keep pins the verdict's `at` in place of a long text (aiLead/run.ts pinsOf, CUL-2523),
+    // so two runs that built their verdicts in one millisecond must still write different `at`s.
+    const v: StoredVerdict = { ...built, at: at() }
     const wrote = await io.writeDraft(text, v, model)
     if (!wrote) return { outcome: 'draft_not_found' }
     if (v.outcome === 'printed' && text !== null && v.sentences) return { outcome: 'printed', sentences: v.sentences, text, cached: false }
