@@ -3,7 +3,7 @@
 **Date:** 2026-11-05
 **One thing:** D4 L1 — Guards: a guard that reads the source's own output catches facts nobody listed · check: pending
 
-Dispatched row, [CUL-2551](https://linear.app/projectnyx/issue/CUL-2551), plan-gated. The PM typed the go in session and approved all five briefs (1a, 2a, 3a, 4a, 5a). Shipped via #1446, left open for the PM. Each cold read found a new QUIET gap, and the row stops on that.
+Dispatched row, [CUL-2551](https://linear.app/projectnyx/issue/CUL-2551), plan-gated. The PM typed the go in session and approved all five briefs (1a, 2a, 3a, 4a, 5a). Shipped via #1446. Each cold read found a new gap and the row stopped for the PM each time; the PM ruled three forks in session, then chose to merge with the fourth ([CUL-2588](https://linear.app/projectnyx/issue/CUL-2588)) open as a v2 go-live gate. v2 is dark behind `report_document_v2`.
 
 ## What happened
 
@@ -23,7 +23,8 @@ The PM ruled fork (a): v2's sheet 1 carries every block of v1's page 1, either w
 - **Cold read at 4b2425b: NOT READY on a new QUIET gap.** The carried v1 blocks print without v1's styles, so Nyx's only rising signal (vomiting 7 → 11) reads quieter than it does on v1. The row stops again. The fork is [CUL-2585](https://linear.app/projectnyx/issue/CUL-2585).
 - **The PM ruled CUL-2585 (a) and CUL-2564 (a) in session.** The carried blocks keep v1's trend and tile styles, and the falling halves stay off sheet 1. A cold read at `4be169d` was CLINIC-READY, with one minor QUIET note: my caption cut had dropped the "not read as clean" caveat, so it came back in `8c95795`.
 - **Cold read at 8c95795: NOT READY.** Brought back without its chart, the caveat reads as an orphan legend. The two reads disagree, and the fix needs either v1's chart or new clinical words, so the fork is [CUL-2588](https://linear.app/projectnyx/issue/CUL-2588).
-- **Open for the PM:** [CUL-2588](https://linear.app/projectnyx/issue/CUL-2588), how the off-diet section carries v1's caveats.
+- **The PM ruled CUL-2588 (a): draw v1's off-diet chart.** It builds in print, but the phone's own rules turn red: only counts may be SVG text, every size is a rem, and the phone must say the PDF's words. That is a persona conflict (Dr. Chen against the Designer, with the Engineer's redraw-in-the-phone's-idiom option as a third way), so it went back to the PM. The print build is saved as a patch in the session scratchpad, not pushed.
+- **Open for the PM:** [CUL-2588](https://linear.app/projectnyx/issue/CUL-2588), the phone half of the off-diet chart.
 
 ## Teach
 
