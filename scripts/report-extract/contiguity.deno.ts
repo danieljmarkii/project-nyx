@@ -338,6 +338,17 @@ Deno.test('declineSentences — dates, times and the measured carve-outs are not
   assertEquals(declineSentences('Vomiting: a fall here.', ['vomit']).length, 1)
   assertEquals(declineSentences('A flat-headed vertical marks the week one stopped: itching.', ['itch']), [])
   assertEquals(declineSentences('Itching stopped.', ['itch']).length, 1)
+  // v1's coverage beside its halves is logged days, not a course (the PDF has no block boundaries).
+  assertEquals(declineSentences('Vomiting 5 entries / 32 d · 19 of 32 days logged · trend halves: Jun 1 – Jun 16, 2026 (16 of 16 d logged) vs Jun 17 – Jul 2, 2026 (3 of 16 d logged).', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting later window sparsely logged (3 of 16 d); Jun 22 – Jun 28 had a log on 0 of 7 days.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting went from 16 to 3.', ['vomit']).length, 1)
+  // A next sentence headed by another sign is that sign's own line; one headed by the trial's sign still counts.
+  assertEquals(declineSentences('Vomiting 16 entries / 46 d. Coughing 5 entries / 46 d 4 → 1.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting 16 entries / 46 d. Vomiting 4 → 1.', ['vomit']).length > 0, true)
+  assertEquals(declineSentences('Vomiting 16 entries / 46 d. It fell to 1.', ['vomit']).length, 1)
+  assertEquals(declineSentences('Itching 12 entries. Reading the trend: the trial diet (started May 8, stopped Jun 25).', ['itch']), [])
+  assertEquals(declineSentences('Itching stopped Jun 25.', ['itch']).length, 1)
+  assertEquals(declineSentences('42 of the trial\u02BCs 73 days fall outside it, vomiting (1 logged).', ['vomit']), [])
   // A block boundary ends a sentence: a tile's sign never borrows the next tile's words.
   assertEquals(declineSentences('15 itching \u2029 Weight no weigh-ins \u2029 Off-diet: down to none', ['itch']), [])
   assertEquals(declineSentences('15 itching, down to 2', ['itch']).length, 1)

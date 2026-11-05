@@ -810,7 +810,10 @@ function postTrialFoodRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: E
     const from = m.firstDate !== null && m.firstDate > after ? m.firstDate : after
     const to = m.lastDate as string
     const label = m.foodLabel ?? 'A food not named'
-    const when = `fed after the trial, logged from ${plainDay(from)} to ${plainDay(to)}${m.proteinSet.offTrial.length > 0 ? ` (${m.proteinSet.offTrial.join(', ')}, off the trial)` : ''}`
+    // The snapshot's own dates only (adversarial pass 2: "logged from <the day after the trial>" was a
+    // date no feeding carried). A food first logged before the trial ended says so.
+    const span = m.firstDate !== null && m.firstDate >= after ? `logged from ${plainDay(m.firstDate)} to ${plainDay(to)}` : `logged until ${plainDay(to)} (first logged ${m.firstDate ? plainDay(m.firstDate) : 'date not recorded'}, before the trial ended)`
+    const when = `fed after the trial, ${span}${m.proteinSet.offTrial.length > 0 ? ` (${m.proteinSet.offTrial.join(', ')}, off the trial)` : ''}`
     if (rows.length >= POST_TRIAL_FOOD_ROWS_MAX) {
       overflow.push(`${label} ${when}`)
       continue
@@ -874,6 +877,18 @@ function offDietRow(snap: ReportSnapshot, cols: ChartColumn[]): Extract<ChartRow
  * days sat in the last eleven. The same days the lines print (`concernWordDaysOf`,
  * `unfinishedMealDaysOf`), never re-derived.
  */
+/** Every day a change tick row would draw, oldest first (the row's start must reach the first). */
+function changeDaysOf(snap: ReportSnapshot): string[] {
+  const days: string[] = []
+  for (const c of changesInWindowOf(snap) ?? []) {
+    if (c.id !== 'noticed_concern' || !snap.noticed) continue
+    const word = snap.noticed.concernWords.find((w) => c.text.startsWith(`Marked ${w.label.toLowerCase()} on `))
+    if (word) days.push(...concernWordDaysOf(snap, word.key))
+  }
+  if (snap.v2.mealNotFinishedDays > 0) days.push(...(unfinishedMealDaysOf(snap) ?? []))
+  return [...new Set(days)].sort()
+}
+
 function changeTickRows(snap: ReportSnapshot, cols: ChartColumn[]): Array<Extract<ChartRow, { kind: 'span' }>> {
   if (cols.length === 0) return []
   const rows: Array<Extract<ChartRow, { kind: 'span' }>> = []
@@ -994,7 +1009,13 @@ function buildLeadChart(
   if (((windowDays < THIN_RECORD_DAYS || fewLogged) && lead?.sign !== 'intake') || zeroSign) {
     unit = 'day'
     const days = windowDayKeys(snap)
-    const first = fewLogged ? snap.v2.loggedDayKeys[0] : null
+    let first = fewLogged ? snap.v2.loggedDayKeys[0] : null
+    // Adversarial pass 2 (QUIET, the chart): on a zero-sign sheet the row starts no later than the
+    // first day a change was marked, or ticks before it were dropped and the rest drawn as the set.
+    if (zeroSign && first !== null) {
+      const changed = changeDaysOf(snap)
+      if (changed.length > 0 && changed[0] < first) first = changed[0]
+    }
     dayRowFrom = first !== null && first > snap.scope.startDate ? first : null
     columns = days
       .filter((d) => dayRowFrom === null || d >= dayRowFrom)
@@ -1193,14 +1214,21 @@ function bowlText(b: ReportSnapshot['diet']['freeFed'][number]): string {
  * an older meal across a fully eaten one the log's scope leaves out.
  */
 function refusalRunText(snap: ReportSnapshot, run: number): string {
-  const rows = snap.provenance.intakeLog.filter((r) => !r.notCountedFreeFed && !r.pinned)
+  // ADVERSARIAL PASS 2: the run (`recentNotFullyEatenRun`) counts a free-fed bowl's ratings, so the
+  // rows read here count them too (never filtered, or `k` and `run` index different lists and the
+  // "meal before" could sit behind a fully eaten bowl rating); and the cap needs `k < run` (an exact
+  // run of 40 ending at a capped log is not "at least").
+  const rows = snap.provenance.intakeLog.filter((r) => !r.pinned)
   let k = 0
   while (k < rows.length && k < run && rows[k].intakeRating === 'refused') k++
   if (k < 2) return ''
   const day = (iso: string) => textOf(fmtLocalDay(iso, snap.timezone))
-  const capped = k === rows.length && snap.provenance.intakeLogHiddenOlder > 0
+  const capped = k === rows.length && k < run && snap.provenance.intakeLogHiddenOlder > 0
   const next = k < run && k < rows.length ? rows[k] : null
-  const before = next && next.intakeRating !== 'all' && next.intakeRating !== 'refused' ? ` The meal before them, on ${day(next.occurredAt)}, was partly eaten.` : ''
+  const before =
+    next && !next.notCountedFreeFed && next.intakeRating !== 'all' && next.intakeRating !== 'refused'
+      ? ` The meal before them, on ${day(next.occurredAt)}, was partly eaten.`
+      : ''
   return ` ${capped ? 'At least the last' : 'The last'} ${k} were refused outright, from ${day(rows[k - 1].occurredAt)} to ${day(rows[0].occurredAt)}.${before}`
 }
 
@@ -1216,7 +1244,9 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   // were not. The same floor as v1's `recentNotFullyEatenRun`: 2 or more. CUL-2540: a run that is
   // every rated meal says so, with its newest day, so an unbroken refusal never reads as a count.
   const run = mc?.recentNotFullyEatenRun ?? 0
-  const newest = snap.provenance.intakeLog.find((r) => !r.notCountedFreeFed && !r.pinned)
+  // The newest rated row, a bowl's included, as the run counts them (adversarial pass 2, QUIET: a run
+  // reaching today was dated by the newest meal behind two bowl ratings, days earlier).
+  const newest = snap.provenance.intakeLog.find((r) => !r.pinned)
   const newestDay = newest ? textOf(fmtLocalDay(newest.occurredAt, snap.timezone)) : null
   const runText =
     mc && run >= 2 && run < mc.ratedMeals

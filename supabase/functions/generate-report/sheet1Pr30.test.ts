@@ -112,9 +112,9 @@ Deno.test('CUL-2537 — the trial’s line is the trial’s, and what was fed af
   assert.ok(labels.some((l) => l.startsWith('Trial: ')), labels.join(' | '))
   const food = c.rows.find((r) => r.kind === 'span' && r.when.startsWith('fed after the trial'))
   assert.ok(food && food.kind === 'span' && !food.endDeclared, 'a food after the trial, no end bracket')
-  assert.match(c.twin, /fed after the trial, logged from Oct 21/)
+  assert.match(c.twin, /Blue Buffalo Tastefuls Purées with Chicken \(Treat\) fed after the trial, logged until Oct 27 \(first logged Oct 18, before the trial ended\)/)
   // Every other food fed after it is named under the chart, the trial food carrying on included.
-  assert.match(c.twin, /Royal Canin Selected Protein PR, Wet \(Wet\) fed after the trial, logged from Oct 21 to Oct 30/)
+  assert.match(c.twin, /Royal Canin Selected Protein PR, Wet \(Wet\) fed after the trial, logged until Oct 30 \(first logged Sep 16, before the trial ended\)/)
   // A steroid course over the trial is never pushed off the chart by a food.
   assert.ok(labels.includes('Prednisolone'), labels.join(' | '))
 })
@@ -182,7 +182,7 @@ Deno.test('pending the PM — a trial’s own falling sign prints its count but 
 // ── Adversarial pass 1 on PR-30: each break, reproduced ─────────────────────
 
 /** Cooper with an intake log and a meal-completion run a real record can hold, newest first. */
-function withLog(ratings: Array<'refused' | 'most' | 'all'>, opts: { run: number; hidden: number; pinnedAll?: boolean }): ReportSnapshot {
+function withLog(ratings: Array<'refused' | 'most' | 'all'>, opts: { run: number; hidden: number; pinnedAll?: boolean; bowls?: number[] }): ReportSnapshot {
   const s = structuredClone(fx('cooper'))
   const t0 = Date.parse('2026-10-16T18:00:00Z')
   const row = (i: number, r: 'refused' | 'most' | 'all', pinned = false) => ({
@@ -191,7 +191,7 @@ function withLog(ratings: Array<'refused' | 'most' | 'all'>, opts: { run: number
     foodLabel: 'Venison LID',
     intakeRating: r,
     isLastFullMeal: pinned,
-    notCountedFreeFed: false,
+    notCountedFreeFed: (opts.bowls ?? []).includes(i),
     pinned,
   })
   s.provenance.intakeLog = [...ratings.map((r, i) => row(i, r)), ...(opts.pinnedAll ? [row(ratings.length + 30, 'all', true)] : [])] as never
@@ -231,4 +231,43 @@ Deno.test('pass 1, guard gap — on every fixture, no falling halves of a trial�
     }
   }
   assert.ok(falling >= 1, `fixtures with a falling trial sign (${falling})`)
+})
+
+// ── Adversarial pass 2 on PR-30: each break, reproduced ─────────────────────
+
+Deno.test('pass 2, break 1 (QUIET) — the run is dated by its newest rated row, a bowl’s included', () => {
+  // Two bowl refusals newest (Oct 16), then meals: the run of 4 reaches the report day.
+  const meals = lineOf(docOf(withLog(['refused', 'refused', 'refused', 'refused', 'all'], { run: 4, hidden: 0, bowls: [0, 1] })), 'intake')
+  assert.match(meals, /The last 4 rated meals in a row were not fully eaten, the most recent on Oct 16\./)
+})
+
+Deno.test('pass 2, break 3 (LOUD) — a run ending exactly at a capped log is exact, never "at least"', () => {
+  const meals = lineOf(docOf(withLog(Array(40).fill('refused'), { run: 40, hidden: 10, pinnedAll: true })), 'intake')
+  assert.match(meals, / The last 40 were refused outright/)
+  assert.doesNotMatch(meals, /At least/)
+})
+
+Deno.test('pass 2, break 4 (LOUD) — "the meal before them" is never named behind a bowl rating the run counts', () => {
+  // refused, refused, bowl "all" … the run counts the bowl row; the meal after it is past a full rating.
+  const meals = lineOf(docOf(withLog(['refused', 'refused', 'all', 'most', 'all'], { run: 2, hidden: 0, bowls: [2] })), 'intake')
+  assert.doesNotMatch(meals, /The meal before them/)
+  const bowlNext = lineOf(docOf(withLog(['refused', 'refused', 'most', 'most'], { run: 4, hidden: 0, bowls: [2] })), 'intake')
+  assert.doesNotMatch(bowlNext, /The meal before them/, 'a bowl rating is not a meal')
+})
+
+Deno.test('pass 2, break 5 (LOUD) — a food after the trial carries the snapshot’s own dates, never a made-up start', () => {
+  const c = chartOf(docOf(nyxLiveSnapshot()))
+  assert.doesNotMatch(c.twin, /Instinct[^;]*logged from Oct 21/)
+  assert.match(c.twin, /Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy \(Wet\) fed after the trial, logged until Oct 30 \(first logged Sep 21, before the trial ended\)/)
+})
+
+Deno.test('pass 2, break 2 (QUIET, chart) — a zero-sign day row starts no later than the first change day', () => {
+  // Olive with meals logged on Oct 13 to 15 only: the row would start Oct 13; it starts Oct 6.
+  const s = structuredClone(fx('looks-only'))
+  s.v2 = { ...s.v2, loggedDayKeys: ['2026-10-13', '2026-10-14', '2026-10-15'] }
+  s.atAGlance = { ...s.atAGlance, loggedDays: 3 }
+  const c = chartOf(docOf(s))
+  assert.equal(c.columns[0].start, '2026-10-06')
+  const word = c.rows.find((r) => r.kind === 'span' && r.label === 'Marked sleeping more')
+  assert.ok(word && word.kind === 'span' && word.doseCols?.length === 6, 'all six days ticked')
 })

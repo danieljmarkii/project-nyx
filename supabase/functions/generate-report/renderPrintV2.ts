@@ -379,6 +379,10 @@ h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .lede.body{font-size:9.5pt;line-height:1.38;margin:6pt 0 0;}
 .changes .lede{margin:2pt 0 4pt;}
 .trialread .trow{margin:3pt 0 0;}
+/* CUL-2551: v1's two-column rows on sheet 1 read label, then words, so a PDF extractor (pdfminer)
+   never interleaves a row with its neighbour. */
+.carry .kv,.trialread .kv{display:block;}
+.carry .kv .k,.trialread .kv .k{display:block;font-weight:650;}
 .ailead{margin:10pt 0 0;}
 .ailead .ailabel{font-size:7.5pt;letter-spacing:.04em;color:var(--ink2);margin:0;}
 .ailead .beta{text-transform:uppercase;letter-spacing:.1em;border:.5pt solid var(--ink2);padding:0 2pt;}

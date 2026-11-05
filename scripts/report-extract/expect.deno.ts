@@ -28,6 +28,7 @@ import { AI_LEAD_LABEL } from '../../supabase/functions/generate-report/renderPr
 import type { LeadSentence } from '../../supabase/functions/generate-report/aiLead/verify.ts'
 import type { ReportSnapshot } from '../../supabase/functions/generate-report/report.ts'
 import { symptomLabel } from '../../supabase/functions/generate-report/render.ts'
+import { REPORT_SYMPTOM_TYPES } from '../../supabase/functions/generate-report/report.ts'
 import { SKIN_TRIAL_SIGNS } from '../../supabase/functions/generate-report/v2Predicates.ts'
 import { keptSentencesOf } from '../../supabase/functions/generate-report/backSheetsV2.ts'
 
@@ -172,10 +173,17 @@ export function sheet1Lines(doc: DocumentV2): ExpectedLine[] {
   return out
 }
 
-/** The runs of text between block boundaries in a fragment of v1's markup (a chart's SVG left out). */
+/**
+ * The runs of text between block boundaries in a fragment of v1's markup (a chart's SVG left out).
+ * A `kv` row's label is its own run: sheet 1 lays it above its words (`.carry .kv`), so an extractor
+ * reads the label, then the row. Numeric entities (the Noticed legend's ○ and ●) are decoded.
+ */
 function blockRuns(html: string): string[] {
   return html
     .replace(/<svg\b[\s\S]*?<\/svg>/g, '\u0000')
+    .replace(/<span class="k">([\s\S]*?)<\/span>/g, '\u0000$1\u0000')
+    .replace(/&#(\d+);/g, (_m, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_m, n: string) => String.fromCodePoint(parseInt(n, 16)))
     .split(/<\/?(?:div|p|h[1-6]|li|ul|ol|table|thead|tbody|tr|td|th|dl|dt|dd|section|caption|br)\b[^>]*>|\u0000/)
     .map((x) => textOf(x).trim())
     .filter((x) => x !== '')
@@ -216,6 +224,9 @@ const SIGN_STEMS: Record<string, RegExp> = {
   scratch: /\b(?:scratch\w*|lick\w*|paw[- ]lick\w*|chew\w*)/i,
   skin_reaction: /\bskin\b/i,
 }
+
+/** Every report sign's label, as v1's trend block heads each sign's run with it. */
+const OTHER_SIGN_HEADS: readonly string[] = REPORT_SYMPTOM_TYPES.map((t) => symptomLabel(t))
 
 export function signPattern(key: string): RegExp {
   return SIGN_STEMS[key] ?? new RegExp(`\\b${symptomLabel(key).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i')
@@ -348,7 +359,15 @@ const NOT_A_COURSE = [
   /\bdown from \d+\.\d{2} kg\b/gi, // a weight reading (kg at 2 dp), not a sign
   /\bthe less this marker means\b/gi, // the exposures' timing-marker footnote: the marker, not a sign
   // CUL-2551 carries v1's page 1 onto sheet 1; each of these is a measured false hit there:
-  /\bof the trial[’']s \d+ days fall outside it\b/gi, // the headline: the trial's scope beside this window
+  /\bof the trial['\u2019\u02BC]s \d+ days fall outside it\b/gi, // the headline: the trial's scope beside this window
+  // v1's trend block, its coverage beside each half: logged days, never a sign's count.
+  /\btrend halves: [^()]*\(\d+ of \d+ d logged\) vs [^()]*\(\d+ of \d+ d logged\)/gi,
+  /\b(?:early|later) window sparsely logged \(\d+ of \d+ d\)/gi,
+  /\bhad a log on \d+ of \d+ days\b/gi,
+  /\band \d+ more weeks? logged on under \d+ days\b/gi,
+  /\bcompares the latest reading with the highest in the last \d+ days\b/gi, // v1's weight block: a weight, not a sign
+  // v1's "Reading the trend": a course's or the trial's own dates ("started May 8, stopped Jun 25").
+  /\bstarted (?:[A-Z][a-z]{2} \d{1,2}(?:, \d{4})?), stopped (?:[A-Z][a-z]{2} \d{1,2}(?:, \d{4})?)/g,
   /\ba fall (?:here|across such a week) may be less logging, not fewer entries\b/gi, // a decline DENIED: the opposite of reassurance
   /\bmarks the week one stopped\b/gi, // the trend chart's legend: a course's end marker, not a sign
   // "How this record was kept": a clearance DENIED, the opposite of a decline (pdfminer ran the
@@ -402,7 +421,11 @@ export function declineSentences(text: string, signs: readonly string[], lineLab
     // (owner-entered): ... stopped Jun 19"), which is the next record line, not a follow-on. Only
     // the document's labels count: any early colon did, and hid "By week 6 it had settled: 2" (pass 2).
     const next = sentences[i + 1] ?? ''
-    const follows = !lineLabels.some((l) => l !== '' && next.toLowerCase().startsWith(`${l.toLowerCase()}:`))
+    // CUL-2551: v1's trend block names each sign at the head of its own run ("Coughing Sep 16 →
+    // Oct 31 …"). A next sentence that opens on another sign's name is that sign's line, never a
+    // follow-on about this one; it is tested as its own sentence (and flagged there if it is a trial sign).
+    const otherSign = OTHER_SIGN_HEADS.some((h) => !pats.some((p) => p.test(h)) && next.toLowerCase().startsWith(`${h.toLowerCase()} `))
+    const follows = !otherSign && !lineLabels.some((l) => l !== '' && next.toLowerCase().startsWith(`${l.toLowerCase()}:`))
     const window = [sent, follows ? next : ''].map((x) => NOT_A_COURSE.reduce((acc, re) => acc.replace(re, ' '), cutSpanWords(x, pats, spanWords))).join(' ')
     if (DECLINE_WORDS.test(window) || hasDescent(window)) out.push(follows && next !== '' ? `${sent} ${next}` : sent)
   })
