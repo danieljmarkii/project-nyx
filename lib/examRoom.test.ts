@@ -670,6 +670,16 @@ describe('only our own scripts run (CUL-2531)', () => {
     expect(allowedTexts(titled)).toContain('/*reflow*/');
   });
 
+  it('R1: an injected copy of the room\'s open tag cannot force the inline policy', () => {
+    for (const evil of ['</script><script id="nyx-exam-script">x', '</SCRIPT> <script id="nyx-exam-script">x</script>', '<script id="nyx-exam-script">']) {
+      const injected = PHONE.replace('</section>', `${evil}</section>`);
+      for (const html of [withFrameLock(injected) as string, examRoomHtml(injected, '#000') as string]) {
+        expect(scriptSrc(html)).not.toContain("'unsafe-inline'");
+        expect(scriptSrc(html)).toContain(nodeHash('/*reflow*/'));
+      }
+    }
+  });
+
   it('F3: a layout script the parser would rewrite (CR, NUL) keeps the inline policy rather than block it', () => {
     for (const text of ['a\r\nb', 'a\rb', 'a\u0000b']) {
       expect(lockOf(withFrameLock(PHONE.replace('/*reflow*/', text)) as string)).toContain(`content="${EXAM_CSP}"`);

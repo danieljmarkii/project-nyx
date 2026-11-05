@@ -370,10 +370,22 @@ const EXAM_SCRIPT_TEXT = EXAM_SCRIPT.slice(EXAM_SCRIPT_OPEN.length, -'</script>'
 
 /**
  * Where a report document's own scripts end: the renderer's bare `<script>` closes just before
- * `</body></html>`, optionally followed by the room's (renderPhoneV2 ends with it; the room adds
- * its script after). Every string interpolated from the record sits before this tail.
+ * `</body></html>`, optionally followed by the room's script (renderPhoneV2 ends with it; the room
+ * adds its script after). Every string interpolated from the record sits before this tail. Read
+ * backwards from the end, never by a pattern's first match: an injected copy of the room's open
+ * tag earlier in the body would otherwise start the match there and force the inline policy
+ * (privacy pass 2 on CUL-2531, R1). Returns where the renderer's `</script>` starts and whether the
+ * room's script follows it, or null when the document does not end this way.
  */
-const DOCUMENT_TAIL = /<\/script>\s*(?:<script id="nyx-exam-script">([\s\S]*?)<\/script>\s*)?<\/body>\s*<\/html>\s*$/i;
+function documentTail(html: string): { close: number; room: boolean } | null {
+  const end = /<\/body>\s*<\/html>\s*$/i.exec(html);
+  if (end === null) return null;
+  let before = html.slice(0, end.index).trimEnd();
+  const room = before.endsWith(EXAM_SCRIPT);
+  if (room) before = before.slice(0, -EXAM_SCRIPT.length).trimEnd();
+  if (!before.endsWith('</script>')) return null;
+  return { close: before.length - '</script>'.length, room };
+}
 
 /**
  * The renderer's script text, read from its OWN open tag: the last bare `<script>` before the
@@ -412,21 +424,16 @@ export function frameCsp(scriptHashes: readonly string[]): string {
  * The hashes a document's own scripts need, or null when it carries a script this module cannot
  * account for (a bare `<script>` with no recognisable renderer tail). Null keeps today's
  * `'unsafe-inline'` policy rather than block a layout script whose loss would drop the pinned
- * warning: the louder side. An injection cannot force it, because it cannot move the tail; the
- * renderer moving it is what the test above catches.
+ * warning: the louder side. An injection cannot force it, because the tail is read backwards from
+ * the document's literal end; the renderer moving it is what `lib/examRoom.test.ts` catches.
  */
 function documentScriptHashes(html: string): string[] | null {
-  const tail = DOCUMENT_TAIL.exec(html);
+  const tail = documentTail(html);
   if (tail === null) return /<script>/i.test(html) ? null : [];
-  const text = rendererScriptText(html, tail.index);
+  const text = rendererScriptText(html, tail.close);
   if (text === null) return null;
-  const own = [cspScriptHash(text)];
-  if (tail[1] !== undefined) {
-    // The room's slot holds only the room's own script, byte for byte.
-    if (tail[1] !== EXAM_SCRIPT_TEXT) return null;
-    own.push(cspScriptHash(EXAM_SCRIPT_TEXT));
-  }
-  return own;
+  // The room's script is matched byte for byte above, so its hash is the constant's.
+  return tail.room ? [cspScriptHash(text), cspScriptHash(EXAM_SCRIPT_TEXT)] : [cspScriptHash(text)];
 }
 
 /** The lock a document's head opens with, for that document's own scripts (after the rename). */
