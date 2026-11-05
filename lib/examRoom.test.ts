@@ -245,17 +245,40 @@ describe('the frame lock (CUL-2469, CUL-2495)', () => {
     expect(neutralizeRefusedTags('<LINK\trel="preconnect" href="https://e">')).toBe('<x-refused-LINK\trel="preconnect" href="https://e">');
     expect(neutralizeRefusedTags('<iframe srcdoc="x"></iframe>')).toBe('<x-refused-iframe srcdoc="x"></x-refused-iframe>');
     expect(neutralizeRefusedTags('<IfRaMe/onload=alert(1)>')).toBe('<x-refused-IfRaMe/onload=alert(1)>');
-    for (const t of ['frame', 'frameset', 'object', 'embed', 'portal', 'fencedframe']) {
+    for (const t of ['frame', 'frameset', 'object', 'embed', 'portal', 'fencedframe', 'a', 'area']) {
       expect(neutralizeRefusedTags(`<${t} data=x>`)).toBe(`<x-refused-${t} data=x>`);
     }
     expect(neutralizeRefusedTags('<iframe')).toBe('<x-refused-iframe');
     // Not a refused tag, or escaped text: untouched.
-    for (const s of ['<links>', '<a href=x>', '&lt;iframe src=x&gt;', '<p>link iframe</p>', '<linkx>']) {
+    for (const s of ['<links>', '<abbr>x</abbr>', '<aside>', '<article>', '&lt;iframe src=x&gt;', '<p>link iframe</p>', '<linkx>', '<script>/*s*/</script>', '<script id="nyx-exam-script">']) {
       expect(neutralizeRefusedTags(s)).toBe(s);
+    }
+    // An anchor's host is never a DNS prefetch, on an engine that ignores the switch either.
+    expect(neutralizeRefusedTags('<a href="https://r.evil.example/">x</a>')).toBe('<x-refused-a href="https://r.evil.example/">x</x-refused-a>');
+    // A script with any attribute but the room's own is renamed: speculation rules, import maps,
+    // modules, a type spelled with character references, a `>` hidden in a quoted value.
+    for (const tag of [
+      '<script type="speculationrules">',
+      '<SCRIPT type=speculationrules>',
+      '<script/type=speculationrules>',
+      '<script type="speculation&#114;ules">',
+      '<script x=">" type=speculationrules>',
+      '<script id="nyx-exam-script" type="speculationrules">',
+      '<script\ttype=module>',
+      '<script type=importmap>',
+    ]) {
+      const out = neutralizeRefusedTags(`${tag}{"prefetch":[{"urls":["https://p.evil.example/"]}]}</script>`);
+      expect(out.startsWith('<x-refused-script')).toBe(true);
     }
     // Through the box, a parser-placed hint or frame never exists.
     const boxed = withFrameLock('<html><head></head><body><link rel=preconnect href=https://p.evil><iframe srcdoc="<script>x</script>"></iframe></body></html>') as string;
     expect(boxed).not.toMatch(/<(link|iframe)[\s/>]/i);
+    // The report's own documents pass through untouched: the renderer's scripts, the room's
+    // script and the lock carry nothing the renaming would touch.
+    expect(neutralizeRefusedTags(PHONE)).toBe(PHONE);
+    const room = examRoomHtml(PHONE, '#0A0A0A') as string;
+    expect(room).toContain('<script id="nyx-exam-script">');
+    expect(room).not.toContain('x-refused');
   });
 
   /** A browser-shaped window with the lock run first, as the head runs it. */
@@ -294,6 +317,14 @@ describe('the frame lock (CUL-2469, CUL-2495)', () => {
     expect(refused('document.write("<iframe></iframe>")')).toBe('refused');
     expect(refused('document.open()')).toBe('refused');
     expect(refused('document.body.attachShadow({ mode: "open" })')).toBe('refused');
+    // setHTML (the Sanitizer API) parses and inserts on its own path: locked to throw, even where
+    // the engine has none yet (jsdom has none, so the descriptor is the proof).
+    expect(w.eval('var d = Object.getOwnPropertyDescriptor(Element.prototype, "setHTML"); typeof d.value + d.writable + d.configurable')).toBe('functionfalsefalse');
+    expect(refused('document.body.setHTML("<iframe></iframe>")')).toBe('refused');
+    // No script element goes in at all: a speculationrules script inserted by script prefetches.
+    expect(refused('document.createElement("script")')).toBe('refused');
+    expect(w.eval(`new DOMParser().parseFromString('<script type=speculationrules>{}<\\/script>', "text/html").head.firstChild.nodeName`)).toBe('SCRIPT');
+    expect(refused(`document.body.appendChild(new DOMParser().parseFromString('<script type=speculationrules>{}<\\/script>', "text/html").head.firstChild)`)).toBe('refused');
     // An element from an inert parse (DOMParser keeps it), adopted and inserted: refused before it
     // lands, by every node path.
     const parsed = (tag: string) => `new DOMParser().parseFromString(${JSON.stringify(tag)}, "text/html").body.firstChild`;
