@@ -100,6 +100,20 @@ Deno.test('the golden path: written, verified, checked, kept on the draft with i
   assert.ok(f.sends[1].body.includes('\\"draft\\"'))
 })
 
+Deno.test('the verdict is stamped at its write, after the model calls, not when it was built (CUL-2523)', async () => {
+  // The keep pins a long lead by its verdict's `at` (run.ts pinsOf), so `at` must be the write's.
+  const f = fake({ answers: [writer(GOOD), checker()] })
+  let lastNow = 0
+  const now = f.io.now
+  f.io.now = () => (lastNow = now())
+  const write = f.io.writeDraft
+  let atWrite = 0
+  f.io.writeDraft = (text, verdict, model) => ((atWrite = lastNow), write(text, verdict, model))
+  await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.equal(Date.parse(f.writes[0].verdict.at), atWrite, 'the last clock read before the write is the stamp')
+  assert.ok(f.sends.length === 2, 'both model calls ran before it')
+})
+
 Deno.test('leave out: recorded on the copy, no gate, no model', async () => {
   const f = fake({})
   const r = await runAiLead(f.io, FACTS, { leaveOut: true })

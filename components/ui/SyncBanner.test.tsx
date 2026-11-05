@@ -1,4 +1,9 @@
-import { syncBannerText } from './SyncBanner';
+import { act, render, screen } from '@testing-library/react-native';
+import { SyncBanner, msUntilPendingLineDue, syncBannerText } from './SyncBanner';
+import { useSyncStore } from '../../store/syncStore';
+import { useAppActive } from '../../hooks/useAppActive';
+
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: jest.fn(() => true) }));
 
 // The banner is the ONLY place the app tells an owner their record has not left
 // the phone, so what it says — and when it stays quiet — is the whole surface of
@@ -67,5 +72,76 @@ describe('syncBannerText', () => {
     expect(
       syncBannerText({ pendingCount: 1, oldestPendingAt: 'not-a-date', quarantinedCount: 0 }, NOW),
     ).toBeNull();
+  });
+});
+
+// CUL-2547: the banner decides at render, and the store changes only after a sync cycle.
+// Held open and offline across the 24-hour mark, nothing redrew it, so the pending line
+// stayed quiet. One timer to the mark is the redraw; these drive the real component on a
+// fake clock (modern fake timers move Date.now with the timers).
+describe('msUntilPendingLineDue (CUL-2547)', () => {
+  const DAY = 24 * 3600_000;
+  it('counts down to one millisecond past the day mark', () => {
+    expect(msUntilPendingLineDue({ pendingCount: 1, oldestPendingAt: hoursAgo(23), quarantinedCount: 0 }, NOW))
+      .toBe(3600_000 + 1);
+    expect(msUntilPendingLineDue({ pendingCount: 1, oldestPendingAt: hoursAgo(0), quarantinedCount: 0 }, NOW))
+      .toBe(DAY + 1);
+  });
+  it('is null when the line is already due, nothing is pending, quarantine leads, or the stamp is unreadable', () => {
+    for (const state of [
+      { pendingCount: 1, oldestPendingAt: hoursAgo(24), quarantinedCount: 0 },
+      { pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 },
+      { pendingCount: 1, oldestPendingAt: hoursAgo(2), quarantinedCount: 1 },
+      { pendingCount: 1, oldestPendingAt: 'not-a-date', quarantinedCount: 0 },
+    ]) {
+      expect(msUntilPendingLineDue(state, NOW)).toBeNull();
+    }
+  });
+});
+
+describe('SyncBanner notices the day passing (CUL-2547)', () => {
+  const LINE = /haven't synced in over a day/;
+  beforeEach(() => {
+    jest.useFakeTimers({ now: NOW });
+    (useAppActive as jest.Mock).mockReturnValue(true);
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    act(() => useSyncStore.setState({ pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 }));
+  });
+
+  it('shows the pending line the moment the oldest entry turns a day old, with no store change', () => {
+    useSyncStore.setState({ pendingCount: 1, oldestPendingAt: hoursAgo(23), quarantinedCount: 0 });
+    render(<SyncBanner />);
+    expect(screen.queryByText(LINE)).toBeNull();
+    act(() => jest.advanceTimersByTime(3600_000 - 1000));
+    expect(screen.queryByText(LINE)).toBeNull();
+    act(() => jest.advanceTimersByTime(1001));
+    expect(screen.getByText(LINE)).toBeTruthy();
+  });
+
+  it('re-arms on a store change: a newer oldest entry moves the moment later', () => {
+    useSyncStore.setState({ pendingCount: 1, oldestPendingAt: hoursAgo(23), quarantinedCount: 0 });
+    render(<SyncBanner />);
+    act(() => useSyncStore.setState({ oldestPendingAt: hoursAgo(1) }));
+    act(() => jest.advanceTimersByTime(3600_000 + 10));
+    expect(screen.queryByText(LINE)).toBeNull();
+    act(() => jest.advanceTimersByTime(22 * 3600_000));
+    expect(screen.getByText(LINE)).toBeTruthy();
+  });
+
+  it('holds no timer while the app is in the background', () => {
+    (useAppActive as jest.Mock).mockReturnValue(false);
+    useSyncStore.setState({ pendingCount: 1, oldestPendingAt: hoursAgo(23), quarantinedCount: 0 });
+    render(<SyncBanner />);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('clears its timer on unmount', () => {
+    useSyncStore.setState({ pendingCount: 1, oldestPendingAt: hoursAgo(23), quarantinedCount: 0 });
+    const { unmount } = render(<SyncBanner />);
+    expect(jest.getTimerCount()).toBe(1);
+    unmount();
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

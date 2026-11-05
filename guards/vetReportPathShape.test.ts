@@ -30,10 +30,15 @@
 //   ✗ scopeVetReportPaths replaced by a `.pdf`-only filter (an .html copy survives)
 //   ✗ vetReports left out of SWEEP_SCOPE's pet folders
 //
+//   ✗ savedCopyPath emitting `{pet}/{id}/report.html` (the writer block below reds)
+//   ✗ savedCopyPath emitting `.htm` (not an extension the CHECK lists)
+//   ✗ savedCopyPath dropping its toLowerCase (an upper-case pet folder the
+//     owned-pet set, which Postgres prints lower-case, never matches)
+//
 // BLIND SPOTS, stated. It reads the repo, not production: an unapplied 113 is
-// invisible here (the PM's `apply 113` and its VERIFY block cover that). It
-// proves the CHECK and the purge agree; the writer's own path builder (VR2-20,
-// CUL-2311 item 2) still owes a test that its output is a row's key.
+// invisible here (the PM's `apply 113` and its VERIFY block cover that). The
+// writer block drives the deployed builder, savedCopyPath (VR2-20, CUL-2311
+// item 2), so the CHECK, the purge and the writer are pinned in one file.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -45,6 +50,17 @@ import {
   collectStoragePaths,
   type OwnedStoragePaths,
 } from '../supabase/functions/delete-account/plan';
+
+// The writer, loaded at run time by a non-literal path: a static import would pull
+// savedCopy.ts's Deno-only type imports (`https://esm.sh/...`) into the app's
+// `tsc --noEmit`, which excludes supabase/functions on purpose. Babel strips those
+// type-only imports, so jest runs the real, deployed builder. The cast names only
+// the two exports used; a renamed export fails the first test, not silently.
+const SAVED_COPY_MODULE = '../supabase/functions/generate-report/savedCopy';
+const { savedCopyPath, VET_REPORTS_BUCKET } = require(SAVED_COPY_MODULE) as {
+  savedCopyPath: (petId: string, reportId: string) => string;
+  VET_REPORTS_BUCKET: string;
+};
 
 const MIGRATIONS = path.resolve(__dirname, '..', 'supabase', 'migrations');
 
@@ -171,5 +187,31 @@ describe('every key the CHECK accepts is erased by account deletion', () => {
     expect(() => allowedExtensions(threeSeg)).toThrow(/not \{pet_id\}\/\{id\}/);
     const pet = randomUUID();
     expect(vetReportPurge([`${pet}/${randomUUID()}/report.pdf`], [pet])).toEqual([]);
+  });
+});
+
+describe('the writer: every key savedCopyPath builds is one the CHECK accepts and deletion erases', () => {
+  const exts = allowedExtensions(liveStoragePathChecks()[0]);
+  // The ids as a client might send them (upper-case) and as Postgres prints them.
+  const cases = Array.from({ length: 5 }, () => {
+    const pet = randomUUID();
+    const id = randomUUID();
+    return { pet, id, petIn: pet.toUpperCase(), idIn: id.toUpperCase() };
+  });
+
+  it('writes to the bucket the purge removes from', () => {
+    expect(VET_REPORTS_BUCKET).toBe(STORAGE_BUCKETS.vetReports);
+  });
+
+  it.each(cases)('builds the row key {pet_id}/{id}.<listed ext> ($pet)', ({ pet, id, petIn, idIn }) => {
+    const key = savedCopyPath(petIn, idIn);
+    const ext = exts.find((e) => key === `${pet}/${id}${e}`);
+    expect(ext).toBeDefined();
+  });
+
+  it.each(cases)('the owner\'s deletion keeps it; another account\'s drops it ($pet)', ({ pet, petIn, idIn }) => {
+    const key = savedCopyPath(petIn, idIn);
+    expect(vetReportPurge([key], [randomUUID(), pet])).toEqual([key]);
+    expect(vetReportPurge([key], [randomUUID()])).toEqual([]);
   });
 });

@@ -45,8 +45,10 @@ describe('keepReportCopy', () => {
 
   it('names the draft by pet and id, with the route', async () => {
     const invoke = jest.fn(ok);
-    expect(await keepReportCopy(report, 'print', invoke)).toBe('kept');
-    expect(invoke).toHaveBeenCalledWith({ mode: 'keep', petId: PET, reportId: ID, sharedVia: 'print' });
+    const sent = Date.parse('2026-11-05T12:00:00.000Z');
+    expect(await keepReportCopy(report, 'print', invoke, KEEP_RETRY_DELAYS_MS, noWait, undefined, () => sent)).toBe('kept');
+    // Every try names the send's own time, so a retry after a background pause never restamps it.
+    expect(invoke).toHaveBeenCalledWith({ mode: 'keep', petId: PET, reportId: ID, sharedVia: 'print', sharedAt: '2026-11-05T12:00:00.000Z' });
   });
 
   it('an unsaved report (the Preview save failed) calls nothing and says not saved', async () => {
@@ -75,27 +77,32 @@ describe('keepReportCopy', () => {
     expect(invoke).toHaveBeenCalledTimes(2);
   });
 
-  it('a refusal is never retried; a Preview past the keep window reads as expired', async () => {
-    const refused = jest.fn(err(409));
+  it('a refusal is never retried; one only a new Preview can fix reads as expired', async () => {
+    const refused = jest.fn(err(400));
     expect(await keepReportCopy(report, 'email', refused, KEEP_RETRY_DELAYS_MS, noWait)).toBe('failed');
     expect(refused).toHaveBeenCalledTimes(1);
-    const expired = jest.fn(err(409, true));
-    expect(await keepReportCopy(report, 'email', expired, KEEP_RETRY_DELAYS_MS, noWait)).toBe('expired');
-    expect(expired).toHaveBeenCalledTimes(1);
+    for (const status of [404, 409]) {
+      const gone = jest.fn(err(status, true));
+      expect(await keepReportCopy(report, 'email', gone, KEEP_RETRY_DELAYS_MS, noWait)).toBe('expired');
+      expect(gone).toHaveBeenCalledTimes(1);
+    }
     expect(noWait).not.toHaveBeenCalled();
   });
 
-  it('reads the status and the expired refusal off the real client error shape', async () => {
+  it('reads a 404 or any 409 off the real client error shape as "Preview again" (adversarial pass 2)', async () => {
     const { supabase } = jest.requireMock('./supabase') as { supabase: { functions: { invoke: jest.Mock } } };
+    for (const [status, body] of [[409, 'Saved copy expired'], [409, 'Saved copy unavailable'], [409, 'Saved copy needs a new preview'], [404, 'Saved copy not found']] as const) {
+      supabase.functions.invoke.mockResolvedValueOnce({
+        error: { name: 'FunctionsHttpError', message: 'non-2xx', context: { status, json: async () => ({ error: body }) } },
+      });
+      expect(await keepReportCopy(report, 'print', undefined, KEEP_RETRY_DELAYS_MS, noWait)).toBe('expired');
+    }
     supabase.functions.invoke.mockResolvedValueOnce({
-      error: { name: 'FunctionsHttpError', message: 'non-2xx', context: { status: 409, json: async () => ({ error: 'Saved copy expired' }) } },
+      error: { name: 'FunctionsHttpError', message: 'non-2xx', context: { status: 503, json: async () => ({}) } },
     });
-    expect(await keepReportCopy(report, 'print', undefined, KEEP_RETRY_DELAYS_MS, noWait)).toBe('expired');
-    supabase.functions.invoke.mockResolvedValueOnce({
-      error: { name: 'FunctionsHttpError', message: 'non-2xx', context: { status: 409, json: async () => ({ error: 'Saved copy unavailable' }) } },
-    });
+    supabase.functions.invoke.mockResolvedValueOnce({ error: { name: 'FunctionsHttpError', message: 'non-2xx', context: { status: 503 } } });
+    supabase.functions.invoke.mockResolvedValueOnce({ error: { name: 'FunctionsHttpError', message: 'non-2xx', context: { status: 503 } } });
     expect(await keepReportCopy(report, 'print', undefined, KEEP_RETRY_DELAYS_MS, noWait)).toBe('failed');
-    expect(noWait).not.toHaveBeenCalled();
   });
 });
 

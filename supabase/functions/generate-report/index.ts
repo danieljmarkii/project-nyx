@@ -84,7 +84,7 @@ import {
 } from './composer.ts'
 import { buildDocumentV2, type DocumentV2 } from './documentV2.ts'
 import { draftLeadIO, parseAiLeadRequest, runAiLeadForDraft, settleLeadForKeep } from './aiLead/run.ts'
-import { isUuid, keepCopy, openCopy, parseKeepRequest, parseOpenRequest, reapStaleDrafts, saveDraft, savedCopyIO, type DraftInput, type Rendered, type SaveResult, type SharedVia } from './savedCopy.ts'
+import { isUuid, keepCopy, openCopy, parseKeepRequest, parseOpenRequest, reapStaleDrafts, saveDraft, savedCopyIO, type DraftInput, type Rendered, type KeepRequest, type SaveResult, type SharedVia } from './savedCopy.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
 import { REPORT_DOCUMENT_FLAG, reportDocumentV2On } from './documentFlag.ts'
@@ -1919,7 +1919,7 @@ const handler = async (req: Request): Promise<Response> => {
   let composer: { part: ComposerPart } | null = null
   let documentRequest: 'v1' | 'v2' = 'v1'
   let aiLead: { reportId: string | null; leaveOut: boolean } | null = null
-  let keep: { reportId: string | null; sharedVia: SharedVia | null } | null = null
+  let keep: KeepRequest | null = null
   let open: { reportId: string | null } | null = null
   try {
     const body = (await req.json()) as {
@@ -1951,6 +1951,7 @@ const handler = async (req: Request): Promise<Response> => {
       // VR2-21 (CUL-2301) — `mode: 'open'` returns one kept copy's stored HTML (savedCopy.ts).
       sharedVia?: string
       shared_via?: string
+      sharedAt?: string
     }
     keep = parseKeepRequest(body)
     open = parseOpenRequest(body)
@@ -2118,7 +2119,7 @@ async function keepForPet(
   supabase: SupabaseClient,
   adminClient: SupabaseClient,
   petId: string,
-  req: { reportId: string | null; sharedVia: SharedVia | null },
+  req: KeepRequest,
   callerJwt: string | null,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   if (req.reportId === null || req.sharedVia === null) return { status: 400, body: { error: 'reportId and sharedVia required' } }

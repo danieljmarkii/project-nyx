@@ -34,7 +34,7 @@ export type CheckOutcome =
   | { kind: 'overdue' }
   | { kind: 'unreachable'; detail: string }
 
-type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }) =>
+export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }) =>
   Promise<{ status: number; ok: boolean; json(): Promise<unknown>; text(): Promise<string> }>
 
 /** Ask the deployed function. Anything but a clean 204 or a 200 `{overdue: true}` is "could not run". */
@@ -146,9 +146,25 @@ const RELATE = `mutation ($input: IssueRelationCreateInput!) { issueRelationCrea
 
 type IssueRef = { id: string; identifier: string; url: string }
 
+/** The issue a check files: its marker title, its body, the issue it relates to, its labels.
+ *  Shared so a second daily check (scripts/ops/orphanSweepCheck.ts, CUL-2521) files the same way. */
+export interface IssueSpec {
+  title: string
+  description: (first: string) => string
+  parentIssueId: string
+  labelNames: ReadonlyArray<string>
+}
+
+export const DRAFTS_ISSUE: IssueSpec = {
+  title: ISSUE_TITLE,
+  description: issueDescription,
+  parentIssueId: PARENT_ISSUE_ID,
+  labelNames: LABEL_NAMES,
+}
+
 /** One open issue per stall: comment on it if it is there, else open it. Returns what it did. */
-export async function report(gql: GraphQL, text: string): Promise<{ action: 'commented' | 'opened'; issue: IssueRef }> {
-  const found = (await gql(FIND_OPEN, { team: LINEAR_TEAM_ID, title: ISSUE_TITLE })) as { issues?: { nodes?: IssueRef[] } }
+export async function report(gql: GraphQL, text: string, spec: IssueSpec = DRAFTS_ISSUE): Promise<{ action: 'commented' | 'opened'; issue: IssueRef }> {
+  const found = (await gql(FIND_OPEN, { team: LINEAR_TEAM_ID, title: spec.title })) as { issues?: { nodes?: IssueRef[] } }
   const open = found.issues?.nodes?.[0]
   if (open) {
     await gql(COMMENT, { input: { issueId: open.id, body: text } })
@@ -157,18 +173,18 @@ export async function report(gql: GraphQL, text: string): Promise<{ action: 'com
   // Labels are looked up by name, so a renamed label costs the label, never the issue.
   let labelIds: string[] = []
   try {
-    const labels = (await gql(FIND_LABELS, { team: LINEAR_TEAM_ID, names: [...LABEL_NAMES] })) as { issueLabels?: { nodes?: Array<{ id: string }> } }
+    const labels = (await gql(FIND_LABELS, { team: LINEAR_TEAM_ID, names: [...spec.labelNames] })) as { issueLabels?: { nodes?: Array<{ id: string }> } }
     labelIds = (labels.issueLabels?.nodes ?? []).map((l) => l.id)
   } catch {
     labelIds = []
   }
   const created = (await gql(CREATE, {
-    input: { teamId: LINEAR_TEAM_ID, title: ISSUE_TITLE, description: issueDescription(text), priority: 2, labelIds },
+    input: { teamId: LINEAR_TEAM_ID, title: spec.title, description: spec.description(text), priority: 2, labelIds },
   })) as { issueCreate?: { success?: boolean; issue?: IssueRef } }
   const issue = created.issueCreate?.issue
   if (!created.issueCreate?.success || !issue) throw new Error('Linear did not create the issue')
   try {
-    await gql(RELATE, { input: { issueId: issue.id, relatedIssueId: PARENT_ISSUE_ID, type: 'related' } })
+    await gql(RELATE, { input: { issueId: issue.id, relatedIssueId: spec.parentIssueId, type: 'related' } })
   } catch {
     // The relation is a convenience; the issue itself is the alert.
   }
