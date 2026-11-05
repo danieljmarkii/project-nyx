@@ -2,7 +2,13 @@ import type { AppBowl } from './mealBowls';
 import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
-import { INBOX_FOOD_ID_RE, readInboxFoodIds } from './inboxFoodRefs';
+import {
+  INBOX_FOOD_ID_RE,
+  clearCatalogFlushSkips,
+  inboxKeepForCatalogFlush,
+  readInboxFoodRefs,
+  type InboxFoodRefs,
+} from './inboxFoodRefs';
 import {
   LIBRARY_FOODS_QUERY,
   ARCHIVED_FOODS_QUERY,
@@ -91,6 +97,36 @@ interface CacheFlushDb {
 // only by it was deleted: the capture then deferred until it aged out. Only ids of the
 // extension's uuid shape reach the SQL (the PRAGMA's interpolation reasoning: execAsync takes
 // no bound parameters); anything else is left out, never quoted in.
+// Whether the flush below would run: the local cache-schema version lags the target.
+export async function catalogCacheFlushDue(
+  database: CacheFlushDb,
+  targetVersion: number = CACHE_SCHEMA_VERSION,
+): Promise<boolean> {
+  const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+  return (row?.user_version ?? 0) < Math.trunc(targetVersion);
+}
+
+/**
+ * initDb's flush step: read the widget inbox only when a flush is due, skip while the inbox
+ * cannot be read whole (bounded, CUL-2572), and clear the skip ledger once the flush runs.
+ * Returns whether it flushed. `readRefs` is the inbox read, injectable for the test.
+ */
+export async function runCatalogCacheFlush(
+  database: CacheFlushDb,
+  readRefs: () => InboxFoodRefs = readInboxFoodRefs,
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (!(await catalogCacheFlushDue(database))) return false;
+  const inboxFoods = await inboxKeepForCatalogFlush(readRefs(), now);
+  if (inboxFoods === null) {
+    console.warn('[db] catalog cache flush skipped: widget inbox unreadable');
+    return false;
+  }
+  const flushed = await flushLegacyCatalogCachesIfNeeded(database, CACHE_SCHEMA_VERSION, inboxFoods);
+  if (flushed) await clearCatalogFlushSkips();
+  return flushed;
+}
+
 export async function flushLegacyCatalogCachesIfNeeded(
   database: CacheFlushDb,
   targetVersion: number = CACHE_SCHEMA_VERSION,
@@ -247,16 +283,14 @@ export async function initDb(): Promise<void> {
   // privacy/UX wart, not a crash; the next successful launch retries the flush
   // because user_version was never bumped).
   //
-  // CUL-2542: the widget inbox's foods are kept too. An inbox that cannot be read skips the
-  // flush for this launch (user_version stays behind, so the next launch retries) rather
+  // CUL-2542: the widget inbox's foods are kept too. An inbox that cannot be read whole skips
+  // the flush for this launch (user_version stays behind, so the next launch retries) rather
   // than delete a food a capture it could not see is waiting on.
+  // CUL-2572: but not forever. Skips on five distinct days run it, keeping the inbox foods it
+  // could read (lib/inboxFoodRefs.ts). The inbox is read only when a flush is due, so no skip
+  // is counted while none is waiting.
   try {
-    const inboxFoods = readInboxFoodIds();
-    if (inboxFoods === null) {
-      console.warn('[db] catalog cache flush skipped: widget inbox unreadable');
-    } else {
-      await flushLegacyCatalogCachesIfNeeded(database, CACHE_SCHEMA_VERSION, inboxFoods);
-    }
+    await runCatalogCacheFlush(database);
   } catch (e) {
     console.warn('[db] catalog cache flush failed:', e);
   }

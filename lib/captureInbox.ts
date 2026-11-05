@@ -29,7 +29,7 @@
 
 import { getDb } from './db';
 import { File } from 'expo-file-system';
-import { getCaptureInboxDirectory } from './appGroup';
+import { getCaptureInboxDirectory, openCaptureInbox } from './appGroup';
 import { usePetStore } from '../store/petStore';
 import { triggerSignalRegenDebounced } from './signal';
 import { currentSignOutEpoch } from './signOutEpoch';
@@ -72,6 +72,47 @@ export const INBOX_DEFERRAL_STAMP_SUFFIX = '.deferred';
 
 // The one stamp form the wrapper writes (`toISOString()`); anything else reads as no stamp.
 const INBOX_STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+// CUL-2571: the 45 days are read off the phone's clock at both ends, so a clock that is far
+// behind when the stamp is written, or jumps ahead later, made a capture look 45 days deferred
+// on its very next pass. So an age-out also needs this many DISTINCT days (UTC) on which a
+// pass found the record unusable, today's included. A clock jump adds one day, never seven.
+// It errs toward keeping: an owner who opens the app rarely keeps a stuck capture past 45
+// days. PM go on the recommendation, 2026-11-05.
+export const INBOX_MIN_UNUSABLE_DAYS = 7;
+
+// One line per unusable day under the stamp, in the `YYYY-MM-DD` form `inboxDayKey` writes.
+const INBOX_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The UTC calendar day of an instant, as the sidecar records it. */
+export function inboxDayKey(at: Date): string {
+  return at.toISOString().slice(0, 10);
+}
+
+/**
+ * CUL-2571: a sidecar's contents. Line 1 is the first-deferral stamp (the whole file, before
+ * this change, so every stamp already on a phone still reads, with no days). Each later line
+ * is a distinct day an unusable pass saw the record. A first line in any other form is no
+ * stamp, and its days go with it: the wrapper replaces the file and both restart.
+ */
+export function parseInboxDeferral(text: string): { at: string | null; days: string[] } {
+  const [first = '', ...rest] = text.split('\n').map((l) => l.trim());
+  if (!INBOX_STAMP_RE.test(first) || Number.isNaN(Date.parse(first))) return { at: null, days: [] };
+  const days = [...new Set(rest.filter((l) => INBOX_DAY_RE.test(l)))];
+  return { at: first, days };
+}
+
+/** The sidecar text for a stamp and its days. */
+export function formatInboxDeferral(at: string, days: readonly string[]): string {
+  return [at, ...days].join('\n');
+}
+
+// The days a record has been found unusable on, with `today` added, capped at the minimum
+// (no rule reads past it, so the file never grows).
+function unusableDaysWith(days: readonly string[], today: string): string[] {
+  const all = days.includes(today) ? [...days] : [...days, today];
+  return all.slice(0, Math.max(INBOX_MIN_UNUSABLE_DAYS, days.length));
+}
 
 /**
  * CUL-2542: the pet ids an inbox pass treats as this account's: the set the caller hands
@@ -253,6 +294,12 @@ export interface InboxFilePayload {
    * future, the record defers and is never aged out.
    */
   firstDeferredAt?: string | null;
+  /**
+   * CUL-2571: the distinct UTC days earlier passes found this record unusable on (the
+   * sidecar's later lines). Age-out also needs `INBOX_MIN_UNUSABLE_DAYS` of them, this pass's
+   * day included. Absent is none.
+   */
+  unusableDays?: readonly string[];
 }
 
 export type InboxAction = 'applied' | 'deferred' | 'dropped';
@@ -354,7 +401,14 @@ export async function ingestCaptureRecords(
     const stampMs =
       file.firstDeferredAt && INBOX_STAMP_RE.test(file.firstDeferredAt) ? Date.parse(file.firstDeferredAt) : NaN;
     const firstDeferredMs = Number.isNaN(stampMs) ? NaN : Math.max(stampMs, Date.parse(record.createdAt));
-    const aged = !Number.isNaN(firstDeferredMs) && now.getTime() - firstDeferredMs > maxAgeMs;
+    //
+    // CUL-2571: and only after unusable passes on `INBOX_MIN_UNUSABLE_DAYS` distinct days, this
+    // one counted, so a clock jump cannot fold the 45 days into one pass.
+    const unusableDayCount = new Set([...(file.unusableDays ?? []), inboxDayKey(now)]).size;
+    const aged =
+      !Number.isNaN(firstDeferredMs) &&
+      now.getTime() - firstDeferredMs > maxAgeMs &&
+      unusableDayCount >= INBOX_MIN_UNUSABLE_DAYS;
     const unusable = (reason: string): InboxDecision =>
       aged
         ? { name: file.name, action: 'dropped', reason: `aged out (${reason})` }
@@ -564,18 +618,17 @@ export async function ingestCaptureInbox(
   // CUL-2542: every listed record name (read or not), and each first-deferral stamp by the
   // record it belongs to. A stamp whose record is not listed is an orphan.
   const recordNames = new Set<string>();
-  const stamps = new Map<string, { entry: { delete(): void }; at: string | null }>();
+  const stamps = new Map<string, { entry: { delete(): void }; at: string | null; days: string[] }>();
   for (const entry of entries) {
     if (!('textSync' in entry)) continue;
     if (entry.name.endsWith(INBOX_DEFERRAL_STAMP_SUFFIX)) {
-      let at: string | null = null;
+      let parsed: { at: string | null; days: string[] } = { at: null, days: [] };
       try {
-        const text = entry.textSync().trim();
-        at = INBOX_STAMP_RE.test(text) && !Number.isNaN(Date.parse(text)) ? text : null;
+        parsed = parseInboxDeferral(entry.textSync());
       } catch (e) {
         console.warn(`[captureInbox] stamp read failed for ${entry.name}:`, e);
       }
-      stamps.set(entry.name.slice(0, -INBOX_DEFERRAL_STAMP_SUFFIX.length), { entry, at });
+      stamps.set(entry.name.slice(0, -INBOX_DEFERRAL_STAMP_SUFFIX.length), { entry, ...parsed });
       continue;
     }
     // Only files, only .json — the extension writes nothing else; anything else
@@ -590,7 +643,11 @@ export async function ingestCaptureInbox(
       console.warn(`[captureInbox] read failed for ${entry.name}:`, e);
     }
   }
-  for (const f of files) f.firstDeferredAt = stamps.get(f.name)?.at ?? null;
+  for (const f of files) {
+    const stamp = stamps.get(f.name);
+    f.firstDeferredAt = stamp?.at ?? null;
+    f.unusableDays = stamp?.at ? stamp.days : [];
+  }
   if (files.length === 0) {
     if (!fenced()) deleteOrphanStamps(stamps, recordNames);
     return;
@@ -600,13 +657,15 @@ export async function ingestCaptureInbox(
   // starve a record behind newer arrivals across passes.
   files.sort((a, b) => inboxFileSortKey(a.raw) - inboxFileSortKey(b.raw));
 
+  // One clock read for the pass: the age check and the day the sidecar records agree.
+  const now = new Date();
   let decisions: InboxDecision[];
   try {
     decisions = await ingestCaptureRecords(
       getDb(),
       files,
       withArchivedPetIds(validPetIds),
-      new Date(),
+      now,
       MAX_INGEST_PER_PASS,
       fenced,
       archivedKnown,
@@ -622,22 +681,33 @@ export async function ingestCaptureInbox(
   if (fenced()) return;
 
   const regenPets = new Set<string>();
-  const stampAt = new Date().toISOString();
+  const stampAt = now.toISOString();
+  const today = inboxDayKey(now);
   for (const d of decisions) {
     if (d.action === 'deferred') {
       // Deferrals are expected to be transient; log so a stuck record (e.g. a
       // genuinely foreign pet waiting on the age-out) is visible in the trail.
       console.warn(`[captureInbox] deferred ${d.name}: ${d.reason}`);
       // CUL-2542: the first unusable pass starts the 45 days. An existing readable stamp
-      // is never rewritten (that would restart the clock); an unreadable one is replaced.
+      // is never moved (that would restart the clock); an unreadable one is replaced.
       // A failed write leaves the record unstamped, so it defers again and never ages.
       // A pet outside the active set while the archived ids are unread is not marked
       // unusable by the ingest, so no clock starts on it until they are read.
-      if (d.unusable && !stamps.get(d.name)?.at) {
-        try {
-          new File(inbox, `${d.name}${INBOX_DEFERRAL_STAMP_SUFFIX}`).write(stampAt);
-        } catch (e) {
-          console.warn(`[captureInbox] stamp write failed for ${d.name}:`, e);
+      // CUL-2571: each unusable pass on a new day adds that day under the stamp, up to the
+      // minimum. A failed write loses only this day, which errs toward keeping.
+      const stamp = stamps.get(d.name);
+      if (d.unusable) {
+        const at = stamp?.at ?? null;
+        const days = at ? stamp?.days ?? [] : [];
+        const next = unusableDaysWith(days, today);
+        if (!at || next.length !== days.length) {
+          try {
+            new File(inbox, `${d.name}${INBOX_DEFERRAL_STAMP_SUFFIX}`).write(
+              formatInboxDeferral(at ?? stampAt, next),
+            );
+          } catch (e) {
+            console.warn(`[captureInbox] stamp write failed for ${d.name}:`, e);
+          }
         }
       }
       continue;
@@ -754,9 +824,15 @@ export function summarizeUnclaimedInboxPayloads(
 // a real capture, and over-warning is the safe direction. A listing that fails THROWS, so the
 // caller's count fails as a whole and takes its own "no evidence" path. No inbox (Android, no
 // entitlement) is empty.
+//
+// CUL-2570: an inbox folder that would not open THROWS too, the same "no evidence" path (each
+// caller counts it as one unsent entry). Read as no inbox, it zeroed every count while the
+// sign-out wipe still deleted the folder and whatever it held.
 export function readUnclaimedInbox(petIds: ReadonlySet<string>): UnclaimedInboxSummary {
-  const inbox = getCaptureInboxDirectory();
-  if (!inbox) return { count: 0, oldestAt: null, unknownAge: 0 };
+  const opened = openCaptureInbox();
+  if (opened.status === 'none') return { count: 0, oldestAt: null, unknownAge: 0 };
+  if (opened.status === 'unavailable') throw new Error('capture inbox would not open');
+  const inbox = opened.dir;
   const raws: string[] = [];
   let unreadable = 0;
   for (const entry of inbox.list()) {

@@ -35,12 +35,22 @@ jest.mock('./signal', () => ({ triggerSignalRegenDebounced: jest.fn() }));
 jest.mock('./db', () => ({ getDb: jest.fn() }));
 // The wrapper suite drives the inbox through a fake directory; everything else
 // leaves it returning null (wrapper no-ops, core functions don't touch it).
-jest.mock('./appGroup', () => ({
-  APP_GROUP_ID: 'group.test',
-  getCaptureInboxDirectory: jest.fn(() => null),
-  getSnapshotDirectory: jest.fn(() => null),
-  clearWidgetData: jest.fn(),
-}));
+// CUL-2570: the counts open the inbox through `openCaptureInbox`; by default it follows the
+// `getCaptureInboxDirectory` mock (a directory is `ok`, null is `none`), and a test sets it
+// directly to reach `unavailable`.
+jest.mock('./appGroup', () => {
+  const getCaptureInboxDirectory = jest.fn(() => null);
+  return {
+    APP_GROUP_ID: 'group.test',
+    getCaptureInboxDirectory,
+    openCaptureInbox: jest.fn(() => {
+      const dir = getCaptureInboxDirectory();
+      return dir ? { status: 'ok', dir } : { status: 'none' };
+    }),
+    getSnapshotDirectory: jest.fn(() => null),
+    clearWidgetData: jest.fn(),
+  };
+});
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
@@ -60,6 +70,9 @@ import {
   CAPTURE_INBOX_SCHEMA_VERSION,
   INBOX_MAX_AGE_DAYS,
   INBOX_DEFERRAL_STAMP_SUFFIX,
+  INBOX_MIN_UNUSABLE_DAYS,
+  inboxDayKey,
+  parseInboxDeferral,
   MAX_INGEST_PER_PASS,
   withArchivedPetIds,
   type BowlTopUpCaptureRecord,
@@ -67,7 +80,7 @@ import {
   type MealCaptureRecord,
   type InboxDb,
 } from './captureInbox';
-import { getCaptureInboxDirectory } from './appGroup';
+import { getCaptureInboxDirectory, openCaptureInbox } from './appGroup';
 import { getDb } from './db';
 import { notifySignedOut } from './signOutEpoch';
 import { triggerSignalRegenDebounced } from './signal';
@@ -253,10 +266,13 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
       name: `${i}.json`,
       raw: typeof r === 'string' ? r : JSON.stringify(r),
     }));
-  // CUL-2542: the same files, each carrying a first-deferral stamp (the sidecar's time).
-  const stampedFiles = (firstDeferredAt: string, ...records: (CaptureRecord | string)[]) =>
-    files(...records).map((f) => ({ ...f, firstDeferredAt }));
   const daysBefore = (days: number) => new Date(NOW.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+  // CUL-2571: the distinct days earlier unusable passes were recorded on, the `n` days before NOW.
+  const priorDays = (n: number) => Array.from({ length: n }, (_, i) => inboxDayKey(new Date(daysBefore(i + 1))));
+  // CUL-2542: the same files, each carrying a first-deferral stamp (the sidecar's time) and, by
+  // default, enough unusable days for the stamp alone to decide (CUL-2571: NOW is the last).
+  const stampedFiles = (firstDeferredAt: string, ...records: (CaptureRecord | string)[]) =>
+    files(...records).map((f) => ({ ...f, firstDeferredAt, unusableDays: priorDays(INBOX_MIN_UNUSABLE_DAYS - 1) }));
 
   it('writes the insertMeal-shaped event+meal pair: queued (synced=0), provenance stamped, unrated', async () => {
     const decisions = await ingestCaptureRecords(db, files(validRecord()), new Set([PET]), NOW);
@@ -434,6 +450,47 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
       const foreign = validRecord({ petId: '99999999-9999-4999-9999-999999999999', createdAt: edge });
       const decisions = await ingestCaptureRecords(db, files(foreign), new Set([PET]), NOW);
       expect(decisions[0]).toMatchObject({ action: 'deferred', reason: 'pet not in account' });
+    });
+  });
+
+  // CUL-2571: the 45 days are read off the phone's clock at both ends, so the age-out also needs
+  // unusable passes on INBOX_MIN_UNUSABLE_DAYS distinct days, this pass's included.
+  describe('a clock jump cannot age a capture out early (CUL-2571)', () => {
+    const MISSING_FOOD = '55555555-5555-4555-9555-555555555555';
+    const waiting = () => validRecord({ foodItemId: MISSING_FOOD, createdAt: daysBefore(200), occurredAt: daysBefore(200) });
+    const withDays = (stamp: string, days: string[]) =>
+      files(waiting()).map((f) => ({ ...f, firstDeferredAt: stamp, unusableDays: days }));
+
+    it('a stamp 46 days old by the clock defers with one day short of the minimum, drops at it', async () => {
+      const stamp = daysBefore(INBOX_MAX_AGE_DAYS + 1);
+      const short = await ingestCaptureRecords(db, withDays(stamp, priorDays(INBOX_MIN_UNUSABLE_DAYS - 2)), new Set([PET]), NOW);
+      expect(short[0]).toMatchObject({ action: 'deferred', unusable: true });
+      const enough = await ingestCaptureRecords(db, withDays(stamp, priorDays(INBOX_MIN_UNUSABLE_DAYS - 1)), new Set([PET]), NOW);
+      expect(enough[0]).toMatchObject({ action: 'dropped', reason: 'aged out (food not in cache)' });
+    });
+
+    it('a 60-day forward jump after one real day of deferral defers: two days are not seven', async () => {
+      // Stamped on day 0, seen unusable on day 0; then the clock jumps 60 days ahead.
+      const stampDay = new Date(NOW.getTime() - 60 * 86_400_000);
+      const d = await ingestCaptureRecords(db, withDays(stampDay.toISOString(), [inboxDayKey(stampDay)]), new Set([PET]), NOW);
+      expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
+    });
+
+    it("today's day counts once, however often it was recorded", async () => {
+      const stamp = daysBefore(INBOX_MAX_AGE_DAYS + 1);
+      const today = inboxDayKey(NOW);
+      const repeated = [...priorDays(INBOX_MIN_UNUSABLE_DAYS - 2), today, today];
+      const d = await ingestCaptureRecords(db, withDays(stamp, repeated), new Set([PET]), NOW);
+      expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
+    });
+
+    it('the sidecar keeps reading a stamp written before the days were added', () => {
+      expect(parseInboxDeferral('2026-11-01T08:00:00.000Z')).toEqual({ at: '2026-11-01T08:00:00.000Z', days: [] });
+      expect(parseInboxDeferral('2026-11-01T08:00:00.000Z\n2026-11-01\n2026-11-01\nbad\n2026-11-03')).toEqual({
+        at: '2026-11-01T08:00:00.000Z',
+        days: ['2026-11-01', '2026-11-03'],
+      });
+      expect(parseInboxDeferral('garbage\n2026-11-01')).toEqual({ at: null, days: [] });
     });
   });
 
@@ -1146,6 +1203,19 @@ describe('summarizeUnclaimedInboxPayloads / readUnclaimedInbox / withUnclaimedIn
     expect(() => readUnclaimedInbox(mine)).toThrow('list');
   });
 
+  it('CUL-2570: an inbox folder that would not open throws for the caller, never reads as no inbox', () => {
+    (openCaptureInbox as jest.Mock).mockReturnValueOnce({ status: 'unavailable' });
+    expect(() => readUnclaimedInbox(mine)).toThrow('would not open');
+    (openCaptureInbox as jest.Mock).mockReturnValueOnce({ status: 'unavailable' });
+    expect(() => countUnclaimedInbox(mine)).toThrow('would not open');
+    // What every caller does with that throw: one unsent entry, of unknown age.
+    expect(withUnclaimedInbox({ pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 }, null)).toEqual({
+      pendingCount: 1,
+      oldestPendingAt: UNKNOWN_AGE_PENDING_AT,
+      quarantinedCount: 0,
+    });
+  });
+
   it('adds a deferred capture to an empty queue: the banner now has an oldest entry to age', () => {
     const out = withUnclaimedInbox(ROWS_NONE, { count: 1, oldestAt: '2026-07-01T08:00:00.000Z', unknownAge: 0 });
     expect(out).toEqual({ pendingCount: 1, oldestPendingAt: '2026-07-01T08:00:00.000Z', quarantinedCount: 0 });
@@ -1221,13 +1291,47 @@ describe('ingestCaptureInbox: the first-deferral stamp (CUL-2542)', () => {
     expect(waiting.deleted).toBe(false);
     expect(mockStampWrites).toHaveLength(1);
     expect(mockStampWrites[0].name).toBe(`w.json${INBOX_DEFERRAL_STAMP_SUFFIX}`);
-    expect(Date.parse(mockStampWrites[0].text)).toBeGreaterThanOrEqual(before);
+    const written = parseInboxDeferral(mockStampWrites[0].text);
+    expect(Date.parse(written.at ?? '')).toBeGreaterThanOrEqual(before);
+    // CUL-2571: the first unusable pass is the first recorded day.
+    expect(written.days).toEqual([inboxDayKey(new Date(Date.parse(written.at ?? '')))]);
   });
 
-  it('never rewrites a readable stamp, so the clock does not restart', async () => {
-    install([recordFile('w.json', { foodItemId: MISSING_FOOD }), stampFile('w.json', daysAgo(10))]);
+  it('keeps a readable stamp as it is and adds today under it (CUL-2571), so the clock does not restart', async () => {
+    const stamp = daysAgo(10);
+    install([recordFile('w.json', { foodItemId: MISSING_FOOD }), stampFile('w.json', stamp)]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites).toHaveLength(1);
+    expect(parseInboxDeferral(mockStampWrites[0].text)).toEqual({ at: stamp, days: [inboxDayKey(new Date())] });
+  });
+
+  it('writes nothing when today is already recorded (CUL-2571)', async () => {
+    const text = `${daysAgo(10)}\n${inboxDayKey(new Date())}`;
+    install([recordFile('w.json', { foodItemId: MISSING_FOOD }), stampFile('w.json', text)]);
     await ingestCaptureInbox(new Set([PET]));
     expect(mockStampWrites).toHaveLength(0);
+  });
+
+  it('records each new day, up to the minimum and never past it (CUL-2571)', async () => {
+    const prior = (n: number) => Array.from({ length: n }, (_, i) => inboxDayKey(new Date(Date.now() - (i + 1) * 86_400_000)));
+    const stamp = daysAgo(10);
+    install([recordFile('w.json', { foodItemId: MISSING_FOOD }), stampFile('w.json', [stamp, ...prior(3)].join('\n'))]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(parseInboxDeferral(mockStampWrites[0].text).days).toHaveLength(4);
+    mockStampWrites.length = 0;
+    install([
+      recordFile('w.json', { foodItemId: MISSING_FOOD }),
+      stampFile('w.json', [stamp, ...prior(INBOX_MIN_UNUSABLE_DAYS)].join('\n')),
+    ]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites).toHaveLength(0);
+  });
+
+  it('a stamp 46 days old with too few recorded days keeps its record (CUL-2571)', async () => {
+    const record = recordFile('w.json', { foodItemId: MISSING_FOOD });
+    install([record, stampFile('w.json', daysAgo(INBOX_MAX_AGE_DAYS + 1))]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(record.deleted).toBe(false);
   });
 
   it('replaces an unreadable stamp rather than ageing from it', async () => {
@@ -1246,7 +1350,11 @@ describe('ingestCaptureInbox: the first-deferral stamp (CUL-2542)', () => {
 
   it('drops a record 46 days after its first deferral, with its stamp', async () => {
     const record = recordFile('w.json', { foodItemId: MISSING_FOOD });
-    const stamp = stampFile('w.json', daysAgo(INBOX_MAX_AGE_DAYS + 1));
+    // CUL-2571: and unusable passes on the minimum of distinct days, today the last of them.
+    const days = Array.from({ length: INBOX_MIN_UNUSABLE_DAYS - 1 }, (_, i) =>
+      inboxDayKey(new Date(Date.now() - (i + 1) * 86_400_000)),
+    );
+    const stamp = stampFile('w.json', [daysAgo(INBOX_MAX_AGE_DAYS + 1), ...days].join('\n'));
     install([record, stamp]);
     await ingestCaptureInbox(new Set([PET]));
     expect(record.deleted).toBe(true);
