@@ -636,6 +636,46 @@ describe('only our own scripts run (CUL-2531)', () => {
     expect(lockOf(withFrameLock(tampered) as string)).toContain(`content="${EXAM_CSP}"`);
   });
 
+  // Privacy pass 1 on this PR: the renderer's script is read from its own open tag, never from
+  // the first `<script>` spelling in the document.
+  const allowedTexts = (html: string) => {
+    const src = scriptSrc(html);
+    // Parsed with scripting on, as a WebView parses (it decides how <noscript> reads).
+    return [...new JSDOM(html, { runScripts: 'outside-only' }).window.document.querySelectorAll('script')]
+      .map((el) => el.textContent ?? '')
+      .filter((t) => src.includes(nodeHash(t)));
+  };
+
+  it('F1: an injected unclosed script before the tail never gets its text allowed', () => {
+    // An svg <title> is an HTML integration point, so a script opened there is a real one.
+    for (const evil of ['<script>window.x=1//', '<SCRIPT>window.x=1;', '<script>/*', '<svg><title><script>x</title></svg>']) {
+      const html = withFrameLock(PHONE.replace('</section>', `${evil}</section>`)) as string;
+      // Whatever the parser runs, only our own texts carry a listed hash.
+      for (const t of allowedTexts(html)) expect([FRAME_LOCK_SCRIPT, '/*reflow*/']).toContain(t);
+      expect(scriptSrc(html)).not.toContain("'unsafe-inline'");
+    }
+  });
+
+  it('F2: the spelling <script> in a title, textarea, attribute or xmp never moves the hash off the layout script', () => {
+    for (const inert of [
+      '<textarea><script>x</textarea>',
+      '<p title="<script>x">t</p>',
+      '<xmp><script>x</xmp>',
+    ]) {
+      const html = withFrameLock(PHONE.replace('<main class="sheet" data-sheet="1">', `<main class="sheet" data-sheet="1">${inert}`)) as string;
+      // The layout script still runs: it is in the document and its hash is listed.
+      expect(allowedTexts(html)).toContain('/*reflow*/');
+    }
+    const titled = withFrameLock(PHONE.replace('<style>', '<title>a <script>b</title><style>')) as string;
+    expect(allowedTexts(titled)).toContain('/*reflow*/');
+  });
+
+  it('F3: a layout script the parser would rewrite (CR, NUL) keeps the inline policy rather than block it', () => {
+    for (const text of ['a\r\nb', 'a\rb', 'a\u0000b']) {
+      expect(lockOf(withFrameLock(PHONE.replace('/*reflow*/', text)) as string)).toContain(`content="${EXAM_CSP}"`);
+    }
+  });
+
   // The renderer's script is found by where it sits. A renderer that moves it, or gives it a tag
   // the tail pattern does not read, would fall back to the inline policy: red here first.
   it('renderPhoneV2 ends its document with its one bare script, nothing after it', () => {
@@ -644,7 +684,7 @@ describe('only our own scripts run (CUL-2531)', () => {
     expect(src.match(/<script/g)).toHaveLength(1);
     const start = src.indexOf('const SCRIPT_PHONE = `');
     const script = src.slice(start, src.indexOf('`', start + 22));
-    expect(script).not.toMatch(/<\/script|<!--/i);
+    expect(script).not.toMatch(/<\/?script|<!--|[\r\0]/i);
     // No handler attribute in the markup: it would never run under a hashed policy.
     expect(src.replace(script, '')).not.toMatch(/<[a-z][^>]*\son[a-z]+=/i);
   });

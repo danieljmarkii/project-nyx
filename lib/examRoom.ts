@@ -369,19 +369,32 @@ function base64(bytes: number[]): string {
 const EXAM_SCRIPT_TEXT = EXAM_SCRIPT.slice(EXAM_SCRIPT_OPEN.length, -'</script>'.length);
 
 /**
- * The scripts that end a report document, exactly as the renderer and the room write them: the
- * renderer's one bare `<script>` (renderPhoneV2 ends with it), then optionally the room's, then
- * `</body></html>`. Every string interpolated from the record sits before this tail, so no
- * injection can occupy it, and an injected script ahead of it is simply not hashed.
- * `lib/examRoom.test.ts` reads renderPhoneV2.ts so a renderer that moves its script reds there.
- * A text holding `</script` (any case) or `<!--` is never matched: the tokenizer could end or read
- * it differently from this pattern.
+ * Where a report document's own scripts end: the renderer's bare `<script>` closes just before
+ * `</body></html>`, optionally followed by the room's (renderPhoneV2 ends with it; the room adds
+ * its script after). Every string interpolated from the record sits before this tail.
  */
-const SCRIPT_TEXT = '((?:(?!<\\/script|<!--)[\\s\\S])*)';
-const DOCUMENT_TAIL = new RegExp(
-  `<script>${SCRIPT_TEXT}</script>\\s*(?:<script id="nyx-exam-script">${SCRIPT_TEXT}</script>\\s*)?</body>\\s*</html>\\s*$`,
-  'i',
-);
+const DOCUMENT_TAIL = /<\/script>\s*(?:<script id="nyx-exam-script">([\s\S]*?)<\/script>\s*)?<\/body>\s*<\/html>\s*$/i;
+
+/**
+ * The renderer's script text, read from its OWN open tag: the last bare `<script>` before the
+ * tail's close (privacy pass 1 on CUL-2531, F1/F2). Never the first match of a pattern: an
+ * injected `<script>`, or the spelling `<script>` inside a title, textarea, attribute or svg, sits
+ * earlier, and a match starting there would hash text the engine never runs as one script (so an
+ * attacker prefix could be allowed, or the real layout script blocked). The renderer's own tag and
+ * text are literals, so the last open tag is its own; if an injection before it swallows it (an
+ * unclosed element), the layout does not run on any policy, today's included.
+ *
+ * Null when the text is not exactly what the engine will hash (F3): a CR or NUL is rewritten by
+ * the parser before the script exists, and `<!--`, `<script` or `</script` would change how the
+ * tokenizer reads it. Null keeps the inline policy, the louder side.
+ */
+function rendererScriptText(html: string, close: number): string | null {
+  const open = html.lastIndexOf('<script>', close);
+  if (open < 0) return null;
+  const text = html.slice(open + '<script>'.length, close);
+  if (/[\r\0]|<!--|<\/?script/i.test(text)) return null;
+  return text;
+}
 
 /** The frame lock's hash, computed once. */
 let lockHash: string | null = null;
@@ -405,10 +418,12 @@ export function frameCsp(scriptHashes: readonly string[]): string {
 function documentScriptHashes(html: string): string[] | null {
   const tail = DOCUMENT_TAIL.exec(html);
   if (tail === null) return /<script>/i.test(html) ? null : [];
-  const own = [cspScriptHash(tail[1])];
-  if (tail[2] !== undefined) {
+  const text = rendererScriptText(html, tail.index);
+  if (text === null) return null;
+  const own = [cspScriptHash(text)];
+  if (tail[1] !== undefined) {
     // The room's slot holds only the room's own script, byte for byte.
-    if (tail[2] !== EXAM_SCRIPT_TEXT) return null;
+    if (tail[1] !== EXAM_SCRIPT_TEXT) return null;
     own.push(cspScriptHash(EXAM_SCRIPT_TEXT));
   }
   return own;
