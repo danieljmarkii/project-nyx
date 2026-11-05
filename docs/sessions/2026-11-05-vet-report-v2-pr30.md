@@ -21,7 +21,9 @@ The PM ruled fork (a): v2's sheet 1 carries every block of v1's page 1, either w
 - **Cold read at b1b6262: NOT READY on placement.** Each of these sits later on sheet 1 than v1 had it, or is gone: the masthead's "not a diagnosis", the word "associational", the trial headline, and the Noticed caveat. Captions also print with no chart under them. This is a new QUIET gap, so the row stopped. The placement fork is [CUL-2579](https://linear.app/projectnyx/issue/CUL-2579).
 - **The PM ruled CUL-2579 (a) in session.** The masthead now carries v1's stamp, the colophon keeps "associational", v1's headline prints straight under the band, and a caption whose chart isn't drawn is left out. The guard checks each caption cut on its own terms. Built in `4b2425b` and `8943a0b`.
 - **Cold read at 4b2425b: NOT READY on a new QUIET gap.** The carried v1 blocks print without v1's styles, so Nyx's only rising signal (vomiting 7 → 11) reads quieter than it does on v1. The row stops again. The fork is [CUL-2585](https://linear.app/projectnyx/issue/CUL-2585).
-- **Open for the PM:** a trial sign's falling halves are left off sheet 1 for now ([CUL-2564](https://linear.app/projectnyx/issue/CUL-2564)), because v2's extraction rule bars stating a decline in a trial's own sign.
+- **The PM ruled CUL-2585 (a) and CUL-2564 (a) in session.** The carried blocks keep v1's trend and tile styles, and the falling halves stay off sheet 1. A cold read at `4be169d` was CLINIC-READY, with one minor QUIET note: my caption cut had dropped the "not read as clean" caveat, so it came back in `8c95795`.
+- **Cold read at 8c95795: NOT READY.** Brought back without its chart, the caveat reads as an orphan legend. The two reads disagree, and the fix needs either v1's chart or new clinical words, so the fork is [CUL-2588](https://linear.app/projectnyx/issue/CUL-2588).
+- **Open for the PM:** [CUL-2588](https://linear.app/projectnyx/issue/CUL-2588), how the off-diet section carries v1's caveats.
 
 ## Teach
 
