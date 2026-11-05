@@ -16,6 +16,7 @@ import { strict as assert } from 'node:assert'
 import { kgToLbsNum, lbsToKg } from '../../../lib/weightUnits.ts'
 import {
   assembleReport,
+  partialDoseVehiclesOf,
   weightChangeOf,
   weightLaneFor,
   partitionCourseDays,
@@ -6576,4 +6577,142 @@ Deno.test('CUL-2512 pass 1 — a food with no id is one food fed alone or in a b
   }
   const events = [...dayKeys('2026-03-20', '2026-07-01').map((d) => mealEvent(d, { label: 'House Kibble' })), plainMeal, bowl]
   assert.deepEqual(assembleReport(baseInput({ events })).windowNewFoods!.map((c) => [c.label, c.fedDays]), [['Applaws (Wet)', 2]])
+})
+
+// ── CUL-2529 instance 5 — partial doses joined to the dosed meal's intake ──────
+Deno.test('CUL-2529 — partial doses are joined to the meal each rode in, and the buckets partition them', () => {
+  idSeq = 0
+  const mealEv = (id: string, date: string, rating: 'picked' | 'all' | null): ReportEventInput =>
+    makeEvent({
+      id,
+      type: 'meal',
+      occurredAt: at(date, '08:00:00'),
+      meal: {
+        foodItemId: null,
+        intakeRating: rating,
+        quantity: null,
+        foodType: 'meal',
+        format: null,
+        primaryProtein: 'rabbit',
+        proteins: ['rabbit'],
+        ingredientsNotes: null,
+        brand: 'RC',
+        productName: 'Wet',
+      },
+    })
+  const dose = (eventId: string, date: string, adherence: string, paired: string | null) => ({
+    eventId,
+    occurredAt: at(date, '08:05:00'),
+    medicationId: 'reg-pred',
+    medicationItemId: 'mi-pred',
+    adherence,
+    doseAmount: '5 mg',
+    pairedEventId: paired,
+  })
+  const snap = assembleReport(
+    baseInput({
+      events: [mealEv('m1', '2026-06-20', 'picked'), mealEv('m2', '2026-06-21', null), mealEv('m3', '2026-06-22', null), mealEv('m4', '2026-06-23', 'all')],
+      medications: [
+        {
+          id: 'reg-pred',
+          medicationItemId: 'mi-pred',
+          drugName: 'Prednisolone',
+          doseAmount: '5 mg',
+          route: 'oral',
+          dosesPerDay: 1,
+          scheduleNotes: null,
+          indication: null,
+          prescribedBy: null,
+          startedAt: '2026-06-20',
+          targetDurationDays: null,
+          status: 'active',
+          endedAt: null,
+          isPrescription: true,
+          strength: '5 mg',
+        },
+      ],
+      medicationItems: [
+        { id: 'mi-pred', genericName: 'prednisolone', brandName: null, strength: '5 mg', route: 'oral', isPrescription: true, form: 'tablet' },
+      ],
+      doses: [
+        dose('d1', '2026-06-20', 'partial', 'm1'),
+        dose('d2', '2026-06-21', 'partial', 'm2'),
+        dose('d3', '2026-06-22', 'partial', 'm3'),
+        dose('d4', '2026-06-23', 'given', 'm4'), // given, not partial: never counted here
+        dose('d5', '2026-06-24', 'partial', null),
+        dose('d6', '2026-06-25', 'partial', 'gone'), // paired to an event the report did not read
+      ],
+    }),
+  )
+  const m = snap.medications.find((x) => x.drugName === 'Prednisolone')!
+  assert.deepEqual(m.partialDoseVehicles, {
+    partial: 5,
+    inMeal: 3,
+    rated: [{ rating: 'picked', n: 1 }],
+    unrated: 2,
+    pairedUnread: 1,
+    notPaired: 1,
+  })
+  const v = m.partialDoseVehicles!
+  assert.equal(v.inMeal + v.pairedUnread + v.notPaired, v.partial, 'the buckets partition the partial doses')
+  assert.equal(v.partial, m.lifetimePartialDoses, 'the same population as the partial count the row prints')
+})
+
+Deno.test('CUL-2529 — a course with no partial dose carries no vehicle fact (never a zero)', () => {
+  assert.equal(partialDoseVehiclesOf([], new Map()), null)
+})
+
+Deno.test('CUL-2529 adversarial 1 (QUIET) — a dose paired to the unrated twin of a refused re-log reads the cluster’s worst rating', () => {
+  idSeq = 0
+  const meal = (id: string, time: string, rating: 'refused' | null): ReportEventInput =>
+    makeEvent({
+      id,
+      type: 'meal',
+      occurredAt: at('2026-06-20', time),
+      meal: {
+        foodItemId: 'food-1',
+        intakeRating: rating,
+        quantity: null,
+        foodType: 'meal',
+        format: null,
+        primaryProtein: 'rabbit',
+        proteins: ['rabbit'],
+        ingredientsNotes: null,
+        brand: 'RC',
+        productName: 'Wet',
+      },
+    })
+  const snap = assembleReport(
+    baseInput({
+      events: [meal('m1a', '08:00:00', null), meal('m1b', '08:00:30', 'refused')],
+      medications: [
+        {
+          id: 'reg-pred',
+          medicationItemId: 'mi-pred',
+          drugName: 'Prednisolone',
+          doseAmount: '5 mg',
+          route: 'oral',
+          dosesPerDay: 1,
+          scheduleNotes: null,
+          indication: null,
+          prescribedBy: null,
+          startedAt: '2026-06-20',
+          targetDurationDays: null,
+          status: 'active',
+          endedAt: null,
+          isPrescription: true,
+          strength: '5 mg',
+        },
+      ],
+      medicationItems: [
+        { id: 'mi-pred', genericName: 'prednisolone', brandName: null, strength: '5 mg', route: 'oral', isPrescription: true, form: 'tablet' },
+      ],
+      doses: [
+        { eventId: 'd1', occurredAt: at('2026-06-20', '08:05:00'), medicationId: 'reg-pred', medicationItemId: 'mi-pred', adherence: 'partial', doseAmount: '5 mg', pairedEventId: 'm1a' },
+      ],
+    }),
+  )
+  const v = snap.medications.find((x) => x.drugName === 'Prednisolone')!.partialDoseVehicles!
+  assert.deepEqual(v.rated, [{ rating: 'refused', n: 1 }], 'the twin pair is one refused meal, never "not recorded"')
+  assert.equal(v.unrated, 0)
 })

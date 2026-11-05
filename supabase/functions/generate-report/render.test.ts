@@ -5820,10 +5820,10 @@ Deno.test('B-532 — the legend describes the page-1 intake line only when that 
       }),
     ),
   )
-  assert.ok(!/When intake drops, page 1 shows/.test(unfinished), 'no flag fired ⇒ no claim that the line is there')
+  assert.ok(!/When intake drops, the clinical summary shows/.test(unfinished), 'no flag fired ⇒ no claim that the line is there')
   assert.ok(/appears only when a reduced-intake flag fired/.test(unfinished))
   assert.ok(/not that intake was normal/.test(unfinished), 'and the silence is never an all-clear')
-  assert.ok(!/When intake drops, page 1 shows/.test(unfinished))
+  assert.ok(!/When intake drops, the clinical summary shows/.test(unfinished))
 
   const flagged = plain(
     renderReport(
@@ -5838,7 +5838,7 @@ Deno.test('B-532 — the legend describes the page-1 intake line only when that 
       }),
     ),
   )
-  assert.ok(/When intake drops, page 1 shows/.test(flagged), 'and it IS described when the flag population is listed')
+  assert.ok(/When intake drops, the clinical summary shows/.test(flagged), 'and it IS described when the flag population is listed')
 })
 
 Deno.test('B-532 ADV① — page 1 and the symptom panel never disagree about direction', () => {
@@ -8680,7 +8680,7 @@ Deno.test('CUL-1979 — appendix B names the source of the sets it lists, and th
   // CUL-1978 — page 1 may now name an association; the legend must not deny one exists.
   const html = sheet({ photo: 0, owner: 2 })
   assert.ok(!/draws no link/.test(html))
-  assert.ok(/not an association test &mdash; the food&ndash;symptom associations this report states are on page&nbsp;1/.test(html))
+  assert.ok(/not an association test &mdash; the food&ndash;symptom associations this report states are in the clinical summary under Timing vs symptoms/.test(html))
 })
 
 Deno.test('CUL-1978 ⑥ — an Established finding never silences a second one or any Early one (adversarial pass 2)', () => {
@@ -9036,8 +9036,17 @@ Deno.test('CUL-2357 — the refusal lead states its finding and its population b
     /Diet not eaten 4 of 4 rated feedings carrying the trial diet left unfinished \(entries with the diet in them, treats included\) on 3 days between Jun 2 and Jun 9; nothing rated since shows whether that has changed\./.test(row),
     row,
   )
-  assert.ok(row.indexOf('left unfinished') < row.indexOf('Food A'), 'the finding comes first')
-  assert.ok(/Trial diet: Food A \/ Food B \/ Food C \/ Food D \/ Food E \/ Food F\./.test(row), 'the names still print, after it')
+  // CUL-2529 (PM ruling (a)): past two foods, v1's band points at the diet-trial block, which names them.
+  assert.ok(
+    row.indexOf('left unfinished') < row.indexOf('Trial diet: the 6 trial-diet foods named in the diet-trial block.'),
+    'the finding comes first, then the pointer',
+  )
+  assert.ok(!/Food A/.test(row), 'six names are not repeated on the band')
+  const r = cul2357Refusal()
+  if (r.kind !== 'trial_diet_refusal') throw new Error('fixture')
+  const two = plain(renderReport(base({ safetyFlags: [{ ...r, trialDietLabels: ['Food A', 'Food B'] }] })))
+  const twoRow = two.slice(two.indexOf('Diet not eaten'), two.indexOf('Diet not eaten') + 600)
+  assert.ok(/Trial diet: Food A \/ Food B\./.test(twoRow), 'two names still print on the band, after the finding')
   assert.ok(/Dates covered: May 20 – Jun 30, 2026\./.test(row), 'the counted window is still stated')
 })
 
