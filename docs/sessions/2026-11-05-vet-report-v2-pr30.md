@@ -3,7 +3,7 @@
 **Date:** 2026-11-05
 **One thing:** D4 L1 — Guards: a guard that reads the source's own output catches facts nobody listed · check: pending
 
-Dispatched row, [CUL-2551](https://linear.app/projectnyx/issue/CUL-2551), plan-gated. The PM typed the go in session and approved all five briefs (1a, 2a, 3a, 4a, 5a). Shipped via #1446, left open for the PM: the final cold read found a new QUIET gap, and the row stops on that.
+Dispatched row, [CUL-2551](https://linear.app/projectnyx/issue/CUL-2551), plan-gated. The PM typed the go in session and approved all five briefs (1a, 2a, 3a, 4a, 5a). Shipped via #1446, left open for the PM. Each cold read found a new QUIET gap, and the row stops on that.
 
 ## What happened
 
@@ -19,6 +19,8 @@ The PM ruled fork (a): v2's sheet 1 carries every block of v1's page 1, either w
 - **Adversarial pass 1:** one QUIET break (a pinned row capped the refusal run) and one LOUD break. Both fixed.
 - **Adversarial pass 2:** three QUIET breaks (a bowl's date, zero-sign ticks, a fabricated post-trial start) and two LOUD breaks. All fixed and mutation-proven, which brought the row to the cap.
 - **Cold read at b1b6262: NOT READY on placement.** Each of these sits later on sheet 1 than v1 had it, or is gone: the masthead's "not a diagnosis", the word "associational", the trial headline, and the Noticed caveat. Captions also print with no chart under them. This is a new QUIET gap, so the row stopped. The placement fork is [CUL-2579](https://linear.app/projectnyx/issue/CUL-2579).
+- **The PM ruled CUL-2579 (a) in session.** The masthead now carries v1's stamp, the colophon keeps "associational", v1's headline prints straight under the band, and a caption whose chart isn't drawn is left out. The guard checks each caption cut on its own terms. Built in `4b2425b` and `8943a0b`.
+- **Cold read at 4b2425b: NOT READY on a new QUIET gap.** The carried v1 blocks print without v1's styles, so Nyx's only rising signal (vomiting 7 → 11) reads quieter than it does on v1. The row stops again. The fork is [CUL-2585](https://linear.app/projectnyx/issue/CUL-2585).
 - **Open for the PM:** a trial sign's falling halves are left off sheet 1 for now ([CUL-2564](https://linear.app/projectnyx/issue/CUL-2564)), because v2's extraction rule bars stating a decline in a trial's own sign.
 
 ## Teach
