@@ -276,7 +276,9 @@ export function neutralizeRefusedTags(html: string): string {
 function keptMetaOnce(): (tag: string) => string {
   let viewport = false;
   return (tag) => {
-    const isViewport = /^<meta[\t\n\f\r ]+name="viewport"/i.test(tag);
+    // Any attribute position: KEPT_META admits name/content/charset in any order, and its values
+    // hold no quote, so ` name="viewport"` cannot be faked from inside one (privacy pass D1).
+    const isViewport = /[\t\n\f\r ]name="viewport"/i.test(tag);
     if (metaKept(tag) && !(isViewport && viewport)) {
       if (isViewport) viewport = true;
       return tag;

@@ -459,6 +459,12 @@ describe('no report frame can be blanked by its own content', () => {
     const locked = examRoomHtml(PHONE.replace('<body>', '<body><meta name="viewport" content="initial-scale=5" />'), '#0A0A0A') as string;
     expect(locked.match(/<meta name="viewport"/g)).toHaveLength(1);
     expect(locked).toContain('<x-refused-meta name="viewport" content="initial-scale=5" />');
+    // In any attribute order (privacy pass D1).
+    for (const late of ['<meta content="initial-scale=5" name="viewport">', '<meta charset="utf-8" NAME="Viewport" content="initial-scale=5">']) {
+      const out = examRoomHtml(PHONE.replace('<body>', `<body>${late}`), '#0A0A0A') as string;
+      expect(out.match(/<meta[^>]*name="viewport"/gi)).toHaveLength(1);
+      expect(out).toContain(`<x-refused-meta${late.slice(5)}`);
+    }
     // Each call starts afresh: one viewport per document.
     const v = '<meta name="viewport" content="width=1" />';
     expect(neutralizeRefusedTags(v)).toBe(v);
