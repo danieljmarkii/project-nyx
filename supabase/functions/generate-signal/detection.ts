@@ -1255,6 +1255,14 @@ export interface IntakeDeclineFinding extends FindingBase {
    * hold the window's own mean and no surface reads them as a comparison.
    */
   sustainedRefusal?: SustainedRefusalFacts
+  /**
+   * CUL-2424 (PM ruling (a), 2026-11-02): true on a `consecutive_low` finding when every rated
+   * meal in its recent days was rated Refused (the recent score is the refused score). Such a day
+   * is a refusal, never "eating less", and every surface words it from this fact, never from the
+   * score. Set (true or false) on every `consecutive_low` this engine emits; absent on the other
+   * triggers and on a finding cached before the field existed.
+   */
+  allRefused?: boolean
 }
 
 /** A reflection only ever describes a FLAT ("same as last week") or IMPROVING (falling) trend. */
@@ -4663,6 +4671,9 @@ function detectIntakeDeclineRelative(
           refusedFoodLabel: null,
           ratedMealsConsidered: baselineMeals.length,
           lastFullMealIso,
+          // CUL-2424: the per-day means are means of 0..4 scores, so the recent mean sits at the
+          // refused score only when every recent rated meal was refused.
+          allRefused: recentMean === intakeScore('refused'),
         })
         break
       }

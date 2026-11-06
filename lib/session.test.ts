@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CATALOG_FLUSH_SKIPS_KEY } from './inboxFoodRefs';
 
 // The native-heavy halves are mocked; the AsyncStorage-backed halves (the recovery
 // marker, the recovery gate, the active-pet key) run for real, because they are
@@ -206,6 +207,14 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
 
     expect(useBetaOptInStore.getState().optIns).toEqual({});
     expect(await AsyncStorage.getItem(BETA_OPT_IN_STORAGE_KEY)).toBeNull();
+  });
+
+  // CUL-2572. The catalog cache flush's skip ledger holds the inbox food ids read on its skip
+  // days: this account's ids, so it goes with the account.
+  it('clears the catalog flush skip ledger', async () => {
+    await AsyncStorage.setItem(CATALOG_FLUSH_SKIPS_KEY, JSON.stringify({ version: 1, days: ['2026-11-01'], ids: [] }));
+    await wipeLocalSession();
+    expect(await AsyncStorage.getItem(CATALOG_FLUSH_SKIPS_KEY)).toBeNull();
   });
 
   // DR-3 (§4). The Daily Recap offer markers (the 30-day "Not now" quiet + the two

@@ -1001,7 +1001,11 @@ Deno.test('(k3) a carried card is dated, never its old sentence, and ages out; t
         assertStrictEquals(e.finding.type !== 'stood_down' && e.finding.carriedFrom, new Date(Date.parse(c.nowIso)).toISOString())
         assertStrictEquals(/^An earlier read of /.test(e.text), true, e.text)
         assertStrictEquals(/\bjust\b|up from|this week|since|\d+ (episode|of the last)/.test(e.text), false, e.text)
-        assertStrictEquals(validatePhrasing(e.text, e.finding as never), true, e.text)
+        // CUL-2424: validatePhrasing refuses EVERY model sentence on an all-refused card (it only
+        // screens model sentences in production; this line is a template). Screen the carried line
+        // with that backstop off, so the reassurance and dismissive screens still read it.
+        const screened = e.finding.type === 'intake_decline' ? { ...e.finding, allRefused: false } : e.finding
+        assertStrictEquals(validatePhrasing(e.text, screened as never), true, e.text)
         carriedSeen++
       }
     }

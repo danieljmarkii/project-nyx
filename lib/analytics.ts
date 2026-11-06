@@ -1071,6 +1071,8 @@ export interface IntakeDeclineFlag {
   daysBelowBaseline: number;
   refusedFoodLabel: string | null;
   ratedMealsConsidered: number;
+  /** CUL-2424: every recent rated meal was refused (`consecutive_low` only; detection.ts's mirror). */
+  allRefused?: boolean;
   /** The sustained-refusal floor's counts; present on that trigger only (detection.ts's mirror). */
   sustainedRefusal?: {
     meals: number;
@@ -1284,6 +1286,8 @@ function detectIntakeDeclineRelative(input: IntakeDeclineInput): IntakeDeclineRe
           daysBelowBaseline: recentDays.length,
           refusedFoodLabel: null,
           ratedMealsConsidered: baselineMeals.length,
+          // CUL-2424: a recent mean at the refused score means every recent rated meal was refused.
+          allRefused: recentMean === INTAKE_SCORE.refused,
         });
         break;
       }

@@ -196,7 +196,9 @@ function signalFrom(flags: IntakeDeclineFlag[], pet = 'Mochi'): CachedFinding[] 
     text:
       f.trigger === 'refused_normal_food'
         ? `${pet} just turned down ${f.refusedFoodLabel ?? 'a food they usually finish'}, which ${pet} normally eats — worth keeping an eye on, and a word with your vet if it carries on.`
-        : `${pet} has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.`,
+        : f.allRefused === true
+          ? `${pet} refused every meal you rated today — worth keeping an eye on, and a word with your vet if it carries on.`
+          : `${pet} has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.`,
     finding: {
       type: 'intake_decline',
       priorityClass: 'safety',
@@ -205,6 +207,7 @@ function signalFrom(flags: IntakeDeclineFlag[], pet = 'Mochi'): CachedFinding[] 
       daysBelowBaseline: f.daysBelowBaseline,
       refusedFoodLabel: f.refusedFoodLabel,
       ratedMealsConsidered: f.ratedMealsConsidered,
+      ...(f.allRefused === undefined ? {} : { allRefused: f.allRefused }),
     },
   }));
 }
@@ -1028,6 +1031,25 @@ describe('CUL-950 — a decline the Signal already states is printed once, the S
     expect(rows).toHaveLength(1);
     expect(rows[0].text).toBe(findings[0].text);
     expect(rows[0].source).toBe('signal');
+  });
+
+  it('CUL-2424: a device day of refusals is never dropped under a Signal dip (stale or pre-field cache)', () => {
+    // Today on a food with no history (so no refusal of a usual food can fire), both refused.
+    const NEW = { id: 'f-new', label: 'Hills z/d' };
+    const record = [...baseline(), meal(0, 8, NEW, 'refused'), meal(0, 10, NEW, 'refused')];
+    const device = detect(record, DETECT_NOW);
+    expect(device.map((f) => [f.trigger, f.allRefused])).toEqual([['consecutive_low', true]]); // the premise
+    const facts = intakeDeclineFacts(device, 'Mochi');
+
+    // A cache written before the fact existed: the same trigger, no refusal fact, "less" words.
+    const preField = signalFrom(device.map(({ allRefused: _drop, ...f }) => f));
+    const { rows } = buildWorthRaising(input({ findings: preField, intakeDecline: facts }));
+    expect(rows.map((r) => r.text)).toContain('Mochi refused every meal you rated today.');
+
+    // A fresh cache that carries the fact states it once, the Signal's.
+    const fresh = signalFrom(device);
+    const again = buildWorthRaising(input({ findings: fresh, intakeDecline: facts })).rows;
+    expect(again.map((r) => [r.source, r.text])).toEqual([['signal', fresh[0].text]]);
   });
 
   it('both triggers on both sides: the Signal’s two rows, and none of the device’s', () => {

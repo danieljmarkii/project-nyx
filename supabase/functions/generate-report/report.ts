@@ -1648,6 +1648,12 @@ export type SafetyFlag =
        * `ratedMealsConsidered` describe the window itself and the band row reads these instead.
        */
       sustainedRefusal?: SustainedRefusalFacts | null
+      /**
+       * CUL-2424: the engine's refusal fact — on `consecutive_low`, every recent rated meal was
+       * refused. The band row reads it to say "refused", never "reduced intake" (the render half
+       * rides the render.ts queue). Null on a finding that carries no such fact.
+       */
+      allRefused?: boolean | null
     }
   | {
       /**
@@ -5681,6 +5687,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       lastFullMealIso: f.lastFullMealIso,
       hoursSinceLastFullMeal,
       sustainedRefusal: f.sustainedRefusal ?? null,
+      allRefused: f.allRefused ?? null,
     })
   }
   // B-494 — THE REFUSED PRESCRIBED DIET REACHES THE BAND. Ordered immediately after

@@ -173,6 +173,13 @@ export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string):
     return `${petName} just turned down ${food}, which ${petName} normally eats — worth keeping an eye on, and a word with your vet if it carries on.`
   }
   const span = f.daysBelowBaseline <= 1 ? 'today' : `the last ${numWord(f.daysBelowBaseline)} days`
+  if (f.allRefused === true) {
+    // CUL-2424 (PM ruling (a) + option 1, 2026-11-05): a day of nothing but refusals is a refusal,
+    // never "eating less". "You rated" scopes it to the record; it never claims an unrated meal.
+    // Mirrored on the client (`evidenceText` and `bannerRest`, lib/signalCopy.ts); keep them in sync.
+    const when = f.daysBelowBaseline <= 1 ? 'today' : `over ${span}`
+    return `${petName} refused every meal you rated ${when} — worth keeping an eye on, and a word with your vet if it carries on.`
+  }
   return `${petName} has eaten less than usual ${span} — worth keeping an eye on, and a word with your vet if it carries on.`
 }
 
@@ -695,7 +702,9 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
               ? 'vomiting soon after turning down a meal'
               : f.trigger === 'sustained_refusal'
                 ? 'no rated meal eaten in the last few days'
-                : 'eating less than usual'
+                : f.allRefused === true
+                  ? 'refusing every meal you rated'
+                  : 'eating less than usual'
           : f.type === 'incident_red_flag'
             ? isCallOnly(f)
               ? `a ${INCIDENT_READ_NOUN[f.incidentType]} read that called for your vet`
@@ -874,6 +883,12 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // The sustained-refusal floor: NO MODEL SENTENCE IS EVER ACCEPTED. Its load is counts and a
     // call; a free sentence has no baseline to anchor and slides to "less than usual" or "picky".
     // index.ts routes the card to its template; this is the backstop.
+    return false
+  }
+  if (finding.type === 'intake_decline' && finding.allRefused === true) {
+    // CUL-2424: NO MODEL SENTENCE IS EVER ACCEPTED on a day of nothing but refusals. The model is
+    // handed "days eating less" and words it as less; the template says refused. index.ts routes
+    // the card to its template; this is the backstop.
     return false
   }
   if (finding.type === 'intake_decline' && finding.refusedThenVomited !== undefined) {

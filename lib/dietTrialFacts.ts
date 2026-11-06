@@ -1094,6 +1094,8 @@ export function intakeDeclineFacts(
     trigger: flag.trigger,
     refusedFoodLabel: flag.refusedFoodLabel,
     headline: declineHeadline(flag, petName),
+    // Present only when true: absent reads as not refused everywhere it is compared.
+    ...(flag.allRefused === true ? { allRefused: true } : {}),
   }));
 }
 
@@ -1113,6 +1115,13 @@ export function declineHeadline(flag: IntakeDeclineFlag, petName: string): strin
     return `${petName} just turned down ${food}, which ${petName} normally eats.`;
   }
   const days = flag.daysBelowBaseline;
+  if (flag.trigger === 'consecutive_low' && flag.allRefused === true) {
+    // CUL-2424 (PM ruling (a) + option 1): every recent rated meal refused reads as refusal,
+    // never "less than usual". The detector sets the fact; the score is never re-read here.
+    return days <= 1
+      ? `${petName} refused every meal you rated today.`
+      : `${petName} refused every meal you rated over the last ${days} days.`;
+  }
   return days <= 1
     ? `${petName} has eaten less than usual today.`
     : `${petName} has left most of their food for ${days} days.`;

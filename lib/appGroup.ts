@@ -38,32 +38,52 @@ const WIDGET_DIR = 'widget';
 const INBOX_DIR = 'inbox';
 const SNAPSHOT_DIR = 'snapshots';
 
-// The App Group container root, or null when unavailable (Android, or an iOS
-// binary without the entitlement). Wrapped in try/catch because the native
-// lookup throws rather than returning undefined on some misconfigurations.
-export function getAppGroupContainer(): Directory | null {
-  if (Platform.OS !== 'ios') return null;
+// The App Group container lookup. `none` when the platform has none (Android) or the binary
+// lacks the entitlement (the lookup returns nothing). CUL-2570 (adversarial pass 1): a lookup
+// that THROWS on iOS is `unavailable`, never `none`: the wipe looks the container up again on
+// its own, so a lookup that failed for the count and worked for the wipe would warn of nothing
+// and delete the captures. Erring loud: a misconfigured iOS build counts one unsent entry.
+type ContainerLookup = { status: 'ok'; container: Directory } | { status: 'none' } | { status: 'unavailable' };
+
+function lookUpContainer(): ContainerLookup {
+  if (Platform.OS !== 'ios') return { status: 'none' };
   try {
-    return Paths.appleSharedContainers?.[APP_GROUP_ID] ?? null;
+    const container = Paths.appleSharedContainers?.[APP_GROUP_ID];
+    return container ? { status: 'ok', container } : { status: 'none' };
   } catch (e) {
     console.warn('[appGroup] shared container unavailable:', e);
-    return null;
+    return { status: 'unavailable' };
   }
 }
 
-// Resolve (and lazily create) a widget-data subdirectory. Creation is
-// idempotent; a failure returns null so callers no-op rather than throw into
-// a sync cycle or an auth flow.
-function widgetSubdirectory(name: string): Directory | null {
-  const container = getAppGroupContainer();
-  if (!container) return null;
+// The App Group container root, or null when there is none or the lookup failed.
+export function getAppGroupContainer(): Directory | null {
+  const found = lookUpContainer();
+  return found.status === 'ok' ? found.container : null;
+}
+
+// Resolve (and lazily create) a widget-data subdirectory.
+//
+// CUL-2570: three answers, never two. `none` is "this surface does not exist here" (no
+// container: Android, no entitlement), and a reader may take it as empty. `unavailable` is a
+// container that exists with a subdirectory that would not open, and nothing may take it as
+// empty: the folder may hold captures the read cannot see, while the sign-out wipe still
+// deletes it through the container. Creation is idempotent.
+export type WidgetDirectory =
+  | { status: 'ok'; dir: Directory }
+  | { status: 'none' }
+  | { status: 'unavailable' };
+
+function widgetSubdirectory(name: string): WidgetDirectory {
+  const found = lookUpContainer();
+  if (found.status !== 'ok') return found;
   try {
-    const dir = new Directory(container, WIDGET_DIR, name);
+    const dir = new Directory(found.container, WIDGET_DIR, name);
     dir.create({ intermediates: true, idempotent: true });
-    return dir;
+    return { status: 'ok', dir };
   } catch (e) {
     console.warn(`[appGroup] widget/${name} unavailable:`, e);
-    return null;
+    return { status: 'unavailable' };
   }
 }
 
@@ -72,14 +92,27 @@ function widgetSubdirectory(name: string): Directory | null {
 // record on purpose: appending to a single shared file would be a cross-process
 // read-modify-write race between an intent writing and the app ingesting; a
 // whole-file create is atomic enough that neither side ever sees a half-record.
-export function getCaptureInboxDirectory(): Directory | null {
+//
+// CUL-2570: every reader that COUNTS or KEEPS from the inbox opens it here, so an inbox that
+// would not open is told apart from no inbox at all.
+export function openCaptureInbox(): WidgetDirectory {
   return widgetSubdirectory(INBOX_DIR);
+}
+
+// The inbox directory, or null for both `none` and `unavailable`. Only for paths where the
+// two mean the same thing: the ingest (it does nothing either way, and the records stay) and
+// the extension's write (either way the tap fails, loudly). A count or a keep-set uses
+// `openCaptureInbox`.
+export function getCaptureInboxDirectory(): Directory | null {
+  const inbox = openCaptureInbox();
+  return inbox.status === 'ok' ? inbox.dir : null;
 }
 
 // The per-pet snapshot directory the widget renders from — written by the app
 // (lib/widgetSnapshot.ts), read-only for the extension.
 export function getSnapshotDirectory(): Directory | null {
-  return widgetSubdirectory(SNAPSHOT_DIR);
+  const dir = widgetSubdirectory(SNAPSHOT_DIR);
+  return dir.status === 'ok' ? dir.dir : null;
 }
 
 // Sign-out wipe (B-054 FR-9 parity — called from lib/session.ts alongside
