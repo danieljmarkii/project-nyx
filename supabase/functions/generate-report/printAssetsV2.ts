@@ -80,4 +80,4 @@ export const PRINT_ASSET_STYLE = `
 .colo .colotext{flex:1 1 auto;min-width:0;}
 .qrblock{flex:none;display:flex;flex-direction:column;align-items:center;gap:1.5pt;break-inside:avoid;}
 svg.qr{display:block;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-.qrcap{font-size:7.5pt;line-height:1.2;color:var(--ink2);white-space:nowrap;}`
+.qrcap{font-size:7.5pt;line-height:1.2;color:var(--ink);white-space:nowrap;}`

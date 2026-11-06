@@ -460,7 +460,9 @@ export function divergence(haystack: string, line: string): string {
  * Cut on the folded text, so a line is never joined across anything but furniture.
  */
 export function withoutFurniture(haystack: string, doc: DocumentV2): string {
-  let hay = fold(haystack).replace(/page\d+of\d+/g, '')
+  // The footer's digits sit beside the line's own, so `fold` marks the space between them ("page2of4#1to"):
+  // the mark goes with the footer, and survives only where a digit stands on both sides of it.
+  let hay = fold(haystack).replace(/(#?)page\d+of\d+(#?)/g, (_m, a: string, b: string) => (a && b ? '#' : ''))
   const m = /@top-left\{content:("(?:[^"\\]|\\.)*")/.exec(pageHeadCss(doc))
   if (m) {
     const head = m[1].slice(1, -1).replace(/\\3C /g, '<').replace(/\\(.)/g, '$1')

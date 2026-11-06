@@ -360,12 +360,13 @@ jobs:
   # dropped digits and punctuation from exactly this text layer (CUL-2385, CUL-2386); re-adding
   # either one turns this job red.
   #
-  # Inter is installed and made the sans (fonts.conf) because it is the face those measurements
-  # were taken with (the report names Geist first, which the runner does not have; VR2-11 embeds
-  # the real faces). Every run ends with a canary: tabular-nums re-added to one fixture must turn
-  # the check red on lost body text, or the job fails for measuring nothing. Not covered: the
-  # serif slot's real face (Newsreader; the runner prints Liberation Serif) until VR2-11. WebKit, the engine
-  # iOS prints in, is not covered here (CUL-1771's on-device probe).
+  # Since VR2-11 (CUL-2291) the report embeds its own faces (Geist and the Newsreader sentence face,
+  # tabular figures frozen into each cmap), and extract.py refuses a PDF printed in any other. Every
+  # run ends with two canaries: with the faces cut out (the sans falls to Inter, fonts.conf, the face
+  # those measurements were taken in), tabular-nums re-added to one fixture must turn the check red on
+  # lost body text, or the job fails for measuring nothing; and on the embedded faces the same
+  # tabular-nums must stay green, or the figures are not frozen. WebKit, the engine iOS prints in, is
+  # not covered here (CUL-1771's on-device probe).
   #
   # Separate job so a Chromium or apt hiccup never reds the type check, and one stable check name
   # for the `main` ruleset. `ubuntu-24.04`, not `-latest`: requirements.txt pins wheels for its
@@ -398,14 +399,16 @@ jobs:
           set -euo pipefail
           npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright@1.63.0
           "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
-          sudo apt-get install -y --no-install-recommends fonts-inter
+          # fonts-inter is the extraction canary's face; tesseract-ocr and poppler-utils (pdftoppm,
+          # pdfinfo) are the print-survival test's OCR and raster (CUL-2291).
+          sudo apt-get install -y --no-install-recommends fonts-inter tesseract-ocr poppler-utils
           # Installing Inter is not enough: the runner's default sans is DejaVu. run.sh points
           # FONTCONFIG_FILE at scripts/report-extract/fonts.conf, which prefers Inter, and extract.py
           # refuses any PDF whose embedded sans is not Inter (adversarial pass 1: under DejaVu,
           # re-adding tabular-nums stayed green).
           echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
 
-      - name: Install pypdf and pdfminer.six (hash-pinned)
+      - name: Install pypdf, pdfminer.six and the print-survival wheels (hash-pinned)
         shell: bash
         run: |
           set -euo pipefail
@@ -415,6 +418,15 @@ jobs:
 
       - name: Extract and check
         run: scripts/report-extract/run.sh "$RUNNER_TEMP/extract"
+
+      # The print-survival test (CUL-2291, row VR2-11; v2 spec §7): every sheet 1 printed, rasterised
+      # at 200 dpi, blurred and thresholded the way a copier degrades a page, then held to the spec:
+      # chart labels at 7pt or more OCR, filled and hollow marks stay distinct, hatch stays distinct
+      # from paper, and the QR decodes to its tokenless URL with modules of 0.5 mm or more and its
+      # caption on one line. Ten canaries then break those marks on purpose and must each turn it red.
+      # Reads the HTML the step above dumped.
+      - name: Print survival
+        run: scripts/report-extract/survival.sh "$RUNNER_TEMP/extract"
 
   # Migration 118's withdrawal clear, run for real (CUL-2465 instance 3). An owner's "no" to the
   # AI summary must clear it from their unsent drafts at once. guards/vetReportsPolicy.test.ts pins

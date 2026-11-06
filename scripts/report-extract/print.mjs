@@ -19,6 +19,9 @@ try {
   const page = await browser.newPage()
   for (const name of names) {
     await page.goto('file://' + path.resolve(dir, `${name}.html`), { waitUntil: 'load' })
+    // The embedded faces (VR2-11) decode after load; print only once they have, so the PDF measured
+    // is the one the faces draw, never the fallback stack's.
+    await page.evaluate(() => document.fonts.ready)
     for (const paper of ['A4', 'Letter']) {
       await page.pdf({ path: path.join(dir, `${name}.${paper}.pdf`), format: paper, printBackground: true, preferCSSPageSize: false })
     }
