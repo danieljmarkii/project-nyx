@@ -78,6 +78,8 @@ Deno.test('parity — every block says the PDF’s words; the phone adds only it
         p = p.replace(/<p class="verdict"[^>]*>[^<]*<\/p>/, '').replace(/<div class="chart"[\s\S]*?<\/div>(?=<p class="twin">)/, '')
         q = q.replace(/<svg class="chart"[\s\S]*?<\/svg>/, '')
       }
+      // The QR and its caption are print only (spec §5.10); the colophon's words are the same.
+      if (b.kind === 'colophon') q = q.replace(/<div class="qrblock"[\s\S]*?<\/span><\/div>/, '')
       assert.equal(textOf(p), textOf(q), `${name}: block ${b.id}`)
     }
     // The back sheets share one writer (renderBackV2.ts), so their words are the PDF's exactly.

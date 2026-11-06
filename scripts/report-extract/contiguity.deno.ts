@@ -362,6 +362,23 @@ Deno.test('fold — whitespace between digits is never dropped', () => {
   assert(fold('12 of\n14 days').includes(fold('12 of 14 days')))
 })
 
+Deno.test('withoutFurniture — a page break between two numbers never fuses them (adversarial pass 1, PR-11)', () => {
+  const d = docs.find((x) => x.name === 'mira-long-bowls')
+  assert(d, 'mira-long-bowls fixture missing')
+  const m = d.doc.blocks.find((b) => b.kind === 'masthead')
+  assert(m && m.kind === 'masthead')
+  const head = `${m.name} · ${m.signalmentBrief} · owner\u2019s home log · ${m.window}`
+  const day31: ExpectedLine[] = [{ block: 'record-lines', text: 'Refused on day 31 to 2 meals' }]
+  const day3: ExpectedLine[] = [{ block: 'record-lines', text: 'Refused on day 3 1 to 2 meals' }]
+  for (const furniture of ['page 2 of 4', head, `page 2 of 4 ${head}`]) {
+    const split = withoutFurniture(`Refused on day 3\n${furniture}\n1 to 2 meals`, d.doc)
+    assertEquals(missing(split, day31).length, 1, `"day 3 | ${furniture} | 1" must not read as day 31`)
+    assertEquals(missing(split, day3), [], 'the two numbers still read back, apart')
+  }
+  // A word before the break and a number after it join as the line folds them.
+  assertEquals(missing(withoutFurniture('vomiting from Jun\npage 2 of 4\n1 to Jun 19', d.doc), [{ block: 'lead-chart', text: 'from Jun 1 to Jun 19' }]), [])
+})
+
 Deno.test('withoutFurniture — a running head mid-line is cut; a lost digit still is not forgiven', () => {
   const d = docs.find((x) => x.name === 'mira-long-bowls')
   assert(d, 'mira-long-bowls fixture missing')

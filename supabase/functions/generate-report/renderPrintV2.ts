@@ -6,7 +6,8 @@
 // ids off the HTML, and the phone reflow (VR2-15) will be held to the same list.
 //
 // THE MARK LEXICON (spec §5.4, chart standard §4.3's row):
-//   - hatch means nothing logged, and nothing else (`hatchCol` is the only place it is drawn);
+//   - hatch means nothing logged, and nothing else (`hatchCol` is the only place it is drawn, as
+//     strokes, never an SVG pattern: see `hatchCol`);
 //   - one count scale across every stacked sign row, with a stated floor so one entry never
 //     draws at full height; the word "scale" never appears on the axis;
 //   - an empty cell is drawn as nothing at all, never a `0` (these signs are logged only when
@@ -18,7 +19,9 @@
 //     of the chart's facts;
 //   - every label over a mark wears the paper halo (`paint-order: stroke`).
 //
-// Fonts and the QR are VR2-11 (CUL-2291); this file names the families and draws no QR.
+// Fonts and the QR are VR2-11 (CUL-2291, `printAssetsV2.ts`): the stylesheet opens with the embedded
+// faces (tabular figures frozen into the cmap, so no `font-variant-numeric` anywhere), and the
+// colophon carries the tokenless QR on sheet 1.
 //
 // THE AI LEAD (VR2-25, CUL-2305; spec §5.3, §9.1). When a verified lead is handed in, it takes the
 // one serif slot where the lead sentence stands, under its label, and the code's line 1 drops to
@@ -30,6 +33,7 @@ import { BACK_STYLE_PRINT, backSheetHtml, bandPhotosHtml, pageHeadCss } from './
 import type { LeadSentence } from './aiLead/verify.ts'
 import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
+import { PRINT_ASSET_STYLE, qrBlockV2, reportFontFaceCss } from './printAssetsV2.ts'
 
 /** Never fewer than this many counts on the axis, so a single entry draws at a quarter height. */
 export const COUNT_AXIS_MIN_MAX = 4
@@ -50,8 +54,27 @@ function colW(n: number): number {
   return PLOT_W / n
 }
 
+/** The hatch's stroke spacing, measured across the strokes, in points. */
+export const HATCH_PITCH = 4
+
+/**
+ * Nothing logged, hatched: one path of 45° strokes clipped to the cell by arithmetic. Not an SVG
+ * pattern: Chromium prints a pattern as a smoothed bitmap tile, which came out of the PDF at a mid
+ * grey (darkest pixel 95 of 255 at 200 dpi even in full ink) and vanished under a copier's blur and
+ * threshold (VR2-11's print-survival test). Strokes on a page-wide grid, so neighbouring cells join.
+ */
 function hatchCol(i: number, n: number, y: number, hgt: number): string {
-  return `<rect class="hatch" x="${x0(i, n).toFixed(1)}" y="${y}" width="${colW(n).toFixed(1)}" height="${hgt}" fill="url(#v2hatch)"/>`
+  const x = x0(i, n)
+  const w = colW(n)
+  const step = HATCH_PITCH * Math.SQRT2 // along x for a 45° stroke
+  const segs: string[] = []
+  for (let c = Math.ceil((x + y) / step) * step; c < x + w + y + hgt; c += step) {
+    const xa = Math.max(x, c - (y + hgt))
+    const xb = Math.min(x + w, c - y)
+    if (xb - xa < 0.3) continue
+    segs.push(`M${xa.toFixed(2)} ${(c - xa).toFixed(2)}L${xb.toFixed(2)} ${(c - xb).toFixed(2)}`)
+  }
+  return `<path class="hatch" d="${segs.join('')}"/>`
 }
 
 /** Labels longer than the label column are cut with an ellipsis; the twin carries the full name. */
@@ -238,8 +261,7 @@ export function chartSvg(chart: LeadChart): string {
     body.push(bracketRow(chart, y))
     y += BRACKET_H
   }
-  const hatch = `<defs><pattern id="v2hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" class="hatchline"/></pattern></defs>`
-  return `<svg class="chart" aria-hidden="true" focusable="false" viewBox="0 0 ${LABEL_W + PLOT_W} ${y}" width="${LABEL_W + PLOT_W}pt" height="${y}pt">${hatch}${body.join('')}</svg>`
+  return `<svg class="chart" aria-hidden="true" focusable="false" viewBox="0 0 ${LABEL_W + PLOT_W} ${y}" width="${LABEL_W + PLOT_W}pt" height="${y}pt">${body.join('')}</svg>`
 }
 
 /** The label the spec prints over the lead (§9.1), unboxed: a frame is the band's register. */
@@ -334,7 +356,8 @@ function block(b: BlockV2, aiLead: string | null = null): string {
         .map((q) => `<li><span class="q">${h(q.text)}</span> <span class="ptr">${h(q.pointer)}</span></li>`)
         .join('')}</ol></section>`
     case 'colophon':
-      return `${open('footer', 'colo')}${h(b.text)}</footer>`
+      // The QR sits beside the colophon's words, never inside them (the line stays one run of text).
+      return `${open('footer', 'colo withqr')}<span class="colotext">${h(b.text)}</span>${qrBlockV2()}</footer>`
   }
 }
 
@@ -344,7 +367,12 @@ export function blockIdsOf(html: string): string[] {
 }
 
 const STYLE_V2 = `
-:root{--ink:#16181d;--ink2:#565961;--faint:#8a8d94;--hair:#d8d9dd;--paper:#ffffff;--concern:#9F1239;--partly:#d9a3b0;--cov:#c2c4c9;}
+:root{--ink:#16181d;--ink2:#565961;--faint:#8a8d94;--hair:#d8d9dd;--paper:#ffffff;--concern:#9F1239;--partly:#a34d64;--cov:#c2c4c9;}
+/* Print survival (VR2-11, scripts/report-extract/survival.py): a copier's blur and threshold erased
+   the light partly-eaten fill (#d9a3b0) and the faint hatch outright. --partly is now dark enough to
+   survive as ink, so on a copy the refused and partly-eaten shares merge into one not-finished bar
+   (the louder reading; the n of N label still prints) rather than the partly share vanishing. Its
+   own mono mark is a ruling for the PM (filed on CUL-2291). The hatch draws in ink-2, as strokes. */
 @page{size:auto;margin:36pt 40pt;}
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
@@ -355,7 +383,7 @@ html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
 ::marker{font-variant-numeric:normal;}
 body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:9.5pt;line-height:1.38;orphans:3;widows:3;}
 .sheet{width:515pt;margin:0 auto;}
-.serif{font-family:"Newsreader",Georgia,"Iowan Old Style",serif;}
+.serif{font-family:"Newsreader","Geist",Georgia,"Iowan Old Style",serif;}
 .mast .stamp{font-size:7.5pt;color:var(--ink2);margin:0;}
 .mast .eyebrow{font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);}
 .mast h1{font-size:20pt;line-height:1.1;margin:2pt 0 3pt;font-weight:650;}
@@ -420,9 +448,14 @@ svg .cnt.nr{fill:var(--ink2);font-weight:400;}
 .lines{margin:8pt 0 0;padding-left:14pt;}
 .lines li{margin:0 0 2pt;}
 .qs .ptr{color:var(--ink2);font-size:8pt;}
-.colo{margin-top:14pt;padding-top:5pt;border-top:.5pt solid var(--hair);font-size:7.5pt;color:var(--ink2);}
+/* The colophon prints in full ink (VR2-11): in ink-2 at 7.5pt the print-survival test watched "not a
+   diagnosis", the date, the report id and the sheet count dissolve on a copy, leaving only the QR. */
+.colo{margin-top:14pt;padding-top:5pt;border-top:.5pt solid var(--hair);font-size:7.5pt;color:var(--ink);}
 svg.chart{display:block;margin:2pt 0 0;overflow:visible;max-width:100%;height:auto;}
-svg .rl{font-size:8.5px;fill:var(--ink2);}
+/* Chart labels print in full ink (VR2-11): the print-survival test measured ink-2 at 7.5 to 8.5pt
+   dissolving under a copier's blur and threshold (the axis dates went first). Hierarchy is size and
+   weight here, never a grey a photocopy erases. */
+svg .rl{font-size:8.5px;fill:var(--ink);}
 svg .rl.lead{fill:var(--concern);font-weight:650;}
 svg .rl.sub{font-size:7px;}
 svg .base{stroke:var(--hair);stroke-width:.75;}
@@ -430,7 +463,7 @@ svg .bar{fill:var(--ink2);}
 svg .bar.lead{fill:var(--concern);}
 svg .bar.partly{fill:var(--partly);}
 svg .cov{fill:var(--cov);}
-svg .hatchline{stroke:var(--faint);stroke-width:1;}
+svg .hatch{fill:none;stroke:var(--ink2);stroke-width:1;}
 svg .span{stroke:var(--ink2);stroke-width:1.5;}
 svg .span.hollow{stroke-dasharray:3 2;stroke-width:1;fill:none;}
 svg .span.open{stroke-dasharray:1.5 2.5;}
@@ -440,10 +473,10 @@ svg .bar.partly.sofar{stroke:var(--partly);}
 svg .bracket{stroke:var(--ink);stroke-width:1;fill:none;}
 svg .cnt{font-size:8px;fill:var(--ink);font-weight:600;}
 svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linejoin:round;}
-svg .ax{font-size:7.5px;fill:var(--ink2);}
+svg .ax{font-size:7.5px;fill:var(--ink);}
 svg .ax.part{fill:var(--ink);}
 @media print{.sheet{width:auto;}}
-${BACK_STYLE_PRINT}`
+${BACK_STYLE_PRINT}${PRINT_ASSET_STYLE}`
 
 /** The whole v2 document as HTML: sheet 1 only until the back sheets ship (VR2-13). `aiLead`
  *  is a lead the send path read back with `storedLeadForDocument` (verified, same facts) or null. */
@@ -458,7 +491,8 @@ export function renderPrintV2(doc: DocumentV2, aiLead: readonly LeadSentence[] |
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="report-version" content="v2" />
 <title>${h(title)}</title>
-<style>${STYLE_V2}${pageHeadCss(doc)}</style>
+<style>${reportFontFaceCss()}
+${STYLE_V2}${pageHeadCss(doc)}</style>
 </head>
 <body>
 <main class="sheet" data-sheet="1">
