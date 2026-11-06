@@ -3773,7 +3773,7 @@ export function hydrolysedIntactText(snap: ReportSnapshot): { lead: string; rest
     .map((f) =>
       f.kind === 'free_fed'
         ? `${f.foodLabel} (free-fed bowl)`
-        : `${f.foodLabel} (${f.kind === 'treat' ? 'treat' : 'meal'}, ×${f.feedings})`,
+        : `${f.foodLabel} ×${f.feedings}`,
     )
     .join(', ')
   return {

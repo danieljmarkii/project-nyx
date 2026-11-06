@@ -592,6 +592,7 @@ Deno.test('the strip reconciles each drawn word to ITS OWN span, and says which 
   // span", which read as "it stopped".
   assert.ok(/Keeping away: marked before this span, on none of the <span class="num">\d+<\/span> days? answered in it/.test(html), 'a zero is said in words, never as "0"')
   assert.ok(!/entirely before this span/.test(html), 'the old wording, which read as a stop, is gone')
+  assert.ok(/day[s]? not answered say nothing either way/.test(html), 'and the unanswered days are named as unknown, not as clear')
   assert.ok(!/Keeping away on <span class="num">0<\/span>/.test(html), 'never a bare zero beside a word')
 })
 
