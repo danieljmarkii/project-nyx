@@ -20,6 +20,7 @@ import { leftOutBandLine } from './photoLeaveOut.ts'
 import {
   REPORT_SYMPTOM_TYPES,
   type ConcurrentChange,
+  type IncidentPhotoLeftOut,
   type ReportSnapshot,
   type ReportSymptomType,
   type SafetyFlag,
@@ -554,7 +555,23 @@ export function bandLeftOutLineOf(f: SafetyFlag, snap: ReportSnapshot): string |
   if (f.kind !== 'present_blood' && f.kind !== 'present_foreign') return null
   // Absent on a snapshot frozen before PR-23 (a saved copy, a recorded fixture): nothing was left
   // out then, because nothing could be.
-  return leftOutBandLine(new Set(f.incidents.map((i) => i.eventId)), snap.incidentPhotosLeftOut ?? [], snap.timezone)
+  // CUL-2455: each left-out incident keeps the day and time its caption would have printed, from
+  // its own record (the same words `bandPhotosOf` puts in the caption). From the record, not the
+  // event log: the stool blood flag cites normal stools, which the event log does not list
+  // (adversarial pass 1). A copy saved before the time fields existed falls back to the day.
+  const whenOf = (p: IncidentPhotoLeftOut): string | null =>
+    p.occurredAtConfidence === undefined
+      ? null
+      : `${textOf(fmtLocalDay(p.occurredAt, snap.timezone))}, ${incidentTimeWords(
+          {
+            occurredAt: p.occurredAt,
+            occurredAtConfidence: p.occurredAtConfidence,
+            occurredAtEarliest: p.occurredAtEarliest ?? null,
+            occurredAtLatest: p.occurredAtLatest ?? null,
+          },
+          snap.timezone,
+        )}`
+  return leftOutBandLine(new Set(f.incidents.map((i) => i.eventId)), snap.incidentPhotosLeftOut ?? [], snap.timezone, whenOf)
 }
 
 /** An incident's time in words with its confidence (v1's classes, `timeConfidence`). */

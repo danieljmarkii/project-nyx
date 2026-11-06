@@ -190,11 +190,13 @@ Deno.test('R-10 — a flagged photo left out: its flag prints word for word, dat
   const foreign = after.items.find((i) => i.id.includes('present_foreign'))
   assert.ok(foreign)
   assert.equal(foreign.photos.length, 0, 'the photo itself is gone')
-  const day = fmtLocalDay(flagged[0].occurredAt, s.timezone)
-  assert.equal(foreign.photosLeftOutLine, `Photo left out by the owner (${day}).`, 'dated with the incident’s day')
+  // CUL-2455: dated with the incident's day AND time, the words its caption would have carried.
+  const when = `${textOf(fmtLocalDay(flagged[0].occurredAt, s.timezone))}, ${incidentTimeWords(flagged[0], s.timezone)}`
+  assert.equal(foreign.photosLeftOutLine, `Photo left out by the owner (${when}).`, 'dated with the incident’s day and time')
   for (const html of [renderPrintV2(docOf(left)), renderPhoneV2(docOf(left))]) {
     const li = itemHtml(html, foreign.id)
-    assert.ok(li.includes(`<span class="bleft">Photo left out by the owner (${day}).</span>`), 'inside its band line, print and phone')
+    assert.ok(textOf(li).includes(`Photo left out by the owner (${when}).`), 'inside its band line, print and phone')
+    assert.ok(li.includes('<span class="bleft">'), 'in the left-out span')
     assert.ok(!li.includes('class="bphoto"'), 'no image beside it')
   }
   for (const i of after.items.filter((x) => x !== foreign)) assert.equal(i.photosLeftOutLine, null, i.id)

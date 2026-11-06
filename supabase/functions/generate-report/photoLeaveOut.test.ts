@@ -34,6 +34,9 @@ const photo = (attachmentId: string, eventId: string, occurredAt: string, safety
   attachmentId,
   eventId,
   occurredAt,
+  occurredAtConfidence: 'witnessed' as const,
+  occurredAtEarliest: null,
+  occurredAtLatest: null,
   type: 'vomit',
   safety,
   storagePath: `pet/${eventId}/${attachmentId}.jpg`,
@@ -57,7 +60,16 @@ Deno.test('partition: the chosen photos leave, order kept on both sides, case ig
 
 Deno.test('record: keeps which and when, never the path, the note or the bytes', () => {
   const r = leftOutRecord(photo(A, 'e1', '2026-07-02T10:00:00Z', 'blood'))
-  assert.deepEqual(r, { attachmentId: A, eventId: 'e1', type: 'vomit', occurredAt: '2026-07-02T10:00:00Z', safety: 'blood' })
+  assert.deepEqual(r, {
+    attachmentId: A,
+    eventId: 'e1',
+    type: 'vomit',
+    occurredAt: '2026-07-02T10:00:00Z',
+    occurredAtConfidence: 'witnessed',
+    occurredAtEarliest: null,
+    occurredAtLatest: null,
+    safety: 'blood',
+  })
   assert.equal(JSON.stringify(r).includes('owner words'), false)
   assert.equal(JSON.stringify(r).includes('.jpg'), false)
 })

@@ -16,6 +16,7 @@
 
 import { fmtLocalDay } from './render.ts'
 import type { IncidentPhotoLeftOut, IncidentPhotoSafety } from './report.ts'
+import type { OccurredAtConfidence } from '../generate-signal/detection.ts'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -50,39 +51,63 @@ export function partitionPhotos<P extends { attachmentId: string }>(
 }
 
 /** What the saved copy keeps about a photo left out (`ReportSnapshot.incidentPhotosLeftOut`):
- *  which one, when, and whether it sat behind a flag. No storage path, no note, no AI read, no
- *  bytes. */
+ *  which one, when (with how sure the owner was, CUL-2455), and whether it sat behind a flag. No
+ *  storage path, no note, no AI read, no bytes. */
 export function leftOutRecord(p: {
   attachmentId: string
   eventId: string
   type: string
   occurredAt: string
+  occurredAtConfidence: OccurredAtConfidence | null
+  occurredAtEarliest: string | null
+  occurredAtLatest: string | null
   safety: IncidentPhotoSafety | null
 }): IncidentPhotoLeftOut {
-  return { attachmentId: p.attachmentId, eventId: p.eventId, type: p.type, occurredAt: p.occurredAt, safety: p.safety }
+  return {
+    attachmentId: p.attachmentId,
+    eventId: p.eventId,
+    type: p.type,
+    occurredAt: p.occurredAt,
+    occurredAtConfidence: p.occurredAtConfidence,
+    occurredAtEarliest: p.occurredAtEarliest,
+    occurredAtLatest: p.occurredAtLatest,
+    safety: p.safety,
+  }
 }
 
 /**
  * The dated line beside a band flag, for the photos left out on the events that flag cites.
- * Null when none of them were left out. One date per incident day, in the order given (the
- * snapshot's, most recent first); two photos of one incident are one date.
+ * Null when none of them were left out. One entry per incident, in the order given (the
+ * snapshot's, most recent first); two photos of one incident are one entry.
+ *
+ * `whenOf` gives an incident's day AND time as the photo's caption would have said it (CUL-2455:
+ * a window incident's "sometime between …" lived only in that caption, so leaving the photo out
+ * took the time since ingestion off the band). Without it, or when it has no word for an event,
+ * the entry is the incident's day alone (a copy saved before the time fields existed), and two
+ * incidents on one day are one date.
  *
  *   "Photo left out by the owner (Jul 2)."
  *   "Photos left out by the owner (Jul 2, Jun 28)."
+ *   "Photo left out by the owner (Oct 9, sometime between Oct 8 22:00 and Oct 9 06:00)."
+ *   "Photos left out by the owner (Jul 2, seen at 08:10; Jun 28, about 19:00 (an estimate))."
  */
-export function leftOutBandLine(
+export function leftOutBandLine<P extends { eventId: string; occurredAt: string }>(
   citedEventIds: ReadonlySet<string>,
-  leftOut: readonly { eventId: string; occurredAt: string }[],
+  leftOut: readonly P[],
   tz: string | null,
+  whenOf?: (p: P) => string | null,
 ): string | null {
   const mine = leftOut.filter((p) => citedEventIds.has(p.eventId))
   if (mine.length === 0) return null
-  const days: string[] = []
+  const entries: string[] = []
   for (const p of mine) {
-    const d = fmtLocalDay(p.occurredAt, tz)
-    if (!days.includes(d)) days.push(d)
+    const e = whenOf?.(p) ?? fmtLocalDay(p.occurredAt, tz)
+    if (!entries.includes(e)) entries.push(e)
   }
-  return `${mine.length === 1 ? 'Photo' : 'Photos'} left out by the owner (${days.join(', ')}).`
+  // An entry with a time already holds a comma ("Jul 2, seen at 08:10"), so entries then part on
+  // a semicolon; day-only entries keep the comma list.
+  const sep = entries.some((e) => e.includes(',')) ? '; ' : ', '
+  return `${mine.length === 1 ? 'Photo' : 'Photos'} left out by the owner (${entries.join(sep)}).`
 }
 
 /** The record sheet's count of every photo left out, flagged or not. Null at zero. */

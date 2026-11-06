@@ -223,7 +223,16 @@ export function v2FlagPointersOf(sheets: readonly BackSheetV2[], snap: ReportSna
     mealsDetailIn: meals,
     // The event log lists every entry by date and time (VR2-14), as v1's appendix A did.
     logLists: `the event log ${titled(LOG_SHEET_TITLE)} lists`,
-    incidents: snap.incidentPhotos.length > 0 ? `see the incident photos ${titled(RECORD_SHEET_TITLE)}` : null,
+    // CUL-2455: the red flag behind this pointer names no incident, so once the owner left any
+    // photo out the pointer cannot promise the flagged one is on that sheet. No digit (PR-25).
+    incidents:
+      snap.incidentPhotos.length === 0
+        ? null
+        : `see the incident photos ${titled(RECORD_SHEET_TITLE)}${
+            (snap.incidentPhotosLeftOut ?? []).length > 0
+              ? '; the owner left some photos out of this report, so its photo may be one of them'
+              : ''
+          }`,
   }
 }
 
@@ -939,7 +948,7 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
             // says so on the card, and its read and date stay.
             // A photo the owner removed has no card; the sheet discloses it and its read stays in the
             // event log (cold read round 4), so the grid is never offered as the complete set.
-            text: `The owner’s incident photos are on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first: each retained photo has a card with its read, and the image where it could be embedded. A photo the owner removed has no card; that sheet says so, and its read stays in the event log. A photo the owner left out of this report has no card either; that sheet counts it, and one flagged for blood or foreign material is dated beside its flag on sheet 1. An embedded image has its location, device and capture-time metadata removed and is downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
+            text: `The owner’s incident photos are on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first: each photo in this report has a card with its read, and the image where it could be embedded. A photo the owner removed has no card; that sheet says so, and its read stays in the event log. A photo the owner left out of this report has no card either; that sheet counts it, and one flagged for blood or foreign material is dated beside its flag on sheet 1. An embedded image has its location, device and capture-time metadata removed and is downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
           },
         ]
       : []),
