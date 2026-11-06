@@ -19,6 +19,8 @@ import { useAllowlistFlag } from '../hooks/useAppConfig';
 import { useBetaOptIn } from '../lib/betaFeatures';
 import { ReportComposer } from '../components/report/ReportComposer';
 import { ReportNotesOption } from '../components/report/ReportNotesOption';
+import { PhotoLeaveOutSheet } from '../components/report/PhotoLeaveOutSheet';
+import { leftOutChanged, normaliseLeftOut, photoRowLabel } from '../lib/reportPhotoPicker';
 import { useReportComposer } from '../hooks/useReportComposer';
 import { WINDOW_LABEL, composerRange, type ComposerWindow } from '../lib/reportComposer';
 import {
@@ -224,6 +226,14 @@ export default function ReportScreen() {
   const petId = subject.kind === 'pet' ? subject.petId : undefined;
   const petName = subject.kind === 'pet' ? subject.petName : null;
 
+  // PR-23b (CUL-2454): the photos the owner left out in the picker. Part of the request, so Done
+  // rebuilds the report once; a new pet starts with every photo in.
+  const [photosLeftOut, setPhotosLeftOut] = useState<string[]>([]);
+  const [photoSheetOpen, setPhotoSheetOpen] = useState(false);
+  useEffect(() => {
+    setPhotosLeftOut([]);
+  }, [petId]);
+
   const composerEligible = useAllowlistFlag('report_composer_v2');
   const composerOptedIn = useBetaOptIn('report_composer_v2');
   const composerOn = composerEligible && composerOptedIn;
@@ -272,10 +282,12 @@ export default function ReportScreen() {
     // dropping the field would silently drop notes the owner switched on. (Noticed is GA,
     // CUL-876, so the switch is always on screen; CUL-1464's hidden-switch-sends-false
     // rule went with the flag that could hide it.)
-    const base = { petId, includeNotes };
+    // PR-23b: the photos left out ride on both branches too; `generateVetReport` sends them on
+    // a v2 request only.
+    const base = { petId, includeNotes, ...(photosLeftOut.length > 0 ? { photosLeftOut } : {}) };
     if (rangeMode === 'default') return base;
     return { ...base, startDate: customStartKey, endDate: customEndKey };
-  }, [petId, rangeMode, customStartKey, customEndKey, includeNotes]);
+  }, [petId, rangeMode, customStartKey, customEndKey, includeNotes, photosLeftOut]);
 
   // CUL-371 — the params the report is actually BUILT from. An edit of the custom
   // window already on screen (From, then To) settles for CUSTOM_RANGE_SETTLE_MS before
@@ -830,13 +842,40 @@ export default function ReportScreen() {
               // honest about being a step behind beats no report.
               <Text style={styles.barStale}>{staleLine}</Text>
             )}
-            {report.photoCount > 0 && (
+            {report.photos && report.photos.length > 0 ? (
+              // PR-23b (CUL-2454, R-10): on v2 the photo line is the door to the picker. Its count
+              // is the photos this report holds against every photo it could hold, computed over
+              // the manifest the server sent, never a count the server echoes back (R4).
+              <TouchableOpacity
+                testID="report-photos-choose"
+                style={styles.barPhotosRow}
+                onPress={() => setPhotoSheetOpen(true)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityHint="Choose photos to leave out of this report"
+              >
+                <ThemedText style={styles.barPhotosChoose}>
+                  {photoRowLabel(report.photos.length, normaliseLeftOut(report.photos, photosLeftOut).length)}
+                </ThemedText>
+              </TouchableOpacity>
+            ) : report.photoCount > 0 ? (
               // Owner visibility (spec §8): before sending, the owner sees how many of their own
-              // incident photos this report hands to the vet. The interactive "tap to exclude any"
-              // review is the deferred fast-follow (B-243) that builds on this.
+              // incident photos this report hands to the vet. v1 has no picker (R-10 is v2's).
               <Text style={styles.barPhotos}>
                 Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
               </Text>
+            ) : null}
+            {report.photos && report.photos.length > 0 && (
+              <PhotoLeaveOutSheet
+                visible={photoSheetOpen}
+                photos={report.photos}
+                leftOut={normaliseLeftOut(report.photos, photosLeftOut)}
+                onClose={() => setPhotoSheetOpen(false)}
+                onDone={(next) => {
+                  setPhotoSheetOpen(false);
+                  if (leftOutChanged(normaliseLeftOut(report.photos ?? [], photosLeftOut), next)) setPhotosLeftOut(next);
+                }}
+              />
             )}
             {hasVetDocuments === true && (
               // R-16 (CUL-457) — D14's truth at the moment it matters. The Vet Files card
@@ -1096,6 +1135,19 @@ const styles = StyleSheet.create({
     fontFamily: theme.fontBody,
     fontSize: theme.textXS,
     color: theme.colorTextSecondary,
+    textAlign: 'center',
+  },
+  // PR-23b: the photo line as a door. At the 44pt floor by its box, no slop (C-5): the lines
+  // above and below it in the bar are not touchable, but the send button is.
+  barPhotosRow: {
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
+  barPhotosChoose: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: colorRoles.action.onLight,
     textAlign: 'center',
   },
   // B-534's staleness line. One step up from barPhotos (size + primary colour)

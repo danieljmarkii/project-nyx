@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { isWhollyInView, scrollDeltaToReveal } from '../../lib/revealInScroll';
 import { measureNodeInWindow } from '../../lib/measureNode';
@@ -26,6 +26,7 @@ import {
 import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
 import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/attachments';
+import { countSavedReportsWithPhoto, savedReportsLine } from '../../lib/savedReportsWithPhoto';
 import { resolveEventPhotoDisplay, addPhotoHeroCopy, EVENT_HERO_HEIGHT, eventHeroHeightFor } from '../../lib/eventPhoto';
 import { useColumnWidth, useLayoutClass, useWindowFrame } from '../../hooks/useLayoutClass';
 import { localFileExists } from '../../lib/localFile';
@@ -189,6 +190,24 @@ export default function EventDetailScreen() {
 
   const [event, setEvent] = useState<TimelineRow | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
+  // PR-23b (CUL-2454): how many saved reports still hold this photo, read when it is on screen so
+  // the remove confirm opens at once. Null until answered or when the read fails: the confirm then
+  // says what it always said, and the delete is the same either way (sent copies stay frozen).
+  const [savedCopiesWithPhoto, setSavedCopiesWithPhoto] = useState<number | null>(null);
+  const attachmentId = attachment?.id ?? null;
+  const attachmentPath = attachment?.storage_path ?? null;
+  const eventPetId = event?.pet_id ?? null;
+  useEffect(() => {
+    setSavedCopiesWithPhoto(null);
+    if (!attachmentId || !eventPetId) return undefined;
+    let cancelled = false;
+    countSavedReportsWithPhoto(eventPetId, { id: attachmentId, storage_path: attachmentPath }).then((n) => {
+      if (!cancelled) setSavedCopiesWithPhoto(n);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [attachmentId, attachmentPath, eventPetId]);
   // The id `loadAll` last ran for, so a refocus can be told from a navigation (CUL-302).
   const loadedEventIdRef = useRef<string | null>(null);
   // The storage_path the signed URLs in state are a handle ON. Holding a URL across a
@@ -639,9 +658,10 @@ export default function EventDetailScreen() {
 
   async function handleRemovePhoto() {
     if (!attachment) return;
+    const alsoIn = savedReportsLine(savedCopiesWithPhoto);
     Alert.alert(
       'Remove photo?',
-      'The photo will be detached from this event.',
+      alsoIn ? `The photo will be detached from this event. ${alsoIn}` : 'The photo will be detached from this event.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

@@ -225,3 +225,42 @@ it('boxedV1Html renames a meta refresh inert, so the v1 preview cannot be blanke
   expect(out).toContain('<meta name="viewport" content="width=794" />');
   expect(out.match(/<x-refused-meta/gi)).toHaveLength(2);
 });
+
+// PR-23b (CUL-2454): the v2 photo line opens the picker; Done rebuilds once with the choice, and a
+// Done that changes nothing builds nothing.
+jest.mock('../lib/reportPhotoThumbs', () => ({ readPickerThumbs: jest.fn(async () => new Map()) }));
+it('PR-23b: the picker\'s Done rebuilds the report once with the photos left out', async () => {
+  const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const photos = [
+    { attachmentId: A, eventId: 'e1', type: 'vomit', occurredAt: '2026-07-02T12:00:00Z', safety: 'blood' as const },
+    { attachmentId: B, eventId: 'e2', type: 'vomit', occurredAt: '2026-06-28T12:00:00Z', safety: null },
+  ];
+  mockedGenerate.mockResolvedValue(report({ photoCount: 2, photos }));
+  const s = render(<ReportScreen />);
+  const row = await s.findByTestId('report-photos-choose');
+  expect(s.getByText('Photos · 2 · Choose')).toBeTruthy();
+  expect(mockedGenerate).toHaveBeenCalledTimes(1);
+
+  // An unchanged Done builds nothing.
+  fireEvent.press(row);
+  fireEvent.press(await s.findByTestId('photo-leave-out-done'));
+  expect(mockedGenerate).toHaveBeenCalledTimes(1);
+
+  fireEvent.press(s.getByTestId('report-photos-choose'));
+  fireEvent.press(await s.findByTestId(`photo-row-${A}`));
+  expect(mockedGenerate).toHaveBeenCalledTimes(1);
+  mockedGenerate.mockResolvedValue(report({ photoCount: 1, photos }));
+  fireEvent.press(s.getByTestId('photo-leave-out-done'));
+  await waitFor(() => expect(mockedGenerate).toHaveBeenCalledTimes(2));
+  expect(mockedGenerate.mock.calls[1][0]).toEqual({ petId: 'p1', includeNotes: true, photosLeftOut: [A] });
+  await waitFor(() => expect(s.getByText('Photos · 1 of 2 · Choose')).toBeTruthy());
+});
+
+it('PR-23b: v1 keeps its sentence and offers no picker', async () => {
+  mockedGenerate.mockResolvedValue(report({ reportVersion: 'v1', phoneHtml: null, photoCount: 2, photos: null }));
+  const s = render(<ReportScreen />);
+  await s.findByText('Send to vet');
+  expect(s.getByText('Includes 2 photos from logged incidents.')).toBeTruthy();
+  expect(s.queryByTestId('report-photos-choose')).toBeNull();
+});
