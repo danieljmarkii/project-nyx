@@ -190,7 +190,7 @@ def ocr_lines(ink: np.ndarray, region: np.ndarray, tmp: pathlib.Path, keep: path
 
 
 # Glyphs OCR confuses with a figure in a geometric sans at this size (Geist's 1 has no foot).
-CONFUSED = {"0": set("0o"), "1": set("1il|")}
+CONFUSED = {"0": set("0o"), "1": set("1il|"), "5": set("5s")}
 
 
 def same_glyph(w: str, g: str) -> bool:
@@ -201,15 +201,15 @@ def reads_back(label: str, lines: list) -> bool:
     """A label reads back when some OCR'd line holds it, aligned character by character (spaces
     dropped: OCR fuses "Jun 12" into "Juni2" where the face sets the space narrow). It forgives a
     misread glyph and never a loss:
-      • every figure aligns with the same figure, or a glyph OCR confuses with it (0 and o; 1, i, l);
+      • every figure aligns with the same figure, or a glyph OCR confuses with it (0 and o; 1, i, l; 5 and s);
       • no edit drops or rewrites more than ONE character of the label, so a lost word fails
         ("Meals finished" for "Meals not finished", "On" for "Off");
       • nothing figure-like is added beside a figure ("Oct l1" for "Oct 1"), and no figure anywhere;
       • the whole matches at 85% or better, after the glyph fold.
     Adversarial pass 1 on PR-11 broke the first version with a dropped "not"."""
     want = norm(label)
-    fold = str.maketrans({"o": "0", "i": "1", "l": "1", "|": "1"})
-    figure_like = set("0123456789oil|")
+    fold = str.maketrans({"o": "0", "i": "1", "l": "1", "|": "1", "s": "5"})
+    figure_like = set("0123456789oil|s")
     for line in lines:
         got = norm(unicodedata.normalize("NFKD", line))
         if want == got:

@@ -107,7 +107,10 @@ def build(root: pathlib.Path) -> list:
         opts = subset.Options()
         opts.flavor = "woff2"
         opts.layout_features = ["kern"]  # GPOS kerning only: no GSUB alternate can reach a glyph
-        opts.hinting = False
+        # Hinting KEPT. Stripped, Chromium 153 (Playwright 1.63, the extraction job's) printed Geist with
+        # glyph positions the PDF's widths did not predict, and pdfminer and pypdf read a space after
+        # every o, a, s and J ("o wner", "windo w"): measured on CI 2026-11-06, gone with hints kept.
+        opts.hinting = True
         opts.desubroutinize = True
         opts.name_IDs = [0, 1, 2, 3, 4, 5, 6, 13, 14]  # family, style, version, PostScript name, licence
         opts.notdef_outline = True
