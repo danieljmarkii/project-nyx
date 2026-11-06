@@ -35,6 +35,7 @@ import type { VetReport } from './pdf';
 import type { SendResult } from './reportSend';
 import { keepsAnswered, keepsInFlight, missesAwaitingAck, sqliteKeepLedger, type KeepLedger, type PendingKeep } from './reportKeepLedger';
 import { currentSignOutEpoch } from './signOutEpoch';
+import { useAuthStore } from '../store/authStore';
 import { useKeepLossStore } from '../store/keepLossStore';
 
 export type KeepVia = 'email' | 'print' | 'share' | 'shown';
@@ -130,11 +131,14 @@ export type CurrentUser = () => Promise<string | null>;
 export const currentKeepUser: CurrentUser = async () => {
   try {
     const { data } = await supabase.auth.getSession();
-    return data.session?.user.id ?? null;
+    if (data.session) return data.session.user.id;
   } catch (e) {
     console.warn('[reportKeep] session read failed:', e instanceof Error ? e.message : String(e));
-    return null;
   }
+  // auth-js answers no session for an expired token it cannot refresh offline (a clinic
+  // basement), without removing it: the store still names the signed-in account, and a keep made
+  // then must still leave its row (adversarial-reviewer pass 1, finding 1).
+  return useAuthStore.getState().session?.user.id ?? null;
 };
 
 /** This account's rows; every other row is deleted unsent (CUL-2576). Throws if the list fails. */
@@ -328,13 +332,15 @@ export async function pendingKeepsBeforeSignOut(
 /**
  * How many of `uid`'s keeps still wait, with no try (CUL-2573): a sign-out whose session is
  * already gone can only count what it is about to wipe. Rows of any other account are not
- * counted (and are deleted, CUL-2576). An unreadable ledger, or no account to count for, counts
- * as one, so a loss is said rather than assumed away. Never throws.
+ * counted (and are deleted, CUL-2576). With no account to count for, every row counts; an
+ * unreadable ledger counts as one, so a loss is said rather than assumed away. Never throws.
  */
 export async function pendingKeepCount(uid: string | null, ledger: KeepLedger = sqliteKeepLedger()): Promise<number> {
   if (uid === null) {
+    // No account to attribute to: every row counts, so a loss is never understated
+    // (adversarial-reviewer pass 1, finding 2). Nothing is deleted on a guess.
     try {
-      return (await ledger.list()).length > 0 ? 1 : 0;
+      return (await ledger.list()).length;
     } catch {
       return 1;
     }

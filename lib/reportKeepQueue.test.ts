@@ -259,7 +259,21 @@ describe('a ledger row belongs to its account (CUL-2576)', () => {
     expect(rows.get(ID)?.userId).toBe('user-b');
   });
 
-  it('with no session a keep writes no row (no drain could send it) and still tries once', async () => {
+  it('auth-js reading no session (an expired token offline) still leaves a row, under the store account (adversarial pass 1, finding 1)', async () => {
+    mockUid = null;
+    const { useAuthStore } = jest.requireActual('../store/authStore') as typeof import('../store/authStore');
+    useAuthStore.setState({ session: { user: { id: 'user-a' } } as never });
+    try {
+      const { ledger, rows } = memoryLedger();
+      void keepReportCopy(report, 'shown', jest.fn(err(null)), KEEP_RETRY_DELAYS_MS, () => new Promise(() => undefined), ledger, at(T0));
+      await new Promise((r) => setImmediate(r));
+      expect(rows.get(ID)?.userId).toBe('user-a');
+    } finally {
+      useAuthStore.setState({ session: null });
+    }
+  });
+
+  it('with no session anywhere a keep writes no row (no drain could send it) and still tries once', async () => {
     mockUid = null;
     const { ledger, rows } = memoryLedger();
     const invoke = jest.fn(err(401));
@@ -298,7 +312,8 @@ describe('a ledger row belongs to its account (CUL-2576)', () => {
   it("the sign-out count is this account's rows only; with no account, any row counts as one", async () => {
     const { ledger } = memoryLedger([row(), row({ reportId: ID2, userId: 'user-b' })]);
     expect(await pendingKeepCount('user-a', ledger)).toBe(1);
-    expect(await pendingKeepCount(null, memoryLedger([row(), row({ reportId: ID2 })]).ledger)).toBe(1);
+    // No account: every row counts, never collapsed to one (adversarial pass 1, finding 2).
+    expect(await pendingKeepCount(null, memoryLedger([row(), row({ reportId: ID2 }), row({ reportId: 'x', userId: 'user-b' })]).ledger)).toBe(3);
     expect(await pendingKeepCount(null, memoryLedger().ledger)).toBe(0);
     const broken: KeepLedger = { record: async () => undefined, clear: async () => undefined, list: async () => { throw new Error('disk'); } };
     expect(await pendingKeepCount('user-a', broken)).toBe(1);
