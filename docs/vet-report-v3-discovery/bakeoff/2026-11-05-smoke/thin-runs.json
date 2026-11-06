@@ -1,0 +1,58 @@
+[
+ {
+  "fixture": "thin-juniper-4d",
+  "logged_days": 4,
+  "result": {
+   "outcome": "not_eligible",
+   "reason": "thin_record"
+  },
+  "model_calls": 0,
+  "stored": {
+   "text": null,
+   "verdict": {
+    "v": 1,
+    "outcome": "not_eligible",
+    "reason": "thin_record",
+    "fact_hash": null,
+    "prompt": "vr2-lead-4",
+    "verifier": "vr2-5",
+    "writer_model": null,
+    "checker_model": null,
+    "sentences": null,
+    "verifier_errors": [],
+    "checker": null,
+    "attempts": 0,
+    "at": "2026-11-05T16:31:03.681Z"
+   },
+   "model": null
+  }
+ },
+ {
+  "fixture": "thin-juniper-14d",
+  "logged_days": 14,
+  "result": {
+   "outcome": "not_eligible",
+   "reason": "thin_record"
+  },
+  "model_calls": 0,
+  "stored": {
+   "text": null,
+   "verdict": {
+    "v": 1,
+    "outcome": "not_eligible",
+    "reason": "thin_record",
+    "fact_hash": null,
+    "prompt": "vr2-lead-4",
+    "verifier": "vr2-5",
+    "writer_model": null,
+    "checker_model": null,
+    "sentences": null,
+    "verifier_errors": [],
+    "checker": null,
+    "attempts": 0,
+    "at": "2026-11-05T16:31:03.682Z"
+   },
+   "model": null
+  }
+ }
+]

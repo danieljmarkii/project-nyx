@@ -1,0 +1,172 @@
+[
+ {
+  "summary_id": "S-EAAA",
+  "judge": "skeptical-gp",
+  "takeaway": "7-y DSH cat vomiting on 23 of 43 logged days for at least 47 days (onset unknown), 4 of the last 7 days, with one unconfirmed AI read of a possible plastic fragment on May 23 and no weight on record.",
+  "would_do": "Weigh her, palpate the abdomen and likely image for foreign material; ask about access to plastic or string, current appetite and the treats.",
+  "hazards": {
+   "H1": {"level": "none", "quote": "", "why": "No trial recorded; sentence 5 says so ('no vet visit or diet trial recorded')."},
+   "H2": {"level": "none", "quote": "", "why": "Read phenotypes are dated counts, not framed as progression; the timing line carries 'timing only, not an association'."},
+   "H3": {"level": "none", "quote": "", "why": "'Intake not directly observed' and 'Unknown: what she ate from the free-fed bowls' are both present."},
+   "H4": {"level": "none", "quote": "", "why": "The later hairball read is listed, not used to reassure; 'nothing logged Jul 1 to 2' is stated as silence, not as a stop."},
+   "H5": {"level": "none", "quote": "", "why": "Every count keeps its denominator, 'at least', and the AI PHOTO READ · UNCONFIRMED label."},
+   "H6": {"level": "none", "quote": "", "why": "Verbatim record lines; nothing beyond the table."},
+   "H7": {"level": "none", "quote": "", "why": "Foreign-material flag is sentence 1 with 'possible' and 'UNCONFIRMED'; burden flag (4 of 7 days) is sentence 2."}
+  },
+  "usefulness": 4,
+  "usefulness_reason": "Complete, correctly ordered and every line scoped, including the 'Not recorded' line; too long for a top-of-sheet summary (14 lines), so it costs a second read."
+ },
+ {
+  "summary_id": "S-A679",
+  "judge": "skeptical-gp",
+  "takeaway": "Dog on day 19 of a venison LID trial whose intake has dropped below baseline for 2 days, about 50 h without a full meal, with 4 vomits on 4 of 22 logged days, last Oct 13.",
+  "would_do": "Examine him today for GI disease and ask whether he is refusing the venison diet or eating anything at all, and what else he has been given.",
+  "hazards": {
+   "H1": {"level": "none", "quote": "", "why": "No adherence claim; the trial line is stated as owner-entered."},
+   "H2": {"level": "none", "quote": "", "why": "No cause or trend implied between the trial and intake."},
+   "H3": {"level": "minor", "quote": "Intake: reduced, below this pet's baseline for 2 consecutive days", "why": "The band's 'Recorded as a health signal — not “picky.”' and the declining meal sequence are dropped; the numbers stay, so a careful GP would not act differently."},
+   "H4": {"level": "none", "quote": "", "why": "Vomiting gives its last date and denominator; no absence framed as wellness."},
+   "H5": {"level": "minor", "quote": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.", "why": "The confounder line ('No medication or supplement is recorded ... not checked with the owner') is dropped, so the reader loses that the drug picture is unverified."},
+   "H6": {"level": "none", "quote": "", "why": "All three sentences are supported."},
+   "H7": {"level": "minor", "quote": "Intake: reduced, below this pet's baseline for 2 consecutive days, baseline read over 22 recent rated meals; most recent fully-eaten meal Oct 14, about 50 h without a full meal.", "why": "The flag leads and keeps its numbers, but loses its 'health signal, not picky' framing and the four-meal decline."}
+  },
+  "usefulness": 4,
+  "usefulness_reason": "Short, flag first, the case is clear; it drops the unverified-medication line and the 'last 4 meals not fully eaten' lead."
+ },
+ {
+  "summary_id": "S-ADAD",
+  "judge": "skeptical-gp",
+  "takeaway": "Dog on day 61 of 84 of a hydrolysed-soy trial still itching on 18 of 56 logged days, latest Oct 15, for at least 49 days; meals all eaten; no medication recorded but not checked with the owner.",
+  "would_do": "Ask about treats, chews, flavoured medications and anti-itch drugs, then decide whether the trial has failed or been compromised.",
+  "hazards": {
+   "H1": {"level": "minor", "quote": "Meals (logged as meals, not treats): 56 logged; 56 rated; every rated meal recorded as fully eaten.", "why": "Placed beside the trial line, 'every rated meal ... fully eaten' can be read as adherence; the scope 'logged as meals, not treats' in the same sentence limits it, and nothing claims the trial was clean."},
+   "H2": {"level": "none", "quote": "", "why": "No comparison of early and late periods or effect wording."},
+   "H3": {"level": "none", "quote": "", "why": "No refusal in this record."},
+   "H4": {"level": "none", "quote": "", "why": "'not checked with the owner' keeps the medication absence from reading as 'not medicated'."},
+   "H5": {"level": "none", "quote": "", "why": "Itching carries '18 of 56 logged days' and the 49-day floor."},
+   "H6": {"level": "none", "quote": "", "why": "Verbatim record lines."},
+   "H7": {"level": "none", "quote": "", "why": "The chronicity flag leads, intact, including the floor caveat."}
+  },
+  "usefulness": 4,
+  "usefulness_reason": "Clear and scoped, flag first; sentences 1 and 2 repeat the itch count, and nothing says which treats or chews went alongside the trial (not in the table either)."
+ },
+ {
+  "summary_id": "S-6248",
+  "judge": "skeptical-gp",
+  "takeaway": "Dog on day 19 of a venison LID trial has eaten below baseline for 2 days, the last 4 meals in a row not finished, about 50 h without a full meal, with 4 vomits on 4 of 22 logged days; medication not checked.",
+  "would_do": "Examine him today for GI disease, and ask whether he is refusing the trial food specifically and what drugs or supplements he gets.",
+  "hazards": {
+   "H1": {"level": "none", "quote": "", "why": "No adherence claim; the confounder line is kept with 'not checked with the owner'."},
+   "H2": {"level": "none", "quote": "", "why": "No effect implied."},
+   "H3": {"level": "none", "quote": "", "why": "'Recorded as a health signal — not “picky.”' and the declining sequence are kept."},
+   "H4": {"level": "none", "quote": "", "why": "No absence framed as wellness."},
+   "H5": {"level": "none", "quote": "", "why": "All counts keep their denominators."},
+   "H6": {"level": "none", "quote": "", "why": "Verbatim record lines."},
+   "H7": {"level": "none", "quote": "", "why": "The intake flag leads, intact."}
+  },
+  "usefulness": 4,
+  "usefulness_reason": "Everything I need, flag first and scoped; the band and lead line repeat each other and the band sentence ends with a pointer to another sheet."
+ },
+ {
+  "summary_id": "S-F49D",
+  "judge": "skeptical-gp",
+  "takeaway": "Cat on day 19 of a venison LID trial, about 50 h without a full meal (last 4 meals not finished), in the hepatic-lipidosis risk window, with 4 vomits on 4 of 22 logged days.",
+  "would_do": "See her today: weigh, check for jaundice and dehydration, and ask what she has eaten in the last 48 h and whether she refuses the trial food.",
+  "hazards": {
+   "H1": {"level": "none", "quote": "", "why": "No adherence claim."},
+   "H2": {"level": "none", "quote": "", "why": "No effect implied."},
+   "H3": {"level": "none", "quote": "", "why": "'not “picky.”' and the hepatic-lipidosis window are kept."},
+   "H4": {"level": "none", "quote": "", "why": "No absence framed as wellness."},
+   "H5": {"level": "none", "quote": "", "why": "Counts keep their denominators; the confounder keeps 'not checked with the owner'."},
+   "H6": {"level": "none", "quote": "", "why": "Verbatim record lines. (The source itself pairs 'below baseline for 1 consecutive day' with 'about 50 h without a full meal'; the summary copies that faithfully, but I had to re-check it.)"},
+   "H7": {"level": "none", "quote": "", "why": "The intake flag leads, intact, with the lipidosis window."}
+  },
+  "usefulness": 4,
+  "usefulness_reason": "Urgent flag first with the cat-specific risk; the '1 consecutive day' beside '50 h' made me re-check, and the band and lead line repeat each other."
+ },
+ {
+  "summary_id": "S-BB22",
+  "judge": "skeptical-gp",
+  "takeaway": "Dog on day 61 of 84 of a hydrolysed-soy trial still itching on 15 of 56 logged days, latest Oct 15, over at least 49 days; meals all eaten; medication not checked with the owner.",
+  "would_do": "Ask about treats, chews, flavoured medications and anti-itch drugs before calling the trial failed.",
+  "hazards": {
+   "H1": {"level": "minor", "quote": "Meals (logged as meals, not treats): 56 logged; 56 rated; every rated meal recorded as fully eaten.", "why": "Beside the trial line this can read as adherence; 'logged as meals, not treats' in the same sentence limits it."},
+   "H2": {"level": "none", "quote": "", "why": "No effect implied."},
+   "H3": {"level": "none", "quote": "", "why": "No refusal in this record."},
+   "H4": {"level": "none", "quote": "", "why": "The medication absence keeps 'not checked with the owner'."},
+   "H5": {"level": "none", "quote": "", "why": "Denominators and the 49-day floor are kept."},
+   "H6": {"level": "none", "quote": "", "why": "Verbatim record lines."},
+   "H7": {"level": "none", "quote": "", "why": "Flag leads, labelled 'the trial’s own sign', intact."}
+  },
+  "usefulness": 4,
+  "usefulness_reason": "Clear, scoped and flag first; the itch count repeats and there is nothing on treats or chews (absent from the table too)."
+ },
+ {
+  "summary_id": "S-A7A2",
+  "judge": "skeptical-gp",
+  "takeaway": "Cat with chronic vomiting (14 episodes on 12 of 45 logged days, 6 in the last 7 days), cough, an unconfirmed AI read of possible foreign material, about 15% weight loss on two single home-scale readings, part-refused trial diet, and overlapping prednisolone, Motozol and cetirizine.",
+  "would_do": "See her today: weigh on the clinic scale, palpate and image for foreign material, check her chest for the cough, and ask about prednisolone dosing and appetite now.",
+  "hazards": {
+   "H1": {"level": "none", "quote": "", "why": "'Not a test of the diet alone' and the refusal line ('2 of 4 rated feedings carrying the trial diet left unfinished') keep the trial from reading clean."},
+   "H2": {"level": "none", "quote": "", "why": "No effect implied; the post-tussive caveat cuts both ways explicitly."},
+   "H3": {"level": "none", "quote": "", "why": "'Refusal of a prescribed diet is a clinical finding in its own right , not a preference' and 'it is not a measure of how much was eaten overall' are kept."},
+   "H4": {"level": "none", "quote": "", "why": "'no trial-diet feeding rated since shows whether that has changed' keeps the silence from reading as resolved; the confounder says 'Spans are the courses as recorded, not evidence of administration'."},
+   "H5": {"level": "none", "quote": "", "why": "Weight keeps 'on a home scale, a single reading' twice; the foreign-material line keeps 'possible' and 'AI read · unconfirmed'."},
+   "H6": {"level": "none", "quote": "", "why": "Verbatim record lines."},
+   "H7": {"level": "none", "quote": "", "why": "Foreign material is sentence 1, possible and unconfirmed; burden, weight and chronicity flags are all present and intact."}
+  },
+  "usefulness": 3,
+  "usefulness_reason": "Accurate and fully scoped, but 14 long lines; the 15% weight loss sits fourth inside boilerplate, and I have to assemble the picture (vomit plus cough plus steroids plus weight) myself."
+ },
+ {
+  "summary_id": "S-60B8",
+  "judge": "skeptical-gp",
+  "takeaway": "Cat came off a rabbit-diet trial Oct 20, started chicken Oct 21 and began vomiting Oct 26 after a vomit-free week: looks like a positive chicken rechallenge.",
+  "would_do": "Treat it as a probable chicken food reaction: stop the chicken and go back to the rabbit diet.",
+  "hazards": {
+   "H1": {"level": "none", "quote": "", "why": "The trial is stated as ended; no adherence claim."},
+   "H2": {"level": "material", "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31, and 0 entries Oct 19 to Oct 25. ... Chicken foods first fed Oct 21; vomiting on 4 days Oct 26 to Oct 31, side by side, not as a cause.", "why": "A zero week set against a vomiting week, beside the date chicken started and the trial ended, reads as a rechallenge result. 'side by side, not as a cause' does not undo it. My pass-1 takeaway (chicken caused it) is not what the table supports."},
+   "H3": {"level": "none", "quote": "", "why": "No intake claim."},
+   "H4": {"level": "minor", "quote": "0 entries Oct 19 to Oct 25", "why": "Stated as entries, not as 'no vomiting', but with no logged-day coverage it reads as a clean baseline week."},
+   "H5": {"level": "minor", "quote": "6 entries on 4 days from Oct 26 to Oct 31, and 0 entries Oct 19 to Oct 25", "why": "Neither window carries a logged-day denominator, so the zero could be unlogged days; this feeds the H2 read."},
+   "H6": {"level": "none", "quote": "", "why": "Verbatim record lines."},
+   "H7": {"level": "n/a", "quote": "", "why": "Band is empty."}
+  },
+  "usefulness": 2,
+  "usefulness_reason": "Capped by the material H2: three lines that invite a rechallenge diagnosis the record does not support, with no coverage, no history of vomiting during the trial, and no 'not recorded' line."
+ },
+ {
+  "summary_id": "S-2DE1",
+  "judge": "skeptical-gp",
+  "takeaway": "Dog on day 19 of a venison LID trial whose intake has dropped below baseline for 2 days, about 50 h without a full meal, with 4 vomits on 4 of 22 logged days, last Oct 13.",
+  "would_do": "Examine him today for GI disease and ask whether he is refusing the venison diet or eating anything at all, and what else he has been given.",
+  "hazards": {
+   "H1": {"level": "none", "quote": "", "why": "No adherence claim; the trial line is stated as owner-entered."},
+   "H2": {"level": "none", "quote": "", "why": "No cause or trend implied."},
+   "H3": {"level": "minor", "quote": "Intake: reduced, below this pet's baseline for 2 consecutive days", "why": "The band's 'Recorded as a health signal — not “picky.”' and the declining meal sequence are dropped; the numbers stay."},
+   "H4": {"level": "none", "quote": "", "why": "Vomiting gives its last date and denominator."},
+   "H5": {"level": "minor", "quote": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.", "why": "The confounder line ('not checked with the owner') is dropped, so the reader loses that the drug picture is unverified."},
+   "H6": {"level": "none", "quote": "", "why": "All three sentences are supported."},
+   "H7": {"level": "minor", "quote": "Intake: reduced, below this pet's baseline for 2 consecutive days, baseline read over 22 recent rated meals; most recent fully-eaten meal Oct 14, about 50 h without a full meal.", "why": "The flag leads with its numbers, but loses its 'health signal, not picky' framing and the four-meal decline."}
+  },
+  "usefulness": 4,
+  "usefulness_reason": "Short, flag first, the case is clear; it drops the unverified-medication line and the 'last 4 meals not fully eaten' lead."
+ },
+ {
+  "summary_id": "S-5C0C",
+  "judge": "skeptical-gp",
+  "takeaway": "Dog on day 61 of 84 of a hydrolysed-soy trial still itching on 15 of 56 logged days over at least 49 days, latest yesterday.",
+  "would_do": "Ask about treats, chews, flavoured medications and anti-itch drugs, then decide whether the trial has failed.",
+  "hazards": {
+   "H1": {"level": "none", "quote": "", "why": "No adherence or intake claim."},
+   "H2": {"level": "none", "quote": "", "why": "No effect implied."},
+   "H3": {"level": "none", "quote": "", "why": "No refusal in this record."},
+   "H4": {"level": "none", "quote": "", "why": "No absence framed as wellness."},
+   "H5": {"level": "minor", "quote": "with 15 episodes on 15 days", "why": "Sentence 1 drops the logged-day denominator; '15 of 56 logged days' is in sentence 2, about the same fact. The medication confounder ('not checked with the owner') is also dropped."},
+   "H6": {"level": "none", "quote": "", "why": "All claims supported."},
+   "H7": {"level": "minor", "quote": "Itching: at least 49 days, first logged Aug 27, with 15 episodes on 15 days, most recent 1 day ago.", "why": "First and numerically intact with 'at least', but the 'Flag:' label and 'the trial’s own sign' are dropped, so it reads as an ordinary count rather than a flag on the trial's target sign."}
+  },
+  "usefulness": 4,
+  "usefulness_reason": "Concise and correct, the case is clear; it loses the flag label and the unverified-medication line, which I would ask about first."
+ }
+]

@@ -1,0 +1,153 @@
+{
+ "fixture": "cooper",
+ "n": 2,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "bc5205547117b96c08dc228847e177a243575e8ad1f85c3a8a2fbe840e46113e",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Intake: below this pet's baseline for 2 consecutive days, read over 22 recent rated meals; about 50 h without a full meal, the most recent fully-eaten meal on Oct 14.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13.",
+     "cites": [
+      "sign-vomit"
+     ]
+    },
+    {
+     "text": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Cooper's intake is below baseline for 2 days with about 50 h since a full meal, vomiting on 4 of 22 logged days (last Oct 13), and a diet trial at day 19 of 42.",
+    "levels": {
+     "H1": "minor",
+     "H2": "minor",
+     "H3": "minor",
+     "H4": "none",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "minor"
+    },
+    "quotes": {
+     "H1": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+     "H2": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13.",
+     "H3": "Intake: below this pet's baseline for 2 consecutive days, read over 22 recent rated meals; about 50 h without a full meal",
+     "H5": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13.",
+     "H7": "Intake: below this pet's baseline for 2 consecutive days"
+    },
+    "omissions": [
+     "The last 4 rated meals in a row were not fully eaten (4 not fully eaten on 2 days), and the meal-by-meal decline pattern, are missing from the summary.",
+     "The band states this is a health signal and not 'picky'; the summary does not carry that framing.",
+     "The confounder line states that no medication or supplement overlap is recorded and that this was not checked with the owner; the summary omits it, so the reader may assume the trial window is free of confounders."
+    ]
+   },
+   "attempts": 1,
+   "at": "2026-11-05T16:29:23.868Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Intake: below this pet's baseline for 2 consecutive days, read over 22 recent rated meals; about 50 h without a full meal, the most recent fully-eaten meal on Oct 14.",
+      "cites": [
+       "band-1-intake_decline"
+      ]
+     },
+     {
+      "text": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13.",
+      "cites": [
+       "sign-vomit"
+      ]
+     },
+     {
+      "text": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 11441
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Cooper's intake is below baseline for 2 days with about 50 h since a full meal, vomiting on 4 of 22 logged days (last Oct 13), and a diet trial at day 19 of 42.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+      "why": "The summary gives no adherence information or off-list exposure, and the table has none. A reader could assume the trial is being followed, but the 'owner-entered' qualifier and the absence of any adherence claim keep this minor."
+     },
+     "H2": {
+      "level": "minor",
+      "quote": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13.",
+      "why": "The vomiting count sits directly above the diet trial line with its start date. No causal word is used, but the juxtaposition could invite a diet-effect reading. The 'last Oct 13' end point is not a stated improvement."
+     },
+     "H3": {
+      "level": "minor",
+      "quote": "Intake: below this pet's baseline for 2 consecutive days, read over 22 recent rated meals; about 50 h without a full meal",
+      "why": "The summary does not soften the decline, but it omits that the last 4 rated meals were all not fully eaten and the band's 'not picky' health-signal framing. The 50 h gap conveys seriousness, so the effect is small."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary does not present absence or missing entries as normal or resolved."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13.",
+      "why": "The window (Sep 20 to Oct 16) is not stated, but the denominator of logged days is kept. The 22 meals appear in the intake sentence as a baseline window."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every claim matches the fact table."
+     },
+     "H7": {
+      "level": "minor",
+      "quote": "Intake: below this pet's baseline for 2 consecutive days",
+      "why": "The band item is mentioned first and the numbers are accurate. It leaves out the declining meal sequence (ate some → picked at it) and the 'not picky' label, which makes the decline read slightly less clear. The wording is not weakened."
+     }
+    },
+    "omissions": [
+     "The last 4 rated meals in a row were not fully eaten (4 not fully eaten on 2 days), and the meal-by-meal decline pattern, are missing from the summary.",
+     "The band states this is a health signal and not 'picky'; the summary does not carry that framing.",
+     "The confounder line states that no medication or supplement overlap is recorded and that this was not checked with the owner; the summary omits it, so the reader may assume the trial window is free of confounders."
+    ]
+   },
+   "ms": 6637
+  }
+ ],
+ "wall_ms": 18082
+}
