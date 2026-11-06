@@ -7,7 +7,10 @@
 //   1. Read the draft row: the owner's own draft of this pet (id, pet, maker and status all in
 //      the filter). No draft, no run: there is nowhere to keep a lead.
 //   2. "Leave out the AI summary": record the choice on the copy and stop. No gate, no model.
-//   3. Not eligible (a thin record, nothing to summarise): record why and stop.
+//   3. Not eligible (a thin record, nothing to summarise): record why and stop. And a record with 2
+//      or more live band items (CUL-2563 ruling (b), verify.ts `multiFlagIssues`): the gate is read
+//      without spending, a closed one records its own outcome, an open one records not_eligible /
+//      multi_flag. Before the cache, so no stored lead is served on such a record.
 //   4. The cache: the same fact table (by hash) already printed on THIS draft. The gate still
 //      runs consent, both flags and the pet (it spends no count), so a withdrawn yes or a flag
 //      turned off clears the stored lead instead of serving it.
@@ -30,7 +33,7 @@ import { sha256Hex } from '../../_shared/engineStamps.ts'
 import { factTableHash, type LeadFacts, type LeadFactPayload } from './facts.ts'
 import { modelFor, requestBody, ticketFor, type GateTicket, type ModelResult, type Role } from './model.ts'
 import { HAZARDS, PROMPT_VERSION, type Hazard, type HazardLevel } from './prompts.ts'
-import { bandOrderIssues, LEAD_VERIFIER_VERSION, printedLeadText, printedSentences, verifyLead, type LeadSentence, type LeadSummary } from './verify.ts'
+import { bandOrderIssues, LEAD_VERIFIER_VERSION, multiFlagIssues, printedLeadText, printedSentences, verifyLead, type LeadSentence, type LeadSummary } from './verify.ts'
 import type { FactTable, VerifyIssue } from './verifyCore.ts'
 
 export const LEAD_WALL_CLOCK_MS = 60_000
@@ -166,6 +169,8 @@ export function modelDecision(v: CheckerVerdict): 'pass' | 'repair' | 'reject' {
  *  for the model's half alone and call it the checker. The verifier's band-first rule reads the same
  *  function and stays on; neither net depends on the other. */
 export function checkerDecision(v: CheckerVerdict, ctx: { table: FactTable; draft: LeadSummary }): 'pass' | 'repair' | 'reject' {
+  // CUL-2563 ruling (b): a multi-flag record never prints a lead, whatever the checker scored.
+  if (multiFlagIssues(ctx.table).length > 0) return 'reject'
   if (bandOrderIssues(ctx.table, { sentences: printedSentences(ctx.draft).map((text, i) => ({ text, cites: ctx.draft.sentences[i].cites })) }).length > 0) return 'reject'
   return modelDecision(v)
 }
@@ -206,6 +211,18 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
 
   if (opts.leaveOut) return record(base('left_out', 'owner', null))
   if (!facts.eligible) return record(base('not_eligible', facts.reason, null))
+  // CUL-2563 ruling (b): a record with 2+ live band items never prints a lead. Decided here, before
+  // the cache and before any model call, so no stored lead is served and no count is spent. The gate
+  // is read without spending, so a flag-off or declined owner keeps their own outcome (the preview
+  // says nothing to a flag-off owner).
+  if (multiFlagIssues(facts.table).length > 0) {
+    const g = await io.runGate(false)
+    if (!g.allow) {
+      const out = gateOutcome(g)
+      return record(base(out.outcome, out.reason, null))
+    }
+    return record(base('not_eligible', 'multi_flag', null))
+  }
   const hash = await factTableHash(facts.payload, LEAD_VERIFIER_VERSION)
 
   // 4. The cache, on this draft only.

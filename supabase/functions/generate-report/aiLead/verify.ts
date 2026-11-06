@@ -47,6 +47,9 @@
 //   bottom-line CUL-2532: a trial's bottom line or confounder scope prints only after its own line's words
 //   date-anchor CUL-2380: in any sentence citing more than the trial, every date keeps the word its
 //               line prints before it and its recency words, so dates cannot swap or be rebuilt
+//   multi-flag  CUL-2563 ruling (b): no lead at all on a record with 2 or more live band items
+//               (`multiFlagIssues`). Read off the table, never the draft, so nothing a model writes
+//               or scores can pass it; the pipeline asks it before any model call.
 
 import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type FactTable, type VerifyIssue, type VerifyReport } from './verifyCore.ts'
 
@@ -55,7 +58,7 @@ import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type F
 export type LeadSentence = { text: string; cites: string[] }
 export type LeadSummary = { sentences: LeadSentence[] }
 
-export const LEAD_VERIFIER_VERSION = 'vr2-6'
+export const LEAD_VERIFIER_VERSION = 'vr2-7'
 export const LEAD_MAX_SENTENCES = 3
 /** PM ruling 2026-11-05 on CUL-2550 (was 60, 2026-10-31): the smoke bake-off's drafts sat at a
  *  median of 57 words and the cap squeezed out the trial's confounder and denominators first. */
@@ -265,6 +268,23 @@ export function bandOrderIssues(table: FactTable, summary: LeadSummary): VerifyI
   return []
 }
 
+/** CUL-2563 ruling (b), PM 2026-11-06: no AI lead prints on a record with this many live band items
+ *  or more. The re-run measured ruling (a) (cite band item 1 only, band above): on nyx-v2 the lead
+ *  named the burden and left five live flags unsaid, both judges scored it material, and the checker
+ *  model passed it. Every band row is live (`tableFromPayload` builds each `live: true`, R-11's heading
+ *  flag included), and a row is counted whatever its `live` says, so a mislabelled row errs loud. */
+export const MULTI_FLAG_MIN_BAND = 2
+
+/** multi-flag: a record with `MULTI_FLAG_MIN_BAND` or more band items gets no lead. A function of the
+ *  fact table alone (no sentence, cite or checker verdict is read), so no model output can pass it.
+ *  Read by `verifyLead`, by the checker's decision and by `runAiLead` before any model call
+ *  (leadPipeline.ts); removing it from one does not remove it from the others. */
+export function multiFlagIssues(table: FactTable): VerifyIssue[] {
+  const n = table.facts.filter((f) => f.role === 'band').length
+  if (n < MULTI_FLAG_MIN_BAND) return []
+  return [{ sentence: null, check: 'multi-flag', detail: `${n} live band items (no lead at ${MULTI_FLAG_MIN_BAND} or more, CUL-2563)` }]
+}
+
 export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict {
   // The core judges the printed form, never the model's raw strings.
   const printed: LeadSummary = { sentences: summary.sentences.map((s, i) => ({ text: printedSentences(summary)[i], cites: s.cites })) }
@@ -283,6 +303,7 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
   const total = sents.reduce((n, s) => n + words(s.text), 0)
   if (total > LEAD_MAX_WORDS) err(null, 'structure', `the lead has ${total} words (max ${LEAD_MAX_WORDS})`)
 
+  for (const e of multiFlagIssues(table)) errors.push(e)
   for (const e of bandOrderIssues(table, printed)) errors.push(e)
   const band = table.facts.filter((f) => f.role === 'band')
   const bandSentences = sents.filter((s) => s.cites.some((c) => facts.get(c)?.role === 'band')).length
