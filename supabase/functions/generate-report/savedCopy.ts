@@ -132,6 +132,9 @@ export interface DraftRow {
   snapshot: Record<string, unknown>
   scope_basis: string
   short_id: string
+  /** PR-23b (CUL-2454): how many photos the owner left out of this copy (113's column). Which
+   *  ones rides in the snapshot's `incidentPhotosLeftOut`; the two come from one split. */
+  photos_left_out: number
 }
 
 export type InsertOutcome = 'ok' | 'short_id_taken' | 'failed'
@@ -283,6 +286,9 @@ export interface DraftInput {
   scopeBasis: string
   params: Record<string, unknown>
   snapshot: unknown
+  /** PR-23b (CUL-2454): `applyPhotosLeftOut`'s count for this very snapshot. A value that is not
+   *  a whole number at or above zero is written as 0 (113's CHECK refuses a negative). */
+  photosLeftOut: number
 }
 
 export interface Rendered<D> {
@@ -331,6 +337,7 @@ export async function saveDraft<D>(
       snapshot,
       scope_basis: input.scopeBasis,
       short_id: candidate,
+      photos_left_out: Number.isInteger(input.photosLeftOut) && input.photosLeftOut > 0 ? input.photosLeftOut : 0,
     })
     if (out === 'ok') shortId = candidate
     else if (out === 'failed') return unsaved()

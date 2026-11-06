@@ -773,8 +773,8 @@ Deno.test('mapAttachmentRows: renames fields, defaults null mime + missing sort_
     { id: 'a2', event_id: 'e2', storage_path: 'pet/e2.jpg', mime_type: null, sort_order: null },
   ])
   assert.deepEqual(out, [
-    { eventId: 'e1', storagePath: 'pet/e1.jpg', mimeType: 'image/jpeg', sortOrder: 2 },
-    { eventId: 'e2', storagePath: 'pet/e2.jpg', mimeType: null, sortOrder: 0 },
+    { id: 'a1', eventId: 'e1', storagePath: 'pet/e1.jpg', mimeType: 'image/jpeg', sortOrder: 2 },
+    { id: 'a2', eventId: 'e2', storagePath: 'pet/e2.jpg', mimeType: null, sortOrder: 0 },
   ])
 })
 
@@ -824,6 +824,7 @@ function jpegBlob(size = 1024): Blob {
 
 function mkPhoto(over: Partial<IncidentPhoto> & { eventId: string }): IncidentPhoto {
   return {
+    attachmentId: over.attachmentId ?? `att-${over.eventId}`,
     eventId: over.eventId,
     storagePath: over.storagePath ?? `pet/${over.eventId}.jpg`,
     type: over.type ?? 'vomit',

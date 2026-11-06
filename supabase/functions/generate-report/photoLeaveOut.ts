@@ -15,7 +15,7 @@
 //      photos.
 
 import { fmtLocalDay } from './render.ts'
-import type { IncidentPhotoLeftOut, IncidentPhotoSafety } from './report.ts'
+import type { IncidentPhotoLeftOut, IncidentPhotoSafety, ReportSnapshot } from './report.ts'
 import type { OccurredAtConfidence } from '../generate-signal/detection.ts'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -73,6 +73,63 @@ export function leftOutRecord(p: {
     occurredAtLatest: p.occurredAtLatest,
     safety: p.safety,
   }
+}
+
+/**
+ * PR-23b (CUL-2454): the owner's choice applied to an ASSEMBLED snapshot, the one step index.ts
+ * takes between `assembleReport` and the embed. Three rules, each pinned by a test:
+ *
+ *   1. v2 only (R5, adversarial gate 1, CUL-2590 guard 2). `v2On` is the request asking for v2
+ *      AND the flag resolving on, read BEFORE the embed. Otherwise the snapshot comes back as it
+ *      went in: every photo kept, `incidentPhotosLeftOut` empty, because v1 has no words for a
+ *      photo left out and would lose a flagged photo's card without a line.
+ *   2. The split runs on the manifest `assembleReport` built (CUL-2590 guard 1). Each photo there
+ *      already carries the SURVIVING incident's eventId (a twin's photo is merged onto it), so
+ *      every left-out record names an incident the band's flag cites, and its dated line prints.
+ *      Never rebuilt from raw attachment rows.
+ *   3. Only `incidentPhotos` and `incidentPhotosLeftOut` change (adversarial gate 3, R2): the
+ *      flags, the removed-photo disclosure and every analysis stay as assembled, so leaving a
+ *      photo out never moves a warning.
+ *
+ * `leftOutCount` is for the draft row's `photos_left_out`; it never goes into a response (R4).
+ */
+export function applyPhotosLeftOut(
+  snapshot: ReportSnapshot,
+  leftOutIds: readonly string[],
+  v2On: boolean,
+): { snapshot: ReportSnapshot; leftOutCount: number } {
+  if (!v2On || leftOutIds.length === 0) return { snapshot, leftOutCount: 0 }
+  const { kept, leftOut } = partitionPhotos(snapshot.incidentPhotos, leftOutIds)
+  if (leftOut.length === 0) return { snapshot, leftOutCount: 0 }
+  return {
+    snapshot: { ...snapshot, incidentPhotos: kept, incidentPhotosLeftOut: leftOut.map(leftOutRecord) },
+    leftOutCount: leftOut.length,
+  }
+}
+
+/** One row of the preview's photo picker (R7): which photo, of which incident, when, and whether
+ *  it sits behind a flag. No storage path, no URL, no note, no bytes; the phone draws the thumbnail
+ *  from its own copy of the attachment. */
+export interface PhotoManifestEntry {
+  attachmentId: string
+  eventId: string
+  type: string
+  occurredAt: string
+  safety: IncidentPhotoSafety | null
+}
+
+/** Every photo the assembled report held, BEFORE the owner's split, so the picker can offer a
+ *  photo back. It carries no mark of which were left out (R4): the phone holds its own choice. */
+export function photoManifestOf(
+  photos: readonly { attachmentId: string; eventId: string; type: string; occurredAt: string; safety: IncidentPhotoSafety | null }[],
+): PhotoManifestEntry[] {
+  return photos.map((p) => ({
+    attachmentId: p.attachmentId,
+    eventId: p.eventId,
+    type: p.type,
+    occurredAt: p.occurredAt,
+    safety: p.safety,
+  }))
 }
 
 /**

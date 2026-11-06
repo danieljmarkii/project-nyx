@@ -8,7 +8,7 @@ import { buildDocumentV2, flagRowOf, incidentTimeWords, textOf, type DocumentV2,
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { backSheetsOf, RECORD_SHEET_TITLE, v2FlagPointersOf } from './backSheetsV2.ts'
 import { fmtLocalDay, incidentPhotosIntroHtml } from './render.ts'
-import { leftOutBandLine, leftOutRecord, partitionPhotos } from './photoLeaveOut.ts'
+import { applyPhotosLeftOut, leftOutBandLine } from './photoLeaveOut.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
 import { at, nyxSafetyCat, stoolPhotoDog } from './v2Fixtures.testutil.ts'
 
@@ -17,15 +17,7 @@ const docOf = (s: ReportSnapshot): DocumentV2 => buildDocumentV2(s, OPTS)
 
 /** What index.ts does with the owner's choice (the same shape backSheetsV2.test.ts uses). */
 function leaveOut(s: ReportSnapshot, pick: (p: ReportSnapshot['incidentPhotos'][number]) => boolean): ReportSnapshot {
-  const { kept, leftOut } = partitionPhotos(
-    s.incidentPhotos.map((p) => ({ ...p, attachmentId: p.storagePath })),
-    s.incidentPhotos.filter(pick).map((p) => p.storagePath),
-  )
-  return {
-    ...s,
-    incidentPhotos: kept.map(({ attachmentId: _a, ...p }) => p),
-    incidentPhotosLeftOut: [...(s.incidentPhotosLeftOut ?? []), ...leftOut.map(leftOutRecord)],
-  }
+  return applyPhotosLeftOut(s, s.incidentPhotos.filter(pick).map((p) => p.attachmentId), true).snapshot
 }
 
 /** Nyx with her first vomit's photo removed after it was read: a removed-photo disclosure is
@@ -178,7 +170,7 @@ Deno.test('CUL-2455 (5) — a normal stool with blood, in a window across midnig
   normal.occurredAtEarliest = at(18, 22)
   normal.occurredAtLatest = at(17, 6)
   input.aiAnalyses.push({ ...bloody, eventId: normal.id })
-  input.attachments = [...(input.attachments ?? []), { ...anyPhoto, eventId: normal.id, storagePath: `pet-v2/${normal.id}.jpg` }]
+  input.attachments = [...(input.attachments ?? []), { ...anyPhoto, id: `att-${normal.id}`, eventId: normal.id, storagePath: `pet-v2/${normal.id}.jpg` }]
   const s = assembleReport(input)
   assert.ok(!s.provenance.symptomLog.some((e) => e.eventId === normal.id), 'the event log does not hold it')
   const photo = s.incidentPhotos.find((p) => p.eventId === normal.id)

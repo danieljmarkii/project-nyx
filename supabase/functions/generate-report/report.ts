@@ -697,6 +697,9 @@ export interface ReportConditionInput {
  * index.ts re-sniffs the transform output).
  */
 export interface ReportAttachmentInput {
+  /** PR-23b (CUL-2454, R3): `event_attachments.id` from the RLS-scoped pull. The ONLY key a photo
+   *  the owner left out is matched on; never a request value, never rendered. */
+  id: string
   eventId: string
   storagePath: string
   mimeType: string | null
@@ -2122,6 +2125,10 @@ export interface IncidentPhotoLeftOut {
  * incident with two photos yields two entries sharing the incident's date/type/phenotype/safety).
  */
 export interface IncidentPhoto {
+  /** PR-23b (CUL-2454, R3, R8): the `event_attachments.id` this photo is, from the RLS-scoped pull
+   *  (`ReportAttachmentInput.id`). What the owner's leave-out choice is matched on and what the
+   *  saved copy records. NEVER rendered. */
+  attachmentId: string
   eventId: string
   /** Storage object path (nyx-event-attachments). Consumed only by index.ts for the signed fetch — NEVER rendered. */
   storagePath: string
@@ -6886,6 +6893,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         : null
     for (const at of atts) {
       incidentPhotos.push({
+        attachmentId: at.id,
         eventId: e.id,
         storagePath: at.storagePath,
         type: e.type,

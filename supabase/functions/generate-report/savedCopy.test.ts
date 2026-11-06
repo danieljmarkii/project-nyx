@@ -141,6 +141,7 @@ const input = {
   scopeBasis: 'since_visit',
   params: { requested_window: null },
   snapshot: { scope: { startDate: '2026-10-01' }, incidentPhotos: [{ id: 'x', dataUri: 'data:image/jpeg;base64,AAAA' }] },
+  photosLeftOut: 0,
 }
 const render = (shortId: string | null) => ({ doc: { shortId }, html: `<html>report ${shortId ?? 'unsaved'}</html>` })
 
