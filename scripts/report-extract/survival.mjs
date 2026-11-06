@@ -26,6 +26,7 @@ export const MARKS = {
   // Not marks: the regions OCR reads (every chart label, and the QR's caption).
   labels: 'svg.chart text',
   caption: '.qrcap',
+  colophon: '.colo .colotext',
 }
 
 const dir = process.argv[2]
@@ -64,11 +65,13 @@ try {
           caption = { text: cap.textContent, lines: lineTops.size, pt: parseFloat(getComputedStyle(cap).fontSize) * ptPerPx }
         }
         const present = Object.fromEntries(Object.entries(marks).map(([k, sel]) => [k, document.querySelectorAll(sel).length]))
+        const colo = document.querySelector('.colo .colotext')
+        const colophon = colo ? { text: colo.textContent.trim(), pt: parseFloat(getComputedStyle(colo).fontSize) * ptPerPx } : null
         const qr = document.querySelector('.qrblock')
         const qrSvg = document.querySelector('svg.qr')
         // The symbol's own modules: the viewBox less the 4-module quiet zone on each side.
         const qrModules = qrSvg ? qrSvg.viewBox.baseVal.width - 8 : null
-        return { labels, caption, present, qrUrl: qr ? qr.getAttribute('data-qr') : null, qrModules }
+        return { labels, caption, colophon, present, qrUrl: qr ? qr.getAttribute('data-qr') : null, qrModules }
       }, MARKS)
       await page.emulateMedia({ media: null })
       fs.writeFileSync(`${stem}.survival.json`, JSON.stringify(facts, null, 1))

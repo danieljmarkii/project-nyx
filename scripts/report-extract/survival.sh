@@ -31,6 +31,7 @@ mutants=(
   "solid|mira|svg .span:not(.hollow):not(.dose){stroke-dasharray:3 3 !important;}|reads as dashed"
   "qr-small|cooper|svg.qr{width:13mm !important;height:13mm !important;}|QR modules print at"
   "caption|cooper|.qrcap{white-space:normal !important;word-break:break-all;display:block;width:24pt;}|caption wraps"
+  "colophon|cooper|.colo{color:#8a8d94 !important;}|did not OCR"
   "qr-query|cooper|ATTR|decoded to"
 )
 names=()

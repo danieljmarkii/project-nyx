@@ -5,8 +5,9 @@ THE COPY. Each sheet 1 that survival.mjs printed is rasterised at 200 dpi in gre
 way a copier degrades a page: a Gaussian blur of BLUR_PX (0.75 px at 200 dpi, about 0.1 mm: the
 optics' spread), then a hard threshold at half grey to pure black and white. On that page:
   1. LABELS. Every chart label drawn at 7pt or more (the row labels, the dates and part-column
-     labels under the axis, the flag's bracket) and the QR's caption read back through OCR
-     (tesseract). No chart text is drawn under 7pt.
+     labels under the axis, the flag's bracket), the QR's caption and the colophon ("not a
+     diagnosis", the date, the report id, the sheet count) read back through OCR (tesseract). No
+     chart text is drawn under 7pt.
      BLIND SPOT, stated so it never reads as coverage: the counts over the bars ("4 of 12",
      "1 in 6 d", "2") are not OCR'd. They print crisply on the copy, but tesseract misreads bold 8pt
      figures with tight word spacing at any enlargement (measured: "4o0f 12", "1inéd"). Every count
@@ -31,6 +32,7 @@ Usage: python3 -I scripts/report-extract/survival.py <dir> [--keep]   (--keep sa
 """
 import difflib
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -46,6 +48,9 @@ DPI = 200
 BLUR_PX = 0.75
 THRESHOLD = 128
 MODULE_MM_MIN = 0.5
+# One thread: tesseract's OpenMP workers spin against each other on a busy runner, and a one-second
+# read was measured taking minutes.
+TESSERACT_ENV = {**os.environ, "OMP_THREAD_LIMIT": "1"}
 MARKS = ("filled", "hollow", "solid", "dashed", "hatch", "qr")
 # The pieces of one mark that the footprint can split (a dashed line's dashes, a hatched cell's
 # strokes, a QR's modules) are joined by growing each pixel this far before counting blobs.
@@ -179,7 +184,7 @@ def ocr_lines(ink: np.ndarray, region: np.ndarray, tmp: pathlib.Path, keep: path
     out = []
     for k in (2, 3):
         Image.fromarray(sheet).resize((sheet.shape[1] * k, sheet.shape[0] * k), Image.LANCZOS).save(img, dpi=(DPI * k, DPI * k))
-        res = subprocess.run(["tesseract", str(img), "-", "--psm", "6", "--dpi", str(DPI * k)], capture_output=True, text=True, check=True)
+        res = subprocess.run(["tesseract", str(img), "-", "--psm", "6", "--dpi", str(DPI * k)], capture_output=True, text=True, check=True, env=TESSERACT_ENV)
         out += [l for l in res.stdout.splitlines() if l.strip()]
     return out
 
@@ -298,11 +303,16 @@ def check_sheet(d: pathlib.Path, name: str, paper: str, tmp: pathlib.Path, keep:
     caption_at = region("caption", -1)
     if caption_at is not None:
         lines += ocr_lines(ink[-1], caption_at, tmp)
+    colophon_at = region("colophon", -1)
+    if colophon_at is not None:
+        lines += ocr_lines(ink[-1], colophon_at, tmp, d / f"{stem}.ocr-colophon.png" if keep else None)
     wanted = [l["text"] for l in facts["labels"] if l["pt"] >= 7 and not l["cls"].startswith("cnt")]
     if facts["caption"]:
         wanted.append(facts["caption"]["text"])
         if facts["caption"]["lines"] != 1:
             fails.append(f"{at}: the QR caption wraps onto {facts['caption']['lines']} lines")
+    if facts.get("colophon"):
+        wanted.append(facts["colophon"]["text"])
     for label in wanted:
         stats["labels"] += 1
         if not reads_back(label, lines):

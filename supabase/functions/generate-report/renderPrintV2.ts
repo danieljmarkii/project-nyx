@@ -448,7 +448,9 @@ svg .cnt.nr{fill:var(--ink2);font-weight:400;}
 .lines{margin:8pt 0 0;padding-left:14pt;}
 .lines li{margin:0 0 2pt;}
 .qs .ptr{color:var(--ink2);font-size:8pt;}
-.colo{margin-top:14pt;padding-top:5pt;border-top:.5pt solid var(--hair);font-size:7.5pt;color:var(--ink2);}
+/* The colophon prints in full ink (VR2-11): in ink-2 at 7.5pt the print-survival test watched "not a
+   diagnosis", the date, the report id and the sheet count dissolve on a copy, leaving only the QR. */
+.colo{margin-top:14pt;padding-top:5pt;border-top:.5pt solid var(--hair);font-size:7.5pt;color:var(--ink);}
 svg.chart{display:block;margin:2pt 0 0;overflow:visible;max-width:100%;height:auto;}
 /* Chart labels print in full ink (VR2-11): the print-survival test measured ink-2 at 7.5 to 8.5pt
    dissolving under a copier's blur and threshold (the axis dates went first). Hierarchy is size and
