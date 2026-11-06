@@ -2994,8 +2994,9 @@ export interface IntakeLogEntry {
   notCountedFreeFed: boolean
   /**
    * CUL-2568: a free-fed bowl's rating in EITHER scope (`notCountedFreeFed` is the flag scope's
-   * marker only). `mealCompletion.recentNotFullyEatenRun` skips these rows, so a reader indexing
-   * the log against the run skips them too. Absent on an older snapshot (read as false).
+   * marker only). `mealCompletion.recentNotFullyEatenRun` skips a bowl's "ate it all" (and only
+   * that), so a reader indexing the log against the run skips those rows too. Absent on an older
+   * snapshot (read as false).
    */
   freeFed?: boolean
   /**
@@ -3844,7 +3845,7 @@ function leftMostOfIt(rating: IntakeRating): boolean {
  * arrive in time order and a run read off an unsorted list is a run of nothing.
  */
 /** CUL-2581: the word that marks a food, panel or protein key as hydrolysed (either spelling). */
-const HYDROLYSED_WORD = /\bhydroly[sz]ed?\b|\bhydrolysate\b/i
+const HYDROLYSED_WORD = /\bhydroly[sz]\w*/i
 
 export function recentNotFullyEatenRun(
   rated: Array<{ occurredAt: string; meal: { intakeRating: IntakeRating | null; foodItemId?: string | null } | null }>,
@@ -3853,10 +3854,16 @@ export function recentNotFullyEatenRun(
   const newestFirst = [...rated].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
   let run = 0
   for (const e of newestFirst) {
-    // CUL-2568: a free-fed bowl's rating is skipped, as the intake detector skips it (§11 #6). A
-    // bowl rated "ate it all" ended the run, so a cat refusing every watched meal printed no run.
-    if (isFreeFedIntakeMeal(e.meal?.foodItemId ?? null, Date.parse(e.occurredAt), freeFedSpans)) continue
-    if (e.meal?.intakeRating === 'all') break
+    // CUL-2568: a free-fed bowl's "ate it all" never ENDS the run. Intake from a bowl left down is
+    // not directly observed (the detector sets bowls aside, §11 #6), so a bowl "all" ended the run and
+    // a cat refusing every watched meal printed none. A bowl rating BELOW "all" still counts: it is an
+    // owner's observation of food left, and skipping it hid a bowl-only cat refusing for three days
+    // (adversarial pass 1, QUIET). Asymmetric on purpose: a bowl may only lengthen the run.
+    const isBowl = isFreeFedIntakeMeal(e.meal?.foodItemId ?? null, Date.parse(e.occurredAt), freeFedSpans)
+    if (e.meal?.intakeRating === 'all') {
+      if (isBowl) continue
+      break
+    }
     run++
   }
   return run
@@ -6403,37 +6410,81 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   })()
 
   // CUL-2581 — the hydrolysed trial and the foods carrying its protein intact (see the field).
+  //
+  // THE WORD MUST QUALIFY THE TRIAL'S OWN PROTEIN (adversarial pass 1): "hydrolysed yeast" in an
+  // intact-chicken diet's panel, or a hydrolysed-SOY diet the owner keyed as chicken, printed
+  // "Chicken (hydrolysed)" to a vet. Only a protein key that hydrolyses the target's source, or text
+  // naming that source beside the word ("hydrolysed chicken liver", "chicken hydrolysate"), counts.
+  // And only the TRIAL'S OWN SPAN is scanned: a treat given before Day 1 was never "beside" the diet.
   const hydrolysedTrial: DietSummary['hydrolysedTrial'] = (() => {
     if (!reportTrialInput || !trial) return null
-    const says = (...xs: Array<string | null | undefined>): boolean => xs.some((x) => typeof x === 'string' && HYDROLYSED_WORD.test(x))
-    const trialProteins = readProteinSet(reportTrialInput.proteins ?? null, reportTrialInput.primaryProtein ?? null)
-    if (!says(reportTrialInput.foodLabel, reportTrialInput.ingredientsNotes, ...trialProteins)) return null
     const base = proteinSourceBase(trialProteinTarget)
     if (!base) return null
-    // Intact: a key whose source is the trial's and which does not itself say hydrolysed.
-    const intact = (proteins: readonly string[]): boolean =>
-      proteins.some((p) => !HYDROLYSED_WORD.test(p) && proteinSourceBase(p) === base)
+    const src = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')
+    const qualifies = new RegExp(`\\bhydroly[sz]\\w*\\s+(?:[a-z-]+\\s+)?${src}\\b|\\b${src}(?:\\s+[a-z-]+)?\\s+hydroly[sz]\\w*`, 'i')
+    const hydrolysesBase = (key: string): boolean => HYDROLYSED_WORD.test(key) && proteinSourceBase(key) === base
+    // A GENERIC "hydrolysed protein" (Royal Canin "Hydrolyzed Protein HP") names no source, so it
+    // counts for the target only where the same text names no OTHER hydrolysed source: a soy panel
+    // under an owner-keyed chicken primary is not a hydrolysed chicken diet (adversarial case H).
+    // Words after "hydrolysed" that name a product, not a source ("Hydrolyzed HP", "Hydrolysed Diet").
+    const NOT_A_SOURCE = new Set(['protein', 'proteins', 'hp', 'diet', 'formula', 'food', 'recipe', 'treat', 'treats', 'loaf', 'kibble'])
+    const namedSources = (x: string): string[] =>
+      [...x.matchAll(/\bhydroly[sz]\w*(?:\s+([a-z][a-z-]*))?/gi)]
+        .map((m) => (m[1] ?? '').toLowerCase())
+        .filter((w) => w !== '' && !NOT_A_SOURCE.has(w))
+        .map((w) => proteinSourceBase(w))
+        .filter((b): b is string => b !== null)
+    const saysHydrolysedTarget = (...xs: Array<string | null | undefined>): boolean => {
+      const texts = xs.filter((x): x is string => typeof x === 'string')
+      if (texts.some((x) => qualifies.test(x))) return true
+      const generic = texts.some((x) => HYDROLYSED_WORD.test(x))
+      return generic && !texts.some((x) => namedSources(x).some((b) => b !== base))
+    }
+    const trialProteins = readProteinSet(reportTrialInput.proteins ?? null, reportTrialInput.primaryProtein ?? null)
+    if (!trialProteins.some(hydrolysesBase) && !saysHydrolysedTarget(reportTrialInput.foodLabel, reportTrialInput.ingredientsNotes)) return null
+    const startNum = dayNumber(reportTrialInput.startedAt.slice(0, 10))
+    const endKey = reportTrialInput.endedAt ?? reportTrialInput.completedAt ?? null
+    const endNum = endKey ? dayNumber(endKey.slice(0, 10)) : null
+    const inTrial = (iso: string): boolean => {
+      const d = eventDayNumber(iso, tz)
+      return d !== null && (startNum === null || d >= startNum) && (endNum === null || d <= endNum)
+    }
+    // A food carries the source INTACT when one of its keys names it and nothing (key, label or
+    // panel) says that source is hydrolysed. Per protein, not per label: a "Hydrolysed Salmon"
+    // treat whose panel lists chicken still carries intact chicken.
+    const carriesIntact = (proteins: readonly string[], label: string | null | undefined, notes: string | null | undefined): boolean =>
+      proteins.some((p) => !HYDROLYSED_WORD.test(p) && proteinSourceBase(p) === base) &&
+      !proteins.some(hydrolysesBase) &&
+      !saysHydrolysedTarget(label, notes)
     const found = new Map<string, { foodLabel: string; kind: 'free_fed' | 'meal' | 'treat'; feedings: number }>()
+    const bowlFoodIds = new Set<string>()
     for (const a of input.feedingArrangements) {
       if (a.method !== 'free_choice') continue
       const fromNum = a.activeFrom ? dayNumber(a.activeFrom) : -Infinity
       const untilNum = a.activeUntil ? dayNumber(a.activeUntil) : Infinity
+      // Overlaps the trial's span (not merely the report window).
+      const lo = startNum ?? -Infinity
+      const hi = endNum ?? Infinity
+      if (!((fromNum ?? -Infinity) <= hi && lo <= (untilNum ?? Infinity))) continue
       if (!((fromNum ?? -Infinity) <= endDayNum && startDayNum <= (untilNum ?? Infinity))) continue
       if (trialFoodId && a.foodItemId === trialFoodId) continue
       const label = a.foodLabel?.trim() || 'A free-fed bowl'
-      if (says(label, a.ingredientsNotes)) continue
-      if (!intact(readProteinSet(a.proteins ?? null, a.primaryProtein ?? null))) continue
+      if (!carriesIntact(readProteinSet(a.proteins ?? null, a.primaryProtein ?? null), label, a.ingredientsNotes)) continue
+      if (a.foodItemId) bowlFoodIds.add(a.foodItemId)
       if (!found.has(`bowl:${label}`)) found.set(`bowl:${label}`, { foodLabel: label, kind: 'free_fed', feedings: 0 })
     }
     for (const e of windowMeals) {
+      if (!inTrial(e.occurredAt)) continue
       const m = e.meal!
       const parts: Array<ReportFoodProteinInput & { foodItemId: string | null; brand: string | null; productName: string | null; format?: FoodFormat | null; foodType: 'meal' | 'treat' | 'other' | null; primaryProtein: string | null }> =
         m.bowl ? m.bowl.components : [m]
       for (const c of parts) {
         if (isReportTrialFood(c)) continue
+        // The bowl's own food is named once, as the bowl.
+        if (c.foodItemId && bowlFoodIds.has(c.foodItemId)) continue
         const label = mealFoodLabel(c)?.trim()
-        if (!label || says(label, c.ingredientsNotes)) continue
-        if (!intact(readProteinSet(c.proteins ?? null, c.primaryProtein ?? null))) continue
+        if (!label) continue
+        if (!carriesIntact(readProteinSet(c.proteins ?? null, c.primaryProtein ?? null), label, c.ingredientsNotes)) continue
         const kind = c.foodType === 'treat' || c.format === 'treat' ? 'treat' : 'meal'
         const prev = found.get(`fed:${label}`)
         if (prev) prev.feedings++

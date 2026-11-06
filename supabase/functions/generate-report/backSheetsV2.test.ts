@@ -390,7 +390,7 @@ Deno.test('episodes — v1’s sections word for word (with v2’s pointers), on
   assert.equal(ep.heading, EPISODES_HEADING)
   const text = textOf(ep.html)
   // The non-completed states are named, each once, beside the assessed denominator.
-  assert.match(text, /Across all 7 vomiting incidents; 3 have a legible AI read \(1 uncertain, 1 not read \(analysis did not complete\), 1 still processing, 1 without a photo\)\./)
+  assert.match(text, /Across all 7 vomiting incidents; 3 have a legible AI read \(1 uncertain, 1 not read \(analysis did not complete\), 1 still processing, 1 with no photo read on record\)\./)
   assert.match(text, /Possible foreign material — 1 incident:/)
   assert.doesNotMatch(text, /Possible blood/, 'blood prints only when present')
   assert.doesNotMatch(text, /appendix/i, 'no pointer to a sheet v2 does not print')

@@ -8093,9 +8093,12 @@ export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
   // and watery are 2–2 is a false majority (cold-read).
   // CUL-2412 instance 3: a tally, every value with its count, never "most often X" (which dropped
   // the minority reading a vet needs), over the field's own denominator (`distributionBit`'s rule).
-  const consistReads = Object.values(p.consistencyDistribution).reduce((a, b) => a + b, 0)
+  // 'unsure' is the model declining to read the field, never a consistency (the colour tally drops it
+  // in report.ts); it is left out here and its read out of the denominator.
+  const consistDist = Object.fromEntries(Object.entries(p.consistencyDistribution).filter(([k]) => k !== 'unsure'))
+  const consistReads = Object.values(consistDist).reduce((a, b) => a + b, 0)
   const consistBit = distributionBit(
-    p.consistencyDistribution,
+    consistDist,
     `Consistency, from ${consistReads === 1 ? 'the one read' : `the ${num(consistReads)} reads`} where it was legible:`,
     (k) => k.replace(/_/g, ' '),
   )
@@ -8117,7 +8120,7 @@ export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
   if (p.states.uncertain) stateBits.push(`${p.states.uncertain} uncertain`)
   if (p.states.failed) stateBits.push(`${p.states.failed} not read (analysis did not complete)`)
   if (p.states.pending) stateBits.push(`${p.states.pending} still processing`)
-  if (noPhoto > 0) stateBits.push(`${noPhoto} without a photo`)
+  if (noPhoto > 0) stateBits.push(`${noPhoto} with no photo read on record`)
   const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
   const denom = `Across ${p.totalIncidents === 1 ? 'the' : 'all'} ${num(p.totalIncidents)} vomiting incident${
     p.totalIncidents === 1 ? '' : 's'
@@ -8410,7 +8413,7 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
     const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
     aiLine = `<br/><span class="aitag">Automated photo analysis &middot; owner-reviewable</span> Photo reads cover ${num(ai.withAnalysis)} of the ${num(
       ai.totalIncidents,
-    )} stool event${ai.totalIncidents === 1 ? '' : 's'}${noPhoto > 0 ? ` (${num(noPhoto)} without a photo)` : ''}; of those, ${legibleReadCount(
+    )} stool event${ai.totalIncidents === 1 ? '' : 's'}${noPhoto > 0 ? ` (${num(noPhoto)} with no photo read on record)` : ''}; of those, ${legibleReadCount(
       ai.assessedCount,
     )} a legible AI read${stateDisclosure}.${bristolBit}${colourBit} Bristol type is the AI's read of the photo, for the owner to confirm; it is not a diagnosis.`
   }
@@ -9978,30 +9981,21 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null, stateWords = false):
   if (!ph) return ''
   if (ph.status === 'completed') {
     // PRESENT-only (§5.9): render blood/foreign/mucus ONLY when present; silence otherwise.
-    const bits =
-      ph.kind === 'stool'
+    const bits = [
+      ...(ph.kind === 'stool'
         ? [
             ph.bristol ? `consistency ${h(BRISTOL_LABEL[ph.bristol] ?? ph.bristol.replace(/_/g, ' '))}` : null,
             ph.stoolColour ? `colour ${h(STOOL_COLOUR_LABEL[ph.stoolColour] ?? ph.stoolColour.replace(/_/g, ' '))}` : null,
-            ph.stoolBlood
-              ? `<b>blood ${
-                  ph.stoolBlood === 'fresh_red'
-                    ? 'possible fresh red (haematochezia)'
-                    : ph.stoolBlood === 'dark_tarry'
-                    ? 'possible black/tarry (melena)'
-                    : 'possible (subtype unread)'
-                } (AI, unconfirmed)</b>`
-              : null,
-            // Mucus is monitor-tier (D5) — surfaced, present-only, but NOT bolded like a red flag.
-            ph.mucusPresent ? `mucus present (AI, unconfirmed)` : null,
-          ].filter(Boolean)
+          ]
         : [
             ph.colour ? `colour ${h(ph.colour)}` : null,
             ph.contentsCategory ? `contents ${h(contentsLabel(ph.contentsCategory).toLowerCase())}` : null,
             ph.consistency ? `consistency ${h(ph.consistency.replace(/_/g, ' '))}` : null,
-            ph.bloodPresent ? `<b>blood ${ph.bloodPresent === 'fresh_red' ? 'possible fresh red' : 'possible coffee-ground'} (AI, unconfirmed)</b>` : null,
-            ph.foreignPresent ? `<b>foreign material possible (AI, unconfirmed)${ph.foreignNote ? ` — ${h(ph.foreignNote)}` : ''}</b>` : null,
-          ].filter(Boolean)
+          ]
+      ).filter((x): x is string => x !== null),
+      // Mucus is monitor-tier (D5): surfaced, present-only, not bolded like a red flag.
+      ...presentFlagBits(ph),
+    ]
     // v2's event log names every read's state in words, completed included (spec §6.1, GAP-32):
     // a completed read with no present field otherwise prints "Photo:" and nothing, which a
     // reader cannot tell from a read that never ran. v1 keeps its own row.
@@ -10014,9 +10008,37 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null, stateWords = false):
   // CUL-2416: uncertain and failed shared "not clear enough to read", so a hedged read (which may
   // have hinted at blood) read the same as no read, and "present" read as "finding present". Each
   // now says what happened to that photo, and both send the vet to the photo itself.
-  if (ph.status === 'failed') return 'photo not read (the analysis did not complete); ask to see the photo'
-  if (ph.status === 'uncertain') return 'read uncertain, findings not shown; ask to see the photo'
-  return 'still processing — not read as of this report'
+  //
+  // A PRESENT red flag still prints first (adversarial pass 1, QUIET, pre-existing): the bout's
+  // blood / foreign / mucus flags are unioned over every member, so the band could say "Possible
+  // blood, Oct 11" while this row, its own source, said only "findings not shown".
+  const present = presentFlagBits(ph)
+  const lead = present.length > 0 ? `${present.join(' &middot; ')} &middot; ` : ''
+  if (ph.status === 'failed') return `${lead}photo not read (the analysis did not complete); ask to see the photo`
+  if (ph.status === 'uncertain') return `${lead}read uncertain, findings not shown; ask to see the photo`
+  return `${lead}still processing — not read as of this report`
+}
+
+/** The PRESENT-only red flags a phenotype carries (§5.9), whatever its read state. */
+function presentFlagBits(ph: SymptomLogPhenotype): string[] {
+  const out: string[] = []
+  if (ph.kind === 'stool') {
+    if (ph.stoolBlood)
+      out.push(
+        `<b>blood ${
+          ph.stoolBlood === 'fresh_red'
+            ? 'possible fresh red (haematochezia)'
+            : ph.stoolBlood === 'dark_tarry'
+              ? 'possible black/tarry (melena)'
+              : 'possible (subtype unread)'
+        } (AI, unconfirmed)</b>`,
+      )
+    if (ph.mucusPresent) out.push('mucus present (AI, unconfirmed)')
+  } else {
+    if (ph.bloodPresent) out.push(`<b>blood ${ph.bloodPresent === 'fresh_red' ? 'possible fresh red' : 'possible coffee-ground'} (AI, unconfirmed)</b>`)
+    if (ph.foreignPresent) out.push(`<b>foreign material possible (AI, unconfirmed)${ph.foreignNote ? ` — ${h(ph.foreignNote)}` : ''}</b>`)
+  }
+  return out
 }
 
 /** The incident types the owner can photograph for a read (vomit, stool); a cough row has none. */

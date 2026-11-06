@@ -1509,13 +1509,13 @@ Deno.test('stool: AI read, nothing present → Bristol line + "not a clearance" 
   assert.ok(/Type 6[^·]*×1/.test(flat), 'the minority Bristol type keeps its count')
   assert.ok(!/most often/.test(flat), 'never a modal line')
   // …and the photo line is counted over the photographed events, not every stool log.
-  assert.ok(/Photo reads cover 3 of the 4 stool events \(1 without a photo\)/.test(flat), 'its own denominator')
+  assert.ok(/Photo reads cover 3 of the 4 stool events \(1 with no photo read on record\)/.test(flat), 'its own denominator')
   assert.ok(!/Across all 4 stool events/.test(flat), 'never the pooled stool denominator')
   const head = /<h2>Stool characteristics([\s\S]*?)<\/h2>/.exec(html)?.[1] ?? ''
   assert.ok(/4 stool events · owner-described/.test(head.replace(/<[^>]*>/g, '')), 'the owner bar keeps owner-described under its heading')
   assert.ok(!/Automated photo analysis/.test(head), 'CUL-2412: the AI badge heads the photo line, not the owner bar')
   assert.ok(/Not seen/.test(html) && /not<\/b> a clearance/.test(html), 'present-only absence framed as non-clearance')
-  assert.ok(/1 without a photo/.test(flat), 'four-state denominator discloses the no-photo incident')
+  assert.ok(/1 with no photo read on record/.test(flat), 'four-state denominator discloses the no-photo incident')
   assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
 })
 
@@ -5779,7 +5779,7 @@ Deno.test('B-532/B-502 — with no photographed incident, the block collapses to
   )
   const t = plain(html)
   assert.ok(!/no legible read yet/.test(t), 'no chart furniture standing in for data that does not exist (B-532)')
-  assert.ok(/5 without a photo/.test(t), 'the denominator disclosure survives (§5.10)')
+  assert.ok(/5 with no photo read on record/.test(t), 'the denominator disclosure survives (§5.10)')
   // B-502 — the empty block collapses to ONE line: the section said "no photo" three ways (a
   // photo-read lead, a repeated body, and the blood block), ~100 words for one fact. The lead
   // that described a read that never happened is gone, the repeated body with it, and the

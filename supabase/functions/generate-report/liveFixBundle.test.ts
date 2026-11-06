@@ -60,8 +60,22 @@ Deno.test('CUL-2568 — a free-fed bowl rated "ate it all" never breaks the not-
   assert.match(v2Text(snap), /The last 3 rated meals in a row were not fully eaten/, 'v2 prints the same run')
   // The bowl's own rating is never part of the run either way.
   const spans = parseFreeFedIntakeSpans([{ foodItemId: 'bowl-food', createdAt: at(40, 6), activeFrom: dayKey(40), activeUntil: null, endedAt: null }])
-  assert.equal(recentNotFullyEatenRun([bowlMeal(1, 'refused'), meal(2, 'all')], spans), 0, 'a bowl refusal alone is no run')
+  // A bowl refusal is food left, observed: it COUNTS (adversarial pass 1, QUIET: skipping it hid a
+  // bowl-only cat three days into refusing). Only a bowl's "ate it all" is set aside.
+  assert.equal(recentNotFullyEatenRun([bowlMeal(1, 'refused'), meal(2, 'all')], spans), 1, 'a bowl refusal counts')
+  assert.equal(recentNotFullyEatenRun([bowlMeal(1, 'refused', 18), bowlMeal(1, 'refused', 8), bowlMeal(2, 'all')], spans), 2, 'a bowl "all" never ends it')
   assert.equal(recentNotFullyEatenRun([meal(1, 'refused'), bowlMeal(1, 'all', 9), meal(2, 'refused')], []), 1, 'without spans the bowl still ends it (the old rule)')
+})
+
+Deno.test('CUL-2568 adversarial P2 — a cat fed only from a bowl, refusing three days, keeps her run on v1 and v2', () => {
+  const events = [
+    ...[1, 2, 3].flatMap((d) => [bowlMeal(d, 'refused', 18), bowlMeal(d, 'refused', 8)]),
+    ...[4, 5, 6, 7, 8, 9, 10, 11, 12].map((d) => bowlMeal(d, 'all', 12)),
+  ]
+  const snap = assembleReport(baseInput({ events, feedingArrangements: [BOWL] }))
+  assert.equal(snap.diet.mealCompletion?.recentNotFullyEatenRun, 6)
+  assert.match(v2Text(snap), /The last 6 rated meals in a row were not fully eaten/)
+  assert.match(plain(renderReport(snap)), /the last 6 rated in a row not fully eaten/i)
 })
 
 // ── CUL-2589 ────────────────────────────────────────────────────────────────────
@@ -155,6 +169,14 @@ Deno.test('CUL-2416 / CUL-2442 — each photo state says what happened to that p
   assert.match(v2Text(snap), /photo attached, no read on record/, 'v2 reprints the event log')
 })
 
+Deno.test('CUL-2416 adversarial — an uncertain read that carries a blood flag prints the flag first, as the band does', () => {
+  const v = { ...symptom('vomit', 2), id: 'v-blood' }
+  const a = { ...analysis('v-blood', 'uncertain'), bloodPresent: 'fresh_red' } as ReportInput['aiAnalyses'][number]
+  const snap = assembleReport(baseInput({ events: [v], aiAnalyses: [a], attachments: [{ eventId: 'v-blood', storagePath: 'p/b.jpg', mimeType: 'image/jpeg', sortOrder: 0 }] }))
+  const v1 = plain(renderReport(snap))
+  assert.match(v1, /Photo: blood possible fresh red \(AI, unconfirmed\) · read uncertain, findings not shown; ask to see the photo/)
+})
+
 // ── CUL-2412 ────────────────────────────────────────────────────────────────────
 Deno.test('CUL-2412 — each chart and tally names the population it was drawn from', () => {
   const snap = assembleReport(baseInput())
@@ -178,7 +200,7 @@ Deno.test('CUL-2412 — each chart and tally names the population it was drawn f
   } as never
   const stoolHtml = stoolCharacteristics(snap)
   const st = plain(stoolHtml)
-  assert.match(st, /Photo reads cover 3 of the 12 stool events \(9 without a photo\); of those, 3 have a legible AI read\./)
+  assert.match(st, /Photo reads cover 3 of the 12 stool events \(9 with no photo read on record\); of those, 3 have a legible AI read\./)
   assert.match(st, /Type 7[^·.]*×1/, 'the one Type 7 keeps its count')
   assert.match(st, /Colour, from the 3 reads where it was legible: [^.]*×2 · [^.]*×1\./)
   assert.doesNotMatch(st, /most often|Across all 12 stool events/)
@@ -210,7 +232,7 @@ function hydrolysedTrialInput(bowlProteins: string[], bowlLabel = 'Purina ONE In
         allowedFoods: [{ foodItemId: 'f-zd', foodLabel: "Hill's z/d", role: 'primary_diet', allowedFrom: dayKey(20), allowedUntil: null, primaryProtein: 'chicken', brand: "Hill's", productName: 'z/d', proteins: ['chicken'], ingredientsNotes: 'Hydrolysed chicken liver, corn starch' }],
       } as never,
     ],
-    feedingArrangements: [{ ...BOWL, foodItemId: 'f-dry', proteins: bowlProteins, foodLabel: bowlLabel }],
+    feedingArrangements: [{ ...BOWL, foodItemId: 'f-dry', proteins: bowlProteins, primaryProtein: bowlProteins[0], foodLabel: bowlLabel }],
   })
 }
 Deno.test('CUL-2581 — a hydrolysed trial is named so, and intact protein beside it is called out (v1, v2)', () => {
@@ -228,6 +250,31 @@ Deno.test('CUL-2581 — a hydrolysed trial is named so, and intact protein besid
   clean.diet.hydrolysedTrial!.intactFoods = clean.diet.hydrolysedTrial!.intactFoods.filter((f) => f.kind === 'free_fed')
   assert.equal(clean.diet.hydrolysedTrial!.intactFoods.length, 0)
   assert.doesNotMatch(plain(renderReport(clean)), /Intact protein/)
+  // Adversarial pass 1: a food fed BEFORE Day 1 was never beside the trial.
+  const early = hydrolysedTrialInput(['turkey'])
+  early.events = early.events.filter((e) => e.meal?.foodItemId !== 'f-treat')
+  const pre = meal(30, null, 20)
+  early.events.push({ ...pre, meal: { ...pre.meal!, foodItemId: 'f-treat', foodType: 'treat', format: 'treat' as never, brand: 'Temptations', productName: 'Classic', primaryProtein: 'chicken', proteins: ['chicken'] } })
+  assert.deepEqual(assembleReport(early).diet.hydrolysedTrial?.intactFoods, [], 'a pre-trial treat is not listed')
+  // The word must qualify the trial's protein: "hydrolysed yeast" in an intact-chicken diet is not it.
+  const yeast = hydrolysedTrialInput(['chicken'])
+  yeast.dietTrials[0].ingredientsNotes = 'Chicken, rice, hydrolysed yeast'
+  yeast.dietTrials[0].foodLabel = 'Chicken & Rice'
+  yeast.events = yeast.events.map((e) => (e.meal?.foodItemId === 'f-zd' ? { ...e, meal: { ...e.meal!, ingredientsNotes: 'Chicken, rice, hydrolysed yeast' } } : e))
+  assert.equal(assembleReport(yeast).diet.hydrolysedTrial, null, '"hydrolysed yeast" does not make a chicken diet hydrolysed')
+  // Case H: a hydrolysed-SOY diet the owner keyed as chicken is not a hydrolysed chicken diet.
+  const soy = hydrolysedTrialInput(['chicken'])
+  soy.dietTrials[0].foodLabel = 'Royal Canin Hydrolyzed Protein HP'
+  soy.dietTrials[0].ingredientsNotes = 'Hydrolysed soy protein isolate, rice'
+  soy.events = soy.events.map((e) => (e.meal?.foodItemId === 'f-zd' ? { ...e, meal: { ...e.meal!, ingredientsNotes: 'Hydrolysed soy protein isolate, rice' } } : e))
+  assert.equal(assembleReport(soy).diet.hydrolysedTrial, null, 'a soy panel never prints "Chicken (hydrolysed)"')
+  // Case E: a "Hydrolysed Salmon" treat whose panel lists chicken still carries intact chicken.
+  const salmon = hydrolysedTrialInput(['turkey'])
+  salmon.events = salmon.events.map((e) => (e.meal?.foodItemId === 'f-treat' ? { ...e, meal: { ...e.meal!, productName: 'Hydrolysed Salmon', proteins: ['hydrolyzed salmon', 'chicken'] } } : e))
+  assert.ok(assembleReport(salmon).diet.hydrolysedTrial!.intactFoods.some((f) => /Hydrolysed Salmon/.test(f.foodLabel)), 'listed by its chicken')
+  // A "chicken hydrolyzate" key is hydrolysed, never intact.
+  const hz = hydrolysedTrialInput(['chicken hydrolyzate'], 'Hypo bowl')
+  assert.ok(!assembleReport(hz).diet.hydrolysedTrial!.intactFoods.some((f) => f.foodLabel === 'Hypo bowl'))
   // A trial diet that is not hydrolysed carries neither.
   const intactTrial = hydrolysedTrialInput(['chicken'])
   intactTrial.dietTrials[0].ingredientsNotes = 'Chicken, rice'

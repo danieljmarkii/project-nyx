@@ -1244,11 +1244,11 @@ function bowlText(b: ReportSnapshot['diet']['freeFed'][number]): string {
  * an older meal across a fully eaten one the log's scope leaves out.
  */
 function refusalRunText(snap: ReportSnapshot, run: number): string {
-  // CUL-2568: the run (`recentNotFullyEatenRun`) skips a free-fed bowl's ratings, as the intake
-  // detector does, so the rows read here skip them too (`k` and `run` must index one list, or the
+  // CUL-2568: the run (`recentNotFullyEatenRun`) skips a free-fed bowl's "ate it all" and counts its
+  // other ratings, so the rows read here skip exactly those (`k` and `run` must index one list, or the
   // "meal before" could sit behind a bowl rating); and the cap needs `k < run` (an exact run of 40
   // ending at a capped log is not "at least").
-  const rows = snap.provenance.intakeLog.filter((r) => !r.pinned && !r.freeFed)
+  const rows = snap.provenance.intakeLog.filter((r) => !r.pinned && !(r.freeFed && r.intakeRating === 'all'))
   let k = 0
   while (k < rows.length && k < run && rows[k].intakeRating === 'refused') k++
   if (k < 2) return ''
@@ -1274,8 +1274,8 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   // were not. The same floor as v1's `recentNotFullyEatenRun`: 2 or more. CUL-2540: a run that is
   // every rated meal says so, with its newest day, so an unbroken refusal never reads as a count.
   const run = mc?.recentNotFullyEatenRun ?? 0
-  // The newest rated row the run counts: a bowl's is skipped, as the run skips it (CUL-2568).
-  const newest = snap.provenance.intakeLog.find((r) => !r.pinned && !r.freeFed)
+  // The newest rated row the run counts: a bowl's "ate it all" is skipped, as the run skips it (CUL-2568).
+  const newest = snap.provenance.intakeLog.find((r) => !r.pinned && !(r.freeFed && r.intakeRating === 'all'))
   const newestDay = newest ? textOf(fmtLocalDay(newest.occurredAt, snap.timezone)) : null
   const runText =
     mc && run >= 2 && run < mc.ratedMeals
