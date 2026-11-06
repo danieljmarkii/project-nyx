@@ -476,6 +476,31 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
       expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
     });
 
+    it('adversarial pass 1: a day a forward jump recorded stops counting once the clock comes back', async () => {
+      // Six real days plus one phantom day 30 days ahead: six count, so it waits.
+      const stamp = daysBefore(INBOX_MAX_AGE_DAYS + 1);
+      const phantom = inboxDayKey(new Date(NOW.getTime() + 30 * 86_400_000));
+      const d = await ingestCaptureRecords(
+        db,
+        withDays(stamp, [...priorDays(INBOX_MIN_UNUSABLE_DAYS - 2), phantom]),
+        new Set([PET]),
+        NOW,
+      );
+      expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
+    });
+
+    it('a day recorded before the stamp does not count', async () => {
+      const stamp = daysBefore(INBOX_MAX_AGE_DAYS + 1);
+      const before = inboxDayKey(new Date(Date.parse(stamp) - 5 * 86_400_000));
+      const d = await ingestCaptureRecords(
+        db,
+        withDays(stamp, [...priorDays(INBOX_MIN_UNUSABLE_DAYS - 2), before]),
+        new Set([PET]),
+        NOW,
+      );
+      expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
+    });
+
     it("today's day counts once, however often it was recorded", async () => {
       const stamp = daysBefore(INBOX_MAX_AGE_DAYS + 1);
       const today = inboxDayKey(NOW);
@@ -1323,6 +1348,13 @@ describe('ingestCaptureInbox: the first-deferral stamp (CUL-2542)', () => {
       recordFile('w.json', { foodItemId: MISSING_FOOD }),
       stampFile('w.json', [stamp, ...prior(INBOX_MIN_UNUSABLE_DAYS)].join('\n')),
     ]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites).toHaveLength(0);
+  });
+
+  it('records no day while a later day is already recorded (a clock that jumped ahead, adversarial pass 1)', async () => {
+    const ahead = inboxDayKey(new Date(Date.now() + 30 * 86_400_000));
+    install([recordFile('w.json', { foodItemId: MISSING_FOOD }), stampFile('w.json', `${daysAgo(10)}\n${ahead}`)]);
     await ingestCaptureInbox(new Set([PET]));
     expect(mockStampWrites).toHaveLength(0);
   });

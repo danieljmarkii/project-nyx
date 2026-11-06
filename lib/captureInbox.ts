@@ -107,11 +107,22 @@ export function formatInboxDeferral(at: string, days: readonly string[]): string
   return [at, ...days].join('\n');
 }
 
-// The days a record has been found unusable on, with `today` added, capped at the minimum
-// (no rule reads past it, so the file never grows).
+// The distinct recorded days that count toward the minimum: those from the stamp's day to
+// `today`, with today itself (this pass is unusable). Day keys are fixed-width `YYYY-MM-DD`, so
+// comparing them as text is comparing dates.
+export function countedUnusableDays(days: readonly string[], stampDay: string, today: string): number {
+  const counted = new Set(days.filter((d) => d >= stampDay && d <= today));
+  counted.add(today);
+  return counted.size;
+}
+
+// The days a record has been found unusable on, with `today` added only when it is LATER than
+// every day already recorded (adversarial pass 1): after a forward clock jump, no real day is
+// recorded until the clock passes the phantom one, which only keeps the capture longer. Capped
+// at the minimum (no rule reads past it, so the file never grows).
 function unusableDaysWith(days: readonly string[], today: string): string[] {
-  const all = days.includes(today) ? [...days] : [...days, today];
-  return all.slice(0, Math.max(INBOX_MIN_UNUSABLE_DAYS, days.length));
+  if (days.length >= INBOX_MIN_UNUSABLE_DAYS || days.some((d) => d >= today)) return [...days];
+  return [...days, today];
 }
 
 /**
@@ -404,7 +415,11 @@ export async function ingestCaptureRecords(
     //
     // CUL-2571: and only after unusable passes on `INBOX_MIN_UNUSABLE_DAYS` distinct days, this
     // one counted, so a clock jump cannot fold the 45 days into one pass.
-    const unusableDayCount = new Set([...(file.unusableDays ?? []), inboxDayKey(now)]).size;
+    // Only days from the stamp's day to today count (adversarial pass 1): a day a forward clock
+    // jump recorded stops counting once the clock comes back.
+    const unusableDayCount = Number.isNaN(firstDeferredMs)
+      ? 0
+      : countedUnusableDays(file.unusableDays ?? [], inboxDayKey(new Date(firstDeferredMs)), inboxDayKey(now));
     const aged =
       !Number.isNaN(firstDeferredMs) &&
       now.getTime() - firstDeferredMs > maxAgeMs &&

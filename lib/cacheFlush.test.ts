@@ -239,7 +239,7 @@ describe('inboxFoodIdsFromPayloads (CUL-2542)', () => {
 describe('runCatalogCacheFlush (CUL-2572: the skip is bounded)', () => {
   const INBOX_FOOD = '22222222-2222-4222-9222-222222222222';
   const day = (n: number) => new Date(Date.UTC(2026, 10, 1 + n, 12));
-  const incomplete = () => ({ ids: [INBOX_FOOD], complete: false });
+  const incomplete = () => ({ ids: [INBOX_FOOD], complete: false, listed: true });
 
   beforeEach(async () => {
     await AsyncStorage.clear();
@@ -271,7 +271,7 @@ describe('runCatalogCacheFlush (CUL-2572: the skip is bounded)', () => {
   it('a whole read flushes on the first launch', async () => {
     const db = freshDb();
     seed(db);
-    expect(await runCatalogCacheFlush(asyncAdapter(db), () => ({ ids: [], complete: true }), day(0))).toBe(true);
+    expect(await runCatalogCacheFlush(asyncAdapter(db), () => ({ ids: [], complete: true, listed: true }), day(0))).toBe(true);
     expect(counts(db)).toEqual({ foods: 0, meds: 0 });
   });
 });

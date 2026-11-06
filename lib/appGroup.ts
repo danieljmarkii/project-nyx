@@ -38,17 +38,28 @@ const WIDGET_DIR = 'widget';
 const INBOX_DIR = 'inbox';
 const SNAPSHOT_DIR = 'snapshots';
 
-// The App Group container root, or null when unavailable (Android, or an iOS
-// binary without the entitlement). Wrapped in try/catch because the native
-// lookup throws rather than returning undefined on some misconfigurations.
-export function getAppGroupContainer(): Directory | null {
-  if (Platform.OS !== 'ios') return null;
+// The App Group container lookup. `none` when the platform has none (Android) or the binary
+// lacks the entitlement (the lookup returns nothing). CUL-2570 (adversarial pass 1): a lookup
+// that THROWS on iOS is `unavailable`, never `none`: the wipe looks the container up again on
+// its own, so a lookup that failed for the count and worked for the wipe would warn of nothing
+// and delete the captures. Erring loud: a misconfigured iOS build counts one unsent entry.
+type ContainerLookup = { status: 'ok'; container: Directory } | { status: 'none' } | { status: 'unavailable' };
+
+function lookUpContainer(): ContainerLookup {
+  if (Platform.OS !== 'ios') return { status: 'none' };
   try {
-    return Paths.appleSharedContainers?.[APP_GROUP_ID] ?? null;
+    const container = Paths.appleSharedContainers?.[APP_GROUP_ID];
+    return container ? { status: 'ok', container } : { status: 'none' };
   } catch (e) {
     console.warn('[appGroup] shared container unavailable:', e);
-    return null;
+    return { status: 'unavailable' };
   }
+}
+
+// The App Group container root, or null when there is none or the lookup failed.
+export function getAppGroupContainer(): Directory | null {
+  const found = lookUpContainer();
+  return found.status === 'ok' ? found.container : null;
 }
 
 // Resolve (and lazily create) a widget-data subdirectory.
@@ -64,10 +75,10 @@ export type WidgetDirectory =
   | { status: 'unavailable' };
 
 function widgetSubdirectory(name: string): WidgetDirectory {
-  const container = getAppGroupContainer();
-  if (!container) return { status: 'none' };
+  const found = lookUpContainer();
+  if (found.status !== 'ok') return found;
   try {
-    const dir = new Directory(container, WIDGET_DIR, name);
+    const dir = new Directory(found.container, WIDGET_DIR, name);
     dir.create({ intermediates: true, idempotent: true });
     return { status: 'ok', dir };
   } catch (e) {

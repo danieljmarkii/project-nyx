@@ -4,6 +4,7 @@
 const mockContainer = { id: 'container' };
 let mockCreateThrows = false;
 let mockHasContainer = true;
+let mockLookupThrows = false;
 
 jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 jest.mock('expo-file-system', () => ({
@@ -14,6 +15,7 @@ jest.mock('expo-file-system', () => ({
   },
   Paths: {
     get appleSharedContainers() {
+      if (mockLookupThrows) throw new Error('lookup');
       return mockHasContainer ? { 'group.com.projectnyx.app': mockContainer } : {};
     },
   },
@@ -25,6 +27,7 @@ describe('openCaptureInbox (CUL-2570)', () => {
   beforeEach(() => {
     mockCreateThrows = false;
     mockHasContainer = true;
+    mockLookupThrows = false;
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 
@@ -36,6 +39,11 @@ describe('openCaptureInbox (CUL-2570)', () => {
   it('no container is none', () => {
     mockHasContainer = false;
     expect(openCaptureInbox()).toEqual({ status: 'none' });
+  });
+
+  it('adversarial pass 1: a container lookup that throws on iOS is unavailable, never none', () => {
+    mockLookupThrows = true;
+    expect(openCaptureInbox()).toEqual({ status: 'unavailable' });
   });
 
   it('a container whose folder will not open is unavailable, never none', () => {

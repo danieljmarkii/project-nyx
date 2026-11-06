@@ -117,7 +117,7 @@ export async function runCatalogCacheFlush(
   now: Date = new Date(),
 ): Promise<boolean> {
   if (!(await catalogCacheFlushDue(database))) return false;
-  const inboxFoods = await inboxKeepForCatalogFlush(readRefs(), now);
+  const inboxFoods = await inboxKeepForCatalogFlush(readRefs(), CACHE_SCHEMA_VERSION, now);
   if (inboxFoods === null) {
     console.warn('[db] catalog cache flush skipped: widget inbox unreadable');
     return false;
