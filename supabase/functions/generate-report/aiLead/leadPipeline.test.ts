@@ -11,6 +11,8 @@ import { assertSendable } from './model.ts'
 import { modelDecision, leadAllowedAtSend, parseChecker, runAiLead, type LeadIO, type StoredVerdict } from './leadPipeline.ts'
 import { CHECKER_MODEL, HAZARDS, WRITER_MODEL } from './prompts.ts'
 import { LEAD_VERIFIER_VERSION, type LeadSentence } from './verify.ts'
+import { leadContextOf, storedLeadForSnapshot } from './run.ts'
+import { documentForLead } from './facts.ts'
 
 const snap = nyxLiveSnapshot()
 /** The live Nyx record as production builds it: six live band items, so no lead may print on it
@@ -317,4 +319,14 @@ Deno.test('CUL-2563: two live flags are enough; one still prints', async () => {
   assert.equal(f.sends.length, 0)
   const g = fake({ answers: [writer(GOOD), checker()] })
   assert.equal((await runAiLead(g.io, FACTS, { leaveOut: false })).outcome, 'printed')
+})
+
+Deno.test('CUL-2563: the send path never serves a stored lead on a multi-flag record, even with a matching hash', async () => {
+  // A printed verdict no shipped writer can produce today (runAiLead refuses first): the send path
+  // still checks the record itself rather than trusting the hash (adversarial review, finding A).
+  const facts = buildLeadFacts(documentForLead(snap), leadContextOf(snap, false))
+  if (!facts.eligible) throw new Error('eligible')
+  const text = GOOD.map((s) => s.text).join(' ')
+  const verdict = { outcome: 'printed', fact_hash: await factTableHash(facts.payload, LEAD_VERIFIER_VERSION), sentences: GOOD }
+  assert.equal(await storedLeadForSnapshot(snap, { text, verdict }), null)
 })
