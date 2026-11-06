@@ -536,6 +536,13 @@ function checkOutcomeClause(o: CheckOutcome, snap: ReportSnapshot): string {
     return ` from ${at(new Date(end - o.windowDays * MS_PER_DAY).toISOString())} to ${at(o.endIso)}`
   }
   const need = (what: string): string => (o.state === 'too_few' ? `, ${o.needed} needed${what}` : '')
+  // Found by the check's own logic, not carried as a flag here (adversarial pass 1 on CUL-2565).
+  if (o.found?.kind === 'one_bout') {
+    return `trial diet not eaten (${o.found.unfinished} of ${plural(o.found.rated, 'rated trial-diet feeding', 'rated trial-diet feedings')} left unfinished, all within ${o.found.spanHours} hours, too short a span for the flag)`
+  }
+  if (o.found?.kind === 'refused_then_vomited') {
+    return `a meal refused and then vomit within ${o.found.windowMinutes} minutes (${plural(o.found.episodes, 'time', 'times')} on ${plural(o.found.days, 'day', 'days')}, the first ${h(textOf(fmtDay(o.found.firstLocalDay)))}), which the app raises as an intake card but this report does not carry as a flag`
+  }
   switch (o.check) {
     case 'intake_decline':
       return `reduced intake (${plural(o.seen, 'rated meal', 'rated meals')}${span()}${need('')})`
@@ -560,11 +567,14 @@ function checksHtmlOf(snap: ReportSnapshot): string | null {
   const outcomes = snap.checkOutcomes ?? []
   const quiet = outcomes.filter((o) => o.state === 'not_flagged').map((o) => checkOutcomeClause(o, snap))
   const thin = outcomes.filter((o) => o.state === 'too_few').map((o) => checkOutcomeClause(o, snap))
+  const found = outcomes.filter((o) => o.state === 'found_not_flagged').map((o) => checkOutcomeClause(o, snap))
   const lead = checked?.lead ?? null
   const body = [
     // v1's sentence and its notes first and whole, so the must-carry guard reads them verbatim.
     lead === null ? '' : `Ran and did not trigger, which does not rule these out: ${lead}`,
     ...(checked?.rest ?? []),
+    // Loudest first: what a check found, though no flag above carries it.
+    found.length === 0 ? '' : `Found in this record, not raised as a flag, so not ruled out: ${found.join('; ')}.`,
     quiet.length === 0 ? '' : `${lead === null ? 'Ran and did not trigger, which does not rule these out' : 'Also ran and did not trigger'}: ${quiet.join('; ')}.`,
     thin.length === 0 ? '' : `Too few entries to run, so not ruled out either: ${thin.join('; ')}.`,
   ]
@@ -1170,7 +1180,7 @@ function buildLeadChart(
       // for column as a drawn row's twin says it, so a recent cluster of a fourth sign is not only a
       // total. Read off the same buckets (`perCol`), never recounted.
       overflowParts.push(
-        `also logged, not drawn: ${overflow
+        `also logged: ${overflow
           .map((s) => {
             const counts = perCol(s.weeklyBuckets, s.type)
             const short = soFarCol(columns, unit)
@@ -1347,9 +1357,10 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   // as partial intake). Same population as `finishedMeals`, from `intakeBreakdown`.
   const refused = mc?.intakeBreakdown.find((b) => b.rating === 'refused')?.count ?? 0
   // CUL-2580 (PM ruling (a) on brief A, 2026-11-06): this line counts "ate most" as not fully eaten;
-  // the band's diet-not-eaten flag counts it as finished (`feedingWasFinished`). So where the two can
-  // differ, the line names its "ate most" meals, and a vet can reconcile the two counts. v1's flag
-  // prints word for word.
+  // the band's diet-not-eaten flag counts it as finished (`feedingWasFinished`), over trial-diet
+  // feedings, treats included, across the trial's evidence dates. So each names its population: the
+  // flag in v1's words, word for word, and this line its meals and, where any, its "ate most" ones.
+  // The two need not sum to each other; they count different feedings, and each says which.
   const mostly = mc?.intakeBreakdown.find((b) => b.rating === 'most')?.count ?? 0
   const refusedText = `${mostly > 0 ? `, counting ${mostly} “ate most”` : ''}${refused > 0 ? ` (${refused} refused outright)` : ''}`
   // CUL-2349 (N2): the unfinished days themselves, as every sign line gives its last day.

@@ -200,6 +200,7 @@ function captionCut(leaf: V1Leaf): { rest: string; items: string | null } | null
     .replace(' colour is a convenience — every protein also carries a texture, so this reads in black & white.', '')
     // CUL-2588 ruling (b): with no bands drawn, the floor is the counts'.
     .replace(' so these bands are a floor.', ' so these counts are a floor.')
+    .replace(/(do(?:es)? not appear in) these bars\./g, '$1 these counts.')
   return cut === leaf.text ? null : { rest: cut, items: null }
 }
 

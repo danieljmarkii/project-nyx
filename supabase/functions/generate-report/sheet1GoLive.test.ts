@@ -12,6 +12,9 @@ import { refusalUnfinishedNamed, renderReport, safetyFlagRow, symptomLabel } fro
 import { fold } from './sheet1MustCarry.testutil.ts'
 import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
+import { sampleCases } from '../../../scripts/render-trial-report-sample.deno.ts'
+import { assembleReport, type ReportInput } from './report.ts'
+import { olive, symptom } from './v2Fixtures.testutil.ts'
 
 const OPTS: DocumentV2Options = { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: [] }
 
@@ -101,6 +104,53 @@ Deno.test('CUL-2565 — a snapshot frozen before the fact renders as before (no 
   assert.ok(!checksText(buildDocumentV2(frozen as ReportSnapshot, OPTS)).includes('reduced intake'))
 })
 
+// ── Adversarial pass 1's QUIET breaks, held ─────────────────────────────────
+
+Deno.test('adversarial 1 (QUIET) — a trial refusal inside one bout, which the band holds back, is said as found, never "did not trigger"', () => {
+  const input = structuredClone(sampleCases().find(([n]) => n === 'trial-report-clean.html')![1]) as ReportInput
+  const hp = input.events.filter((e) => e.type === 'meal' && /^f-hp/.test(e.meal?.foodItemId ?? ''))
+  for (const e of hp) e.meal!.intakeRating = null
+  // Three refused trial-diet feedings in one three-hour bout across local midnight.
+  const stamps = ['2026-05-26T03:00:00Z', '2026-05-26T04:30:00Z', '2026-05-26T06:00:00Z']
+  hp.filter((e) => /^2026-05-2[56]/.test(e.occurredAt)).slice(0, 3).forEach((e, i) => {
+    e.occurredAt = stamps[i]
+    e.loggedAt = stamps[i]
+    e.meal!.intakeRating = 'refused'
+  })
+  const s = assembleReport(input)
+  assert.ok(s.trial?.rangeRefusal && !s.trial.rangeRefusalSpansEpisodes, 'the range fact fires inside one bout')
+  assert.ok(!s.safetyFlags.some((f) => f.kind === 'trial_diet_refusal'), 'and the band holds it back')
+  const o = s.checkOutcomes?.find((x) => x.check === 'trial_diet_refusal')
+  assert.equal(o?.state, 'found_not_flagged')
+  const line = checksText(buildDocumentV2(s, OPTS))
+  assert.ok(!/did not trigger[^.]*trial diet not eaten/.test(line), line)
+  assert.match(line, /found in this record, not raised as a flag, so not ruled out: trial diet not eaten \(3 of 3 rated trial-diet feedings left unfinished, all within 12 hours/)
+})
+
+Deno.test('adversarial 1 (QUIET) — with en5 on, a cat whose refused-then-vomited card fires on Home is never told "reduced intake: ran and did not trigger"', () => {
+  const input = olive({ unfinishedDays: 0 }) as ReportInput
+  input.engineFlags = { on: ['engines_v3_en5'], readOk: true } as ReportInput['engineFlags']
+  const meals = input.events.filter((e) => e.type === 'meal')
+  for (const d of [5, 3]) {
+    const day = new Date(Date.parse(input.now) - d * 86_400_000).toISOString().slice(0, 10)
+    const m = meals.find((e) => e.occurredAt.startsWith(day))!
+    m.meal!.intakeRating = 'refused'
+    const v = symptom('vomit', d, 18)
+    v.occurredAt = m.occurredAt.replace(':00:00', ':20:00')
+    v.loggedAt = v.occurredAt
+    input.events.push(v)
+  }
+  const s = assembleReport(input)
+  assert.ok(!s.safetyFlags.some((f) => f.kind === 'intake_decline'), 'the report carries no intake flag (the gap filed apart)')
+  assert.equal(s.checkOutcomes?.find((x) => x.check === 'intake_decline')?.state, 'found_not_flagged')
+  const line = checksText(buildDocumentV2(s, OPTS))
+  assert.ok(!/did not trigger[^.]*reduced intake/.test(line), line)
+  assert.match(line, /found in this record, not raised as a flag, so not ruled out: a meal refused and then vomit within \d+ minutes \(2 times on 2 days/)
+  // Off, the card is not Home's either, so the plain read stands.
+  const off = assembleReport({ ...input, engineFlags: { on: [], readOk: true } as ReportInput['engineFlags'] })
+  assert.notEqual(off.checkOutcomes?.find((x) => x.check === 'intake_decline')?.state, 'found_not_flagged')
+})
+
 // ── CUL-2580: the meals line names the population it counts ─────────────────
 
 Deno.test('CUL-2580 — Nyx’s meals line says it counts “ate most” as not fully eaten, and v1’s flag prints word for word beside it', () => {
@@ -171,7 +221,7 @@ Deno.test('CUL-2566 instance 1 — a fourth sign past the chart’s rows keeps i
   const over = fold(chart.chart.overflow ?? '')
   const label = fold(symptomLabel('diarrhea'))
   const mine = over.split(`${label} 5 entries, by week `)[1]?.split(';')[0] ?? ''
-  assert.ok(over.startsWith('also logged, not drawn:') && mine !== '', over)
+  assert.ok(over.startsWith('also logged:') && mine !== '', over)
   // The cluster sits in the last week, in words, as the drawn rows' twin says a week.
   assert.match(mine.trim(), /\b5(?: in \d+ days?)?$/, `the cluster is in the last week: ${mine}`)
   assert.equal(mine.split(', ').length, n, 'one word per week')

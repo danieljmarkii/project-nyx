@@ -240,6 +240,8 @@ function offDietNotesStandAlone(div: string, snap: ReportSnapshot): string {
   return div
     .replace(/<div class="subnote"><svg class="key"[\s\S]*?<\/svg>:[\s\S]*?<\/div>/, offDietUnreadNote(snap))
     .replace(' so these bands are a floor.', ' so these counts are a floor.')
+    // A free-fed bowl's standing proteins: v1 says they are not in "these bars"; sheet 1 draws none.
+    .replace(/(do(?:es)? not appear in) these bars\./g, '$1 these counts.')
 }
 
 /** v1's words with v2's pointers; a chart's SVG, its captions and v1's contents line left out (see the header). */

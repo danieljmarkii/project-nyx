@@ -95,6 +95,8 @@ import {
   type StapleWashoutDiagnostic,
   INTAKE_TRIGGER_RANK,
   intakeCheckCoverage,
+  detectIntakeDecline,
+  withEn5Config,
 } from '../generate-signal/detection.ts'
 // The SHARED protein canonicalizer (lib/protein.ts via the generate-signal re-export —
 // same path detection.ts uses, so esbuild inlines one copy). The appendix-B tally MUST
@@ -165,7 +167,7 @@ import {
 } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
-import { carriesTrialDiet, COVERAGE_FLOOR, REFUSAL_MIN_RATED, VEHICLE_HOW_GIVEN, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
+import { carriesTrialDiet, COVERAGE_FLOOR, REFUSAL_MIN_RATED, REFUSAL_MIN_SPAN_MS, VEHICLE_HOW_GIVEN, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
 import { countedWeighIns, WEIGHT_RULES, weightStory, type WeightPoint, type WeightReading } from '../../../lib/weightStory.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 export type {
@@ -1936,7 +1938,13 @@ export interface SymptomAggregate {
  */
 export interface CheckOutcome {
   check: 'intake_decline' | 'trial_diet_refusal' | 'weight_loss'
-  state: 'flagged' | 'not_flagged' | 'too_few'
+  /** `found_not_flagged`: the check's own logic fired, but this report carries no flag for it
+   *  (adversarial pass 1 on CUL-2565): said apart, never as "did not trigger". */
+  state: 'flagged' | 'not_flagged' | 'too_few' | 'found_not_flagged'
+  /** With `found_not_flagged`: what the check found, and why the band does not carry it. */
+  found?:
+    | { kind: 'one_bout'; unfinished: number; rated: number; spanHours: number }
+    | { kind: 'refused_then_vomited'; episodes: number; days: number; windowMinutes: number; firstLocalDay: string }
   /** What the check read: rated meals, rated trial-diet feedings (or rated feedings, on the meal
    *  record when the trial diet could not be identified), or weigh-ins. */
   seen: number
@@ -6058,9 +6066,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const hasFlag = (...kinds: SafetyFlag['kind'][]): boolean => safetyFlags.some((f) => kinds.includes(f.kind))
   {
     const cov = intakeCheckCoverage(detInput, detConfig)
+    // Adversarial pass 1 (QUIET): Home's intake lane also runs I5, refused then vomited within
+    // minutes, under `engines_v3_en5`; this report's band does not (a gap filed apart, v1 included).
+    // So where I5 fires for this account and no intake flag is carried, the line says it was found,
+    // never that the intake check came back quiet.
+    const i5 =
+      hasFlag('intake_decline') || !isEngineKeyOn(input.engineFlags, 'engines_v3_en5')
+        ? undefined
+        : detectIntakeDecline(detInput, withEn5Config(detConfig)).find((f) => f.refusedThenVomited)?.refusedThenVomited
     checkOutcomes.push({
       check: 'intake_decline',
-      state: hasFlag('intake_decline') ? 'flagged' : cov.ratedMeals < cov.needed ? 'too_few' : 'not_flagged',
+      state: hasFlag('intake_decline') ? 'flagged' : i5 ? 'found_not_flagged' : cov.ratedMeals < cov.needed ? 'too_few' : 'not_flagged',
+      ...(i5
+        ? { found: { kind: 'refused_then_vomited' as const, episodes: i5.episodeCount, days: i5.dayCount, windowMinutes: i5.windowMinutes, firstLocalDay: i5.firstLocalDay } }
+        : {}),
       seen: cov.ratedMeals,
       needed: cov.needed,
       windowDays: cov.windowDays,
@@ -6073,7 +6092,26 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       check: 'trial_diet_refusal',
       // Only the ratings floor makes the check unable to read. Its days floor counts the days a
       // feeding was LEFT unfinished, so under it the check read and found too few refusals.
-      state: hasFlag('trial_diet_refusal') ? 'flagged' : rc.rated < REFUSAL_MIN_RATED ? 'too_few' : 'not_flagged',
+      // Adversarial pass 1 (QUIET): the range fact can fire inside one bout the band's episode guard
+      // holds back (three refusals in three hours across midnight). The check found it; it is said
+      // as found, with why the band does not carry it, never as "did not trigger".
+      state: hasFlag('trial_diet_refusal')
+        ? 'flagged'
+        : trialBlock.rangeRefusal
+          ? 'found_not_flagged'
+          : rc.rated < REFUSAL_MIN_RATED
+            ? 'too_few'
+            : 'not_flagged',
+      ...(!hasFlag('trial_diet_refusal') && trialBlock.rangeRefusal
+        ? {
+            found: {
+              kind: 'one_bout' as const,
+              unfinished: trialBlock.rangeRefusal.refusedFeedings,
+              rated: trialBlock.rangeRefusal.ratedFeedings,
+              spanHours: REFUSAL_MIN_SPAN_MS / MS_PER_HOUR,
+            },
+          }
+        : {}),
       seen: rc.rated,
       needed: REFUSAL_MIN_RATED,
       windowDays: null,
