@@ -460,14 +460,26 @@ export function divergence(haystack: string, line: string): string {
  * Cut on the folded text, so a line is never joined across anything but furniture.
  */
 export function withoutFurniture(haystack: string, doc: DocumentV2): string {
-  // The footer's digits sit beside the line's own, so `fold` marks the space between them ("page2of4#1to"):
-  // the mark goes with the footer, and survives only where a digit stands on both sides of it.
-  let hay = fold(haystack).replace(/(#?)page\d+of\d+(#?)/g, (_m, a: string, b: string) => (a && b ? '#' : ''))
+  let hay = cutFurniture(fold(haystack), /#?page\d+of\d+#?/g)
   const m = /@top-left\{content:("(?:[^"\\]|\\.)*")/.exec(pageHeadCss(doc))
   if (m) {
     const head = m[1].slice(1, -1).replace(/\\3C /g, '<').replace(/\\(.)/g, '$1')
     const f = fold(head)
-    if (f !== '') hay = hay.split(f).join('')
+    if (f !== '') hay = cutFurniture(hay, new RegExp(`#?${f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}#?`, 'g'))
   }
   return hay
+}
+
+/**
+ * Cuts each match out of folded text. Where a digit stands on BOTH sides of the cut, the digit-space
+ * mark `fold` writes ("#") goes back in its place, so "day 3 | page 2 of 4 | 1 to" stays "3#1", never
+ * the "31" a lost digit would also produce; anywhere else the cut leaves nothing ("Jun | page 2 of 4 |
+ * 1" is "jun1", as "Jun 1" folds). Adversarial pass 1 on PR-11 caught the first version fusing them.
+ */
+export function cutFurniture(hay: string, re: RegExp): string {
+  return hay.replace(re, (match: string, at: number, whole: string) => {
+    const before = whole[at - 1] ?? ''
+    const after = whole[at + match.length] ?? ''
+    return /\d/.test(before) && /\d/.test(after) ? '#' : ''
+  })
 }

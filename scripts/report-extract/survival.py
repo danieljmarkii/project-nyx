@@ -199,28 +199,39 @@ def same_glyph(w: str, g: str) -> bool:
 
 def reads_back(label: str, lines: list) -> bool:
     """A label reads back when some OCR'd line holds it, aligned character by character (spaces
-    dropped: OCR fuses "Jun 12" into "Juni2" where the face sets the space narrow). Every figure in the
-    label must align with the same figure, or a glyph OCR confuses with it (0 and o; 1, i, l); no
-    figure may be dropped, and none added; the letters must match at 85% or better. So it forgives a
-    misread and never a loss: "Oct" for "Oct 11", or "Oct 14" for "Oct 1", fails."""
+    dropped: OCR fuses "Jun 12" into "Juni2" where the face sets the space narrow). It forgives a
+    misread glyph and never a loss:
+      • every figure aligns with the same figure, or a glyph OCR confuses with it (0 and o; 1, i, l);
+      • no edit drops or rewrites more than ONE character of the label, so a lost word fails
+        ("Meals finished" for "Meals not finished", "On" for "Off");
+      • nothing figure-like is added beside a figure ("Oct l1" for "Oct 1"), and no figure anywhere;
+      • the whole matches at 85% or better, after the glyph fold.
+    Adversarial pass 1 on PR-11 broke the first version with a dropped "not"."""
     want = norm(label)
+    fold = str.maketrans({"o": "0", "i": "1", "l": "1", "|": "1"})
+    figure_like = set("0123456789oil|")
     for line in lines:
         got = norm(unicodedata.normalize("NFKD", line))
         if want == got:
             return True
-        fold = str.maketrans({"o": "0", "i": "1", "l": "1", "|": "1"})
         if difflib.SequenceMatcher(None, want.translate(fold), got.translate(fold), autojunk=False).ratio() < 0.85:
             continue
-        m = difflib.SequenceMatcher(None, want, got, autojunk=False)
         ok = True
-        for op, i1, i2, j1, j2 in m.get_opcodes():
+        for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, want, got, autojunk=False).get_opcodes():
             w, g = want[i1:i2], got[j1:j2]
             if op == "equal":
                 continue
-            if op == "replace" and len(w) == len(g):
-                ok = all(same_glyph(a, b) or not (a.isdigit() or b.isdigit()) for a, b in zip(w, g))
-            else:
-                ok = not any(c.isdigit() for c in w + g)
+            if op == "insert":
+                beside = want[i1 - 1 : i1] + want[i1 : i1 + 1]
+                ok = not any(c.isdigit() for c in g) and not (any(c.isdigit() for c in beside) and any(c in figure_like for c in g))
+            elif op == "delete":
+                ok = len(w) == 1 and not w.isdigit()
+            elif len(w) != 1 or len(g) > 2:  # replace: one character of the label, never a word
+                ok = False
+            elif w.isdigit():  # a figure stays that figure, or the one glyph OCR confuses with it
+                ok = len(g) == 1 and same_glyph(w, g)
+            else:  # a misread letter, but never one read as a figure it is not
+                ok = not any(c.isdigit() and not same_glyph(w, c) for c in g)
             if not ok:
                 break
         if ok:
@@ -247,14 +258,16 @@ def check_mark(mark: str, region: np.ndarray, where: str, facts: dict) -> list:
             out.append(f"{where}: a hollow bar's outline is {rim.mean():.0%} ink after the copy; it disappears")
         return out
     if mark in ("solid", "dashed"):
-        if w < h:
-            return []  # a bracket's end tick, not the line
+        # Along the line (its end ticks joined in): the columns that hold any ink. A course shorter
+        # than its own tick is still checked (adversarial pass 1 drew a 6pt hollow course solid).
         profile = region.any(axis=0)
         trimmed = profile[2:-2] if len(profile) > 6 else profile
         gaps = sum(1 for i in range(1, len(trimmed)) if trimmed[i - 1] and not trimmed[i])
         if mark == "solid" and not trimmed.all():
             return [f"{where}: a solid course line breaks into {gaps + 1} pieces after the copy; it reads as dashed"]
-        if mark == "dashed" and w > 20 and gaps < 2:
+        # Dashes repeat every 5pt (14px at 200 dpi): a line of 16px must show a gap, one of 40px two.
+        need = 2 if w > 40 else 1 if w >= 16 else 0
+        if mark == "dashed" and gaps < need:
             return [f"{where}: a dashed (hollow) course line keeps {gaps} gap(s) after the copy; it reads as solid"]
         return []
     if mark == "hatch":
