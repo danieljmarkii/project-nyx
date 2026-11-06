@@ -176,7 +176,7 @@ export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string):
   if (f.allRefused === true) {
     // CUL-2424 (PM ruling (a) + option 1, 2026-11-05): a day of nothing but refusals is a refusal,
     // never "eating less". "You rated" scopes it to the record; it never claims an unrated meal.
-    // Mirrored on the client (`intakeAllRefusedSentence`, lib/signalCopy.ts); keep the two in sync.
+    // Mirrored on the client (`evidenceText` and `bannerRest`, lib/signalCopy.ts); keep them in sync.
     const when = f.daysBelowBaseline <= 1 ? 'today' : `over ${span}`
     return `${petName} refused every meal you rated ${when} — worth keeping an eye on, and a word with your vet if it carries on.`
   }

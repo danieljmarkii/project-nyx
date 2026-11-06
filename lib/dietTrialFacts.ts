@@ -1094,6 +1094,8 @@ export function intakeDeclineFacts(
     trigger: flag.trigger,
     refusedFoodLabel: flag.refusedFoodLabel,
     headline: declineHeadline(flag, petName),
+    // Present only when true: absent reads as not refused everywhere it is compared.
+    ...(flag.allRefused === true ? { allRefused: true } : {}),
   }));
 }
 

@@ -218,6 +218,8 @@ export interface LocalIntakeDecline {
   trigger: IntakeDeclineTrigger | null;
   refusedFoodLabel: string | null;
   headline: string;
+  /** CUL-2424: the detector's refusal fact on a `consecutive_low`; part of its identity. */
+  allRefused?: boolean;
 }
 
 /**
@@ -265,6 +267,7 @@ export function getReadyIntakeDeclines(
 function sameLocalDecline(a: LocalIntakeDecline, b: LocalIntakeDecline): boolean {
   if (a.trigger === null || b.trigger === null) return a.headline === b.headline;
   if (a.trigger !== b.trigger) return false;
+  if (a.trigger === 'consecutive_low') return (a.allRefused === true) === (b.allRefused === true);
   if (a.trigger !== 'refused_normal_food') return true;
   return (a.refusedFoodLabel ?? '').trim().toLowerCase() === (b.refusedFoodLabel ?? '').trim().toLowerCase();
 }
@@ -581,9 +584,12 @@ function intakeRank(trigger: IntakeDeclineTrigger | null): number {
  *   • A different trigger is a different fact. "Ate less than usual today" and
  *     "turned down Chicken Pâté" are two things to tell a vet, and the server itself
  *     emits them as two rows when both fire.
- *   • `consecutive_low` is identified by its trigger alone. Its day count is the
- *     species constant on both sides (`daysBelowBaseline`: cat 1, dog 2), so two
- *     `consecutive_low`s for one pet cannot disagree about anything.
+ *   • `consecutive_low` is identified by its trigger AND its refusal fact (CUL-2424).
+ *     Its day count is the species constant on both sides (`daysBelowBaseline`: cat 1,
+ *     dog 2), but a day of nothing but refusals is not a dip: a device "refused every
+ *     meal you rated" is never dropped under a Signal "eaten less than usual" (a stale
+ *     cache, or one written before the fact existed, which reads as not refused). A
+ *     mismatch either way prints both rows; the failure is an extra row.
  *   • A refusal is identified by its FOOD as well. Two normally-eaten foods refused
  *     on consecutive days is the move from aversion to anorexia — the history
  *     Dr. Chen said she most needs — and a trigger-only match read the vet the
@@ -609,7 +615,8 @@ function sameDecline(local: LocalIntakeDecline, signal: IntakeDeclineFinding): b
   if (local.trigger === null || local.trigger !== signal.trigger) return false;
   // The sustained-refusal floor, like consecutive-low, is one per pet: its counts move with the
   // clock on both sides, so the trigger alone identifies it.
-  if (local.trigger === 'consecutive_low' || local.trigger === 'sustained_refusal') return true;
+  if (local.trigger === 'consecutive_low') return (local.allRefused === true) === (signal.allRefused === true);
+  if (local.trigger === 'sustained_refusal') return true;
   if (local.refusedFoodLabel === null) return true;
   return (
     signal.refusedFoodLabel != null &&
@@ -651,7 +658,7 @@ function intakeRow(decline: LocalIntakeDecline): WorthRaisingRow {
     id:
       decline.trigger === null
         ? `intake-decline-${decline.headline}`
-        : `intake-${decline.trigger}${decline.refusedFoodLabel === null ? '' : `-${decline.refusedFoodLabel.trim().toLowerCase()}`}`,
+        : `intake-${decline.trigger}${decline.allRefused === true ? '-refused' : ''}${decline.refusedFoodLabel === null ? '' : `-${decline.refusedFoodLabel.trim().toLowerCase()}`}`,
     text: decline.headline,
     detail: null,
     source: 'intake',

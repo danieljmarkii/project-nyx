@@ -3007,7 +3007,7 @@ export function stripNameLine(finding: SignalFinding): string | null {
             ? 'No meal eaten well'
             : finding.trigger === 'consecutive_low'
               ? intakeAllRefused(finding)
-                ? 'Refused every meal'
+                ? 'Refused every meal you rated'
                 : 'Eating less than usual'
               : UNKNOWN_INTAKE_COPY.name;
     case 'incident_red_flag':

@@ -8,6 +8,7 @@
 
 jest.mock('./db', () => ({ getDb: jest.fn() }));
 jest.mock('./feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
+jest.mock('./supabase', () => ({ supabase: {} }));
 
 import {
   bannerCopy,
@@ -23,6 +24,7 @@ import {
 } from './signalCopy';
 import { signalHomeLine } from './signalHomeLine';
 import { declineHeadline } from './dietTrialFacts';
+import { getReadyIntakeDeclines } from './getReady';
 import { detectIntakeDecline, type AnalyticsMeal, type IntakeDeclineFlag } from './analytics';
 import {
   liveCardCopy,
@@ -73,8 +75,8 @@ describe('a day of nothing but refusals reads as refusal (CUL-2424)', () => {
     expect(s.sample).toBe('1 day of refused meals, against 6 recent meals');
     expect(s.script).toBe('Concern: refused every meal you rated | How long: 1 day | Compared with: 6 recent meals');
     expect(s.banner).toBe('Miso refused every meal you rated today — worth a look.');
-    expect(s.stripName).toBe('Refused every meal');
-    expect(s.homeHeadline).toBe('Refused every meal');
+    expect(s.stripName).toBe('Refused every meal you rated');
+    expect(s.homeHeadline).toBe('Refused every meal you rated');
     expect(s.stripCount).toBe('1 day of refused meals, against 6 recent meals');
   });
 
@@ -95,6 +97,13 @@ describe('a day of nothing but refusals reads as refusal (CUL-2424)', () => {
     expect(surfaces(card({ allRefused: false })).stripName).toBe('Eating less than usual');
     expect(intakeAllRefused(card({ allRefused: true }))).toBe(true);
     expect(intakeAllRefused(card({ allRefused: true, trigger: 'refused_normal_food' }))).toBe(false);
+  });
+
+  it('Get ready keeps a refusal and a dip from two reads as two declines', () => {
+    const refused = { trigger: 'consecutive_low' as const, refusedFoodLabel: null, headline: 'Miso refused every meal you rated today.', allRefused: true };
+    const dip = { trigger: 'consecutive_low' as const, refusedFoodLabel: null, headline: 'Miso has eaten less than usual today.' };
+    expect(getReadyIntakeDeclines([dip], { intakeDeclineHeadline: refused.headline, intakeDeclineFacts: [refused] })).toHaveLength(2);
+    expect(getReadyIntakeDeclines([refused], { intakeDeclineHeadline: refused.headline, intakeDeclineFacts: [refused] })).toHaveLength(1);
   });
 
   it('the device headline says refused', () => {
@@ -143,7 +152,7 @@ describe('the composer card words an intake flag by what happened (CUL-2424, CUL
   const body = (f: ComposerFlag) => liveCardCopy(live([f]), 'Miso')?.body ?? '';
 
   it('a refusal fact reads as refusing, the dip as less', () => {
-    expect(body(intake('consecutive_low', true))).toMatch(/refusing every meal rated/i);
+    expect(body(intake('consecutive_low', true))).toMatch(/refusing every meal you rated/i);
     expect(body(intake('consecutive_low', true))).not.toMatch(/less/);
     expect(body(intake('consecutive_low', false))).toMatch(/eating less than usual/i);
   });

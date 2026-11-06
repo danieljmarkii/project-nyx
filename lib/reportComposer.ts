@@ -496,7 +496,7 @@ function flagWords(f: ComposerFlag): string {
       if (f.trigger === 'refused_normal_food') return 'refusing a usual food';
       if (f.trigger === 'sustained_refusal') return 'no meal eaten well for days';
       // CUL-2424 (PM ruling (a) + option 1): every recent rated meal refused is a refusal.
-      if (f.trigger === 'consecutive_low') return f.allRefused === true ? 'refusing every meal rated' : 'eating less than usual';
+      if (f.trigger === 'consecutive_low') return f.allRefused === true ? 'refusing every meal you rated' : 'eating less than usual';
       // CUL-2415: a null or unknown trigger states no baseline it cannot back (PM default, 2026-11-02).
       return 'not eating normally';
     case 'trial_diet_refusal':
