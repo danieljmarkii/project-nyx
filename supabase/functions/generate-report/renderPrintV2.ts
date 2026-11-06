@@ -18,7 +18,9 @@
 //     of the chart's facts;
 //   - every label over a mark wears the paper halo (`paint-order: stroke`).
 //
-// Fonts and the QR are VR2-11 (CUL-2291); this file names the families and draws no QR.
+// Fonts and the QR are VR2-11 (CUL-2291, `printAssetsV2.ts`): the stylesheet opens with the embedded
+// faces (tabular figures frozen into the cmap, so no `font-variant-numeric` anywhere), and the
+// colophon carries the tokenless QR on sheet 1.
 //
 // THE AI LEAD (VR2-25, CUL-2305; spec §5.3, §9.1). When a verified lead is handed in, it takes the
 // one serif slot where the lead sentence stands, under its label, and the code's line 1 drops to
@@ -30,6 +32,7 @@ import { BACK_STYLE_PRINT, backSheetHtml, bandPhotosHtml, pageHeadCss } from './
 import type { LeadSentence } from './aiLead/verify.ts'
 import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
+import { PRINT_ASSET_STYLE, qrBlockV2, reportFontFaceCss } from './printAssetsV2.ts'
 
 /** Never fewer than this many counts on the axis, so a single entry draws at a quarter height. */
 export const COUNT_AXIS_MIN_MAX = 4
@@ -334,7 +337,8 @@ function block(b: BlockV2, aiLead: string | null = null): string {
         .map((q) => `<li><span class="q">${h(q.text)}</span> <span class="ptr">${h(q.pointer)}</span></li>`)
         .join('')}</ol></section>`
     case 'colophon':
-      return `${open('footer', 'colo')}${h(b.text)}</footer>`
+      // The QR sits beside the colophon's words, never inside them (the line stays one run of text).
+      return `${open('footer', 'colo withqr')}<span class="colotext">${h(b.text)}</span>${qrBlockV2()}</footer>`
   }
 }
 
@@ -355,7 +359,7 @@ html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
 ::marker{font-variant-numeric:normal;}
 body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:9.5pt;line-height:1.38;orphans:3;widows:3;}
 .sheet{width:515pt;margin:0 auto;}
-.serif{font-family:"Newsreader",Georgia,"Iowan Old Style",serif;}
+.serif{font-family:"Newsreader","Geist",Georgia,"Iowan Old Style",serif;}
 .mast .stamp{font-size:7.5pt;color:var(--ink2);margin:0;}
 .mast .eyebrow{font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);}
 .mast h1{font-size:20pt;line-height:1.1;margin:2pt 0 3pt;font-weight:650;}
@@ -443,7 +447,7 @@ svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linej
 svg .ax{font-size:7.5px;fill:var(--ink2);}
 svg .ax.part{fill:var(--ink);}
 @media print{.sheet{width:auto;}}
-${BACK_STYLE_PRINT}`
+${BACK_STYLE_PRINT}${PRINT_ASSET_STYLE}`
 
 /** The whole v2 document as HTML: sheet 1 only until the back sheets ship (VR2-13). `aiLead`
  *  is a lead the send path read back with `storedLeadForDocument` (verified, same facts) or null. */
@@ -458,7 +462,8 @@ export function renderPrintV2(doc: DocumentV2, aiLead: readonly LeadSentence[] |
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="report-version" content="v2" />
 <title>${h(title)}</title>
-<style>${STYLE_V2}${pageHeadCss(doc)}</style>
+<style>${reportFontFaceCss()}
+${STYLE_V2}${pageHeadCss(doc)}</style>
 </head>
 <body>
 <main class="sheet" data-sheet="1">

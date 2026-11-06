@@ -309,7 +309,9 @@ Deno.test('hatch — drawn only on a column with nothing logged, once per drawn 
 Deno.test('svg — aria-hidden, no aria-label and no title: the twin is the only carrier', () => {
   for (const [name, s] of fixtures()) {
     const html = renderPrintV2(docOf(s))
-    const svgs = html.match(/<svg[\s\S]*?<\/svg>/g) ?? []
+    // The colophon's QR (VR2-11) is not a chart: it is an image of a link and says so
+    // (printAssetsV2.test.ts holds it). Every other SVG is a chart.
+    const svgs = (html.match(/<svg[\s\S]*?<\/svg>/g) ?? []).filter((svg) => !svg.startsWith('<svg class="qr"'))
     assert.ok(svgs.length >= 1, name)
     for (const svg of svgs) {
       assert.match(svg, /^<svg[^>]*aria-hidden="true"/, name)
