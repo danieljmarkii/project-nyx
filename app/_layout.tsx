@@ -37,7 +37,9 @@ import { currentSignOutEpoch } from '../lib/signOutEpoch';
 import { PASSWORD_RECOVERY_ENABLED } from '../constants/flags';
 import { purgeRetiredStorage } from '../lib/retiredStorage';
 import { useSync } from '../hooks/useSync';
-import { usePendingReportKeeps } from '../hooks/usePendingReportKeeps';
+import { PendingReportKeepsHost } from '../components/reportV2/PendingReportKeepsHost';
+import { currentKeepUser, noteSignedOutKeepLoss, pendingKeepCount } from '../lib/reportKeep';
+import { useKeepLossStore } from '../store/keepLossStore';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { useWidgetSnapshots } from '../hooks/useWidgetSnapshots';
 import { useNotificationScheduling } from '../hooks/useNotificationScheduling';
@@ -104,8 +106,6 @@ function RootLayoutTree() {
   const [fontsLoaded, fontError] = useFonts(fontMap);
 
   useSync();
-  // CUL-2522: a sent report's keep the app was closed on is tried again, or said once.
-  usePendingReportKeeps();
   // B-290: keep the App Group widget snapshots current — debounced re-publish on
   // event/pet-store changes + each hydration tick. Inert off iOS.
   useWidgetSnapshots();
@@ -287,6 +287,9 @@ function RootLayoutTree() {
           store.setRecoveryInProgress(true);
           router.replace('/(auth)/reset-password');
           void (async () => {
+            // CUL-2573: this wipe has no flush and no warning before it; count what it takes.
+            const lostUser = await currentKeepUser();
+            useKeepLossStore.getState().note(lostUser, await pendingKeepCount(lostUser));
             await wipeLocalSession();
             await abandonRecovery('failed');
           })().catch((e: unknown) =>
@@ -348,6 +351,14 @@ function RootLayoutTree() {
         // fallback (DeleteAccountSheet) runs the identical sequence — one source
         // of truth for the wipe. Awaited so it completes before any subsequent
         // sign-in starts re-hydrating.
+        //
+        // CUL-2573: a sign-out the owner did not confirm (a refresh failure, the confirm screen's
+        // account switch) wipes report copies still waiting to be kept, and its session is
+        // already gone, so they cannot be tried. Count them first; `PendingReportKeepsHost` says
+        // it after the wipe. Settings' sign-out warned before it and was confirmed; a deleted
+        // account has no reports left to keep a copy in.
+        const before = useAuthStore.getState();
+        await noteSignedOutKeepLoss({ userId: before.session?.user.id ?? null, justDeletedAccount: before.justDeletedAccount });
         await wipeLocalSession();
         setSession(null);
         const store = useAuthStore.getState();
@@ -513,6 +524,9 @@ function RootLayoutTree() {
             because Ask and the day summary are stack screens pushed over the tabs and a
             sheet has to present from above them. */}
         <LogSheetHost />
+        {/* CUL-2522 / CUL-2576: a sent report's keep the app was closed on is tried again,
+            and a miss is said once, in a notice a sign-out closes. */}
+        <PendingReportKeepsHost />
         <MealCompletionCard />
         <MedicationCompletionCard />
         <NamedCompletionCard />

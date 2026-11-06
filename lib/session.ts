@@ -1,6 +1,7 @@
 import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
 import { pendingKeepsBeforeSignOut } from './reportKeep';
+import { clearKeepSessionState } from './reportKeepLedger';
 import { clearWidgetData } from './appGroup';
 import { clearCatalogFlushSkips } from './inboxFoodRefs';
 import { countUnclaimedInbox, ingestCaptureInbox } from './captureInbox';
@@ -218,6 +219,9 @@ export async function wipeLocalSession(): Promise<void> {
   // memory for a few seconds (`lib/removalNotice.ts`). An id matches no other account's
   // row, and it goes anyway: every place account state rests, not just SQLite.
   clearRemovalNotices();
+  // CUL-2576: the report-keep sets (in flight, answered, awaiting a dismissal) hold report ids of
+  // this account. They reach nothing under the next one, and they go anyway.
+  clearKeepSessionState();
   // CUL-1127 (rls-privacy-reviewer): realtime channels are account state too, and nothing
   // closed them. Each is a socket subscription joined under the signing-out owner's token
   // and filtered on one of their row ids, and its owner (a screen) is not guaranteed to

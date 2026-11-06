@@ -72,13 +72,18 @@ export interface SummaryCaps { daily: number; monthly: number }
 // app_config.ai_caps.report_summary without a deploy.
 export const REPORT_SUMMARY_CAPS: SummaryCaps = { daily: 6, monthly: 30 }
 
+/** Set on a refusal that came from a read that failed (an error or a throw), not from what was
+ *  read (CUL-2575). The gate still refuses, fail-closed, for every caller; only a caller that can
+ *  ask again later (the keep, whose client retries) treats it as passing. */
+type Unread = { unread?: true }
+
 export type SummaryGate =
   | { allow: true }
-  | { allow: false; reason: 'consent_declined'; scope: 'ai_boundary' | 'report_summary' }
-  | { allow: false; reason: 'flag_off'; flag: typeof REPORT_DOCUMENT_FLAG | typeof REPORT_AI_LEAD_FLAG }
-  | { allow: false; reason: 'pet_not_owned' }
-  | { allow: false; reason: 'cap_reached'; cap: 'daily' | 'monthly' }
-  | { allow: false; reason: 'cap_unknown' }
+  | ({ allow: false; reason: 'consent_declined'; scope: 'ai_boundary' | 'report_summary' } & Unread)
+  | ({ allow: false; reason: 'flag_off'; flag: typeof REPORT_DOCUMENT_FLAG | typeof REPORT_AI_LEAD_FLAG } & Unread)
+  | ({ allow: false; reason: 'pet_not_owned' } & Unread)
+  | ({ allow: false; reason: 'cap_reached'; cap: 'daily' | 'monthly' } & Unread)
+  | ({ allow: false; reason: 'cap_unknown' } & Unread)
 
 type ConsentRow = { scope?: unknown; granted?: unknown; copy_version?: unknown }
 
@@ -149,8 +154,8 @@ export function capDecision(
 export interface SummaryGateIO {
   readConsent(): Promise<{ data: unknown; error: unknown }>
   readConfig(): Promise<{ key: string; value: unknown }[] | null>
-  /** True only when the pet exists and belongs to the verified uid. */
-  petOwned(): Promise<boolean>
+  /** True only when the pet exists and belongs to the verified uid; null when the read failed. */
+  petOwned(): Promise<boolean | null>
   recordUsage(): Promise<{ dayCount: number; monthCount: number } | null>
 }
 
@@ -164,9 +169,11 @@ export async function runSummaryGate(io: SummaryGateIO, uid: string, opts: { spe
   }
   let consent: SummaryGate
   try {
-    consent = consentDecision(await io.readConsent())
+    const read = await io.readConsent()
+    consent = consentDecision(read)
+    if (!consent.allow && (!read || read.error)) consent = { ...consent, unread: true }
   } catch {
-    consent = { allow: false, reason: 'consent_declined', scope: 'ai_boundary' }
+    consent = { allow: false, reason: 'consent_declined', scope: 'ai_boundary', unread: true }
   }
   if (!consent.allow) return consent
 
@@ -177,15 +184,17 @@ export async function runSummaryGate(io: SummaryGateIO, uid: string, opts: { spe
     config = null
   }
   const flags = flagDecision(config, uid)
-  if (!flags.allow) return flags
+  // readConfig answers null only for a read that failed; no rows is [].
+  if (!flags.allow) return config === null ? { ...flags, unread: true } : flags
 
-  let owned = false
+  let owned: boolean | null = false
   try {
-    owned = (await io.petOwned()) === true
+    owned = await io.petOwned()
   } catch {
-    owned = false
+    owned = null
   }
-  if (!owned) return { allow: false, reason: 'pet_not_owned' }
+  if (owned === null) return { allow: false, reason: 'pet_not_owned', unread: true }
+  if (owned !== true) return { allow: false, reason: 'pet_not_owned' }
   if (!opts.spend) return { allow: true }
 
   let counts: { dayCount: number; monthCount: number } | null = null
@@ -237,7 +246,7 @@ export function summaryGateIO(
         .maybeSingle()
       if (error) {
         console.warn('pets read failed; the summary is skipped:', error.message)
-        return false
+        return null
       }
       return !!data
     },

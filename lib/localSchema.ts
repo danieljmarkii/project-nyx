@@ -666,11 +666,14 @@ export const BASE_SCHEMA_SQL = `
     -- open tries it again (lib/reportKeep.ts drainPendingKeeps) or tells the owner it missed.
     -- Local only, never synced. Wiped on sign-out (LOCAL_WIPE_TABLES): a row names a pet's
     -- report and says when it left the phone.
+    -- CUL-2576: user_id is the account that sent it. A row is tried and said only under that
+    -- account; any other (or none) deletes it unsent, so the wipe is no longer the only fence.
     CREATE TABLE IF NOT EXISTS pending_report_keeps (
       report_id     TEXT PRIMARY KEY,
       pet_id        TEXT NOT NULL,
       shared_via    TEXT NOT NULL,
-      queued_at     TEXT NOT NULL
+      queued_at     TEXT NOT NULL,
+      user_id       TEXT
     );
 `;
 
@@ -758,6 +761,9 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // food. No `rehydrate`: no build has written a count, so no server row holds one an
   // older pull could have skipped, and the components decide a bowl anyway.
   { table: 'meals', column: 'component_count', type: 'INTEGER' },
+  // CUL-2576 — the account a waiting report keep belongs to. Nullable, no backfill: a row from
+  // before it names no account, so no drain sends or says it (lib/reportKeep.ts deletes it).
+  { table: 'pending_report_keeps', column: 'user_id', type: 'TEXT' },
   { table: 'medication_administrations', column: 'logged_via', type: "TEXT NOT NULL DEFAULT 'app'" },
   // B-546 / migration 048 — the filename a vet document arrived with (Files/PDF
   // picks only). `vet_documents` shipped in VF-1 without it, so a device that

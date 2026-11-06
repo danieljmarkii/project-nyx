@@ -2,7 +2,14 @@
 // open. Drives the real keepReportCopy / drainPendingKeeps over an in-memory ledger, and the real
 // sqlite ledger over BASE_SCHEMA_SQL on node:sqlite.
 
-jest.mock('./supabase', () => ({ supabase: { functions: { invoke: jest.fn() } } }));
+// auth-js's session names the account a keep belongs to (CUL-2576); `mockUid` swaps it.
+let mockUid: string | null = 'user-a';
+jest.mock('./supabase', () => ({
+  supabase: {
+    functions: { invoke: jest.fn() },
+    auth: { getSession: async () => ({ data: { session: mockUid === null ? null : { user: { id: mockUid } } } }) },
+  },
+}));
 jest.mock('./db', () => ({ getDb: () => { throw new Error('no device db under test'); } }));
 
 import * as fs from 'fs';
@@ -14,11 +21,14 @@ import {
   acknowledgeKeepMisses,
   drainPendingKeeps,
   pendingKeepsBeforeSignOut,
+  pendingKeepCount,
+  noteSignedOutKeepLoss,
   keepReportCopy,
   pendingKeepMissNotice,
   type KeepAnswer,
 } from './reportKeep';
-import { keepsAnswered, keepsInFlight, missesAwaitingAck, sqliteKeepLedger, type KeepLedger, type LedgerDb, type PendingKeep } from './reportKeepLedger';
+import { ACCEPT_WINDOW_MS, useKeepLossStore, keepLossNotice, mayHearKeepLoss } from '../store/keepLossStore';
+import { clearKeepSessionState, keepsAnswered, keepsInFlight, missesAwaitingAck, sqliteKeepLedger, type KeepLedger, type LedgerDb, type PendingKeep } from './reportKeepLedger';
 
 const PET = '11111111-2222-4333-8444-555555555555';
 const ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -44,6 +54,7 @@ const at = (ms: number) => () => ms;
 beforeEach(() => jest.spyOn(console, 'warn').mockImplementation(() => undefined));
 afterEach(() => {
   jest.restoreAllMocks();
+  mockUid = 'user-a';
   keepsInFlight.clear();
   keepsAnswered.clear();
   missesAwaitingAck.clear();
@@ -98,7 +109,7 @@ describe('keepReportCopy writes the ledger before its first try and clears it on
     // The wait between tries never returns: the JS context is gone.
     void keepReportCopy(report, 'share', jest.fn(err(null)), KEEP_RETRY_DELAYS_MS, () => new Promise(() => undefined), ledger, at(T0));
     await new Promise((r) => setImmediate(r));
-    expect([...rows.values()]).toEqual([{ reportId: ID, petId: PET, sharedVia: 'share', queuedAt: new Date(T0).toISOString() }]);
+    expect([...rows.values()]).toEqual([{ reportId: ID, petId: PET, sharedVia: 'share', queuedAt: new Date(T0).toISOString(), userId: 'user-a' }]);
     relaunch();
     const invoke = jest.fn(ok);
     expect(await drainPendingKeeps(invoke, ledger, at(T0 + 60_000))).toEqual([]);
@@ -121,7 +132,7 @@ describe('keepReportCopy writes the ledger before its first try and clears it on
 });
 
 describe('drainPendingKeeps', () => {
-  const row = (over: Partial<PendingKeep> = {}): PendingKeep => ({ reportId: ID, petId: PET, sharedVia: 'email', queuedAt: new Date(T0).toISOString(), ...over });
+  const row = (over: Partial<PendingKeep> = {}): PendingKeep => ({ reportId: ID, petId: PET, sharedVia: 'email', queuedAt: new Date(T0).toISOString(), userId: 'user-a', ...over });
   const missOf = (r: PendingKeep) => ({ reportId: r.reportId, petId: r.petId, sharedVia: r.sharedVia });
 
   it.each([
@@ -237,6 +248,159 @@ describe('drainPendingKeeps', () => {
   });
 });
 
+describe('a ledger row belongs to its account (CUL-2576)', () => {
+  const row = (over: Partial<PendingKeep> = {}): PendingKeep => ({ reportId: ID, petId: PET, sharedVia: 'email', queuedAt: new Date(T0).toISOString(), userId: 'user-a', ...over });
+
+  it('a keep records the account whose token it carries', async () => {
+    mockUid = 'user-b';
+    const { ledger, rows } = memoryLedger();
+    void keepReportCopy(report, 'email', jest.fn(err(null)), KEEP_RETRY_DELAYS_MS, () => new Promise(() => undefined), ledger, at(T0));
+    await new Promise((r) => setImmediate(r));
+    expect(rows.get(ID)?.userId).toBe('user-b');
+  });
+
+  it('auth-js reading no session (an expired token offline) still leaves a row, under the store account (adversarial pass 1, finding 1)', async () => {
+    mockUid = null;
+    const { useAuthStore } = jest.requireActual('../store/authStore') as typeof import('../store/authStore');
+    useAuthStore.setState({ session: { user: { id: 'user-a' } } as never });
+    try {
+      const { ledger, rows } = memoryLedger();
+      void keepReportCopy(report, 'shown', jest.fn(err(null)), KEEP_RETRY_DELAYS_MS, () => new Promise(() => undefined), ledger, at(T0));
+      await new Promise((r) => setImmediate(r));
+      expect(rows.get(ID)?.userId).toBe('user-a');
+    } finally {
+      useAuthStore.setState({ session: null });
+    }
+  });
+
+  it('with no session anywhere a keep writes no row (no drain could send it) and still tries once', async () => {
+    mockUid = null;
+    const { ledger, rows } = memoryLedger();
+    const invoke = jest.fn(err(401));
+    expect(await keepReportCopy(report, 'email', invoke, KEEP_RETRY_DELAYS_MS, noWait, ledger, at(T0))).toBe('failed');
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(rows.size).toBe(0);
+  });
+
+  it("another account's row is deleted unsent and never said", async () => {
+    mockUid = 'user-b';
+    const { ledger, rows } = memoryLedger([row()]);
+    const invoke = jest.fn(err(404));
+    expect(await drainPendingKeeps(invoke, ledger, at(T0 + 1000))).toEqual([]);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(rows.size).toBe(0);
+  });
+
+  it('a row naming no account (the build before user_id) is never sent, said with no pet, and goes on OK (CUL-2602 stopgap)', async () => {
+    const legacy = row({ reportId: ID2, userId: null });
+    const { ledger, rows } = memoryLedger([legacy]);
+    const invoke = jest.fn(ok);
+    const misses = await drainPendingKeeps(invoke, ledger, at(T0 + 1000));
+    expect(invoke).not.toHaveBeenCalled();
+    expect(misses).toEqual([{ reportId: ID2, petId: '', sharedVia: 'email' }]);
+    expect(pendingKeepMissNotice(misses, () => 'Cooper')?.body).toMatch(/to your vet reports\./);
+    expect(rows.size).toBe(1);
+    // Counted at a sign-out, never deleted unsaid.
+    expect(await pendingKeepCount('user-a', ledger)).toBe(1);
+    await acknowledgeKeepMisses(misses, ledger);
+    expect(rows.size).toBe(0);
+  });
+
+  it("this account's row is still tried and said, beside another account's", async () => {
+    const mine = row({ reportId: ID2 });
+    const { ledger, rows } = memoryLedger([row({ userId: 'user-b' }), mine]);
+    const invoke = jest.fn(err(404));
+    expect(await drainPendingKeeps(invoke, ledger, at(T0 + 1000))).toEqual([{ reportId: ID2, petId: PET, sharedVia: 'email' }]);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect([...rows.keys()]).toEqual([ID2]);
+  });
+
+  it('no session: no drain sends or says anything, and no row is touched', async () => {
+    mockUid = null;
+    const { ledger, rows } = memoryLedger([row()]);
+    const invoke = jest.fn(err(404));
+    expect(await drainPendingKeeps(invoke, ledger, at(T0))).toEqual([]);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(rows.size).toBe(1);
+  });
+
+  it("the sign-out count is this account's rows only; with no account, any row counts as one", async () => {
+    const { ledger } = memoryLedger([row(), row({ reportId: ID2, userId: 'user-b' })]);
+    expect(await pendingKeepCount('user-a', ledger)).toBe(1);
+    // No account: every row counts, never collapsed to one (adversarial pass 1, finding 2).
+    expect(await pendingKeepCount(null, memoryLedger([row(), row({ reportId: ID2 }), row({ reportId: 'x', userId: 'user-b' })]).ledger)).toBe(3);
+    expect(await pendingKeepCount(null, memoryLedger().ledger)).toBe(0);
+    const broken: KeepLedger = { record: async () => undefined, clear: async () => undefined, list: async () => { throw new Error('disk'); } };
+    expect(await pendingKeepCount('user-a', broken)).toBe(1);
+  });
+
+  it('the sign-out teardown empties the in-memory sets', () => {
+    keepsInFlight.add(ID);
+    keepsAnswered.add(ID);
+    missesAwaitingAck.add(ID2);
+    clearKeepSessionState();
+    expect([keepsInFlight.size, keepsAnswered.size, missesAwaitingAck.size]).toEqual([0, 0, 0]);
+  });
+});
+
+describe('a forced sign-out says what its wipe took (CUL-2573)', () => {
+  const row = (over: Partial<PendingKeep> = {}): PendingKeep => ({ reportId: ID, petId: PET, sharedVia: 'email', queuedAt: new Date(T0).toISOString(), userId: 'user-a', ...over });
+  beforeEach(() => useKeepLossStore.setState({ lost: null, accepted: null }));
+
+  it("an unconfirmed SIGNED_OUT notes the account's waiting copies, and only its own", async () => {
+    const { ledger } = memoryLedger([row(), row({ reportId: ID2 }), row({ reportId: 'x', userId: 'user-b' })]);
+    await noteSignedOutKeepLoss({ userId: 'user-a', justDeletedAccount: false }, ledger);
+    expect(useKeepLossStore.getState().lost).toEqual({ userId: 'user-a', count: 2 });
+  });
+
+  it('the Settings sign-out that warned and was confirmed notes nothing, once', async () => {
+    const { ledger } = memoryLedger([row()]);
+    useKeepLossStore.getState().acceptNextSignOut();
+    await noteSignedOutKeepLoss({ userId: 'user-a', justDeletedAccount: false }, ledger);
+    expect(useKeepLossStore.getState().lost).toBeNull();
+    // The acceptance is one-shot: the next forced sign-out is said.
+    await noteSignedOutKeepLoss({ userId: 'user-a', justDeletedAccount: false }, ledger);
+    expect(useKeepLossStore.getState().lost).toEqual({ userId: 'user-a', count: 1 });
+  });
+
+  it('an acceptance whose sign-out never came is spent after a minute: the next forced one is said', async () => {
+    const { ledger } = memoryLedger([row()]);
+    useKeepLossStore.getState().acceptNextSignOut(Date.now() - ACCEPT_WINDOW_MS - 1);
+    await noteSignedOutKeepLoss({ userId: 'user-a', justDeletedAccount: false }, ledger);
+    expect(useKeepLossStore.getState().lost).toEqual({ userId: 'user-a', count: 1 });
+  });
+
+  it('a deleted account notes nothing: its reports went with it', async () => {
+    await noteSignedOutKeepLoss({ userId: 'user-a', justDeletedAccount: true }, memoryLedger([row()]).ledger);
+    expect(useKeepLossStore.getState().lost).toBeNull();
+  });
+
+  it('an unreadable ledger is a loss said, never none', async () => {
+    const broken: KeepLedger = { record: async () => undefined, clear: async () => undefined, list: async () => { throw new Error('disk'); } };
+    await noteSignedOutKeepLoss({ userId: 'user-a', justDeletedAccount: false }, broken);
+    expect(useKeepLossStore.getState().lost).toEqual({ userId: 'user-a', count: 1 });
+  });
+
+  it('one account adds up; another replaces it; who may hear it', () => {
+    const s = useKeepLossStore.getState();
+    s.note('user-a', 1);
+    s.note('user-a', 2);
+    expect(useKeepLossStore.getState().lost).toEqual({ userId: 'user-a', count: 3 });
+    s.note('user-b', 1);
+    expect(useKeepLossStore.getState().take()).toEqual({ userId: 'user-b', count: 1 });
+    expect(useKeepLossStore.getState().lost).toBeNull();
+    expect([mayHearKeepLoss('user-a', null), mayHearKeepLoss('user-a', 'user-a'), mayHearKeepLoss('user-a', 'user-b'), mayHearKeepLoss(null, 'user-a')])
+      .toEqual([true, true, false, false]);
+  });
+
+  it('the line names the count, no pet, and no exclamation', () => {
+    expect(keepLossNotice(0)).toBeNull();
+    expect(keepLossNotice(1)?.body).toBe('You were signed out before a copy of a vet report you sent could be saved to your vet reports. Preview the report again and send it to save one.');
+    expect(keepLossNotice(3)?.body).toMatch(/^You were signed out before 3 copies of vet reports you sent/);
+    expect(JSON.stringify([keepLossNotice(1), keepLossNotice(3)])).not.toMatch(/!/);
+  });
+});
+
 describe('pendingKeepMissNotice', () => {
   const m = (petId: string, sharedVia = 'email') => ({ reportId: `r-${petId}-${sharedVia}`, petId, sharedVia });
   const name = (id: string) => (id === PET ? 'Cooper' : id === 'p2' ? 'Juniper' : '');
@@ -273,16 +437,32 @@ describe('the sqlite ledger, over the shipped DDL', () => {
 
   it('records, lists oldest first, takes the latest send of a report, clears', async () => {
     const ledger = sqliteKeepLedger(() => db);
-    await ledger.record({ reportId: ID2, petId: PET, sharedVia: 'email', queuedAt: '2026-11-05T12:05:00.000Z' });
-    await ledger.record({ reportId: ID, petId: PET, sharedVia: 'email', queuedAt: '2026-11-05T12:00:00.000Z' });
-    await ledger.record({ reportId: ID, petId: PET, sharedVia: 'print', queuedAt: '2026-11-05T13:00:00.000Z' });
-    // The route and its time travel together, so a replay stamps the later departure (rls R1).
+    await ledger.record({ reportId: ID2, petId: PET, sharedVia: 'email', queuedAt: '2026-11-05T12:05:00.000Z', userId: 'user-a' });
+    await ledger.record({ reportId: ID, petId: PET, sharedVia: 'email', queuedAt: '2026-11-05T12:00:00.000Z', userId: 'user-a' });
+    await ledger.record({ reportId: ID, petId: PET, sharedVia: 'print', queuedAt: '2026-11-05T13:00:00.000Z', userId: 'user-b' });
+    // The route, its time and its account travel together, so a replay stamps the later
+    // departure (rls R1) under the account that made it (CUL-2576).
     expect(await ledger.list()).toEqual([
-      { reportId: ID2, petId: PET, sharedVia: 'email', queuedAt: '2026-11-05T12:05:00.000Z' },
-      { reportId: ID, petId: PET, sharedVia: 'print', queuedAt: '2026-11-05T13:00:00.000Z' },
+      { reportId: ID2, petId: PET, sharedVia: 'email', queuedAt: '2026-11-05T12:05:00.000Z', userId: 'user-a' },
+      { reportId: ID, petId: PET, sharedVia: 'print', queuedAt: '2026-11-05T13:00:00.000Z', userId: 'user-b' },
     ]);
     await ledger.clear(ID);
     expect((await ledger.list()).map((r) => r.reportId)).toEqual([ID2]);
+  });
+
+  it('a device upgrading from before user_id gets the column, and its old rows read as no account', async () => {
+    const { COLUMN_UPGRADES } = jest.requireActual('./localSchema');
+    const old = new DatabaseSync(':memory:');
+    old.exec('CREATE TABLE pending_report_keeps (report_id TEXT PRIMARY KEY, pet_id TEXT NOT NULL, shared_via TEXT NOT NULL, queued_at TEXT NOT NULL)');
+    old.prepare('INSERT INTO pending_report_keeps VALUES (?, ?, ?, ?)').run(ID, PET, 'email', '2026-11-05T12:00:00.000Z');
+    for (const u of COLUMN_UPGRADES.filter((c: { table: string }) => c.table === 'pending_report_keeps')) {
+      old.exec(`ALTER TABLE ${u.table} ADD COLUMN ${u.column} ${u.type}`);
+    }
+    const ledger = sqliteKeepLedger(() => ({
+      runAsync: async (sql, ...p) => old.prepare(sql).run(...p),
+      getAllAsync: async <T,>(sql: string, ...p: Array<string | number | null>) => old.prepare(sql).all(...p) as T[],
+    }));
+    expect((await ledger.list())[0].userId).toBeNull();
   });
 });
 

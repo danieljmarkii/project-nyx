@@ -27,6 +27,7 @@ import {
   type SharedVia,
 } from './savedCopy.ts'
 import { NEW_PREVIEW_ERROR } from './savedCopy.ts'
+import { sha256Hex as textSha } from '../_shared/engineStamps.ts'
 import { LEAD_SLOT_MARK, PIN_TEXT_URL_BUDGET, settleLeadForKeep, type KeepLead, type KeepRefusal } from './aiLead/run.ts'
 import { h } from './documentV2.ts'
 
@@ -357,6 +358,7 @@ Deno.test('a lead the sent copy does not print is cleared, the verdict says why,
       'ai_lead_verdict->>at': AT,
       'ai_lead_verdict->>outcome': 'printed',
       'ai_lead_verdict->>fact_hash': 'h',
+      'ai_lead_verdict->>text_sha': null,
       ai_lead_text: 'Cooper vomited on 3 days.',
     },
   })
@@ -392,7 +394,7 @@ Deno.test('a lead the stored copy prints is pinned on text, verdict and model, n
   const lead = await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.', 'He ate <less> & slept.']))
   assert.deepEqual(lead, {
     set: {},
-    unchanged: { ai_lead_model: 'writer-1', 'ai_lead_verdict->>at': AT, 'ai_lead_verdict->>outcome': 'printed', 'ai_lead_verdict->>fact_hash': 'h', ai_lead_text: text },
+    unchanged: { ai_lead_model: 'writer-1', 'ai_lead_verdict->>at': AT, 'ai_lead_verdict->>outcome': 'printed', 'ai_lead_verdict->>fact_hash': 'h', 'ai_lead_verdict->>text_sha': null, ai_lead_text: text },
   })
   assert.equal(io.gateCalls, 1, 'consent is re-checked before a pinned keep')
 })
@@ -410,6 +412,21 @@ Deno.test('a slot that does not hold the draft text refuses the keep for good (C
 Deno.test('a pinned keep after a withdrawal is refused, never frozen with the summary (PM ruling (a))', async () => {
   const io = leadIO('Cooper vomited on 3 days.', { outcome: 'printed', at: AT }, 'm', DENY)
   assert.deepEqual(await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.'])), { refused: 'withdrawn' })
+})
+
+Deno.test('a pinned keep whose consent, config or pet read failed is retried (500), never refused for good (CUL-2575)', async () => {
+  for (const reason of ['consent_declined', 'flag_off', 'pet_not_owned']) {
+    const unread = { allow: false, reason, scope: 'ai_boundary', flag: 'report_ai_lead', unread: true } as unknown as Awaited<ReturnType<SettleIO['runGate']>>
+    const io = leadIO('Cooper vomited on 3 days.', { outcome: 'printed', at: AT }, 'm', unread)
+    assert.equal(await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.'])), null, reason)
+  }
+  // End to end: the keep answers 500, which the phone retries, and the draft stays a draft.
+  const f = await savedOne()
+  await printingCopy(f, 'Cooper ate well.', { outcome: 'printed', at: AT }, 'm')
+  const gate = { allow: false, reason: 'consent_declined', scope: 'ai_boundary', unread: true } as unknown as Awaited<ReturnType<SettleIO['runGate']>>
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, (html) => settleLeadForKeep({ ...plainSettleIO(f), runGate: async () => gate }, html))
+  assert.equal(out.status, 500)
+  assert.equal(f.rows.get(ID)!.status, 'draft')
 })
 
 Deno.test('a refused settle answers 409 and leaves the draft a draft', async () => {
@@ -466,22 +483,42 @@ Deno.test('an unreadable verdict is no pin: the keep is refused rather than gues
   assert.equal(await settleLeadForKeep(leadIO(null, { at: 12 }), '<html></html>'), null)
 })
 
-Deno.test('the pin fits a request URL: a 2000-character non-ASCII lead pins by its verdict, under 4 KB', async () => {
+Deno.test('a long lead is pinned by its stored text_sha, and the longest pin URL stays short (CUL-2574)', async () => {
   // aiLead caps a lead at 2000 characters; three-byte characters percent-encode to nine bytes each,
-  // ~18 KB, which a gateway may refuse. Past PIN_TEXT_URL_BUDGET the text is pinned by the
-  // verdict's `at` (every write of the three columns moves it) and left out of the URL.
+  // ~18 KB of text. With text_sha the text never rides in the URL, at any length.
   const text = '猫'.repeat(2000)
-  const lead = isLead(await settleLeadForKeep(leadIO(text, { outcome: 'printed', at: AT, fact_hash: 'a'.repeat(64) }, 'claude-model-id'), '<html></html>'))
-  assert.ok(!('ai_lead_text' in lead.unchanged), 'the long text is not in the filter')
-  assert.equal(lead.unchanged['ai_lead_verdict->>at'], AT)
+  const sha = await textSha(text)
+  const lead = isLead(await settleLeadForKeep(leadIO(text, { outcome: 'printed', at: AT, fact_hash: 'a'.repeat(64), text_sha: sha }, 'claude-model-id'), '<html></html>'))
+  assert.ok(!('ai_lead_text' in lead.unchanged), 'the text is not in the filter')
+  assert.equal(lead.unchanged['ai_lead_verdict->>text_sha'], sha)
+  // The longest pin set the keep can send: every verdict pin at its longest, plus the model and
+  // the keep's own filters. The gateway's limit is not reached from here (no production call);
+  // 2 KB is well under any common proxy's request-line limit (8 KB).
   const url = new URL('https://x.supabase.co/rest/v1/vet_reports')
+  for (const k of ['id', 'pet_id', 'generated_by', 'status', 'content_sha256']) url.searchParams.append(k, `eq.${'f'.repeat(64)}`)
   for (const [k, v] of Object.entries(lead.unchanged)) url.searchParams.append(k, v === null ? 'is.null' : `eq.${v}`)
-  assert.ok(url.href.length < 4096, `${url.href.length} bytes`)
-  // At the budget the text is still pinned, and that URL is bounded by it.
+  assert.ok(url.href.length < 2048, `${url.href.length} bytes`)
+})
+
+Deno.test('a verdict from before text_sha pins a short text by value, and a long one is no pin (CUL-2574)', async () => {
   const short = 'a'.repeat(PIN_TEXT_URL_BUDGET)
   const pinned = isLead(await settleLeadForKeep(leadIO(short, { outcome: 'printed', at: AT }), '<html></html>'))
   assert.equal(pinned.unchanged.ai_lead_text, short)
-  assert.equal('ai_lead_text' in isLead(await settleLeadForKeep(leadIO(short + 'a', { outcome: 'printed', at: AT }), '<html></html>')).unchanged, false)
+  // Past the budget the old code pinned the timing alone; now the keep is refused (500, retried).
+  assert.equal(await settleLeadForKeep(leadIO(short + 'a', { outcome: 'printed', at: AT }), '<html></html>'), null)
+})
+
+Deno.test('a text_sha that does not match the text, or one with no text, is no pin (CUL-2574)', async () => {
+  const text = 'Cooper vomited on 3 days.'
+  assert.equal(await settleLeadForKeep(leadIO(text, { outcome: 'printed', at: AT, text_sha: await textSha('other') }), '<html></html>'), null)
+  assert.equal(await settleLeadForKeep(leadIO(null, { outcome: 'failed', at: AT, text_sha: await textSha(text) }), '<html></html>'), null)
+  assert.equal(await settleLeadForKeep(leadIO(text, { outcome: 'printed', at: AT, text_sha: 7 }), '<html></html>'), null)
+})
+
+Deno.test('a cleared lead takes its text_sha with it: the kept verdict fingerprints no text (CUL-2574)', async () => {
+  const text = 'Cooper vomited on 3 days.'
+  const lead = isLead(await settleLeadForKeep(leadIO(text, { outcome: 'printed', at: AT, text_sha: await textSha(text) }), '<html>no lead</html>'))
+  assert.deepEqual(lead.set.ai_lead_verdict, { outcome: 'printed', at: AT, at_send: { printed: false, reason: 'not_on_sent_copy' } })
 })
 
 Deno.test('an unreadable draft fails the settle, so the keep is refused', async () => {
@@ -592,6 +629,26 @@ Deno.test('an unraced pinned keep goes through, with the summary as printed', as
   const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, (html) => settleLeadForKeep(plainSettleIO(f), html))
   assert.deepEqual(out, { status: 200, body: { kept: true, first: true } })
   assert.equal(f.rows.get(ID)!.ai_lead_text, 'Cooper ate well.')
+})
+
+Deno.test('two long leads stamped in one millisecond: the keep never freezes the one the copy did not print (CUL-2574)', async () => {
+  // Run A printed; run B lands in the gap with the same `at`, outcome, fact hash and model, and
+  // different text. Before text_sha, a long text was pinned by those alone, so the keep matched
+  // and froze B's text over a copy that printed A's.
+  const textA = 'Cooper vomited on 3 days. '.repeat(100).trim()
+  const textB = 'Cooper vomited on 4 days. '.repeat(100).trim()
+  assert.ok(encodeURIComponent(textA).length > PIN_TEXT_URL_BUDGET)
+  const verdict = async (t: string) => ({ outcome: 'printed', at: AT, fact_hash: 'h', text_sha: await textSha(t) })
+  const f = await savedOne()
+  await printingCopy(f, textA, await verdict(textA), 'm')
+  const vB = await verdict(textB)
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, async (html) => {
+    const lead = await settleLeadForKeep(plainSettleIO(f), html)
+    Object.assign(f.rows.get(ID)!, { ai_lead_text: textB, ai_lead_verdict: vB }) // B lands
+    return lead
+  })
+  assert.equal(out.status, 500)
+  assert.equal(f.rows.get(ID)!.status, 'draft', 'never kept over text the vet did not get')
 })
 
 Deno.test('a failed undo leaves the row for the reaper: never an object no row names (F1)', async () => {

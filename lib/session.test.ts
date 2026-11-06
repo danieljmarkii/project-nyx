@@ -124,6 +124,18 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(clearNotificationInteractions).toHaveBeenCalled();
   });
 
+  // CUL-2576: the report-keep sets are this account's report ids; the wipe empties them before
+  // its first await, so no drain under the next account reads a stale one.
+  it('empties the report-keep sets synchronously', () => {
+    const ledger = jest.requireActual('./reportKeepLedger') as typeof import('./reportKeepLedger');
+    ledger.keepsInFlight.add('r1');
+    ledger.keepsAnswered.add('r2');
+    ledger.missesAwaitingAck.add('r3');
+    const done = wipeLocalSession();
+    expect([ledger.keepsInFlight.size, ledger.keepsAnswered.size, ledger.missesAwaitingAck.size]).toEqual([0, 0, 0]);
+    return done;
+  });
+
   // CUL-1952: the widget fence moves BEFORE the first await, so a publish already
   // reading SQLite cannot write past it, and BEFORE the clears, which then erase
   // anything it wrote earlier.
@@ -786,6 +798,9 @@ describe('every store is classified against the sign-out wipe (CUL-1255)', () =>
       'must SURVIVE this wipe, which the reset handler calls mid-attempt (spec §6.3, FR-12)',
     crashStore: 'one boolean, whether the app has failed (CUL-1841); holds nothing of the account',
     foodLibraryStore: 'a version counter that tells screens to re-read; holds no rows',
+    keepLossStore: 'how many report copies a forced wipe took, and whose account (CUL-2573): it ' +
+      'reports on the wipe, so it must survive it; said once, to nobody signed in or that account, ' +
+      'and dropped unsaid when another account is signed in. Holds no report, pet or time',
     recordChangeStore: 'a version counter a removal raises so screens re-read; holds no rows (CUL-1665)',
     reducedMotionStore: 'the OS Reduce Motion setting, a device fact (C-43)',
   };

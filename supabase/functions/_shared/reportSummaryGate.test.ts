@@ -222,9 +222,33 @@ Deno.test('order: spend false (the cache hit, VR2-25) reads consent, config and 
 Deno.test("order: another owner's pet (or an unreadable one) never reaches the counter", async () => {
   for (const owned of [false, null, 'true', 1]) {
     const { impl, reached } = io({ owned })
-    assertEquals(await runSummaryGate(impl, UID), { allow: false, reason: 'pet_not_owned' })
+    // null is a pets read that failed (CUL-2575): still a refusal, marked unread.
+    assertEquals(await runSummaryGate(impl, UID), owned === null
+      ? { allow: false, reason: 'pet_not_owned', unread: true }
+      : { allow: false, reason: 'pet_not_owned' })
     assertEquals(reached, ['consent', 'config', 'pet'])
   }
+})
+
+Deno.test('a refusal from a read that failed is marked unread; one from what was read never is (CUL-2575)', async () => {
+  const unread = async (over: Parameters<typeof io>[0]) => {
+    const r = await runSummaryGate(io(over).impl, UID, { spend: false })
+    assertEquals(r.allow, false, JSON.stringify(over))
+    return (r as { unread?: true }).unread === true
+  }
+  // Failed reads: an error or a throw at consent, config or the pet.
+  assertEquals(await unread({ consent: { data: null, error: { message: 'down' } } }), true)
+  assertEquals(await unread({ throwAt: 'consent' }), true)
+  assertEquals(await unread({ config: null }), true)
+  assertEquals(await unread({ throwAt: 'config' }), true)
+  assertEquals(await unread({ owned: null }), true)
+  assertEquals(await unread({ throwAt: 'pet' }), true)
+  // Answers: a withdrawn yes, an old consent wording, a flag off, no config rows, another pet.
+  assertEquals(await unread({ consent: { data: [boundaryYes, { ...summaryYes, granted: false }], error: null } }), false)
+  assertEquals(await unread({ consent: { data: [boundaryYes, { ...summaryYes, copy_version: 'old' }], error: null } }), false)
+  assertEquals(await unread({ config: [flagsOn[0]] }), false)
+  assertEquals(await unread({ config: [] }), false)
+  assertEquals(await unread({ owned: false }), false)
 })
 
 Deno.test('order: a declined owner never reaches the config or the counter', async () => {
