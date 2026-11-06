@@ -78,8 +78,11 @@ const INBOX_STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 // on its very next pass. So an age-out also needs this many DISTINCT days (UTC) on which a
 // pass found the record unusable, today's included. A clock jump adds one day, never seven.
 // It errs toward keeping: an owner who opens the app rarely keeps a stuck capture past 45
-// days. PM go on the recommendation, 2026-11-05.
-export const INBOX_MIN_UNUSABLE_DAYS = 7;
+// days. PM go on 7 real days, 2026-11-05. Set to 8 (adversarial pass 2): one clock
+// discontinuity (a boot-time clock fixed the same day, one accidental jump) puts two day keys
+// on one real day, so 7 keys could be 6 real days. 8 keeps 7 real days across one; the PM
+// rules whether to keep 8 or count 7 clock-days.
+export const INBOX_MIN_UNUSABLE_DAYS = 8;
 
 // One line per unusable day under the stamp, in the `YYYY-MM-DD` form `inboxDayKey` writes.
 const INBOX_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;

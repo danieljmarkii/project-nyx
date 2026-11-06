@@ -501,6 +501,21 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
       expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
     });
 
+    it('adversarial pass 2: a boot-time clock 60 days behind, fixed the same day, still needs 7 real days', async () => {
+      // Real day 0 holds two keys (the wrong-clock day W and the true day); six real days in all
+      // with today, one short of the PM's seven.
+      const wrong = new Date(NOW.getTime() - 66 * 86_400_000);
+      const realDays = Array.from({ length: INBOX_MIN_UNUSABLE_DAYS - 3 }, (_, i) => inboxDayKey(new Date(daysBefore(i + 1))));
+      const d = await ingestCaptureRecords(
+        db,
+        withDays(wrong.toISOString(), [inboxDayKey(wrong), ...realDays]),
+        new Set([PET]),
+        NOW,
+      );
+      expect(new Set([...realDays, inboxDayKey(NOW)]).size).toBe(6);
+      expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
+    });
+
     it("today's day counts once, however often it was recorded", async () => {
       const stamp = daysBefore(INBOX_MAX_AGE_DAYS + 1);
       const today = inboxDayKey(NOW);
