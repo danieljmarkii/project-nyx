@@ -4373,7 +4373,7 @@ export function detectIntakeDecline(
 
 /** The ranker's order within intake_decline (refused_normal_food leads), shared with the line's
  *  placement so the line always sits on the card that leads. */
-const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = {
+export const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = {
   // A record with no good meal in three days leads: it is the one a vet would act on first.
   sustained_refusal: 0,
   refused_normal_food: 1,

@@ -93,6 +93,7 @@ import {
   type EmptyStomachTimingFinding,
   type TimingStoryFinding,
   type StapleWashoutDiagnostic,
+  INTAKE_TRIGGER_RANK,
 } from '../generate-signal/detection.ts'
 // The SHARED protein canonicalizer (lib/protein.ts via the generate-signal re-export —
 // same path detection.ts uses, so esbuild inlines one copy). The appendix-B tally MUST
@@ -4321,7 +4322,7 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
         break
       }
       case 'intake_decline':
-        if (!intakeDecline) intakeDecline = finding as IntakeDeclineFinding
+        intakeDecline = reportIntakeOf(intakeDecline, finding as IntakeDeclineFinding)
         break
       case 'symptom_chronicity':
         // Every course, in the engine's rank order — the ranked list is already sorted
@@ -8252,5 +8253,18 @@ function buildConcurrentChanges(
   return out
 }
 
-
-
+/**
+ * The one intake finding the report carries, chosen by TRIGGER order (`INTAKE_TRIGGER_RANK`), never
+ * the ranker's. CUL-2593 lifted a cat's all-refused card (the call today) above refused_normal_food
+ * on the Signal, but the report's intake detail has no all-refused branch: taking the ranker's first
+ * card turned "refused a food it normally eats (the food)" into "below this pet's baseline for 1
+ * consecutive day" (adversarial pass 2, QUIET). Ties keep the earlier card, so the report's flag is
+ * exactly the one it carried before the lift.
+ */
+export function reportIntakeOf(
+  current: IntakeDeclineFinding | null,
+  next: IntakeDeclineFinding,
+): IntakeDeclineFinding {
+  if (!current) return next
+  return INTAKE_TRIGGER_RANK[next.trigger] < INTAKE_TRIGGER_RANK[current.trigger] ? next : current
+}
