@@ -406,3 +406,69 @@ Deno.test('own-sign: on r11-jump the band row never says it, so the words are ne
 Deno.test('own-sign: the writer is told to keep the words', () => {
   assert.ok(WRITER_SYSTEM.includes('"the trial\'s own sign"'))
 })
+
+/** The adversarial pass on 9e4422d: the words printed, but not on the flag. Each printed through
+ *  verifyLead and checkerDecision there, because the words were only looked for, never placed, and the
+ *  exposure test blanked every copy. Each is refused here by own-sign, by both. */
+const R11_S2: LeadSentence = { text: 'Itching: 15 entries on 15 of 56 logged days, the last Oct 15.', cites: ['line-1'] }
+const R11_S3: LeadSentence = { text: 'The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.', cites: ['trial', 'trial-reading-2', 'confounder'] }
+const FLAG = 'Itching is a live flag: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago'
+const DETACHED: string[] = [
+  // asked, not stated
+  `${FLAG}; is it the trial's own sign?`,
+  `${FLAG}, so is itching the trial's own sign?`,
+  // negated through the band's own "cannot show how"
+  `${FLAG}; the record cannot show how it is the trial's own sign.`,
+  `${FLAG}, so the record cannot show how itching is the trial's own sign.`,
+  // an order claim the mask hid (and false: the trial started first)
+  `${FLAG}, so itching predates the trial's own sign.`,
+  "Itching, the trial's own sign, is a live flag: itching over at least 49 days predates it, 15 episodes on 15 days, most recent 1 day ago.",
+  `${FLAG}; the trial's own sign predates it.`,
+  // attached to something other than the flag
+  `${FLAG}; this window, the trial's own sign, opens Aug 22.`,
+  `${FLAG}, so 49 days is a floor, the trial's own sign.`,
+  `${FLAG}; the record, the trial's own sign, cannot show how long.`,
+  `${FLAG}, and so is the trial's own sign.`,
+  `${FLAG}; the trial's own sign opens Aug 22.`,
+  // anchored, but asked
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago?",
+  // twice, and with punctuation inside it
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag, the trial's; own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag, the trial's-own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+]
+
+Deno.test('own-sign: the words name the flag, or the lead drops (adversarial pass on 9e4422d)', () => {
+  for (const text of DETACHED) {
+    for (const lead of [[{ text, cites: ['band-r11'] }, R11_S2, R11_S3], [{ text, cites: ['band-r11'] }, R11_S3]]) {
+      const v = verifyLead(R11.table, { sentences: lead })
+      assert.equal(v.pass, false, text)
+      assert.ok(v.errors.some((e) => e.check === 'own-sign'), `${text}: ${JSON.stringify(v.errors)}`)
+      assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'reject', text)
+    }
+  }
+})
+
+Deno.test('own-sign: the two anchored shapes print', () => {
+  for (const text of [
+    "Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+    "Itching is a live flag: itching over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
+    "Itching is a live flag: itching over at least 49 days, the trial’s own sign; 15 episodes on 15 days, most recent 1 day ago.",
+  ]) {
+    const lead = [{ text, cites: ['band-r11'] }, R11_S2, R11_S3]
+    assert.deepEqual(verifyLead(R11.table, { sentences: lead }).errors, [], text)
+    assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'pass', text)
+  }
+})
+
+Deno.test('own-sign: an unanchored or second copy is still an exposure beside the sign (H2), a second net behind own-sign', () => {
+  for (const text of [
+    `${FLAG}; the record cannot show how it is the trial's own sign.`,
+    `${FLAG}; this window, the trial's own sign, opens Aug 22.`,
+    `${FLAG}, so itching predates the trial's own sign.`,
+    "Itching is a live flag, the trial's own sign: itching over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
+  ]) {
+    const checks = verifyLead(R11.table, { sentences: [{ text, cites: ['band-r11'] }, R11_S3] }).errors.map((e) => e.check)
+    assert.ok(checks.includes('order'), `${text}: ${checks}`)
+  }
+})

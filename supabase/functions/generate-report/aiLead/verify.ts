@@ -52,7 +52,8 @@
 //               or scores can pass it; the pipeline asks it before any model call.
 //   own-sign    CUL-2619: a band row that prints "the trial's own sign" (R-11's heading) is never
 //               restated without those words (`ownSignIssues`), in any sentence that cites it or
-//               calls anything a flag; read by the checker's decision too
+//               calls anything a flag: once, anchored to the flag, never in a question; read by the
+//               checker's decision too
 
 import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type FactTable, type VerifyIssue, type VerifyReport } from './verifyCore.ts'
 
@@ -274,39 +275,56 @@ export function bandOrderIssues(table: FactTable, summary: LeadSummary): VerifyI
 /** CUL-2619: R-11's heading (documentV2.ts `leadChart`, spec §5.2) names a skin trial's chronicity
  *  flag as "the trial’s own sign": the sign the trial is testing. A lead that restates the flag
  *  without those words reads a shortened flag (the 2026-11-05 re-run's r11 runs 1 and 3, H7 minor).
- *  Straight or curly apostrophe; matched on whole words. */
+ *  Straight or curly apostrophe (`norm` straightens it); single spaces, nothing between the words. */
 export const OWN_SIGN_PHRASE = "the trial's own sign"
-const OWN_SIGN_FLAT = ` ${OWN_SIGN_PHRASE} `
+const OWN_SIGN = /\bthe trial's own sign\b/gi
+/** Where the words may stand in a lead: named as the flag's own apposition ("Itching is a live flag,
+ *  the trial's own sign: …"), or after the span exactly as the heading prints it ("… over at least
+ *  49 days, the trial's own sign"), and followed by a clause break or the end. Anywhere else they
+ *  name something other than the flag, or sit inside a claim about it: "is it the trial's own
+ *  sign?", "the record cannot show how it is the trial's own sign", "this window, the trial's own
+ *  sign, opens Aug 22", "itching predates the trial's own sign" (adversarial pass on 9e4422d). */
+const OWN_SIGN_ANCHORED = /(?:\bflag|\bover at least \d+ days),\s+the trial's own sign(?=\s*[:;,.]|\s*$)/i
 
-/** Whether a line prints the own-sign phrase. */
+/** Whether a line prints the own-sign phrase, word for word. */
 export function printsOwnSign(text: string): boolean {
-  return ` ${flatWords(text)} `.includes(OWN_SIGN_FLAT)
+  return new RegExp(OWN_SIGN.source, 'i').test(norm(text))
 }
 
-/** The text with each own-sign phrase blanked, for the exposure test only, and only in a sentence
- *  citing a band row that prints the phrase: there "trial" names the sign the trial tests, not an
- *  exposure set beside it. Any other exposure word in the sentence still counts (H2). */
+/** The text with its one anchored own-sign phrase blanked, for the exposure test only, and only in a
+ *  sentence citing a band row that prints the phrase: there "trial" names the sign the trial tests,
+ *  not an exposure set beside it. An unanchored or second copy stays, and still counts as an
+ *  exposure (H2), as does any other exposure word in the sentence. */
 function withoutOwnSign(text: string, cites: string[], facts: Map<string, { role?: string; text?: string }>): string {
   const licensed = cites.some((c) => facts.get(c)?.role === 'band' && printsOwnSign(facts.get(c)?.text ?? ''))
-  return licensed ? norm(text).replace(/\bthe trial's own sign\b/gi, ' ') : text
+  if (!licensed) return text
+  const t = norm(text)
+  if ((t.match(OWN_SIGN) ?? []).length !== 1) return text
+  return t.replace(OWN_SIGN_ANCHORED, (m) => m.replace(new RegExp(OWN_SIGN.source, 'i'), ' '))
 }
 
 /** own-sign: when a band row prints "the trial's own sign", every sentence that cites that row, or
- *  says "flag" at all, carries the four words in place. Multi-flag leaves such a record one band
- *  item, so any "flag" in its lead is that flag (a sentence 2 citing a record line and calling the
- *  sign "a live flag" restates it). A function of the table and the printed text alone, read by
- *  `verifyLead` AND by the checker's decision (leadPipeline.ts `checkerDecision`), so neither the
- *  writer nor the checker model can pass a lead without the words. Errs loud: four more required
- *  words inside the cap drop leads that would otherwise print. */
+ *  says "flag" at all, carries the four words exactly once, anchored to the flag
+ *  (`OWN_SIGN_ANCHORED`), and asks nothing (a "?" turns the flag into a question). Multi-flag leaves
+ *  such a record one band item, so any "flag" in its lead is that flag. A function of the table and
+ *  the printed text alone, read by `verifyLead` AND by the checker's decision (leadPipeline.ts
+ *  `checkerDecision`), so neither the writer nor the checker model can pass a lead without the words.
+ *  Errs loud: an honest lead phrased another way drops, and four more required words inside the cap
+ *  drop leads that would otherwise print. */
 export function ownSignIssues(table: FactTable, summary: LeadSummary): VerifyIssue[] {
   const own = new Set(table.facts.filter((f) => f.role === 'band' && printsOwnSign(String(f.text ?? ''))).map((f) => f.id))
   if (own.size === 0) return []
   const out: VerifyIssue[] = []
+  const issue = (k: number, detail: string) => out.push({ sentence: k + 1, check: 'own-sign', detail: `${detail} (R-11, CUL-2619)` })
   summary.sentences.forEach((s, k) => {
-    const restates = s.cites.some((c) => own.has(c)) || /\bflags?\b/i.test(norm(s.text))
-    if (restates && !printsOwnSign(s.text)) {
-      out.push({ sentence: k + 1, check: 'own-sign', detail: `restates the flag without ${JSON.stringify(OWN_SIGN_PHRASE)} (R-11, CUL-2619)` })
-    }
+    const t = norm(s.text)
+    const copies = (t.match(OWN_SIGN) ?? []).length
+    const restates = s.cites.some((c) => own.has(c)) || /\bflags?\b/i.test(t)
+    if (!restates && copies === 0) return
+    if (copies === 0) return issue(k, `restates the flag without ${JSON.stringify(OWN_SIGN_PHRASE)}`)
+    if (copies > 1) return issue(k, `${JSON.stringify(OWN_SIGN_PHRASE)} ${copies} times (once, on the flag)`)
+    if (!OWN_SIGN_ANCHORED.test(t)) return issue(k, `${JSON.stringify(OWN_SIGN_PHRASE)} does not name the flag ("… is a live flag, the trial's own sign:" or "… over at least N days, the trial's own sign")`)
+    if (t.includes('?')) return issue(k, 'the flag is asked about, not stated')
   })
   return out
 }
