@@ -3511,6 +3511,7 @@ const PNG_1PX =
 
 function photo(over: Partial<IncidentPhoto> & { eventId: string; occurredAt: string }): IncidentPhoto {
   return {
+    attachmentId: over.attachmentId ?? `att-${over.eventId}`,
     eventId: over.eventId,
     storagePath: over.storagePath ?? `p/${over.eventId}.jpg`,
     type: over.type ?? 'vomit',
@@ -7350,7 +7351,7 @@ Deno.test('R-13 item 6 — the photos appendix NAMES the removed incidents, and 
     base({
       incidentPhotos: [
         {
-          eventId: 'kept', type: 'vomit', occurredAt: '2026-06-21T14:00:00Z', dataUri: 'data:image/jpeg;base64,AAAA',
+          attachmentId: 'att-kept', eventId: 'kept', type: 'vomit', occurredAt: '2026-06-21T14:00:00Z', dataUri: 'data:image/jpeg;base64,AAAA',
           storagePath: 'pet/kept/1.jpg', occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null,
           notes: null, safety: null,
           phenotype: { kind: 'vomit', status: 'completed', colour: 'yellow', contentsCategory: 'bile', consistency: 'foamy', bloodPresent: null, foreignPresent: null, foreignNote: null, bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited: false },

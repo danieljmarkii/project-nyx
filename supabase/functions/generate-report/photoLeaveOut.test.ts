@@ -101,3 +101,116 @@ Deno.test('count line: every photo left out is counted; zero prints nothing', ()
   assert.equal(leftOutCountLine(1), '1 photo left out by the owner.')
   assert.equal(leftOutCountLine(3), '3 photos left out by the owner.')
 })
+
+// ── PR-23b (CUL-2454): the split index.ts applies, and CUL-2590's two guards ─────────────────
+
+import { assembleReport, type ReportInput, type ReportSnapshot } from './report.ts'
+import { buildDocumentV2, type DocumentV2Options } from './documentV2.ts'
+import { renderPrintV2 } from './renderPrintV2.ts'
+import { renderReport } from './render.ts'
+import { applyPhotosLeftOut, photoManifestOf } from './photoLeaveOut.ts'
+import { nyxSafetyCat } from './v2Fixtures.testutil.ts'
+
+const DOC_OPTS: DocumentV2Options = { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: [] }
+
+/** Nyx, with the foreign-material photo moved onto a same-minute TWIN of that vomit. The read stays
+ *  on the original, so the twin loses the representative race (completed read first) and
+ *  `assembleReport` merges its photo onto the surviving incident: the raw attachment row names the
+ *  twin, the manifest names the survivor. */
+function nyxWithTwin(): { input: ReportInput; twinId: string; survivorId: string } {
+  const input = nyxSafetyCat()
+  const vomits = input.events.filter((e) => e.type === 'vomit')
+  const flagged = vomits[2]
+  const twin = { ...flagged, id: `${flagged.id}-twin`, occurredAt: new Date(Date.parse(flagged.occurredAt) + 20_000).toISOString() }
+  input.events = [...input.events, twin]
+  input.attachments = (input.attachments ?? []).map((a) => (a.eventId === flagged.id ? { ...a, eventId: twin.id } : a))
+  return { input, twinId: twin.id, survivorId: flagged.id }
+}
+
+const foreignItem = (s: ReportSnapshot) => {
+  const band = buildDocumentV2(s, DOC_OPTS).blocks.find((b) => b.kind === 'band')
+  assert.ok(band && band.kind === 'band')
+  const item = band.items.find((i) => i.id.includes('present_foreign'))
+  assert.ok(item, 'the foreign-material flag leads the band')
+  return item
+}
+
+Deno.test('CUL-2590 guard 1: a twin\'s photo left out is recorded under the surviving incident, and dated beside its flag', () => {
+  const { input, twinId, survivorId } = nyxWithTwin()
+  const s = assembleReport(input)
+  const flaggedPhoto = s.incidentPhotos.find((p) => p.safety === 'foreign')
+  assert.ok(flaggedPhoto, 'the merged photo carries the flag')
+  assert.equal(flaggedPhoto.eventId, survivorId, 'the manifest names the survivor, not the raw row\'s twin')
+  assert.ok(input.attachments!.some((a) => a.eventId === twinId && a.id === flaggedPhoto.attachmentId), 'the raw row named the twin')
+
+  const before = new Set(s.incidentPhotos.map((p) => p.eventId))
+  const { snapshot: left, leftOutCount } = applyPhotosLeftOut(s, [flaggedPhoto.attachmentId], true)
+  assert.equal(leftOutCount, 1)
+  for (const r of left.incidentPhotosLeftOut) assert.ok(before.has(r.eventId), 'every left-out eventId was an incidentPhotos eventId before the split')
+  assert.deepEqual(left.incidentPhotosLeftOut.map((r) => r.eventId), [survivorId])
+
+  const item = foreignItem(left)
+  assert.equal(item.photos.length, 0, 'the photo is gone from the band')
+  assert.match(item.photosLeftOutLine ?? '', /^Photo left out by the owner \(/, 'and its dated line is beside the flag')
+})
+
+Deno.test('CUL-2590 guard 2: v1 never receives a snapshot whose left-out list is non-empty', () => {
+  const s = assembleReport(nyxSafetyCat())
+  const all = s.incidentPhotos.map((p) => p.attachmentId)
+  assert.ok(all.length > 1)
+  const v1 = applyPhotosLeftOut(s, all, false)
+  assert.equal(v1.snapshot, s, 'v1 gets the assembled snapshot back, untouched')
+  assert.equal(v1.leftOutCount, 0)
+  assert.deepEqual(v1.snapshot.incidentPhotosLeftOut, [])
+  assert.equal(v1.snapshot.incidentPhotos.length, all.length, 'every photo stays on v1')
+  // And the v1 render of it shows every photo's card, with no left-out wording.
+  const html = renderReport({ ...v1.snapshot, incidentPhotos: v1.snapshot.incidentPhotos.map((p, i) => ({ ...p, dataUri: `data:image/png;base64,V1PHOTO${i}X` })) })
+  all.forEach((_, i) => assert.ok(html.includes(`base64,V1PHOTO${i}X`), `photo ${i} keeps its card on v1`))
+  assert.ok(!/left out/i.test(html))
+})
+
+Deno.test('applyPhotosLeftOut: only the two photo fields change; flags, removed photos and reads stay as assembled (gate 3)', () => {
+  const s = assembleReport(nyxSafetyCat())
+  const ids = s.incidentPhotos.map((p) => p.attachmentId)
+  const { snapshot: left } = applyPhotosLeftOut(s, ids, true)
+  const changed = Object.keys(s).filter((k) => (s as unknown as Record<string, unknown>)[k] !== (left as unknown as Record<string, unknown>)[k])
+  assert.deepEqual(changed.sort(), ['incidentPhotos', 'incidentPhotosLeftOut'])
+  assert.equal(left.incidentPhotos.length, 0)
+  assert.equal(left.incidentPhotosLeftOut.length, ids.length)
+  // Every flag still prints: the foreign flag's text is unchanged by leaving its photo out.
+  assert.equal(foreignItem(left).html, foreignItem(s).html)
+  assert.equal(foreignItem(left).tag, foreignItem(s).tag)
+})
+
+Deno.test('applyPhotosLeftOut: an id the manifest does not hold changes nothing; none matched is the snapshot as given', () => {
+  const s = assembleReport(nyxSafetyCat())
+  const out = applyPhotosLeftOut(s, [STRANGER], true)
+  assert.equal(out.snapshot, s)
+  assert.equal(out.leftOutCount, 0)
+  assert.equal(applyPhotosLeftOut(s, [], true).snapshot, s)
+})
+
+Deno.test('applyPhotosLeftOut: the saved record holds no path, note, read or bytes, and the print holds neither its path nor its id (R2, R8)', () => {
+  const s = assembleReport(nyxSafetyCat())
+  const target = s.incidentPhotos[0]
+  const embedded = { ...s, incidentPhotos: s.incidentPhotos.map((p, i) => ({ ...p, dataUri: `data:image/png;base64,PHOTO${i}` })) }
+  const { snapshot: left } = applyPhotosLeftOut(embedded, [target.attachmentId], true)
+  const json = JSON.stringify(left)
+  assert.ok(!json.includes(target.storagePath), 'the frozen snapshot never holds the left-out path')
+  assert.ok(!json.includes('base64,PHOTO0'), 'nor a data URI for it')
+  assert.deepEqual(Object.keys(left.incidentPhotosLeftOut[0]).sort(), [
+    'attachmentId', 'eventId', 'occurredAt', 'occurredAtConfidence', 'occurredAtEarliest', 'occurredAtLatest', 'safety', 'type',
+  ])
+  const html = renderPrintV2(buildDocumentV2(left, DOC_OPTS))
+  assert.ok(!html.includes(target.storagePath))
+  for (const p of s.incidentPhotos) assert.ok(!html.includes(p.attachmentId), 'no attachment id is ever rendered (R8)')
+})
+
+Deno.test('photoManifestOf: which photo, of which incident, when, and its flag; never a path, note or bytes (R7)', () => {
+  const s = assembleReport(nyxSafetyCat())
+  const m = photoManifestOf(s.incidentPhotos)
+  assert.equal(m.length, s.incidentPhotos.length)
+  for (const e of m) assert.deepEqual(Object.keys(e).sort(), ['attachmentId', 'eventId', 'occurredAt', 'safety', 'type'])
+  const json = JSON.stringify(m)
+  for (const p of s.incidentPhotos) assert.ok(!json.includes(p.storagePath))
+})

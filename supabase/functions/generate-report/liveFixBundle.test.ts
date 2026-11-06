@@ -180,9 +180,9 @@ Deno.test('CUL-2416 / CUL-2442 — each photo state says what happened to that p
       events: [unsure, failed, none, attachedUnread, cough],
       aiAnalyses: [analysis('v-unsure', 'uncertain'), analysis('v-failed', 'failed')],
       attachments: [
-        { eventId: 'v-unsure', storagePath: 'p/1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
-        { eventId: 'v-failed', storagePath: 'p/2.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
-        { eventId: 's-attached', storagePath: 'p/3.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+        { id: 'att-v-unsure', eventId: 'v-unsure', storagePath: 'p/1.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+        { id: 'att-v-failed', eventId: 'v-failed', storagePath: 'p/2.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
+        { id: 'att-s-attached', eventId: 's-attached', storagePath: 'p/3.jpg', mimeType: 'image/jpeg', sortOrder: 0 },
       ],
     }),
   )
@@ -200,7 +200,7 @@ Deno.test('CUL-2416 / CUL-2442 — each photo state says what happened to that p
 Deno.test('CUL-2416 adversarial — an uncertain read that carries a blood flag prints the flag first, as the band does', () => {
   const v = { ...symptom('vomit', 2), id: 'v-blood' }
   const a = { ...analysis('v-blood', 'uncertain'), bloodPresent: 'fresh_red' } as ReportInput['aiAnalyses'][number]
-  const snap = assembleReport(baseInput({ events: [v], aiAnalyses: [a], attachments: [{ eventId: 'v-blood', storagePath: 'p/b.jpg', mimeType: 'image/jpeg', sortOrder: 0 }] }))
+  const snap = assembleReport(baseInput({ events: [v], aiAnalyses: [a], attachments: [{ id: 'att-v-blood', eventId: 'v-blood', storagePath: 'p/b.jpg', mimeType: 'image/jpeg', sortOrder: 0 }] }))
   const v1 = plain(renderReport(snap))
   assert.match(v1, /Photo: blood possible fresh red \(AI, unconfirmed\) · read uncertain, findings not shown; ask to see the photo/)
 })

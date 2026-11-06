@@ -740,3 +740,41 @@ describe('an inbox that cannot be read on the first count errs loud, per gate (C
     await expect(flushBeforeReport()).resolves.toEqual({ pending: 1, quarantined: 0 });
   });
 });
+
+// PR-23b (CUL-2454): the photos left out ride on a v2 request only, and only as a real choice;
+// the manifest comes back on v2 only.
+describe('generateVetReport — photos left out (PR-23b)', () => {
+  const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const TODAY = { petId: 'p1', includeNotes: true, timezone: 'America/Chicago' };
+  const MANIFEST = [{ attachmentId: A, eventId: 'e1', type: 'vomit', occurredAt: '2026-07-02T12:00:00Z', safety: null }];
+  beforeEach(() => {
+    mockedInvoke.mockReset();
+    mockDocumentEligible = false;
+    useBetaOptInStore.getState().reset();
+  });
+
+  it('a v2 request carries the choice and parses the manifest', async () => {
+    mockDocumentEligible = true;
+    useBetaOptInStore.getState().setOptIn('report_document_v2', true);
+    mockedInvoke.mockResolvedValue({ data: { html: '<html></html>', phone_html: '<p>x</p>', report_version: 'v2', photos: MANIFEST }, error: null });
+    const r = await generateVetReport({ petId: 'p1', includeNotes: true, photosLeftOut: [A] });
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: { ...TODAY, reportVersion: 'v2', photosLeftOut: [A] } });
+    expect(r.photos).toEqual(MANIFEST);
+  });
+
+  it('a v1 request never carries it, and a v1 answer offers no picker', async () => {
+    mockedInvoke.mockResolvedValue({ data: { html: '<html></html>', photos: MANIFEST }, error: null });
+    const r = await generateVetReport({ petId: 'p1', includeNotes: true, photosLeftOut: [A] });
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: TODAY });
+    expect(r.photos).toBeNull();
+  });
+
+  it('an empty choice sends no key', async () => {
+    mockDocumentEligible = true;
+    useBetaOptInStore.getState().setOptIn('report_document_v2', true);
+    mockedInvoke.mockResolvedValue({ data: { html: '<html></html>', phone_html: '<p>x</p>', report_version: 'v2' }, error: null });
+    const r = await generateVetReport({ petId: 'p1', includeNotes: true, photosLeftOut: [] });
+    expect(Object.keys(mockedInvoke.mock.calls[0][1].body)).not.toContain('photosLeftOut');
+    expect(r.photos).toBeNull();
+  });
+});

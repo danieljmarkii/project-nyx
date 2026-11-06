@@ -2540,7 +2540,7 @@ function mkAttachment(
   storagePath: string,
   o: { sortOrder?: number; mimeType?: string | null } = {},
 ): import('./report.ts').ReportAttachmentInput {
-  return { eventId, storagePath, mimeType: o.mimeType ?? 'image/jpeg', sortOrder: o.sortOrder ?? 0 }
+  return { id: `att:${storagePath}`, eventId, storagePath, mimeType: o.mimeType ?? 'image/jpeg', sortOrder: o.sortOrder ?? 0 }
 }
 
 Deno.test('PR7 photos — one entry per attachment, most-recent-first, dataUri null in pure assembly', () => {

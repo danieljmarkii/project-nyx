@@ -216,7 +216,7 @@ function analysis(eventId: string, over: Partial<Analysis>): Analysis {
 }
 
 function photo(eventId: string, sortOrder = 0): NonNullable<ReportInput['attachments']>[number] {
-  return { eventId, storagePath: `pet-v2/${eventId}.jpg`, mimeType: 'image/jpeg', sortOrder }
+  return { id: `att-${eventId}-${sortOrder}`, eventId, storagePath: `pet-v2/${eventId}.jpg`, mimeType: 'image/jpeg', sortOrder }
 }
 
 /**

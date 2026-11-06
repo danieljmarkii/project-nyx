@@ -8,7 +8,7 @@ import { buildDocumentV2, incidentTimeWords, textOf, type DocumentV2, type Docum
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, BACK_STYLE_PRINT, labelTableCells, pageHeadCss } from './renderBackV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
-import { leftOutRecord, partitionPhotos } from './photoLeaveOut.ts'
+import { applyPhotosLeftOut } from './photoLeaveOut.ts'
 import {
   backSheetsOf,
   EPISODES_HEADING,
@@ -152,19 +152,10 @@ Deno.test('R-10 — a photo that could not be embedded still prints its date, an
 
 // ── Photos left out (PR-23, R-10, PM option A 2026-11-02) ───────────────────
 
-/** What index.ts does with the owner's choice: the chosen photos leave `incidentPhotos` for
- *  `incidentPhotosLeftOut`. The storage path stands in for the attachment id here; the document
- *  never reads either. */
+/** What index.ts does with the owner's choice: the production split (`applyPhotosLeftOut`), on
+ *  the photos' real attachment ids. */
 function leaveOut(s: ReportSnapshot, pick: (p: ReportSnapshot['incidentPhotos'][number]) => boolean): ReportSnapshot {
-  const { kept, leftOut } = partitionPhotos(
-    s.incidentPhotos.map((p) => ({ ...p, attachmentId: p.storagePath })),
-    s.incidentPhotos.filter(pick).map((p) => p.storagePath),
-  )
-  return {
-    ...s,
-    incidentPhotos: kept.map(({ attachmentId: _a, ...p }) => p),
-    incidentPhotosLeftOut: [...(s.incidentPhotosLeftOut ?? []), ...leftOut.map(leftOutRecord)],
-  }
+  return applyPhotosLeftOut(s, s.incidentPhotos.filter(pick).map((p) => p.attachmentId), true).snapshot
 }
 
 function bandOf(d: DocumentV2) {
@@ -512,7 +503,7 @@ Deno.test('ledger — a lead sign with no entry in the window never leaves a fla
   const normal = dog.events.find((e) => e.type === 'stool_normal')
   assert.ok(normal)
   dog.aiAnalyses = [{ ...dog.aiAnalyses[2], eventId: normal.id }]
-  dog.attachments = [{ eventId: normal.id, storagePath: 'x.jpg', mimeType: 'image/jpeg', sortOrder: 0 }]
+  dog.attachments = [{ id: 'att-normal', eventId: normal.id, storagePath: 'x.jpg', mimeType: 'image/jpeg', sortOrder: 0 }]
   dog.events.push(...[24, 20, 16, 12, 8, 5, 2].map((d) => symptom('vomit', d, 9)))
   const s = assembleReport(dog)
   assert.ok(s.safetyFlags.some((f) => f.kind === 'present_blood'))

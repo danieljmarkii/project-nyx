@@ -8,6 +8,7 @@ import { transientDirectory } from './transientFiles';
 import { supabase } from './supabase';
 import { syncNow } from './sync';
 import { fetchOwnerSurname, getDeviceTimezone } from './profile';
+import { parseReportPhotos, type ReportPhoto } from './reportPhotoPicker';
 
 // Vet report client (Step 9, Phase 2 PR 5 — the owner-facing MVP).
 //
@@ -42,6 +43,13 @@ export interface VetReportParams {
    * the screen's copy says which notes it means.
    */
   includeNotes: boolean;
+  /**
+   * PR-23b (CUL-2454): the attachment ids the owner left out in the preview's photo picker.
+   * Sent only on a v2 request, and only when non-empty; the server honours it on the v2 document
+   * alone and ignores any id that is not one of this pet's photos. Absent means every photo goes,
+   * which is what the picker shows before the owner touches it.
+   */
+  photosLeftOut?: readonly string[];
 }
 
 export interface VetReport {
@@ -61,6 +69,12 @@ export interface VetReport {
   // bytes themselves are already embedded in `html` (EXIF-stripped, downscaled server-side), so
   // they flow into both the in-app WebView and the on-device PDF with no extra client wiring.
   photoCount: number;
+  /**
+   * PR-23b (CUL-2454): every photo this report held before the owner's choice, for the picker
+   * (`lib/reportPhotoPicker.ts`). Null on v1 and from a server older than PR-23b: no picker.
+   * Absent reads as null, like `reportId`, so a report built elsewhere offers no picker.
+   */
+  photos?: ReportPhoto[] | null;
   /**
    * R-16 (CUL-998 / CUL-861) — the report's own verdict that the trial it describes is
    * still running and has no allowed-food list, so nothing on it was checked against one.
@@ -303,11 +317,14 @@ export async function generateVetReport(params: VetReportParams): Promise<VetRep
   // when unresolvable → the server falls back to the stored zone. Never guessed.
   // reportVersion is injected the same way, and only when it is 'v2' (CUL-2347).
   const reportVersion = reportVersionNow();
+  const { photosLeftOut, ...rest } = params;
   const { data, error } = await supabase.functions.invoke('generate-report', {
     body: {
-      ...params,
+      ...rest,
       timezone: getDeviceTimezone(),
       ...(reportVersion === 'v2' ? { reportVersion } : {}),
+      // PR-23b: v2 only, and only a real choice; v1 has no words for a photo left out.
+      ...(reportVersion === 'v2' && photosLeftOut && photosLeftOut.length > 0 ? { photosLeftOut: [...photosLeftOut] } : {}),
     },
   });
   if (error) throw new Error(`Report generation failed: ${error.message}`);
@@ -330,6 +347,7 @@ export async function generateVetReport(params: VetReportParams): Promise<VetRep
     endDate: typeof data.end_date === 'string' ? data.end_date : '',
     scopeBasis: typeof data.scope_basis === 'string' ? data.scope_basis : '',
     photoCount: typeof data.photo_count === 'number' ? data.photo_count : 0,
+    photos: version === 'v2' ? parseReportPhotos(data.photos) : null,
     trialAllowedListMissing: data.trial_allowed_list_missing === true,
     petId: params.petId,
     reportId: version === 'v2' && typeof data.report_id === 'string' && data.report_id.length > 0 ? data.report_id : null,
