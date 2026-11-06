@@ -33,7 +33,7 @@ import { sha256Hex } from '../../_shared/engineStamps.ts'
 import { factTableHash, type LeadFacts, type LeadFactPayload } from './facts.ts'
 import { modelFor, requestBody, ticketFor, type GateTicket, type ModelResult, type Role } from './model.ts'
 import { HAZARDS, PROMPT_VERSION, type Hazard, type HazardLevel } from './prompts.ts'
-import { bandOrderIssues, LEAD_VERIFIER_VERSION, multiFlagIssues, printedLeadText, printedSentences, verifyLead, type LeadSentence, type LeadSummary } from './verify.ts'
+import { bandOrderIssues, LEAD_VERIFIER_VERSION, multiFlagIssues, ownSignIssues, printedLeadText, printedSentences, verifyLead, type LeadSentence, type LeadSummary } from './verify.ts'
 import type { FactTable, VerifyIssue } from './verifyCore.ts'
 
 export const LEAD_WALL_CLOCK_MS = 60_000
@@ -171,7 +171,11 @@ export function modelDecision(v: CheckerVerdict): 'pass' | 'repair' | 'reject' {
 export function checkerDecision(v: CheckerVerdict, ctx: { table: FactTable; draft: LeadSummary }): 'pass' | 'repair' | 'reject' {
   // CUL-2563 ruling (b): a multi-flag record never prints a lead, whatever the checker scored.
   if (multiFlagIssues(ctx.table).length > 0) return 'reject'
-  if (bandOrderIssues(ctx.table, { sentences: printedSentences(ctx.draft).map((text, i) => ({ text, cites: ctx.draft.sentences[i].cites })) }).length > 0) return 'reject'
+  const printed = { sentences: printedSentences(ctx.draft).map((text, i) => ({ text, cites: ctx.draft.sentences[i].cites })) }
+  if (bandOrderIssues(ctx.table, printed).length > 0) return 'reject'
+  // CUL-2619: R-11's flag restated without "the trial's own sign" is a shortened flag (H7), whatever
+  // the model scored (the re-run's checker passed it; one judge scored it minor twice).
+  if (ownSignIssues(ctx.table, printed).length > 0) return 'reject'
   return modelDecision(v)
 }
 

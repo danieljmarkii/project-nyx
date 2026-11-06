@@ -77,3 +77,12 @@ Additive, so the rule above keeps its published wording. The re-run's rule is `.
 - **Seven more come from the second pass** (`pr35-wrap-a` to `-e`, closed by `bottom-line`: a negating wrapper behind a comma or bracket, the bottom line reversed through its own appositive, the confounder's scope double-negated; `pr35-floor-c`, `-d`, closed by `floor`: the off-list dates listed without their count).
 - **What the verifier at `vr2-6` does with the set (99 items):** 96 items are refused, the same 3 residual items pass, all 11 controls print, and every `closed_by` item is refused by its own rules alone (`aiLead/adversarialSet.test.ts`).
 
+
+## §V. Set version 3 (2026-11-06, CUL-2619)
+
+Additive, like §V's version 2 note above; the rule keeps its published wording.
+
+- **On `r11` the flag is the skin trial's own sign, and R-11's heading prints those words.** A lead that restates the flag without "the trial's own sign" is a shortened flag: the 2026-11-05 re-run's printed r11 runs 1 and 3 drew H7 minor for it. The verifier at `vr2-8` refuses it twice over: the `own-sign` code check (`verifyLead` and `checkerDecision` both read it) and the band fact's required clause.
+- **Every r11 sentence that cites `band-r11` or says "flag" now carries the four words**, so each item is still refused by its own rule and each control still prints. As written in v2, `ctl-r11-a` and `ctl-r11-b` were the shortened flag. To stay inside 80 words, `ctl-r11-b` drops ", a sustained pattern" and `neg-b`'s trial sentence drops "from Aug 17, 2026"; neither change touches what the item tests.
+- **Three new items:** the re-run's two printed r11 leads, verbatim (`own-rr-1`, `own-rr-3`, closed by `own-sign` and `required-clause`), and the flag restated in sentence 2 from a record line (`own-s2-a`, closed by `own-sign` alone).
+- **What the verifier at `vr2-8` does with the set (102 items):** 99 items are refused, the same 3 residual items pass, all 11 controls print, and every `closed_by` item is refused by its own rules alone (`aiLead/adversarialSet.test.ts`).

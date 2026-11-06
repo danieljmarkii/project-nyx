@@ -74,7 +74,7 @@ Deno.test('intake framing: no invented adequacy, no recombined counts, no short 
 })
 
 Deno.test('R-11: every number the flag prints leads, not only the bold one', () => {
-  const thin = { text: 'Itching is the flag: over at least 49 days, the most recent 1 day ago.', cites: ['band-r11'] }
+  const thin = { text: 'Itching is the flag, the trial\'s own sign: over at least 49 days, the most recent 1 day ago.', cites: ['band-r11'] }
   assert.ok(checks(r11, [thin]).includes('band-numbers'))
 })
 

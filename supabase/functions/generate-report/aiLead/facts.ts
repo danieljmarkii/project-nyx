@@ -24,7 +24,7 @@ import { buildDocumentV2, textOf } from '../documentV2.ts'
 import type { ReportSnapshot } from '../report.ts'
 import type { Fact, FactTable } from './verifyCore.ts'
 import { PROMPT_VERSION, WRITER_MODEL, CHECKER_MODEL } from './prompts.ts'
-import { BOTTOM_LINE_PHRASES } from './verify.ts'
+import { BOTTOM_LINE_PHRASES, OWN_SIGN_PHRASE, printsOwnSign } from './verify.ts'
 
 /** `trial_reading`: a sentence of sheet 1's trial reading (CUL-2532). */
 export type RecordLineKind = 'lead' | 'record' | 'confounder' | 'trial_reading'
@@ -198,7 +198,9 @@ export function tableFromPayload(payload: LeadFactPayload): FactTable {
   const { band, record_lines: recordLines, trial_line: trial, record_edge: edge } = payload
   const bottomLine = bottomLineId(recordLines)
   const facts: Fact[] = [
-    ...band.map((b, i) => ({ id: b.id, text: b.text, label: b.label, role: 'band', live: true, required: i === 0, must_say: mustSayOf(b.text) })),
+    // R-11's heading names the flag as the trial's own sign (CUL-2619): those words are required
+    // wherever the row is cited. verify.ts `ownSignIssues` holds the same rule on its own.
+    ...band.map((b, i) => ({ id: b.id, text: b.text, label: b.label, role: 'band', live: true, required: i === 0, must_say: [...mustSayOf(b.text), ...(printsOwnSign(b.text) ? [[OWN_SIGN_PHRASE]] : [])] })),
     // With a trial on the sheet, the confounder and the trial reading's bottom line are required
     // (CUL-2550: the smoke bake-off's commonest checker findings were the trial printed alone, H1
     // 17 of 23, and the not-checked confounder left out, 14 of 23).

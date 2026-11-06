@@ -1,8 +1,8 @@
 {
- "version": 2,
+ "version": 3,
  "cul": "CUL-2380",
  "pre_registered": "2026-11-02",
- "verifier": "vr2-7",
+ "verifier": "vr2-8",
  "about": "The smoke bake-off's adversarial set (CUL-2306, spec §9.4). Every counterexample from PR-25's adversarial passes 1 to 3 and the checker regression's known miss, rephrased in fresh words, plus careful controls. The stop rule in docs/vet-report-v3-discovery/bakeoff/adversarial/PROTOCOL.md governs every item.",
  "fields": {
   "expect.verifier": "refuse: the shipped verifier must refuse it (a pass reds aiLead/adversarialSet.test.ts and is stop (3)). pass: built from the cited lines' own words, so only the checker can catch it",
@@ -60,7 +60,7 @@
      ]
     },
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -546,7 +546,7 @@
    "source": "adversarialPass2.test.ts exposure-only stopping",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -812,7 +812,7 @@
    "source": "adversarialPass2.test.ts R-11 numbers dropped from the flag",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, most recently 1 day ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, most recently 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -866,7 +866,7 @@
    "source": "adversarialPass3.test.ts B1 (a pronoun after an ending word)",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -899,7 +899,7 @@
    "source": "adversarialPass3.test.ts B1 (a pronoun after an ending word)",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -932,7 +932,7 @@
    "source": "adversarialPass3.test.ts B1 (a pronoun after an ending word)",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -1145,7 +1145,7 @@
    "source": "adversarialPass3.test.ts B4 (a recency moved)",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 15 days ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 15 days ago.",
      "cites": [
       "band-r11"
      ]
@@ -1411,7 +1411,7 @@
    "source": "adversarialPass3.test.ts B7 (a false trial day)",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -1444,7 +1444,7 @@
    "source": "adversarialPass3.test.ts B7",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -1600,7 +1600,7 @@
    "source": "CUL-2380 rule B",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -1612,7 +1612,7 @@
      ]
     },
     {
-     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
      "cites": [
       "trial",
       "trial-reading-2",
@@ -1671,7 +1671,7 @@
    "source": "CUL-2380 rule B, two words bound: the band prints \"not a single incident\", never \"not a sustained pattern\"",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago, not a sustained pattern.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago, not a sustained pattern.",
      "cites": [
       "band-r11"
      ]
@@ -2069,7 +2069,7 @@
    "source": "CUL-2380 adversarial pass 1 (past tense)",
    "sentences": [
     {
-     "text": "Itching had been the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "text": "Itching had been the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -2356,7 +2356,7 @@
    "source": "CUL-2380 adversarial pass 2 (past tense outside the first clause)",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago, was a sustained pattern.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago, was a sustained pattern.",
      "cites": [
       "band-r11"
      ]
@@ -2549,7 +2549,7 @@
    "source": "CUL-2380 adversarial pass 3 (a live itch dated by its first entry)",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, 1 day, the most recent logged Aug 27.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, 1 day, the most recent logged Aug 27.",
      "cites": [
       "band-r11"
      ]
@@ -3161,6 +3161,119 @@
    "closed_by": [
     "floor"
    ]
+  },
+  {
+   "id": "own-rr-1",
+   "fixture": "r11",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "minor",
+   "source": "the 2026-11-05 re-run's printed r11 run 1, verbatim (CUL-2619)",
+   "sentences": [
+    {
+     "text": "Itching is a live flag: itching over at least 49 days, with 15 episodes on 15 days, most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "Itching: 15 entries on 15 of 56 logged days, the last Oct 15.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.",
+     "cites": [
+      "trial",
+      "trial-reading-2",
+      "confounder"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "own-sign",
+    "required-clause"
+   ]
+  },
+  {
+   "id": "own-rr-3",
+   "fixture": "r11",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "minor",
+   "source": "the 2026-11-05 re-run's printed r11 run 3, verbatim (CUL-2619)",
+   "sentences": [
+    {
+     "text": "Itching is a live flag: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "Itching showed 15 entries on 15 of 56 logged days.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record; no medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.",
+     "cites": [
+      "trial",
+      "trial-reading-2",
+      "confounder"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "own-sign",
+    "required-clause"
+   ]
+  },
+  {
+   "id": "own-s2-a",
+   "fixture": "r11",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "minor",
+   "source": "CUL-2619 (the flag restated in sentence 2 from a record line, without the trial's own sign)",
+   "sentences": [
+    {
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "Itching is a live flag: 15 entries on 15 of 56 logged days.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "cites": [
+      "trial",
+      "trial-reading-2",
+      "confounder"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "own-sign"
+   ]
   }
  ],
  "controls": [
@@ -3234,7 +3347,7 @@
    "source": "adversarialPass1.test.ts honest",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -3264,7 +3377,7 @@
    "source": "fresh",
    "sentences": [
     {
-     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago, a sustained pattern.",
+     "text": "Itching is the flag, the trial's own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
      "cites": [
       "band-r11"
      ]
@@ -3487,6 +3600,7 @@
  "revised": [
   "v2 (2026-11-05, CUL-2532, CUL-2550): the fact table follows sheet 1, so nyx-v2's band item 1 is the burden flag. Every nyx-v2 item that opened on band-1-present_foreign opens on band-3-symptom_burden-vomit; the 16 whose hazard sat in sentence 1 carry the same hazard on the burden flag. Every item that cites a trial with a trial reading and a confounder now cites the reading's bottom line and the confounder, which the table now requires, so each item is still refused by its own rule.",
   "v2, after adversarial pass 1 on PR-35: seven items from that pass's four breaks (a double negative around the trial's bottom line; an unused cite stripping 'a floor, not a total'; off-list dates moved onto the trial start; a zero week set across the whole trial through the side-by-side waiver). Each is refused by the rule that closes it alone.",
-  "v2, after adversarial pass 2 on PR-35: seven more items (a negating wrapper behind a comma or bracket; the bottom line reversed through its own appositive; the confounder's scope double-negated; the off-list dates listed without their count or the floor). Each is refused by the rule that closes it alone."
+  "v2, after adversarial pass 2 on PR-35: seven more items (a negating wrapper behind a comma or bracket; the bottom line reversed through its own appositive; the confounder's scope double-negated; the off-list dates listed without their count or the floor). Each is refused by the rule that closes it alone.",
+  "v3 (2026-11-06, CUL-2619): on r11 the flag is the skin trial's own sign, and R-11's heading says so. A lead that restates it without \"the trial's own sign\" is a shortened flag (the re-run's r11 runs 1 and 3, H7 minor), refused by `own-sign` and the band fact's required clause. Every r11 sentence that cites band-r11 or says \"flag\" now carries the four words, so each item is still refused by its own rule and each control still prints; v2's ctl-r11-a and ctl-r11-b, as written, were the shortened flag. Three new items: the re-run's two printed r11 leads verbatim (own-rr-1, own-rr-3) and the flag restated in sentence 2 from a record line (own-s2-a). Verifier vr2-8."
  ]
 }

@@ -35,7 +35,7 @@ const CAT_HONEST: LeadSentence = {
 const CAT_TRIAL: LeadSentence = { text: 'The owner-entered diet trial, Cooper\'s Venison LID, is at day 19 of 42, from Sep 28, 2026.', cites: ['trial'] }
 // CUL-2532: the trial's reading bottom line and its confounder, now required beside a trial.
 const CAT_READING: LeadSentence = { text: 'Trial diet was not fed exclusively; no medication or supplement is recorded as overlapping the trial, not checked with the owner.', cites: ['trial-reading-3', 'confounder'] }
-const R11_HONEST: LeadSentence = { text: 'Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.', cites: ['band-r11'] }
+const R11_HONEST: LeadSentence = { text: 'Itching is the flag, the trial\'s own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.', cites: ['band-r11'] }
 // Band item 1 is the band's first PRINTED row: on Nyx, the burden flag (CUL-2381 ruling (a), CUL-2532).
 const NYX_BAND: LeadSentence = { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] }
 
@@ -62,7 +62,7 @@ Deno.test('B2: the cat 50 h in is never "below", "approaching" or "before" its w
 Deno.test('B3: a number with a symbol before it is bound like any other', () => {
   const lt = { ...CAT_HONEST, text: 'Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h without a full meal, <48 h of markedly reduced intake; ≥48–72 h is a hepatic-lipidosis risk window.' }
   assert.ok(errorsOf(cat, [lt, CAT_TRIAL]).includes('number-binding'))
-  const ge = { ...R11_HONEST, text: 'Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent ≥49 days ago.' }
+  const ge = { ...R11_HONEST, text: 'Itching is the flag, the trial\'s own sign: over at least 49 days, 15 episodes on 15 days, the most recent ≥49 days ago.' }
   const e = errorsOf(r11, [ge])
   assert.ok(e.includes('number-binding') || e.includes('recency'), String(e))
 })
@@ -72,7 +72,7 @@ Deno.test('B4: a number or date never moves from one sign to another', () => {
   assert.ok(errorsOf(nyx, [borrowed]).includes('one-observation'))
   const date = { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 21.', cites: ['line-1', 'sign-cough'] }
   assert.ok(errorsOf(nyx, [NYX_BAND, date]).includes('one-observation'))
-  const recency = { ...R11_HONEST, text: 'Itching is the flag: over at least 49 days, 15 episodes on 15 days at 1 day apart, the most recent 15 days ago.' }
+  const recency = { ...R11_HONEST, text: 'Itching is the flag, the trial\'s own sign: over at least 49 days, 15 episodes on 15 days at 1 day apart, the most recent 15 days ago.' }
   assert.ok(errorsOf(r11, [recency]).includes('recency'))
 })
 
