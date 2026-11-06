@@ -26,6 +26,7 @@
 // row; no Map, no KV and no Storage object holds a lead (aiLead/storage.guard.test.ts).
 
 import { consentDecision, flagDecision, type SummaryGate } from '../../_shared/reportSummaryGate.ts'
+import { sha256Hex } from '../../_shared/engineStamps.ts'
 import { factTableHash, type LeadFacts, type LeadFactPayload } from './facts.ts'
 import { modelFor, requestBody, ticketFor, type GateTicket, type ModelResult, type Role } from './model.ts'
 import { HAZARDS, PROMPT_VERSION, type Hazard, type HazardLevel } from './prompts.ts'
@@ -66,6 +67,9 @@ export interface StoredVerdict {
   checker: CheckerVerdict | null
   attempts: number
   at: string
+  /** SHA-256 hex of `ai_lead_text` as written beside this verdict, null when no text is
+   *  (CUL-2574). The keep pins the text by this field, so a request URL never carries the text. */
+  text_sha: string | null
 }
 
 export interface DraftRead {
@@ -185,13 +189,15 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
   const at = () => new Date(io.now()).toISOString()
   const base = (outcome: LeadOutcome, reason: string | null, hash: string | null): StoredVerdict => ({
     v: 1, outcome, reason, fact_hash: hash, prompt: PROMPT_VERSION, verifier: LEAD_VERIFIER_VERSION,
-    writer_model: null, checker_model: null, sentences: null, verifier_errors: [], checker: null, attempts: 0, at: at(),
+    writer_model: null, checker_model: null, sentences: null, verifier_errors: [], checker: null, attempts: 0, at: at(), text_sha: null,
   })
   const record = async (built: StoredVerdict, text: string | null = null, model: string | null = null): Promise<LeadResult> => {
     // `at` is stamped at the WRITE, not when the verdict was built (up to the wall clock earlier):
     // the keep pins the verdict's `at` in place of a long text (aiLead/run.ts pinsOf, CUL-2523),
     // so two runs that built their verdicts in one millisecond must still write different `at`s.
-    const v: StoredVerdict = { ...built, at: at() }
+    // `text_sha` is computed here, from the text this same write stores, so the two can never
+    // disagree (CUL-2574: the keep pins the text by it, whatever the text's length).
+    const v: StoredVerdict = { ...built, at: at(), text_sha: text === null ? null : await sha256Hex(text) }
     const wrote = await io.writeDraft(text, v, model)
     if (!wrote) return { outcome: 'draft_not_found' }
     if (v.outcome === 'printed' && text !== null && v.sentences) return { outcome: 'printed', sentences: v.sentences, text, cached: false }

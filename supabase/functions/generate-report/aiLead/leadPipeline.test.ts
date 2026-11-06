@@ -1,6 +1,7 @@
 // The AI lead pipeline end to end over a recording fake I/O (CUL-2305, spec §9.2; CUL-2331).
 // The writer and checker answers are scripted; everything else is the production code path.
 import assert from 'node:assert/strict'
+import { sha256Hex } from '../../_shared/engineStamps.ts'
 import type { SummaryGate } from '../../_shared/reportSummaryGate.ts'
 import { buildDocumentV2 } from '../documentV2.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
@@ -112,6 +113,17 @@ Deno.test('the verdict is stamped at its write, after the model calls, not when 
   await runAiLead(f.io, FACTS, { leaveOut: false })
   assert.equal(Date.parse(f.writes[0].verdict.at), atWrite, 'the last clock read before the write is the stamp')
   assert.ok(f.sends.length === 2, 'both model calls ran before it')
+})
+
+Deno.test('every write carries text_sha, the SHA-256 of the text it writes, null with no text (CUL-2574)', async () => {
+  const f = fake({ answers: [writer(GOOD), checker()] })
+  await runAiLead(f.io, FACTS, { leaveOut: false })
+  const w = f.writes[0]
+  assert.ok(w.text !== null)
+  assert.equal(w.verdict.text_sha, await sha256Hex(w.text!))
+  const g = fake({})
+  await runAiLead(g.io, FACTS, { leaveOut: true })
+  assert.equal(g.writes[0].verdict.text_sha, null)
 })
 
 Deno.test('leave out: recorded on the copy, no gate, no model', async () => {

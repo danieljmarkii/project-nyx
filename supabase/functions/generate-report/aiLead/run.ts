@@ -17,6 +17,7 @@ import { buildLeadFacts, documentForLead, factTableHash } from './facts.ts'
 import { sendChecked } from './model.ts'
 import { runAiLead, type DraftRead, type LeadIO, type LeadResult, type StoredVerdict } from './leadPipeline.ts'
 import { h } from '../documentV2.ts'
+import { sha256Hex } from '../../_shared/engineStamps.ts'
 import { LEAD_VERIFIER_VERSION, type LeadSentence } from './verify.ts'
 
 export interface DraftKey {
@@ -119,23 +120,32 @@ export interface KeepLead {
  */
 export type KeepRefusal = { readonly refused: 'withdrawn' | 'mismatch' }
 
-/** The pin's longest text, URL-encoded, before the text is left to the verdict's pins. A
- *  PostgREST filter rides in the request URL, and a gateway may refuse a long one (CUL-2523): the
- *  verdict's `at` moves on every write of the three columns (leadPipeline.ts `record`, the one
- *  writer besides 118's withdrawal clear, which nulls all three), so it pins the text too. */
+/** The longest text pinned by its own value, URL-encoded, for a verdict written before
+ *  `text_sha` existed (CUL-2574). A PostgREST filter rides in the request URL, and a gateway may
+ *  refuse a long one. Such a verdict past this length is no pin: the keep is refused (500) and
+ *  retried, never kept on a weaker pin. */
 export const PIN_TEXT_URL_BUDGET = 2048
 
 /** The verdict fields the pin reads by path: `at` moves on every write; the rest make a write in
- *  the same millisecond still differ. */
-const VERDICT_PINS = ['at', 'outcome', 'fact_hash'] as const
+ *  the same millisecond still differ. `text_sha` (CUL-2574) pins the text by its content. */
+const VERDICT_PINS = ['at', 'outcome', 'fact_hash', 'text_sha'] as const
 
 function verdictObject(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
 }
 
-/** Every lead column as read: a rewrite of any of them between this read and the keep refuses
- *  the keep, on BOTH branches (CUL-2523). */
-function pinsOf(draft: DraftRead): Record<string, string | null> | null {
+/**
+ * Every lead column as read: a rewrite of any of them between this read and the keep refuses
+ * the keep, on BOTH branches (CUL-2523).
+ *
+ * THE TEXT IS PINNED BY ITS HASH (CUL-2574). `leadPipeline.ts` `record` writes `text_sha`, the
+ * text's SHA-256, in the same write as the text, so `ai_lead_verdict->>text_sha` moves whenever
+ * the text does, and the URL stays short however long the text is. The hash is checked against
+ * the text read here: one that does not match is no pin. A verdict from before `text_sha` falls
+ * back to pinning a short text by value; a long one is no pin. Timing (`at`) never stands in for
+ * the content, since two runs can stamp the same millisecond.
+ */
+async function pinsOf(draft: DraftRead): Promise<Record<string, string | null> | null> {
   const verdict = verdictObject(draft.verdict)
   if (draft.verdict !== null && verdict === null) return null // an unreadable verdict is no pin
   const pins: Record<string, string | null> = { ai_lead_model: draft.model ?? null }
@@ -144,11 +154,21 @@ function pinsOf(draft: DraftRead): Record<string, string | null> | null {
     for (const key of VERDICT_PINS) {
       const value = verdict[key]
       if (value !== undefined && value !== null && typeof value !== 'string') return null
+      // A verdict that never had the key is pinned as missing (`->>` reads null for both).
       pins[`ai_lead_verdict->>${key}`] = (value as string | undefined) ?? null
     }
   }
-  if (draft.text === null) pins.ai_lead_text = null
-  else if (encodeURIComponent(draft.text).length <= PIN_TEXT_URL_BUDGET) pins.ai_lead_text = draft.text
+  const sha = verdict?.text_sha
+  if (draft.text === null) {
+    if (typeof sha === 'string') return null // a hash with no text: no record can be true
+    pins.ai_lead_text = null
+  } else if (typeof sha === 'string') {
+    if ((await sha256Hex(draft.text)) !== sha) return null
+  } else if (encodeURIComponent(draft.text).length <= PIN_TEXT_URL_BUDGET) {
+    pins.ai_lead_text = draft.text
+  } else {
+    return null
+  }
   return pins
 }
 
@@ -192,7 +212,7 @@ export async function settleLeadForKeep(
 ): Promise<KeepLead | KeepRefusal | null> {
   const draft = await io.readDraft()
   if (!draft.found) return null
-  const unchanged = pinsOf(draft)
+  const unchanged = await pinsOf(draft)
   if (unchanged === null) return null
   if (storedHtml.includes(LEAD_SLOT_MARK)) {
     if (draft.text === null || printedLeadOf(storedHtml) !== h(draft.text)) return { refused: 'mismatch' }
@@ -202,7 +222,8 @@ export async function settleLeadForKeep(
   }
   const prior = verdictObject(draft.verdict)
   const reason = draft.text !== null ? 'not_on_sent_copy' : prior === null ? 'not_ready' : 'not_printed'
-  const { sentences: _sentences, checker: _checker, ...record } = prior ?? {}
+  // The hash goes with the text it fingerprints: the cleared row claims no text (CUL-2574).
+  const { sentences: _sentences, checker: _checker, text_sha: _textSha, ...record } = prior ?? {}
   return {
     set: { ai_lead_text: null, ai_lead_verdict: { ...record, at_send: { printed: false, reason } }, ai_lead_model: null },
     unchanged,
