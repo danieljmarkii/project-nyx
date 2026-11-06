@@ -159,6 +159,24 @@ function sustainedRefusalCounts(r: SustainedRefusalFacts): string {
   return `${r.meals} meals on ${r.days} days (${parts.join(', ')})`
 }
 
+/**
+ * CUL-2593 (PM ruling option (1), 2026-11-06): an all-refused consecutive-low card asks for a call
+ * today unless the pet is a dog. A cat can get into liver trouble inside about 48 hours of not
+ * eating, so a full day of refusal is not a "wait and see" card. Only `'dog'` keeps the
+ * conditional ask: a cat, `'other'` or a species the finding does not carry asks the louder one.
+ * Mirrored on the client (`intakeAllRefusedCallsToday`, lib/signalCopy.ts); keep the two in sync.
+ */
+export function allRefusedCallsToday(f: IntakeDeclineFinding): boolean {
+  return f.trigger === 'consecutive_low' && f.allRefused === true && f.species !== 'dog'
+}
+
+/** The vet clause of an all-refused card: a call today, or (a dog) the conditional word. */
+function allRefusedAsk(f: IntakeDeclineFinding): string {
+  return allRefusedCallsToday(f)
+    ? 'worth a call to your vet today'
+    : 'worth keeping an eye on, and a word with your vet if it carries on'
+}
+
 export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string): string {
   // Safety finding: calm, clear, points toward keeping an eye on it + the vet.
   // Never reassures, never frames reduced eating as fussiness.
@@ -178,7 +196,7 @@ export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string):
     // never "eating less". "You rated" scopes it to the record; it never claims an unrated meal.
     // Mirrored on the client (`evidenceText` and `bannerRest`, lib/signalCopy.ts); keep them in sync.
     const when = f.daysBelowBaseline <= 1 ? 'today' : `over ${span}`
-    return `${petName} refused every meal you rated ${when} — worth keeping an eye on, and a word with your vet if it carries on.`
+    return `${petName} refused every meal you rated ${when} — ${allRefusedAsk(f)}.`
   }
   return `${petName} has eaten less than usual ${span} — worth keeping an eye on, and a word with your vet if it carries on.`
 }
@@ -723,7 +741,7 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
             : 'worth raising with your vet'
         : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
           ? 'worth booking a vet visit'
-        : f.type === 'intake_decline' && f.trigger === 'sustained_refusal'
+        : f.type === 'intake_decline' && (f.trigger === 'sustained_refusal' || allRefusedCallsToday(f))
           ? 'worth a call to your vet'
           : 'worth a word with your vet'
   return `An earlier read of ${petName}'s record, on ${onsetDay(carriedFromIso)}, showed ${what} — ${ask}. Part of the record didn't load for this update, so it hasn't been checked again yet.`

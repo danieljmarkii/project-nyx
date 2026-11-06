@@ -82,9 +82,10 @@ const base = lowOf(detectIntakeDecline(input('cat', record('cat', ['refused', 'r
 
 Deno.test('CUL-2424: the template words a day of refusals as refusal, never "less"', () => {
   const t = templateIntakeDecline(base, 'Miso')
-  assert.equal(t, 'Miso refused every meal you rated today — worth keeping an eye on, and a word with your vet if it carries on.')
+  // CUL-2593: a cat's day of refusals asks for a call today (detection.allRefusedAsk.test.ts).
+  assert.equal(t, 'Miso refused every meal you rated today — worth a call to your vet today.')
   assert.ok(!/less/i.test(t))
-  const two = templateIntakeDecline({ ...base, daysBelowBaseline: 2 }, 'Rex')
+  const two = templateIntakeDecline({ ...base, daysBelowBaseline: 2, species: 'dog' }, 'Rex')
   assert.equal(two, 'Rex refused every meal you rated over the last two days — worth keeping an eye on, and a word with your vet if it carries on.')
   // The dip keeps its own words.
   assert.match(templateIntakeDecline({ ...base, allRefused: false }, 'Miso'), /eaten less than usual today/)

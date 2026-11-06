@@ -1219,7 +1219,9 @@ export function evidenceText(
     return (
       `${petName} refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)}, compared with ` +
       `${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Refusing food can be an early sign ` +
-      `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`
+      (intakeAllRefusedCallsToday(finding)
+        ? `something's off, so it's worth a call to your vet today.${i5Tail}`
+        : `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`)
     );
   }
   return (
@@ -1955,6 +1957,15 @@ export function sustainedRefusalOf(finding: SignalFinding): SustainedRefusalFact
  */
 export function intakeAllRefused(finding: SignalFinding): boolean {
   return finding.type === 'intake_decline' && finding.trigger === 'consecutive_low' && finding.allRefused === true;
+}
+
+/**
+ * CUL-2593 (PM ruling option (1), 2026-11-06): an all-refused card asks for a call today unless the
+ * pet is a dog (a cat's liver window is about 48 hours). A cat, `'other'` or a missing species asks
+ * the louder one. The mirror of phrasing.ts `allRefusedCallsToday`; keep the two in sync.
+ */
+export function intakeAllRefusedCallsToday(finding: SignalFinding): boolean {
+  return intakeAllRefused(finding) && finding.type === 'intake_decline' && finding.species !== 'dog';
 }
 
 /** "today" or "over the last two days": the span an all-refused card names. */
@@ -2902,9 +2913,9 @@ export const STRIP_ASKS = {
   visit: 'Worth a vet visit',
   /** The card says "worth a word with your vet" (chronicity standard; worsening standard). */
   tell: 'Tell your vet',
-  /** The card says "a word with your vet if it carries on" (intake decline, both triggers; worsening soft). */
+  /** The card says "a word with your vet if it carries on" (intake decline, both triggers, save an all-refused non-dog card; worsening soft). */
   check: 'Check with your vet',
-  /** The card says "worth a call to your vet" (a photo red flag). */
+  /** The card says "worth a call to your vet" (a photo red flag; sustained refusal; an all-refused non-dog card, CUL-2593). */
   call: 'Call your vet',
 } as const;
 
@@ -3069,6 +3080,8 @@ export function stripAskLine(finding: SignalFinding): string | null {
       // The sustained-refusal floor ends "worth a call to your vet today", an unconditional call.
       if (finding.trigger === 'sustained_refusal') return STRIP_ASKS.call;
       if (finding.trigger === 'refused_then_vomited') return STRIP_ASKS.tell;
+      // CUL-2593: an all-refused card that asks for a call today (every species but a dog) calls.
+      if (intakeAllRefusedCallsToday(finding)) return STRIP_ASKS.call;
       // CUL-2405: the two conditional cards are named; a trigger this build does not know calls.
       return finding.trigger === 'consecutive_low' || finding.trigger === 'refused_normal_food' ? STRIP_ASKS.check : STRIP_ASKS.call;
     case 'incident_red_flag':
