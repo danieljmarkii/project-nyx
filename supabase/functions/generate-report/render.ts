@@ -3259,7 +3259,9 @@ export function safetyFlagRow(
       const words: Record<string, string> = {
         incident_red_flag: `a red flag on a photographed incident${ptr.incidents === null ? '' : ` (${ptr.incidents})`}`,
       }
-      const named = f.findingTypes.map((t) => h(words[t] ?? t.replace(/_/g, ' ')))
+      // The words are this file's own markup (v2's pointer carries &ldquo; entities), so they are
+      // not escaped again; an unnamed type is engine text and is (CUL-2455: v2 printed "&ldquo;").
+      const named = f.findingTypes.map((t) => words[t] ?? h(t.replace(/_/g, ' ')))
       return row('Also flagged', `The app's checks also flagged ${named.join('; ')}. This report does not detail ${f.findingTypes.length === 1 ? 'it' : 'them'} here.`)
     }
     case 'symptom_worsening': {
@@ -10673,12 +10675,22 @@ export function incidentPhotosIntroHtml(snap: ReportSnapshot, ptr: SectionPointe
             : ` The read${removed === 1 ? '' : 's'} ${removed === 1 ? 'remains' : 'remain'} in ${ptr.eventLog}, marked there.`
         }`
       : ''
-  const lead =
-    n > 0
+  // R-10 (CUL-2455): a photo the owner left out of this report is still retained, so the lead
+  // names what THIS report holds once any was left out. No number for the left-out photos here:
+  // v2's strip counts them on the line below, and the lead must not be a second count of them.
+  // Absent on a snapshot frozen before PR-23: nothing could be left out then.
+  const leftOut = (snap.incidentPhotosLeftOut ?? []).length > 0
+  const lead = !leftOut
+    ? n > 0
       ? `<span class="num">${n}</span> photographed incident${
           n === 1 ? '' : 's'
         } with a retained photo in this window, most recent first`
       : `No photographed incident in this window still has a retained photo`
+    : n > 0
+      ? `<span class="num">${n}</span> photographed incident${
+          n === 1 ? '' : 's'
+        } with a photo in this report, most recent first; the owner left further photos out of this report`
+      : `No photo is in this report: the owner left every retained photo out of it`
   return `${lead} — the owner's own photos, attached when the event was logged. For analyzed incidents the automated photo-analysis fields are shown beneath (owner-reviewable, unconfirmed); a photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1. Photo metadata (location, device, capture time) is removed before embedding. A clear photo is never an all-clear and these never carry a diagnosis.${missingNote}${removedNote}`
 }
 

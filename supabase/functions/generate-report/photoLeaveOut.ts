@@ -64,25 +64,36 @@ export function leftOutRecord(p: {
 
 /**
  * The dated line beside a band flag, for the photos left out on the events that flag cites.
- * Null when none of them were left out. One date per incident day, in the order given (the
- * snapshot's, most recent first); two photos of one incident are one date.
+ * Null when none of them were left out. One entry per incident, in the order given (the
+ * snapshot's, most recent first); two photos of one incident are one entry.
+ *
+ * `whenOf` gives an incident's day AND time as the photo's caption would have said it (CUL-2455:
+ * a window incident's "sometime between …" lived only in that caption, so leaving the photo out
+ * took the time since ingestion off the band). Without it, or when it has no word for an event,
+ * the entry is the incident's day alone, and two incidents on one day are one date.
  *
  *   "Photo left out by the owner (Jul 2)."
  *   "Photos left out by the owner (Jul 2, Jun 28)."
+ *   "Photo left out by the owner (Oct 9, sometime between Oct 8 22:00 and Oct 9 06:00)."
+ *   "Photos left out by the owner (Jul 2, seen at 08:10; Jun 28, about 19:00 (an estimate))."
  */
 export function leftOutBandLine(
   citedEventIds: ReadonlySet<string>,
   leftOut: readonly { eventId: string; occurredAt: string }[],
   tz: string | null,
+  whenOf?: (eventId: string) => string | null,
 ): string | null {
   const mine = leftOut.filter((p) => citedEventIds.has(p.eventId))
   if (mine.length === 0) return null
-  const days: string[] = []
+  const entries: string[] = []
   for (const p of mine) {
-    const d = fmtLocalDay(p.occurredAt, tz)
-    if (!days.includes(d)) days.push(d)
+    const e = whenOf?.(p.eventId) ?? fmtLocalDay(p.occurredAt, tz)
+    if (!entries.includes(e)) entries.push(e)
   }
-  return `${mine.length === 1 ? 'Photo' : 'Photos'} left out by the owner (${days.join(', ')}).`
+  // An entry with a time already holds a comma ("Jul 2, seen at 08:10"), so entries then part on
+  // a semicolon; day-only entries keep the comma list.
+  const sep = entries.some((e) => e.includes(',')) ? '; ' : ', '
+  return `${mine.length === 1 ? 'Photo' : 'Photos'} left out by the owner (${entries.join(sep)}).`
 }
 
 /** The record sheet's count of every photo left out, flagged or not. Null at zero. */

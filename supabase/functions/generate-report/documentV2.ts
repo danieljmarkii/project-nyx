@@ -554,7 +554,14 @@ export function bandLeftOutLineOf(f: SafetyFlag, snap: ReportSnapshot): string |
   if (f.kind !== 'present_blood' && f.kind !== 'present_foreign') return null
   // Absent on a snapshot frozen before PR-23 (a saved copy, a recorded fixture): nothing was left
   // out then, because nothing could be.
-  return leftOutBandLine(new Set(f.incidents.map((i) => i.eventId)), snap.incidentPhotosLeftOut ?? [], snap.timezone)
+  // CUL-2455: each left-out incident keeps the day and time its caption would have printed, read
+  // from the event log's row for that event (the same words `bandPhotosOf` puts in the caption).
+  const logged = new Map(snap.provenance.symptomLog.map((e) => [e.eventId, e]))
+  const whenOf = (eventId: string): string | null => {
+    const e = logged.get(eventId)
+    return e ? `${textOf(fmtLocalDay(e.occurredAt, snap.timezone))}, ${incidentTimeWords(e, snap.timezone)}` : null
+  }
+  return leftOutBandLine(new Set(f.incidents.map((i) => i.eventId)), snap.incidentPhotosLeftOut ?? [], snap.timezone, whenOf)
 }
 
 /** An incident's time in words with its confidence (v1's classes, `timeConfidence`). */
