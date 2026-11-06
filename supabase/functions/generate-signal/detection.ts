@@ -4588,6 +4588,25 @@ function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig)
   }
 }
 
+/**
+ * CUL-2565: what detector ② had to work with at `input.now`, so a report can say whether the intake
+ * check ran or had too little to read. Both of ②'s coverage floors, through the same classifier and
+ * window edge as `detectIntakeDeclineRelative` (the window's meals are a subset of the record's, so
+ * the window count clearing the floor is both floors clearing). Never a verdict: ② may still be
+ * silent above the floor, and that silence is not an all-clear.
+ */
+export function intakeCheckCoverage(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): { ratedMeals: number; needed: number; windowDays: number } {
+  const cfg = config.intakeDecline
+  const nowMs = Date.parse(input.now)
+  const ratedMeals = Number.isFinite(nowMs)
+    ? classifyRatedMeals(intakeMealEventsOf(input), intakeFreeFedSpans(input)).filter((m) => m.ms >= nowMs - cfg.baselineWindowDays * MS_PER_DAY).length
+    : 0
+  return { ratedMeals, needed: cfg.minRatedMealsForBaseline, windowDays: cfg.baselineWindowDays }
+}
+
 function detectIntakeDeclineRelative(
   input: DetectionInput,
   config: DetectionConfig,

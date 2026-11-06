@@ -1850,7 +1850,7 @@ export function chronicitySpanDaysShown(
 }
 
 /** The generated-at day, localized (for the letterhead stamp). */
-function localDayKeyOf(iso: string, tz: string | null): string {
+export function localDayKeyOf(iso: string, tz: string | null): string {
   const ms = Date.parse(iso)
   if (Number.isNaN(ms)) return iso.slice(0, 10)
   if (tz) {
@@ -2101,7 +2101,7 @@ function futureNote(e: RecordEdge): string {
 }
 
 /** "Jun 19", or "Jan 3, 2027" when the day falls in another year than the range box states. */
-function fmtDayScopedTo(dayKey: string, windowEndKey: string): string {
+export function fmtDayScopedTo(dayKey: string, windowEndKey: string): string {
   const y = dayParts(dayKey)?.y
   return y !== undefined && y !== dayParts(windowEndKey)?.y ? fmtDayYear(dayKey) : fmtDay(dayKey)
 }

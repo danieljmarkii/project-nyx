@@ -2074,6 +2074,11 @@ export interface TrialFacts {
    * the failure mode — a multi-week refusal is.
    */
   rangeRefusal: TrialDietRefusal | null;
+  /** CUL-2565: what the refusal check read over the range, fired or not, so a report can say
+   *  whether it ran (`REFUSAL_MIN_RATED` ratings) or had too few. The same population and counters
+   *  `rangeRefusal` fires on; `days` is its refusal-day count (days a feeding was left unfinished),
+   *  not rated days. Never a verdict: silence above the floors is not an all-clear. */
+  refusalCheck: { rated: number; days: number; population: TrialRefusalPopulation };
   /**
    * True when `rangeRefusal`'s refusals span more than one EPISODE.
    *
@@ -2814,6 +2819,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     arrangementExposures: arrangementHits,
     trialDietRefusal: null,
     rangeRefusal: null,
+    refusalCheck: { rated: 0, days: 0, population: 'trial_diet' },
     rangeRefusalSpansEpisodes: false,
     unfinishedDayIndices: [],
     unfinishedMealDayIndices: [],
@@ -3631,6 +3637,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     ...(oralRouteOnList.length > 0 ? { oralRouteOnList } : {}),
     trialDietRefusal,
     rangeRefusal,
+    refusalCheck: { rated: pop.rangeRated, days: pop.rangeDays.size, population },
     // Measured on the RANGE fact's own stamps, not the recency window's — the live
     // register reads `rangeRefusal` on the stand-down path, so the span guard has
     // to be about the same refusals it would speak from.

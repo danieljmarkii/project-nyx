@@ -399,15 +399,28 @@ function louder(a: WeightRow | null, b: WeightRow | null): WeightRow | null {
 
 // ── The predicate ────────────────────────────────────────────────────────────
 
-export function weightStory(input: WeightStoryInput): WeightStory {
+/**
+ * CUL-2565: the readings the story counts (clinic and home scale, in its window), so a report can
+ * say how many weigh-ins the weight check read. `weightStory` reads the same list, so the two
+ * cannot disagree.
+ */
+export function countedWeighIns(input: Pick<WeightStoryInput, 'readings' | 'nowMs'>): number {
+  return readingsInWindow(input).filter(({ r }) => r.source === 'clinic' || r.source === 'home_scale').length
+}
+
+function readingsInWindow(input: Pick<WeightStoryInput, 'readings' | 'nowMs'>) {
   const { nowMs } = input
   const windowStart = nowMs - WEIGHT_RULES.windowDays * MS_PER_DAY
-
-  const inWindow = input.readings
+  return input.readings
     .map((r) => ({ r, ms: Date.parse(r.occurredAt) }))
     .filter(({ r, ms }) => isFiniteKg(r.kg) && Number.isFinite(ms) && ms > windowStart && ms <= nowMs + WEIGHT_RULES.futureSlackMs)
     // Canonical order, so the answer never depends on the order the read chose: time, then value.
     .sort((a, b) => a.ms - b.ms || a.r.kg - b.r.kg || a.r.source.localeCompare(b.r.source))
+}
+
+export function weightStory(input: WeightStoryInput): WeightStory {
+  const { nowMs } = input
+  const inWindow = readingsInWindow(input)
 
   const notCounted = inWindow.filter(({ r }) => r.source === 'estimate').map(({ r }) => r)
   const counted: Indexed[] = inWindow
