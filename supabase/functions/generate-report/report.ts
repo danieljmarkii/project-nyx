@@ -2103,6 +2103,12 @@ export interface IncidentPhotoLeftOut {
   eventId: string
   type: string
   occurredAt: string
+  /** CUL-2455: the incident's time as the owner recorded it, so the dated line beside a flag
+   *  says it as the photo's caption would have ("sometime between …"). Optional only for a
+   *  copy saved before the fields existed, which falls back to the day. */
+  occurredAtConfidence?: OccurredAtConfidence | null
+  occurredAtEarliest?: string | null
+  occurredAtLatest?: string | null
   safety: IncidentPhotoSafety | null
 }
 

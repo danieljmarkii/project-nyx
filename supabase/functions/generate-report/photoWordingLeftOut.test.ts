@@ -166,7 +166,51 @@ Deno.test('CUL-2455 (5) — a window incident left out keeps its "sometime betwe
   assert.ok(textOf(renderPrintV2(docOf(leaveOut(s, (p) => p.safety === 'foreign')))).includes(words), 'and it prints')
 })
 
-Deno.test('CUL-2455 (5) — the dated line: one entry per incident, a day alone when the log has no row', () => {
+Deno.test('CUL-2455 (5) — a normal stool with blood, in a window across midnight, keeps its window (adversarial pass 1)', () => {
+  // The stool blood flag cites normal stools, which the event log does not list: the time has to
+  // come from the left-out photo's own record, never from the log.
+  const input = stoolPhotoDog()
+  const normal = input.events.find((e) => e.type === 'stool_normal')
+  const bloody = input.aiAnalyses.find((a) => (a as { stoolBloodPresent?: string }).stoolBloodPresent === 'yes')
+  const anyPhoto = (input.attachments ?? [])[0]
+  assert.ok(normal && bloody && anyPhoto)
+  normal.occurredAtConfidence = 'window'
+  normal.occurredAtEarliest = at(18, 22)
+  normal.occurredAtLatest = at(17, 6)
+  input.aiAnalyses.push({ ...bloody, eventId: normal.id })
+  input.attachments = [...(input.attachments ?? []), { ...anyPhoto, eventId: normal.id, storagePath: `pet-v2/${normal.id}.jpg` }]
+  const s = assembleReport(input)
+  assert.ok(!s.provenance.symptomLog.some((e) => e.eventId === normal.id), 'the event log does not hold it')
+  const photo = s.incidentPhotos.find((p) => p.eventId === normal.id)
+  assert.ok(photo, 'the normal stool is photographed')
+  const words = incidentTimeWords(photo, s.timezone)
+  assert.match(words, /^sometime between /)
+
+  const left = leaveOut(s, (p) => p.eventId === normal.id)
+  const band = docOf(left).blocks.find((b) => b.kind === 'band')
+  assert.ok(band && band.kind === 'band')
+  const blood = band.items.find((i) => i.id.includes('present_blood'))
+  assert.ok(blood && blood.photosLeftOutLine !== null)
+  const day = textOf(fmtLocalDay(photo.occurredAt, s.timezone))
+  assert.ok(blood.photosLeftOutLine.includes(`${day}, ${words}`), blood.photosLeftOutLine)
+})
+
+Deno.test('CUL-2455 (5) — a copy saved before the time fields existed dates the line by day, never drops it', () => {
+  const s = assembleReport(nyxSafetyCat())
+  const left = leaveOut(s, (p) => p.safety === 'foreign')
+  const frozen: ReportSnapshot = {
+    ...left,
+    incidentPhotosLeftOut: left.incidentPhotosLeftOut.map(({ occurredAtConfidence: _c, occurredAtEarliest: _e, occurredAtLatest: _l, ...r }) => r),
+  }
+  const band = docOf(frozen).blocks.find((b) => b.kind === 'band')
+  assert.ok(band && band.kind === 'band')
+  const item = band.items.find((i) => i.id.includes('present_foreign'))
+  assert.ok(item)
+  const day = fmtLocalDay(left.incidentPhotosLeftOut[0].occurredAt, s.timezone)
+  assert.equal(item.photosLeftOutLine, `Photo left out by the owner (${day}).`)
+})
+
+Deno.test('CUL-2455 (5) — the dated line: one entry per incident, a day alone without words', () => {
   const left = [
     { eventId: 'e1', occurredAt: '2026-07-02T08:10:00Z' },
     { eventId: 'e1', occurredAt: '2026-07-02T08:10:00Z' },
@@ -175,7 +219,7 @@ Deno.test('CUL-2455 (5) — the dated line: one entry per incident, a day alone 
   ]
   const words: Record<string, string> = { e1: 'Jul 2, seen at 08:10', e3: 'Jun 28, about 19:00 (an estimate)' }
   assert.equal(
-    leftOutBandLine(new Set(['e1', 'e3', 'e4']), left, 'UTC', (id) => words[id] ?? null),
+    leftOutBandLine(new Set(['e1', 'e3', 'e4']), left, 'UTC', (p) => words[p.eventId] ?? null),
     'Photos left out by the owner (Jul 2, seen at 08:10; Jun 28, about 19:00 (an estimate); Jun 28).',
   )
   // Without words the line is PR-23's, day for day.

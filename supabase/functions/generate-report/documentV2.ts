@@ -20,6 +20,7 @@ import { leftOutBandLine } from './photoLeaveOut.ts'
 import {
   REPORT_SYMPTOM_TYPES,
   type ConcurrentChange,
+  type IncidentPhotoLeftOut,
   type ReportSnapshot,
   type ReportSymptomType,
   type SafetyFlag,
@@ -554,13 +555,22 @@ export function bandLeftOutLineOf(f: SafetyFlag, snap: ReportSnapshot): string |
   if (f.kind !== 'present_blood' && f.kind !== 'present_foreign') return null
   // Absent on a snapshot frozen before PR-23 (a saved copy, a recorded fixture): nothing was left
   // out then, because nothing could be.
-  // CUL-2455: each left-out incident keeps the day and time its caption would have printed, read
-  // from the event log's row for that event (the same words `bandPhotosOf` puts in the caption).
-  const logged = new Map(snap.provenance.symptomLog.map((e) => [e.eventId, e]))
-  const whenOf = (eventId: string): string | null => {
-    const e = logged.get(eventId)
-    return e ? `${textOf(fmtLocalDay(e.occurredAt, snap.timezone))}, ${incidentTimeWords(e, snap.timezone)}` : null
-  }
+  // CUL-2455: each left-out incident keeps the day and time its caption would have printed, from
+  // its own record (the same words `bandPhotosOf` puts in the caption). From the record, not the
+  // event log: the stool blood flag cites normal stools, which the event log does not list
+  // (adversarial pass 1). A copy saved before the time fields existed falls back to the day.
+  const whenOf = (p: IncidentPhotoLeftOut): string | null =>
+    p.occurredAtConfidence === undefined
+      ? null
+      : `${textOf(fmtLocalDay(p.occurredAt, snap.timezone))}, ${incidentTimeWords(
+          {
+            occurredAt: p.occurredAt,
+            occurredAtConfidence: p.occurredAtConfidence,
+            occurredAtEarliest: p.occurredAtEarliest ?? null,
+            occurredAtLatest: p.occurredAtLatest ?? null,
+          },
+          snap.timezone,
+        )}`
   return leftOutBandLine(new Set(f.incidents.map((i) => i.eventId)), snap.incidentPhotosLeftOut ?? [], snap.timezone, whenOf)
 }
 
