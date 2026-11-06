@@ -1771,7 +1771,11 @@ function letterhead(snap: ReportSnapshot): string {
     </div>
   </div>
   <div class="rule-brand"></div>
-  <div class="orient">Clinical summary first; appendices A&ndash;${lastAppendix} and a legend follow: the reference record behind every figure.${utcNotice(snap.timezone)}</div>`
+  <div class="orient">Clinical summary first; appendices A&ndash;${lastAppendix} and a legend follow: the reference record behind every figure.</div>${
+    // CUL-2391 (cold read at the bundle's head): a grey clause in the orient line went unseen, so
+    // the no-zone notice is its own bordered line, the page-1 disclosure register.
+    zoneUsable(snap.timezone) ? '' : `<div class="cherry">${utcNotice(snap.timezone).trim()}</div>`
+  }`
 }
 
 /**
@@ -1782,7 +1786,7 @@ function letterhead(snap: ReportSnapshot): string {
 export function utcNotice(tz: string | null): string {
   return zoneUsable(tz)
     ? ''
-    : ' <b>Dates and times are in UTC:</b> no usable time zone is on record for this pet, so a day or a time can be hours off the owner\'s local one.'
+    : ' <b>Every date and time on this report is in UTC:</b> no usable time zone is on record for this pet, so a time can be hours off the owner\'s local clock and an evening event can fall on the next day.'
 }
 
 /**
@@ -3454,13 +3458,18 @@ function headline(snap: ReportSnapshot): string {
     const availabilityBit = breach.freeFed.length
       ? ` (some of it${breach.fromSharedBowl ? ' in a bowl shared with another pet' : ' free-fed'}; intake not directly observed)`
       : ''
-    const breachBit = breachNames.length
+    const breachBitBase = breachNames.length
       ? ` <b>The record shows ${h(proteinList(breachNames.map(capProtein)))} in ${h(
           snap.signalment.name,
         )}&rsquo;s diet during the trial${availabilityBit}</b> — see the diet section before reading the trial as a result.`
       : breach.targetUnknown
         ? ` <b>No main protein is recorded for the trial food, so its other proteins cannot be checked against the trial.</b> Its full set is in appendix&nbsp;B.`
         : ''
+    // CUL-2581 (stopgap; cold read at the bundle's head, QUIET): intact protein beside a hydrolysed
+    // trial diet is the breach such a trial cares about, and it sat only in the diet section while
+    // this line named a different protein. Said here too; no count moves.
+    const intact = hydrolysedIntactText(snap)
+    const breachBit = `${breachBitBase}${intact ? ` <b>${h(intact.lead)}</b> See the diet section.` : ''}`
     // PRESENT TENSE IS A CLAIM. A trial the owner completed or stopped still
     // describes this report (§7's day-after-completion AC), and "Tracking X as a
     // diet trial — day 19 of 28" over a diet the cat came off three weeks ago is
@@ -3778,7 +3787,7 @@ export function hydrolysedIntactText(snap: ReportSnapshot): { lead: string; rest
     .join(', ')
   return {
     lead: `${capProtein(p)} fed intact beside a hydrolysed ${p} trial diet.`,
-    rest: `${ht.intactFoods.length === 1 ? 'This food lists' : 'These foods list'} ${p} with nothing saying it is hydrolysed: ${list}. Intact ${p} is the exposure a hydrolysed ${p} trial is meant to exclude; ${
+    rest: `${ht.intactFoods.length === 1 ? 'This food is' : 'These foods are'} recorded with ${p}, with nothing saying it is hydrolysed: ${list}. Intact ${p} is the exposure a hydrolysed ${p} trial is meant to exclude; ${
       ht.intactFoods.length === 1 ? 'it is' : 'they are'
     } not counted as off-diet anywhere on this report.`,
   }

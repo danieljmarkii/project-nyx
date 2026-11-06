@@ -6463,11 +6463,21 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // of "chicken" plus "hydrolyzed chicken" is intact chicken until the record says otherwise. Only
     // the PRODUCT'S OWN NAME saying the source is hydrolysed ("Hydrolyzed Chicken Treats") overrides
     // its keys; a panel ingredient ("hydrolyzed chicken liver" as a palatant) never hides one.
+    //
+    // Cold read at the bundle's head (false claim): Cooper's own second trial food ("Hydrolyzed
+    // Protein HP Loaf") and his approved "Hydrolyzed Treats" were listed as intact soy. A trial-diet
+    // food is never its own exposure, and a product name saying hydrolysed with no OTHER source
+    // named counts for the target (the same rule as the trial's own name). A PERMITTED extra with an
+    // intact key and no such name is still listed: that is the breach §5.5 D-A exists for.
     const carriesIntact = (proteins: readonly string[], label: string | null | undefined): boolean =>
       proteins.some((p) => !HYDROLYSED_WORD.test(p) && proteinSourceBase(p) === base) &&
-      !(typeof label === 'string' && qualifies.test(label))
+      !saysHydrolysedTarget(label)
     const found = new Map<string, { foodLabel: string; kind: 'free_fed' | 'meal' | 'treat'; feedings: number }>()
     const bowlFoodIds = new Set<string>()
+    const trialDietIds = new Set<string>(
+      (reportTrialInput.allowedFoods ?? []).filter((f) => f.role === 'primary_diet' && f.foodItemId).map((f) => f.foodItemId as string),
+    )
+    if (trialFoodId) trialDietIds.add(trialFoodId)
     for (const a of input.feedingArrangements) {
       if (a.method !== 'free_choice') continue
       const fromNum = a.activeFrom ? dayNumber(a.activeFrom) : -Infinity
@@ -6477,7 +6487,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       const hi = endNum ?? Infinity
       if (!((fromNum ?? -Infinity) <= hi && lo <= (untilNum ?? Infinity))) continue
       if (!((fromNum ?? -Infinity) <= endDayNum && startDayNum <= (untilNum ?? Infinity))) continue
-      if (trialFoodId && a.foodItemId === trialFoodId) continue
+      if (a.foodItemId && trialDietIds.has(a.foodItemId)) continue
       const label = a.foodLabel?.trim() || 'A free-fed bowl'
       if (!carriesIntact(readProteinSet(a.proteins ?? null, a.primaryProtein ?? null), label)) continue
       if (a.foodItemId) bowlFoodIds.add(a.foodItemId)
@@ -6489,7 +6499,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       const parts: Array<ReportFoodProteinInput & { foodItemId: string | null; brand: string | null; productName: string | null; format?: FoodFormat | null; foodType: 'meal' | 'treat' | 'other' | null; primaryProtein: string | null }> =
         m.bowl ? m.bowl.components : [m]
       for (const c of parts) {
-        if (isReportTrialFood(c)) continue
+        if (isReportTrialFood(c) || (c.foodItemId && trialDietIds.has(c.foodItemId))) continue
         // The bowl's own food is named once, as the bowl.
         if (c.foodItemId && bowlFoodIds.has(c.foodItemId)) continue
         const label = mealFoodLabel(c)?.trim()

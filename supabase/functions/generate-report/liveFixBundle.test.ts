@@ -154,11 +154,11 @@ Deno.test('CUL-2391 — a time with no usable zone says UTC, on every time and o
   const input = baseInput({ timezone: null as never, events: [symptom('vomit', 3, 13)] })
   const snap = assembleReport(input)
   const v1 = plain(renderReport(snap))
-  assert.match(v1, /Dates and times are in UTC: no usable time zone is on record for this pet/)
+  assert.match(v1, /Every date and time on this report is in UTC: no usable time zone is on record for this pet/)
   assert.match(v1, /13:00 \(UTC\)/, 'the event log time is labelled')
-  assert.match(v2Text(snap), /Dates and times are in UTC/, 'v2 says it on sheet 1')
+  assert.match(v2Text(snap), /Every date and time on this report is in UTC/, 'v2 says it on sheet 1')
   const zoned = plain(renderReport(assembleReport({ ...input, timezone: 'UTC' })))
-  assert.doesNotMatch(zoned, /\(UTC\)|Dates and times are in UTC/, 'a usable zone, UTC included, carries no marker')
+  assert.doesNotMatch(zoned, /\(UTC\)|is in UTC:/, 'a usable zone, UTC included, carries no marker')
 })
 
 // ── CUL-2416 and CUL-2442 ───────────────────────────────────────────────────────
@@ -268,8 +268,11 @@ Deno.test('CUL-2581 — a hydrolysed trial is named so, and intact protein besid
   assert.equal(snap.diet.hydrolysedTrial?.protein, 'chicken')
   const v1 = plain(renderReport(snap))
   assert.match(v1, /Elimination diet trial — Chicken \(hydrolysed\)/)
-  assert.match(v1, /Intact protein Chicken fed intact beside a hydrolysed chicken trial diet\. These foods list chicken with nothing saying it is hydrolysed: Purina ONE Indoor \(free-fed bowl\), Temptations Classic \(Treat\) ×2\./)
+  assert.match(v1, /Intact protein Chicken fed intact beside a hydrolysed chicken trial diet\. These foods are recorded with chicken, with nothing saying it is hydrolysed: Purina ONE Indoor \(free-fed bowl\), Temptations Classic \(Treat\) ×2\./)
   assert.match(v1, /not counted as off-diet anywhere on this report/)
+  // Cold read at the bundle's head (QUIET): said on page 1 too, beside the trial's breach line.
+  const page1 = v1.slice(0, v1.indexOf('Diet trial the record'))
+  assert.match(page1, /Chicken fed intact beside a hydrolysed chicken trial diet\. See the diet section\./)
   const v2 = v2Text(snap)
   assert.match(v2, /Diet trial \(owner-entered\): Hill's z\/d \(hydrolysed chicken\)/)
   assert.match(v2, /Chicken fed intact beside a hydrolysed chicken trial diet/)
@@ -321,6 +324,22 @@ Deno.test('CUL-2581 — a hydrolysed trial is named so, and intact protein besid
   // A "chicken hydrolyzate" key is hydrolysed, never intact.
   const hz = hydrolysedTrialInput(['chicken hydrolyzate'], 'Hypo bowl')
   assert.ok(!assembleReport(hz).diet.hydrolysedTrial!.intactFoods.some((f) => f.foodLabel === 'Hypo bowl'))
+  // Cold read (false claim): a second trial-diet food and an approved "Hydrolyzed Treats" are never
+  // intact, though their keys name the source plainly.
+  const cooper = hydrolysedTrialInput(['turkey'])
+  cooper.dietTrials[0].allowedFoods = [
+    ...(cooper.dietTrials[0].allowedFoods ?? []),
+    { foodItemId: 'f-zd-loaf', foodLabel: "Hill's z/d Loaf", role: 'primary_diet', allowedFrom: dayKey(20), allowedUntil: null, primaryProtein: 'chicken', brand: "Hill's", productName: 'z/d Loaf', proteins: ['chicken'] },
+  ] as never
+  const loaf = meal(2, 'refused', 12)
+  const hydroTreat = meal(3, null, 21)
+  cooper.events.push(
+    { ...loaf, meal: { ...loaf.meal!, foodItemId: 'f-zd-loaf', brand: "Hill's", productName: 'z/d Loaf', primaryProtein: 'chicken', proteins: ['chicken'] } },
+    { ...hydroTreat, meal: { ...hydroTreat.meal!, foodItemId: 'f-hyd-treat', foodType: 'treat', format: 'treat' as never, brand: 'Royal Canin', productName: 'Hydrolyzed Treats', primaryProtein: 'chicken', proteins: ['chicken'] } },
+  )
+  const listed = assembleReport(cooper).diet.hydrolysedTrial!.intactFoods.map((f) => f.foodLabel)
+  assert.ok(!listed.some((l) => /z\/d Loaf|Hydrolyzed Treats/.test(l)), listed.join(', '))
+  assert.ok(listed.some((l) => /Temptations/.test(l)), 'the intact treat is still listed')
   // A trial diet that is not hydrolysed carries neither.
   const intactTrial = hydrolysedTrialInput(['chicken'])
   intactTrial.dietTrials[0].ingredientsNotes = 'Chicken, rice'
