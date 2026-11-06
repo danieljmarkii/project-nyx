@@ -45,6 +45,7 @@ import {
 } from './report.ts'
 import { renderReport } from './render.ts'
 import type { ReportAudience } from './noticed.ts'
+import type { SaveCopy } from './index.ts'
 
 /** CUL-875 — `generateReportForPet` takes the audience as a REQUIRED 5th argument, with
  *  no default: a privacy decision a caller can omit is a privacy decision taken silently
@@ -1666,5 +1667,120 @@ Deno.test('CUL-2290: v2 asked but the flag fails closed → v1 (not allowlisted,
     assert.equal(res.body.report_version, 'v1', name)
     assert.deepEqual(res.body.report_flags_read, { report_document_v2: false }, name)
     assert.ok(!isV2(res.body.html), name)
+  }
+})
+
+// ── PR-23b (CUL-2454): photos the owner left out, through the whole report path ───────────────
+//
+// R1 (never fetched), R2 (the saved snapshot and stored HTML hold no trace of it), R4 (no request
+// id echoed), R5 / CUL-2590 guard 2 (v1 and a closed flag never split), R7 (the picker's list).
+
+const PH_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const PH_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const PH_STRANGER = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+
+function photoTables(flag: Record<string, unknown>) {
+  const vomit = (id: string, daysAgo: number) => ({
+    id, event_type: 'vomit', occurred_at: new Date(NOW_MS - daysAgo * MS_PER_DAY).toISOString(),
+    occurred_at_confidence: 'witnessed', occurred_at_earliest: null, occurred_at_latest: null,
+    severity: null, notes: null, created_at: NOW, meals: null,
+  })
+  return {
+    ...PET_TABLES,
+    user_profiles: { single: { display_name: 'Jordan', first_name: 'Jordan', last_name: 'Rivera', timezone: 'UTC' } },
+    events: { list: [vomit('ev-a', 3), vomit('ev-b', 6)] },
+    event_attachments: {
+      list: [
+        { id: PH_A, event_id: 'ev-a', storage_path: 'p1/ev-a/left-out.jpg', mime_type: 'image/jpeg', sort_order: 0 },
+        { id: PH_B, event_id: 'ev-b', storage_path: 'p1/ev-b/kept.jpg', mime_type: 'image/jpeg', sort_order: 0 },
+      ],
+    },
+    ...DOC_FLAG(flag),
+  }
+}
+
+/** A service-role client that records every Storage download and refuses any data query. */
+function recordingAdmin() {
+  const downloads: string[] = []
+  const client = {
+    from: () => {
+      throw new Error('the service-role client issued a DATA query')
+    },
+    storage: {
+      from: (_bucket: string) => ({
+        download: (path: string) => {
+          downloads.push(path)
+          const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, ...new TextEncoder().encode(path)])
+          return Promise.resolve({ data: new Blob([jpeg], { type: 'image/jpeg' }), error: null })
+        },
+      }),
+    },
+  } as unknown as Parameters<typeof generateReportForPet>[6]
+  return { client, downloads }
+}
+
+/** The saver index.ts hands a v2 render to, recording what it was given and what it stored. */
+function recordingSaver() {
+  const seen: { input: Parameters<SaveCopy>[0] | null; html: string | null } = { input: null, html: null }
+  const save: SaveCopy = (input, render) => {
+    seen.input = input
+    const rendered = render('ABCD')
+    seen.html = rendered.html
+    return Promise.resolve({ saved: true, reportId: 'r1', shortId: 'ABCD', rendered })
+  }
+  return { save, seen }
+}
+
+Deno.test('PR-23b R1/R2: on v2, a photo left out is never fetched, and the saved copy holds no trace of it', async () => {
+  const client = withAuth(fakeClient(photoTables({ enabled: false, allowlist: ['u1'] })), 'u1')
+  const admin = recordingAdmin()
+  const saver = recordingSaver()
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, 'jwt', admin.client, null, 'v2', saver.save, [PH_A])
+  assert.equal(res.body.report_version, 'v2')
+  assert.deepEqual(admin.downloads, ['p1/ev-b/kept.jpg'], 'only the kept photo is downloaded (R1)')
+
+  const input = saver.seen.input
+  assert.ok(input)
+  assert.equal(input.photosLeftOut, 1, 'photos_left_out on the draft row')
+  const snap = input.snapshot as { incidentPhotos: Array<{ attachmentId: string }>; incidentPhotosLeftOut: Array<Record<string, unknown>> }
+  assert.deepEqual(snap.incidentPhotos.map((p) => p.attachmentId), [PH_B], 'the saver gets the post-split snapshot (R2)')
+  assert.deepEqual(snap.incidentPhotosLeftOut.map((r) => [r.attachmentId, r.eventId]), [[PH_A, 'ev-a']])
+  for (const where of [JSON.stringify(input.snapshot), saver.seen.html ?? '', String(res.body.html), String(res.body.phone_html)]) {
+    assert.ok(!where.includes('p1/ev-a/left-out.jpg'), 'never the left-out path')
+    assert.ok(!where.includes(btoa('p1/ev-a/left-out.jpg').slice(0, 12)), 'never a data URI of its bytes')
+  }
+  assert.equal(saver.seen.html, res.body.html, 'the stored HTML is the one returned')
+  assert.match(String(res.body.html), /1 photo left out by the owner\./)
+  assert.equal(res.body.photo_count, 1, 'the photos this report hands over')
+})
+
+Deno.test('PR-23b R4/R7: the response lists every photo for the picker, with no path, no left-out mark and no stranger id', async () => {
+  const client = withAuth(fakeClient(photoTables({ enabled: false, allowlist: ['u1'] })), 'u1')
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, 'jwt', recordingAdmin().client, null, 'v2', recordingSaver().save, [PH_A, PH_STRANGER])
+  const photos = res.body.photos as Array<Record<string, unknown>>
+  assert.deepEqual(photos.map((p) => p.attachmentId).sort(), [PH_A, PH_B].sort(), 'both, so a photo left out can be offered back')
+  for (const p of photos) assert.deepEqual(Object.keys(p).sort(), ['attachmentId', 'eventId', 'occurredAt', 'safety', 'type'])
+  const body = JSON.stringify(res.body)
+  assert.ok(!body.includes(PH_STRANGER), 'an id outside the manifest is never echoed')
+  assert.ok(!body.includes('left-out.jpg') && !body.includes('kept.jpg'), 'no storage path')
+  assert.ok(!/token=|\/sign\//.test(body), 'no signed URL')
+})
+
+Deno.test('PR-23b R5 / CUL-2590 guard 2: v1, and v2 behind a closed flag, ignore the ids and show every photo', async () => {
+  const cases: Array<[string, Record<string, unknown>, 'v1' | 'v2']> = [
+    ['v1 asked', { enabled: true }, 'v1'],
+    ['v2 asked, flag closed', { enabled: false, allowlist: ['someone-else'] }, 'v2'],
+  ]
+  for (const [name, flag, asked] of cases) {
+    const client = withAuth(fakeClient(photoTables(flag)), 'u1')
+    const admin = recordingAdmin()
+    const saver = recordingSaver()
+    const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, 'jwt', admin.client, null, asked, saver.save, [PH_A])
+    assert.equal(res.body.report_version, 'v1', name)
+    assert.deepEqual(admin.downloads.sort(), ['p1/ev-a/left-out.jpg', 'p1/ev-b/kept.jpg'], `${name}: both photos embed`)
+    assert.equal(saver.seen.input, null, `${name}: v1 saves no copy`)
+    assert.equal(res.body.photo_count, 2, name)
+    assert.equal(res.body.photos, null, `${name}: no picker list on v1`)
+    assert.ok(!/left out/i.test(String(res.body.html)), `${name}: no left-out wording on v1`)
   }
 })

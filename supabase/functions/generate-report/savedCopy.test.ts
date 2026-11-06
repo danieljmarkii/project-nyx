@@ -746,3 +746,20 @@ Deno.test('the real row read names its row by id PAIRED WITH pet and verified ma
   assert.equal(await io.readRow(ID), null)
   assert.deepEqual(eqs, [['id', ID], ['pet_id', PET], ['generated_by', 'verified-uid']])
 })
+
+// ── PR-23b (CUL-2454): photos left out ─────────────────────────────────────────
+
+Deno.test('PR-23b: the draft row records how many photos the owner left out; a bad count is 0', async () => {
+  for (const [given, stored] of [[2, 2], [0, 0], [-1, 0], [1.5, 0], [Number.NaN, 0]] as const) {
+    const f = fakeIO()
+    const out = await saveDraft(f.io, { ...input, photosLeftOut: given }, render, () => ID)
+    assert.equal(out.saved, true)
+    assert.equal(f.rows.get(ID)!.photos_left_out, stored, `given ${given}`)
+  }
+})
+
+Deno.test('PR-23b R6: a keep request never carries photos left out; the kept copy is the draft as rendered', () => {
+  const k = parseKeepRequest({ mode: 'keep', reportId: ID, sharedVia: 'mail', photosLeftOut: [ID] } as Parameters<typeof parseKeepRequest>[0])
+  assert.ok(k)
+  assert.deepEqual(Object.keys(k).sort(), ['reportId', 'sharedAt', 'sharedVia'])
+})
