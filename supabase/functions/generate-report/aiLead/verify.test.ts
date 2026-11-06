@@ -6,7 +6,7 @@ import { buildDocumentV2 } from '../documentV2.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
 import { buildLeadFacts, tableFromPayload, type LeadFactPayload } from './facts.ts'
 import { WRITER_SYSTEM } from './prompts.ts'
-import { framePatternHits, LEAD_FRAME, printedLeadText, verifyLead, type LeadSentence } from './verify.ts'
+import { framePatternHits, LEAD_FRAME, MULTI_FLAG_MIN_BAND, multiFlagIssues, printedLeadText, verifyLead, type LeadSentence } from './verify.ts'
 
 const nyxSnap = nyxLiveSnapshot()
 const nyxFacts = buildLeadFacts(buildDocumentV2(nyxSnap, { owner: null, shortId: null, questions: [] }), {
@@ -27,14 +27,16 @@ const GOOD: LeadSentence[] = [
   { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026; the trial diet was not fed exclusively, and it is not a test of the diet alone.', cites: ['trial', 'trial-reading-3', 'confounder'] },
 ]
 
+/** The sentence rules' verdict. The live Nyx record has six live band items, so `multi-flag` (a rule
+ *  on the record, never on a sentence, CUL-2563) refuses every lead on it; the rule tests below each
+ *  break one SENTENCE rule on that record, so they read the sentence rules without it. The multi-flag
+ *  tests at the end read it directly. */
 function checks(sentences: LeadSentence[], table = nyxTable): string[] {
-  return verifyLead(table, { sentences }).errors.map((e) => e.check)
+  return verifyLead(table, { sentences }).errors.map((e) => e.check).filter((c) => c !== 'multi-flag')
 }
 
-Deno.test('a careful three-sentence lead over the live Nyx record passes', () => {
-  const v = verifyLead(nyxTable, { sentences: GOOD })
-  assert.deepEqual(v.errors, [])
-  assert.equal(v.pass, true)
+Deno.test('a careful three-sentence lead over the live Nyx record passes every sentence rule', () => {
+  assert.deepEqual(checks(GOOD), [])
 })
 
 Deno.test('structure: four sentences, or more than 80 words in all, reject', () => {
@@ -207,9 +209,9 @@ Deno.test('vocabulary: a softening word no list names is refused because no cite
   // Two sentences, so the trial line's absence is the only other error ('required').
   const quieter = { ...GOOD[1], text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31, quietening.' }
   const v = verifyLead(nyxTable, { sentences: [GOOD[0], quieter] })
-  assert.deepEqual([...new Set(v.errors.map((e) => e.check))].filter((c) => c !== 'required'), ['vocabulary'])
+  assert.deepEqual([...new Set(v.errors.map((e) => e.check))].filter((c) => c !== 'required' && c !== 'multi-flag'), ['vocabulary'])
   assert.ok(v.errors.some((e) => e.detail.includes('"quietening"')))
-  assert.deepEqual(verifyLead(nyxTable, { sentences: [GOOD[0], GOOD[1]] }).errors.filter((e) => e.check !== 'required'), [], 'the same lead without the word passes')
+  assert.deepEqual(checks([GOOD[0], GOOD[1]]).filter((c) => c !== 'required'), [], 'the same lead without the word passes')
 })
 
 Deno.test('vocabulary: a word another line prints is not licensed by citing this one', () => {
@@ -240,4 +242,62 @@ Deno.test('negation: bound to the two words a cited line prints after it', () =>
   assert.deepEqual(verifyLead(r11, { sentences: ok }).errors.filter((e) => e.check === 'negation'), [])
   const flipped = [{ ...ok[0], text: 'Itching is the flag: over at least 49 days, 15 episodes on 15 days, most recent 1 day ago, not a sustained pattern.' }]
   assert.deepEqual([...new Set(verifyLead(r11, { sentences: flipped }).errors.map((e) => e.check))], ['negation'])
+})
+
+// ── multi-flag: CUL-2563 ruling (b), PM 2026-11-06 ──────────────────────────────────────────────
+
+/** The lead the bake-off re-run printed on nyx-v2 in runs 2, 3 and 4 (CUL-2306,
+ *  docs/vet-report-v3-discovery/bakeoff/rerun/2026-11-05-run/): the burden, said well, and five live
+ *  flags unsaid. Both judges scored H7 material; the checker model passed it. */
+const RERUN_NYX_LEAD: LeadSentence[] = [
+  { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] },
+  { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] },
+  { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran from Jul 26, 2026 to Oct 20, 2026; the trial diet was not fed exclusively, and it is not a test of the diet alone.', cites: ['trial', 'trial-reading-3', 'confounder'] },
+]
+
+Deno.test('multi-flag: the live Nyx record (six live band items) refuses the lead the re-run printed', () => {
+  assert.equal(nyxTable.facts.filter((f) => f.role === 'band').length, 6)
+  const v = verifyLead(nyxTable, { sentences: RERUN_NYX_LEAD })
+  assert.equal(v.pass, false)
+  // It passes every sentence rule, as it did in the re-run: only the record rule stops it.
+  assert.deepEqual(v.errors.map((e) => e.check), ['multi-flag'])
+  assert.equal(v.errors[0].sentence, null)
+})
+
+Deno.test('multi-flag: no draft passes, whatever it says or cites (the rule reads the record alone)', () => {
+  const drafts: LeadSentence[][] = [
+    RERUN_NYX_LEAD,
+    [GOOD[0]],
+    [{ text: 'Nyx.', cites: [] }],
+    [],
+    // Every band item cited: still no lead (ruling (b), not (c)).
+    nyxTable.facts.filter((f) => f.role === 'band').map((f) => ({ text: f.text ?? '', cites: [f.id] })),
+  ]
+  for (const sentences of drafts) {
+    const v = verifyLead(nyxTable, { sentences })
+    assert.equal(v.pass, false)
+    assert.ok(v.errors.some((e) => e.check === 'multi-flag'))
+  }
+})
+
+Deno.test('multi-flag: two band items refuse; one, or none, still prints', () => {
+  assert.equal(MULTI_FLAG_MIN_BAND, 2)
+  const band = [
+    { id: 'band-1', label: 'Chronicity', text: 'Itching spans 49 days (first logged Aug 27): 18 episodes on 18 days; most recent 1 day ago.' },
+    { id: 'band-2', label: 'Weight', text: 'Weight down 15% over 30 days.' },
+  ]
+  const base = { pet_name: 'Biscuit', species: 'dog', record_start: '2026-08-22', record_end: '2026-10-16', record_lines: [], trial_line: null, record_edge: [] }
+  // The vocabulary test's labelled lead: it passes every rule on its one-flag record.
+  const lead = [{ text: 'Chronicity: itching spans 49 days, 18 episodes on 18 days, the most recent 1 day ago.', cites: ['band-1'] }]
+  const one = tableFromPayload({ ...base, band: band.slice(0, 1) })
+  assert.deepEqual(multiFlagIssues(one), [])
+  assert.deepEqual(verifyLead(one, { sentences: lead }).errors, [], 'the one-flag record still prints')
+  const two = tableFromPayload({ ...base, band })
+  assert.deepEqual(multiFlagIssues(two).map((e) => e.check), ['multi-flag'])
+  assert.deepEqual(verifyLead(two, { sentences: lead }).errors.map((e) => e.check), ['multi-flag'])
+  // A row not marked live still counts: the rule errs loud.
+  const unmarked = { ...two, facts: two.facts.map((f) => (f.role === 'band' ? { ...f, live: false } : f)) }
+  assert.deepEqual(multiFlagIssues(unmarked).map((e) => e.check), ['multi-flag'])
+  // No band at all: the rule is silent (H2_TABLE's careful lead passes above).
+  assert.deepEqual(multiFlagIssues(H2_TABLE), [])
 })

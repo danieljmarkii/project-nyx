@@ -83,7 +83,8 @@ Deno.test('spelled-out counts are refused', () => {
 })
 
 Deno.test('the careful leads still pass: the rules are loud, not deaf', () => {
-  assert.deepEqual(verifyLead(tableOf(nyx), { sentences: [NYX_BAND, { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] }] }).errors.filter((e) => e.check !== 'required'), [])
+  // Nyx carries six live flags, so `multi-flag` refuses any lead on it (CUL-2563); the sentence rules pass this one.
+  assert.deepEqual(verifyLead(tableOf(nyx), { sentences: [NYX_BAND, { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] }] }).errors.filter((e) => e.check !== 'required' && e.check !== 'multi-flag'), [])
   const band = tableOf(cooper).facts.find((f) => f.role === 'band')!.id
   const honest = { text: 'Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.', cites: [band] }
   // CUL-2532: the trial's reading bottom line and its confounder ride with it.

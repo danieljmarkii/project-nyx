@@ -41,14 +41,14 @@ Deno.test('replay: the recorded checker verdicts reproduce the bake-off\'s shipp
 
 /** The bake-off's Nyx table in the v2 payload's shape: its band facts as the band (S1 first,
  *  labelled with the v2 tag for possible foreign material), every other line a record line. */
-async function nyxTable() {
+async function nyxTable(opts: { firstBandOnly?: boolean } = {}) {
   const f = (await read('facts-nyx.json')) as { facts: Array<{ id: string; role?: string; text: string }> }
   const payload: LeadFactPayload = {
     pet_name: 'Nyx',
     species: 'cat',
     record_start: '2026-05-14',
     record_end: '2026-07-02',
-    band: f.facts.filter((x) => x.role === 'band').map((x) => ({ id: x.id, label: x.id === 'S1' ? 'Foreign material' : x.id, text: x.text })),
+    band: f.facts.filter((x) => x.role === 'band').slice(0, opts.firstBandOnly ? 1 : undefined).map((x) => ({ id: x.id, label: x.id === 'S1' ? 'Foreign material' : x.id, text: x.text })),
     record_lines: f.facts.filter((x) => x.role !== 'band').map((x) => ({ id: x.id, kind: 'record' as const, text: x.text })),
     trial_line: null,
     record_edge: [],
@@ -112,9 +112,12 @@ Deno.test('CUL-2548: every band-order item is rejected by the checker whatever t
 })
 
 Deno.test('CUL-2548: the code half is not blind: a lead that opens on band item 1 takes the model\'s decision', async () => {
-  const table = await nyxTable()
+  // On the bake-off table's first flag alone: with all its band items the record is multi-flag and
+  // the code half rejects every lead (CUL-2563), which the last line pins.
+  const table = await nyxTable({ firstBandOnly: true })
   const clean = parseChecker({ takeaway: 'x', hazards: Object.fromEntries(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7'].map((h) => [h, { level: 'none', quote: '', why: '' }])), omissions: [] })!
   const lead: LeadSentence = { text: 'Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.', cites: ['S1'] }
   assert.equal(checkerDecision(clean, { table, draft: { sentences: [lead] } }), 'pass')
   assert.equal(checkerDecision(parseChecker({ ...clean, hazards: { ...Object.fromEntries(['H1', 'H2', 'H3', 'H4', 'H6', 'H7'].map((h) => [h, { level: 'none', quote: '', why: '' }])), H5: { level: 'minor', quote: 'x', why: 'x' } } })!, { table, draft: { sentences: [lead] } }), 'repair')
+  assert.equal(checkerDecision(clean, { table: await nyxTable(), draft: { sentences: [lead] } }), 'reject', 'the full table is multi-flag')
 })

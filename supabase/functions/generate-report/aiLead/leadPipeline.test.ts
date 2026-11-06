@@ -5,7 +5,7 @@ import { sha256Hex } from '../../_shared/engineStamps.ts'
 import type { SummaryGate } from '../../_shared/reportSummaryGate.ts'
 import { buildDocumentV2 } from '../documentV2.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
-import { buildLeadFacts, factTableHash } from './facts.ts'
+import { buildLeadFacts, factTableHash, tableFromPayload, type LeadFacts } from './facts.ts'
 import type { ModelResult, Role } from './model.ts'
 import { assertSendable } from './model.ts'
 import { modelDecision, leadAllowedAtSend, parseChecker, runAiLead, type LeadIO, type StoredVerdict } from './leadPipeline.ts'
@@ -13,15 +13,23 @@ import { CHECKER_MODEL, HAZARDS, WRITER_MODEL } from './prompts.ts'
 import { LEAD_VERIFIER_VERSION, type LeadSentence } from './verify.ts'
 
 const snap = nyxLiveSnapshot()
-const FACTS = buildLeadFacts(buildDocumentV2(snap, { owner: null, shortId: null, questions: [] }), {
+/** The live Nyx record as production builds it: six live band items, so no lead may print on it
+ *  (CUL-2563 ruling (b)). */
+const NYX_FACTS = buildLeadFacts(buildDocumentV2(snap, { owner: null, shortId: null, questions: [] }), {
   petName: snap.signalment.name,
   species: snap.signalment.species,
   recordStart: snap.scope.startDate,
   recordEnd: snap.scope.endDate,
   includeLookNotes: false,
 })
+if (!NYX_FACTS.eligible) throw new Error('the live Nyx record is eligible for a lead')
+/** The same record with one live flag (band item 1, the burden, alone): the record a lead may still
+ *  print on. Every pipeline path below runs on it; the multi-flag tests run on NYX_FACTS. */
+const ONE_FLAG_PAYLOAD = { ...NYX_FACTS.payload, band: NYX_FACTS.payload.band.slice(0, 1) }
+const FACTS: LeadFacts = { eligible: true, payload: ONE_FLAG_PAYLOAD, table: tableFromPayload(ONE_FLAG_PAYLOAD) }
 
-// Band item 1 is the band's first PRINTED row: on Nyx, the burden flag (CUL-2532). The trial
+// Band item 1 is the band's first PRINTED row: on Nyx, the burden flag (CUL-2532), the one-flag record's
+// only flag. The trial
 // sentence carries the reading's bottom line and the confounder, both required beside it.
 const GOOD: LeadSentence[] = [
   { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] },
@@ -265,4 +273,48 @@ Deno.test('step 7 decides with the checker\'s code half: the draft and the table
   const src = await Deno.readTextFile(new URL('./leadPipeline.ts', import.meta.url))
   assert.ok(src.includes('checkerDecision(cv, { table: facts.table, draft: summary })'), 'step 7 calls checkerDecision with the draft and the table')
   assert.ok(!/\bmodelDecision\(cv\)/.test(src), 'step 7 never decides on the model alone')
+})
+
+// ── CUL-2563 ruling (b): no lead on a record with 2 or more live band items ─────────────────────
+
+Deno.test('CUL-2563: the live Nyx record (six live flags) never prints: no model call, no count spent', async () => {
+  assert.ok(NYX_FACTS.eligible && NYX_FACTS.payload.band.length === 6, 'the fixture is the six-flag record')
+  // Scripted answers a model would give: the re-run's printed lead and a clean checker. Never asked.
+  const f = fake({ answers: [writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, NYX_FACTS, { leaveOut: false })
+  assert.deepEqual(r, { outcome: 'not_eligible', reason: 'multi_flag' })
+  assert.deepEqual([f.gates, f.sends.length, f.writes.length, f.writes[0].text], [[false], 0, 1, null])
+  assert.equal(f.writes[0].verdict.outcome, 'not_eligible')
+})
+
+Deno.test('CUL-2563: a stored printed lead on a multi-flag draft is never served, whatever its hash', async () => {
+  if (!NYX_FACTS.eligible) throw new Error('eligible')
+  const hash = await factTableHash(NYX_FACTS.payload, LEAD_VERIFIER_VERSION)
+  const text = GOOD.map((s) => s.text).join(' ')
+  const f = fake({ draft: { found: true, text, verdict: { outcome: 'printed', fact_hash: hash, sentences: GOOD } } })
+  assert.deepEqual(await runAiLead(f.io, NYX_FACTS, { leaveOut: false }), { outcome: 'not_eligible', reason: 'multi_flag' })
+  assert.deepEqual([f.sends.length, f.writes[0].text], [0, null])
+})
+
+Deno.test('CUL-2563: on a multi-flag record a closed gate keeps its own outcome (a flag-off owner hears nothing)', async () => {
+  for (const [gate, outcome] of [
+    [{ allow: false, reason: 'flag_off', flag: 'report_ai_lead' }, 'flag_off'],
+    [{ allow: false, reason: 'consent_declined', scope: 'report_summary' }, 'declined'],
+    [{ allow: false, reason: 'cap_reached', cap: 'daily' }, 'capped'],
+  ] as Array<[SummaryGate, string]>) {
+    const f = fake({ gate: () => gate })
+    const r = await runAiLead(f.io, NYX_FACTS, { leaveOut: false })
+    assert.equal(r.outcome, outcome)
+    assert.deepEqual([f.gates, f.sends.length, f.writes[0].text], [[false], 0, null])
+  }
+})
+
+Deno.test('CUL-2563: two live flags are enough; one still prints', async () => {
+  if (!NYX_FACTS.eligible) throw new Error('eligible')
+  const two = { ...NYX_FACTS.payload, band: NYX_FACTS.payload.band.slice(0, 2) }
+  const f = fake({ answers: [writer(GOOD), checker()] })
+  assert.deepEqual(await runAiLead(f.io, { eligible: true, payload: two, table: tableFromPayload(two) }, { leaveOut: false }), { outcome: 'not_eligible', reason: 'multi_flag' })
+  assert.equal(f.sends.length, 0)
+  const g = fake({ answers: [writer(GOOD), checker()] })
+  assert.equal((await runAiLead(g.io, FACTS, { leaveOut: false })).outcome, 'printed')
 })

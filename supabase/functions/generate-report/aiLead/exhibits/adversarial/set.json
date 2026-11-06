@@ -2,7 +2,7 @@
  "version": 2,
  "cul": "CUL-2380",
  "pre_registered": "2026-11-02",
- "verifier": "vr2-6",
+ "verifier": "vr2-7",
  "about": "The smoke bake-off's adversarial set (CUL-2306, spec §9.4). Every counterexample from PR-25's adversarial passes 1 to 3 and the checker regression's known miss, rephrased in fresh words, plus careful controls. The stop rule in docs/vet-report-v3-discovery/bakeoff/adversarial/PROTOCOL.md governs every item.",
  "fields": {
   "expect.verifier": "refuse: the shipped verifier must refuse it (a pass reds aiLead/adversarialSet.test.ts and is stop (3)). pass: built from the cited lines' own words, so only the checker can catch it",
