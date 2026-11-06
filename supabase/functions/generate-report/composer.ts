@@ -86,6 +86,9 @@ export interface ComposerFlag {
   sign: string | null
   /** An intake flag's trigger, so the card can say "refusing" rather than "less" when it was. */
   trigger: string | null
+  /** CUL-2424: an intake flag whose recent rated meals were all refused, so the card says
+   *  "refusing" when the trigger alone would read as "less". False on every other flag. */
+  allRefused: boolean
 }
 
 export interface ComposerLive {
@@ -258,7 +261,12 @@ function flagSymptomOf(f: SafetyFlag): string | null {
  * order. R-11's exempt chronicity flag stays in it: it moves to lead the sheet, it is still live.
  */
 function flagOf(f: SafetyFlag): ComposerFlag {
-  return { kind: f.kind, sign: flagSymptomOf(f), trigger: f.kind === 'intake_decline' ? f.trigger : null }
+  return {
+    kind: f.kind,
+    sign: flagSymptomOf(f),
+    trigger: f.kind === 'intake_decline' ? f.trigger : null,
+    allRefused: f.kind === 'intake_decline' && f.allRefused === true,
+  }
 }
 
 export function liveOf(snap: ReportSnapshot): ComposerLive {

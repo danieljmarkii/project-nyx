@@ -288,6 +288,8 @@ export interface IntakeDeclineFact {
   /** The refused food's label (`refused_normal_food` only), or null when unnamed. */
   refusedFoodLabel: string | null;
   headline: string;
+  /** CUL-2424: the detector's refusal fact (`consecutive_low` only): part of the decline's identity. */
+  allRefused?: boolean;
 }
 
 /**

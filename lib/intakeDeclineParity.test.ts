@@ -189,7 +189,7 @@ function serverVerdict(rec: Rec, withBowls: boolean): Verdict[] {
 type Verdict = Pick<
   IntakeDeclineFlag,
   'baselineScore' | 'recentScore' | 'daysBelowBaseline' | 'refusedFoodLabel' | 'ratedMealsConsidered'
-> & { trigger: IntakeDeclineFinding['trigger'] };
+> & { trigger: IntakeDeclineFinding['trigger']; allRefused: boolean | null };
 
 function verdictOf(f: IntakeDeclineFlag | IntakeDeclineFinding): Verdict {
   return {
@@ -199,6 +199,8 @@ function verdictOf(f: IntakeDeclineFlag | IntakeDeclineFinding): Verdict {
     daysBelowBaseline: f.daysBelowBaseline,
     refusedFoodLabel: f.refusedFoodLabel,
     ratedMealsConsidered: f.ratedMealsConsidered,
+    // CUL-2424: the refusal fact the copy words from; both detectors must agree on it.
+    allRefused: f.allRefused ?? null,
   };
 }
 

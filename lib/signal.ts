@@ -271,6 +271,10 @@ export interface IntakeDeclineFinding {
   refusedThenVomited?: RefusedThenVomitedFacts;
   /** The floor's counts: present on a `sustained_refusal` card and only there. */
   sustainedRefusal?: SustainedRefusalFacts;
+  /** CUL-2424: the engine's refusal fact. On a `consecutive_low` card, true when every recent
+   *  rated meal was refused, so the card says "refused", never "eating less". Absent on a cache
+   *  written before the engine set it, and on every other trigger. Read through `intakeAllRefused`. */
+  allRefused?: boolean;
 }
 
 // Reflection (③, B-051) — descriptive symptom-count trend, no causal/wellness

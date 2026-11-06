@@ -183,6 +183,28 @@ Deno.test('an intake flag carries its trigger, so the card can say refusing when
   }
 })
 
+Deno.test('CUL-2424: an intake flag carries the refusal fact; a dip does not', () => {
+  const good = [10, 9, 8, 7, 6, 5, 4].map((d) => meal(d, 'all'))
+  // The issue's case: the refused meals are of a food with no history, so only the dip can fire.
+  const newFood = (d: number, r: 'refused' | 'some') => {
+    const m = meal(d, r)
+    return { ...m, meal: { ...m.meal!, foodItemId: 'food-new' } }
+  }
+  const refused = snap(baseInput({ requestedWindow: liveWindowOf(TODAY), events: [...good, newFood(1, 'refused'), newFood(0, 'refused')] }))
+  const low = liveOf(refused).flags.find((f) => f.kind === 'intake_decline' && f.trigger === 'consecutive_low')
+  assert.ok(low, 'two days of refusals raise the consecutive-low flag')
+  assert.equal(low.allRefused, true)
+  // The report's band carries it too, so the render half only has to read it.
+  const band = refused.safetyFlags.find((f) => f.kind === 'intake_decline' && f.trigger === 'consecutive_low')
+  assert.ok(band && band.kind === 'intake_decline')
+  assert.equal(band.allRefused, true)
+  const dip = snap(baseInput({ requestedWindow: liveWindowOf(TODAY), events: [...good, newFood(1, 'some'), newFood(0, 'some')] }))
+  const dipFlag = liveOf(dip).flags.find((f) => f.kind === 'intake_decline' && f.trigger === 'consecutive_low')
+  assert.ok(dipFlag, 'two days of "ate some" raise the dip')
+  assert.equal(dipFlag.allRefused, false)
+  for (const f of liveOf(refused).flags) if (f.kind !== 'intake_decline') assert.equal(f.allRefused, false)
+})
+
 Deno.test('live: a quiet record reads none; a short pull with no flag reads incomplete, never none', () => {
   const quiet = snap(baseInput({ requestedWindow: liveWindowOf(TODAY), events: [symptom('cough', 20)] }))
   assert.equal(liveOf(quiet).state, 'none')
