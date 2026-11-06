@@ -20,7 +20,9 @@ jest.mock('expo-file-system', () => ({ File: class {} }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
-import { flushLegacyCatalogCachesIfNeeded, CACHE_SCHEMA_VERSION } from './db';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { flushLegacyCatalogCachesIfNeeded, runCatalogCacheFlush, CACHE_SCHEMA_VERSION } from './db';
+import { CATALOG_FLUSH_MAX_SKIP_DAYS, CATALOG_FLUSH_SKIPS_KEY } from './inboxFoodRefs';
 
 type RawDb = InstanceType<typeof DatabaseSync>;
 
@@ -229,5 +231,47 @@ describe('inboxFoodIdsFromPayloads (CUL-2542)', () => {
         'null',
       ]),
     ).toEqual([A, B]);
+  });
+});
+
+// CUL-2572: initDb's step, over the real flush. An inbox read that is not whole skips, the skip
+// is bounded by distinct days, and the bound keeps the inbox foods that could be read.
+describe('runCatalogCacheFlush (CUL-2572: the skip is bounded)', () => {
+  const INBOX_FOOD = '22222222-2222-4222-9222-222222222222';
+  const day = (n: number) => new Date(Date.UTC(2026, 10, 1 + n, 12));
+  const incomplete = () => ({ ids: [INBOX_FOOD], complete: false, listed: true });
+
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+  });
+
+  it('skips while the inbox will not read whole, then flushes on the fifth distinct day keeping what it read', async () => {
+    const db = freshDb();
+    seed(db);
+    db.exec(`INSERT INTO food_items_cache (id, brand) VALUES ('${INBOX_FOOD}', 'Inbox');`);
+    for (let n = 0; n < CATALOG_FLUSH_MAX_SKIP_DAYS - 1; n++) {
+      expect(await runCatalogCacheFlush(asyncAdapter(db), incomplete, day(n))).toBe(false);
+      expect(userVersion(db)).toBe(0);
+    }
+    expect(await runCatalogCacheFlush(asyncAdapter(db), incomplete, day(CATALOG_FLUSH_MAX_SKIP_DAYS - 1))).toBe(true);
+    expect(userVersion(db)).toBe(CACHE_SCHEMA_VERSION);
+    expect(db.prepare('SELECT id FROM food_items_cache').all()).toEqual([{ id: INBOX_FOOD }]);
+    expect(await AsyncStorage.getItem(CATALOG_FLUSH_SKIPS_KEY)).toBeNull();
+  });
+
+  it('counts no skip, and reads no inbox, while no flush is due', async () => {
+    const db = freshDb();
+    db.exec(`PRAGMA user_version = ${CACHE_SCHEMA_VERSION};`);
+    const read = jest.fn(incomplete);
+    expect(await runCatalogCacheFlush(asyncAdapter(db), read, day(0))).toBe(false);
+    expect(read).not.toHaveBeenCalled();
+    expect(await AsyncStorage.getItem(CATALOG_FLUSH_SKIPS_KEY)).toBeNull();
+  });
+
+  it('a whole read flushes on the first launch', async () => {
+    const db = freshDb();
+    seed(db);
+    expect(await runCatalogCacheFlush(asyncAdapter(db), () => ({ ids: [], complete: true, listed: true }), day(0))).toBe(true);
+    expect(counts(db)).toEqual({ foods: 0, meds: 0 });
   });
 });

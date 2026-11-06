@@ -2,6 +2,7 @@ import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
 import { pendingKeepsBeforeSignOut } from './reportKeep';
 import { clearWidgetData } from './appGroup';
+import { clearCatalogFlushSkips } from './inboxFoodRefs';
 import { countUnclaimedInbox, ingestCaptureInbox } from './captureInbox';
 import { fenceWidgetPublish } from './widgetSnapshot';
 import { clearWidgetTimeline } from './widgetBridge';
@@ -400,6 +401,11 @@ export async function wipeLocalSession(): Promise<void> {
   // shipped defaults until the first authenticated fetch, exactly as a fresh
   // install does.
   await clearCachedAppConfig();
+  // CUL-2572 — the catalog cache flush's skip ledger holds the inbox food ids read on the days it
+  // skipped, this account's ids, so it goes with the account. The wipe also empties the caches the
+  // flush exists to clean, so a count carried to the next account could only fire its flush early.
+  // Never throws.
+  await clearCatalogFlushSkips();
   // CUL-902 (VV-4) — the in-room paperwork pointers: appointment id → the Vet Files
   // document groups photographed during that visit, AsyncStorage-resident. Not the
   // record (the documents themselves are SQLite rows clearLocalData already wipes),
