@@ -1962,7 +1962,7 @@ export function intakeAllRefused(finding: SignalFinding): boolean {
 /**
  * CUL-2593 (PM ruling option (1), 2026-11-06): an all-refused card asks for a call today unless the
  * pet is a dog (a cat's liver window is about 48 hours). A cat, `'other'` or a missing species asks
- * the louder one. The mirror of phrasing.ts `allRefusedCallsToday`; keep the two in sync.
+ * the louder one. The mirror of generate-signal detection.ts `allRefusedCallsToday`; keep the two in sync.
  */
 export function intakeAllRefusedCallsToday(finding: SignalFinding): boolean {
   return intakeAllRefused(finding) && finding.type === 'intake_decline' && finding.species !== 'dog';

@@ -1393,7 +1393,11 @@ describe('CUL-950 — the intake order is the ENGINE’s, pinned to its source (
     );
     // PR-30s moved the order into one constant the comparator and I5's line placement share;
     // pin both the comparator's use of it and its body.
-    expect(/x\.type === 'intake_decline' && y\.type === 'intake_decline'\)\s*\{\s*return INTAKE_TRIGGER_RANK\[x\.trigger\] - INTAKE_TRIGGER_RANK\[y\.trigger\]/.test(src)).toBe(true);
+    // CUL-2593 lifted the call-today all-refused card above refused_normal_food (`intakeRankOf`),
+    // a step a device row cannot mirror (it carries no species); the trigger order beneath it is
+    // still this constant's, and that is what is pinned. The device row only places, never drops.
+    expect(/x\.type === 'intake_decline' && y\.type === 'intake_decline'\)\s*\{[^}]*return intakeRankOf\(x\) - intakeRankOf\(y\)/.test(src)).toBe(true);
+    expect(/function intakeRankOf\(f: IntakeDeclineFinding\): number \{\s*return allRefusedCallsToday\(f\) \? INTAKE_CALL_TODAY_RANK : INTAKE_TRIGGER_RANK\[f\.trigger\]/.test(src)).toBe(true);
     const block = /const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = \{([^}]*)\}/.exec(src);
     expect(block).not.toBeNull();
     const engine = Object.fromEntries(

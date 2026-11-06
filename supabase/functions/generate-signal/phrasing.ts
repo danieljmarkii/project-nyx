@@ -38,6 +38,7 @@ import type {
   RankedFinding,
   SymptomType,
 } from './detection.ts'
+import { allRefusedCallsToday } from './detection.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
 import { TIER_WORDS } from '../../../lib/incidentTierWords.ts'
@@ -159,16 +160,8 @@ function sustainedRefusalCounts(r: SustainedRefusalFacts): string {
   return `${r.meals} meals on ${r.days} days (${parts.join(', ')})`
 }
 
-/**
- * CUL-2593 (PM ruling option (1), 2026-11-06): an all-refused consecutive-low card asks for a call
- * today unless the pet is a dog. A cat can get into liver trouble inside about 48 hours of not
- * eating, so a full day of refusal is not a "wait and see" card. Only `'dog'` keeps the
- * conditional ask: a cat, `'other'` or a species the finding does not carry asks the louder one.
- * Mirrored on the client (`intakeAllRefusedCallsToday`, lib/signalCopy.ts); keep the two in sync.
- */
-export function allRefusedCallsToday(f: IntakeDeclineFinding): boolean {
-  return f.trigger === 'consecutive_low' && f.allRefused === true && f.species !== 'dog'
-}
+// CUL-2593: the predicate lives with the ranker that also reads it (detection.ts); re-exported here.
+export { allRefusedCallsToday }
 
 /** The vet clause of an all-refused card: a call today, or (a dog) the conditional word. */
 function allRefusedAsk(f: IntakeDeclineFinding): string {

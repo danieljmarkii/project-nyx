@@ -7,6 +7,7 @@
 import { strict as assert } from 'node:assert'
 import {
   detectIntakeDecline,
+  rankFindings,
   type DetectionInput,
   type IntakeDeclineFinding,
   type IntakeRating,
@@ -14,6 +15,7 @@ import {
   type Species,
 } from './detection.ts'
 import { allRefusedCallsToday, templateCarried, templateIntakeDecline, validatePhrasing } from './phrasing.ts'
+import { leadingSafetyText } from '../ask/answer.ts'
 
 const MS_PER_HOUR = 3_600_000
 const NOW = '2026-07-30T20:00:00.000Z'
@@ -33,6 +35,14 @@ function meal(hoursAgo: number, rating: IntakeRating, foodItemId: string): MealE
     foodType: 'meal',
     foodLabel: foodItemId === 'f-usual' ? 'Usual food' : 'New food',
   }
+}
+
+/** A week of the usual food eaten well, then `todayDays` days of `today` on `todayFood`. */
+function recordOf(species: Species, today: IntakeRating[], todayDays: number, todayFood: string): DetectionInput {
+  const meals: MealEvent[] = []
+  for (let d = 1 + todayDays; d <= 8; d++) meals.push(meal(d * 24 + 6, 'all', 'f-usual'), meal(d * 24 - 4, 'all', 'f-usual'))
+  for (let d = 0; d < todayDays; d++) today.forEach((r, i) => meals.push(meal(d * 24 + 2 + i * 3, r, todayFood)))
+  return { pet: { name: 'Miso', species, dietTrialActive: false }, symptomEvents: [], mealEvents: meals, now: NOW, timezone: 'UTC' }
 }
 
 /** A week of the usual food eaten well, then `todayDays` days of `today` on a food with no history. */
@@ -100,4 +110,39 @@ Deno.test('CUL-2593: a carried all-refused card keeps the call for a cat, the wo
 Deno.test('CUL-2593: the model never phrases the card, so it cannot soften the call', () => {
   const soft = `Miso refused her meals today — ${SOFT}.`
   assert.equal(validatePhrasing(soft, lowFor('cat', ['refused', 'refused'])), false)
+})
+
+// Adversarial pass 1: the shape production most often makes. A cat refusing her USUAL food all day
+// fires refused_normal_food (the conditional ask) beside the all-refused card (the call today). By
+// trigger alone the soft card led, so Ask's safety line and Home's lead dropped the call.
+function usualFoodLead(species: Species, todayDays: number): IntakeDeclineFinding[] {
+  const out = detectIntakeDecline(recordOf(species, ['refused', 'refused'], todayDays, 'f-usual'))
+  const ranked = rankFindings(out, { name: 'Miso', species, dietTrialActive: false }).map((r) => r.finding)
+  return ranked.filter((f): f is IntakeDeclineFinding => f.type === 'intake_decline')
+}
+
+Deno.test('CUL-2593: a cat refusing her usual food all day leads with the call, not "just turned down"', () => {
+  const ranked = usualFoodLead('cat', 1)
+  assert.deepEqual(ranked.map((f) => f.trigger), ['consecutive_low', 'refused_normal_food'])
+  assert.equal(ranked[0].allRefused, true)
+  assert.equal(templateIntakeDecline(ranked[0], 'Miso'), `Miso refused every meal you rated today — ${CALL}.`)
+})
+
+Deno.test('CUL-2593: "other" refusing the usual food leads with the call too; a dog keeps the trigger order', () => {
+  assert.deepEqual(usualFoodLead('other', 2).map((f) => f.trigger), ['consecutive_low', 'refused_normal_food'])
+  const dog = usualFoodLead('dog', 2)
+  assert.deepEqual(dog.map((f) => f.trigger), ['refused_normal_food', 'consecutive_low'])
+})
+
+Deno.test("CUL-2593: a cat's plain dip beside a turned-down usual food keeps the trigger order", () => {
+  const out = detectIntakeDecline(recordOf('cat', ['refused', 'picked'], 1, 'f-usual'))
+  const ranked = rankFindings(out, { name: 'Miso', species: 'cat', dietTrialActive: false }).map((r) => r.finding).filter((f): f is IntakeDeclineFinding => f.type === 'intake_decline')
+  assert.deepEqual(ranked.map((f) => f.trigger), ['refused_normal_food', 'consecutive_low'])
+  assert.equal(ranked[1].allRefused, false)
+})
+
+Deno.test("CUL-2593: Ask's safety line relays the call on a cat refusing her usual food", () => {
+  // Ask leads with the first live safety card in the cached order, which is the ranker's.
+  const raw = usualFoodLead('cat', 1).map((f) => ({ type: f.type, priorityClass: f.priorityClass, payload: { text: templateIntakeDecline(f, 'Miso') } }))
+  assert.equal(leadingSafetyText(raw, 'Miso'), `Miso refused every meal you rated today — ${CALL}.`)
 })
