@@ -141,12 +141,20 @@ export const currentKeepUser: CurrentUser = async () => {
   return useAuthStore.getState().session?.user.id ?? null;
 };
 
-/** This account's rows; every other row is deleted unsent (CUL-2576). Throws if the list fails. */
+/**
+ * This account's rows, and the rows that name no account; every row of ANOTHER account is deleted
+ * unsent (CUL-2576). Throws if the list fails.
+ *
+ * A row naming no account was written by the build before `user_id` (CUL-2602). It is never sent,
+ * since its sender is unknown and a report id must not go out under someone else's token; and it
+ * is never deleted unsaid (adversarial-reviewer pass 2): the drain says it as a miss that names no
+ * pet, and it goes only when the owner dismisses that, until the PM rules on CUL-2602.
+ */
 async function ownRows(ledger: KeepLedger, uid: string): Promise<PendingKeep[]> {
   const rows = await ledger.list();
   const own: PendingKeep[] = [];
   for (const row of rows) {
-    if (row.userId === uid) own.push(row);
+    if (row.userId === uid || row.userId === null) own.push(row);
     else await quietly('clear', () => ledger.clear(row.reportId));
   }
   return own;
@@ -279,6 +287,15 @@ async function drainOnce(
     // miss already on screen waits for its dismissal.
     if (keepsInFlight.has(row.reportId)) continue;
     if (!lastChance && (keepsAnswered.has(row.reportId) || missesAwaitingAck.has(row.reportId))) continue;
+    if (row.userId === null) {
+      // Unattributed (CUL-2602): said, never sent, and named for no pet. The last-chance drain
+      // leaves it to the count.
+      if (!lastChance) {
+        missesAwaitingAck.add(row.reportId);
+        misses.push({ reportId: row.reportId, petId: '', sharedVia: row.sharedVia });
+      }
+      continue;
+    }
     const miss = { reportId: row.reportId, petId: row.petId, sharedVia: row.sharedVia };
     keepsInFlight.add(row.reportId);
     try {
@@ -412,7 +429,8 @@ export function pendingKeepMissNotice(
   petName: (petId: string) => string,
 ): { title: string; body: string } | null {
   if (misses.length === 0) return null;
-  const names = new Set(misses.map((m) => petName(m.petId)));
+  // A miss with no pet (an unattributed row, CUL-2602) names none, whatever the lookup says.
+  const names = new Set(misses.map((m) => (m.petId ? petName(m.petId) : '')));
   const name = names.size === 1 ? [...names][0] : '';
   const reports = name ? `${name}’s vet reports` : 'your vet reports';
   const copy = misses.length === 1 ? 'A copy of a vet report you sent wasn’t' : `${misses.length} copies of vet reports you sent weren’t`;

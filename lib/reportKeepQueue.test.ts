@@ -282,12 +282,27 @@ describe('a ledger row belongs to its account (CUL-2576)', () => {
     expect(rows.size).toBe(0);
   });
 
-  it("another account's row, or one naming none, is deleted unsent and never said", async () => {
+  it("another account's row is deleted unsent and never said", async () => {
     mockUid = 'user-b';
-    const { ledger, rows } = memoryLedger([row(), row({ reportId: ID2, userId: null })]);
+    const { ledger, rows } = memoryLedger([row()]);
     const invoke = jest.fn(err(404));
     expect(await drainPendingKeeps(invoke, ledger, at(T0 + 1000))).toEqual([]);
     expect(invoke).not.toHaveBeenCalled();
+    expect(rows.size).toBe(0);
+  });
+
+  it('a row naming no account (the build before user_id) is never sent, said with no pet, and goes on OK (CUL-2602 stopgap)', async () => {
+    const legacy = row({ reportId: ID2, userId: null });
+    const { ledger, rows } = memoryLedger([legacy]);
+    const invoke = jest.fn(ok);
+    const misses = await drainPendingKeeps(invoke, ledger, at(T0 + 1000));
+    expect(invoke).not.toHaveBeenCalled();
+    expect(misses).toEqual([{ reportId: ID2, petId: '', sharedVia: 'email' }]);
+    expect(pendingKeepMissNotice(misses, () => 'Cooper')?.body).toMatch(/to your vet reports\./);
+    expect(rows.size).toBe(1);
+    // Counted at a sign-out, never deleted unsaid.
+    expect(await pendingKeepCount('user-a', ledger)).toBe(1);
+    await acknowledgeKeepMisses(misses, ledger);
     expect(rows.size).toBe(0);
   });
 
