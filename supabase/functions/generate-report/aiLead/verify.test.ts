@@ -472,3 +472,38 @@ Deno.test('own-sign: an unanchored or second copy is still an exposure beside th
     assert.ok(checks.includes('order'), `${text}: ${checks}`)
   }
 })
+
+/** Adversarial pass 2 (f54f6d6): the words on the flag, the flag inside a claim about it. Each printed
+ *  through verifyLead and checkerDecision there. */
+const PASS_2: string[] = [
+  // asked, with no ASCII "?"
+  "Is itching a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag: is itching over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago？",
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago‽",
+  "¿Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  // doubted through the band's own "cannot show how"
+  "The record cannot show how itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "The record cannot show how long itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag, the trial's own sign: the record cannot show how itching spans at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag: the record cannot show how itching is over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
+  // an order claim behind the words
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days predates it, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag: itching over at least 49 days, the trial's own sign, predates it, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag, the trial's own sign: the sign predates it, itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  // dated by its latest entry
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, first logged 1 day ago.",
+  // softened: not a live flag
+  "Itching is a floor flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+]
+
+Deno.test('own-sign: the flag opens the sentence in its own shape, and nothing asks, doubts or dates it against the trial (pass 2)', () => {
+  for (const text of PASS_2) {
+    const lead = [{ text, cites: ['band-r11'] }, R11_S3]
+    const v = verifyLead(R11.table, { sentences: lead })
+    assert.equal(v.pass, false, text)
+    assert.ok(v.errors.some((e) => e.check === 'own-sign'), `${text}: ${JSON.stringify(v.errors)}`)
+    assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'reject', text)
+  }
+})

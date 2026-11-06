@@ -278,42 +278,63 @@ export function bandOrderIssues(table: FactTable, summary: LeadSummary): VerifyI
  *  Straight or curly apostrophe (`norm` straightens it); single spaces, nothing between the words. */
 export const OWN_SIGN_PHRASE = "the trial's own sign"
 const OWN_SIGN = /\bthe trial's own sign\b/gi
-/** Where the words may stand in a lead: named as the flag's own apposition ("Itching is a live flag,
- *  the trial's own sign: …"), or after the span exactly as the heading prints it ("… over at least
- *  49 days, the trial's own sign"), and followed by a clause break or the end. Anywhere else they
- *  name something other than the flag, or sit inside a claim about it: "is it the trial's own
- *  sign?", "the record cannot show how it is the trial's own sign", "this window, the trial's own
- *  sign, opens Aug 22", "itching predates the trial's own sign" (adversarial pass on 9e4422d). */
-const OWN_SIGN_ANCHORED = /(?:\bflag|\bover at least \d+ days),\s+the trial's own sign(?=\s*[:;,.]|\s*$)/i
+/** Where the words may stand in a lead: the sentence opens on the flag in one of the heading's two
+ *  shapes, and nothing before it. "<Label> is a live flag, the trial's own sign: …", or "<Label> is a
+ *  live flag: <label> over at least N days, the trial's own sign …" ("the flag" for "a live flag").
+ *  Anywhere else the words name something other than the flag, or the flag sits inside a claim about
+ *  it: "is it the trial's own sign?", "this window, the trial's own sign, opens Aug 22" (adversarial
+ *  pass 1); "Is itching a live flag, the trial's own sign: …", "The record cannot show how itching is
+ *  a live flag, the trial's own sign: …" (pass 2). */
+function ownSignShape(text: string, label: string): boolean {
+  const l = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (l === '') return false
+  const a = new RegExp(`^${l} is (?:a live|the) flag, the trial's own sign:\\s`, 'i')
+  const b = new RegExp(`^${l} is (?:a live|the) flag:\\s+${l} over at least \\d+ days, the trial's own sign(?=\\s*[;,.]|\\s*$)`, 'i')
+  return a.test(text) || b.test(text)
+}
+/** In a sentence carrying the words, the rest never asks (any script's question mark), never borrows
+ *  the band's "cannot show" to doubt the flag, never says "predates" and never says "it" or "its",
+ *  whose nearest antecedent beside the words is the trial (pass 2: "…, the trial's own sign: itching
+ *  over at least 49 days predates it"), and never says "first", which can date a 49-day sign to its
+ *  latest entry ("first logged 1 day ago", pass 2). Each errs loud: an honest lead needs none. */
+const OWN_SIGN_QUESTION = /[?\u037E\u00BF\u061F\u203D\u2E2E\uFE56\uFF1F]/
+const OWN_SIGN_FORBIDDEN = /\b(?:cannot|can't|predat\w*|it|its|it's|first)\b/i
+
+/** The band row's label (the flag's sign word, "itching"), for the shape check. */
+function labelOf(f: { label?: unknown } | undefined): string {
+  return typeof f?.label === 'string' ? f.label.trim() : ''
+}
 
 /** Whether a line prints the own-sign phrase, word for word. */
 export function printsOwnSign(text: string): boolean {
   return new RegExp(OWN_SIGN.source, 'i').test(norm(text))
 }
 
-/** The text with its one anchored own-sign phrase blanked, for the exposure test only, and only in a
- *  sentence citing a band row that prints the phrase: there "trial" names the sign the trial tests,
- *  not an exposure set beside it. An unanchored or second copy stays, and still counts as an
- *  exposure (H2), as does any other exposure word in the sentence. */
+/** The text with its one own-sign phrase blanked, for the exposure test only, and only in a sentence
+ *  citing a band row that prints the phrase, opening on the flag in one of its two shapes: there
+ *  "trial" names the sign the trial tests, not an exposure set beside it. Any other copy stays, and
+ *  still counts as an exposure (H2), as does any other exposure word in the sentence. */
 function withoutOwnSign(text: string, cites: string[], facts: Map<string, { role?: string; text?: string }>): string {
-  const licensed = cites.some((c) => facts.get(c)?.role === 'band' && printsOwnSign(facts.get(c)?.text ?? ''))
-  if (!licensed) return text
+  const row = cites.map((c) => facts.get(c)).find((f) => f?.role === 'band' && printsOwnSign(f?.text ?? ''))
+  if (!row) return text
   const t = norm(text)
-  if ((t.match(OWN_SIGN) ?? []).length !== 1) return text
-  return t.replace(OWN_SIGN_ANCHORED, (m) => m.replace(new RegExp(OWN_SIGN.source, 'i'), ' '))
+  if ((t.match(OWN_SIGN) ?? []).length !== 1 || !ownSignShape(t, labelOf(row as { label?: unknown }))) return text
+  return t.replace(new RegExp(OWN_SIGN.source, 'i'), ' ')
 }
 
 /** own-sign: when a band row prints "the trial's own sign", every sentence that cites that row, or
- *  says "flag" at all, carries the four words exactly once, anchored to the flag
- *  (`OWN_SIGN_ANCHORED`), and asks nothing (a "?" turns the flag into a question). Multi-flag leaves
+ *  says "flag" at all, carries the four words exactly once, opens on the flag in one of its two shapes
+ *  (`ownSignShape`), and holds none of `OWN_SIGN_QUESTION` / `OWN_SIGN_FORBIDDEN`. Multi-flag leaves
  *  such a record one band item, so any "flag" in its lead is that flag. A function of the table and
  *  the printed text alone, read by `verifyLead` AND by the checker's decision (leadPipeline.ts
  *  `checkerDecision`), so neither the writer nor the checker model can pass a lead without the words.
  *  Errs loud: an honest lead phrased another way drops, and four more required words inside the cap
  *  drop leads that would otherwise print. */
 export function ownSignIssues(table: FactTable, summary: LeadSummary): VerifyIssue[] {
-  const own = new Set(table.facts.filter((f) => f.role === 'band' && printsOwnSign(String(f.text ?? ''))).map((f) => f.id))
-  if (own.size === 0) return []
+  const rows = table.facts.filter((f) => f.role === 'band' && printsOwnSign(String(f.text ?? '')))
+  if (rows.length === 0) return []
+  const own = new Set(rows.map((f) => f.id))
+  const label = labelOf(rows[0] as { label?: unknown })
   const out: VerifyIssue[] = []
   const issue = (k: number, detail: string) => out.push({ sentence: k + 1, check: 'own-sign', detail: `${detail} (R-11, CUL-2619)` })
   summary.sentences.forEach((s, k) => {
@@ -323,8 +344,10 @@ export function ownSignIssues(table: FactTable, summary: LeadSummary): VerifyIss
     if (!restates && copies === 0) return
     if (copies === 0) return issue(k, `restates the flag without ${JSON.stringify(OWN_SIGN_PHRASE)}`)
     if (copies > 1) return issue(k, `${JSON.stringify(OWN_SIGN_PHRASE)} ${copies} times (once, on the flag)`)
-    if (!OWN_SIGN_ANCHORED.test(t)) return issue(k, `${JSON.stringify(OWN_SIGN_PHRASE)} does not name the flag ("… is a live flag, the trial's own sign:" or "… over at least N days, the trial's own sign")`)
-    if (t.includes('?')) return issue(k, 'the flag is asked about, not stated')
+    if (!ownSignShape(t, label)) return issue(k, `does not open on the flag with ${JSON.stringify(OWN_SIGN_PHRASE)} ("${label} is a live flag, the trial's own sign: …" or "${label} is a live flag: ${label} over at least N days, the trial's own sign …")`)
+    if (OWN_SIGN_QUESTION.test(t)) return issue(k, 'the flag is asked about, not stated')
+    const bad = t.match(OWN_SIGN_FORBIDDEN)
+    if (bad) return issue(k, `${JSON.stringify(bad[0])} beside the trial's own sign`)
   })
   return out
 }
