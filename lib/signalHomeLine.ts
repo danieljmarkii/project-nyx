@@ -26,7 +26,7 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, sustainedRefusalOf, symptomWord, UNKNOWN_INTAKE_COPY } from './signalCopy';
+import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, intakeAllRefusedCallsToday, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, sustainedRefusalOf, symptomWord, UNKNOWN_INTAKE_COPY } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import { localCallDay } from './callNowDated';
 import type { SignalScreenModel } from './signalScreen';
@@ -61,7 +61,8 @@ function numWord(n: number): string {
  *   chronicity   firm "worth booking a vet visit" · else "worth a word with your vet"
  *   worsening    firm "worth booking a vet visit soon" · soft "worth keeping an eye on, and a
  *                word with your vet if it carries on" · standard "worth a word with your vet"
- *   intake       "worth keeping an eye on, and a word with your vet if it carries on" (both)
+ *   intake       "worth keeping an eye on, and a word with your vet if it carries on" (both);
+ *                an all-refused card for any species but a dog "worth a call to your vet today" (CUL-2593)
  * The conditional asks keep their lead-in: cut to "a word with your vet if it carries on"
  * they read as a fragment with no verb (pm-feature-review).
  *   red flag     "worth a call to your vet"; a NEW-RULE call (Engines v3 PR-30a, CUL-1511) asks in
@@ -85,6 +86,8 @@ export function signalHomeAsk(finding: SignalFinding, nowMs?: number): string | 
       if (finding.trigger === 'refused_then_vomited') return 'worth mentioning to your vet';
       // The sustained-refusal floor's sentence ends on a call today.
       if (finding.trigger === 'sustained_refusal') return 'worth a call to your vet today';
+      // CUL-2593: an all-refused card asks for a call today, every species but a dog.
+      if (intakeAllRefusedCallsToday(finding)) return 'worth a call to your vet today';
       if (finding.trigger === 'consecutive_low' || finding.trigger === 'refused_normal_food') return 'worth keeping an eye on, and a word with your vet if it carries on';
       // CUL-2405: a trigger this build does not know asks at its most cautious.
       return UNKNOWN_INTAKE_COPY.ask;

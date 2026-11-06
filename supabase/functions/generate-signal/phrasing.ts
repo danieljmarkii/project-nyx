@@ -38,6 +38,7 @@ import type {
   RankedFinding,
   SymptomType,
 } from './detection.ts'
+import { allRefusedCallsToday } from './detection.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
 import { TIER_WORDS } from '../../../lib/incidentTierWords.ts'
@@ -159,6 +160,16 @@ function sustainedRefusalCounts(r: SustainedRefusalFacts): string {
   return `${r.meals} meals on ${r.days} days (${parts.join(', ')})`
 }
 
+// CUL-2593: the predicate lives with the ranker that also reads it (detection.ts); re-exported here.
+export { allRefusedCallsToday }
+
+/** The vet clause of an all-refused card: a call today, or (a dog) the conditional word. */
+function allRefusedAsk(f: IntakeDeclineFinding): string {
+  return allRefusedCallsToday(f)
+    ? 'worth a call to your vet today'
+    : 'worth keeping an eye on, and a word with your vet if it carries on'
+}
+
 export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string): string {
   // Safety finding: calm, clear, points toward keeping an eye on it + the vet.
   // Never reassures, never frames reduced eating as fussiness.
@@ -178,7 +189,7 @@ export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string):
     // never "eating less". "You rated" scopes it to the record; it never claims an unrated meal.
     // Mirrored on the client (`evidenceText` and `bannerRest`, lib/signalCopy.ts); keep them in sync.
     const when = f.daysBelowBaseline <= 1 ? 'today' : `over ${span}`
-    return `${petName} refused every meal you rated ${when} — worth keeping an eye on, and a word with your vet if it carries on.`
+    return `${petName} refused every meal you rated ${when} — ${allRefusedAsk(f)}.`
   }
   return `${petName} has eaten less than usual ${span} — worth keeping an eye on, and a word with your vet if it carries on.`
 }
@@ -723,7 +734,7 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
             : 'worth raising with your vet'
         : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
           ? 'worth booking a vet visit'
-        : f.type === 'intake_decline' && f.trigger === 'sustained_refusal'
+        : f.type === 'intake_decline' && (f.trigger === 'sustained_refusal' || allRefusedCallsToday(f))
           ? 'worth a call to your vet'
           : 'worth a word with your vet'
   return `An earlier read of ${petName}'s record, on ${onsetDay(carriedFromIso)}, showed ${what} — ${ask}. Part of the record didn't load for this update, so it hasn't been checked again yet.`

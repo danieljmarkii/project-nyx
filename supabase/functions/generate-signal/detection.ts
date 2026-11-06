@@ -4349,7 +4349,7 @@ export function detectIntakeDecline(
   if (findings.length > 0) {
     // One line, on the card that leads (the ranker's own trigger order), so two intake cards
     // never print it twice.
-    const lead = findings.reduce((a, b) => (INTAKE_TRIGGER_RANK[b.trigger] < INTAKE_TRIGGER_RANK[a.trigger] ? b : a))
+    const lead = findings.reduce((a, b) => (intakeRankOf(b) < intakeRankOf(a) ? b : a))
     return findings.map((f) => (f === lead ? { ...f, refusedThenVomited: facts } : f))
   }
   return [
@@ -4373,12 +4373,40 @@ export function detectIntakeDecline(
 
 /** The ranker's order within intake_decline (refused_normal_food leads), shared with the line's
  *  placement so the line always sits on the card that leads. */
-const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = {
+export const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = {
   // A record with no good meal in three days leads: it is the one a vet would act on first.
   sustained_refusal: 0,
   refused_normal_food: 1,
   consecutive_low: 2,
   refused_then_vomited: 3,
+}
+
+/**
+ * CUL-2593 (PM ruling option (1), 2026-11-06): an all-refused consecutive-low card asks for a call
+ * today unless the pet is a dog. A cat can get into liver trouble inside about 48 hours of not
+ * eating, so a full day of refusal is not a "wait and see" card. Only `'dog'` keeps the
+ * conditional ask: a cat, `'other'` or a species the finding does not carry asks the louder one.
+ * The templates word it (phrasing.ts); the ranker leads with it (`intakeRankOf`). Mirrored on the
+ * client (`intakeAllRefusedCallsToday`, lib/signalCopy.ts); keep the two in sync.
+ */
+export function allRefusedCallsToday(f: IntakeDeclineFinding): boolean {
+  return f.trigger === 'consecutive_low' && f.allRefused === true && f.species !== 'dog'
+}
+
+/**
+ * CUL-2593 (adversarial pass 1): a cat refusing her USUAL food all day fires both
+ * `refused_normal_food` (the conditional ask) and an all-refused `consecutive_low` (the call
+ * today). By trigger alone the softer card led, so Ask's safety line and Home's lead dropped the
+ * call. The card that asks for a call today ranks between the sustained-refusal floor (which
+ * replaces it and never sits beside it) and `refused_normal_food`: the louder ask leads, as the
+ * floor's does. Get ready's device-row order (`INTAKE_TRIGGER_ORDER`) cannot follow it: a device
+ * row carries no species; it only places a stale device row, and never drops one.
+ */
+const INTAKE_CALL_TODAY_RANK = 0.5
+
+/** An intake card's place in its run: the call-today card's rank, else its trigger's. */
+export function intakeRankOf(f: IntakeDeclineFinding): number {
+  return allRefusedCallsToday(f) ? INTAKE_CALL_TODAY_RANK : INTAKE_TRIGGER_RANK[f.trigger]
 }
 
 /**
@@ -8231,7 +8259,8 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
         )
       }
       if (x.type === 'intake_decline' && y.type === 'intake_decline') {
-        return INTAKE_TRIGGER_RANK[x.trigger] - INTAKE_TRIGGER_RANK[y.trigger]
+        // CUL-2593: the trigger order, with the call-today card lifted above refused_normal_food.
+        return intakeRankOf(x) - intakeRankOf(y)
       }
       // Two chronicity cards (R4 both-stated, CUL-676) — the same shape as the two
       // red-flags above, and stated EXPLICITLY for the same reason: the detector already

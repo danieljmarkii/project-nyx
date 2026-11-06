@@ -155,7 +155,10 @@ Deno.test('CUL-1213 — an incomplete read carries the prior decline beside the 
       weightFacts: null,
     })
   const complete = templatePayload(run([], null))
-  const refused = complete.findings.find((e) => e.finding.type === 'intake_decline')
+  // By trigger, not position: since CUL-2593 this cat's all-refused card (a call today) leads it.
+  const refused = complete.findings.find(
+    (e) => e.finding.type === 'intake_decline' && (e.finding as { trigger: string }).trigger === 'refused_normal_food',
+  )
   assert.ok(refused && (refused.finding as { trigger: string }).trigger === 'refused_normal_food', 'the case serves the refusal')
   const decline = { ...refused.finding, trigger: 'consecutive_low', daysBelowBaseline: 1, refusedFoodLabel: null }
   const prior = {
