@@ -488,18 +488,6 @@ function predicateLineOf(snap: ReportSnapshot): string | null {
   return line
 }
 
-/** " (UTC)" when the record carries no usable zone: fmtLocalTime then prints UTC, and an
- *  unlabelled UTC minute reads as local (adversarial pass 1 on CUL-2293). */
-function utcMark(tz: string | null): string {
-  if (!tz) return ' (UTC)'
-  try {
-    new Intl.DateTimeFormat('en-GB', { timeZone: tz })
-    return ''
-  } catch {
-    return ' (UTC)'
-  }
-}
-
 /**
  * GAP-35's line: when a refusing pet last ate something, the time a vet phoning about the feline
  * 48 to 72 hour window needs. Read off the snapshot (`lastMealAboveRefusal`), which `assembleReport`
@@ -535,7 +523,7 @@ function lastAboveRefusedOf(snap: ReportSnapshot): string | null {
   const none = anyMostOrAll ? '' : ' No meal in this window was rated “ate most” or “ate it all”.'
   return `The last ${noun} rated “ate some” or better: ${plain(fmtLocalDay(hit.occurredAt, snap.timezone))} at ${plain(
     fmtLocalTime(hit.occurredAt, snap.timezone),
-  )}${utcMark(snap.timezone)} (${intakeLabel(hit.rating).toLowerCase()}).${none}${caveat}`
+  )} (${intakeLabel(hit.rating).toLowerCase()}).${none}${caveat}`
 }
 
 function intakeBlock(snap: ReportSnapshot): BackBlockV2 {

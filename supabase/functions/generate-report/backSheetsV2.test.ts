@@ -390,7 +390,7 @@ Deno.test('episodes — v1’s sections word for word (with v2’s pointers), on
   assert.equal(ep.heading, EPISODES_HEADING)
   const text = textOf(ep.html)
   // The non-completed states are named, each once, beside the assessed denominator.
-  assert.match(text, /Across all 7 vomiting incidents; 3 have a legible AI read \(1 uncertain, 1 not legible, 1 still processing, 1 without a photo\)\./)
+  assert.match(text, /Across all 7 vomiting incidents; 3 have a legible AI read \(1 uncertain, 1 not read \(analysis did not complete\), 1 still processing, 1 without a photo\)\./)
   assert.match(text, /Possible foreign material — 1 incident:/)
   assert.doesNotMatch(text, /Possible blood/, 'blood prints only when present')
   assert.doesNotMatch(text, /appendix/i, 'no pointer to a sheet v2 does not print')
@@ -749,7 +749,7 @@ Deno.test('VR2-14 event log — every photographed row names its read in words, 
   assert.ok(log && log.kind === 'section')
   const photos = [...log.html.matchAll(/<b>Photo:<\/b> ([^<]*)/g)].map((m) => m[1])
   assert.ok(photos.length >= 4, `${photos.length}`)
-  for (const p of photos) assert.match(p, /^(read completed|read uncertain|present but not legible|still processing)/, p)
+  for (const p of photos) assert.match(p, /^(read completed|read uncertain|photo not read|still processing|no photo$|photo attached, no read on record$)/, p)
   assert.ok(photos.some((p) => p.startsWith('read completed')))
   assert.ok(photos.some((p) => p.startsWith('still processing')))
   assert.doesNotMatch(log.html, /[\u{1F534}\u{1F7E0}\u{1F7E1}\u{1F7E2}\u26A0]/u, 'no owner-facing triage glyph crosses over')

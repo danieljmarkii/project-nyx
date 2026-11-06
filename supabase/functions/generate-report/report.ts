@@ -108,6 +108,7 @@ import {
 // Re-deriving "which proteins here aren't the trial protein?" locally is the exact
 // failure B-417 §5.3 documents — three contradictory off-diet predicates, one of
 // them already shipped in this file. One implementation, imported.
+import { proteinSourceBase } from '../../../lib/proteinRelation.ts'
 import {
   offTrialProteins,
   offTrialProteinsInTrialFood,
@@ -119,7 +120,7 @@ import {
 // dependency-free precisely so both runtimes share one copy; a second map here is the
 // B-103 drift class, where a new enum value reaches one surface and not the other).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
-import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans } from '../../../lib/freeFedIntake.ts'
+import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans, type FreeFedIntakeSpan } from '../../../lib/freeFedIntake.ts'
 import { isKnownIntakeRating, isRefusedOrPickedRating } from '../../../lib/intakeEvidence.ts'
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
@@ -2326,6 +2327,21 @@ export interface DietSummary {
    * implementation of the counter — the exact shape B-421 spent a PR deleting from
    * the client. Day N, the target and the overrun all come from `snapshot.trial`.
    */
+  /**
+   * CUL-2581 (stopgap, wording and classification await a clinical ruling): the trial diet reads
+   * as HYDROLYSED (its label, panel or protein keys say so), and these other foods list the same
+   * protein source with nothing saying it is hydrolysed. The protein model keys the trial as plain
+   * `chicken`, so a bowl of ordinary chicken beside a hydrolysed-chicken trial matched the target
+   * and was never marked: the exposure that breaks such a trial went unsaid. Display only: no
+   * count and no off-diet verdict moves on it. Null when the trial is not read as hydrolysed, or
+   * its protein names no usable source. Optional: absent on an older snapshot.
+   */
+  hydrolysedTrial?: {
+    /** The source the trial diet hydrolyses (`chicken`), as a canonical key. */
+    protein: string
+    /** Each other food listing that source intact, most-fed first; `feedings` is 0 for a bowl. */
+    intactFoods: Array<{ foodLabel: string; kind: 'free_fed' | 'meal' | 'treat'; feedings: number }>
+  } | null
   trial: {
     foodLabel: string | null
     primaryProtein: string | null
@@ -2876,6 +2892,12 @@ export interface SymptomLogEntry {
    * that said one photo was gone, and named neither.
    */
   photoRemoved: boolean
+  /**
+   * CUL-2442: a photo is attached to this incident (any member of a de-duplicated bout). With no
+   * read on record the row says "no photo" or "photo attached, no read on record" in words, never
+   * a dash. Optional: absent on an older snapshot, where the row cannot tell and says so.
+   */
+  photoAttached?: boolean
   occurredAt: string
   occurredAtConfidence: OccurredAtConfidence | null
   occurredAtEarliest: string | null
@@ -2970,6 +2992,12 @@ export interface IntakeLogEntry {
    * never the anchor, and left out of page 1's recent-meals trajectory.
    */
   notCountedFreeFed: boolean
+  /**
+   * CUL-2568: a free-fed bowl's rating in EITHER scope (`notCountedFreeFed` is the flag scope's
+   * marker only). `mealCompletion.recentNotFullyEatenRun` skips these rows, so a reader indexing
+   * the log against the run skips them too. Absent on an older snapshot (read as false).
+   */
+  freeFed?: boolean
   /**
    * True when this row is the anchor PINNED back in past the most-recent cap (it is older than
    * every other shown row, with omitted meals between). Render draws an "earlier meals omitted"
@@ -3815,10 +3843,19 @@ function leftMostOfIt(rating: IntakeRating): boolean {
  * rather than trusted from the caller, because the window's events are not guaranteed to
  * arrive in time order and a run read off an unsorted list is a run of nothing.
  */
-export function recentNotFullyEatenRun(rated: Array<{ occurredAt: string; meal: { intakeRating: IntakeRating | null } | null }>): number {
+/** CUL-2581: the word that marks a food, panel or protein key as hydrolysed (either spelling). */
+const HYDROLYSED_WORD = /\bhydroly[sz]ed?\b|\bhydrolysate\b/i
+
+export function recentNotFullyEatenRun(
+  rated: Array<{ occurredAt: string; meal: { intakeRating: IntakeRating | null; foodItemId?: string | null } | null }>,
+  freeFedSpans: readonly FreeFedIntakeSpan[] = [],
+): number {
   const newestFirst = [...rated].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
   let run = 0
   for (const e of newestFirst) {
+    // CUL-2568: a free-fed bowl's rating is skipped, as the intake detector skips it (§11 #6). A
+    // bowl rated "ate it all" ended the run, so a cat refusing every watched meal printed no run.
+    if (isFreeFedIntakeMeal(e.meal?.foodItemId ?? null, Date.parse(e.occurredAt), freeFedSpans)) continue
     if (e.meal?.intakeRating === 'all') break
     run++
   }
@@ -5272,13 +5309,25 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const mealCompletionBreakdown = intakeBreakdownOf(
     ratedMeals.map((e) => e.meal!.intakeRating as IntakeRating),
   )
+  // CUL-2568: the bowls the intake detector sets aside, over the same arrangements it reads.
+  const mealRunFreeFedSpans = parseFreeFedIntakeSpans(
+    input.feedingArrangements
+      .filter((a) => a.method === 'free_choice')
+      .map((a) => ({
+        foodItemId: a.foodItemId ?? null,
+        createdAt: a.createdAt ?? null,
+        activeFrom: a.activeFrom,
+        activeUntil: a.activeUntil,
+        endedAt: a.endedAt ?? null,
+      })),
+  )
   const mealCompletion =
     ratedMeals.length > 0
       ? {
           ratedMeals: ratedMeals.length,
           finishedMeals,
           rate: finishedMeals / ratedMeals.length,
-          recentNotFullyEatenRun: recentNotFullyEatenRun(ratedMeals),
+          recentNotFullyEatenRun: recentNotFullyEatenRun(ratedMeals, mealRunFreeFedSpans),
           intakeBreakdown: mealCompletionBreakdown,
         }
       : null
@@ -6125,6 +6174,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         eventId: e.id,
         type: e.type,
         photoRemoved: photoRemovedIds.has(e.id),
+        photoAttached: e.memberEventIds.some((mid) => (attachmentsByEvent.get(mid)?.length ?? 0) > 0),
         occurredAt: e.occurredAt,
         occurredAtConfidence: e.occurredAtConfidence,
         occurredAtEarliest: e.occurredAtEarliest,
@@ -6352,7 +6402,52 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     return { labels, feedings, countedInTally, unresolvedDoses: unresolvedVehicleDoses, byFood }
   })()
 
+  // CUL-2581 — the hydrolysed trial and the foods carrying its protein intact (see the field).
+  const hydrolysedTrial: DietSummary['hydrolysedTrial'] = (() => {
+    if (!reportTrialInput || !trial) return null
+    const says = (...xs: Array<string | null | undefined>): boolean => xs.some((x) => typeof x === 'string' && HYDROLYSED_WORD.test(x))
+    const trialProteins = readProteinSet(reportTrialInput.proteins ?? null, reportTrialInput.primaryProtein ?? null)
+    if (!says(reportTrialInput.foodLabel, reportTrialInput.ingredientsNotes, ...trialProteins)) return null
+    const base = proteinSourceBase(trialProteinTarget)
+    if (!base) return null
+    // Intact: a key whose source is the trial's and which does not itself say hydrolysed.
+    const intact = (proteins: readonly string[]): boolean =>
+      proteins.some((p) => !HYDROLYSED_WORD.test(p) && proteinSourceBase(p) === base)
+    const found = new Map<string, { foodLabel: string; kind: 'free_fed' | 'meal' | 'treat'; feedings: number }>()
+    for (const a of input.feedingArrangements) {
+      if (a.method !== 'free_choice') continue
+      const fromNum = a.activeFrom ? dayNumber(a.activeFrom) : -Infinity
+      const untilNum = a.activeUntil ? dayNumber(a.activeUntil) : Infinity
+      if (!((fromNum ?? -Infinity) <= endDayNum && startDayNum <= (untilNum ?? Infinity))) continue
+      if (trialFoodId && a.foodItemId === trialFoodId) continue
+      const label = a.foodLabel?.trim() || 'A free-fed bowl'
+      if (says(label, a.ingredientsNotes)) continue
+      if (!intact(readProteinSet(a.proteins ?? null, a.primaryProtein ?? null))) continue
+      if (!found.has(`bowl:${label}`)) found.set(`bowl:${label}`, { foodLabel: label, kind: 'free_fed', feedings: 0 })
+    }
+    for (const e of windowMeals) {
+      const m = e.meal!
+      const parts: Array<ReportFoodProteinInput & { foodItemId: string | null; brand: string | null; productName: string | null; format?: FoodFormat | null; foodType: 'meal' | 'treat' | 'other' | null; primaryProtein: string | null }> =
+        m.bowl ? m.bowl.components : [m]
+      for (const c of parts) {
+        if (isReportTrialFood(c)) continue
+        const label = mealFoodLabel(c)?.trim()
+        if (!label || says(label, c.ingredientsNotes)) continue
+        if (!intact(readProteinSet(c.proteins ?? null, c.primaryProtein ?? null))) continue
+        const kind = c.foodType === 'treat' || c.format === 'treat' ? 'treat' : 'meal'
+        const prev = found.get(`fed:${label}`)
+        if (prev) prev.feedings++
+        else found.set(`fed:${label}`, { foodLabel: label, kind, feedings: 1 })
+      }
+    }
+    const intactFoods = [...found.values()].sort(
+      (x, y) => (x.kind === 'free_fed' ? -1 : 0) - (y.kind === 'free_fed' ? -1 : 0) || y.feedings - x.feedings || x.foodLabel.localeCompare(y.foodLabel),
+    )
+    return { protein: base, intactFoods }
+  })()
+
   const diet: DietSummary = {
+    hydrolysedTrial,
     trialTargetProtein: trialProteinTarget,
     trialProteinProvenance,
     trialProteinMismatch,
@@ -6625,6 +6720,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       intakeRating: e.meal!.intakeRating as IntakeRating,
       isLastFullMeal: anchorMeal !== null && e.id === anchorMeal.id,
       notCountedFreeFed: intakeLogScope === 'intake_flag' && isIntakeFreeFed(e),
+      freeFed: isIntakeFreeFed(e),
       pinned: !anchorInHead && anchorMeal !== null && e.id === anchorMeal.id,
     }))
   }

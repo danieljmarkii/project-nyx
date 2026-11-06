@@ -835,18 +835,22 @@ Deno.test('phenotype discloses the four AI states distinctly (assessed denominat
   )
   const text = html.replace(/<[^>]*>/g, ' ')
   assert.ok(/7\s+have a legible AI read/.test(text), 'assessed denominator = completed')
-  assert.ok(/uncertain/.test(text) && /not legible/.test(text), 'uncertain + failed disclosed distinctly')
+  assert.ok(/1 uncertain/.test(text) && /2 not read \(analysis did not complete\)/.test(text), 'uncertain + failed disclosed distinctly')
+  assert.ok(!/not legible/.test(text), 'CUL-2416: a failed analysis is never called illegible')
 })
 
 Deno.test('phenotype consistency: a tie for the top type is disclosed, not asserted as a majority', () => {
   const tie = renderReport(
     base({ vomitPhenotype: emptyPhenotype({ consistencyDistribution: { foamy: 2, watery: 2, chunky: 1 } }) }),
   )
-  assert.ok(/no single predominant reading/i.test(tie), 'a 2–2 tie is not called "most often foamy"')
+  assert.ok(!/most often/i.test(tie), 'a 2–2 tie is not called "most often foamy"')
+  assert.ok(/from the 5 reads where it was legible: foamy ×2 · watery ×2 · chunky ×1/.test(tie.replace(/<[^>]*>/g, '').replace(/&times;/g, '×').replace(/&middot;/g, '·')), 'CUL-2412: a tally, every value with its count')
   const clear = renderReport(
     base({ vomitPhenotype: emptyPhenotype({ consistencyDistribution: { foamy: 6, chunky: 2 } }) }),
   )
-  assert.ok(/most often foamy/i.test(clear), 'a clear majority still reads "most often X"')
+  // CUL-2412: a clear majority is tallied too, so the minority reading is never dropped.
+  assert.ok(!/most often/i.test(clear), 'never a modal line')
+  assert.ok(/foamy ×6 · chunky ×2/.test(clear.replace(/<[^>]*>/g, '').replace(/&times;/g, '×').replace(/&middot;/g, '·')), 'both readings, each with its count')
 })
 
 // ── §4 / B-117 adherence — never "compliant" on zero doses ─────────────────────────
@@ -1498,10 +1502,20 @@ Deno.test('stool: AI read, nothing present → Bristol line + "not a clearance" 
     },
   }))
   assert.ok(/Automated photo analysis/.test(html), 'aitag when a read exists')
-  assert.ok(/Type 4 — smooth, soft/.test(html), 'Bristol most-common named with plain label')
-  assert.ok(/most often brown/.test(html), 'colour predominant line')
+  assert.ok(/Type 4 — smooth, soft/.test(html), 'Bristol named with plain label')
+  const flat = html.replace(/<[^>]*>/g, '').replace(/&times;/g, '×').replace(/&middot;/g, '·')
+  // CUL-2412: every Bristol type and colour tallied over its own reads, never "most often".
+  assert.ok(/Colour, from the 3 reads where it was legible: brown ×3/.test(flat), 'colour tally')
+  assert.ok(/Type 6[^·]*×1/.test(flat), 'the minority Bristol type keeps its count')
+  assert.ok(!/most often/.test(flat), 'never a modal line')
+  // …and the photo line is counted over the photographed events, not every stool log.
+  assert.ok(/Photo reads cover 3 of the 4 stool events \(1 without a photo\)/.test(flat), 'its own denominator')
+  assert.ok(!/Across all 4 stool events/.test(flat), 'never the pooled stool denominator')
+  const head = /<h2>Stool characteristics([\s\S]*?)<\/h2>/.exec(html)?.[1] ?? ''
+  assert.ok(/4 stool events · owner-described/.test(head.replace(/<[^>]*>/g, '')), 'the owner bar keeps owner-described under its heading')
+  assert.ok(!/Automated photo analysis/.test(head), 'CUL-2412: the AI badge heads the photo line, not the owner bar')
   assert.ok(/Not seen/.test(html) && /not<\/b> a clearance/.test(html), 'present-only absence framed as non-clearance')
-  assert.ok(/1 without a photo/.test(html), 'four-state denominator discloses the no-photo incident')
+  assert.ok(/1 without a photo/.test(flat), 'four-state denominator discloses the no-photo incident')
   assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
 })
 
@@ -9206,9 +9220,10 @@ Deno.test('CUL-2390 instance 4 — a pending photo read is worded as pending, ne
   assert.ok(!/not clear enough/.test(pending), pending)
   assert.ok(!/AI read/.test(pending), 'an unread photo carries no AI-read badge')
   assert.match(card('failed'), /AI read/)
-  // Failed and uncertain were read, so they keep the legibility wording.
-  assert.match(card('failed'), /present but not legible — not clear enough to read/)
-  assert.match(card('uncertain'), /read uncertain — not clear enough to read/)
+  // CUL-2416: failed and uncertain each say what happened to the photo, and never share a caption.
+  assert.match(card('failed'), /photo not read \(the analysis did not complete\); ask to see the photo/)
+  assert.match(card('uncertain'), /read uncertain, findings not shown; ask to see the photo/)
+  assert.ok(!/not clear enough/.test(card('failed') + card('uncertain')))
 })
 
 Deno.test('CUL-2390 guard — no "0 of" ever sits beside blood, foreign material or mucus', () => {

@@ -46,6 +46,8 @@ import {
   type FlagPointers,
   symptomLabel,
   truncationDisclosure,
+  utcNotice,
+  hydrolysedIntactText,
 } from './render.ts'
 import {
   bandMembersOf,
@@ -1242,11 +1244,11 @@ function bowlText(b: ReportSnapshot['diet']['freeFed'][number]): string {
  * an older meal across a fully eaten one the log's scope leaves out.
  */
 function refusalRunText(snap: ReportSnapshot, run: number): string {
-  // ADVERSARIAL PASS 2: the run (`recentNotFullyEatenRun`) counts a free-fed bowl's ratings, so the
-  // rows read here count them too (never filtered, or `k` and `run` index different lists and the
-  // "meal before" could sit behind a fully eaten bowl rating); and the cap needs `k < run` (an exact
-  // run of 40 ending at a capped log is not "at least").
-  const rows = snap.provenance.intakeLog.filter((r) => !r.pinned)
+  // CUL-2568: the run (`recentNotFullyEatenRun`) skips a free-fed bowl's ratings, as the intake
+  // detector does, so the rows read here skip them too (`k` and `run` must index one list, or the
+  // "meal before" could sit behind a bowl rating); and the cap needs `k < run` (an exact run of 40
+  // ending at a capped log is not "at least").
+  const rows = snap.provenance.intakeLog.filter((r) => !r.pinned && !r.freeFed)
   let k = 0
   while (k < rows.length && k < run && rows[k].intakeRating === 'refused') k++
   if (k < 2) return ''
@@ -1272,9 +1274,8 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   // were not. The same floor as v1's `recentNotFullyEatenRun`: 2 or more. CUL-2540: a run that is
   // every rated meal says so, with its newest day, so an unbroken refusal never reads as a count.
   const run = mc?.recentNotFullyEatenRun ?? 0
-  // The newest rated row, a bowl's included, as the run counts them (adversarial pass 2, QUIET: a run
-  // reaching today was dated by the newest meal behind two bowl ratings, days earlier).
-  const newest = snap.provenance.intakeLog.find((r) => !r.pinned)
+  // The newest rated row the run counts: a bowl's is skipped, as the run skips it (CUL-2568).
+  const newest = snap.provenance.intakeLog.find((r) => !r.pinned && !r.freeFed)
   const newestDay = newest ? textOf(fmtLocalDay(newest.occurredAt, snap.timezone)) : null
   const runText =
     mc && run >= 2 && run < mc.ratedMeals
@@ -1309,7 +1310,16 @@ function trialLine(snap: ReportSnapshot): RecordLine | null {
       ? `, day ${t.dayCounter}, ${plural(t.daysPastTarget, 'day', 'days')} past its planned ${t.targetDurationDays}`
       : `, day ${t.dayCounter} of ${t.targetDurationDays}`
   const planned = t.endedAt ? `; planned for ${t.targetDurationDays} days` : ''
-  return { id: 'trial', text: `Diet trial (owner-entered): ${foods}, from ${start}${ended}${planned}.` }
+  // CUL-2581 (stopgap): v1's trial block names a hydrolysed trial and the intact protein beside it;
+  // so does this line, word for word, so v2 never says less than v1.
+  // Only where the food's own name does not already say it ("Vetline Hydrolysed Soy").
+  const hydrolysed =
+    snap.diet.hydrolysedTrial && !/hydroly[sz]/i.test(foods) ? ` (hydrolysed ${snap.diet.hydrolysedTrial.protein})` : ''
+  const intact = hydrolysedIntactText(snap)
+  return {
+    id: 'trial',
+    text: `Diet trial (owner-entered): ${foods}${hydrolysed}, from ${start}${ended}${planned}.${intact ? ` ${intact.lead} ${intact.rest}` : ''}`,
+  }
 }
 
 function medicationLines(snap: ReportSnapshot): RecordLine[] {
@@ -1484,7 +1494,9 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
 
   // v1's page-1 disclosures (the cherry-pick guard, a record that could not be read in full) carry
   // over word for word: each one stops a short or hand-cropped record reading as a whole one.
-  const disclosure = `${cherryPickDisclosure(snap)}${truncationDisclosure(snap)}`.trim()
+  // CUL-2391: with no usable zone every date and time on the sheet is UTC, and v1's letterhead line
+  // says so; v2 has no letterhead, so it rides here, beside the other record-reading disclosures.
+  const disclosure = `${cherryPickDisclosure(snap)}${truncationDisclosure(snap)}${utcNotice(snap.timezone)}`.trim()
   if (disclosure !== '') blocks.push({ kind: 'disclosure', id: 'disclosure', html: disclosure })
 
   const { band, leadFlag } = bandMembersOf(snap)
