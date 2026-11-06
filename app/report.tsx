@@ -861,9 +861,19 @@ export default function ReportScreen() {
             ) : report.photoCount > 0 ? (
               // Owner visibility (spec §8): before sending, the owner sees how many of their own
               // incident photos this report hands to the vet. v1 has no picker (R-10 is v2's).
-              <Text style={styles.barPhotos}>
-                Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
-              </Text>
+              <>
+                <Text style={styles.barPhotos}>
+                  Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
+                </Text>
+                {photosLeftOut.length > 0 && (
+                  // PR-23b privacy pass F1: a rebuild that came back as the older layout (the
+                  // layout switch or its flag changed mid-session) sends every photo, the ones the
+                  // owner left out included. Said before Send, never dropped in silence.
+                  <ThemedText style={styles.barStale} testID="report-photos-choice-dropped">
+                    This version of the report sends every photo, including the ones you left out.
+                  </ThemedText>
+                )}
+              </>
             ) : null}
             {report.photos && report.photos.length > 0 && (
               <PhotoLeaveOutSheet

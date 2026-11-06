@@ -264,3 +264,16 @@ it('PR-23b: v1 keeps its sentence and offers no picker', async () => {
   expect(s.getByText('Includes 2 photos from logged incidents.')).toBeTruthy();
   expect(s.queryByTestId('report-photos-choose')).toBeNull();
 });
+
+it('PR-23b privacy F1: a rebuild that lands on v1 after a photo was left out says every photo goes', async () => {
+  const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const photos = [{ attachmentId: A, eventId: 'e1', type: 'vomit', occurredAt: '2026-07-02T12:00:00Z', safety: null }];
+  mockedGenerate.mockResolvedValue(report({ photoCount: 1, photos }));
+  const s = render(<ReportScreen />);
+  fireEvent.press(await s.findByTestId('report-photos-choose'));
+  fireEvent.press(await s.findByTestId(`photo-row-${A}`));
+  mockedGenerate.mockResolvedValue(report({ reportVersion: 'v1', phoneHtml: null, photoCount: 1, photos: null }));
+  fireEvent.press(s.getByTestId('photo-leave-out-done'));
+  await waitFor(() => expect(s.getByTestId('report-photos-choice-dropped')).toBeTruthy());
+  expect(s.getByText('This version of the report sends every photo, including the ones you left out.')).toBeTruthy();
+});
