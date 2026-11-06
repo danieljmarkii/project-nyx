@@ -1253,11 +1253,13 @@ function refusalRunText(snap: ReportSnapshot, run: number): string {
   while (k < rows.length && k < run && rows[k].intakeRating === 'refused') k++
   if (k < 2) return ''
   const day = (iso: string) => textOf(fmtLocalDay(iso, snap.timezone))
-  const capped = k === rows.length && k < run && snap.provenance.intakeLogHiddenOlder > 0
+  // "At least" whenever the log runs out before the run does: hidden watched rows OR bowl rows past
+  // the bowl cap (adversarial pass 2, QUIET: the bound read as the whole run).
+  const capped = k === rows.length && k < run
   const next = k < run && k < rows.length ? rows[k] : null
   const before =
     next && !next.notCountedFreeFed && next.intakeRating !== 'all' && next.intakeRating !== 'refused'
-      ? ` The meal before them, on ${day(next.occurredAt)}, was partly eaten.`
+      ? ` The ${next.freeFed ? 'free-fed bowl rating' : 'meal'} before them, on ${day(next.occurredAt)}, was partly eaten.`
       : ''
   return ` ${capped ? 'At least the last' : 'The last'} ${k} were refused outright, from ${day(rows[k - 1].occurredAt)} to ${day(rows[0].occurredAt)}.${before}`
 }

@@ -78,6 +78,34 @@ Deno.test('CUL-2568 adversarial P2 — a cat fed only from a bowl, refusing thre
   assert.match(plain(renderReport(snap)), /the last 6 rated in a row not fully eaten/i)
 })
 
+Deno.test('CUL-2568 adversarial pass 2 — a run of bowl and watched refusals with no full meal is read off a log that holds it all', () => {
+  const cat = { id: 'pet-v2', name: 'Fixture', species: 'cat', breed: null, sex: 'female', dateOfBirth: '2020-03-01', weightKg: 4 } as ReportInput['pet']
+  const events = [
+    meal(1, 'refused', 18), meal(1, 'refused', 8), meal(2, 'refused', 18),
+    ...[3, 4, 5, 6].flatMap((d) => [bowlMeal(d, 'refused', 19), bowlMeal(d, 'refused', 7)]),
+  ]
+  const snap = assembleReport(baseInput({ pet: cat, events, feedingArrangements: [BOWL] }))
+  assert.equal(snap.diet.mealCompletion?.recentNotFullyEatenRun, 11)
+  const v2 = v2Text(snap)
+  assert.doesNotMatch(v2, /The last 3 were refused outright/, 'never the watched rows alone')
+  assert.match(v2, /(At least the last|The last) 11 were refused outright, from [A-Z][a-z]{2} \d+ to/)
+})
+
+Deno.test('CUL-2568 adversarial pass 2 — bowl refusals past the bowl cap make the refusal sentence a lower bound', () => {
+  const cat = { id: 'pet-v2', name: 'Fixture', species: 'cat', breed: null, sex: 'female', dateOfBirth: '2020-03-01', weightKg: 4 } as ReportInput['pet']
+  // Watched refusals enough to fire the intake flag (its log scope keeps bowl rows apart), then 46
+  // bowl refusals behind them: more than the bowl rows' own cap of 40.
+  const events = [
+    ...[1, 2, 3].flatMap((d) => [meal(d, 'refused', 18), meal(d, 'refused', 8)]),
+    ...Array.from({ length: 23 }, (_, i) => [bowlMeal(4 + i, 'refused', 19), bowlMeal(4 + i, 'refused', 7)]).flat(),
+  ]
+  const snap = assembleReport(baseInput({ pet: cat, events, feedingArrangements: [BOWL] }))
+  assert.equal(snap.provenance.intakeLogScope, 'intake_flag', 'the flag scope, where only the bowl rows are capped')
+  assert.equal(snap.provenance.intakeLogHiddenOlder, 0, 'no watched row hidden: the bound comes from the bowl cap alone')
+  assert.equal(snap.diet.mealCompletion?.recentNotFullyEatenRun, 52)
+  assert.match(v2Text(snap), /At least the last \d+ were refused outright/, 'the log ran out before the run: said as a bound')
+})
+
 // ── CUL-2589 ────────────────────────────────────────────────────────────────────
 function lowFlag(allRefused: boolean | null): SafetyFlag {
   return {
@@ -245,8 +273,9 @@ Deno.test('CUL-2581 — a hydrolysed trial is named so, and intact protein besid
   const v2 = v2Text(snap)
   assert.match(v2, /Diet trial \(owner-entered\): Hill's z\/d \(hydrolysed chicken\)/)
   assert.match(v2, /Chicken fed intact beside a hydrolysed chicken trial diet/)
-  // A bowl whose own label says hydrolysed is not intact; with nothing intact left, no row.
-  const clean = assembleReport(hydrolysedTrialInput(['chicken'], 'Royal Canin Hydrolyzed Protein'))
+  // A bowl whose own NAME says its chicken is hydrolysed is not intact (a generic "Hydrolyzed
+  // Protein" name says nothing about the source, so that bowl is listed: the loud side).
+  const clean = assembleReport(hydrolysedTrialInput(['chicken'], 'Hydrolyzed Chicken Kibble'))
   clean.diet.hydrolysedTrial!.intactFoods = clean.diet.hydrolysedTrial!.intactFoods.filter((f) => f.kind === 'free_fed')
   assert.equal(clean.diet.hydrolysedTrial!.intactFoods.length, 0)
   assert.doesNotMatch(plain(renderReport(clean)), /Intact protein/)
@@ -272,6 +301,23 @@ Deno.test('CUL-2581 — a hydrolysed trial is named so, and intact protein besid
   const salmon = hydrolysedTrialInput(['turkey'])
   salmon.events = salmon.events.map((e) => (e.meal?.foodItemId === 'f-treat' ? { ...e, meal: { ...e.meal!, productName: 'Hydrolysed Salmon', proteins: ['hydrolyzed salmon', 'chicken'] } } : e))
   assert.ok(assembleReport(salmon).diet.hydrolysedTrial!.intactFoods.some((f) => /Hydrolysed Salmon/.test(f.foodLabel)), 'listed by its chicken')
+  // Pass 2 (QUIET): a key list of chicken plus hydrolyzed chicken is intact chicken; a palatant in the
+  // panel ("hydrolyzed chicken liver") never hides a treat's intact chicken key.
+  const both = hydrolysedTrialInput(['turkey'])
+  both.events = both.events.map((e) => (e.meal?.foodItemId === 'f-treat' ? { ...e, meal: { ...e.meal!, proteins: ['chicken', 'hydrolyzed chicken'] } } : e))
+  assert.ok(assembleReport(both).diet.hydrolysedTrial!.intactFoods.some((f) => /Temptations/.test(f.foodLabel)), 'chicken + hydrolyzed chicken is listed')
+  const palatant = hydrolysedTrialInput(['turkey'])
+  palatant.events = palatant.events.map((e) => (e.meal?.foodItemId === 'f-treat' ? { ...e, meal: { ...e.meal!, ingredientsNotes: 'Chicken meal, corn, hydrolyzed chicken liver' } } : e))
+  assert.ok(assembleReport(palatant).diet.hydrolysedTrial!.intactFoods.some((f) => /Temptations/.test(f.foodLabel)), 'a panel palatant never hides intact chicken')
+  // Pass 2 (false label): a source written before a suffix form ("yeast hydrolysate", "soy protein
+  // isolate hydrolysate") is read, so neither makes a chicken diet hydrolysed.
+  for (const notes of ['Chicken, rice, yeast hydrolysate', 'Soy protein isolate hydrolysate, rice']) {
+    const t = hydrolysedTrialInput(['chicken'])
+    t.dietTrials[0].ingredientsNotes = notes
+    t.dietTrials[0].foodLabel = 'Chicken & Rice'
+    t.events = t.events.map((e) => (e.meal?.foodItemId === 'f-zd' ? { ...e, meal: { ...e.meal!, ingredientsNotes: notes } } : e))
+    assert.equal(assembleReport(t).diet.hydrolysedTrial, null, notes)
+  }
   // A "chicken hydrolyzate" key is hydrolysed, never intact.
   const hz = hydrolysedTrialInput(['chicken hydrolyzate'], 'Hypo bowl')
   assert.ok(!assembleReport(hz).diet.hydrolysedTrial!.intactFoods.some((f) => f.foodLabel === 'Hypo bowl'))

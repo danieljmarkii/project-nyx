@@ -6427,10 +6427,16 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // counts for the target only where the same text names no OTHER hydrolysed source: a soy panel
     // under an owner-keyed chicken primary is not a hydrolysed chicken diet (adversarial case H).
     // Words after "hydrolysed" that name a product, not a source ("Hydrolyzed HP", "Hydrolysed Diet").
-    const NOT_A_SOURCE = new Set(['protein', 'proteins', 'hp', 'diet', 'formula', 'food', 'recipe', 'treat', 'treats', 'loaf', 'kibble'])
+    const NOT_A_SOURCE = new Set(['protein', 'proteins', 'hp', 'diet', 'formula', 'food', 'recipe', 'treat', 'treats', 'loaf', 'kibble', 'isolate', 'partially', 'partly', 'extensively', 'and', 'with', 'of'])
+    // The source can sit AFTER the word ("hydrolysed soy") or BEFORE a suffix form ("yeast
+    // hydrolysate", "soy protein isolate hydrolysate"): both are read (adversarial pass 2).
     const namedSources = (x: string): string[] =>
-      [...x.matchAll(/\bhydroly[sz]\w*(?:\s+([a-z][a-z-]*))?/gi)]
-        .map((m) => (m[1] ?? '').toLowerCase())
+      [
+        ...[...x.matchAll(/\bhydroly[sz]\w*(?:\s+([a-z][a-z-]*))?/gi)].map((m) => [m[1] ?? '']),
+        ...[...x.matchAll(/((?:[a-z][a-z-]*\s+){1,3})hydroly[sz]ates?\b/gi)].map((m) => m[1].trim().split(/\s+/)),
+      ]
+        .flat()
+        .map((w) => w.toLowerCase())
         .filter((w) => w !== '' && !NOT_A_SOURCE.has(w))
         .map((w) => proteinSourceBase(w))
         .filter((b): b is string => b !== null)
@@ -6443,8 +6449,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     const trialProteins = readProteinSet(reportTrialInput.proteins ?? null, reportTrialInput.primaryProtein ?? null)
     if (!trialProteins.some(hydrolysesBase) && !saysHydrolysedTarget(reportTrialInput.foodLabel, reportTrialInput.ingredientsNotes)) return null
     const startNum = dayNumber(reportTrialInput.startedAt.slice(0, 10))
+    // An end INSTANT is read on the owner's local day, never its UTC date (adversarial pass 2).
     const endKey = reportTrialInput.endedAt ?? reportTrialInput.completedAt ?? null
-    const endNum = endKey ? dayNumber(endKey.slice(0, 10)) : null
+    const endNum = endKey ? dayNumber(endKey.length > 10 ? localDayKey(endKey, tz) ?? endKey.slice(0, 10) : endKey) : null
     const inTrial = (iso: string): boolean => {
       const d = eventDayNumber(iso, tz)
       return d !== null && (startNum === null || d >= startNum) && (endNum === null || d <= endNum)
@@ -6452,10 +6459,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // A food carries the source INTACT when one of its keys names it and nothing (key, label or
     // panel) says that source is hydrolysed. Per protein, not per label: a "Hydrolysed Salmon"
     // treat whose panel lists chicken still carries intact chicken.
-    const carriesIntact = (proteins: readonly string[], label: string | null | undefined, notes: string | null | undefined): boolean =>
+    // Adversarial pass 2 (QUIET): any intact key lists the food, whatever else it carries; a key list
+    // of "chicken" plus "hydrolyzed chicken" is intact chicken until the record says otherwise. Only
+    // the PRODUCT'S OWN NAME saying the source is hydrolysed ("Hydrolyzed Chicken Treats") overrides
+    // its keys; a panel ingredient ("hydrolyzed chicken liver" as a palatant) never hides one.
+    const carriesIntact = (proteins: readonly string[], label: string | null | undefined): boolean =>
       proteins.some((p) => !HYDROLYSED_WORD.test(p) && proteinSourceBase(p) === base) &&
-      !proteins.some(hydrolysesBase) &&
-      !saysHydrolysedTarget(label, notes)
+      !(typeof label === 'string' && qualifies.test(label))
     const found = new Map<string, { foodLabel: string; kind: 'free_fed' | 'meal' | 'treat'; feedings: number }>()
     const bowlFoodIds = new Set<string>()
     for (const a of input.feedingArrangements) {
@@ -6469,7 +6479,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       if (!((fromNum ?? -Infinity) <= endDayNum && startDayNum <= (untilNum ?? Infinity))) continue
       if (trialFoodId && a.foodItemId === trialFoodId) continue
       const label = a.foodLabel?.trim() || 'A free-fed bowl'
-      if (!carriesIntact(readProteinSet(a.proteins ?? null, a.primaryProtein ?? null), label, a.ingredientsNotes)) continue
+      if (!carriesIntact(readProteinSet(a.proteins ?? null, a.primaryProtein ?? null), label)) continue
       if (a.foodItemId) bowlFoodIds.add(a.foodItemId)
       if (!found.has(`bowl:${label}`)) found.set(`bowl:${label}`, { foodLabel: label, kind: 'free_fed', feedings: 0 })
     }
@@ -6484,7 +6494,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         if (c.foodItemId && bowlFoodIds.has(c.foodItemId)) continue
         const label = mealFoodLabel(c)?.trim()
         if (!label) continue
-        if (!carriesIntact(readProteinSet(c.proteins ?? null, c.primaryProtein ?? null), label, c.ingredientsNotes)) continue
+        if (!carriesIntact(readProteinSet(c.proteins ?? null, c.primaryProtein ?? null), label)) continue
         const kind = c.foodType === 'treat' || c.format === 'treat' ? 'treat' : 'meal'
         const prev = found.get(`fed:${label}`)
         if (prev) prev.feedings++
@@ -6732,7 +6742,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // and taggable — never left cited-but-invisible. Everything between is disclosed as omitted.
     const anchorInHead = anchorMeal !== null && head.includes(anchorMeal)
     const oldestShown = head.length > 0 ? Date.parse(head[head.length - 1].occurredAt) : Infinity
-    const floorMs = anchorMeal !== null ? Math.min(oldestShown, Date.parse(anchorMeal.occurredAt)) : oldestShown
+    // CUL-2568 (adversarial pass 2, QUIET): the not-fully-eaten run counts a bowl's refusals, so with
+    // no anchor the bowl rows reach back past the oldest watched row shown; floored there, a cat with
+    // three watched refusals after eight bowl ones read "the last 3 refused, Oct 14 to 15" over a
+    // six-day refusal. The bowl rows keep their own cap.
+    const floorMs = anchorMeal !== null ? Math.min(oldestShown, Date.parse(anchorMeal.occurredAt)) : -Infinity
     const bowlShown = bowlRows.filter((e) => Date.parse(e.occurredAt) >= floorMs).slice(0, INTAKE_LOG_CAP)
     const inList = new Set([...head, ...bowlShown].map((e) => e.id))
     const merged = ratedForLog.filter((e) => inList.has(e.id)) // keeps the list's most-recent-first order
