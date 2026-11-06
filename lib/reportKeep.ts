@@ -24,12 +24,18 @@
 // `drainPendingKeeps` tries it at the next open, foreground or reconnect: kept is silent, a
 // passing failure stays for the next drain, and a refusal or a keep past the window is a miss
 // said once (`pendingKeepMissNotice`).
+//
+// A ROW BELONGS TO ITS ACCOUNT (CUL-2576). Every row names the account that sent it, read off
+// auth-js's own session, the one whose token the keep call carries. A drain tries and says only
+// that account's rows; another account's row, or one that names none, is deleted unsent. The
+// sign-out wipe stays the first fence; this is the second, for a wipe that failed.
 
 import { supabase } from './supabase';
 import type { VetReport } from './pdf';
 import type { SendResult } from './reportSend';
 import { keepsAnswered, keepsInFlight, missesAwaitingAck, sqliteKeepLedger, type KeepLedger, type PendingKeep } from './reportKeepLedger';
 import { currentSignOutEpoch } from './signOutEpoch';
+import { useKeepLossStore } from '../store/keepLossStore';
 
 export type KeepVia = 'email' | 'print' | 'share' | 'shown';
 
@@ -116,6 +122,32 @@ async function quietly(what: string, step: () => Promise<unknown>): Promise<void
   }
 }
 
+/** The account whose token a keep call would carry: auth-js's session, never the store's, which
+ *  the recovery handler nulls before its last-chance flush. Null when there is none or it cannot
+ *  be read. Never throws. */
+export type CurrentUser = () => Promise<string | null>;
+
+export const currentKeepUser: CurrentUser = async () => {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.user.id ?? null;
+  } catch (e) {
+    console.warn('[reportKeep] session read failed:', e instanceof Error ? e.message : String(e));
+    return null;
+  }
+};
+
+/** This account's rows; every other row is deleted unsent (CUL-2576). Throws if the list fails. */
+async function ownRows(ledger: KeepLedger, uid: string): Promise<PendingKeep[]> {
+  const rows = await ledger.list();
+  const own: PendingKeep[] = [];
+  for (const row of rows) {
+    if (row.userId === uid) own.push(row);
+    else await quietly('clear', () => ledger.clear(row.reportId));
+  }
+  return own;
+}
+
 /** Keep `report`'s draft as sent by `via`. Never throws. */
 export async function keepReportCopy(
   report: VetReport,
@@ -125,15 +157,18 @@ export async function keepReportCopy(
   wait: (ms: number) => Promise<void> = sleep,
   ledger: KeepLedger = sqliteKeepLedger(),
   now: () => number = Date.now,
+  currentUser: CurrentUser = currentKeepUser,
 ): Promise<KeepOutcome> {
   const { reportId, petId } = report;
   if (!reportId || !petId) return 'not_saved';
   keepsInFlight.add(reportId);
   try {
     // Written BEFORE the first try (CUL-2522): if the app is closed at any moment from here on,
-    // the row is what the next open finds.
+    // the row is what the next open finds. With no account to name, no row: no drain could
+    // ever send it, and the in-session try below still says its own line.
     const queuedAt = new Date(now()).toISOString();
-    await quietly('write', () => ledger.record({ reportId, petId, sharedVia: via, queuedAt }));
+    const userId = await currentUser();
+    if (userId !== null) await quietly('write', () => ledger.record({ reportId, petId, sharedVia: via, queuedAt, userId }));
     // Every try names the send's own time: iOS pauses timers in the background, so a retry can
     // fire hours later, and the copy must still say when it left (adversarial pass 2).
     const outcome = await keepWithRetries(invoke, { petId, reportId, sharedVia: via, sharedAt: queuedAt }, delays, wait);
@@ -199,10 +234,11 @@ export function drainPendingKeeps(
   ledger: KeepLedger = sqliteKeepLedger(),
   now: () => number = Date.now,
   lastChance = false,
+  currentUser: CurrentUser = currentKeepUser,
 ): Promise<KeepMiss[]> {
   const epoch = currentSignOutEpoch();
   if (drainInFlight && drainInFlight.epoch === epoch) return drainInFlight.run.then(() => []);
-  const run = drainOnce(invoke, ledger, now, epoch, lastChance).finally(() => {
+  const run = drainOnce(invoke, ledger, now, epoch, lastChance, currentUser).finally(() => {
     if (drainInFlight?.run === run) drainInFlight = null;
   });
   drainInFlight = { epoch, run };
@@ -212,10 +248,20 @@ export function drainPendingKeeps(
 /** `lastChance`: the drain before a sign-out wipes the ledger. It tries every row this launch is
  *  not still making (an answered row included: this is its last try), and parks no miss, since the
  *  caller counts what is left (adversarial pass 2, S1 and S2). */
-async function drainOnce(invoke: Invoke, ledger: KeepLedger, now: () => number, epoch: number, lastChance: boolean): Promise<KeepMiss[]> {
+async function drainOnce(
+  invoke: Invoke,
+  ledger: KeepLedger,
+  now: () => number,
+  epoch: number,
+  lastChance: boolean,
+  currentUser: CurrentUser,
+): Promise<KeepMiss[]> {
+  // No account, nothing tried: every row is some account's, and none is this session's to send.
+  const uid = await currentUser();
+  if (uid === null || currentSignOutEpoch() !== epoch) return [];
   let rows: PendingKeep[];
   try {
-    rows = await ledger.list();
+    rows = await ownRows(ledger, uid);
   } catch (e) {
     console.warn('[reportKeep] ledger read failed:', e instanceof Error ? e.message : String(e));
     return [];
@@ -272,14 +318,48 @@ export async function pendingKeepsBeforeSignOut(
   invoke: Invoke = invokeKeep,
   ledger: KeepLedger = sqliteKeepLedger(),
   now: () => number = Date.now,
+  currentUser: CurrentUser = currentKeepUser,
 ): Promise<number> {
-  await drainPendingKeeps(invoke, ledger, now, true);
+  const uid = await currentUser();
+  await drainPendingKeeps(invoke, ledger, now, true, async () => uid);
+  return pendingKeepCount(uid, ledger);
+}
+
+/**
+ * How many of `uid`'s keeps still wait, with no try (CUL-2573): a sign-out whose session is
+ * already gone can only count what it is about to wipe. Rows of any other account are not
+ * counted (and are deleted, CUL-2576). An unreadable ledger, or no account to count for, counts
+ * as one, so a loss is said rather than assumed away. Never throws.
+ */
+export async function pendingKeepCount(uid: string | null, ledger: KeepLedger = sqliteKeepLedger()): Promise<number> {
+  if (uid === null) {
+    try {
+      return (await ledger.list()).length > 0 ? 1 : 0;
+    } catch {
+      return 1;
+    }
+  }
   try {
-    return (await ledger.list()).length;
+    return (await ownRows(ledger, uid)).length;
   } catch (e) {
     console.warn('[reportKeep] ledger read before sign-out failed:', e instanceof Error ? e.message : String(e));
     return 1;
   }
+}
+
+/**
+ * At a SIGNED_OUT, before its wipe (CUL-2573): note how many of the signed-out account's copies
+ * the wipe takes, for the notice after it. Nothing is tried: the session is already gone. Not
+ * noted for the one sign-out that warned first and was confirmed (Settings), nor for a deleted
+ * account, whose reports went with it. Never throws.
+ */
+export async function noteSignedOutKeepLoss(
+  opts: { userId: string | null; justDeletedAccount: boolean },
+  ledger: KeepLedger = sqliteKeepLedger(),
+): Promise<void> {
+  const loss = useKeepLossStore.getState();
+  if (loss.consumeAccepted() || opts.justDeletedAccount) return;
+  loss.note(opts.userId, await pendingKeepCount(opts.userId, ledger));
 }
 
 /**

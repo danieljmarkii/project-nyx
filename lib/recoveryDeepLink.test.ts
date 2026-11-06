@@ -54,6 +54,11 @@ jest.mock('./session', () => ({
   flushForSignOut: jest.fn(),
   purgeStoredAuthSession: jest.fn(),
 }));
+// CUL-2573: the account and the count are noted for the notice; tested in lib/reportKeepQueue.test.ts.
+jest.mock('./reportKeep', () => ({
+  currentKeepUser: jest.fn(async () => 'user-a'),
+  pendingKeepCount: jest.fn(async () => 3),
+}));
 jest.mock('./recoveryMarker', () => {
   const actual = jest.requireActual('./recoveryMarker');
   return { ...actual, readRecoveryRequest: jest.fn() };
@@ -720,5 +725,45 @@ describe('handleRecoveryDeepLink waits for a reconcile in flight (rls-privacy-re
     expect(await loadRecoveryPhase()).toEqual({ kind: 'exchanged', userId: 'user-b' });
     expect(await AsyncStorage.getItem(GATE_KEY)).toBe('1');
     expect(useAuthStore.getState().session).toBe(B_SESSION);
+  });
+});
+
+// CUL-2573: both recovery wipes say what they took. The flush's own count is noted under the
+// account it ran as; a flush that throws is counted again from the ledger, never read as none.
+describe('a recovery wipe notes the report copies it could not keep (CUL-2573)', () => {
+  const { useKeepLossStore } = jest.requireActual('../store/keepLossStore') as typeof import('../store/keepLossStore');
+  beforeEach(() => {
+    useKeepLossStore.setState({ lost: null, accepted: false });
+  });
+
+  it('discarding an interrupted reset notes the flush count', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    mockGetSession.mockResolvedValue({ data: { session: null } });
+    mockFlush.mockResolvedValueOnce({ pendingCount: 0, quarantinedCount: 0, keepCount: 2 });
+    await discardInterruptedRecovery();
+    expect(useKeepLossStore.getState().lost).toEqual({ userId: 'user-a', count: 2 });
+  });
+
+  it('a flush that throws counts from the ledger', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    mockGetSession.mockResolvedValue({ data: { session: null } });
+    mockFlush.mockRejectedValueOnce(new Error('x'));
+    await discardInterruptedRecovery();
+    expect(useKeepLossStore.getState().lost).toEqual({ userId: 'user-a', count: 3 });
+  });
+
+  it('a recovery link on a signed-in phone notes what its wipe took', async () => {
+    haveProvenance();
+    mockFlush.mockResolvedValueOnce({ pendingCount: 0, quarantinedCount: 0, keepCount: 1 });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+    expect(useKeepLossStore.getState().lost).toEqual({ userId: 'user-a', count: 1 });
+  });
+
+  it('nothing lost notes nothing', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    mockGetSession.mockResolvedValue({ data: { session: null } });
+    mockFlush.mockResolvedValueOnce({ pendingCount: 4, quarantinedCount: 0, keepCount: 0 });
+    await discardInterruptedRecovery();
+    expect(useKeepLossStore.getState().lost).toBeNull();
   });
 });

@@ -33,6 +33,7 @@ import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useBetaShelf } from '../hooks/useBetaShelf';
 import { useAiConsentStore, loadAiConsent } from '../store/aiConsentStore';
+import { useKeepLossStore } from '../store/keepLossStore';
 import {
   SETTINGS_ROW_LABEL,
   SETTINGS_ROW_SUBLABEL,
@@ -150,11 +151,13 @@ export default function SettingsScreen() {
       const { error } = await supabase.auth.signOut();
       if (error) {
         useAuthStore.getState().setDeliberateSignOut(false);
+        useKeepLossStore.getState().consumeAccepted();
         console.warn('[Settings] sign out failed:', error.message);
         Alert.alert("Couldn't sign out", 'Check your connection and try again.');
       }
     } catch (e) {
       useAuthStore.getState().setDeliberateSignOut(false);
+      useKeepLossStore.getState().consumeAccepted();
       console.warn('[Settings] sign out threw:', e);
       Alert.alert("Couldn't sign out", 'Check your connection and try again.');
     }
@@ -191,7 +194,15 @@ export default function SettingsScreen() {
           }
           Alert.alert(warning.title, warning.message, [
             { text: 'Stay signed in', style: 'cancel' },
-            { text: 'Sign out anyway', style: 'destructive', onPress: doSignOut },
+            {
+              text: 'Sign out anyway',
+              style: 'destructive',
+              // The owner was told and chose: the SIGNED_OUT handler says nothing more (CUL-2573).
+              onPress: () => {
+                useKeepLossStore.getState().acceptNextSignOut();
+                void doSignOut();
+              },
+            },
           ]);
         },
       },

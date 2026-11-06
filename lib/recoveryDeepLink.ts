@@ -34,6 +34,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { flushForSignOut, purgeStoredAuthSession, wipeLocalSession } from './session';
+import { currentKeepUser, pendingKeepCount } from './reportKeep';
+import { useKeepLossStore } from '../store/keepLossStore';
 import type { RecoveryPhase } from './authRouting';
 import {
   useAuthStore,
@@ -285,8 +287,7 @@ export async function discardInterruptedRecovery(): Promise<boolean> {
     console.warn('[recovery] stopping token refresh failed:', e instanceof Error ? e.message : e));
   // Flush before the wipe, as the handler does (B-430): the death may have come before
   // its flush, and the rows are still the previous owner's to send under their session.
-  await flushForSignOut().catch((e) =>
-    console.warn('[recovery] pre-discard flush failed:', e instanceof Error ? e.message : e));
+  await flushThenNoteLoss('pre-discard');
   await wipeLocalSession();
   if (!(await purgeStoredAuthSession()) || !(await authHoldsNothing())) {
     store.setRecoveryInProgress(true);
@@ -439,12 +440,27 @@ export async function handleRecoveryDeepLink(
 
   // step 4: flush (best-effort, so a co-resident's unsynced queue is not destroyed
   // by the wipe — B-430) then wipe. NO signOut (that deletes the verifier).
-  await flushForSignOut().catch((e) =>
-    console.warn('[recovery] pre-wipe flush failed:', e instanceof Error ? e.message : e));
+  await flushThenNoteLoss('pre-wipe');
   await wipeLocalSession();
 
   // steps 5–8.
   await runExchangeAndFinalize(link.code);
+}
+
+/**
+ * B-430's flush before a recovery wipe, which asks nobody: then what it could not keep is noted,
+ * so the owner is told after the wipe (CUL-2573). The flush gives each waiting report copy its last
+ * try and returns how many still wait; a flush that throws is counted again from the ledger, so
+ * a failure never reads as nothing lost. Under auth-js's session, the one the flush sends with.
+ */
+async function flushThenNoteLoss(step: string): Promise<void> {
+  const lostUser = await currentKeepUser();
+  const counts = await flushForSignOut().catch((e: unknown) => {
+    console.warn(`[recovery] ${step} flush failed:`, e instanceof Error ? e.message : e);
+    return null;
+  });
+  const lost = counts ? counts.keepCount : await pendingKeepCount(lostUser);
+  useKeepLossStore.getState().note(lostUser, lost);
 }
 
 // Test seam only: reset the double-fire guard between cases.
