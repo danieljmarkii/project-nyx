@@ -198,7 +198,8 @@ export function printedLeadOf(storedHtml: string): string | null {
  * A COPY THAT PRINTS A SUMMARY (CUL-2523) is kept only when its one slot holds exactly the
  * draft's text, escaped as the slot escapes it (else `mismatch`), and only while the owner's
  * consent and the flags still allow a summary (`runGate(false)`, the gate's own reads, spending
- * nothing; else `withdrawn`). A slot over a draft whose text is gone (118's clear after a "no")
+ * nothing; else `withdrawn`). A gate whose refusal came from a read that failed is null, never
+ * a refusal: it is retried (CUL-2575). A slot over a draft whose text is gone (118's clear after a "no")
  * is `mismatch`: the record could only say "not printed" over a copy that printed it.
  *
  * A lead not on the sent copy leaves no model output behind in the verdict either: `sentences` and
@@ -217,7 +218,10 @@ export async function settleLeadForKeep(
   if (storedHtml.includes(LEAD_SLOT_MARK)) {
     if (draft.text === null || printedLeadOf(storedHtml) !== h(draft.text)) return { refused: 'mismatch' }
     const gate = await io.runGate(false)
-    if (!gate.allow) return { refused: 'withdrawn' }
+    // A read that failed says nothing about the owner's answer: null (500), so the client's retry
+    // and the next launch's drain ask again (CUL-2575). Every other "no" refuses for good, as
+    // ruled for withdrawal (CUL-2523 ruling (a)); which of the others should is still the PM's.
+    if (!gate.allow) return gate.unread ? null : { refused: 'withdrawn' }
     return { set: {}, unchanged }
   }
   const prior = verdictObject(draft.verdict)

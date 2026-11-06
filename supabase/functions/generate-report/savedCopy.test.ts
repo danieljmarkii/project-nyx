@@ -414,6 +414,21 @@ Deno.test('a pinned keep after a withdrawal is refused, never frozen with the su
   assert.deepEqual(await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.'])), { refused: 'withdrawn' })
 })
 
+Deno.test('a pinned keep whose consent, config or pet read failed is retried (500), never refused for good (CUL-2575)', async () => {
+  for (const reason of ['consent_declined', 'flag_off', 'pet_not_owned']) {
+    const unread = { allow: false, reason, scope: 'ai_boundary', flag: 'report_ai_lead', unread: true } as unknown as Awaited<ReturnType<SettleIO['runGate']>>
+    const io = leadIO('Cooper vomited on 3 days.', { outcome: 'printed', at: AT }, 'm', unread)
+    assert.equal(await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.'])), null, reason)
+  }
+  // End to end: the keep answers 500, which the phone retries, and the draft stays a draft.
+  const f = await savedOne()
+  await printingCopy(f, 'Cooper ate well.', { outcome: 'printed', at: AT }, 'm')
+  const gate = { allow: false, reason: 'consent_declined', scope: 'ai_boundary', unread: true } as unknown as Awaited<ReturnType<SettleIO['runGate']>>
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, (html) => settleLeadForKeep({ ...plainSettleIO(f), runGate: async () => gate }, html))
+  assert.equal(out.status, 500)
+  assert.equal(f.rows.get(ID)!.status, 'draft')
+})
+
 Deno.test('a refused settle answers 409 and leaves the draft a draft', async () => {
   const f = await savedOne()
   for (const refused of ['withdrawn', 'mismatch'] as const) {
