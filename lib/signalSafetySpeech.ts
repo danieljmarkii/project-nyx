@@ -1,7 +1,7 @@
 import type { CachedFinding } from './signal';
 import { careStateQuietsAsk } from './careState';
 import { foldIdentity } from './signalFold';
-import { incidentRedFlagSentenceAt } from './signalCopy';
+import { incidentAskLevel, incidentRedFlagSentenceAt, safetyAskLevel } from './signalCopy';
 
 // GAP-13 (CUL-1566; PMD-21 ruled (a), PM 2026-10-04): an escalation that reaches a focused
 // Home is SPOKEN once. "Safety is silent" means no sound and no haptic, never no speech: the
@@ -39,6 +39,56 @@ export function speakableSafety(findings: CachedFinding[]): CachedFinding[] {
 /** The identity a spoken arrival is remembered by: the fold's, so a re-rank is not new. */
 export function safetySpeechIdentity(cached: CachedFinding): string {
   return foldIdentity(cached.finding);
+}
+
+/**
+ * CUL-2604: how loud a spoken card's ask is, inside its identity. A card that keeps its identity
+ * while its ask gets louder (an eating card going to a call today, a burden card from "soon" to
+ * "today", a chronicity or worsening tier firming, a red-flag read moving to a call) is said again.
+ */
+export function safetySpeechLevel(cached: CachedFinding): number {
+  const f = cached.finding;
+  return f.type === 'incident_red_flag' ? incidentAskLevel(f) : safetyAskLevel(f);
+}
+
+/** What the zone remembers of a set it has said: each identity, with the ask level last heard. */
+export type HeardSafety = ReadonlyMap<string, number>;
+
+/**
+ * One answered set against what was heard before. A card arrives when its identity is new, or when
+ * its ask is louder than the level last heard for that identity (CUL-2604). An identity that left
+ * the set is forgotten, so a concern that comes back arrives again. A softer ask is never an
+ * arrival; it lowers what is held, so a later rise is said again. `heard` is what to hold if the
+ * arrivals are NOT said now; the zone marks them heard (`markHeard`) only once it speaks them.
+ */
+export function safetyArrivals(
+  prior: HeardSafety,
+  safety: CachedFinding[],
+): { arriving: CachedFinding[]; heard: Map<string, number> } {
+  // Identities are unique within one set by construction (`findingIdentity.engine.test.ts`).
+  const heard = new Map<string, number>();
+  const arriving: CachedFinding[] = [];
+  for (const f of safety) {
+    const id = safetySpeechIdentity(f);
+    const level = safetySpeechLevel(f);
+    const before = prior.get(id);
+    if (before === undefined || level > before) {
+      arriving.push(f);
+      // Unsaid, it keeps what it held (or nothing), so it stays an arrival until it is said.
+      if (before !== undefined) heard.set(id, before);
+    } else {
+      // The same ask or a softer one: held at the level now showing.
+      heard.set(id, level);
+    }
+  }
+  return { arriving, heard };
+}
+
+/** The held set once `arriving` has been said: each at the level it was said at. */
+export function markHeard(heard: ReadonlyMap<string, number>, arriving: CachedFinding[]): Map<string, number> {
+  const next = new Map(heard);
+  for (const f of arriving) next.set(safetySpeechIdentity(f), safetySpeechLevel(f));
+  return next;
 }
 
 function namesPet(sentence: string, name: string): boolean {

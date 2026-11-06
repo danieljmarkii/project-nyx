@@ -33,7 +33,7 @@ import { useWarningArrival } from '../motion/warningArrivalMotion';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { hasPlayedArrival, markArrivalPlayed } from '../../lib/signalArrival';
-import { safetyArrivalSpoken, safetySpeechIdentity, speakableSafety } from '../../lib/signalSafetySpeech';
+import { markHeard, safetyArrivals, safetyArrivalSpoken, speakableSafety, type HeardSafety } from '../../lib/signalSafetySpeech';
 import { announceQueued, useRowSpeech } from '../dayRow/rowSpeech';
 // CUL-601 §4's arrival tap, and the codebase's only exemption from the D7 scan. This
 // file IS a safety surface, and the silence-on-safety rule is intact here BY GATE
@@ -430,10 +430,15 @@ function useArrivalMoment({
  *  • It reads the set the stack RENDERS (`visibleFindings`, the caller's), so it never speaks
  *    a finding the owner cannot find on the card (G5 parity).
  *
- * SCOPE, stated so it is not read as coverage: an escalation INSIDE one identity is not an
- * arrival. A concern whose ask firms up (chronicity "a word with your vet" → "booking a
- * visit"), an intake decline whose day count grows, a second red-flag photo of the same
- * incident type while the first still stands: each keeps its identity and is not re-spoken.
+ *  • An ask that gets LOUDER inside one identity is an arrival too (CUL-2604): an intake card
+ *    going to a call today, a burden card from "soon" to "today", a chronicity or worsening
+ *    tier firming, a red-flag read moving to a call (`safetySpeechLevel`). A softer ask is
+ *    never said; it lowers what is held, so a later rise is said again.
+ *
+ * SCOPE, stated so it is not read as coverage: an escalation that does not move the ask is
+ * not an arrival. An intake decline whose day count grows, a second red-flag photo of the same
+ * incident type while the first still stands: each keeps its identity and level, and is not
+ * re-spoken.
  * The spoken sentence is the server's (`cached.text`); under Design v2 a counted row may show
  * a count re-composed from a fresher local record, so the spoken number can trail the row's
  * (never above it, never softer). Both are filed as follow-up, not built here.
@@ -455,26 +460,24 @@ function useSafetyArrivalSpeech({
 }): void {
   const speech = useRowSpeech();
   const appActive = useAppActive();
-  const held = useRef<{ petId: string | null; ids: Set<string> | null }>({ petId: null, ids: null });
+  const held = useRef<{ petId: string | null; heard: HeardSafety | null }>({ petId: null, heard: null });
   useEffect(() => {
-    if (held.current.petId !== petId) held.current = { petId, ids: null };
+    if (held.current.petId !== petId) held.current = { petId, heard: null };
     // C-12: only a set the read actually answered is a baseline or an arrival.
     if (!petId || !answered) return;
     const safety = speakableSafety(rendered);
-    const present = new Set(safety.map(safetySpeechIdentity));
-    const prior = held.current.ids;
+    const prior = held.current.heard;
     if (prior === null) {
-      held.current.ids = present;
+      held.current.heard = markHeard(new Map(), safety);
       return;
     }
-    // Forget what has left the set, so a concern that comes back arrives again.
-    const ids = new Set([...prior].filter((id) => present.has(id)));
-    held.current.ids = ids;
-    const arriving = safety.filter((f) => !ids.has(safetySpeechIdentity(f)));
+    // Forgets what left the set, and holds a softened ask at its new level (CUL-2604).
+    const { arriving, heard } = safetyArrivals(prior, safety);
+    held.current.heard = heard;
     if (arriving.length === 0) return;
     // Not in front: leave the arrival unconsumed, to be said when Home is.
     if (!appActive || !speech.mayAnnounce()) return;
-    for (const f of arriving) ids.add(safetySpeechIdentity(f));
+    held.current.heard = markHeard(heard, arriving);
     const spoken = safetyArrivalSpoken(petName, arriving, Date.now());
     if (spoken) announceQueued(spoken);
   }, [petId, petName, answered, rendered, speech, appActive]);

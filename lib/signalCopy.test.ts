@@ -1731,6 +1731,41 @@ it('the sweep covers every type the banner can carry (a new one must join it)', 
 });
 
 describe('selectCrossPetSafetyFinding', () => {
+  // CUL-2604: inside a lane the louder ask takes the banner; a pet's place in the list never does.
+  describe('a louder ask inside one lane leads (CUL-2604)', () => {
+    const soft = intakeDecline({ daysBelowBaseline: 1 });
+    const callToday = intakeDecline({ daysBelowBaseline: 1, allRefused: true });
+    const floor = intakeDecline({ trigger: 'sustained_refusal' });
+    it('a call-today intake card on a later pet takes the banner from a soft intake card', () => {
+      expect(selectCrossPetSafetyFinding([candidate('soft', [soft]), candidate('call', [callToday])])?.pet.id).toBe('call');
+      expect(selectCrossPetSafetyFinding([candidate('call', [callToday]), candidate('soft', [soft])])?.pet.id).toBe('call');
+    });
+    it('sustained refusal does too', () => {
+      const refusal = intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: 'Kibble' });
+      expect(selectCrossPetSafetyFinding([candidate('soft', [refusal]), candidate('floor', [floor])])?.pet.id).toBe('floor');
+    });
+    it('within a pet, the call-today card is the one the banner names', () => {
+      const refusal = intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: 'Kibble' });
+      expect(selectCrossPetSafetyFinding([candidate('A', [refusal, callToday])])?.finding).toBe(callToday);
+    });
+    it('a dog\'s all-refused card asks no louder, so list order still breaks the tie', () => {
+      const dogCall = intakeDecline({ species: 'dog', daysBelowBaseline: 2, allRefused: true });
+      expect(selectCrossPetSafetyFinding([candidate('soft', [soft]), candidate('dog', [dogCall])])?.pet.id).toBe('soft');
+    });
+    it('a burden "today" takes the banner from a burden "soon"', () => {
+      const soon = burden();
+      const today = burden({ persistenceArm: true, tier: 'today' });
+      expect(selectCrossPetSafetyFinding([candidate('soon', [soon]), candidate('today', [today])])?.pet.id).toBe('today');
+    });
+    it('never across a lane: a soft intake card still leads a burden "today", and a red flag leads both', () => {
+      const today = burden({ persistenceArm: true, tier: 'today' });
+      expect(selectCrossPetSafetyFinding([candidate('burden', [today]), candidate('intake', [soft])])?.pet.id).toBe('intake');
+      expect(selectCrossPetSafetyFinding([candidate('call', [callToday]), candidate('flag', [incidentRedFlag()])])?.pet.id).toBe('flag');
+      const firm = worsening({ tier: 'firm' });
+      expect(selectCrossPetSafetyFinding([candidate('w', [firm]), candidate('c', [chronicity({ tier: 'standard' })])])?.pet.id).toBe('c');
+    });
+  });
+
   it('returns null with no candidates', () => {
     expect(selectCrossPetSafetyFinding([])).toBeNull();
   });
