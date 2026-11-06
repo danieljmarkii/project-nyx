@@ -5679,28 +5679,30 @@ for (const [tz, now] of [
 // before they were replaced.
 // Re-captured at CUL-2443, which names the middle day an odd span leaves in neither half: a text
 // diff of all 21 renders against the merge-base differed only in that "Symptoms vs logging" line.
+// Re-recorded for CUL-2581: these trial fixtures run on a hydrolysed soy diet, so the trial line
+// now reads "Soy (hydrolysed)" (diffed: the only change in the rendered page).
 const CUL_2094_GOLDEN: Record<string, string> = {
-  'endedPast/America/Phoenix': '2af9f2fa7ffdda09',
-  'endedPast/window/America/Phoenix': '264129e3759e6b5b',
-  'endedToday/America/Phoenix': '584a6acba68e10bd',
-  'endedToday/window/America/Phoenix': '4ff3fd7fd71adebc',
-  'endedOnTarget/America/Phoenix': 'f6ed47a110851dca',
-  'endedOnTarget/window/America/Phoenix': '78c97c5fe24bfe2b',
-  'active/America/Phoenix': '3531145c16afd20c',
-  'endedPast/Pacific/Noumea': '2af9f2fa7ffdda09',
-  'endedPast/window/Pacific/Noumea': '264129e3759e6b5b',
-  'endedToday/Pacific/Noumea': '584a6acba68e10bd',
-  'endedToday/window/Pacific/Noumea': '4ff3fd7fd71adebc',
-  'endedOnTarget/Pacific/Noumea': 'f6ed47a110851dca',
-  'endedOnTarget/window/Pacific/Noumea': '78c97c5fe24bfe2b',
-  'active/Pacific/Noumea': '060dc0d0a7663a21',
-  'endedPast/UTC': '2af9f2fa7ffdda09',
-  'endedPast/window/UTC': '264129e3759e6b5b',
-  'endedToday/UTC': '584a6acba68e10bd',
-  'endedToday/window/UTC': '4ff3fd7fd71adebc',
-  'endedOnTarget/UTC': 'f6ed47a110851dca',
-  'endedOnTarget/window/UTC': '78c97c5fe24bfe2b',
-  'active/UTC': '3531145c16afd20c',
+  'endedPast/America/Phoenix': '2ca9d025dc4f7dce',
+  'endedPast/window/America/Phoenix': 'e31eed18a8d69511',
+  'endedToday/America/Phoenix': 'cdff697079358379',
+  'endedToday/window/America/Phoenix': '43900bec3b050697',
+  'endedOnTarget/America/Phoenix': '9c2e6760f16a6fc4',
+  'endedOnTarget/window/America/Phoenix': '467c35cc0c46a2c5',
+  'active/America/Phoenix': '27ef27591220c685',
+  'endedPast/Pacific/Noumea': '2ca9d025dc4f7dce',
+  'endedPast/window/Pacific/Noumea': 'e31eed18a8d69511',
+  'endedToday/Pacific/Noumea': 'cdff697079358379',
+  'endedToday/window/Pacific/Noumea': '43900bec3b050697',
+  'endedOnTarget/Pacific/Noumea': '9c2e6760f16a6fc4',
+  'endedOnTarget/window/Pacific/Noumea': '467c35cc0c46a2c5',
+  'active/Pacific/Noumea': 'e4c89bf6a51923a0',
+  'endedPast/UTC': '2ca9d025dc4f7dce',
+  'endedPast/window/UTC': 'e31eed18a8d69511',
+  'endedToday/UTC': 'cdff697079358379',
+  'endedToday/window/UTC': '43900bec3b050697',
+  'endedOnTarget/UTC': '9c2e6760f16a6fc4',
+  'endedOnTarget/window/UTC': '467c35cc0c46a2c5',
+  'active/UTC': '27ef27591220c685',
 }
 
 Deno.test('CUL-2094 — every trial the fix does not reach renders byte-identically (before/after)', async () => {

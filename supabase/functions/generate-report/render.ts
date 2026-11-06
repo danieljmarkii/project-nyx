@@ -364,7 +364,30 @@ export function fmtLocalDay(iso: string, tz: string | null): string {
   return fmtDay(new Date(ms).toISOString().slice(0, 10))
 }
 
-/** An ISO instant → owner-local "HH:MM" 24h (falls back to UTC on a bad tz). */
+/**
+ * CUL-2391 — whether `tz` is a zone this report can print in. Null and a name `Intl` rejects both
+ * fall back to UTC, and every surface that falls back says so: an unlabelled UTC minute reads as
+ * local, so a 09:00 New York meal printed as "13:00" and a refusing cat's last meal read hours off.
+ */
+export function zoneUsable(tz: string | null): boolean {
+  if (!tz) return false
+  try {
+    dateTimeFormat('en-GB', { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** " (UTC)" when `tz` is not usable (CUL-2391), else ''. The one marker both renderers use. */
+export function utcMarker(tz: string | null): string {
+  return zoneUsable(tz) ? '' : ' (UTC)'
+}
+
+/**
+ * An ISO instant → owner-local "HH:MM" 24h. With no usable zone it prints UTC AND SAYS SO
+ * ("13:00 (UTC)", CUL-2391): the fallback used to be silent.
+ */
 export function fmtLocalTime(iso: string, tz: string | null): string {
   const ms = Date.parse(iso)
   if (Number.isNaN(ms)) return '—'
@@ -380,7 +403,7 @@ export function fmtLocalTime(iso: string, tz: string | null): string {
       /* invalid IANA zone → UTC fallback */
     }
   }
-  return new Date(ms).toISOString().slice(11, 16)
+  return `${new Date(ms).toISOString().slice(11, 16)} (UTC)`
 }
 
 /**
@@ -1748,7 +1771,22 @@ function letterhead(snap: ReportSnapshot): string {
     </div>
   </div>
   <div class="rule-brand"></div>
-  <div class="orient">Clinical summary first; appendices A&ndash;${lastAppendix} and a legend follow: the reference record behind every figure.</div>`
+  <div class="orient">Clinical summary first; appendices A&ndash;${lastAppendix} and a legend follow: the reference record behind every figure.</div>${
+    // CUL-2391 (cold read at the bundle's head): a grey clause in the orient line went unseen, so
+    // the no-zone notice is its own bordered line, the page-1 disclosure register.
+    zoneUsable(snap.timezone) ? '' : `<div class="cherry">${utcNotice(snap.timezone).trim()}</div>`
+  }`
+}
+
+/**
+ * CUL-2391 — the one line that covers every DATE on the page when no usable zone is on record.
+ * Clock times carry their own "(UTC)"; a bare day cannot, and an evening event west of UTC lands
+ * on the next day. Said once, at the top, where a reader meets the first date.
+ */
+export function utcNotice(tz: string | null): string {
+  return zoneUsable(tz)
+    ? ''
+    : ' <b>Every date and time on this report is in UTC:</b> no usable time zone is on record for this pet, so a time can be hours off the owner\'s local clock and an evening event can fall on the next day.'
 }
 
 /**
@@ -2936,6 +2974,10 @@ export function safetyFlagRow(
       // read, so the row states the counts and says why no comparison is offered, never "below
       // baseline". The counts are the engine's, over the window it names.
       const sr = f.trigger === 'sustained_refusal' ? f.sustainedRefusal : null
+      // CUL-2589 (PM ruling (1) on CUL-2424, 2026-11-05): a run where every recent rated meal was
+      // refused is said as refusal, never "reduced intake" or "below baseline", which read as a pet
+      // eating less when she ate nothing anyone saw. The engine's fact, never re-derived here.
+      const refusedAll = f.trigger === 'consecutive_low' && f.allRefused === true
       const detail = sr
         ? `<b>No watched meal rated in the ${num(sr.windowHours)}&nbsp;h to ${
             sr.endIso ? h(fmtLocalDay(sr.endIso, tz)) : 'the end of this window'
@@ -2952,12 +2994,16 @@ export function safetyFlagRow(
           ? `This pet <b>refused a food it normally eats</b>${
               f.refusedFoodLabel ? ` (${h(f.refusedFoodLabel)})` : ''
             }.${baselineBit}`
-          : `Intake has been <b>below this pet's baseline for ${num(f.daysBelowBaseline)} consecutive day${
-              f.daysBelowBaseline === 1 ? '' : 's'
-            }</b>.${baselineBit}`
+          : refusedAll
+            ? `<b>Every recent rated meal was refused</b>, on ${num(f.daysBelowBaseline)} consecutive day${
+                f.daysBelowBaseline === 1 ? '' : 's'
+              }.${baselineBit}`
+            : `Intake has been <b>below this pet's baseline for ${num(f.daysBelowBaseline)} consecutive day${
+                f.daysBelowBaseline === 1 ? '' : 's'
+              }</b>.${baselineBit}`
       return row(
         'Intake',
-        `<b>Reduced intake.</b> ${detail}${trajectoryBit}${durationBit}${freeFedBit}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;${appendixBit}`,
+        `<b>${refusedAll ? 'Refused every rated meal.' : 'Reduced intake.'}</b> ${detail}${trajectoryBit}${durationBit}${freeFedBit}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;${appendixBit}`,
       )
     }
     case 'chronicity': {
@@ -3412,13 +3458,18 @@ function headline(snap: ReportSnapshot): string {
     const availabilityBit = breach.freeFed.length
       ? ` (some of it${breach.fromSharedBowl ? ' in a bowl shared with another pet' : ' free-fed'}; intake not directly observed)`
       : ''
-    const breachBit = breachNames.length
+    const breachBitBase = breachNames.length
       ? ` <b>The record shows ${h(proteinList(breachNames.map(capProtein)))} in ${h(
           snap.signalment.name,
         )}&rsquo;s diet during the trial${availabilityBit}</b> — see the diet section before reading the trial as a result.`
       : breach.targetUnknown
         ? ` <b>No main protein is recorded for the trial food, so its other proteins cannot be checked against the trial.</b> Its full set is in appendix&nbsp;B.`
         : ''
+    // CUL-2581 (stopgap; cold read at the bundle's head, QUIET): intact protein beside a hydrolysed
+    // trial diet is the breach such a trial cares about, and it sat only in the diet section while
+    // this line named a different protein. Said here too; no count moves.
+    const intact = hydrolysedIntactText(snap)
+    const breachBit = `${breachBitBase}${intact ? ` <b>${h(intact.lead)}</b> See the diet section.` : ''}`
     // PRESENT TENSE IS A CLAIM. A trial the owner completed or stopped still
     // describes this report (§7's day-after-completion AC), and "Tracking X as a
     // diet trial — day 19 of 28" over a diet the cat came off three weeks ago is
@@ -3714,6 +3765,34 @@ export function weightFlagIntakeBit(snap: ReportSnapshot): string {
 //     structurally incapable of reading as one that was followed (the round-1b
 //     Jordan finding: "All 54 matched the trial diet" three lines above "wouldn't
 //     eat it").
+/**
+ * CUL-2581 (stopgap; the wording and whether these foods count as off-diet await a clinical
+ * ruling) — the foods listing the trial's protein INTACT beside a hydrolysed trial diet, as plain
+ * text both renderers share (v1's trial block escapes it, v2's record line is escaped by its
+ * renderer). Null when the trial is not read as hydrolysed or no such food was fed.
+ *
+ * LOUD BY CONSTRUCTION: it names every such food and says plainly that the report's counts do not
+ * include them, so a clean off-diet tally beside it cannot read as a clean trial.
+ */
+export function hydrolysedIntactText(snap: ReportSnapshot): { lead: string; rest: string } | null {
+  const ht = snap.diet.hydrolysedTrial
+  if (!ht || ht.intactFoods.length === 0) return null
+  const p = ht.protein
+  const list = ht.intactFoods
+    .map((f) =>
+      f.kind === 'free_fed'
+        ? `${f.foodLabel} (free-fed bowl)`
+        : `${f.foodLabel} ×${f.feedings}`,
+    )
+    .join(', ')
+  return {
+    lead: `${capProtein(p)} fed intact beside a hydrolysed ${p} trial diet.`,
+    rest: `${ht.intactFoods.length === 1 ? 'This food is' : 'These foods are'} recorded with ${p}, with nothing saying it is hydrolysed: ${list}. Intact ${p} is the exposure a hydrolysed ${p} trial is meant to exclude; ${
+      ht.intactFoods.length === 1 ? 'it is' : 'they are'
+    } not counted as off-diet anywhere on this report.`,
+  }
+}
+
 export function dietTrialSection(snap: ReportSnapshot): string {
   const t = snap.trial
   if (!t) return ''
@@ -3782,7 +3861,7 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     // one, which is why no artifact was blocked by it — and why one delimiter fixes it
     // on all four.
     protein
-      ? `Elimination diet trial &mdash; <b>${h(capProtein(protein))}</b> &middot; ${trialDayPhrase(
+      ? `Elimination diet trial &mdash; <b>${h(capProtein(protein))}${snap.diet.hydrolysedTrial ? ' (hydrolysed)' : ''}</b> &middot; ${trialDayPhrase(
           t,
           t.targetDurationDays,
           identityDay === fmtDayYear,
@@ -3830,6 +3909,10 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   if (t.vetName) identity.push(`Trial directed by ${h(t.vetName)}.`)
   if (t.stoppedReason) identity.push(`<b>${h(stoppedReasonLine(snap.signalment.name, t.stoppedReason, t))}</b>`)
   rows.push(kv('Trial', identity.join(' ')))
+  // CUL-2581 (stopgap): intact protein beside a hydrolysed trial diet, said directly under the
+  // trial it threatens. Display only; the ruling on counting it is the PM's.
+  const intactLine = hydrolysedIntactText(snap)
+  if (intactLine) rows.push(kv('Intact protein', `<b>${h(intactLine.lead)}</b> ${h(intactLine.rest)}`))
   // ── ITS OWN ROW, AND AFTER THE NAME — THE FOURTH COLD READ'S FINDING ────────
   //
   // Three rounds of copy repair fought this as a wording problem and it was a LAYOUT
@@ -6961,11 +7044,23 @@ function noticedStrip(snap: ReportSnapshot, n: NoticedBlock): string {
   const spoken = s.wordDaysInSpan
     .map((w) => `${h(w.label)} on ${num(w.dayCount)} of the ${num(s.answeredDays)} answered here`)
     .join(' &middot; ')
+  // CUL-2444: "Scratching more falls entirely before this span" read as "the scratching stopped"
+  // (to a hurried reader and to a clinic's summariser), from absence over ANSWERED days. It now
+  // says what the record holds: marked before the span, on none of the answered days in it, and
+  // nothing either way on the days nobody answered. No decline word, so the extraction check's
+  // decline detector has nothing to cut.
+  const unanswered = s.days.length - s.answeredDays
   const absent =
     s.wordsAbsentInSpan.length > 0
-      ? `${s.wordDaysInSpan.length > 0 ? ' &middot; ' : ''}${s.wordsAbsentInSpan
-          .map((w) => h(w.label))
-          .join(', ')} ${s.wordsAbsentInSpan.length === 1 ? 'falls' : 'fall'} entirely before this span`
+      ? `${s.wordDaysInSpan.length > 0 ? ' &middot; ' : ''}${s.wordsAbsentInSpan.map((w) => h(w.label)).join(', ')}: marked before this span${
+          s.answeredDays > 0
+            ? `, on none of the ${num(s.answeredDays)} day${s.answeredDays === 1 ? '' : 's'} answered in it${
+                unanswered > 0
+                  ? `; the ${num(unanswered)} day${unanswered === 1 ? '' : 's'} not answered say nothing either way`
+                  : ''
+              }`
+            : '; no day in it was answered'
+        }`
       : ''
   const reconcile = spoken || absent ? `<div class="ns-words">${spoken}${absent}.</div>` : ''
   // BOTH sides of this count are answered days (§6.11's lesson, applied to a caption):
@@ -7132,7 +7227,9 @@ function trialTiles(snap: ReportSnapshot): string[] {
       tile(
         `${intake.daysBelowBaseline}`,
         `<small>&nbsp;d</small>`,
-        `Consecutive days below intake baseline<br/>a health signal, not preference`,
+        intake.allRefused === true
+          ? `Consecutive days every rated meal was refused<br/>a health signal, not preference`
+          : `Consecutive days below intake baseline<br/>a health signal, not preference`,
       ),
     )
   } else if (snap.diet.mealCompletion) {
@@ -7993,6 +8090,9 @@ export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
           }${h(contentsLabel(c))} &times;${p.contentsMix[c]}`,
       )
       .join('&nbsp;&middot;&nbsp; ')
+    // CUL-2412 instance 1: the bar spans the full width over the legible reads only, under a line
+    // that counts every incident. The key now names the bar's own population first.
+    keyHtml = `Contents, from ${assessed === 1 ? 'the one legible read' : `the ${num(assessed)} legible reads`}: ${keyHtml}`
   } else {
     mixHtml = `<div class="seg" style="flex:1;background:#c7c9ce;color:#16181d">no legible read yet</div>`
   }
@@ -8000,7 +8100,17 @@ export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
   // Consistency: name the most-common deterministically (no average). On a TIE for the
   // top count, say so rather than picking one — asserting "most often foamy" when foamy
   // and watery are 2–2 is a false majority (cold-read).
-  const consistBit = predominantBit(p.consistencyDistribution, 'Consistency, where legible,', (k) => k.replace(/_/g, ' '))
+  // CUL-2412 instance 3: a tally, every value with its count, never "most often X" (which dropped
+  // the minority reading a vet needs), over the field's own denominator (`distributionBit`'s rule).
+  // 'unsure' is the model declining to read the field, never a consistency (the colour tally drops it
+  // in report.ts); it is left out here and its read out of the denominator.
+  const consistDist = Object.fromEntries(Object.entries(p.consistencyDistribution).filter(([k]) => k !== 'unsure'))
+  const consistReads = Object.values(consistDist).reduce((a, b) => a + b, 0)
+  const consistBit = distributionBit(
+    consistDist,
+    `Consistency, from ${consistReads === 1 ? 'the one read' : `the ${num(consistReads)} reads`} where it was legible:`,
+    (k) => k.replace(/_/g, ' '),
+  )
 
   // COLOUR, TALLIED — the field the box was aggregating everything BUT (CUL-981). It sits here,
   // beside the blood caveat, because that is the sentence a clinician reads immediately before
@@ -8017,9 +8127,9 @@ export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
   const noPhoto = p.totalIncidents - p.withAnalysis
   const stateBits: string[] = []
   if (p.states.uncertain) stateBits.push(`${p.states.uncertain} uncertain`)
-  if (p.states.failed) stateBits.push(`${p.states.failed} not legible`)
+  if (p.states.failed) stateBits.push(`${p.states.failed} not read (analysis did not complete)`)
   if (p.states.pending) stateBits.push(`${p.states.pending} still processing`)
-  if (noPhoto > 0) stateBits.push(`${noPhoto} without a photo`)
+  if (noPhoto > 0) stateBits.push(`${noPhoto} with no photo read on record`)
   const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
   const denom = `Across ${p.totalIncidents === 1 ? 'the' : 'all'} ${num(p.totalIncidents)} vomiting incident${
     p.totalIncidents === 1 ? '' : 's'
@@ -8100,28 +8210,9 @@ export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
 }
 
 /**
- * Predominant-category line with a tie-safe majority (mirrors vomitCharacteristics). Names the
- * single most-common entry, or says "no single predominant" on a tie — never asserts a false
- * majority. `label` maps the enum key to display text. Empty distribution ⇒ ''.
- */
-function predominantBit(
-  dist: Record<string, number>,
-  lead: string,
-  label: (k: string) => string,
-): string {
-  const entries = Object.entries(dist).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-  if (entries.length === 0) return ''
-  const maxN = entries[0][1]
-  const tied = entries.filter(([, n]) => n === maxN).map(([k]) => label(k))
-  return tied.length === 1
-    ? ` ${lead} was most often ${h(tied[0])}.`
-    : ` ${lead} had no single predominant reading (${h(tied.slice(0, 3).join(', '))}).`
-}
-
-/**
  * The same distribution, TALLIED rather than ranked — `lead: a ×6 · b ×1 · c ×1.`
  *
- * WHY NOT `predominantBit` (CUL-981). Its sibling above states a majority, which is a claim about
+ * WHY NOT A MAJORITY LINE (CUL-981; the stool and consistency lines followed, CUL-2412). A modal line states a majority, which is a claim about
  * which reading dominates; the colour tally is explicitly forbidden from ranking, interpreting or
  * flagging, and "was most often tan" is a ranking with the other three readings deleted. A vet
  * reaching for colour after the blood caveat wants the whole spread — one green in nine is the
@@ -8242,9 +8333,10 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
     : `<br/><b>Logging change not checked:</b> whether the owner's app added a dedicated normal-stool entry during this window could not be read, so the normal to loose ratio may shift for that reason. If it did, a fall in loose stools may partly reflect borderline stools now logged as normal.`
 
   const ai = st.ai
-  const aiTag = ai
-    ? '<span class="aitag">Automated photo analysis &middot; owner-reviewable</span>'
-    : `<span class="aside">${num(st.total)} stool event${st.total === 1 ? '' : 's'} · owner-described</span>`
+  // CUL-2412 instance 2: the heading is the owner-logged bar's, so it always says owner-described.
+  // The AI badge used to replace it whenever any stool photo was read, which put the owner's own
+  // normal / loose counts under "Automated photo analysis". The badge now heads the photo-read line.
+  const aiTag = `<span class="aside">${num(st.total)} stool event${st.total === 1 ? '' : 's'} · owner-described</span>`
 
   // The right-hand column: present-only blood/mucus when a photo was read; else the pre-AI limitation.
   let sideHtml: string
@@ -8312,18 +8404,27 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
   // The automated descriptive line (Bristol + colour + four-state denominator), when a photo was read.
   let aiLine = ''
   if (ai) {
-    const bristolBit = predominantBit(ai.consistencyDistribution, 'Consistency, where legible,', (k) => BRISTOL_LABEL[k] ?? k.replace(/_/g, ' '))
-    const colourBit = predominantBit(ai.colourDistribution, 'Colour, where legible,', (k) => STOOL_COLOUR_LABEL[k] ?? k.replace(/_/g, ' '))
+    // CUL-2412 instances 3 and 4: every Bristol type and colour TALLIED with its count over the
+    // field's own reads (a modal "most often Type 6" hid the one Type 7, red-streaked stool), and the
+    // line counted over the PHOTOGRAPHED events, never "all 12 stool events": that pooled normal
+    // and loose logs into one denominator under a counts-only line, inviting a share.
+    const tally = (dist: Record<string, number>, field: string, label: (k: string) => string): string => {
+      const reads = Object.values(dist).reduce((a, b) => a + b, 0)
+      return distributionBit(dist, `${field}, from ${reads === 1 ? 'the one read' : `the ${num(reads)} reads`} where it was legible:`, label)
+    }
+    const bristolBit = tally(ai.consistencyDistribution, 'Consistency', (k) => BRISTOL_LABEL[k] ?? k.replace(/_/g, ' '))
+    const colourBit = tally(ai.colourDistribution, 'Colour', (k) => STOOL_COLOUR_LABEL[k] ?? k.replace(/_/g, ' '))
     const noPhoto = ai.totalIncidents - ai.withAnalysis
     const stateBits: string[] = []
     if (ai.states.uncertain) stateBits.push(`${ai.states.uncertain} uncertain`)
-    if (ai.states.failed) stateBits.push(`${ai.states.failed} not legible`)
+    if (ai.states.failed) stateBits.push(`${ai.states.failed} not read (analysis did not complete)`)
     if (ai.states.pending) stateBits.push(`${ai.states.pending} still processing`)
-    if (noPhoto > 0) stateBits.push(`${noPhoto} without a photo`)
     const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
-    aiLine = `<br/>Across ${ai.totalIncidents === 1 ? 'the' : 'all'} ${num(ai.totalIncidents)} stool event${
-      ai.totalIncidents === 1 ? '' : 's'
-    }; ${legibleReadCount(ai.assessedCount)} a legible AI read${stateDisclosure}.${bristolBit}${colourBit} Bristol type is the AI's read of the photo, for the owner to confirm; it is not a diagnosis.`
+    aiLine = `<br/><span class="aitag">Automated photo analysis &middot; owner-reviewable</span> Photo reads cover ${num(ai.withAnalysis)} of the ${num(
+      ai.totalIncidents,
+    )} stool event${ai.totalIncidents === 1 ? '' : 's'}${noPhoto > 0 ? ` (${num(noPhoto)} with no photo read on record)` : ''}; of those, ${legibleReadCount(
+      ai.assessedCount,
+    )} a legible AI read${stateDisclosure}.${bristolBit}${colourBit} Bristol type is the AI's read of the photo, for the owner to confirm; it is not a diagnosis.`
   }
 
   return `
@@ -9881,7 +9982,7 @@ function appendixA(snap: ReportSnapshot): string {
  * The owner-reviewable, PRESENT-only photo-analysis fields as one inline string — shared by
  * Appendix A's symptom log AND Appendix E's incident-photo caption, so the two can never phrase the
  * same read differently. Completed → colour · contents · consistency · (present-only) blood/foreign;
- * a failed / uncertain read → "not clear enough to read"; a pending one → "not read yet" (never a
+ * a failed read → "photo not read", an uncertain one → "findings not shown" (CUL-2416); a pending one → "still processing" (never a
  * positive "no", §5.9).
  * Returns '' when there is no phenotype. NEVER an n=1 verdict/recommendation.
  */
@@ -9889,30 +9990,21 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null, stateWords = false):
   if (!ph) return ''
   if (ph.status === 'completed') {
     // PRESENT-only (§5.9): render blood/foreign/mucus ONLY when present; silence otherwise.
-    const bits =
-      ph.kind === 'stool'
+    const bits = [
+      ...(ph.kind === 'stool'
         ? [
             ph.bristol ? `consistency ${h(BRISTOL_LABEL[ph.bristol] ?? ph.bristol.replace(/_/g, ' '))}` : null,
             ph.stoolColour ? `colour ${h(STOOL_COLOUR_LABEL[ph.stoolColour] ?? ph.stoolColour.replace(/_/g, ' '))}` : null,
-            ph.stoolBlood
-              ? `<b>blood ${
-                  ph.stoolBlood === 'fresh_red'
-                    ? 'possible fresh red (haematochezia)'
-                    : ph.stoolBlood === 'dark_tarry'
-                    ? 'possible black/tarry (melena)'
-                    : 'possible (subtype unread)'
-                } (AI, unconfirmed)</b>`
-              : null,
-            // Mucus is monitor-tier (D5) — surfaced, present-only, but NOT bolded like a red flag.
-            ph.mucusPresent ? `mucus present (AI, unconfirmed)` : null,
-          ].filter(Boolean)
+          ]
         : [
             ph.colour ? `colour ${h(ph.colour)}` : null,
             ph.contentsCategory ? `contents ${h(contentsLabel(ph.contentsCategory).toLowerCase())}` : null,
             ph.consistency ? `consistency ${h(ph.consistency.replace(/_/g, ' '))}` : null,
-            ph.bloodPresent ? `<b>blood ${ph.bloodPresent === 'fresh_red' ? 'possible fresh red' : 'possible coffee-ground'} (AI, unconfirmed)</b>` : null,
-            ph.foreignPresent ? `<b>foreign material possible (AI, unconfirmed)${ph.foreignNote ? ` — ${h(ph.foreignNote)}` : ''}</b>` : null,
-          ].filter(Boolean)
+          ]
+      ).filter((x): x is string => x !== null),
+      // Mucus is monitor-tier (D5): surfaced, present-only, not bolded like a red flag.
+      ...presentFlagBits(ph),
+    ]
     // v2's event log names every read's state in words, completed included (spec §6.1, GAP-32):
     // a completed read with no present field otherwise prints "Photo:" and nothing, which a
     // reader cannot tell from a read that never ran. v1 keeps its own row.
@@ -9922,10 +10014,44 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null, stateWords = false):
   // there was nothing worth asking to see. Pending says pending, anchored to the report so a vet
   // does not wait on a read that may never come; failed and uncertain were read
   // and keep the legibility wording.
-  if (ph.status === 'failed') return 'present but not legible — not clear enough to read'
-  if (ph.status === 'uncertain') return 'read uncertain — not clear enough to read'
-  return 'still processing — not read as of this report'
+  // CUL-2416: uncertain and failed shared "not clear enough to read", so a hedged read (which may
+  // have hinted at blood) read the same as no read, and "present" read as "finding present". Each
+  // now says what happened to that photo, and both send the vet to the photo itself.
+  //
+  // A PRESENT red flag still prints first (adversarial pass 1, QUIET, pre-existing): the bout's
+  // blood / foreign / mucus flags are unioned over every member, so the band could say "Possible
+  // blood, Oct 11" while this row, its own source, said only "findings not shown".
+  const present = presentFlagBits(ph)
+  const lead = present.length > 0 ? `${present.join(' &middot; ')} &middot; ` : ''
+  if (ph.status === 'failed') return `${lead}photo not read (the analysis did not complete); ask to see the photo`
+  if (ph.status === 'uncertain') return `${lead}read uncertain, findings not shown; ask to see the photo`
+  return `${lead}still processing — not read as of this report`
 }
+
+/** The PRESENT-only red flags a phenotype carries (§5.9), whatever its read state. */
+function presentFlagBits(ph: SymptomLogPhenotype): string[] {
+  const out: string[] = []
+  if (ph.kind === 'stool') {
+    if (ph.stoolBlood)
+      out.push(
+        `<b>blood ${
+          ph.stoolBlood === 'fresh_red'
+            ? 'possible fresh red (haematochezia)'
+            : ph.stoolBlood === 'dark_tarry'
+              ? 'possible black/tarry (melena)'
+              : 'possible (subtype unread)'
+        } (AI, unconfirmed)</b>`,
+      )
+    if (ph.mucusPresent) out.push('mucus present (AI, unconfirmed)')
+  } else {
+    if (ph.bloodPresent) out.push(`<b>blood ${ph.bloodPresent === 'fresh_red' ? 'possible fresh red' : 'possible coffee-ground'} (AI, unconfirmed)</b>`)
+    if (ph.foreignPresent) out.push(`<b>foreign material possible (AI, unconfirmed)${ph.foreignNote ? ` — ${h(ph.foreignNote)}` : ''}</b>`)
+  }
+  return out
+}
+
+/** The incident types the owner can photograph for a read (vomit, stool); a cough row has none. */
+const PHOTO_BEARING_TYPES: ReadonlySet<string> = new Set(['vomit', 'stool_normal', 'diarrhea'])
 
 function symptomLogRow(e: SymptomLogEntry, tz: string | null, uniformSeen = false, stateWords = false): string {
   const dateCell = fmtLocalDay(e.occurredAt, tz)
@@ -9939,6 +10065,18 @@ function symptomLogRow(e: SymptomLogEntry, tz: string | null, uniformSeen = fals
     // rather than only as a count on the photos sheet: the findings are what a vet acts on.
     const gone = e.photoRemoved ? ` <span class="conf">photo no longer retained</span>` : ''
     noteCell += `<span class="fields"><b>Photo:</b> ${phenotypeFieldBits(e.phenotype, stateWords)}${gone}</span>`
+  } else if (PHOTO_BEARING_TYPES.has(e.type)) {
+    // CUL-2442: a vomit or stool row with no read printed a bare dash, which a vet cannot tell from
+    // a read gone missing. Said in words, like every read state above; beside a note too, since a
+    // note alone says nothing about a photo. `photoAttached` absent (an older snapshot) says the
+    // record cannot tell, never "no photo".
+    const said =
+      e.photoAttached === true
+        ? 'photo attached, no read on record'
+        : e.photoAttached === false
+          ? 'no photo'
+          : 'no photo read'
+    noteCell += `<span class="fields"><b>Photo:</b> ${said}</span>`
   }
   return `<tr><td class="num">${h(dateCell)}</td><td>${h(symptomLabel(e.type))}</td><td>${occCell}${dup}</td><td class="num">${h(
     logged,
