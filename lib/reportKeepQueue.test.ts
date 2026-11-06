@@ -27,7 +27,7 @@ import {
   pendingKeepMissNotice,
   type KeepAnswer,
 } from './reportKeep';
-import { useKeepLossStore, keepLossNotice, mayHearKeepLoss } from '../store/keepLossStore';
+import { ACCEPT_WINDOW_MS, useKeepLossStore, keepLossNotice, mayHearKeepLoss } from '../store/keepLossStore';
 import { clearKeepSessionState, keepsAnswered, keepsInFlight, missesAwaitingAck, sqliteKeepLedger, type KeepLedger, type LedgerDb, type PendingKeep } from './reportKeepLedger';
 
 const PET = '11111111-2222-4333-8444-555555555555';
@@ -315,7 +315,7 @@ describe('a ledger row belongs to its account (CUL-2576)', () => {
 
 describe('a forced sign-out says what its wipe took (CUL-2573)', () => {
   const row = (over: Partial<PendingKeep> = {}): PendingKeep => ({ reportId: ID, petId: PET, sharedVia: 'email', queuedAt: new Date(T0).toISOString(), userId: 'user-a', ...over });
-  beforeEach(() => useKeepLossStore.setState({ lost: null, accepted: false }));
+  beforeEach(() => useKeepLossStore.setState({ lost: null, accepted: null }));
 
   it("an unconfirmed SIGNED_OUT notes the account's waiting copies, and only its own", async () => {
     const { ledger } = memoryLedger([row(), row({ reportId: ID2 }), row({ reportId: 'x', userId: 'user-b' })]);
@@ -329,6 +329,13 @@ describe('a forced sign-out says what its wipe took (CUL-2573)', () => {
     await noteSignedOutKeepLoss({ userId: 'user-a', justDeletedAccount: false }, ledger);
     expect(useKeepLossStore.getState().lost).toBeNull();
     // The acceptance is one-shot: the next forced sign-out is said.
+    await noteSignedOutKeepLoss({ userId: 'user-a', justDeletedAccount: false }, ledger);
+    expect(useKeepLossStore.getState().lost).toEqual({ userId: 'user-a', count: 1 });
+  });
+
+  it('an acceptance whose sign-out never came is spent after a minute: the next forced one is said', async () => {
+    const { ledger } = memoryLedger([row()]);
+    useKeepLossStore.getState().acceptNextSignOut(Date.now() - ACCEPT_WINDOW_MS - 1);
     await noteSignedOutKeepLoss({ userId: 'user-a', justDeletedAccount: false }, ledger);
     expect(useKeepLossStore.getState().lost).toEqual({ userId: 'user-a', count: 1 });
   });

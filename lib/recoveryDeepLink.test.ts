@@ -733,7 +733,7 @@ describe('handleRecoveryDeepLink waits for a reconcile in flight (rls-privacy-re
 describe('a recovery wipe notes the report copies it could not keep (CUL-2573)', () => {
   const { useKeepLossStore } = jest.requireActual('../store/keepLossStore') as typeof import('../store/keepLossStore');
   beforeEach(() => {
-    useKeepLossStore.setState({ lost: null, accepted: false });
+    useKeepLossStore.setState({ lost: null, accepted: null });
   });
 
   it('discarding an interrupted reset notes the flush count', async () => {

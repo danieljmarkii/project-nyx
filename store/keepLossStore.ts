@@ -9,25 +9,30 @@ import { create } from 'zustand';
 // after the wipe, to the account that lost it.
 //
 // Memory only, on purpose. It holds a count and the id of the account it belongs to, never a
-// report, a pet or a time, so it names nothing a wipe exists to remove; it is not cleared by the
+// report, a pet or a send time, so it names nothing a wipe exists to remove; it is not cleared by the
 // wipe (the wipe is what it reports on). An app killed before the notice shows loses the line:
 // the same bound as every in-memory notice here.
 interface KeepLossState {
   /** The account whose copies were lost (null when it could not be read), and how many. */
   lost: { userId: string | null; count: number } | null;
-  /** Set by the one sign-out that already warned the owner and was confirmed: its loss is said. */
-  accepted: boolean;
+  /** When the one sign-out that already warned the owner was confirmed (epoch ms), or null. */
+  accepted: number | null;
   note: (userId: string | null, count: number) => void;
   /** The pending loss, cleared. */
   take: () => { userId: string | null; count: number } | null;
-  acceptNextSignOut: () => void;
-  /** True once, after `acceptNextSignOut`; any later call is false. */
-  consumeAccepted: () => boolean;
+  acceptNextSignOut: (now?: number) => void;
+  /** True once, within ACCEPT_WINDOW_MS of `acceptNextSignOut`; any later call is false. */
+  consumeAccepted: (now?: number) => boolean;
 }
+
+/** How long a confirmed sign-out's acceptance waits for its SIGNED_OUT. A sign-out that never
+ *  emits one (it failed without saying) must not silence a later forced sign-out (rls-privacy-
+ *  reviewer): past this, the acceptance is spent and the loss is said. */
+export const ACCEPT_WINDOW_MS = 60_000;
 
 export const useKeepLossStore = create<KeepLossState>((set, get) => ({
   lost: null,
-  accepted: false,
+  accepted: null,
   note: (userId, count) => {
     if (count <= 0) return;
     const prior = get().lost;
@@ -40,11 +45,12 @@ export const useKeepLossStore = create<KeepLossState>((set, get) => ({
     if (lost) set({ lost: null });
     return lost;
   },
-  acceptNextSignOut: () => set({ accepted: true }),
-  consumeAccepted: () => {
+  acceptNextSignOut: (now = Date.now()) => set({ accepted: now }),
+  consumeAccepted: (now = Date.now()) => {
     const accepted = get().accepted;
-    if (accepted) set({ accepted: false });
-    return accepted;
+    if (accepted === null) return false;
+    set({ accepted: null });
+    return now - accepted >= 0 && now - accepted <= ACCEPT_WINDOW_MS;
   },
 }));
 

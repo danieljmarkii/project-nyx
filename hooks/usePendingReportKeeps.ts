@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, AppState } from 'react-native';
+import { AppState } from 'react-native';
 import * as Network from 'expo-network';
 import { acknowledgeKeepMisses, drainPendingKeeps, pendingKeepMissNotice, type KeepMiss } from '../lib/reportKeep';
 import { isOnlineFromState } from '../lib/network';
@@ -37,6 +37,9 @@ export function usePendingReportKeeps(): { notice: KeepMissNoticeState | null; d
   const userId = session?.user.id ?? null;
   const [notice, setNotice] = useState<(KeepMissNoticeState & { userId: string }) | null>(null);
   const lost = useKeepLossStore((s) => s.lost);
+  // The forced sign-out's line, and the account it is about (rls-privacy-reviewer L1: drawn here,
+  // not as a system Alert, so it too closes when another account's session arrives).
+  const [loss, setLoss] = useState<{ title: string; body: string; lostUserId: string | null } | null>(null);
 
   // Any session change closes a notice raised under another account (or none).
   const shown = notice !== null && notice.userId === userId ? notice : null;
@@ -49,8 +52,13 @@ export function usePendingReportKeeps(): { notice: KeepMissNoticeState | null; d
     const taken = useKeepLossStore.getState().take();
     if (!taken || !mayHearKeepLoss(taken.userId, userId)) return;
     const line = keepLossNotice(taken.count);
-    if (line) Alert.alert(line.title, line.body, [{ text: 'OK' }]);
+    if (line) setLoss({ ...line, lostUserId: taken.userId });
   }, [lost, userId]);
+
+  const lossShown = loss !== null && mayHearKeepLoss(loss.lostUserId, userId) ? loss : null;
+  useEffect(() => {
+    if (loss !== null && !mayHearKeepLoss(loss.lostUserId, userId)) setLoss(null);
+  }, [loss, userId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -88,11 +96,17 @@ export function usePendingReportKeeps(): { notice: KeepMissNoticeState | null; d
   }, [userId]);
 
   const dismiss = useCallback(() => {
-    // Acknowledged only under the account it was raised for: a notice closed by a sign-out
-    // acknowledges nothing.
-    if (shown && useAuthStore.getState().session?.user.id === shown.userId) void acknowledgeKeepMisses(shown.misses);
-    setNotice(null);
+    if (shown) {
+      // Acknowledged only under the account it was raised for: a notice closed by a sign-out
+      // acknowledges nothing.
+      if (useAuthStore.getState().session?.user.id === shown.userId) void acknowledgeKeepMisses(shown.misses);
+      setNotice(null);
+      return;
+    }
+    setLoss(null);
   }, [shown]);
 
-  return { notice: shown, dismiss };
+  // One card at a time: the miss (a session's own) first, then the sign-out's line.
+  const card: KeepMissNoticeState | null = shown ?? (lossShown ? { title: lossShown.title, body: lossShown.body, misses: [] } : null);
+  return { notice: card, dismiss };
 }
