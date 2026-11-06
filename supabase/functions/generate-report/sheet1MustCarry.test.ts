@@ -193,12 +193,13 @@ function captionCut(leaf: V1Leaf): { rest: string; items: string | null } | null
   const key = /^a dashed vertical marks the week a treatment or diet change started; a flat-headed vertical marks the week one stopped: (.*)\. timing and overlap are in "reading the trend" below\.$/.exec(leaf.text)
   if (key) return { rest: '', items: key[1] }
   if (/^under each date: days with a meal logged, of [^.]*\. a treat alone does not count as a meal\.$/.test(leaf.text)) return { rest: '', items: null }
-  if (/^: a week with (?:no off-diet feeding recorded that is still not read as clean|meals logged on fewer than)/.test(leaf.text)) return { rest: leaf.text.slice(2), items: null }
   const cut = leaf.text
     .replace(/^(?:pre|post)-trial(?: and post-trial)? columns? falls? outside the trial days this report covers \([^)]*\) and are not counted here\. /, '')
     .replace(", so a week's stack can total more than its feedings.", '.')
     .replace('; each bar is one week, stacked by protein.', '.')
     .replace(' colour is a convenience — every protein also carries a texture, so this reads in black & white.', '')
+    // CUL-2588 ruling (b): with no bands drawn, the floor is the counts'.
+    .replace(' so these bands are a floor.', ' so these counts are a floor.')
   return cut === leaf.text ? null : { rest: cut, items: null }
 }
 
@@ -221,8 +222,45 @@ function captionCarries(leaf: V1Leaf, c: Ctx): string[] {
   return miss
 }
 
+/**
+ * CUL-2588 ruling (b): v1's unread-week note keys a chart sheet 1 does not draw, so sheet 1 states it
+ * without the chart. The check reads v1's own chart, never the new sentence's builder: every week v1
+ * drew as unread (its alt text says "not read as clean") must be named on sheet 1 by its dates, or,
+ * when v1 withholds the trial's clean record, sheet 1 must say no trial week is read as free of
+ * off-diet food. Either way the leaf's own caveat survives: absence is never read as clean.
+ */
+function offDietUnreadCarries(leaf: V1Leaf, c: Ctx): string[] {
+  const t = c.snap.proteinTimeline
+  if (t.zeroWithheld) {
+    const need = 'no week of this trial is read as free of off-diet food'
+    return has(c.text, need) && has(c.text, 'interpreting this record') ? [] : [`"${need}"`]
+  }
+  // v1's own drawing, read off its alt text: one entry per column, in order.
+  const alt = /aria-label="Off-diet protein exposure per week: ([^"]*)\."/.exec(renderReportPage1(c.snap))?.[1] ?? ''
+  const cols = alt.split(/, (?=outside the trial|\d|not read as clean)/)
+  const miss: string[] = []
+  if (!has(c.text, 'too few to read')) miss.push('the "too few to read" caveat')
+  cols.forEach((col, i) => {
+    if (!col.startsWith('not read as clean')) return
+    const first = t.weekStartDates[i] < t.scopeStartDate ? t.scopeStartDate : t.weekStartDates[i]
+    const day = fold(new Date(`${first}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }))
+    const days = /meals logged on (\d+) of (\d+) days/.exec(col)
+    if (!has(c.text, day)) miss.push(`the unread week from ${day}`)
+    if (days && !has(c.text, `meals on ${days[1]} of ${days[2]} day`)) miss.push(`the week from ${day}'s ${days[1]} of ${days[2]} meal days`)
+  })
+  if (!cols.some((x) => x.startsWith('not read as clean'))) miss.push('an unread week in v1’s chart')
+  return miss
+}
+
 /** The named reformats: a v1 block kind (and, where it is narrower, the leaf), the v2 block that carries it, and its check. */
 const REFORMATS: ReadonlyArray<{ name: string; top: string; when?: (leaf: V1Leaf) => boolean; v2: string; check: (leaf: V1Leaf, c: Ctx) => string[] }> = [
+  {
+    name: 'the off-diet chart’s unread-week note → a sentence that stands alone (CUL-2588 ruling (b))',
+    top: 'sec:off-diet protein exposure over time',
+    when: (l) => /^: a week with (?:no off-diet feeding recorded that is still not read as clean|meals logged on fewer than)/.test(l.text),
+    v2: 'protein-timeline',
+    check: offDietUnreadCarries,
+  },
   { name: 'an undrawn chart’s caption → the lead chart', top: '*', when: (l) => captionCut(l) !== null, v2: 'lead-chart', check: captionCarries },
   { name: 'identity → masthead', top: 'ident', v2: 'masthead', check: mastheadCarries },
   { name: 'safety band → band', top: 'safetyband', v2: 'band', check: bandCarries },
@@ -436,9 +474,39 @@ Deno.test('CUL-2579 — no caption of an undrawn chart prints, and the counts be
   assert.ok(has(t, 'off-diet feedings (feedings not matched to the trial diet or the allowed list) over'), 'the protein chart’s count still prints')
   assert.ok(has(t, 'a food containing several proteins counts once for each'), 'its counting rule still prints')
   assert.ok(has(t, 'treats logged outside the trial are counted'), 'the outside-columns note’s pointer still prints')
-  // The unread-week note loses its glyph, never its caveat (cold read at 4be169d: QUIET when it went).
-  assert.ok(has(t, 'a week with no off-diet feeding recorded that is still not read as clean'), 'the not-read-as-clean caveat still prints')
-  assert.equal(UNDRAWN_CHART_CAPTIONS.length, 7)
+  // The unread-week note loses its chart, never its caveat (cold read at 4be169d: QUIET when it went).
+  // CUL-2588 ruling (b): the caveat stands alone, with no chart words ("drawn as a zero") left.
+  assert.ok(has(t, 'no week of this trial is read as free of off-diet food'), 'the not-read-as-clean caveat still prints')
+  assert.ok(!t.print.includes('drawn as a zero') && !t.print.includes('these bands are a floor'), 'no chart-keyed wording')
+  // Six: the unread-week glyph left the list when its note became a sentence of its own (CUL-2588 (b)).
+  assert.equal(UNDRAWN_CHART_CAPTIONS.length, 6)
+})
+
+Deno.test('CUL-2588 ruling (b), mutation — the off-diet notes stand alone, and dropping the caveat or a thin week’s dates reds the guard', () => {
+  const byName = new Map(fixtures())
+  // Both of v1's forms are exercised: the withheld trial (nyx-live) and a named thin week (past-window).
+  for (const [name, form] of [['nyx-live-real', 'withheld'], ['trial-report-past-window', 'weeks']] as const) {
+    const s = byName.get(name)
+    assert.ok(s, name)
+    assert.equal(s.proteinTimeline.zeroWithheld, form === 'withheld', name)
+    const doc = buildDocumentV2(s, OPTS)
+    assert.deepEqual(checkSheet1(name, s, doc).missing, [], name)
+    const drop = (re: RegExp, to: string): DocumentV2 => ({
+      ...doc,
+      blocks: doc.blocks.map((b) => (b.kind === 'carried' && b.id === 'protein-timeline' ? { ...b, html: b.html.replace(re, to) } : b)),
+    })
+    // The caveat gone whole: quiet, so the guard must red.
+    const gone = checkSheet1(name, s, drop(/<div class="subnote">(?:No week of this trial|Meals were logged on fewer)[\s\S]*?<\/div>/, '')).missing
+    assert.ok(gone.some((x) => x.includes('CUL-2588')), `${name}: ${gone.join('\n')}`)
+    if (form === 'weeks') {
+      // A thin week's dates gone: the vet can no longer tell which week was not read.
+      const undated = checkSheet1(name, s, drop(/May 18 to 20/, 'one week')).missing
+      assert.ok(undated.some((x) => x.includes('the unread week from may 18')), undated.join('\n'))
+    }
+  }
+  // And the floor is the counts', never the undrawn bands'.
+  const t = sheet1Text(buildDocumentV2(byName.get('cooper')!, OPTS))
+  assert.ok(has(t, 'so these counts are a floor') && !t.print.includes('bands'), 'cooper: the floor names the counts')
 })
 
 Deno.test('CUL-2579, mutation — a caption cut that takes a count with it, or a key whose change is not on the sheet, reds the guard', () => {
