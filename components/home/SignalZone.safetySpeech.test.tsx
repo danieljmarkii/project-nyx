@@ -292,6 +292,70 @@ describe('SignalZone — a safety arrival is spoken on a focused Home (GAP-13)',
     expect(safetySpoken()).toHaveLength(1);
   });
 
+  // CUL-2604: an ask that gets louder under the same finding identity is an arrival.
+  it('speaks again when an intake card goes to a call today under the same identity', async () => {
+    const soft: CachedFinding = {
+      ...intake,
+      text: 'Nyx has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.',
+      finding: { ...(intake.finding as object), daysBelowBaseline: 1, allRefused: false } as SignalFinding,
+    };
+    const call: CachedFinding = {
+      ...intake,
+      text: 'Nyx refused every meal you rated today — worth a call to your vet today.',
+      finding: { ...(intake.finding as object), daysBelowBaseline: 1, allRefused: true } as SignalFinding,
+    };
+    const view = await landOn({ displayState: 'live', findings: [] }, { displayState: 'live', findings: [soft] });
+    expect(safetySpoken()).toEqual([soft.text]);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [call] }));
+    await act(async () => {
+      view.rerender(zone());
+    });
+    await settle();
+    expect(safetySpoken()).toEqual([soft.text, call.text]);
+    // Back to the softer ask: not said. Up again: said again.
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [soft] }));
+    await act(async () => {
+      view.rerender(zone());
+    });
+    await settle();
+    expect(safetySpoken()).toEqual([soft.text, call.text]);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [call] }));
+    await act(async () => {
+      view.rerender(zone());
+    });
+    await settle();
+    expect(safetySpoken()).toEqual([soft.text, call.text, call.text]);
+  });
+
+  it('a louder ask that lands while Home is covered is said once Home is back in front', async () => {
+    const burden = (tier: 'soon' | 'today', text: string): CachedFinding => ({
+      rank: 0,
+      text,
+      finding: {
+        type: 'symptom_burden', priorityClass: 'safety', symptomType: 'vomit', count: 4, days: 3, runDays: 3,
+        daysSinceRunEnd: 0, countArm: true, persistenceArm: tier === 'today', tier, windowDays: 7,
+      } as SignalFinding,
+    });
+    const soon = burden('soon', 'Nyx has vomited 4 times this week — worth booking a vet visit soon.');
+    const today = burden('today', 'Nyx has vomited on 3 days in a row — worth a call to your vet today.');
+    const view = await landOn({ displayState: 'live', findings: [soon] }, { displayState: 'live', findings: [soon] });
+    expect(safetySpoken()).toEqual([]);
+    focused = false;
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [today] }));
+    await act(async () => {
+      view.rerender(zone());
+    });
+    await settle();
+    expect(safetySpoken()).toEqual([]);
+    focused = true;
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [{ ...today }] }));
+    await act(async () => {
+      view.rerender(zone());
+    });
+    await settle();
+    expect(safetySpoken()).toEqual([today.text]);
+  });
+
   it('says nothing for a concern already in the record when Home opened', async () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [intake] }));
     render(zone());

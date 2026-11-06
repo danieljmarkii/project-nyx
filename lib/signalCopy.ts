@@ -1968,6 +1968,36 @@ export function intakeAllRefusedCallsToday(finding: SignalFinding): boolean {
   return intakeAllRefused(finding) && finding.type === 'intake_decline' && finding.species !== 'dog';
 }
 
+/**
+ * CUL-2604: how loud a non-incident safety card's ask is, inside its own lane: 0 is the lane's
+ * softest ask. An intake card asking for a call today (an all-refused card, the sustained-refusal
+ * floor) is 1 over "if it carries on"; a burden card's "today" is 1 over "soon"; a chronicity or
+ * worsening tier counts up to `firm`. It never compares two lanes: the lane order does that. The
+ * spoken arrival re-speaks a card whose level rises (lib/signalSafetySpeech.ts), and the cross-pet
+ * banner breaks a same-lane tie by it (`bannerRankOf`).
+ */
+export function safetyAskLevel(finding: SignalFinding): number {
+  switch (finding.type) {
+    case 'intake_decline':
+      return finding.trigger === 'sustained_refusal' || intakeAllRefusedCallsToday(finding) ? 1 : 0;
+    case 'symptom_burden':
+      return finding.tier === 'today' ? 1 : 0;
+    case 'symptom_chronicity':
+      return finding.tier === 'firm' ? 1 : 0;
+    case 'symptom_worsening':
+      return finding.tier === 'firm' ? 2 : finding.tier === 'standard' ? 1 : 0;
+    default:
+      return 0;
+  }
+}
+
+/** CUL-2604: a red-flag card's call, as a level: a call now 2, a call today 1, no call 0. Speech only;
+ *  the banner keeps the incident order PR-30a and PR-30c ruled. */
+export function incidentAskLevel(finding: IncidentRedFlagFinding): number {
+  const call = incidentCallOf(finding);
+  return call === 'call_now' ? 2 : call === 'call_today' ? 1 : 0;
+}
+
 /** "today" or "over the last two days": the span an all-refused card names. */
 function allRefusedSpan(days: number): string {
   return days <= 1 ? 'today' : `over the last ${days} days`;
@@ -2616,8 +2646,14 @@ function bannerRankOf(f: BannerSafetyFinding, nowMs: number | undefined): number
     return laterCallTodayIsoOf(f) !== null || callTodaySaidSinceCallNow(f) ? BANNER_SAFETY_PRIORITY.incident_red_flag : 0.5;
   }
   if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 2.5;
-  return BANNER_SAFETY_PRIORITY[f.type];
+  // CUL-2604: inside a lane the louder ask leads, so a pet earlier in the list never takes the
+  // banner with "if it carries on" from a pet whose same-lane card asks for a call today. A tenth
+  // per level: never across a lane (the deepest is worsening's firm, 3.8, still under chronicity
+  // at 3), never past I5 (2.5) or a dated call now (0.5).
+  return BANNER_SAFETY_PRIORITY[f.type] - BANNER_ASK_STEP * safetyAskLevel(f);
 }
+
+const BANNER_ASK_STEP = 0.1;
 
 export type BannerSafetyFinding =
   | IncidentRedFlagFinding
