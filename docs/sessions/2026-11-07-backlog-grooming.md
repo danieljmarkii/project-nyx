@@ -1,6 +1,7 @@
 # Session: Backlog grooming (Linear, team Culprit), 2026-11-07
 
 **Date:** 2026-11-07
+**One thing:** P4 L1 — Leading vs lagging indicators: opened ÷ closed warns before board size does · check: pending
 **Mode:** DISCOVERY (Product Owner / Backlog Steward lens), attended: the PM asked for the pass
 **Outcome:** shipped via #1474 (this record, plus the 10-25 pass's record and its two research briefs, folded in from #1332 under G1; the pass's writes are in Linear)
 **Branch:** `claude/compassionate-hawking-0lifiz`
