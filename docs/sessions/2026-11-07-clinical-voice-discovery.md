@@ -23,3 +23,5 @@
 **Deviation:** the launch prompt said to name CUL-2654 in the PR. CLAUDE.md's merge rule would then close the umbrella before the build exists, so the PR names the sub-issue instead.
 
 **Next:** the PM rules D1–D4 and reacts to R-1 and R-2. Then the build is 4 rows (one over the issue's forecast of 3, flagged per D3 of CUL-1858). It runs beside App Store 1.2.0 and lands after the cut.
+
+**Ruled in-session:** the PM took the recommendations on D1, D3 and D4, ruled D2 (a) (the call-now tier joins the floor, Dr. Chen's side) and left R-2 out. Recorded in the inventory's §R. Build rows filed as sub-issues of CUL-2654: CUL-2666 (skills and specs) → CUL-2667 (words module, client copy, call-answer baseline) → CUL-2668 (server copy) → CUL-2669 (adversarial pass, 30-day after-read). All land after the 1.2.0 cut.
