@@ -1,0 +1,34 @@
+{
+ "fixture": "bakeoff-nyx",
+ "n": 1,
+ "result": {
+  "outcome": "not_eligible",
+  "reason": "live_flag"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "not_eligible",
+   "reason": "live_flag",
+   "fact_hash": null,
+   "prompt": "vr2-lead-6",
+   "verifier": "vr2-9",
+   "writer_model": null,
+   "checker_model": null,
+   "sentences": null,
+   "verifier_errors": [],
+   "checker": null,
+   "attempts": 0,
+   "at": "2026-11-07T14:30:01.035Z",
+   "text_sha": null
+  },
+  "model": null
+ },
+ "calls": [],
+ "model_calls": 0,
+ "gate_reads": [
+  false
+ ],
+ "wall_ms": 1
+}

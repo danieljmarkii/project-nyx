@@ -1,0 +1,62 @@
+[
+ {
+  "fixture": "thin-juniper-4d",
+  "logged_days": 4,
+  "eligible": false,
+  "result": {
+   "outcome": "not_eligible",
+   "reason": "thin_record"
+  },
+  "model_calls": 0,
+  "stored": {
+   "text": null,
+   "verdict": {
+    "v": 1,
+    "outcome": "not_eligible",
+    "reason": "thin_record",
+    "fact_hash": null,
+    "prompt": "vr2-lead-6",
+    "verifier": "vr2-9",
+    "writer_model": null,
+    "checker_model": null,
+    "sentences": null,
+    "verifier_errors": [],
+    "checker": null,
+    "attempts": 0,
+    "at": "2026-11-07T14:30:43.393Z",
+    "text_sha": null
+   },
+   "model": null
+  }
+ },
+ {
+  "fixture": "thin-juniper-14d",
+  "logged_days": 14,
+  "eligible": false,
+  "result": {
+   "outcome": "not_eligible",
+   "reason": "thin_record"
+  },
+  "model_calls": 0,
+  "stored": {
+   "text": null,
+   "verdict": {
+    "v": 1,
+    "outcome": "not_eligible",
+    "reason": "thin_record",
+    "fact_hash": null,
+    "prompt": "vr2-lead-6",
+    "verifier": "vr2-9",
+    "writer_model": null,
+    "checker_model": null,
+    "sentences": null,
+    "verifier_errors": [],
+    "checker": null,
+    "attempts": 0,
+    "at": "2026-11-07T14:30:43.393Z",
+    "text_sha": null
+   },
+   "model": null
+  }
+ }
+]
