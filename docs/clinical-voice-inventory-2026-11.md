@@ -196,3 +196,20 @@ Ask writes almost no asks of its own: it relays the Signal's text (rule 6, `ask/
 | 2 | Server copy: `analyze-vomit` and `analyze-stool` read text, `generate-signal/phrasing.ts` (mirrors row 1), Ask's prompt rules 4 and 11 and its tier definitions | deploys on merge; only new reads get the words |
 | 3 | Skills and specs: §3h | Tier 2 docs need the PM's approval to write |
 | 4 | The adversarial pass and the cold read: `adversarial-reviewer` on rows 1–2, with the chronic vomiter, the cat off food at 23 h vs 25 h, a blood photo on an earlier-rule row, and an unknown reason | can ride inside rows 1 and 2 if the PM prefers 3 rows |
+
+---
+
+## §R. Rulings (PM, 2026-11-07, same day)
+
+Added after the brief, which stays as it was written above.
+
+| Decision | Ruled | What it changes |
+|---|---|---|
+| D1 | **(a)** a reason-keyed words layer; an unknown reason gets the floor words | the 4 rows in §6, accepted at forecast + 1 |
+| D2 | **(a)** the *now* tier joins the floor (Dr. Chen) | T1, T2, T3, the dated call-now form, the "Call your vet now if …" watch-for line and the door's "Subdued and vomiting" all keep today's words. The §3a rows marked "per D2" are **unchanged**. |
+| D3 | **(a)** for an owner who rates meals, no meal rated Most or All in 24 h | the trial card's "stops eating" line splits as in mock §05; the dog side of `sustained_refusal` stays deferential |
+| D4 | **(a)** the floor firms up | banner lines `signalCopy.ts:2813, 2818, 2839` say "call your vet today" on floor cases, and the cat intake read text (`analyze-vomit:367, 542`) does too |
+| R-1 | the formula, as drawn | §2 governs every deferential string |
+| R-2 | **left out** | no closing line on deferential cards |
+
+**The floor, as ruled:** blood in vomit or stool · suspected foreign material · a cat with no meal rated Most or All in 24 h · collapse or a breathing sign (the door's printed list) · **any read tiered `call_now`**. Everything else is deferential under §2.
