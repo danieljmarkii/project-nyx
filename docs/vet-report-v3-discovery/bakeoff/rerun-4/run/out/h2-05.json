@@ -1,0 +1,147 @@
+{
+ "fixture": "h2",
+ "n": 5,
+ "copy": "none (no report; ruling h2 a)",
+ "copy_refusal": null,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "1d02b4978757acd1e960ebf81a774732f5eeaa763c23dfa4555819a090fb49c7",
+   "prompt": "vr2-lead-6",
+   "verifier": "vr2-9",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Nyx the cat vomited 6 times on 4 days from Oct 26 to Oct 31, and an owner-entered rabbit diet trial ran Sep 17 to Oct 20; nothing on adherence, the preceding quiet week, or the chicken foods.",
+    "levels": {
+     "H1": "material",
+     "H2": "material",
+     "H3": "none",
+     "H4": "minor",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "none"
+    },
+    "quotes": {
+     "H1": "The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+     "H2": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31. / The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+     "H4": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+     "H5": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31."
+    },
+    "omissions": [
+     "Chicken foods first fed Oct 21, with vomiting on 4 days Oct 26 to Oct 31 'side by side, not as a cause' (the confounder line and its scope limit).",
+     "0 vomiting entries Oct 19 to Oct 25, the quiet stretch before the vomiting.",
+     "Trial adherence and exposure status: the summary does not say the trial cannot be confirmed clean, and it presents the trial as simply having run."
+    ]
+   },
+   "attempts": 1,
+   "at": "2026-11-07T16:32:02.525Z",
+   "text_sha": null
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 7122
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Nyx the cat vomited 6 times on 4 days from Oct 26 to Oct 31, and an owner-entered rabbit diet trial ran Sep 17 to Oct 20; nothing on adherence, the preceding quiet week, or the chicken foods.",
+    "hazards": {
+     "H1": {
+      "level": "material",
+      "quote": "The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+      "why": "The trial is named with no bottom line on adherence or exposure scope, and no confounder line. Stating it ran for a date range reads as a completed, clean trial. The chicken foods first fed Oct 21 are not mentioned."
+     },
+     "H2": {
+      "level": "material",
+      "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31. / The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+      "why": "Vomiting is placed right after the trial's end date with no explanation, so the reader infers vomiting began once the trial stopped and the diet change caused it. The fact table says the chicken foods and vomiting are 'side by side, not as a cause', and the summary drops that limit."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "No refusals or intake are described."
+     },
+     "H4": {
+      "level": "minor",
+      "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "why": "The 0 entries Oct 19 to Oct 25 are omitted, so the reader does not see the quiet stretch before the vomiting. This is not presented as normal, but the omission leaves out that vomiting onset followed a quiet week."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "why": "The window is given, but the logged-day denominator is not, and the line's 0 entries Oct 19 to Oct 25 comparison is missing. The count is otherwise accurately scoped."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "All stated facts match the table."
+     },
+     "H7": {
+      "level": "none",
+      "quote": "",
+      "why": "The band is empty, so there are no live flags to soften."
+     }
+    },
+    "omissions": [
+     "Chicken foods first fed Oct 21, with vomiting on 4 days Oct 26 to Oct 31 'side by side, not as a cause' (the confounder line and its scope limit).",
+     "0 vomiting entries Oct 19 to Oct 25, the quiet stretch before the vomiting.",
+     "Trial adherence and exposure status: the summary does not say the trial cannot be confirmed clean, and it presents the trial as simply having run."
+    ]
+   },
+   "ms": 6187
+  }
+ ],
+ "model_calls": 2,
+ "gate_reads": [
+  true
+ ],
+ "wall_ms": 13612
+}

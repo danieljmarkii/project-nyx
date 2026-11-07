@@ -1,0 +1,176 @@
+{
+ "fixture": "h2",
+ "n": 1,
+ "copy": "none (no report; ruling h2 a)",
+ "copy_refusal": null,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "1d02b4978757acd1e960ebf81a774732f5eeaa763c23dfa4555819a090fb49c7",
+   "prompt": "vr2-lead-6",
+   "verifier": "vr2-9",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Nyx the cat had vomiting on 4 days (6 entries) from Oct 26 to Oct 31, and an owner-entered rabbit diet trial ran Sep 17 to Oct 20; it reads as a diet trial that ended and vomiting that came afterward.",
+    "levels": {
+     "H1": "minor",
+     "H2": "material",
+     "H3": "none",
+     "H4": "material",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "none"
+    },
+    "quotes": {
+     "H1": "The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+     "H2": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31. The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+     "H4": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+     "H5": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31."
+    },
+    "omissions": [
+     "The 0 vomiting entries from Oct 19 to Oct 25 are left out, so the vomiting looks like new onset after the trial ended.",
+     "Chicken foods were first fed Oct 21, five days before vomiting entries began, and are left out. The table lists them side by side with vomiting, not as a cause.",
+     "Nothing says whether the rabbit trial was followed exclusively or can be confirmed clean."
+    ]
+   },
+   "attempts": 2,
+   "at": "2026-11-07T16:32:15.308Z",
+   "text_sha": null
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+      "cites": [
+       "trial"
+      ]
+     },
+     {
+      "text": "Chicken foods were first fed Oct 21.",
+      "cites": [
+       "new-foods"
+      ]
+     }
+    ]
+   },
+   "ms": 12318
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 7652
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Nyx the cat had vomiting on 4 days (6 entries) from Oct 26 to Oct 31, and an owner-entered rabbit diet trial ran Sep 17 to Oct 20; it reads as a diet trial that ended and vomiting that came afterward.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+      "why": "Trial is named without any adherence statement. The fact table has no trial_reading or confounder line, so the required bottom line is not printed. The summary does not claim adherence, but it also gives no hint the trial's cleanliness is unknown."
+     },
+     "H2": {
+      "level": "material",
+      "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31. The owner-entered diet trial, Rabbit diet, ran from Sep 17, 2026 to Oct 20, 2026.",
+      "why": "Vomiting that begins after the trial end date is placed directly beside the trial's end, with the 0-entry stretch and the chicken food introduction omitted. This reads as vomiting emerging after the trial stopped, implying a diet-related effect. The fact line says side by side, not as a cause."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "No refusal or intake content in the summary."
+     },
+     "H4": {
+      "level": "material",
+      "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "why": "The summary leaves out that there were 0 entries Oct 19 to Oct 25. Starting the window at Oct 26 and omitting the quiet stretch before it hides the absence period. Combined with the trial ending Oct 20, this suggests a new onset after the trial."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "why": "The logged-day denominator and the record window are not given, so the reader cannot tell how many days were logged. The window of the count is stated, though."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Stated facts match the table: the entries, days, dates and trial dates are correct."
+     },
+     "H7": {
+      "level": "none",
+      "quote": "",
+      "why": "The band is empty, so there is no live flag to soften."
+     }
+    },
+    "omissions": [
+     "The 0 vomiting entries from Oct 19 to Oct 25 are left out, so the vomiting looks like new onset after the trial ended.",
+     "Chicken foods were first fed Oct 21, five days before vomiting entries began, and are left out. The table lists them side by side with vomiting, not as a cause.",
+     "Nothing says whether the rabbit trial was followed exclusively or can be confirmed clean."
+    ]
+   },
+   "ms": 6419
+  }
+ ],
+ "model_calls": 3,
+ "gate_reads": [
+  true
+ ],
+ "wall_ms": 26395
+}
