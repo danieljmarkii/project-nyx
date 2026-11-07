@@ -83,10 +83,11 @@ Deno.test('spelled-out counts are refused', () => {
 })
 
 Deno.test('the careful leads still pass: the rules are loud, not deaf', () => {
-  // Nyx carries six live flags, so `multi-flag` refuses any lead on it (CUL-2563); the sentence rules pass this one.
-  assert.deepEqual(verifyLead(tableOf(nyx), { sentences: [NYX_BAND, { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] }] }).errors.filter((e) => e.check !== 'required' && e.check !== 'multi-flag'), [])
+  // Nyx carries six live flags, so `live-flag` refuses any lead on it (CUL-2563, CUL-2621); the sentence rules pass this one.
+  assert.deepEqual(verifyLead(tableOf(nyx), { sentences: [NYX_BAND, { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] }] }).errors.filter((e) => e.check !== 'required' && e.check !== 'live-flag'), [])
   const band = tableOf(cooper).facts.find((f) => f.role === 'band')!.id
   const honest = { text: 'Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.', cites: [band] }
   // CUL-2532: the trial's reading bottom line and its confounder ride with it.
-  assert.deepEqual(verifyLead(tableOf(cooper), { sentences: [honest, { text: 'The owner-entered diet trial, Cooper\'s Venison LID, is at day 19 of 42, from Sep 28, 2026.', cites: ['trial'] }, { text: 'Trial diet was not fed exclusively; no medication or supplement is recorded as overlapping the trial, not checked with the owner.', cites: ['trial-reading-3', 'confounder'] }] }).errors, [])
+  // Cooper's one live flag: `live-flag` alone refuses it (CUL-2621 ruling (c)); every sentence rule passes it.
+  assert.deepEqual(verifyLead(tableOf(cooper), { sentences: [honest, { text: 'The owner-entered diet trial, Cooper\'s Venison LID, is at day 19 of 42, from Sep 28, 2026.', cites: ['trial'] }, { text: 'Trial diet was not fed exclusively; no medication or supplement is recorded as overlapping the trial, not checked with the owner.', cites: ['trial-reading-3', 'confounder'] }] }).errors.map((e) => e.check), ['live-flag'])
 })

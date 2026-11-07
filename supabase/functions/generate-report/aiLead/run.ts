@@ -18,7 +18,7 @@ import { sendChecked } from './model.ts'
 import { runAiLead, type DraftRead, type LeadIO, type LeadResult, type StoredVerdict } from './leadPipeline.ts'
 import { h } from '../documentV2.ts'
 import { sha256Hex } from '../../_shared/engineStamps.ts'
-import { LEAD_VERIFIER_VERSION, multiFlagIssues, type LeadSentence } from './verify.ts'
+import { LEAD_VERIFIER_VERSION, liveFlagIssues, type LeadSentence } from './verify.ts'
 
 export interface DraftKey {
   reportId: string
@@ -91,10 +91,10 @@ export async function storedLeadForSnapshot(
   if (stored.text === null || v?.outcome !== 'printed' || !Array.isArray(v.sentences)) return null
   const facts = buildLeadFacts(documentForLead(snap), leadContextOf(snap, false))
   if (!facts.eligible) return null
-  // CUL-2563 ruling (b): never on a record with 2+ live band items, whatever the stored verdict says.
+  // CUL-2621 ruling (c): never on a record with any live band item, whatever the stored verdict says.
   // The hash would refuse one written by `runAiLead` today; this does not lean on it (adversarial
   // review of PR #1461, finding A: a second writer, or the threshold moved without a version bump).
-  if (multiFlagIssues(facts.table).length > 0) return null
+  if (liveFlagIssues(facts.table).length > 0) return null
   if ((await factTableHash(facts.payload, LEAD_VERIFIER_VERSION)) !== v.fact_hash) return null
   const sentences = v.sentences as LeadSentence[]
   return sentences.map((s) => s.text).join(' ') === stored.text ? sentences : null

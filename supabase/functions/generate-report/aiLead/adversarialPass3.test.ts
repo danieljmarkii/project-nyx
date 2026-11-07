@@ -40,7 +40,8 @@ const R11_HONEST: LeadSentence = { text: 'Itching is the flag, the trial\'s own 
 const NYX_BAND: LeadSentence = { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] }
 
 Deno.test('the honest cat lead, its window word for word, still passes', () => {
-  assert.deepEqual(verifyLead(tableOf(cat), { sentences: [CAT_HONEST, CAT_TRIAL, CAT_READING] }).errors, [])
+  // The cat's one live flag: `live-flag` alone refuses it (CUL-2621 ruling (c)); every sentence rule passes it.
+  assert.deepEqual(verifyLead(tableOf(cat), { sentences: [CAT_HONEST, CAT_TRIAL, CAT_READING] }).errors.map((e) => e.check), ['live-flag'])
 })
 
 Deno.test('B1: a pronoun after an absence word is refused, whatever the sentence cites', () => {

@@ -49,7 +49,9 @@ Deno.test('break 1, R-11: the exempt flag is band item 1, safety-live, and must 
     // CUL-2532: the trial's reading and its confounder ride with it.
     { text: 'The elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.', cites: ['trial-reading-2', 'confounder'] },
   ]
-  assert.deepEqual(verifyLead(factsOf(r11).table, { sentences: honest }).errors, [])
+  // r11 carries a live flag, so no lead prints on it (CUL-2621 ruling (c)): `live-flag` alone refuses
+  // the honest shape, and every sentence rule passes it.
+  assert.deepEqual(verifyLead(factsOf(r11).table, { sentences: honest }).errors.map((e) => e.check), ['live-flag'])
 })
 
 Deno.test('break 2: an omission the checker lists is never thrown away', () => {

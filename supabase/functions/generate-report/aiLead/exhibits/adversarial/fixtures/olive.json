@@ -1,0 +1,31 @@
+{
+ "pet_name": "Olive",
+ "species": "cat",
+ "record_start": "2026-09-05",
+ "record_end": "2026-10-16",
+ "band": [],
+ "record_lines": [
+  {
+   "id": "line-1",
+   "kind": "lead",
+   "text": "42 of 42 days logged."
+  },
+  {
+   "id": "absence",
+   "kind": "record",
+   "text": "No symptom events were logged in this window. Absence of a log is not evidence a symptom did not occur."
+  },
+  {
+   "id": "intake",
+   "kind": "record",
+   "text": "Meals (logged as meals, not treats): 42 logged; 42 rated; 3 not fully eaten, on 3 days, first Oct 13, last Oct 15 (1 day before this report)."
+  },
+  {
+   "id": "noticed",
+   "kind": "record",
+   "text": "Noticed: answered on 42 of 42 days; “Sleeping more” on 6, the first Oct 6."
+  }
+ ],
+ "trial_line": null,
+ "record_edge": []
+}

@@ -8,8 +8,9 @@
 //      and every control prints.
 //   3. Every item marked `verifier: pass` still passes: those are the residual, the items only the
 //      checker can catch. A rule that closes one reds here, and the set is updated to say so.
-//   5. CUL-2563: every item on a record with 2+ band items is refused by `multi-flag`; tests 2 to 4
-//      read the sentence rules without it (`verdictOf`), so they keep proving what they proved.
+//   5. CUL-2621 ruling (c) (widening CUL-2563's (b)): every item on a record with any live band item
+//      is refused by `live-flag`; tests 2 to 4 read the sentence rules without it (`verdictOf`), so
+//      they keep proving what they proved. A band-empty fixture's controls print in full.
 //   4. The mutation proof: each `closed_by` item is refused by those checks and no other, so the
 //      rule's removal would print it. Each CUL-2380 rule (`vocabulary`, `negation`, `script`,
 //      `tense`, `date-anchor`, and the bound `intake-positive`) closes at least one item alone.
@@ -18,7 +19,7 @@
 import assert from 'node:assert/strict'
 import { adversarialFixtures } from './adversarialFixtures.testutil.ts'
 import { tableFromPayload, type LeadFactPayload } from './facts.ts'
-import { verifyLead, LEAD_VERIFIER_VERSION, MULTI_FLAG_MIN_BAND, type LeadSentence } from './verify.ts'
+import { verifyLead, LEAD_VERIFIER_VERSION, LIVE_FLAG_MIN_BAND, type LeadSentence } from './verify.ts'
 import { checkerDecision, parseChecker } from './leadPipeline.ts'
 import { HAZARDS } from './prompts.ts'
 
@@ -50,14 +51,14 @@ for (const name of Object.keys(built)) {
 }
 /** The full verdict, every rule. */
 const fullVerdictOf = (it: SetItem) => verifyLead(tableFromPayload(fixtures[it.fixture]), { sentences: it.sentences })
-/** The SENTENCE rules' verdict: every rule but `multi-flag` (CUL-2563), which reads the record and
- *  never the draft, so it refuses every item on a fixture with 2+ band items (nyx-v2, bakeoff-nyx).
- *  The set exists to prove the sentence rules, so tests 2 to 4 read them without it; otherwise 46
- *  items would be refused by the record alone and those tests would prove nothing. The multi-flag
- *  test below reads the full verdict. */
+/** The SENTENCE rules' verdict: every rule but `live-flag` (CUL-2621), which reads the record and
+ *  never the draft, so it refuses every item on a fixture with any band item (all but h2 and olive).
+ *  The set exists to prove the sentence rules, which stay on as the second net, so tests 2 to 4
+ *  read them without it; otherwise nearly every item would be refused by the record alone and those
+ *  tests would prove nothing. The live-flag test below reads the full verdict. */
 const verdictOf = (it: SetItem) => {
   const v = fullVerdictOf(it)
-  const errors = v.errors.filter((e) => e.check !== 'multi-flag')
+  const errors = v.errors.filter((e) => e.check !== 'live-flag')
   return { ...v, errors, pass: errors.length === 0 }
 }
 const checksOf = (it: SetItem) => [...new Set(verdictOf(it).errors.map((e) => e.check))]
@@ -127,25 +128,27 @@ Deno.test('CUL-2548: every item band-first refuses, the checker rejects too, wha
   for (const it of order) {
     assert.equal(checkerDecision(clean, { table: tableFromPayload(fixtures[it.fixture]), draft: { sentences: it.sentences } }), 'reject', it.id)
   }
-  // And no control is rejected by the code half on a record a lead may print on: there it reads
-  // order, nothing else. On a multi-flag record it rejects every control (CUL-2563, below).
+  // On a record with a live flag the code half rejects every control (CUL-2621, below); on a
+  // band-empty one it passes them (order has nothing to read there).
   for (const c of set.controls) {
-    const want = bandCount(c) >= MULTI_FLAG_MIN_BAND ? 'reject' : 'pass'
+    const want = bandCount(c) >= LIVE_FLAG_MIN_BAND ? 'reject' : 'pass'
     assert.equal(checkerDecision(clean, { table: tableFromPayload(fixtures[c.fixture]), draft: { sentences: c.sentences } }), want, c.id)
   }
 })
 
-Deno.test('CUL-2563: on a fixture with 2+ band items every item and control is refused, by the verifier and the checker', () => {
+Deno.test('CUL-2621: on a fixture with any live band item every item and control is refused, by the verifier and the checker', () => {
   const clean = parseChecker({ takeaway: 'x', hazards: Object.fromEntries(HAZARDS.map((h) => [h, { level: 'none', quote: '', why: '' }])), omissions: [] })!
-  const multi = [...set.items, ...set.controls].filter((i) => bandCount(i) >= MULTI_FLAG_MIN_BAND)
-  // nyx-v2 (6 band items) and bakeoff-nyx (3): the re-run's worst instance is among them.
-  assert.deepEqual([...new Set(multi.map((i) => i.fixture))].sort(), ['bakeoff-nyx', 'nyx-v2'])
-  for (const it of multi) {
+  const flagged = [...set.items, ...set.controls].filter((i) => bandCount(i) >= LIVE_FLAG_MIN_BAND)
+  // Every flagged fixture the bake-off runs, the one-flag four included (CUL-2621 instances 1 to 5
+  // sit on r11, r11-jump and nyx-v2's burden row).
+  assert.deepEqual([...new Set(flagged.map((i) => i.fixture))].sort(), ['bakeoff-nyx', 'cooper', 'cooper-cat', 'nyx-v2', 'r11', 'r11-jump'])
+  for (const it of flagged) {
     const v = fullVerdictOf(it)
     assert.equal(v.pass, false, it.id)
-    assert.ok(v.errors.some((e) => e.check === 'multi-flag'), it.id)
+    assert.ok(v.errors.some((e) => e.check === 'live-flag'), it.id)
     assert.equal(checkerDecision(clean, { table: tableFromPayload(fixtures[it.fixture]), draft: { sentences: it.sentences } }), 'reject', it.id)
   }
-  // And on a 0- or 1-flag fixture the rule never fires: every such control prints in full.
-  for (const c of set.controls.filter((i) => bandCount(i) < MULTI_FLAG_MIN_BAND)) assert.deepEqual(fullVerdictOf(c).errors, [], c.id)
+  // The fixtures that may print are exactly the band-empty ones, and on them the rule never fires.
+  assert.deepEqual(Object.keys(fixtures).filter((f) => fixtures[f].band.length === 0).sort(), ['h2', 'olive'])
+  for (const c of set.controls.filter((i) => bandCount(i) === 0)) assert.deepEqual(fullVerdictOf(c).errors, [], c.id)
 })
