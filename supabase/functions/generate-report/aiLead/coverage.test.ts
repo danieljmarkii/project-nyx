@@ -104,25 +104,60 @@ Deno.test('CUL-2629: on every set item and control with the record rule set asid
   }
 })
 
-Deno.test('the rule reads the printed words: cited AND named, each label as often as the flags carrying it', () => {
+/** One sentence naming all six nyx-v2 flags, each with its label and one of its own numbers. */
+const ALL_SIX = 'Burden is 6 entries in 7 days, weight 3.73 kg, foreign material on Sep 22, diet not eaten on 2 of 4, chronicity 44 days for vomiting, chronicity 34 days for coughing.'
+
+Deno.test('the rule reads the printed words: cited, named as often as the flags carrying the label, each with its own number', () => {
   const ids = NYX.band.map((b) => b.id)
   const all = (text: string, cites = ids) => bandCoverageIssues(NYX_TABLE, { sentences: [{ text, cites }] })
-  // Every flag cited and every label printed, "chronicity" twice: covered.
-  assert.deepEqual(all('Burden, weight, foreign material, diet not eaten, chronicity of vomiting and chronicity of coughing are live flags.'), [])
-  // Chronicity once for two chronicity rows: one is not named.
-  assert.equal(all('Burden, weight, foreign material, diet not eaten and chronicity of vomiting and coughing are live flags.').length, 2)
+  const about = (issues: Array<{ detail: string }>, id: string) => issues.some((e) => e.detail.includes(id))
+  // The control: every flag cited, named and given its own number. "Diet not eaten" is a label, not a denial.
+  assert.deepEqual(all(ALL_SIX), [])
+  assert.deepEqual(all(ALL_SIX.toUpperCase()), [], 'case is read as it prints')
+  // Chronicity once for two chronicity rows.
+  assert.ok(about(all(ALL_SIX.replace('chronicity 34 days for coughing', '34 days for coughing')), 'chronicity'))
   // Cited without the word: the cite is the model's claim, not what the vet reads.
-  assert.ok(all('Burden, foreign material, diet not eaten, chronicity and chronicity are live flags.').some((e) => e.detail.includes('band-4-weight_loss')))
-  // A label inside another word does not count ("weighty").
-  assert.ok(all('Burden, weighty foreign material, diet not eaten, chronicity, chronicity.').some((e) => e.detail.includes('band-4-weight_loss')))
-  // Named but not cited: rejected (nothing ties the words to the row).
-  assert.ok(all('Burden, weight, foreign material, diet not eaten, chronicity, chronicity.', ids.slice(0, 5)).some((e) => e.detail.includes('is not cited')))
-  // Case and a zero-width space are read as they print: "Weight" counts, "wei​ght" does not.
-  assert.deepEqual(all('BURDEN, Weight, Foreign material, Diet not eaten, Chronicity, chronicity.'), [])
-  assert.ok(all('Burden, wei​ght, foreign material, diet not eaten, chronicity, chronicity.').length > 0)
-  // A band item with no label is unreadable: rejected.
+  assert.ok(about(all(ALL_SIX.replace('weight 3.73 kg', '3.73 kg')), 'band-4-weight_loss'))
+  // A label inside another word does not count ("weighty"); nor one split by a zero-width space.
+  assert.ok(about(all(ALL_SIX.replace('weight 3.73', 'weighty 3.73')), 'band-4-weight_loss'))
+  assert.ok(about(all(ALL_SIX.replace('weight 3.73', 'wei\u200bght 3.73')), 'band-4-weight_loss'))
+  // Named but not cited.
+  assert.ok(all(ALL_SIX, ids.slice(0, 5)).some((e) => e.detail.includes('is not cited')))
+  // An unlabelled band item is unreadable.
   const unlabelled = tableFromPayload({ ...NYX, band: [{ ...NYX.band[0], label: '' }] })
-  assert.equal(bandCoverageIssues(unlabelled, { sentences: [{ text: 'Burden is a live flag.', cites: [NYX.band[0].id] }] }).length, 1)
+  assert.equal(bandCoverageIssues(unlabelled, { sentences: [{ text: 'Burden is a live flag: 6 entries in 7 days.', cites: [NYX.band[0].id] }] }).length, 1)
+})
+
+Deno.test('adversarial pass 1 on the PR: a flag negated, asked, merged under a shared label, reassured, or listed bare is rejected', () => {
+  const ids = NYX.band.map((b) => b.id)
+  const run = (sentences: LeadSentence[]) => checkerCodeIssues(NYX_TABLE, { sentences })
+  const burden: LeadSentence = { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: [ids[0]] }
+  const shapes: Record<string, LeadSentence[]> = {
+    negated: [{ text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row; weight, foreign material, diet not eaten, chronicity and chronicity are not live flags.', cites: ids }],
+    // The same, each flag given its number, so only the negation is left to catch.
+    'negated, numbers kept': [{ text: `${ALL_SIX.slice(0, -1)}; none of these are live flags.`, cites: ids }],
+    'negated before a label': [{ text: ALL_SIX.replace('foreign material on Sep 22', 'no foreign material on Sep 22'), cites: ids }],
+    questioned: [burden, { text: 'Weight, foreign material, diet not eaten, chronicity, chronicity: none of these?', cites: ids.slice(1) }],
+    'questioned, numbers kept': [{ text: `${ALL_SIX.slice(0, -1)}?`, cites: ids }],
+    'shared label, one sign': [burden, { text: 'Chronicity: vomiting spans 44 days, chronicity a floor.', cites: ['band-5-chronicity-vomit', 'band-6-chronicity-cough'] }],
+    'common-word label, reassured': [burden, { text: 'Weight is stable, no foreign material, the diet not eaten is a preference, chronicity, chronicity unclear.', cites: ids.slice(1) }],
+    'labels only': [{ text: 'Burden, weight, foreign material, diet not eaten, chronicity, chronicity.', cites: ids }],
+  }
+  for (const [name, sentences] of Object.entries(shapes)) {
+    const issues = run(sentences)
+    assert.ok(issues.some((e) => e.check === 'band-coverage'), `${name}: ${JSON.stringify(issues)}`)
+    assert.equal(sansRecordRule(verdict('x'), NYX_TABLE, { sentences }), 'reject', name)
+  }
+  // Which part catches which (each shape below is caught by that part alone).
+  const details = (k: string) => run(shapes[k]).map((e) => e.detail).join(' | ')
+  assert.match(details('negated, numbers kept'), /negates beside a live flag: "none of these"/)
+  assert.match(details('negated before a label'), /"no § /)
+  assert.match(details('questioned, numbers kept'), /asks about a live flag/)
+  assert.match(details('shared label, one sign'), /band-6-chronicity-cough \(chronicity\): none of its own numbers/)
+  // The residual this rule does not claim: an affirmative softening that keeps label, number and no
+  // negation. The verifier refuses it (vocabulary); the code half passes it, and says so here.
+  const softened = [{ text: ALL_SIX.replace('weight 3.73 kg', 'weight steady at 3.73 kg'), cites: ids }]
+  assert.deepEqual(run(softened).filter((e) => e.check === 'band-coverage'), [])
 })
 
 Deno.test('a band-empty record is unchanged: the code half has nothing to cover, and the checker decides as before', () => {

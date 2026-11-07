@@ -423,8 +423,9 @@ Deno.test('CUL-2617, CUL-2628 (1): a slot is kept only when the lead holds on th
   const html = slotHtml([text])
   // The control: the same lead on its own band-empty copy is kept.
   assert.ok(!('refused' in (isLead(await settleLeadForKeep(leadIO(text, printingOn(text)), html)))))
-  // A copy with live flags (nyx-live, 6 band items): refused, whatever the verdict says. The verdict
-  // carries the flagged copy's own hash, so only the record rule can refuse it.
+  // A copy with live flags (nyx-live, 6 band items): refused, whatever the verdict says. (This verdict's
+  // hash is not the copy's either; the next test gives it the copy's own hash, so only the record rule
+  // can refuse it there.)
   const flagged = flaggedCopy()
   const flaggedVerdict = { ...printingOn(text), fact_hash: 'not-read-before-the-rule' }
   const io = leadIO(text, flaggedVerdict, 'm', ALLOW, flagged)

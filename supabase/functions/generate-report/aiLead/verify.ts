@@ -352,49 +352,90 @@ export function ownSignIssues(table: FactTable, summary: LeadSummary): VerifyIss
   return out
 }
 
-/** band-coverage (CUL-2629, PM ruling (a) 2026-11-07): every live band item is named in the lead.
- *  The third bake-off's `rv-script-d` named 1 of nyx-v2's 6 flags and the checker MODEL scored it
- *  clean with no omission (the re-run's nyx-v2 runs 2 to 4 printed the same shape, CUL-2563), so a
- *  flag left out is decided here, in code, from the table and the printed words alone:
- *    - each band item is cited by at least one sentence, and
- *    - the sentences citing it print its label as a word (case-insensitive), as many times as there
- *      are band items carrying that label among the ones they cite (nyx-v2's two "Chronicity" rows
- *      need the word twice), so one label cannot stand for two flags.
- *  A cite alone is the model's claim; the label is what the vet reads. Read by the checker's
+/** band-coverage (CUL-2629, PM ruling (a) 2026-11-07): every live band item is named in the lead,
+ *  each as its own flag, stated. The third bake-off's `rv-script-d` named 1 of nyx-v2's 6 flags and
+ *  the checker MODEL scored it clean with no omission (the re-run's nyx-v2 runs 2 to 4 printed the
+ *  same shape, CUL-2563), so a flag left out is decided here, in code, from the table and the printed
+ *  words alone. For each band item, the sentences citing it must:
+ *    - exist (a cite is the model's claim; the rest is what the vet reads);
+ *    - print its label as a word (case-insensitive), as many times as there are band items with that
+ *      label among the ones they cite (nyx-v2's two "Chronicity" rows need the word twice);
+ *    - print one of its own numbers: one no other band row prints when it has one, else any of its
+ *      numbers. So one label cannot stand for two flags ("Chronicity: vomiting spans 44 days,
+ *      chronicity a floor" drops the cough row's 34), and a bare list of labels names nothing;
+ *    - never ask (no question mark in any script) and never negate, except in words a cited line
+ *      prints: each negating word and the two words after it must be printed by a cited line or
+ *      band label ("diet not eaten" is a label; "are not live flags", "no foreign material" are not).
+ *  Adversarial pass 1 on the PR (negation, a question, a shared label, labels alone) broke the first
+ *  version, which read the label word only. What this still cannot see: an affirmative softening
+ *  that keeps the label, a number and no negation ("Weight is stable at 3.73 kg"). That is the
+ *  verifier's (vocabulary, absence) and the model's H7, never claimed here. Read by the checker's
  *  decision (leadPipeline.ts `checkerCodeIssues`), whatever the model scored. Not a verifier rule:
- *  the verifier stays `vr2-9`, and the record rule (`liveFlagIssues`) already refuses every record
- *  this could fire on. Errs loud: on a record of several flags, band-once leaves one sentence to
- *  name them all, so almost every lead there is rejected. */
+ *  the verifier stays `vr2-9`, and the record rule (`liveFlagIssues`) refuses every record this could
+ *  fire on. Errs loud: band-once leaves one sentence to carry every flag, so almost every lead on a
+ *  record of several flags is rejected. */
 export function bandCoverageIssues(table: FactTable, summary: LeadSummary): VerifyIssue[] {
   const band = table.facts.filter((f) => f.role === 'band')
   if (band.length === 0) return []
   const out: VerifyIssue[] = []
+  const issue = (detail: string) => out.push({ sentence: null, check: 'band-coverage', detail: `${detail} (CUL-2629)` })
+  const facts = new Map(table.facts.map((f) => [f.id, f]))
   const sents = summary.sentences.map((s) => ({ text: norm(s.text).toLowerCase(), cites: s.cites }))
   const countOf = (text: string, label: string): number => {
     const l = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     return (text.match(new RegExp(`(?<![a-z0-9])${l}(?![a-z0-9])`, 'g')) ?? []).length
   }
+  const numbersOf = (f: { text?: unknown }) => new Set(extractNumbers(norm(String(f.text ?? ''))))
+  const bandNumbers = new Map(band.map((f) => [f.id, numbersOf(f)]))
   for (const f of band) {
     const label = labelOf(f as { label?: unknown }).toLowerCase()
+    const name = `live band item ${f.id} (${label || 'no label'})`
     const citing = sents.filter((s) => s.cites.includes(f.id))
     if (citing.length === 0) {
-      out.push({ sentence: null, check: 'band-coverage', detail: `live band item ${f.id} (${label || 'no label'}) is not cited (CUL-2629)` })
+      issue(`${name} is not cited`)
       continue
     }
     // No label is no way to read the words: it rejects (a missing label is a bug).
     if (label === '') {
-      out.push({ sentence: null, check: 'band-coverage', detail: `live band item ${f.id} has no label to read (CUL-2629)` })
+      issue(`${name} has no label to read`)
       continue
     }
     const sameLabel = band.filter((g) => labelOf(g as { label?: unknown }).toLowerCase() === label)
     const need = Math.max(1, ...citing.map((s) => sameLabel.filter((g) => s.cites.includes(g.id)).length))
     const have = citing.reduce((n, s) => n + countOf(s.text, label), 0)
-    if (have < need) {
-      out.push({ sentence: null, check: 'band-coverage', detail: `live band item ${f.id}: its label "${label}" prints ${have} time${have === 1 ? '' : 's'} where it is cited, ${need} needed (CUL-2629)` })
+    if (have < need) issue(`${name}: its label prints ${have} time${have === 1 ? '' : 's'} where it is cited, ${need} needed`)
+    const own = bandNumbers.get(f.id)!
+    const unique = [...own].filter((n) => band.every((g) => g.id === f.id || !bandNumbers.get(g.id)!.has(n)))
+    const wanted = unique.length > 0 ? unique : [...own]
+    if (wanted.length > 0) {
+      const printed = new Set(citing.flatMap((s) => extractNumbers(s.text)))
+      if (!wanted.some((n) => printed.has(n))) issue(`${name}: none of its own numbers prints where it is cited (one of ${wanted.join(', ')})`)
+    }
+  }
+  // Asked or negated, in any sentence that cites a band item.
+  for (const [k, s] of sents.entries()) {
+    const cited = s.cites.map((c) => facts.get(c)).filter((x) => x !== undefined)
+    if (!cited.some((x) => x!.role === 'band')) continue
+    if (BAND_QUESTION.test(s.text)) issue(`sentence ${k + 1} asks about a live flag`)
+    const allowed = cited.map((x) => norm(String(x!.text ?? '')).toLowerCase())
+    // A cited band label that holds a negation ("Diet not eaten") is the flag's name, not a denial:
+    // each whole-word copy is blanked before the scan, so only the words around it are read.
+    let scanned = s.text
+    for (const l of cited.map((x) => labelOf(x as { label?: unknown }).toLowerCase()).filter((l) => l !== '')) {
+      scanned = scanned.replace(new RegExp(`(?<![a-z0-9])${l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`, 'g'), '§')
+    }
+    for (const m of scanned.matchAll(BAND_NEGATION)) {
+      // Whole words only, and a negation before a blanked label ("no §") is printed by no line.
+      const phrase = new RegExp(`(?<![a-z0-9'])${m[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9'])`)
+      if (!allowed.some((t) => phrase.test(t))) issue(`sentence ${k + 1} negates beside a live flag: "${m[0]}" is printed by no cited line`)
     }
   }
   return out
 }
+/** Any script's question mark (as `OWN_SIGN_QUESTION`). */
+const BAND_QUESTION = /[?\u037E\u00BF\u061F\u203D\u2E2E\uFE56\uFF1F]/
+/** A negating word and up to two words after it, inside one clause. */
+const BAND_NEGATION = /\b(?:not|no|none|never|neither|nor|without|cannot|can't|isn't|aren't|wasn't|weren't|doesn't|don't|didn't|hasn't|haven't|hadn't|won't)\b(?:\s+(?:§|[a-z0-9'%-]+(?:\.[0-9]+)?)){0,2}/g
 
 /** CUL-2621 ruling (c), PM 2026-11-07, widening CUL-2563's ruling (b) (2026-11-06, two or more):
  *  no AI lead prints on a record with ONE or more live band items; a lead prints only when the band
