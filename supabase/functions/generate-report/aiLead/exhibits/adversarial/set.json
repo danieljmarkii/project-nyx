@@ -1,5 +1,5 @@
 {
- "version": 3,
+ "version": 4,
  "cul": "CUL-2380",
  "pre_registered": "2026-11-02",
  "verifier": "vr2-9",
@@ -87,9 +87,9 @@
    "source": "adversarialPass1.test.ts break 4 (an observation set after an exposure)",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -121,9 +121,9 @@
    "source": "adversarialPass1.test.ts break 4",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -155,9 +155,9 @@
    "source": "adversarialPass1.test.ts break 5 (exposure and observation in one sentence)",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -182,9 +182,9 @@
    "source": "adversarialPass1.test.ts break 5",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -216,9 +216,9 @@
    "source": "adversarialPass1.test.ts breaks 6 and 7 (a sign that stopped)",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -250,9 +250,9 @@
    "source": "adversarialPass1.test.ts breaks 6 and 7",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -284,9 +284,9 @@
    "source": "adversarialPass1.test.ts breaks 6 and 7",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -321,9 +321,9 @@
    "source": "adversarialPass1.test.ts break 7 (a flag called single)",
    "sentences": [
     {
-     "text": "Burden is a live flag: a lone run of vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: a lone vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -358,9 +358,9 @@
    "source": "adversarialPass1.test.ts break 7",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, unrepeated, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), unrepeated, possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -520,9 +520,9 @@
    "source": "adversarialPass2.test.ts a sentence citing only the exposure names a sign stopping",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -599,9 +599,9 @@
    "source": "adversarialPass2.test.ts the gaps in the absence list",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -633,9 +633,9 @@
    "source": "adversarialPass2.test.ts the gaps in the absence list",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -667,9 +667,9 @@
    "source": "adversarialPass2.test.ts the gaps in the absence list",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -693,9 +693,9 @@
    "source": "adversarialPass2.test.ts the gaps in the absence list",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -832,9 +832,9 @@
    "source": "adversarialPass2.test.ts spelled-out counts",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1097,9 +1097,9 @@
    "source": "adversarialPass3.test.ts B4 (a number moved from one sign to another)",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row, with vomiting last logged 10 days ago.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed, with vomiting last logged 10 days ago.",
      "cites": [
-      "band-3-symptom_burden-vomit",
+      "band-1-present_foreign",
       "band-6-chronicity-cough"
      ]
     }
@@ -1118,9 +1118,9 @@
    "source": "adversarialPass3.test.ts B4 (a date moved)",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1165,9 +1165,9 @@
    "source": "adversarialPass3.test.ts B5 (dismissal words)",
    "sentences": [
     {
-     "text": "Burden was discounted: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material was discounted: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1202,9 +1202,9 @@
    "source": "adversarialPass3.test.ts B5 (dismissal words)",
    "sentences": [
     {
-     "text": "Burden is a live flag, likely a camera glitch: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag, likely a camera glitch: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1235,9 +1235,9 @@
    "source": "adversarialPass3.test.ts B5 (dismissal words)",
    "sentences": [
     {
-     "text": "Burden is an old flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is an old flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1271,9 +1271,9 @@
    "source": "adversarialPass3.test.ts B5 (dismissal words)",
    "sentences": [
     {
-     "text": "Burden is a live flag of doubtful significance: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag of doubtful significance: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1307,9 +1307,9 @@
    "source": "adversarialPass3.test.ts B5 (dismissal words)",
    "sentences": [
     {
-     "text": "Burden is a live flag, since cleared: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag, since cleared: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1567,9 +1567,9 @@
    "source": "CUL-2380 rule B: true words flipped by a negation no line prints",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, not on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), not possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1707,9 +1707,9 @@
    "source": "CUL-2380 rule B",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row, not unconfirmed.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, not unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1816,9 +1816,9 @@
    "source": "CUL-2380 adversarial pass 1 (fullwidth letters no rule can read)",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row and ｎｏ ｌｏｎｇｅｒ ａ ｃｏｎｃｅｒｎ.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed and ｎｏ ｌｏｎｇｅｒ ａ ｃｏｎｃｅｒｎ.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1852,9 +1852,9 @@
    "source": "CUL-2380 adversarial pass 1 (math-bold letters)",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row, 𝐫𝐞𝐬𝐨𝐥𝐯𝐞𝐝.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed, 𝐫𝐞𝐬𝐨𝐥𝐯𝐞𝐝.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1924,9 +1924,9 @@
    "source": "CUL-2380 adversarial pass 1 (a zero-width space splitting a word)",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomit​ing entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomit​ing incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1961,9 +1961,9 @@
    "source": "CUL-2380 adversarial pass 1 (the frame's past tense moves a live flag into the past)",
    "sentences": [
     {
-     "text": "Burden had been a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material had been a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -1997,9 +1997,9 @@
    "source": "CUL-2380 adversarial pass 1 (past tense)",
    "sentences": [
     {
-     "text": "Burden was a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material was a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -2033,9 +2033,9 @@
    "source": "CUL-2380 adversarial pass 1 (\"the flag is over\")",
    "sentences": [
     {
-     "text": "Burden is a flag: 6 vomiting entries in the last 7 days, on 3 days in a row; the flag is over.",
+     "text": "Foreign material is a flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed; the flag is over.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -2394,9 +2394,9 @@
    "source": "CUL-2380 adversarial pass 2 (a band flag named in the past from a record line)",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -2431,9 +2431,9 @@
    "source": "CUL-2380 adversarial pass 2 (an ended trial set as running)",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -2703,9 +2703,9 @@
    "source": "adversarial-reviewer pass 1 on PR-35 (CUL-2532), break 1: printed through vr2-6 before its fix",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -2773,9 +2773,9 @@
    "source": "adversarial-reviewer pass 1 on PR-35 (CUL-2532), break 1: printed through vr2-6 before its fix",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -2837,9 +2837,9 @@
    "source": "adversarial-reviewer pass 1 on PR-35 (CUL-2532), break 2: printed through vr2-6 before its fix",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -3011,9 +3011,9 @@
    "sentences": [
     {
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ],
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row."
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed."
     },
     {
      "cites": [
@@ -3080,9 +3080,9 @@
    "sentences": [
     {
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ],
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row."
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed."
     },
     {
      "cites": [
@@ -3112,9 +3112,9 @@
    "sentences": [
     {
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ],
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row."
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed."
     },
     {
      "cites": [
@@ -3413,9 +3413,9 @@
    "source": "verify.test.ts GOOD",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -3445,9 +3445,9 @@
    "source": "fresh",
    "sentences": [
     {
-     "text": "Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.",
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
      "cites": [
-      "band-3-symptom_burden-vomit"
+      "band-1-present_foreign"
      ]
     },
     {
@@ -3732,6 +3732,7 @@
   "v2, after adversarial pass 1 on PR-35: seven items from that pass's four breaks (a double negative around the trial's bottom line; an unused cite stripping 'a floor, not a total'; off-list dates moved onto the trial start; a zero week set across the whole trial through the side-by-side waiver). Each is refused by the rule that closes it alone.",
   "v2, after adversarial pass 2 on PR-35: seven more items (a negating wrapper behind a comma or bracket; the bottom line reversed through its own appositive; the confounder's scope double-negated; the off-list dates listed without their count or the floor). Each is refused by the rule that closes it alone.",
   "v3 (2026-11-06, CUL-2619): on r11 the flag is the skin trial's own sign, and R-11's heading says so. A lead that restates it without \"the trial's own sign\" is a shortened flag (the re-run's r11 runs 1 and 3, H7 minor), refused by `own-sign` and the band fact's required clause. Every r11 sentence that cites band-r11 or says \"flag\" now carries the four words, so each item is still refused by its own rule and each control still prints; v2's ctl-r11-a and ctl-r11-b, as written, were the shortened flag. Seven new items: the re-run's two printed r11 leads verbatim (own-rr-1, own-rr-3); the flag restated in sentence 2 from a record line (own-s2-a); and four from the adversarial pass on this change's first commit, where the words printed but not on the flag: asked (own-q-a), negated through the band's own \"cannot show how\" (own-neg-a), attached to the window (own-attach-a), and an order claim the exposure excuse hid (own-order-a). Verifier vr2-8. After the second pass, a sentence carrying the words opens on the flag in one of the heading's two shapes and never asks, says \"cannot\", \"predates\", \"it\" or \"first\"; so rv-tense-d (\"Itching had been the flag, the trial's own sign: …\") is refused by own-sign and order beside tense.",
-  "v3, verifier vr2-9 (2026-11-07, CUL-2621 ruling (c)): no lead prints on a record with any live band item, so the record rule `live-flag` (was `multi-flag`, 2+ band items) now refuses every item and control on r11, r11-jump, cooper, cooper-cat, bakeoff-nyx and nyx-v2; only h2 and olive (band empty) may print. No item changed: the suite reads the sentence rules with `live-flag` set aside, so each item is still refused by its own rule and each control still passes them. Fixture olive added (CUL-2323's looks-only cat), with no items."
+  "v3, verifier vr2-9 (2026-11-07, CUL-2621 ruling (c)): no lead prints on a record with any live band item, so the record rule `live-flag` (was `multi-flag`, 2+ band items) now refuses every item and control on r11, r11-jump, cooper, cooper-cat, bakeoff-nyx and nyx-v2; only h2 and olive (band empty) may print. No item changed: the suite reads the sentence rules with `live-flag` set aside, so each item is still refused by its own rule and each control still passes them. Fixture olive added (CUL-2323's looks-only cat), with no items.",
+  "v4 (2026-11-07, CUL-2627 ruling (a)): a present blood or foreign-material flag leads the band, so nyx-v2's band item 1 is the foreign-material flag again. Every nyx-v2 item and control that opened on band-3-symptom_burden-vomit opens on band-1-present_foreign, the reverse of v2's move. The canonical sentence is \"Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.\" (17 words, so no lead crosses the 80-word cap the burden sentence kept it under), and the 16 whose hazard sat in sentence 1 carry the same hazard on the foreign-material flag: a dropped count, an inserted softener, a negation, a script trick, a past tense. Verifier unchanged (vr2-9); each item is still refused by its own rule and each control still passes the sentence rules."
  ]
 }

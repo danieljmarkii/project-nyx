@@ -5,6 +5,11 @@
  "record_end": "2026-10-31",
  "band": [
   {
+   "id": "band-1-present_foreign",
+   "label": "Foreign material",
+   "text": "1 vomiting incident (Sep 22) — possible foreign material on automated photo analysis. AI read · unconfirmed"
+  },
+  {
    "id": "band-3-symptom_burden-vomit",
    "label": "Burden",
    "text": "6 vomiting entries in the last 7 days, on 3 days in a row. A high count on its own, with no earlier week needed to compare. The owner was told to call the vet soon."
@@ -13,11 +18,6 @@
    "id": "band-4-weight_loss",
    "label": "Weight",
    "text": "Weighed 3.73 kg ( 8.2 lb) on Sep 16, 2026 on a home scale, a single reading, down from 4.40 kg ( 9.7 lb) on Jun 15, 2026 on a home scale, a single reading — about 15 % of body weight. No weigh-in is recorded after it: it is 45 days ( 6 weeks) before Oct 31, 2026, when this report was generated. The latest reading against the highest before it in the last 365 days, not a diagnosis; body condition was not assessed. The owner was told it is worth booking a vet visit. Intake was recorded for 3 of 219 meals logged in this window , so this record cannot show how much Nyx is eating."
-  },
-  {
-   "id": "band-1-present_foreign",
-   "label": "Foreign material",
-   "text": "1 vomiting incident (Sep 22) — possible foreign material on automated photo analysis. AI read · unconfirmed"
   },
   {
    "id": "band-2-trial_diet_refusal",

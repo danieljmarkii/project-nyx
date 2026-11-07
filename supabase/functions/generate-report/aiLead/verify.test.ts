@@ -23,10 +23,11 @@ const nyxFacts = buildLeadFacts(buildDocumentV2(nyxSnap, { owner: null, shortId:
 if (!nyxFacts.eligible) throw new Error('the live Nyx record is eligible for a lead')
 const nyxTable = nyxFacts.table
 
-// Band item 1 is the band's first PRINTED row: on Nyx, the burden flag (CUL-2381 ruling (a), CUL-2532).
-// The trial sentence carries the reading's bottom line and the confounder, both required beside it.
+// Band item 1 is the band's first PRINTED row: on Nyx, the present foreign-material flag (CUL-2627
+// ruling (a), ahead of CUL-2381's burden; CUL-2532). The trial sentence carries the reading's bottom
+// line and the confounder, both required beside it.
 const GOOD: LeadSentence[] = [
-  { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] },
+  { text: 'Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.', cites: ['band-1-present_foreign'] },
   { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] },
   { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026; the trial diet was not fed exclusively, and it is not a test of the diet alone.', cites: ['trial', 'trial-reading-3', 'confounder'] },
 ]
@@ -62,7 +63,7 @@ Deno.test('quotes: any quotation mark rejects, owner words or not', () => {
 
 Deno.test('band-first: band item 1 must lead, cited, its label in the first clause', () => {
   assert.ok(checks([GOOD[1], GOOD[0], GOOD[2]]).includes('band-first'))
-  const buried = { ...GOOD[0], text: 'In the last 7 days, 6 vomiting entries, on 3 days in a row, a burden.' }
+  const buried = { ...GOOD[0], text: 'On Sep 22, 1 vomiting incident, possible foreign material, AI read, unconfirmed.' }
   assert.ok(checks([buried, GOOD[1], GOOD[2]]).includes('band-first'))
   const uncited = { ...GOOD[0], cites: ['line-1'] }
   assert.ok(checks([uncited, GOOD[1], GOOD[2]]).includes('band-first'))
@@ -271,8 +272,11 @@ Deno.test('live-flag: the live Nyx record (six live band items) refuses the lead
   assert.equal(nyxTable.facts.filter((f) => f.role === 'band').length, 6)
   const v = verifyLead(nyxTable, { sentences: RERUN_NYX_LEAD })
   assert.equal(v.pass, false)
-  // It passes every sentence rule, as it did in the re-run: only the record rule stops it.
-  assert.deepEqual(v.errors.map((e) => e.check), ['live-flag'])
+  // In the re-run it passed every sentence rule and only the record rule stopped it. Since CUL-2627's
+  // ruling (a) the present foreign-material flag is band item 1, a required fact, so its burden-first
+  // opening, which never cites it, also fails the required and order rules: louder, and the record
+  // rule still stops it on its own.
+  assert.deepEqual(v.errors.map((e) => e.check), ['required', 'live-flag', 'band-first', 'band-numbers'])
   assert.equal(v.errors[0].sentence, null)
 })
 
