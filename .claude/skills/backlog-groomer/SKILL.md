@@ -89,7 +89,7 @@ Step 13's exemption list still binds, ahead of all five.
 
 **Nothing else in this skill is a proposal.** A `Quick Win` takes effect the moment the PM sorts by it, a `Duplicate` closes the issue, a priority reorders the queue, and a project move changes where it is read: none of them has a window between the write and its effect, which is the whole difference.
 
-**What the label strip is, and what it is not.** Stripping a needs-attention label from closed and cancelled issues is the highest-yield safe write on the board — ~70 dead `Quick Win` and ~5 dead `Waiting on PM` on pass one — and it fixes exactly one thing: *the board does not match reality*. **It does essentially nothing for queue length.** A first pass reports an impressive write count; that count is not a drain and must never be reported as one. (CUL-923 proposed a `Needs PM` state to make the `Waiting on PM` half unrepresentable; CUL-1448 declined it on 2026-10-02, so the label stays the wait, and this strip is standing hygiene rather than a stopgap. It is still not the win.)
+**What the label strip is, and what it is not.** It fixes board accuracy, never queue length: never report its count as a drain. _(account: `docs/engineering-lessons.md` §P-19)_
 
 ## The grooming pass — run in order
 
