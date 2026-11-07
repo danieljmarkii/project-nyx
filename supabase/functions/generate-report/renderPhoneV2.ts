@@ -362,7 +362,9 @@ body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto
 .mast .fold .win{color:var(--ink2);}
 .mast .brief{display:none;}
 .mast .last{font-weight:600;margin-top:0.35rem;}
-.disc{margin:0.6rem 0;color:var(--ink2);font-size:0.875rem;}
+/* PM ruling (a) on CUL-2627's brief A: v1's disclosures in full ink, body size, behind a black rule. */
+.disc{margin:0.6rem 0;color:var(--ink);font-size:1rem;}
+.disc .cherry{margin:0.4rem 0 0;border-left:3px solid var(--ink);padding:0 0 0 0.6rem;}
 section{margin:1rem 0 0;}
 h2{font-size:1rem;line-height:1.3;margin:0 0 0.4rem;font-weight:650;}
 ul,ol{margin:0;padding:0;list-style:none;}
@@ -478,7 +480,8 @@ html,body{font-size:9.5pt;}
 .sheet{padding:0;max-width:none;}
 .mast .eyebrow{font-size:7.5pt;}
 .mast h1{font-size:20pt;}
-.disc,.band .checks,.checks.unframed,.twin{font-size:8.5pt;}
+.band .checks,.checks.unframed,.twin{font-size:8.5pt;}
+.disc{font-size:9.5pt;}
 h2{font-size:9pt;}
 .changes h2,.sech,.colo{font-size:7.5pt;}
 .lede{font-size:13pt;}

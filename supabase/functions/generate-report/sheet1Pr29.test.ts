@@ -524,3 +524,17 @@ Deno.test('CUL-2627 (adversarial pass 1) — a record read short prints "Partial
     assert.ok(sheet1.indexOf('Partial record.') < sheet1.indexOf('data-block="band"'))
   }
 })
+
+Deno.test('CUL-2627 brief A ruling (a) — the disclosures print as v1 prints them: full ink, body size, a black rule', () => {
+  const s = new Map(v2DocFixtures()).get('trial-report-past-window')
+  assert.ok(s)
+  const d = docOf(s)
+  const print = renderPrintV2(d)
+  assert.ok(print.includes('.disc{margin:6pt 0;color:var(--ink);font-size:9.5pt;}'), 'print: ink at the body size')
+  assert.ok(/\.disc \.cherry\{[^}]*border-left:[^;]*solid var\(--ink\)/.test(print), 'print: a black rule')
+  const phone = renderPhoneV2(d)
+  assert.ok(phone.includes('.disc{margin:0.6rem 0;color:var(--ink);font-size:1rem;}'), 'phone: ink at the body size')
+  assert.ok(/\.disc \.cherry\{[^}]*border-left:[^;]*solid var\(--ink\)/.test(phone), 'phone: a black rule')
+  assert.ok(phone.slice(phone.lastIndexOf('@media print{')).includes('.disc{font-size:9.5pt;}'), 'phone print: the body size')
+  for (const html of [print, phone]) assert.ok(!/\.disc\{[^}]*--ink2/.test(html), 'never the grey of the checks line')
+})

@@ -401,7 +401,11 @@ body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto
 .mast .sig,.mast .cond{color:var(--ink);}
 .mast .win{color:var(--ink2);}
 .mast .last{font-size:10.5pt;font-weight:600;margin-top:3pt;}
-.disc{margin:6pt 0;color:var(--ink2);font-size:8.5pt;}
+/* PM ruling (a) on CUL-2627's brief A (2026-11-07): v1's page-1 disclosures (custom range, window
+   end, partial record, UTC) print as v1 prints them: full ink, body size, each behind a black rule.
+   In grey 8.5pt they read as the checks line's boilerplate (cold read at 49f9a24). */
+.disc{margin:6pt 0;color:var(--ink);font-size:9.5pt;}
+.disc .cherry{margin:4pt 0 0;border-left:2.25pt solid var(--ink);padding:0 0 0 8pt;}
 section{margin:10pt 0 0;}
 h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .band{border:1.25pt solid var(--ink);padding:7pt 9pt;}
