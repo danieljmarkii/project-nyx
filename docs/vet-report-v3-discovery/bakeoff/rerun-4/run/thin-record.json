@@ -1,0 +1,12 @@
+{
+ "thin-juniper-4d": {
+  "logged_days": 4,
+  "eligible": false,
+  "reason": "thin_record"
+ },
+ "thin-juniper-14d": {
+  "logged_days": 14,
+  "eligible": false,
+  "reason": "thin_record"
+ }
+}

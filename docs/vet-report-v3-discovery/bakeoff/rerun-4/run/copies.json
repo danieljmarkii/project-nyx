@@ -1,0 +1,34 @@
+{
+ "r11": {
+  "copy": "own snapshot, notes-off",
+  "refusal": "live_flag"
+ },
+ "r11-jump": {
+  "copy": "own snapshot, notes-off",
+  "refusal": "live_flag"
+ },
+ "cooper": {
+  "copy": "own snapshot, notes-off",
+  "refusal": "live_flag"
+ },
+ "cooper-cat": {
+  "copy": "own snapshot, notes-off",
+  "refusal": "live_flag"
+ },
+ "bakeoff-nyx": {
+  "copy": "none (no report; ruling h2 a)",
+  "refusal": null
+ },
+ "nyx-v2": {
+  "copy": "own snapshot, notes-off",
+  "refusal": "live_flag"
+ },
+ "h2": {
+  "copy": "none (no report; ruling h2 a)",
+  "refusal": null
+ },
+ "olive": {
+  "copy": "own snapshot, notes-off",
+  "refusal": null
+ }
+}

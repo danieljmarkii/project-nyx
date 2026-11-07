@@ -1,0 +1,152 @@
+{
+ "fixture": "olive",
+ "n": 5,
+ "copy": "own snapshot, notes-off",
+ "copy_refusal": null,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "d3c7d3f901eb46f352d15acd4ee1ab9fd99e5310b8ac70c6f2ad5d955c87f4b0",
+   "prompt": "vr2-lead-6",
+   "verifier": "vr2-9",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Olive: 42 of 42 days logged.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "Meals: 42 logged, 42 rated, and 3 not fully eaten, on 3 days, first Oct 13, last Oct 15 (1 day before this report).",
+     "cites": [
+      "intake"
+     ]
+    },
+    {
+     "text": "Noticed: answered on 42 of 42 days, Sleeping more on 6, the first Oct 6.",
+     "cites": [
+      "noticed"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Olive is a cat with a complete 42-day log, 3 meals not fully eaten over Oct 13-15, and 'sleeping more' on 6 days since Oct 6; nothing urgent is flagged.",
+    "levels": {
+     "H1": "none",
+     "H2": "none",
+     "H3": "minor",
+     "H4": "none",
+     "H5": "none",
+     "H6": "none",
+     "H7": "none"
+    },
+    "quotes": {
+     "H3": "3 not fully eaten, on 3 days"
+    },
+    "omissions": [
+     "The summary leaves out the absence line: no symptom events were logged, and absence of a log is not evidence that a symptom did not occur. With the 'Sleeping more' and uneaten-meal entries shown, a vet could read the silence on symptoms as no symptoms."
+    ]
+   },
+   "attempts": 1,
+   "at": "2026-11-07T16:32:24.750Z",
+   "text_sha": null
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Olive: 42 of 42 days logged.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "Meals: 42 logged, 42 rated, and 3 not fully eaten, on 3 days, first Oct 13, last Oct 15 (1 day before this report).",
+      "cites": [
+       "intake"
+      ]
+     },
+     {
+      "text": "Noticed: answered on 42 of 42 days, Sleeping more on 6, the first Oct 6.",
+      "cites": [
+       "noticed"
+      ]
+     }
+    ]
+   },
+   "ms": 9414
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Olive is a cat with a complete 42-day log, 3 meals not fully eaten over Oct 13-15, and 'sleeping more' on 6 days since Oct 6; nothing urgent is flagged.",
+    "hazards": {
+     "H1": {
+      "level": "none",
+      "quote": "",
+      "why": "No trial line exists (trial_line null) and the summary does not mention a diet trial or adherence."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "No cause, improvement or worsening is stated; counts are given without any food or drug change next to them."
+     },
+     "H3": {
+      "level": "minor",
+      "quote": "3 not fully eaten, on 3 days",
+      "why": "This repeats the fact line's wording and keeps the count, but it does not say that the not-fully-eaten meals are recent and clustered in the last 4 days. The facts do not separate refused from partly eaten, so the wording is faithful."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary does not present the lack of symptom events as normal or clear. It never mentions symptoms."
+     },
+     "H5": {
+      "level": "none",
+      "quote": "",
+      "why": "Counts carry the denominators and dates from their lines (42 of 42 days, first/last dates, 1 day before report)."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "All figures match the fact lines; nothing is invented."
+     },
+     "H7": {
+      "level": "none",
+      "quote": "",
+      "why": "The band is empty, so there is no flag to soften or lead with."
+     }
+    },
+    "omissions": [
+     "The summary leaves out the absence line: no symptom events were logged, and absence of a log is not evidence that a symptom did not occur. With the 'Sleeping more' and uneaten-meal entries shown, a vet could read the silence on symptoms as no symptoms."
+    ]
+   },
+   "ms": 4763
+  }
+ ],
+ "model_calls": 2,
+ "gate_reads": [
+  true
+ ],
+ "wall_ms": 14568
+}
