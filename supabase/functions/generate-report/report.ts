@@ -6070,10 +6070,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // minutes, under `engines_v3_en5`; this report's band does not (a gap filed apart, v1 included).
     // So where I5 fires for this account and no intake flag is carried, the line says it was found,
     // never that the intake check came back quiet.
+    //
+    // Adversarial pass 2 (QUIET): I5 reads its own 14-day lookback of meals AND vomits, so the
+    // window's events alone (a 2-day custom range) hid episodes Home's card fires on. It reads the
+    // deduped pull to the window's end, as CUL-2403 gave the intake lane. And on a past window it
+    // also runs at real-now, as the weight check does: the louder of the two is said (the stopgap
+    // while which "now" a past window's intake outcome answers to is the PM's ruling, filed).
+    const i5At = (events: typeof dedupedAll, nowIso: string) =>
+      detectIntakeDecline({ ...buildDetectionInput(input, scope, events, droppedEventIds, events), now: nowIso }, withEn5Config(detConfig)).find(
+        (f) => f.refusedThenVomited,
+      )?.refusedThenVomited
     const i5 =
       hasFlag('intake_decline') || !isEngineKeyOn(input.engineFlags, 'engines_v3_en5')
         ? undefined
-        : detectIntakeDecline(detInput, withEn5Config(detConfig)).find((f) => f.refusedThenVomited)?.refusedThenVomited
+        : (i5At(intakeEvents, detInput.now) ?? (input.now === detInput.now ? undefined : i5At(dedupedAll, input.now)))
     checkOutcomes.push({
       check: 'intake_decline',
       state: hasFlag('intake_decline') ? 'flagged' : i5 ? 'found_not_flagged' : cov.ratedMeals < cov.needed ? 'too_few' : 'not_flagged',

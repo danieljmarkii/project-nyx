@@ -14,7 +14,7 @@ import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
 import { sampleCases } from '../../../scripts/render-trial-report-sample.deno.ts'
 import { assembleReport, type ReportInput } from './report.ts'
-import { olive, symptom } from './v2Fixtures.testutil.ts'
+import { dayKey, olive, symptom } from './v2Fixtures.testutil.ts'
 
 const OPTS: DocumentV2Options = { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: [] }
 
@@ -56,7 +56,7 @@ Deno.test('CUL-2565 — the snapshot carries the intake check’s outcome, and a
   assert.ok(intake.seen >= intake.needed, 'above the detector’s own floor')
   const doc = buildDocumentV2(s, OPTS)
   assert.ok(doc.blocks.some((b) => b.kind === 'checks'), 'the no-flag sheet prints a checks line')
-  onBoth(sheet1(doc), `Ran and did not trigger, which does not rule these out: reduced intake (${intake.seen} rated meals from`, 'Olive’s intake check')
+  onBoth(sheet1(doc), `Ran and did not trigger, which does not rule these out: the intake check (${intake.seen} rated meals from`, 'Olive’s intake check')
 })
 
 Deno.test('CUL-2565 — a check under its floor says it had too few to run, with the count and the floor, never "did not trigger" (Mira)', () => {
@@ -66,18 +66,18 @@ Deno.test('CUL-2565 — a check under its floor says it had too few to run, with
   const line = checksText(buildDocumentV2(s, OPTS))
   const thin = line.indexOf('too few entries to run, so not ruled out either:')
   assert.ok(thin >= 0, line)
-  assert.match(line.slice(thin), new RegExp(`reduced intake \\(${intake.seen} rated meals? from [^)]*, ${intake.needed} needed\\)`))
+  assert.match(line.slice(thin), new RegExp(`the intake check \\(${intake.seen} rated meals? from [^)]*, ${intake.needed} needed\\)`))
   // Mutation proof by construction: the same outcome marked as read must move under "did not trigger".
   const read: ReportSnapshot = { ...s, checkOutcomes: s.checkOutcomes!.map((o) => (o === intake ? { ...o, state: 'not_flagged' as const } : o)) }
   const moved = checksText(buildDocumentV2(read, OPTS))
   assert.ok(!moved.includes('too few entries to run'), moved)
-  assert.match(moved, /also ran and did not trigger: reduced intake/)
+  assert.match(moved, /also ran and did not trigger: the intake check/)
 })
 
 Deno.test('CUL-2565 — a flagged check is said once, in the band, never again on the checks line (Cooper’s intake)', () => {
   const s = fixture('cooper')
   assert.equal(s.checkOutcomes?.find((o) => o.check === 'intake_decline')?.state, 'flagged')
-  assert.ok(!checksText(buildDocumentV2(s, OPTS)).includes('reduced intake ('))
+  assert.ok(!checksText(buildDocumentV2(s, OPTS)).includes('the intake check ('))
 })
 
 Deno.test('CUL-2565 — the trial refusal check reads its own ratings floor, not its refusal-day counter (a well-eaten trial ran)', () => {
@@ -101,7 +101,7 @@ Deno.test('CUL-2565 — the weight check’s outcome prints with its weigh-ins (
 Deno.test('CUL-2565 — a snapshot frozen before the fact renders as before (no line, no throw)', () => {
   const s = fixture('looks-only')
   const { checkOutcomes: _gone, ...frozen } = s
-  assert.ok(!checksText(buildDocumentV2(frozen as ReportSnapshot, OPTS)).includes('reduced intake'))
+  assert.ok(!checksText(buildDocumentV2(frozen as ReportSnapshot, OPTS)).includes('the intake check'))
 })
 
 // ── Adversarial pass 1's QUIET breaks, held ─────────────────────────────────
@@ -127,7 +127,7 @@ Deno.test('adversarial 1 (QUIET) — a trial refusal inside one bout, which the 
   assert.match(line, /found in this record, not raised as a flag, so not ruled out: trial diet not eaten \(3 of 3 rated trial-diet feedings left unfinished, all within 12 hours/)
 })
 
-Deno.test('adversarial 1 (QUIET) — with en5 on, a cat whose refused-then-vomited card fires on Home is never told "reduced intake: ran and did not trigger"', () => {
+Deno.test('adversarial 1 (QUIET) — with en5 on, a cat whose refused-then-vomited card fires on Home is never told the intake check "ran and did not trigger"', () => {
   const input = olive({ unfinishedDays: 0 }) as ReportInput
   input.engineFlags = { on: ['engines_v3_en5'], readOk: true } as ReportInput['engineFlags']
   const meals = input.events.filter((e) => e.type === 'meal')
@@ -144,11 +144,43 @@ Deno.test('adversarial 1 (QUIET) — with en5 on, a cat whose refused-then-vomit
   assert.ok(!s.safetyFlags.some((f) => f.kind === 'intake_decline'), 'the report carries no intake flag (the gap filed apart)')
   assert.equal(s.checkOutcomes?.find((x) => x.check === 'intake_decline')?.state, 'found_not_flagged')
   const line = checksText(buildDocumentV2(s, OPTS))
-  assert.ok(!/did not trigger[^.]*reduced intake/.test(line), line)
+  assert.ok(!/did not trigger[^.]*the intake check/.test(line), line)
   assert.match(line, /found in this record, not raised as a flag, so not ruled out: a meal refused and then vomit within \d+ minutes \(2 times on 2 days/)
   // Off, the card is not Home's either, so the plain read stands.
   const off = assembleReport({ ...input, engineFlags: { on: [], readOk: true } as ReportInput['engineFlags'] })
   assert.notEqual(off.checkOutcomes?.find((x) => x.check === 'intake_decline')?.state, 'found_not_flagged')
+})
+
+/** The I5 cat of adversarial pass 1: refused at 18:00, vomit at 18:20, on days -5 and -3, en5 on. */
+function i5Cat(): ReportInput {
+  const input = olive({ unfinishedDays: 0 }) as ReportInput
+  input.engineFlags = { on: ['engines_v3_en5'], readOk: true } as ReportInput['engineFlags']
+  const meals = input.events.filter((e) => e.type === 'meal')
+  for (const d of [5, 3]) {
+    const day = new Date(Date.parse(input.now) - d * 86_400_000).toISOString().slice(0, 10)
+    const m = meals.find((e) => e.occurredAt.startsWith(day))!
+    m.meal!.intakeRating = 'refused'
+    const v = symptom('vomit', d, 18)
+    v.occurredAt = m.occurredAt.replace(':00:00', ':20:00')
+    v.loggedAt = v.occurredAt
+    input.events.push(v)
+  }
+  return input
+}
+
+Deno.test('adversarial 2 (QUIET) — a 2-day custom range still sees the refused-then-vomited episodes before it (I5 reads its own lookback, not the window)', () => {
+  const input = i5Cat()
+  input.requestedWindow = { startDate: dayKey(1), endDate: dayKey(0) }
+  const s = assembleReport(input)
+  assert.equal(s.checkOutcomes?.find((x) => x.check === 'intake_decline')?.state, 'found_not_flagged')
+  assert.ok(!/did not trigger[^.]*the intake check/.test(checksText(buildDocumentV2(s, OPTS))))
+})
+
+Deno.test('adversarial 2 (stopgap, the PM rules) — a past window that ends before the second episode says it was found today, the louder reading', () => {
+  const input = i5Cat()
+  input.requestedWindow = { startDate: dayKey(30), endDate: dayKey(4) }
+  const s = assembleReport(input)
+  assert.equal(s.checkOutcomes?.find((x) => x.check === 'intake_decline')?.state, 'found_not_flagged')
 })
 
 // ── CUL-2580: the meals line names the population it counts ─────────────────

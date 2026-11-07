@@ -538,14 +538,18 @@ function checkOutcomeClause(o: CheckOutcome, snap: ReportSnapshot): string {
   const need = (what: string): string => (o.state === 'too_few' ? `, ${o.needed} needed${what}` : '')
   // Found by the check's own logic, not carried as a flag here (adversarial pass 1 on CUL-2565).
   if (o.found?.kind === 'one_bout') {
-    return `trial diet not eaten (${o.found.unfinished} of ${plural(o.found.rated, 'rated trial-diet feeding', 'rated trial-diet feedings')} left unfinished, all within ${o.found.spanHours} hours, too short a span for the flag)`
+    const fed = o.population === 'meal_record' ? ['rated feeding', 'rated feedings'] : ['rated trial-diet feeding', 'rated trial-diet feedings']
+    return `trial diet not eaten (${o.found.unfinished} of ${plural(o.found.rated, fed[0], fed[1])} left unfinished, all within ${o.found.spanHours} hours, too short a span for the flag)`
   }
   if (o.found?.kind === 'refused_then_vomited') {
-    return `a meal refused and then vomit within ${o.found.windowMinutes} minutes (${plural(o.found.episodes, 'time', 'times')} on ${plural(o.found.days, 'day', 'days')}, the first ${h(textOf(fmtDay(o.found.firstLocalDay)))}), which the app raises as an intake card but this report does not carry as a flag`
+    return `a meal refused and then vomit within ${o.found.windowMinutes} minutes (${plural(o.found.episodes, 'time', 'times')} on ${plural(o.found.days, 'day', 'days')}, the first ${h(fmtDayScopedTo(o.found.firstLocalDay, snap.scope.endDate))}), found by the app's own intake check, which this report does not carry as a flag`
   }
   switch (o.check) {
     case 'intake_decline':
-      return `reduced intake (${plural(o.seen, 'rated meal', 'rated meals')}${span()}${need('')})`
+      // "The intake check", never "reduced intake": the sentence before it on the checks line is a
+      // trial sign's own check, and an extractor joins the two, so a decline word here read as a
+      // decline in that sign (CI extraction, spec §8 rule 3). The check's name says no direction.
+      return `the intake check (${plural(o.seen, 'rated meal', 'rated meals')}${span()}${need('')})`
     case 'trial_diet_refusal': {
       const fed = o.population === 'meal_record' ? ['rated feeding', 'rated feedings'] : ['rated trial-diet feeding', 'rated trial-diet feedings']
       const who = o.population === 'meal_record' ? 'trial diet not eaten, read over every rated feeding because the trial diet could not be told apart' : 'trial diet not eaten'
@@ -1362,7 +1366,8 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   // flag in v1's words, word for word, and this line its meals and, where any, its "ate most" ones.
   // The two need not sum to each other; they count different feedings, and each says which.
   const mostly = mc?.intakeBreakdown.find((b) => b.rating === 'most')?.count ?? 0
-  const refusedText = `${mostly > 0 ? `, counting ${mostly} “ate most”` : ''}${refused > 0 ? ` (${refused} refused outright)` : ''}`
+  // Refused first, so its parenthesis cannot read as a share of the "ate most" (adversarial pass 2).
+  const refusedText = `${refused > 0 ? ` (${refused} refused outright)` : ''}${mostly > 0 ? `, counting ${mostly} “ate most”` : ''}`
   // CUL-2349 (N2): the unfinished days themselves, as every sign line gives its last day.
   const dates = unfinishedMealDaysOf(snap)
   const when = dates ? datesClauseOf(dates, snap.atAGlance.recordEdge.reportDate) : ''
