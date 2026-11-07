@@ -19,6 +19,7 @@ import {
   REPORT_SUMMARY_FUNCTION_KEY,
   REPORT_SUMMARY_SCOPE,
   resolveSummaryCaps,
+  runKeepGate,
   runSummaryGate,
   SUMMARY_PAYLOAD_KEYS,
   type SummaryGateIO,
@@ -249,6 +250,60 @@ Deno.test('a refusal from a read that failed is marked unread; one from what was
   assertEquals(await unread({ config: [flagsOn[0]] }), false)
   assertEquals(await unread({ config: [] }), false)
   assertEquals(await unread({ owned: false }), false)
+})
+
+// ── The keep gate (CUL-2575, PM ruling (b) 2026-11-07) ──────────────────────────────────
+// A copy that already prints a summary: only a withdrawn yes and another owner's pet refuse it.
+
+Deno.test('keep gate: a yes at both scopes on the caller\'s pet keeps, reading consent and the pet only', async () => {
+  const { impl, reached } = io({})
+  assertEquals(await runKeepGate(impl, UID), { allow: true })
+  assertEquals(reached, ['consent', 'pet'], 'no config (flags never refuse a keep) and never the counter')
+})
+
+Deno.test('keep gate: a flag switched off never refuses a keep (the config is not read)', async () => {
+  for (const config of [[], [flagsOn[0]], null]) {
+    const { impl, reached } = io({ config })
+    assertEquals(await runKeepGate(impl, UID), { allow: true }, JSON.stringify(config))
+    assertEquals(reached.includes('config'), false)
+  }
+})
+
+Deno.test('keep gate: a summary yes under an older wording keeps; the generation gate still refuses it', async () => {
+  const old = { data: [boundaryYes, { ...summaryYes, copy_version: '2026-01-01' }], error: null }
+  assertEquals(await runKeepGate(io({ consent: old }).impl, UID), { allow: true })
+  assertEquals((await runSummaryGate(io({ consent: old }).impl, UID, { spend: false })).allow, false)
+})
+
+Deno.test('keep gate: a withdrawn or missing yes at either scope refuses for good (ruling (a) stands)', async () => {
+  for (const [data, scope] of [
+    [[{ ...boundaryYes, granted: false }, summaryYes], 'ai_boundary'],
+    [[boundaryYes, { ...summaryYes, granted: false }], 'report_summary'],
+    [[boundaryYes, { ...summaryYes, granted: false, copy_version: '2026-01-01' }], 'report_summary'],
+    [[summaryYes], 'ai_boundary'],
+    [[boundaryYes], 'report_summary'],
+  ] as const) {
+    const { impl, reached } = io({ consent: { data, error: null } })
+    assertEquals(await runKeepGate(impl, UID), { allow: false, reason: 'consent_declined', scope }, JSON.stringify(data))
+    assertEquals(reached, ['consent'], 'a "no" reads nothing after it')
+  }
+})
+
+Deno.test("keep gate: another owner's pet refuses for good; an unreadable one is marked unread", async () => {
+  assertEquals(await runKeepGate(io({ owned: false }).impl, UID), { allow: false, reason: 'pet_not_owned' })
+  assertEquals(await runKeepGate(io({ owned: 'true' }).impl, UID), { allow: false, reason: 'pet_not_owned' })
+  assertEquals(await runKeepGate(io({ owned: null }).impl, UID), { allow: false, reason: 'pet_not_owned', unread: true })
+  assertEquals(await runKeepGate(io({ throwAt: 'pet' }).impl, UID), { allow: false, reason: 'pet_not_owned', unread: true })
+})
+
+Deno.test('keep gate: a failed consent read is marked unread; no uid reads nothing and refuses', async () => {
+  for (const over of [{ consent: { data: null, error: { message: 'down' } } }, { throwAt: 'consent' }]) {
+    const r = await runKeepGate(io(over).impl, UID)
+    assertEquals([r.allow, (r as { unread?: true }).unread], [false, true], JSON.stringify(over))
+  }
+  const { impl, reached } = io({})
+  assertEquals((await runKeepGate(impl, '')).allow, false)
+  assertEquals(reached, [])
 })
 
 Deno.test('order: a declined owner never reaches the config or the counter', async () => {
