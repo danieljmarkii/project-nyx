@@ -918,6 +918,9 @@ export interface TrialBlock {
    * because the fact it needed was not on this type.
    */
   rangeRefusalSpansEpisodes: boolean
+  /** CUL-2565: the refusal check's own counts over the range, fired or not (`TrialFacts.refusalCheck`).
+   *  Optional so a snapshot frozen before it existed still renders. */
+  refusalCheck?: { rated: number; days: number; population: 'trial_diet' | 'meal_record' }
   /**
    * CUL-2479 — the in-range feedings that carried the trial diet (rung 1 on a `primary_diet` row,
    * or a mixed bowl holding it), by event id. The report's intake flag reads every meal; this is
@@ -1691,6 +1694,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     antigenArmDark: facts.antigenArmDark,
     trialDietRefusal: facts.trialDietRefusal,
     rangeRefusal,
+    refusalCheck: facts.refusalCheck,
     rangeRefusalSpansEpisodes: facts.rangeRefusalSpansEpisodes,
     trialDietFeedingEventIds,
     stoppedReason: trial.stoppedReason ?? null,

@@ -20,7 +20,7 @@
 //
 // THE RULES (the same as `documentV2.ts`): no clinical number is computed and no finding is worded
 // here; pointers move through `v2Pointers` only; `html` is v1's already-escaped markup.
-import { renderReport, symptomLabel } from './render.ts'
+import { fmtDay, OFF_DIET_ZERO_MIN_MEAL_DAYS, offDietWeek, renderReport, symptomLabel } from './render.ts'
 import type { ReportSnapshot } from './report.ts'
 import { SHEET1_HERE, v2Pointers } from './backSheetsV2.ts'
 import { trialOwnSignsOf } from './v2Predicates.ts'
@@ -138,7 +138,8 @@ export function carriedSectionsOf(input: ReportSnapshot, episodesHtml: string | 
         continue
       }
       if (SECTIONS_ELSEWHERE.some((r) => r.test(heading))) continue
-      add(sectionId(heading), carry(div, input))
+      const id = sectionId(heading)
+      add(id, carry(id === 'protein-timeline' ? offDietNotesStandAlone(div, input) : div, input))
       continue
     }
     add(cls === 'weight' || cls === 'headline' ? cls : `v1-${cls || 'block'}`, carry(div, input))
@@ -182,15 +183,66 @@ function withoutFallingHalves(div: string, snap: ReportSnapshot): string {
 export const UNDRAWN_CHART_CAPTIONS: ReadonlyArray<{ name: string; re: RegExp; to: string }> = [
   { name: 'the change marks’ key', re: /\s*<div class="chartlegend">[\s\S]*?<\/div>/g, to: '' },
   { name: 'the protein chart’s date row', re: /\s*<div class="subnote">Under each date: [\s\S]*?<\/div>/g, to: '' },
-  // Only the glyph goes: its sentence is a caveat (a week with no off-diet feeding logged is not read
-  // as clean), and dropping it read as clean weeks (cold read at 4be169d).
-  { name: 'the protein chart’s unread-week glyph', re: /(<div class="subnote">)<svg class="key"[\s\S]*?<\/svg>: a week/g, to: '$1A week' },
   { name: 'the protein chart’s bars', re: /; each bar is one week, stacked by protein\./g, to: '.' },
   { name: 'the protein chart’s stacks', re: /, so a week&rsquo;s stack can total more than its feedings\./g, to: '.' },
   // The count beside it already names the trial days it covers; the pointer sentence after it stays.
   { name: 'the protein chart’s outside columns', re: /(<div class="subnote">)<em>(?:pre|post)-trial<\/em>(?: and <em>post-trial<\/em>)? columns? falls? outside the trial days this report covers \([^)]*\) and are not counted here\. /g, to: '$1' },
   { name: 'the protein chart’s colours', re: / Colour is a convenience — every protein also carries a texture, so this reads in black &amp; white\./g, to: '' },
 ]
+
+// ── The off-diet section's notes, without a chart (CUL-2588 ruling (b), 2026-11-06) ──────────────
+//
+// v1's "Off-diet protein exposure over time" notes explain its weekly chart: a dashed box is a week
+// not read as clean, and its bands are a floor. Sheet 1 draws no such chart (the PM's reason: the
+// week-by-week view that matters is the incidents, which the lead chart draws), so each note is
+// rewritten to stand on its own. Nothing is computed here: the weeks come from v1's own classifier
+// (`offDietWeek`) over the snapshot's `proteinTimeline`, so the words and v1's chart cannot disagree.
+
+/** "Sep 16 to 22" or "Sep 30 to Oct 6": the days of chart column `i` inside the chart's scope. */
+function offDietWeekSpan(t: ReportSnapshot['proteinTimeline'], i: number): string {
+  const start = t.weekStartDates[i]
+  const end = new Date(Date.parse(`${start}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10)
+  const a = start < t.scopeStartDate ? t.scopeStartDate : start
+  const b = end > t.scopeEndDate ? t.scopeEndDate : end
+  const from = fmtDay(a)
+  const to = fmtDay(b)
+  if (a === b) return from
+  return from.slice(0, 3) === to.slice(0, 3) ? `${from} to ${to.slice(4)}` : `${from} to ${to}`
+}
+
+/**
+ * v1's unread-week note as a sentence that needs no chart. Two forms, as v1 has:
+ *   - the trial's clean-record statement is withheld: no week of the trial is read as free of
+ *     off-diet food (v1: "no week here is drawn as a zero");
+ *   - otherwise each week too thinly logged to read is named by its dates, with its meal days
+ *     (v1 drew a dashed box and printed "3/3 d" under it).
+ * Empty when v1 prints neither (every week is a bar, a clean zero, or outside the trial).
+ */
+export function offDietUnreadNote(snap: ReportSnapshot): string {
+  const t = snap.proteinTimeline
+  const unread = t.weekStartDates.map((_, i) => i).filter((i) => offDietWeek(t, i) === 'unread')
+  if (unread.length === 0) return ''
+  if (t.zeroWithheld) {
+    return `<div class="subnote">No week of this trial is read as free of off-diet food, because this report withholds the trial&rsquo;s clean-record statement (see <em>Interpreting this record</em>).</div>`
+  }
+  const weeks = unread.map((i) => {
+    const days = t.scopeDaysByBucket[i] ?? 0
+    return `${offDietWeekSpan(t, i)} (meals on ${t.mealDaysByBucket[i] ?? 0} of ${days} day${days === 1 ? '' : 's'}${days < 7 ? ', a part week' : ''})`
+  })
+  const list = weeks.length === 1 ? weeks[0] : `${weeks.slice(0, -1).join('; ')}; and ${weeks[weeks.length - 1]}`
+  return `<div class="subnote">Meals were logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days in ${
+    weeks.length === 1 ? 'the week of' : 'each of the weeks of'
+  } ${list}: too few to read ${weeks.length === 1 ? 'that week' : 'those weeks'} as free of off-diet food.</div>`
+}
+
+/** v1's off-diet section with its chart-keyed notes rewritten to stand alone (see above). */
+function offDietNotesStandAlone(div: string, snap: ReportSnapshot): string {
+  return div
+    .replace(/<div class="subnote"><svg class="key"[\s\S]*?<\/svg>:[\s\S]*?<\/div>/, offDietUnreadNote(snap))
+    .replace(' so these bands are a floor.', ' so these counts are a floor.')
+    // A free-fed bowl's standing proteins: v1 says they are not in "these bars"; sheet 1 draws none.
+    .replace(/(do(?:es)? not appear in) these bars\./g, '$1 these counts.')
+}
 
 /** v1's words with v2's pointers; a chart's SVG, its captions and v1's contents line left out (see the header). */
 function carry(div: string, input: ReportSnapshot): string {

@@ -94,6 +94,9 @@ import {
   type TimingStoryFinding,
   type StapleWashoutDiagnostic,
   INTAKE_TRIGGER_RANK,
+  intakeCheckCoverage,
+  detectIntakeDecline,
+  withEn5Config,
 } from '../generate-signal/detection.ts'
 // The SHARED protein canonicalizer (lib/protein.ts via the generate-signal re-export —
 // same path detection.ts uses, so esbuild inlines one copy). The appendix-B tally MUST
@@ -164,8 +167,8 @@ import {
 } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
-import { carriesTrialDiet, COVERAGE_FLOOR, VEHICLE_HOW_GIVEN, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
-import { weightStory, type WeightPoint, type WeightReading } from '../../../lib/weightStory.ts'
+import { carriesTrialDiet, COVERAGE_FLOOR, REFUSAL_MIN_RATED, REFUSAL_MIN_SPAN_MS, VEHICLE_HOW_GIVEN, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
+import { countedWeighIns, WEIGHT_RULES, weightStory, type WeightPoint, type WeightReading } from '../../../lib/weightStory.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 export type {
   TrialBlock,
@@ -1927,6 +1930,34 @@ export interface SymptomAggregate {
 }
 
 /** One safety check that did not flag, with the floors it applied (CUL-2003). */
+/**
+ * CUL-2565: the outcome of each intake and weight check, fired or not, so a sheet with no flag can
+ * say whether anyone looked. `safetyChecks` covers the symptom checks; these are the rest. Each
+ * count is the one the check itself read, through the detector's own exported helper, and each
+ * floor is the detector's own (never retyped here). `flagged` is in the band already.
+ */
+export interface CheckOutcome {
+  check: 'intake_decline' | 'trial_diet_refusal' | 'weight_loss'
+  /** `found_not_flagged`: the check's own logic fired, but this report carries no flag for it
+   *  (adversarial pass 1 on CUL-2565): said apart, never as "did not trigger". */
+  state: 'flagged' | 'not_flagged' | 'too_few' | 'found_not_flagged'
+  /** With `found_not_flagged`: what the check found, and why the band does not carry it. */
+  found?:
+    | { kind: 'one_bout'; unfinished: number; rated: number; spanHours: number }
+    | { kind: 'refused_then_vomited'; episodes: number; days: number; windowMinutes: number; firstLocalDay: string }
+  /** What the check read: rated meals, rated trial-diet feedings (or rated feedings, on the meal
+   *  record when the trial diet could not be identified), or weigh-ins. */
+  seen: number
+  /** The least the check needs to read at all. */
+  needed: number
+  /** The days back from the check's end that `seen` covers; null for the trial's whole range. */
+  windowDays: number | null
+  /** The check's end (the detector's `now`), so the render can name both instants (CUL-2368). */
+  endIso: string | null
+  /** The refusal check's population (`TrialRefusalPopulation`). */
+  population?: 'trial_diet' | 'meal_record'
+}
+
 export type SafetyCheck =
   | {
       kind: 'ongoing'
@@ -3469,6 +3500,9 @@ export interface ReportSnapshot {
   /** The ongoing and getting-worse checks that ran on a symptom in the window and did not flag
    *  (CUL-2003). Rendered with the band, or in its place when no flag fired; never a clearance. */
   safetyChecks: SafetyCheck[]
+  /** CUL-2565: the intake, trial-refusal and weight checks' outcomes. Optional so a snapshot frozen
+   *  before it existed still renders; v1 never reads it (its page prints nothing for them). */
+  checkOutcomes?: CheckOutcome[]
   weight: WeightSection
   atAGlance: AtAGlance
   symptoms: SymptomAggregate[]
@@ -6023,6 +6057,96 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     })
   }
 
+  // ── The intake and weight checks' outcomes (CUL-2565) ────────────────────────
+  // A sheet with no flag could say "ran and did not trigger" only for the symptom checks. Each
+  // outcome here is read off the check itself: its own exported count and its own floor. Under the
+  // floor is `too_few`, never "did not trigger": a check that could not read is not a check that
+  // came back quiet. Above it, silence is still not an all-clear, and the render says so.
+  const checkOutcomes: CheckOutcome[] = []
+  const hasFlag = (...kinds: SafetyFlag['kind'][]): boolean => safetyFlags.some((f) => kinds.includes(f.kind))
+  {
+    const cov = intakeCheckCoverage(detInput, detConfig)
+    // Adversarial pass 1 (QUIET): Home's intake lane also runs I5, refused then vomited within
+    // minutes, under `engines_v3_en5`; this report's band does not (a gap filed apart, v1 included).
+    // So where I5 fires for this account and no intake flag is carried, the line says it was found,
+    // never that the intake check came back quiet.
+    //
+    // Adversarial pass 2 (QUIET): I5 reads its own 14-day lookback of meals AND vomits, so the
+    // window's events alone (a 2-day custom range) hid episodes Home's card fires on. It reads the
+    // deduped pull to the window's end, as CUL-2403 gave the intake lane. And on a past window it
+    // also runs at real-now, as the weight check does: the louder of the two is said (the stopgap
+    // while which "now" a past window's intake outcome answers to is the PM's ruling, filed).
+    const i5At = (events: typeof dedupedAll, nowIso: string) =>
+      detectIntakeDecline({ ...buildDetectionInput(input, scope, events, droppedEventIds, events), now: nowIso }, withEn5Config(detConfig)).find(
+        (f) => f.refusedThenVomited,
+      )?.refusedThenVomited
+    const i5 =
+      hasFlag('intake_decline') || !isEngineKeyOn(input.engineFlags, 'engines_v3_en5')
+        ? undefined
+        : (i5At(intakeEvents, detInput.now) ?? (input.now === detInput.now ? undefined : i5At(dedupedAll, input.now)))
+    checkOutcomes.push({
+      check: 'intake_decline',
+      state: hasFlag('intake_decline') ? 'flagged' : i5 ? 'found_not_flagged' : cov.ratedMeals < cov.needed ? 'too_few' : 'not_flagged',
+      ...(i5
+        ? { found: { kind: 'refused_then_vomited' as const, episodes: i5.episodeCount, days: i5.dayCount, windowMinutes: i5.windowMinutes, firstLocalDay: i5.firstLocalDay } }
+        : {}),
+      seen: cov.ratedMeals,
+      needed: cov.needed,
+      windowDays: cov.windowDays,
+      endIso: detInput.now,
+    })
+  }
+  if (trialBlock?.refusalCheck) {
+    const rc = trialBlock.refusalCheck
+    checkOutcomes.push({
+      check: 'trial_diet_refusal',
+      // Only the ratings floor makes the check unable to read. Its days floor counts the days a
+      // feeding was LEFT unfinished, so under it the check read and found too few refusals.
+      // Adversarial pass 1 (QUIET): the range fact can fire inside one bout the band's episode guard
+      // holds back (three refusals in three hours across midnight). The check found it; it is said
+      // as found, with why the band does not carry it, never as "did not trigger".
+      state: hasFlag('trial_diet_refusal')
+        ? 'flagged'
+        : trialBlock.rangeRefusal
+          ? 'found_not_flagged'
+          : rc.rated < REFUSAL_MIN_RATED
+            ? 'too_few'
+            : 'not_flagged',
+      ...(!hasFlag('trial_diet_refusal') && trialBlock.rangeRefusal
+        ? {
+            found: {
+              kind: 'one_bout' as const,
+              unfinished: trialBlock.rangeRefusal.refusedFeedings,
+              rated: trialBlock.rangeRefusal.ratedFeedings,
+              spanHours: REFUSAL_MIN_SPAN_MS / MS_PER_HOUR,
+            },
+          }
+        : {}),
+      seen: rc.rated,
+      needed: REFUSAL_MIN_RATED,
+      windowDays: null,
+      endIso: null,
+      population: rc.population,
+    })
+  }
+  // The weight lane runs only where it is on and the record holds weigh-ins (`weightLaneFor`); off,
+  // the check never ran, and nothing is said for it.
+  if (detInput.weight) {
+    const nowMs = parseMs(detInput.now)
+    const seen = nowMs === null ? 0 : countedWeighIns({ readings: detInput.weight.readings, nowMs })
+    // Two: the story compares the latest weigh-in with the highest before it, so one reading is
+    // weightStory's `one_reading` state, which never fires. A definition, not a tuning floor.
+    const needed = 2
+    checkOutcomes.push({
+      check: 'weight_loss',
+      state: hasFlag('weight_loss', 'weight_unchecked') ? 'flagged' : seen < needed ? 'too_few' : 'not_flagged',
+      seen,
+      needed,
+      windowDays: WEIGHT_RULES.windowDays,
+      endIso: detInput.now,
+    })
+  }
+
   // ── The checks that ran and did not flag (CUL-2003) ──────────────────────────
   // The band used to show only what fired, so a vet scanning it could not tell "the ongoing and
   // getting-worse checks ran and stayed under their floors" from "they never ran". Named per
@@ -7276,6 +7400,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     clinicalQuestion,
     safetyFlags,
     safetyChecks,
+    checkOutcomes,
     weight: {
       ...weight,
       // CUL-2286 — the trial sentence's change, measured over the trial's own evidence range

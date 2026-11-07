@@ -293,7 +293,11 @@ const GRID_SCOPES: Record<string, { scopeStart: string | null; scopeEnd: string 
 const GRID_ZONES = [UTC_MINUS_7, UTC_PLUS_11, 'UTC'];
 
 function digest(f: TrialFacts): string {
-  return createHash('sha256').update(JSON.stringify(f)).digest('hex').slice(0, 16);
+  // CUL-2565 added `refusalCheck`, a count the report reads and nothing else does. It is left out
+  // here so these goldens keep proving every field that existed when they were captured is
+  // unchanged; regenerating them would have hidden real drift in those fields.
+  const { refusalCheck: _added, ...before } = f;
+  return createHash('sha256').update(JSON.stringify(before)).digest('hex').slice(0, 16);
 }
 
 function gridCases(): Array<[string, TrialFacts]> {

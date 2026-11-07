@@ -1148,8 +1148,10 @@ export const OFF_DIET_ZERO_MIN_MEAL_DAYS = Math.ceil(COVERAGE_FLOOR * 7)
  *   • `unread`  — no off-diet feeding, but the week cannot be read as clean: too few meal-days, or
  *                 page one withholds the clean-record statement (`zeroWithheld`).
  */
-type OffDietWeek = 'outside' | 'bar' | 'zero' | 'unread'
-function offDietWeek(t: import('./report.ts').ProteinTimeline, w: number): OffDietWeek {
+export type OffDietWeek = 'outside' | 'bar' | 'zero' | 'unread'
+// Exported for v2's sheet 1 (CUL-2588 ruling (b)): its off-diet notes name the weeks this same
+// classifier leaves unread, so the words and v1's chart can never disagree.
+export function offDietWeek(t: import('./report.ts').ProteinTimeline, w: number): OffDietWeek {
   if ((t.scopeDaysByBucket[w] ?? 0) === 0 && proteinWeekTotal(t, w) === 0) return 'outside'
   if (proteinWeekTotal(t, w) > 0) return 'bar'
   if (!t.zeroWithheld && (t.mealDaysByBucket[w] ?? 0) >= OFF_DIET_ZERO_MIN_MEAL_DAYS) return 'zero'
@@ -1848,7 +1850,7 @@ export function chronicitySpanDaysShown(
 }
 
 /** The generated-at day, localized (for the letterhead stamp). */
-function localDayKeyOf(iso: string, tz: string | null): string {
+export function localDayKeyOf(iso: string, tz: string | null): string {
   const ms = Date.parse(iso)
   if (Number.isNaN(ms)) return iso.slice(0, 10)
   if (tz) {
@@ -2099,7 +2101,7 @@ function futureNote(e: RecordEdge): string {
 }
 
 /** "Jun 19", or "Jan 3, 2027" when the day falls in another year than the range box states. */
-function fmtDayScopedTo(dayKey: string, windowEndKey: string): string {
+export function fmtDayScopedTo(dayKey: string, windowEndKey: string): string {
   const y = dayParts(dayKey)?.y
   return y !== undefined && y !== dayParts(windowEndKey)?.y ? fmtDayYear(dayKey) : fmtDay(dayKey)
 }

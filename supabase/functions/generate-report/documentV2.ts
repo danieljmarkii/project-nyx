@@ -19,6 +19,7 @@
 import { leftOutBandLine } from './photoLeaveOut.ts'
 import {
   REPORT_SYMPTOM_TYPES,
+  type CheckOutcome,
   type ConcurrentChange,
   type IncidentPhotoLeftOut,
   type ReportSnapshot,
@@ -39,6 +40,8 @@ import {
   lastEntryLine,
   safetyChecksText,
   fmtLocalTime,
+  fmtDayScopedTo,
+  localDayKeyOf,
   safetyFlagRow,
   timeConfidence,
   scopeBasisLabel,
@@ -481,7 +484,9 @@ export function colophonOf(snap: ReportSnapshot, opts: DocumentV2Options, sheets
  *  v1's thumbnail points at v1's appendix E, which v2 does not print; the dated photo beside a band
  *  line is R-10's (`bandPhotosOf`). The flag TEXT is v1's, with only its pointers swapped
  *  (CUL-2350): the document passes `v2FlagPointersOf`, so every "see appendix" lands on a sheet v2
- *  prints. The default is v1's own pointers, so `flagRowOf(f, s)` is v1's row byte for byte. */
+ *  prints. With v1's own pointers (the default) `flagRowOf(f, s)` is v1's band row byte for byte,
+ *  first-sheet facts included: both pass `v1FirstSheet` (CUL-2555). The AI lead's fact table calls
+ *  `safetyFlagRow` without it and so still lacks those facts (filed for after CUL-2619). */
 export function flagRowOf(f: SafetyFlag, snap: ReportSnapshot, ptr: FlagPointers = V1_FLAG_POINTERS): { tag: string; html: string } {
   const noPhotos: ReportSnapshot = { ...snap, incidentPhotos: [] }
   let captured: { tag: string; html: string } | null = null
@@ -517,11 +522,68 @@ export function bandFlagOf(f: SafetyFlag): SafetyFlag {
   return { ...f, trialDietLabels: [`${f.trialDietLabels[0]} + ${n} other trial item${n === 1 ? '' : 's'}`] }
 }
 
-/** v1's "ran and did not trigger" sentence, word for word (CUL-2003; PM ruling 2026-10-19). */
+/** One intake or weight check, in the band's checks register: what it read and over when. */
+function checkOutcomeClause(o: CheckOutcome, snap: ReportSnapshot): string {
+  const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
+  // Both instants, as the symptom checks name theirs (CUL-2368): the window is N × 24h back from
+  // the detector's now, so it starts partway through a day.
+  const at = (iso: string): string =>
+    `${h(fmtLocalTime(iso, snap.timezone))} on ${h(fmtDayScopedTo(localDayKeyOf(iso, snap.timezone), snap.scope.endDate))}`
+  const span = (): string => {
+    if (o.endIso === null || o.windowDays === null) return ''
+    const end = Date.parse(o.endIso)
+    if (!Number.isFinite(end)) return ` in the ${o.windowDays} days to the end of this window`
+    return ` from ${at(new Date(end - o.windowDays * MS_PER_DAY).toISOString())} to ${at(o.endIso)}`
+  }
+  const need = (what: string): string => (o.state === 'too_few' ? `, ${o.needed} needed${what}` : '')
+  // Found by the check's own logic, not carried as a flag here (adversarial pass 1 on CUL-2565).
+  if (o.found?.kind === 'one_bout') {
+    const fed = o.population === 'meal_record' ? ['rated feeding', 'rated feedings'] : ['rated trial-diet feeding', 'rated trial-diet feedings']
+    return `trial diet not eaten (${o.found.unfinished} of ${plural(o.found.rated, fed[0], fed[1])} left unfinished, all within ${o.found.spanHours} hours, too short a span for the flag)`
+  }
+  if (o.found?.kind === 'refused_then_vomited') {
+    return `a meal refused and then vomit within ${o.found.windowMinutes} minutes (${plural(o.found.episodes, 'time', 'times')} on ${plural(o.found.days, 'day', 'days')}, the first ${h(fmtDayScopedTo(o.found.firstLocalDay, snap.scope.endDate))}), found by the app's own intake check, which this report does not carry as a flag`
+  }
+  switch (o.check) {
+    case 'intake_decline':
+      // "The intake check", never "reduced intake": the sentence before it on the checks line is a
+      // trial sign's own check, and an extractor joins the two, so a decline word here read as a
+      // decline in that sign (CI extraction, spec §8 rule 3). The check's name says no direction.
+      return `the intake check (${plural(o.seen, 'rated meal', 'rated meals')}${span()}${need('')})`
+    case 'trial_diet_refusal': {
+      const fed = o.population === 'meal_record' ? ['rated feeding', 'rated feedings'] : ['rated trial-diet feeding', 'rated trial-diet feedings']
+      const who = o.population === 'meal_record' ? 'trial diet not eaten, read over every rated feeding because the trial diet could not be told apart' : 'trial diet not eaten'
+      // "The trial days this report covers", v1's own phrase: the count is the coverage range (the
+      // trial clipped to the window), never the whole trial (cold read at f89c7ff).
+      return `${who} (${plural(o.seen, fed[0], fed[1])} over the trial days this report covers${need('')})`
+    }
+    case 'weight_loss':
+      return `weight loss (${plural(o.seen, 'weigh-in', 'weigh-ins')}${span()}${need('')})`
+  }
+}
+
+/**
+ * v1's "ran and did not trigger" sentence, word for word (CUL-2003; PM ruling 2026-10-19), then the
+ * intake and weight checks v1 never names (CUL-2565, PM ruling (a) on brief B, 2026-11-06): each
+ * that read enough and stayed quiet, and each that had too little to read, with its count and its
+ * floor. A flagged one is in the band already. Neither list is an all-clear.
+ */
 function checksHtmlOf(snap: ReportSnapshot): string | null {
   const checked = safetyChecksText(snap)
-  if (checked === null) return null
-  const body = [checked.lead === null ? '' : `Ran and did not trigger, which does not rule these out: ${checked.lead}`, ...checked.rest]
+  const outcomes = snap.checkOutcomes ?? []
+  const quiet = outcomes.filter((o) => o.state === 'not_flagged').map((o) => checkOutcomeClause(o, snap))
+  const thin = outcomes.filter((o) => o.state === 'too_few').map((o) => checkOutcomeClause(o, snap))
+  const found = outcomes.filter((o) => o.state === 'found_not_flagged').map((o) => checkOutcomeClause(o, snap))
+  const lead = checked?.lead ?? null
+  const body = [
+    // v1's sentence and its notes first and whole, so the must-carry guard reads them verbatim.
+    lead === null ? '' : `Ran and did not trigger, which does not rule these out: ${lead}`,
+    ...(checked?.rest ?? []),
+    // Loudest first: what a check found, though no flag above carries it.
+    found.length === 0 ? '' : `Found in this record, not raised as a flag, so not ruled out: ${found.join('; ')}.`,
+    quiet.length === 0 ? '' : `${lead === null ? 'Ran and did not trigger, which does not rule these out' : 'Also ran and did not trigger'}: ${quiet.join('; ')}.`,
+    thin.length === 0 ? '' : `Too few entries to run, so not ruled out either: ${thin.join('; ')}.`,
+  ]
     .filter((x) => x !== '')
     .join(' ')
   return body === '' ? null : body
@@ -1120,7 +1182,19 @@ function buildLeadChart(
       twinParts.push(`${symptomLabel(s.type).toLowerCase()} ${counts.map((n, i) => (i === short && n > 0 ? `${n} in ${plural(columns[i].days, 'day', 'days')}` : cellWord(n, columns[i], unit))).join(', ')}`)
     }
     if (overflow.length > 0) {
-      overflowParts.push(`also logged: ${overflow.map((s) => `${symptomLabel(s.type).toLowerCase()} ${plural(s.count, 'entry', 'entries')}`).join('; ')}`)
+      // CUL-2566 instance 1: a sign past the chart's rows keeps v1's weekly series in words, column
+      // for column as a drawn row's twin says it, so a recent cluster of a fourth sign is not only a
+      // total. Read off the same buckets (`perCol`), never recounted.
+      overflowParts.push(
+        `also logged: ${overflow
+          .map((s) => {
+            const counts = perCol(s.weeklyBuckets, s.type)
+            const short = soFarCol(columns, unit)
+            const series = counts.map((n, i) => (i === short && n > 0 ? `${n} in ${plural(columns[i].days, 'day', 'days')}` : cellWord(n, columns[i], unit))).join(', ')
+            return `${symptomLabel(s.type).toLowerCase()} ${plural(s.count, 'entry', 'entries')}, by ${unit === 'two_weeks' ? 'fortnight' : unit === 'day' ? 'day' : 'week'} ${series}`
+          })
+          .join('; ')}`,
+      )
     }
     if (columns.some((c) => c.loggedDays === 0)) marks.add('hatch')
   }
@@ -1288,7 +1362,14 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   // Refused outright is said apart from "not fully eaten" (cold read 3, Mira: 34 of 38 refused read
   // as partial intake). Same population as `finishedMeals`, from `intakeBreakdown`.
   const refused = mc?.intakeBreakdown.find((b) => b.rating === 'refused')?.count ?? 0
-  const refusedText = refused > 0 ? ` (${refused} refused outright)` : ''
+  // CUL-2580 (PM ruling (a) on brief A, 2026-11-06): this line counts "ate most" as not fully eaten;
+  // the band's diet-not-eaten flag counts it as finished (`feedingWasFinished`), over trial-diet
+  // feedings, treats included, across the trial's evidence dates. So each names its population: the
+  // flag in v1's words, word for word, and this line its meals and, where any, its "ate most" ones.
+  // The two need not sum to each other; they count different feedings, and each says which.
+  const mostly = mc?.intakeBreakdown.find((b) => b.rating === 'most')?.count ?? 0
+  // Refused first, so its parenthesis cannot read as a share of the "ate most" (adversarial pass 2).
+  const refusedText = `${refused > 0 ? ` (${refused} refused outright)` : ''}${mostly > 0 ? `, counting ${mostly} “ate most”` : ''}`
   // CUL-2349 (N2): the unfinished days themselves, as every sign line gives its last day.
   const dates = unfinishedMealDaysOf(snap)
   const when = dates ? datesClauseOf(dates, snap.atAGlance.recordEdge.reportDate) : ''
