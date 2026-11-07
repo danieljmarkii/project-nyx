@@ -85,7 +85,7 @@ Deno.test('CUL-2565 — the trial refusal check reads its own ratings floor, not
   const t = s.checkOutcomes?.find((o) => o.check === 'trial_diet_refusal')
   assert.ok(t, 'a trial carries the refusal check')
   assert.equal(t.state, 'not_flagged', 'eighty-odd rated feedings with no refusal is a check that read')
-  assert.match(checksText(buildDocumentV2(s, OPTS)), new RegExp(`trial diet not eaten \\(${t.seen} rated trial-diet feedings over the trial\\)`))
+  assert.match(checksText(buildDocumentV2(s, OPTS)), new RegExp(`trial diet not eaten \\(${t.seen} rated trial-diet feedings over the trial days this report covers\\)`))
 })
 
 Deno.test('CUL-2565 — the weight check’s outcome prints with its weigh-ins (rendered from the fact; the lane is off in the fixtures)', () => {

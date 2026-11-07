@@ -553,7 +553,9 @@ function checkOutcomeClause(o: CheckOutcome, snap: ReportSnapshot): string {
     case 'trial_diet_refusal': {
       const fed = o.population === 'meal_record' ? ['rated feeding', 'rated feedings'] : ['rated trial-diet feeding', 'rated trial-diet feedings']
       const who = o.population === 'meal_record' ? 'trial diet not eaten, read over every rated feeding because the trial diet could not be told apart' : 'trial diet not eaten'
-      return `${who} (${plural(o.seen, fed[0], fed[1])} over the trial${need('')})`
+      // "The trial days this report covers", v1's own phrase: the count is the coverage range (the
+      // trial clipped to the window), never the whole trial (cold read at f89c7ff).
+      return `${who} (${plural(o.seen, fed[0], fed[1])} over the trial days this report covers${need('')})`
     }
     case 'weight_loss':
       return `weight loss (${plural(o.seen, 'weigh-in', 'weigh-ins')}${span()}${need('')})`
