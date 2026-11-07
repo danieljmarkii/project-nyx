@@ -364,9 +364,11 @@ export const LIVE_FLAG_MIN_BAND = 1
 
 /** live-flag: a record with any band item gets no lead. A function of the fact table alone (no
  *  sentence, cite or checker verdict is read), so no model output can pass it. Read by `verifyLead`,
- *  by the checker's decision, by `runAiLead` before any model call, and by the send and keep paths
- *  (leadPipeline.ts, run.ts); removing it from one does not remove it from the others. The sentence
- *  rules on band facts (band-first, own-sign, floor, ...) stay on as the second net. */
+ *  by the checker's decision, by `runAiLead` before any model call (leadPipeline.ts), and by the
+ *  send path's `storedLeadForSnapshot` (run.ts); removing it from one does not remove it from the
+ *  others. Not yet read by the keep's `settleLeadForKeep`, nor on the draft's own snapshot by the
+ *  `ai_lead` request (CUL-2628; no path renders a lead today). The sentence rules on band facts
+ *  (band-first, own-sign, floor, ...) stay on as the second net. */
 export function liveFlagIssues(table: FactTable): VerifyIssue[] {
   const n = table.facts.filter((f) => f.role === 'band').length
   if (n < LIVE_FLAG_MIN_BAND) return []

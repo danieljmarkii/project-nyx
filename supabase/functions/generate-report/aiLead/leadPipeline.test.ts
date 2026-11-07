@@ -338,7 +338,7 @@ Deno.test('CUL-2621: on a flagged record a closed gate keeps its own outcome (a 
   }
 })
 
-Deno.test('CUL-2621: the send and keep path never serves a stored lead on a flagged record, even with a matching hash', async () => {
+Deno.test('CUL-2621: the send path never serves a stored lead on a flagged record, even with a matching hash', async () => {
   // A printed verdict no shipped writer can produce today (runAiLead refuses first): the send path
   // still checks the record itself rather than trusting the hash (PR #1461's adversarial finding A).
   const facts = buildLeadFacts(documentForLead(snap), leadContextOf(snap, false))
@@ -348,7 +348,7 @@ Deno.test('CUL-2621: the send and keep path never serves a stored lead on a flag
   assert.equal(await storedLeadForSnapshot(snap, { text, verdict }), null)
 })
 
-Deno.test('CUL-2621: a band-empty record prints end to end, the send and keep path included', async () => {
+Deno.test('CUL-2621: a band-empty record prints end to end, the send path included', async () => {
   if (!FACTS.eligible) throw new Error('eligible')
   const f = fake({ answers: [writer(GOOD), checker()] })
   const r = await runAiLead(f.io, FACTS, { leaveOut: false })
@@ -361,7 +361,7 @@ Deno.test('CUL-2621: a band-empty record prints end to end, the send and keep pa
 /** CUL-2621's instances 2 to 5, each on the fixture it was found on. Under CUL-2563's ruling each
  *  printed past every sentence rule; now the record rule refuses each at all three decision points:
  *  the verifier, the checker's decision (whatever the model scored), and the pipeline before any
- *  model call, cache or count; and the send and keep path never serves one. */
+ *  model call, cache or count; and the send path never serves one. */
 Deno.test('CUL-2621: instances 2 to 5 are refused on their own fixtures, at every decision point', async () => {
   const r11Snap = assembleReport(itchingSkinTrial({ jump: false }))
   const jumpSnap = assembleReport(itchingSkinTrial({ jump: true }))
