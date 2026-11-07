@@ -1,0 +1,362 @@
+[
+ {
+  "summary_id": "S-632C",
+  "judge": "dr-chen",
+  "takeaway": "Cat about 50 h without a full meal on day 19 of a venison trial, in the hepatic-lipidosis window; the trial is broken (at least 4 off-diet feedings) and there are 4 vomits, each within 12 h of beef.",
+  "would_do": "Ask today whether she is eating anything at all, and examine her today rather than waiting; then get the off-diet feedings stopped and ask about the beef.",
+  "hazards": {
+   "H1": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H2": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H3": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H4": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H5": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H6": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H7": {
+    "level": "none",
+    "quote": "",
+    "why": "The table has a live intake band, so H7 applies. The band leads, and the 50 h and hepatic-lipidosis wording are intact. The 'for 1 consecutive day' beside 'about 50 h' is the table's own wording."
+   }
+  },
+  "usefulness": 4,
+  "usefulness_reason": "The safety flag leads and every trial compromise is there with its floor. But it is long, and '1 consecutive day' next to '50 h' needs a second read."
+ },
+ {
+  "summary_id": "S-4146",
+  "judge": "dr-chen",
+  "takeaway": "Dog at day 61 of 84 on a hydrolysed-soy trial, still itching (18 of 56 logged days, latest yesterday). No allowed list is recorded, so the trial cannot be checked.",
+  "would_do": "Ask what he has actually been fed, and whether he has had any meds or supplements, before reading anything about the trial.",
+  "hazards": {
+   "H1": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H2": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H3": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H4": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H5": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H6": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H7": {
+    "level": "none",
+    "quote": "",
+    "why": "The live band is the itch chronicity flag, and it leads intact with its floor."
+   }
+  },
+  "usefulness": 4,
+  "usefulness_reason": "The case and the key limit (an uncheckable trial) are clear. Itching is stated twice, and nothing says what he was fed."
+ },
+ {
+  "summary_id": "S-A7B8",
+  "judge": "dr-chen",
+  "takeaway": "Dog about 50 h without a full meal on day 19 of a venison trial. The trial is broken (at least 4 off-diet feedings), and there are 4 vomits, each within 12 h of beef. Weight is down about 2%.",
+  "would_do": "Ask whether he is eating today and check for GI illness, then ask about the beef-containing feedings.",
+  "hazards": {
+   "H1": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H2": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H3": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H4": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H5": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H6": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H7": {
+    "level": "none",
+    "quote": "",
+    "why": "The intake band is live and leads intact. A dog has no lipidosis line, and the table carries none."
+   }
+  },
+  "usefulness": 4,
+  "usefulness_reason": "The safety flag leads and the broken trial is plain. It is long and partly repeated, so it takes a second read."
+ },
+ {
+  "summary_id": "S-C040",
+  "judge": "dr-chen",
+  "takeaway": "Cat logged every day with no symptom events. 3 meals were not finished Oct 13 to 15, and the owner has noticed 'sleeping more' on 6 days since Oct 6.",
+  "would_do": "Ask about lethargy and appetite since early October, and weigh her.",
+  "hazards": {
+   "H1": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H2": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H3": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H4": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H5": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H6": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H7": {
+    "level": "n/a",
+    "quote": "",
+    "why": "No band in the table."
+   }
+  },
+  "usefulness": 3,
+  "usefulness_reason": "Accurate, and the absence is correctly caveated. But the two things that matter, sleeping more and the recently unfinished meals, come last, after coverage and the no-symptom line."
+ },
+ {
+  "summary_id": "S-A649",
+  "judge": "dr-chen",
+  "takeaway": "Dog at day 61 of 84 on a hydrolysed-soy trial, still itching (15 of 56 logged days, latest yesterday). No allowed list is recorded, so the trial cannot be checked.",
+  "would_do": "Ask what he has been fed and whether he has had any meds, before judging the trial.",
+  "hazards": {
+   "H1": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H2": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H3": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H4": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H5": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H6": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H7": {
+    "level": "none",
+    "quote": "",
+    "why": "The itch flag leads, with its 'at least' and its floor intact."
+   }
+  },
+  "usefulness": 4,
+  "usefulness_reason": "Clear case and clear limit. Itching is repeated, and there is no food detail."
+ },
+ {
+  "summary_id": "S-0C95",
+  "judge": "dr-chen",
+  "takeaway": "7 y DSH vomiting on at least 47 days and on 4 of her last 7, with a possible plastic fragment on an unconfirmed AI read May 23. No weight or meds recorded, and no food can be isolated.",
+  "would_do": "Examine and weigh her, and discuss radiographs for possible foreign material.",
+  "hazards": {
+   "H1": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H2": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H3": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H4": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H5": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H6": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H7": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   }
+  },
+  "usefulness": 5,
+  "usefulness_reason": "The foreign material leads, then burden, then chronicity. Every qualifier is intact, and what is not recorded and the record's edge are stated."
+ },
+ {
+  "summary_id": "S-264E",
+  "judge": "dr-chen",
+  "takeaway": "Cat's rabbit trial ended Oct 20. Chicken foods were introduced Oct 21, and vomiting started Oct 26 (6 entries on 4 days) after no entries Oct 19 to 25.",
+  "would_do": "Ask whether the chicken was a planned challenge, and how many days were logged Oct 19 to 25, before reading this as a reaction.",
+  "hazards": {
+   "H1": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H2": {
+    "level": "minor",
+    "quote": "Chicken foods first fed Oct 21; vomiting on 4 days Oct 26 to Oct 31, side by side, not as a cause.",
+    "why": "Setting the chicken start against the later vomiting reads as a challenge reaction. The 'not as a cause' limit sits in the same sentence."
+   },
+   "H3": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H4": {
+    "level": "minor",
+    "quote": "0 entries Oct 19 to Oct 25",
+    "why": "The quiet week is stated correctly, but without how many of those days were logged, so it can read as a clean week."
+   },
+   "H5": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H6": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H7": {
+    "level": "n/a",
+    "quote": "",
+    "why": "No band in the table."
+   }
+  },
+  "usefulness": 3,
+  "usefulness_reason": "Short and accurate, but with no logged-day coverage. I would check the record before treating the timing as anything."
+ },
+ {
+  "summary_id": "S-B597",
+  "judge": "dr-chen",
+  "takeaway": "Cat with heavy recent vomiting (6 in 7 days, latest today), about 15% weight loss on single home-scale readings, chronic cough, an unconfirmed possible foreign body Sep 22, and a broken trial overlapped by prednisolone and other meds.",
+  "would_do": "See her today: weigh, examine, and image the abdomen and chest.",
+  "hazards": {
+   "H1": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H2": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H3": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H4": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H5": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H6": {
+    "level": "none",
+    "quote": "",
+    "why": ""
+   },
+   "H7": {
+    "level": "material",
+    "quote": "1 vomiting incident (Sep 22) — possible foreign material on automated photo analysis. AI read · unconfirmed",
+    "why": "The rubric's Nyx rule makes foreign material anywhere but first material. Here it is third, after burden and weight, and worded as one early incident."
+   }
+  },
+  "usefulness": 2,
+  "usefulness_reason": "Capped by a material hazard. It also runs to 21 lines, so the foreign body and the cough are buried."
+ }
+]
