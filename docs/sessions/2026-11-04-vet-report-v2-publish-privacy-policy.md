@@ -12,7 +12,7 @@ Dispatched row for [CUL-2520](https://linear.app/projectnyx/issue/CUL-2520), bra
 - **§3, "Vet report summary (separate permission)"** (#1376, with the withdrawal sentence from #1413): what is sent to Anthropic for the summary, what never is, and what taking back the yes does.
 - **§3, removed:** "Vet report generation does not use AI at all", which the summary made false.
 
-culprit-web#9 transcribes those verbatim into `src/pages/privacy.astro`, links "Veterinary Disclaimer" to `/disclaimer` as the source links it, and moves the effective date to November 4, 2026. No project-nyx policy edit was needed: the source keeps `[SET WHEN HOSTED]` and the site holds the date, as it did in July.
+culprit-web#9 transcribes those verbatim into `src/pages/privacy.astro`, links "Veterinary Disclaimer" to `/disclaimer` as the source links it, and moves the effective date to the publish day (November 4 in the PR; the PM moved it to November 7, 2026 before merging). No project-nyx policy edit was needed: the source keeps `[SET WHEN HOSTED]` and the site holds the date, as it did in July.
 
 ## How it was checked
 
@@ -23,3 +23,7 @@ culprit-web#9 transcribes those verbatim into `src/pages/privacy.astro`, links "
 - Merge culprit-web#9 (a merge to its main publishes the live site). If it merges after November 4, set the date to the merge day first.
 - Two rulings, as decision briefs in the project-nyx PR: whether another pending policy change publishes in this cut, and whether the policy's change clause ("for material changes, tell you in the app before they take effect") requires in-app notice for this one.
 - The project-nyx PR stays unmerged until the site is live, so CUL-2520 does not close early.
+
+## Outcome
+
+The PM merged culprit-web#9 on 2026-11-07 at 13:32 UTC, with the effective date set to November 7, 2026. The live page served `Effective November 7, 2026` within a minute; the same block-by-block comparison against `docs/legal/privacy-policy.md` on main (unchanged since November 2) shows no wording drift.
