@@ -40,12 +40,13 @@ Deno.test('the band leads the payload in the order sheet 1 prints it, with each 
   const band = doc.blocks.find((b) => b.kind === 'band')
   if (!band || band.kind !== 'band') throw new Error('the Nyx record has a band')
   const f = eligible(doc, nyx)
-  // CUL-2381 ruling (a) prints burden, weight loss and intake decline first; band item 1 of the lead
-  // is the band's first PRINTED row, so band-first opens the lead where the band opens.
+  // CUL-2627 ruling (a) prints a present blood or foreign-material flag first, then CUL-2381's burden,
+  // weight loss and intake decline; band item 1 of the lead is the band's first PRINTED row, so
+  // band-first opens the lead where the band opens.
   assert.deepEqual(f.payload.band.map((b) => [b.id, b.label]), band.items.map((i) => [i.id, i.tag]))
   const bySnapshot = [...band.items].sort((a, b) => Number(/^band-(\d+)-/.exec(a.id)![1]) - Number(/^band-(\d+)-/.exec(b.id)![1]))
   assert.notDeepEqual(bySnapshot.map((i) => i.id), band.items.map((i) => i.id), 'Nyx exercises the reorder')
-  assert.equal(f.payload.band[0].label, 'Burden')
+  assert.equal(f.payload.band[0].label, 'Foreign material')
   assert.equal(f.table.safety_live, true)
   assert.equal(f.table.facts.find((x) => x.id === band.items[0].id)?.required, true)
   assert.equal(f.table.facts.filter((x) => x.role === 'band' && x.required).length, 1)

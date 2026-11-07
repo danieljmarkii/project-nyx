@@ -27,7 +27,7 @@
 // scroll can rest anywhere, and only the pinned sentence is beside the bars at every position
 // (adversarial pass on CUL-2295; the PM rules whether it may hide).
 // Frames are known only on the device (its height and text size), so the script measures there.
-import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, backSheetHtml, bandPhotosHtml, labelTableCells } from './renderBackV2.ts'
+import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, PARTLY_PRINT, backSheetHtml, bandPhotosHtml, labelTableCells } from './renderBackV2.ts'
 import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { COUNT_AXIS_MIN_MAX } from './renderPrintV2.ts'
 import { fmtDay } from './render.ts'
@@ -52,6 +52,8 @@ export const PIN_SHARE = 0.38
 
 const SIGN_ROW_H = 34
 const BAR_H = 22
+/** The thinnest intake share drawn, in the plot's units: a thinner one vanished on a copy (CUL-2614). */
+const INTAKE_MIN_H = 2
 const SPAN_ROW_H = 14
 
 function x0(i: number, n: number): number {
@@ -135,8 +137,15 @@ function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[]
     if (!cell || cell.rated === 0 || cell.notFinished === 0) return
     const w = Math.max(2, colW(n) * 0.62)
     const x = x0(i, n) + (colW(n) - w) / 2
-    const refusedH = (cell.refused / cell.rated) * BAR_H
-    const partlyH = ((cell.notFinished - cell.refused) / cell.rated) * BAR_H
+    // A share that is there is drawn, however thin: at 1 of 28 rated a partly-eaten share fell under a
+    // copier's blur and threshold, so a copy showed nothing (adversarial pass 1 on CUL-2614). One
+    // scale, h(k) = floor + k/rated of the rest, for the refused share and for the whole not-finished
+    // bar: it is the floor at 1 and the full bar at rated, and it never falls as either count rises,
+    // so a worse week never draws shorter or with less crimson (adversarial pass 2 broke a per-share
+    // floor that did). It overstates a share by at most the floor; the "n of N" label is exact.
+    const intakeH = (k: number): number => (k > 0 ? INTAKE_MIN_H + (k / cell.rated) * (BAR_H - INTAKE_MIN_H) : 0)
+    const refusedH = intakeH(cell.refused)
+    const partlyH = intakeH(cell.notFinished) - refusedH
     // An intake bar is a share of the meals rated, so a short week does not shorten it: it stays
     // filled, refused solid, never hollowed (adversarial pass 1 on PR-29: Cooper's newest column).
     if (refusedH > 0) parts.push(`<rect class="bar lead" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)
@@ -353,7 +362,9 @@ body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto
 .mast .fold .win{color:var(--ink2);}
 .mast .brief{display:none;}
 .mast .last{font-weight:600;margin-top:0.35rem;}
-.disc{margin:0.6rem 0;color:var(--ink2);font-size:0.875rem;}
+/* PM ruling (a) on CUL-2627's brief A: v1's disclosures in full ink, body size, behind a black rule. */
+.disc{margin:0.6rem 0;color:var(--ink);font-size:1rem;}
+.disc .cherry{margin:0.4rem 0 0;border-left:3px solid var(--ink);padding:0 0 0 0.6rem;}
 section{margin:1rem 0 0;}
 h2{font-size:1rem;line-height:1.3;margin:0 0 0.4rem;font-weight:650;}
 ul,ol{margin:0;padding:0;list-style:none;}
@@ -462,11 +473,15 @@ ${BACK_STYLE_PHONE_SCREEN}
 [data-compact] .band h2{text-transform:none;letter-spacing:0;}
 }
 @media print{
+/* CUL-2614: on paper the partly tone is the print sheet's, which survives a copier; the screen's
+   light #d9a3b0 vanished from a photocopy of a printed phone copy. */
+:root{--partly:${PARTLY_PRINT};}
 html,body{font-size:9.5pt;}
 .sheet{padding:0;max-width:none;}
 .mast .eyebrow{font-size:7.5pt;}
 .mast h1{font-size:20pt;}
-.disc,.band .checks,.checks.unframed,.twin{font-size:8.5pt;}
+.band .checks,.checks.unframed,.twin{font-size:8.5pt;}
+.disc{font-size:9.5pt;}
 h2{font-size:9pt;}
 .changes h2,.sech,.colo{font-size:7.5pt;}
 .lede{font-size:13pt;}

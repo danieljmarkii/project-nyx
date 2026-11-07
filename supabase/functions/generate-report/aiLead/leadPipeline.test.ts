@@ -35,7 +35,8 @@ const oliveSnap = assembleReport(olive())
 const FACTS: LeadFacts = buildLeadFacts(documentForLead(oliveSnap), leadContextOf(oliveSnap, false))
 if (!FACTS.eligible || FACTS.payload.band.length !== 0) throw new Error('Olive is eligible, with an empty band')
 /** Nyx cut to its first printed band item (the burden): a lone live flag, which no longer prints. */
-const ONE_FLAG_PAYLOAD = { ...NYX_FACTS.payload, band: NYX_FACTS.payload.band.slice(0, 1) }
+// The record cut to its burden flag alone (by id: since CUL-2627 the band opens with foreign material).
+const ONE_FLAG_PAYLOAD = { ...NYX_FACTS.payload, band: NYX_FACTS.payload.band.filter((b) => b.id === 'band-3-symptom_burden-vomit') }
 const ONE_FLAG: LeadFacts = { eligible: true, payload: ONE_FLAG_PAYLOAD, table: tableFromPayload(ONE_FLAG_PAYLOAD) }
 
 /** A careful lead on Olive's table: every number and word from a cited line. */
