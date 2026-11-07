@@ -1,0 +1,42 @@
+{
+ "S-63A2": {
+  "src": "r11-jump#A",
+  "arm": "A",
+  "fixture": "r11-jump"
+ },
+ "S-B4DC": {
+  "src": "nyx-v2#A",
+  "arm": "A",
+  "fixture": "nyx-v2"
+ },
+ "S-8B6A": {
+  "src": "cooper#A",
+  "arm": "A",
+  "fixture": "cooper"
+ },
+ "S-AD39": {
+  "src": "h2#A",
+  "arm": "A",
+  "fixture": "h2"
+ },
+ "S-4228": {
+  "src": "bakeoff-nyx#A",
+  "arm": "A",
+  "fixture": "bakeoff-nyx"
+ },
+ "S-4A33": {
+  "src": "olive#A",
+  "arm": "A",
+  "fixture": "olive"
+ },
+ "S-C692": {
+  "src": "cooper-cat#A",
+  "arm": "A",
+  "fixture": "cooper-cat"
+ },
+ "S-7A2D": {
+  "src": "r11#A",
+  "arm": "A",
+  "fixture": "r11"
+ }
+}

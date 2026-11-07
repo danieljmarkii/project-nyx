@@ -1,0 +1,99 @@
+{
+ "fixture": "olive",
+ "n": 4,
+ "result": {
+  "outcome": "rejected",
+  "reason": "verifier"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "verifier",
+   "fact_hash": "d3c7d3f901eb46f352d15acd4ee1ab9fd99e5310b8ac70c6f2ad5d955c87f4b0",
+   "prompt": "vr2-lead-6",
+   "verifier": "vr2-9",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": null,
+   "sentences": null,
+   "verifier_errors": [
+    {
+     "sentence": 2,
+     "check": "order"
+    }
+   ],
+   "checker": null,
+   "attempts": 2,
+   "at": "2026-11-07T14:30:43.335Z",
+   "text_sha": null
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Olive has 42 of 42 days logged; no symptom events were logged in this window, and absence of a log is not evidence a symptom did not occur.",
+      "cites": [
+       "line-1",
+       "absence"
+      ]
+     },
+     {
+      "text": "Meals: 42 logged; 3 not fully eaten, on 3 days, first Oct 13, last Oct 15 (1 day before this report).",
+      "cites": [
+       "intake"
+      ]
+     },
+     {
+      "text": "Noticed: answered on 42 of 42 days; sleeping more on 6, the first Oct 6.",
+      "cites": [
+       "noticed"
+      ]
+     }
+    ]
+   },
+   "ms": 13087
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Olive has 42 of 42 days logged.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "Meals (logged as meals, not treats): 42 logged; 42 rated; 3 not fully eaten, on 3 days, first Oct 13, last Oct 15 (1 day before this report).",
+      "cites": [
+       "intake"
+      ]
+     },
+     {
+      "text": "Noticed: answered on 42 of 42 days; sleeping more on 6, the first Oct 6.",
+      "cites": [
+       "noticed"
+      ]
+     }
+    ]
+   },
+   "ms": 6121
+  }
+ ],
+ "model_calls": 2,
+ "gate_reads": [
+  true
+ ],
+ "wall_ms": 19214
+}

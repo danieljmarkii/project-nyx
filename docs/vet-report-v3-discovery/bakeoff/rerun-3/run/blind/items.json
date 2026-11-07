@@ -1,0 +1,580 @@
+[
+ {
+  "summary_id": "S-63A2",
+  "fact_table": {
+   "pet_name": "Fixture",
+   "species": "dog",
+   "record_start": "2026-08-22",
+   "record_end": "2026-10-16",
+   "band": [
+    {
+     "id": "band-1-chronicity-itch",
+     "label": "Chronicity",
+     "text": "Itching spans 49 days (first logged Aug 27): 18 episodes on 18 days; most recent 1 day ago. A sustained pattern over many samples, not a single incident. This window opens Aug 22, so 49 days is a floor — the record cannot show how long the sign predates it."
+    }
+   ],
+   "record_lines": [
+    {
+     "id": "line-1",
+     "kind": "lead",
+     "text": "Itching: 18 entries on 18 of 56 logged days, the last Oct 15."
+    },
+    {
+     "id": "intake",
+     "kind": "record",
+     "text": "Meals (logged as meals, not treats): 56 logged; 56 rated; every rated meal recorded as fully eaten."
+    },
+    {
+     "id": "confounder",
+     "kind": "confounder",
+     "text": "No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner."
+    },
+    {
+     "id": "trial-reading-1",
+     "kind": "trial_reading",
+     "text": "No allowed-food list is recorded, so nothing here has been checked against the trial."
+    },
+    {
+     "id": "trial-reading-2",
+     "kind": "trial_reading",
+     "text": "For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it — the elimination cannot be confirmed clean from this record."
+    }
+   ],
+   "trial_line": {
+    "id": "trial",
+    "text": "Diet trial (owner-entered): Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84."
+   },
+   "record_edge": []
+  },
+  "summary": [
+   "1. Itching spans 49 days (first logged Aug 27): 18 episodes on 18 days; most recent 1 day ago. A sustained pattern over many samples, not a single incident. This window opens Aug 22, so 49 days is a floor — the record cannot show how long the sign predates it. [band-1-chronicity-itch]",
+   "2. Itching: 18 entries on 18 of 56 logged days, the last Oct 15. [line-1]",
+   "3. Meals (logged as meals, not treats): 56 logged; 56 rated; every rated meal recorded as fully eaten. [intake]",
+   "4. No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner. [confounder]",
+   "5. No allowed-food list is recorded, so nothing here has been checked against the trial. [trial-reading-1]",
+   "6. For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it — the elimination cannot be confirmed clean from this record. [trial-reading-2]",
+   "7. Diet trial (owner-entered): Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84. [trial]"
+  ]
+ },
+ {
+  "summary_id": "S-B4DC",
+  "fact_table": {
+   "pet_name": "Nyx",
+   "species": "cat",
+   "record_start": "2026-09-16",
+   "record_end": "2026-10-31",
+   "band": [
+    {
+     "id": "band-3-symptom_burden-vomit",
+     "label": "Burden",
+     "text": "6 vomiting entries in the last 7 days, on 3 days in a row. A high count on its own, with no earlier week needed to compare. The owner was told to call the vet soon."
+    },
+    {
+     "id": "band-4-weight_loss",
+     "label": "Weight",
+     "text": "Weighed 3.73 kg ( 8.2 lb) on Sep 16, 2026 on a home scale, a single reading, down from 4.40 kg ( 9.7 lb) on Jun 15, 2026 on a home scale, a single reading — about 15 % of body weight. No weigh-in is recorded after it: it is 45 days ( 6 weeks) before Oct 31, 2026, when this report was generated. The latest reading against the highest before it in the last 365 days, not a diagnosis; body condition was not assessed. The owner was told it is worth booking a vet visit. Intake was recorded for 3 of 219 meals logged in this window , so this record cannot show how much Nyx is eating."
+    },
+    {
+     "id": "band-1-present_foreign",
+     "label": "Foreign material",
+     "text": "1 vomiting incident (Sep 22) — possible foreign material on automated photo analysis. AI read · unconfirmed"
+    },
+    {
+     "id": "band-2-trial_diet_refusal",
+     "label": "Diet not eaten",
+     "text": "2 of 4 rated feedings carrying the trial diet left unfinished (entries with the diet in them, treats included) on 2 days between Sep 21 and Oct 8; no trial-diet feeding rated since shows whether that has changed. Trial diet: Royal Canin Selected Protein PR, Dry + 5 other trial items. Dates covered: Sep 16 – Oct 20, 2026. Refusal of a prescribed diet is a clinical finding in its own right , not a preference. In cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window. Shown because it is present in the log; it is not a measure of how much was eaten overall. Intake ratings on the sheet headed “Intake per feeding”."
+    },
+    {
+     "id": "band-5-chronicity-vomit",
+     "label": "Chronicity",
+     "text": "Vomiting spans 44 days (first logged Sep 17): 14 episodes on 12 days; most recent today. A sustained pattern over many samples, not a single incident. Cough and vomiting are both flagged chronic for this patient. Post-tussive vomiting, and cough mistaken for hairball retching, are common in both directions, so either count may be understated as readily as overstated — both are owner-classified, reported separately and un-reclassified. This window opens Sep 16, so 44 days is a floor — the record cannot show how long the sign predates it."
+    },
+    {
+     "id": "band-6-chronicity-cough",
+     "label": "Chronicity",
+     "text": "Coughing spans 34 days (first logged Sep 17): 5 episodes on 5 days; most recent 10 days ago. A sustained pattern over many samples, not a single incident. This window opens Sep 16, so 34 days is a floor — the record cannot show how long the sign predates it."
+    }
+   ],
+   "record_lines": [
+    {
+     "id": "line-1",
+     "kind": "lead",
+     "text": "Vomiting: 16 entries (14 episodes as the flag counts them) on 12 of 45 logged days, the last Oct 31."
+    },
+    {
+     "id": "intake",
+     "kind": "record",
+     "text": "Meals (logged as meals, not treats): 219 logged; 3 rated, intake not recorded for 216; 2 not fully eaten, counting 1 “ate most”, on 2 days, first Sep 21, last Oct 2 (29 days before this report)."
+    },
+    {
+     "id": "sign-cough",
+     "kind": "record",
+     "text": "Coughing: 5 entries on 5 of 45 logged days, the last Oct 21."
+    },
+    {
+     "id": "sign-sneeze",
+     "kind": "record",
+     "text": "Sneezing: 3 entries on 3 of 45 logged days, the last Oct 24."
+    },
+    {
+     "id": "medication-00000000-0000-4000-8000-000000000001",
+     "kind": "record",
+     "text": "Prednisolone: given on 15 of 21 course days (11 partial)."
+    },
+    {
+     "id": "noticed",
+     "kind": "record",
+     "text": "Noticed: answered on 15 of 46 days; “Hunched or tucked up” on 1 (Sep 25)."
+    },
+    {
+     "id": "confounder",
+     "kind": "confounder",
+     "text": "Not a test of the diet alone. Overlapping the trial: Motozol, overlapping it Jul 26 to Aug 9; Motozol, overlapping it Sep 21 to Sep 27; Prednisolone, overlapping it Sep 21 to Oct 11; Cetirizine HCl (Zyrtec) (entered as a supplement), overlapping it Jul 26 to Oct 20 (ad-hoc, by Jul 1). Spans are the courses as recorded, not evidence of administration."
+    },
+    {
+     "id": "trial-reading-1",
+     "kind": "trial_reading",
+     "text": "2 of 4 rated feedings of the trial diet were not finished; only 4 feedings of the trial diet carry a rating, so this record cannot show the diet was eaten as fed — the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively."
+    },
+    {
+     "id": "trial-reading-2",
+     "kind": "trial_reading",
+     "text": "Weight is down about 15 % of body weight across the trial’s start (Jun 15, 2026 → Sep 16, 2026; above)."
+    },
+    {
+     "id": "trial-reading-3",
+     "kind": "trial_reading",
+     "text": "The trial diet was not fed exclusively: 11 of 167 feedings in the 35 trial days this report covers did not match it on Oct 18, Oct 19 and Oct 20, 2026 (the sheet headed “Diet history and food exposure”; a floor, not a total), so this record shows an elimination that was broken, not a clean one. 18 doses by mouth in the 35 trial days this report covers may carry a protein (above), so the elimination cannot be confirmed clean from this record."
+    },
+    {
+     "id": "trial-reading-4",
+     "kind": "trial_reading",
+     "text": "The trial diet’s own label ( Royal Canin Selected Protein PR, Dry ) also lists Pea protein and Hydrolyzed soy protein (above), so this record cannot establish that the elimination was clean."
+    },
+    {
+     "id": "trial-reading-5",
+     "kind": "trial_reading",
+     "text": "The ingredient panels of 5 of the 6 trial-diet foods ( Royal Canin Selected Protein PR, Wet ; Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S.I.T. ; Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy ; and 2 more) were not read, so a protein in them beyond the one recorded would appear nowhere in this record, and the elimination cannot be confirmed clean from it."
+    },
+    {
+     "id": "trial-reading-6",
+     "kind": "trial_reading",
+     "text": "Motozol ( 2 courses), Prednisolone and Cetirizine HCl (Zyrtec) (entered as a supplement) overlapped the trial, so a change in the signs the trial is measuring cannot be attributed to the diet alone."
+    },
+    {
+     "id": "trial-reading-7",
+     "kind": "trial_reading",
+     "text": "As of this report, Nyx lives with 1 other cat, so another animal’s food may have been available during the trial (intake not directly observed) — this record does not say whether feeding was kept separate."
+    }
+   ],
+   "trial_line": {
+    "id": "trial",
+    "text": "Diet trial (owner-entered): Royal Canin Selected Protein PR, Dry and 5 other trial foods, from Jul 26, 2026, ended Oct 20, 2026; planned for 84 days."
+   },
+   "record_edge": []
+  },
+  "summary": [
+   "1. 6 vomiting entries in the last 7 days, on 3 days in a row. A high count on its own, with no earlier week needed to compare. The owner was told to call the vet soon. [band-3-symptom_burden-vomit]",
+   "2. Weighed 3.73 kg ( 8.2 lb) on Sep 16, 2026 on a home scale, a single reading, down from 4.40 kg ( 9.7 lb) on Jun 15, 2026 on a home scale, a single reading — about 15 % of body weight. No weigh-in is recorded after it: it is 45 days ( 6 weeks) before Oct 31, 2026, when this report was generated. The latest reading against the highest before it in the last 365 days, not a diagnosis; body condition was not assessed. The owner was told it is worth booking a vet visit. Intake was recorded for 3 of 219 meals logged in this window , so this record cannot show how much Nyx is eating. [band-4-weight_loss]",
+   "3. 1 vomiting incident (Sep 22) — possible foreign material on automated photo analysis. AI read · unconfirmed [band-1-present_foreign]",
+   "4. 2 of 4 rated feedings carrying the trial diet left unfinished (entries with the diet in them, treats included) on 2 days between Sep 21 and Oct 8; no trial-diet feeding rated since shows whether that has changed. Trial diet: Royal Canin Selected Protein PR, Dry + 5 other trial items. Dates covered: Sep 16 – Oct 20, 2026. Refusal of a prescribed diet is a clinical finding in its own right , not a preference. In cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window. Shown because it is present in the log; it is not a measure of how much was eaten overall. Intake ratings on the sheet headed “Intake per feeding”. [band-2-trial_diet_refusal]",
+   "5. Vomiting spans 44 days (first logged Sep 17): 14 episodes on 12 days; most recent today. A sustained pattern over many samples, not a single incident. Cough and vomiting are both flagged chronic for this patient. Post-tussive vomiting, and cough mistaken for hairball retching, are common in both directions, so either count may be understated as readily as overstated — both are owner-classified, reported separately and un-reclassified. This window opens Sep 16, so 44 days is a floor — the record cannot show how long the sign predates it. [band-5-chronicity-vomit]",
+   "6. Coughing spans 34 days (first logged Sep 17): 5 episodes on 5 days; most recent 10 days ago. A sustained pattern over many samples, not a single incident. This window opens Sep 16, so 34 days is a floor — the record cannot show how long the sign predates it. [band-6-chronicity-cough]",
+   "7. Vomiting: 16 entries (14 episodes as the flag counts them) on 12 of 45 logged days, the last Oct 31. [line-1]",
+   "8. Meals (logged as meals, not treats): 219 logged; 3 rated, intake not recorded for 216; 2 not fully eaten, counting 1 “ate most”, on 2 days, first Sep 21, last Oct 2 (29 days before this report). [intake]",
+   "9. Coughing: 5 entries on 5 of 45 logged days, the last Oct 21. [sign-cough]",
+   "10. Sneezing: 3 entries on 3 of 45 logged days, the last Oct 24. [sign-sneeze]",
+   "11. Prednisolone: given on 15 of 21 course days (11 partial). [medication-00000000-0000-4000-8000-000000000001]",
+   "12. Noticed: answered on 15 of 46 days; “Hunched or tucked up” on 1 (Sep 25). [noticed]",
+   "13. Not a test of the diet alone. Overlapping the trial: Motozol, overlapping it Jul 26 to Aug 9; Motozol, overlapping it Sep 21 to Sep 27; Prednisolone, overlapping it Sep 21 to Oct 11; Cetirizine HCl (Zyrtec) (entered as a supplement), overlapping it Jul 26 to Oct 20 (ad-hoc, by Jul 1). Spans are the courses as recorded, not evidence of administration. [confounder]",
+   "14. 2 of 4 rated feedings of the trial diet were not finished; only 4 feedings of the trial diet carry a rating, so this record cannot show the diet was eaten as fed — the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively. [trial-reading-1]",
+   "15. Weight is down about 15 % of body weight across the trial’s start (Jun 15, 2026 → Sep 16, 2026; above). [trial-reading-2]",
+   "16. The trial diet was not fed exclusively: 11 of 167 feedings in the 35 trial days this report covers did not match it on Oct 18, Oct 19 and Oct 20, 2026 (the sheet headed “Diet history and food exposure”; a floor, not a total), so this record shows an elimination that was broken, not a clean one. 18 doses by mouth in the 35 trial days this report covers may carry a protein (above), so the elimination cannot be confirmed clean from this record. [trial-reading-3]",
+   "17. The trial diet’s own label ( Royal Canin Selected Protein PR, Dry ) also lists Pea protein and Hydrolyzed soy protein (above), so this record cannot establish that the elimination was clean. [trial-reading-4]",
+   "18. The ingredient panels of 5 of the 6 trial-diet foods ( Royal Canin Selected Protein PR, Wet ; Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S.I.T. ; Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy ; and 2 more) were not read, so a protein in them beyond the one recorded would appear nowhere in this record, and the elimination cannot be confirmed clean from it. [trial-reading-5]",
+   "19. Motozol ( 2 courses), Prednisolone and Cetirizine HCl (Zyrtec) (entered as a supplement) overlapped the trial, so a change in the signs the trial is measuring cannot be attributed to the diet alone. [trial-reading-6]",
+   "20. As of this report, Nyx lives with 1 other cat, so another animal’s food may have been available during the trial (intake not directly observed) — this record does not say whether feeding was kept separate. [trial-reading-7]",
+   "21. Diet trial (owner-entered): Royal Canin Selected Protein PR, Dry and 5 other trial foods, from Jul 26, 2026, ended Oct 20, 2026; planned for 84 days. [trial]"
+  ]
+ },
+ {
+  "summary_id": "S-8B6A",
+  "fact_table": {
+   "pet_name": "Cooper",
+   "species": "dog",
+   "record_start": "2026-09-20",
+   "record_end": "2026-10-16",
+   "band": [
+    {
+     "id": "band-1-intake_decline",
+     "label": "Intake",
+     "text": "Reduced intake. Intake has been below this pet's baseline for 2 consecutive days . Baseline read over 22 recent rated meals. Recent rated meals declined: ate some → picked at it → ate some → picked at it. The most recent fully-eaten meal was Oct 14 — about 50 h without a full meal. Recorded as a health signal — not “picky.” Meal-by-meal detail on the sheet headed “Intake per feeding”."
+    }
+   ],
+   "record_lines": [
+    {
+     "id": "line-1",
+     "kind": "lead",
+     "text": "Meals (logged as meals, not treats): The last 4 rated meals in a row were not fully eaten, the most recent on Oct 16. 44 logged; 44 rated; 4 not fully eaten, on 2 days, first Oct 15, last Oct 16 (the day of this report)."
+    },
+    {
+     "id": "sign-vomit",
+     "kind": "record",
+     "text": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13."
+    },
+    {
+     "id": "confounder",
+     "kind": "confounder",
+     "text": "No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner."
+    },
+    {
+     "id": "trial-reading-1",
+     "kind": "trial_reading",
+     "text": "The reduced-intake flag fires on the trial diet (in the flags above), so this record cannot show the diet was eaten as fed — the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively."
+    },
+    {
+     "id": "trial-reading-2",
+     "kind": "trial_reading",
+     "text": "Weight is down about 2 % of body weight across the trial’s start (Sep 26, 2026 → Oct 10, 2026; above)."
+    },
+    {
+     "id": "trial-reading-3",
+     "kind": "trial_reading",
+     "text": "The trial diet was not fed exclusively: 4 of 42 feedings during the trial did not match it on Sep 30, Oct 4, Oct 8 and Oct 13, 2026 (the sheet headed “Diet history and food exposure”; a floor, not a total), so this record shows an elimination that was broken, not a clean one."
+    },
+    {
+     "id": "trial-reading-4",
+     "kind": "trial_reading",
+     "text": "Of the proteins those feedings carried: Beef was in the 12 h before 4 of 4 vomiting episodes (an early signal, not confirmed)."
+    },
+    {
+     "id": "trial-reading-5",
+     "kind": "trial_reading",
+     "text": "The trial diet’s ingredient panel ( Cooper's Venison LID ) was not read, so a protein in it beyond the one recorded would appear nowhere in this record, and the elimination cannot be confirmed clean from it."
+    }
+   ],
+   "trial_line": {
+    "id": "trial",
+    "text": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42."
+   },
+   "record_edge": []
+  },
+  "summary": [
+   "1. Reduced intake. Intake has been below this pet's baseline for 2 consecutive days . Baseline read over 22 recent rated meals. Recent rated meals declined: ate some → picked at it → ate some → picked at it. The most recent fully-eaten meal was Oct 14 — about 50 h without a full meal. Recorded as a health signal — not “picky.” Meal-by-meal detail on the sheet headed “Intake per feeding”. [band-1-intake_decline]",
+   "2. Meals (logged as meals, not treats): The last 4 rated meals in a row were not fully eaten, the most recent on Oct 16. 44 logged; 44 rated; 4 not fully eaten, on 2 days, first Oct 15, last Oct 16 (the day of this report). [line-1]",
+   "3. Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13. [sign-vomit]",
+   "4. No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner. [confounder]",
+   "5. The reduced-intake flag fires on the trial diet (in the flags above), so this record cannot show the diet was eaten as fed — the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively. [trial-reading-1]",
+   "6. Weight is down about 2 % of body weight across the trial’s start (Sep 26, 2026 → Oct 10, 2026; above). [trial-reading-2]",
+   "7. The trial diet was not fed exclusively: 4 of 42 feedings during the trial did not match it on Sep 30, Oct 4, Oct 8 and Oct 13, 2026 (the sheet headed “Diet history and food exposure”; a floor, not a total), so this record shows an elimination that was broken, not a clean one. [trial-reading-3]",
+   "8. Of the proteins those feedings carried: Beef was in the 12 h before 4 of 4 vomiting episodes (an early signal, not confirmed). [trial-reading-4]",
+   "9. The trial diet’s ingredient panel ( Cooper's Venison LID ) was not read, so a protein in it beyond the one recorded would appear nowhere in this record, and the elimination cannot be confirmed clean from it. [trial-reading-5]",
+   "10. Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42. [trial]"
+  ]
+ },
+ {
+  "summary_id": "S-AD39",
+  "fact_table": {
+   "pet_name": "Nyx",
+   "species": "cat",
+   "record_start": "2026-09-17",
+   "record_end": "2026-10-31",
+   "band": [],
+   "record_lines": [
+    {
+     "id": "line-1",
+     "kind": "lead",
+     "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31, and 0 entries Oct 19 to Oct 25."
+    },
+    {
+     "id": "new-foods",
+     "kind": "record",
+     "text": "Chicken foods first fed Oct 21; vomiting on 4 days Oct 26 to Oct 31, side by side, not as a cause."
+    }
+   ],
+   "trial_line": {
+    "id": "trial",
+    "text": "Diet trial (owner-entered): Rabbit diet, from Sep 17, 2026, ended Oct 20, 2026."
+   },
+   "record_edge": []
+  },
+  "summary": [
+   "1. Vomiting: 6 entries on 4 days from Oct 26 to Oct 31, and 0 entries Oct 19 to Oct 25. [line-1]",
+   "2. Chicken foods first fed Oct 21; vomiting on 4 days Oct 26 to Oct 31, side by side, not as a cause. [new-foods]",
+   "3. Diet trial (owner-entered): Rabbit diet, from Sep 17, 2026, ended Oct 20, 2026. [trial]"
+  ]
+ },
+ {
+  "summary_id": "S-4228",
+  "fact_table": {
+   "pet_name": "Nyx",
+   "species": "cat",
+   "record_start": "2026-05-14",
+   "record_end": "2026-07-02",
+   "band": [
+    {
+     "id": "S1",
+     "label": "Foreign material",
+     "text": "Possible foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment · AI PHOTO READ · UNCONFIRMED · photo not retained."
+    },
+    {
+     "id": "S2",
+     "label": "S2",
+     "text": "Vomiting on 4 of the 7 days to Jun 30, her latest entries (burden flag)."
+    },
+    {
+     "id": "S3",
+     "label": "S3",
+     "text": "Vomiting for at least 47 days: 23 entries on 23 of 43 logged days, first logged May 14 (her first entry of any kind, so onset is unknown), most recent Jun 30 (chronicity flag)."
+    }
+   ],
+   "record_lines": [
+    {
+     "id": "P",
+     "kind": "record",
+     "text": "Cat · Domestic Shorthair · female, neuter status not recorded · 7 y (born Apr 1, 2019) · no weigh-ins recorded"
+    },
+    {
+     "id": "W",
+     "kind": "record",
+     "text": "Apr 4 to Jul 2, 2026 · the last 90 days (no vet visit or diet trial recorded) · logged on 43 of 90 days: 4 of the first 45 and 39 of the last 45 · her first entry of any kind is May 14 · nothing logged Jul 1 to 2"
+    },
+    {
+     "id": "L1",
+     "kind": "record",
+     "text": "AI photo reads, 18 legible of 23 entries: undigested food 12 (to Jun 6), bile or foam 5 (Jun 9 to 18), hairball 1 (Jun 21); 5 without a usable read (2 uncertain, 2 not legible, 1 pending) · AI PHOTO READ · UNCONFIRMED · no photos retained."
+    },
+    {
+     "id": "L2",
+     "kind": "record",
+     "text": "Free-fed all day, start not recorded: Nature's Variety Duck and Royal Canin Weight Care (lists chicken). Intake not directly observed."
+    },
+    {
+     "id": "L3",
+     "kind": "record",
+     "text": "Also logged: Temptations Chicken treats, at least 20 feedings May 15 to Jun 28 (ingredient panel not captured); Fancy Feast Tuna wet food, 3 meals May 18 to Jun 20."
+    },
+    {
+     "id": "L4",
+     "kind": "record",
+     "text": "No food could be isolated: chicken is in her all-day kibble, so treat days cannot be tested apart from it."
+    },
+    {
+     "id": "L5",
+     "kind": "record",
+     "text": "All 23 entries carry an owner-logged time between 10:00 and 14:00 (timing only, not an association)."
+    },
+    {
+     "id": "L6",
+     "kind": "record",
+     "text": "Not recorded: weight, body condition, medication, medical conditions, neuter status."
+    },
+    {
+     "id": "U1",
+     "kind": "record",
+     "text": "Unknown: anything before May 14."
+    },
+    {
+     "id": "U2",
+     "kind": "record",
+     "text": "Unknown: what she ate from the free-fed bowls."
+    },
+    {
+     "id": "U3",
+     "kind": "record",
+     "text": "Unknown: what the 5 unread vomits contained."
+    }
+   ],
+   "trial_line": null,
+   "record_edge": []
+  },
+  "summary": [
+   "1. Possible foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment · AI PHOTO READ · UNCONFIRMED · photo not retained. [S1]",
+   "2. Vomiting on 4 of the 7 days to Jun 30, her latest entries (burden flag). [S2]",
+   "3. Vomiting for at least 47 days: 23 entries on 23 of 43 logged days, first logged May 14 (her first entry of any kind, so onset is unknown), most recent Jun 30 (chronicity flag). [S3]",
+   "4. Cat · Domestic Shorthair · female, neuter status not recorded · 7 y (born Apr 1, 2019) · no weigh-ins recorded [P]",
+   "5. Apr 4 to Jul 2, 2026 · the last 90 days (no vet visit or diet trial recorded) · logged on 43 of 90 days: 4 of the first 45 and 39 of the last 45 · her first entry of any kind is May 14 · nothing logged Jul 1 to 2 [W]",
+   "6. AI photo reads, 18 legible of 23 entries: undigested food 12 (to Jun 6), bile or foam 5 (Jun 9 to 18), hairball 1 (Jun 21); 5 without a usable read (2 uncertain, 2 not legible, 1 pending) · AI PHOTO READ · UNCONFIRMED · no photos retained. [L1]",
+   "7. Free-fed all day, start not recorded: Nature's Variety Duck and Royal Canin Weight Care (lists chicken). Intake not directly observed. [L2]",
+   "8. Also logged: Temptations Chicken treats, at least 20 feedings May 15 to Jun 28 (ingredient panel not captured); Fancy Feast Tuna wet food, 3 meals May 18 to Jun 20. [L3]",
+   "9. No food could be isolated: chicken is in her all-day kibble, so treat days cannot be tested apart from it. [L4]",
+   "10. All 23 entries carry an owner-logged time between 10:00 and 14:00 (timing only, not an association). [L5]",
+   "11. Not recorded: weight, body condition, medication, medical conditions, neuter status. [L6]",
+   "12. Unknown: anything before May 14. [U1]",
+   "13. Unknown: what she ate from the free-fed bowls. [U2]",
+   "14. Unknown: what the 5 unread vomits contained. [U3]"
+  ]
+ },
+ {
+  "summary_id": "S-4A33",
+  "fact_table": {
+   "pet_name": "Olive",
+   "species": "cat",
+   "record_start": "2026-09-05",
+   "record_end": "2026-10-16",
+   "band": [],
+   "record_lines": [
+    {
+     "id": "line-1",
+     "kind": "lead",
+     "text": "42 of 42 days logged."
+    },
+    {
+     "id": "absence",
+     "kind": "record",
+     "text": "No symptom events were logged in this window. Absence of a log is not evidence a symptom did not occur."
+    },
+    {
+     "id": "intake",
+     "kind": "record",
+     "text": "Meals (logged as meals, not treats): 42 logged; 42 rated; 3 not fully eaten, on 3 days, first Oct 13, last Oct 15 (1 day before this report)."
+    },
+    {
+     "id": "noticed",
+     "kind": "record",
+     "text": "Noticed: answered on 42 of 42 days; “Sleeping more” on 6, the first Oct 6."
+    }
+   ],
+   "trial_line": null,
+   "record_edge": []
+  },
+  "summary": [
+   "1. 42 of 42 days logged. [line-1]",
+   "2. No symptom events were logged in this window. Absence of a log is not evidence a symptom did not occur. [absence]",
+   "3. Meals (logged as meals, not treats): 42 logged; 42 rated; 3 not fully eaten, on 3 days, first Oct 13, last Oct 15 (1 day before this report). [intake]",
+   "4. Noticed: answered on 42 of 42 days; “Sleeping more” on 6, the first Oct 6. [noticed]"
+  ]
+ },
+ {
+  "summary_id": "S-C692",
+  "fact_table": {
+   "pet_name": "Cooper",
+   "species": "cat",
+   "record_start": "2026-09-20",
+   "record_end": "2026-10-16",
+   "band": [
+    {
+     "id": "band-1-intake_decline",
+     "label": "Intake",
+     "text": "Reduced intake. Intake has been below this pet's baseline for 1 consecutive day . Baseline read over 24 recent rated meals. Recent rated meals declined: ate some → picked at it → ate some → picked at it. The most recent fully-eaten meal was Oct 14 — about 50 h without a full meal. In cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window. Recorded as a health signal — not “picky.” Meal-by-meal detail on the sheet headed “Intake per feeding”."
+    }
+   ],
+   "record_lines": [
+    {
+     "id": "line-1",
+     "kind": "lead",
+     "text": "Meals (logged as meals, not treats): The last 4 rated meals in a row were not fully eaten, the most recent on Oct 16. 44 logged; 44 rated; 4 not fully eaten, on 2 days, first Oct 15, last Oct 16 (the day of this report)."
+    },
+    {
+     "id": "sign-vomit",
+     "kind": "record",
+     "text": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13."
+    },
+    {
+     "id": "confounder",
+     "kind": "confounder",
+     "text": "No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner."
+    },
+    {
+     "id": "trial-reading-1",
+     "kind": "trial_reading",
+     "text": "The reduced-intake flag fires on the trial diet (in the flags above), so this record cannot show the diet was eaten as fed — the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively."
+    },
+    {
+     "id": "trial-reading-2",
+     "kind": "trial_reading",
+     "text": "Weight is down about 2 % of body weight across the trial’s start (Sep 26, 2026 → Oct 10, 2026; above)."
+    },
+    {
+     "id": "trial-reading-3",
+     "kind": "trial_reading",
+     "text": "The trial diet was not fed exclusively: 4 of 42 feedings during the trial did not match it on Sep 30, Oct 4, Oct 8 and Oct 13, 2026 (the sheet headed “Diet history and food exposure”; a floor, not a total), so this record shows an elimination that was broken, not a clean one."
+    },
+    {
+     "id": "trial-reading-4",
+     "kind": "trial_reading",
+     "text": "Of the proteins those feedings carried: Beef was in the 12 h before 4 of 4 vomiting episodes (an early signal, not confirmed)."
+    },
+    {
+     "id": "trial-reading-5",
+     "kind": "trial_reading",
+     "text": "The trial diet’s ingredient panel ( Cooper's Venison LID ) was not read, so a protein in it beyond the one recorded would appear nowhere in this record, and the elimination cannot be confirmed clean from it."
+    }
+   ],
+   "trial_line": {
+    "id": "trial",
+    "text": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42."
+   },
+   "record_edge": []
+  },
+  "summary": [
+   "1. Reduced intake. Intake has been below this pet's baseline for 1 consecutive day . Baseline read over 24 recent rated meals. Recent rated meals declined: ate some → picked at it → ate some → picked at it. The most recent fully-eaten meal was Oct 14 — about 50 h without a full meal. In cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window. Recorded as a health signal — not “picky.” Meal-by-meal detail on the sheet headed “Intake per feeding”. [band-1-intake_decline]",
+   "2. Meals (logged as meals, not treats): The last 4 rated meals in a row were not fully eaten, the most recent on Oct 16. 44 logged; 44 rated; 4 not fully eaten, on 2 days, first Oct 15, last Oct 16 (the day of this report). [line-1]",
+   "3. Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13. [sign-vomit]",
+   "4. No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner. [confounder]",
+   "5. The reduced-intake flag fires on the trial diet (in the flags above), so this record cannot show the diet was eaten as fed — the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively. [trial-reading-1]",
+   "6. Weight is down about 2 % of body weight across the trial’s start (Sep 26, 2026 → Oct 10, 2026; above). [trial-reading-2]",
+   "7. The trial diet was not fed exclusively: 4 of 42 feedings during the trial did not match it on Sep 30, Oct 4, Oct 8 and Oct 13, 2026 (the sheet headed “Diet history and food exposure”; a floor, not a total), so this record shows an elimination that was broken, not a clean one. [trial-reading-3]",
+   "8. Of the proteins those feedings carried: Beef was in the 12 h before 4 of 4 vomiting episodes (an early signal, not confirmed). [trial-reading-4]",
+   "9. The trial diet’s ingredient panel ( Cooper's Venison LID ) was not read, so a protein in it beyond the one recorded would appear nowhere in this record, and the elimination cannot be confirmed clean from it. [trial-reading-5]",
+   "10. Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42. [trial]"
+  ]
+ },
+ {
+  "summary_id": "S-7A2D",
+  "fact_table": {
+   "pet_name": "Fixture",
+   "species": "dog",
+   "record_start": "2026-08-22",
+   "record_end": "2026-10-16",
+   "band": [
+    {
+     "id": "band-r11",
+     "label": "itching",
+     "text": "Flag: itching over at least 49 days, the trial’s own sign. Itching spans 49 days (first logged Aug 27): 15 episodes on 15 days; most recent 1 day ago. A sustained pattern over many samples, not a single incident. This window opens Aug 22, so 49 days is a floor — the record cannot show how long the sign predates it."
+    }
+   ],
+   "record_lines": [
+    {
+     "id": "line-1",
+     "kind": "lead",
+     "text": "Itching: 15 entries on 15 of 56 logged days, the last Oct 15."
+    },
+    {
+     "id": "intake",
+     "kind": "record",
+     "text": "Meals (logged as meals, not treats): 56 logged; 56 rated; every rated meal recorded as fully eaten."
+    },
+    {
+     "id": "confounder",
+     "kind": "confounder",
+     "text": "No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner."
+    },
+    {
+     "id": "trial-reading-1",
+     "kind": "trial_reading",
+     "text": "No allowed-food list is recorded, so nothing here has been checked against the trial."
+    },
+    {
+     "id": "trial-reading-2",
+     "kind": "trial_reading",
+     "text": "For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it — the elimination cannot be confirmed clean from this record."
+    }
+   ],
+   "trial_line": {
+    "id": "trial",
+    "text": "Diet trial (owner-entered): Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84."
+   },
+   "record_edge": []
+  },
+  "summary": [
+   "1. Flag: itching over at least 49 days, the trial’s own sign. Itching spans 49 days (first logged Aug 27): 15 episodes on 15 days; most recent 1 day ago. A sustained pattern over many samples, not a single incident. This window opens Aug 22, so 49 days is a floor — the record cannot show how long the sign predates it. [band-r11]",
+   "2. Itching: 15 entries on 15 of 56 logged days, the last Oct 15. [line-1]",
+   "3. Meals (logged as meals, not treats): 56 logged; 56 rated; every rated meal recorded as fully eaten. [intake]",
+   "4. No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner. [confounder]",
+   "5. No allowed-food list is recorded, so nothing here has been checked against the trial. [trial-reading-1]",
+   "6. For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it — the elimination cannot be confirmed clean from this record. [trial-reading-2]",
+   "7. Diet trial (owner-entered): Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84. [trial]"
+  ]
+ }
+]
