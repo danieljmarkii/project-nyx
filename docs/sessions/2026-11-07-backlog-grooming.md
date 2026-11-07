@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-07
 **Mode:** DISCOVERY (Product Owner / Backlog Steward lens), attended: the PM asked for the pass
-**Outcome:** shipped via #PRNUM (this record only; the pass's writes are in Linear)
+**Outcome:** shipped via #1474 (this record only; the pass's writes are in Linear)
 **Branch:** `claude/compassionate-hawking-0lifiz`
 **Report:** the standing grooming issue [CUL-1962](https://linear.app/projectnyx/issue/CUL-1962), comment of 2026-11-07. It holds the full report and the PM's four open calls (G1 to G4).
 **Predecessor:** the 2026-10-25 pass, whose record PR (#1332) is still an unmerged draft (G1).
