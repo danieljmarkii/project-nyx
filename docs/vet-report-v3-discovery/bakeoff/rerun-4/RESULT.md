@@ -85,3 +85,5 @@ From a clean checkout, with no key in the environment:
     deno run -A --no-lock docs/vet-report-v3-discovery/bakeoff/rerun-4/run/harness.ts score
 
 This rewrites `run/score.json` byte for byte (checked on a clean worktree of the scoring commit, with both key variables unset). It makes no model call.
+
+The scorer reads `set.json` and the round fixtures from git as they stood at `3a28451` (`git show`), so it re-derives the same file on a later `main`, where #1468 moved the set to v4. That needs a full clone. This change landed after the run, when `main` was merged into the branch. It changes where the scorer reads its data, not the rule or any number: `score.json` and the blind sheet came out unchanged on the merged tree.

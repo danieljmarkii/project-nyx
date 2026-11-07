@@ -53,6 +53,17 @@ type Payload = { band: Array<{ id: string; label: string; text: string }>; recor
 
 const HERE = new URL('./', import.meta.url)
 const SET_DIR = new URL('../../../../../supabase/functions/generate-report/aiLead/exhibits/adversarial/', import.meta.url)
+// The set and the round fixtures are read as they stood at the measured commit (PM ruling "commit a"),
+// so a rescore on a later main (set v4 since #1468) re-derives the same score.json. Needs the history
+// that holds 3a28451 (any full clone of the repo). The shipped functions are imported from the tree.
+const PINNED = '3a28451'
+const REPO = new URL('../../../../../', import.meta.url)
+async function pinnedJson<T>(rel: string): Promise<T> {
+  const path = `supabase/functions/generate-report/aiLead/exhibits/adversarial/${rel}`
+  const out = await new Deno.Command('git', { args: ['-C', REPO.pathname, 'show', `${PINNED}:${path}`], stdout: 'piped', stderr: 'piped' }).output()
+  if (!out.success) throw new Error(`git show ${PINNED}:${path}: ${new TextDecoder().decode(out.stderr)}`)
+  return JSON.parse(new TextDecoder().decode(out.stdout)) as T
+}
 const FLAGGED = ['r11', 'r11-jump', 'cooper', 'cooper-cat', 'bakeoff-nyx', 'nyx-v2']
 const BAND_EMPTY = ['h2', 'olive']
 const ROUND_FIXTURES = [...FLAGGED, ...BAND_EMPTY]
@@ -111,7 +122,7 @@ function assertConfig() {
 }
 
 async function loadSet() {
-  const set = await readJson<{ version: number; items: SetItem[]; controls: SetItem[] }>(new URL('set.json', SET_DIR))
+  const set = await pinnedJson<{ version: number; items: SetItem[]; controls: SetItem[] }>('set.json')
   if (set.version !== SET_VERSION || set.items.length !== 106 || set.controls.length !== 11) throw new Error(`set.json: want version 3 with 106 items and 11 controls, got version ${set.version}, ${set.items.length}, ${set.controls.length}`)
   return set
 }
@@ -133,7 +144,7 @@ function thinFixtures() {
 
 async function roundFixtures(): Promise<Record<string, Payload>> {
   const out: Record<string, Payload> = {}
-  for (const n of ROUND_FIXTURES) out[n] = await readJson<Payload>(new URL(`fixtures/${n}.json`, SET_DIR))
+  for (const n of ROUND_FIXTURES) out[n] = await pinnedJson<Payload>(`fixtures/${n}.json`)
   return out
 }
 
