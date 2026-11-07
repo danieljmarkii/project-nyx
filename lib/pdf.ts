@@ -9,6 +9,7 @@ import { supabase } from './supabase';
 import { syncNow } from './sync';
 import { fetchOwnerSurname, getDeviceTimezone } from './profile';
 import { parseReportPhotos, type ReportPhoto } from './reportPhotoPicker';
+import { lockedPrintHtml } from './examRoom';
 
 // Vet report client (Step 9, Phase 2 PR 5 — the owner-facing MVP).
 //
@@ -436,7 +437,7 @@ export function reportPdfFilenameFor(report: VetReport): string {
  * the file Share sends: one render, one name.
  */
 export async function renderReportPdf(report: VetReport): Promise<{ uri: string; release: () => void }> {
-  const { uri } = await Print.printToFileAsync({ html: report.html });
+  const { uri } = await Print.printToFileAsync({ html: lockedPrintHtml(report.html) });
   let named = uri;
   try {
     const dir = transientDirectory();

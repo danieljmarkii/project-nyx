@@ -13,6 +13,7 @@ jest.mock('./reportKeep', () => ({ keepAfterSend: (...a: unknown[]) => mockKeep(
 
 import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
+import { lockedPrintHtml } from './examRoom';
 import { shareReportPdf, type VetReport } from './pdf';
 import { copyEmailText, emailReport, keepShown, loadMailComposer, mailAvailable, printReport, shareReport } from './reportSendActions';
 
@@ -72,7 +73,9 @@ describe('emailReport', () => {
 describe('print, share, copy', () => {
   it('print hands the report’s own HTML to the print sheet', async () => {
     expect((await printReport(report)).result).toBe('done');
-    expect(Print.printAsync).toHaveBeenCalledWith({ html: report.html });
+    // Locked before expo-print sees it (CUL-2649): its WebView is outside every report frame.
+    expect(Print.printAsync).toHaveBeenCalledWith({ html: lockedPrintHtml(report.html) });
+    expect((Print.printAsync as jest.Mock).mock.calls[0][0].html).toContain('Content-Security-Policy');
   });
 
   it('a dismissed print sheet is a cancel: no card', async () => {
