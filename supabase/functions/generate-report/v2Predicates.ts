@@ -296,9 +296,14 @@ export const LEAD_REASON_LINE: Record<LeadReason, string> = {
  * and stayed quiet. The reason stays `flag` (the composer and the app read that enum); only the
  * printed line says which flag it is. With the sign's own flag also firing (Nyx), "flagged" is true.
  */
-export const LEAD_PRESENT_LINE: Record<'present_blood' | 'present_foreign', string> = {
-  present_blood: 'Leads because the possible blood flagged above sits on it, not because its own count was flagged.',
-  present_foreign: 'Leads because the possible foreign material flagged above sits on it, not because its own count was flagged.',
+export function leadPresentLineOf(f: Extract<SafetyFlag, { kind: 'present_blood' | 'present_foreign' }>): string {
+  // "From a stool photo", never "on it": a stool blood flag maps to loose stool even when the blood
+  // was in a formed stool, so the line names where the finding was, not which entries it sits on
+  // (adversarial pass 1 on CUL-2634).
+  const what = f.kind === 'present_blood' ? 'possible blood' : 'possible foreign material'
+  const family = f.kind === 'present_blood' && f.source === 'stool' ? 'stool' : 'vomit'
+  const photo = f.incidents.length > 1 ? `${family} photos` : `a ${family} photo`
+  return `Leads because the ${what} flagged above is from ${photo}; its own count was not flagged.`
 }
 
 /** The flags that are a sign's own count check: what "it is flagged" claims about that sign. */
@@ -364,7 +369,7 @@ export function leadSignOf(snap: ReportSnapshot): Lead | null {
     if (f.kind === 'present_blood' || f.kind === 'present_foreign') {
       // Every flag on the sign, band or not: an R-11 lead flag is still the sign's own count.
       const ownCount = snap.safetyFlags.some((o) => OWN_COUNT_KINDS.includes(o.kind) && flagSign(o) === s)
-      if (!ownCount) return { sign: s, reason: 'flag', line: LEAD_PRESENT_LINE[f.kind] }
+      if (!ownCount) return { sign: s, reason: 'flag', line: leadPresentLineOf(f) }
     }
     return lead(s, 'flag')
   }

@@ -15,6 +15,7 @@ import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
 import { sampleCases } from '../../../scripts/render-trial-report-sample.deno.ts'
 import { assembleReport, type ReportInput } from './report.ts'
 import { dayKey, olive, symptom } from './v2Fixtures.testutil.ts'
+import { leadPresentLineOf } from './v2Predicates.ts'
 
 const OPTS: DocumentV2Options = { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: [] }
 
@@ -314,7 +315,7 @@ function nyxBurden(): ReportSnapshot['safetyFlags'][number] {
   return f
 }
 
-const PRESENT_BLOOD_LEAD = 'Leads because the possible blood flagged above sits on it, not because its own count was flagged.'
+const PRESENT_BLOOD_LEAD = 'Leads because the possible blood flagged above is from a stool photo; its own count was not flagged.'
 
 Deno.test('CUL-2634 — a lead chosen by a present-blood flag says so, never "it is flagged", when the sign’s own checks are quiet (stool-photo-dog), in print and on the phone', () => {
   const s = fixture('stool-photo-dog')
@@ -330,6 +331,13 @@ Deno.test('CUL-2634 — a lead chosen by a present-blood flag says so, never "it
   const ownLine = sheet1(buildDocumentV2(own, OPTS))
   assert.ok(ownLine.print.includes(fold('Leads because it is flagged.')), 'with the sign’s own flag, "flagged" prints')
   assert.ok(!ownLine.print.includes(fold(PRESENT_BLOOD_LEAD)))
+  // Adversarial pass 1: a stool blood flag leads loose stool even when the blood was in a formed
+  // stool, so the line names the photo it came from, never "sits on it". Every source and count.
+  const blood = s.safetyFlags.find((f) => f.kind === 'present_blood')
+  assert.ok(blood && blood.kind === 'present_blood' && blood.source === 'stool' && blood.incidents.length === 1)
+  assert.equal(leadPresentLineOf({ ...blood, incidents: [blood.incidents[0], blood.incidents[0]] }), 'Leads because the possible blood flagged above is from stool photos; its own count was not flagged.')
+  assert.equal(leadPresentLineOf({ ...blood, source: 'vomit' }), 'Leads because the possible blood flagged above is from a vomit photo; its own count was not flagged.')
+  assert.equal(leadPresentLineOf({ kind: 'present_foreign', incidents: [] }), 'Leads because the possible foreign material flagged above is from a vomit photo; its own count was not flagged.')
 })
 
 Deno.test('CUL-2634 — Nyx keeps "Leads because it is flagged.": vomiting’s own flags fire beside the foreign-material flag', () => {
