@@ -94,7 +94,9 @@ export function sheet1Lines(doc: DocumentV2): ExpectedLine[] {
         add(b.id, `${textOf(b.lastEntryHtml)}.`)
         break
       case 'disclosure':
-        add(b.id, textOf(b.html))
+        // One run per disclosure: each of v1's lines is its own bordered block (the cherry-pick guard,
+        // the window end, the partial record), so two on one record are two runs (CUL-2627).
+        for (const run of blockRuns(b.html)) add(b.id, run)
         break
       case 'band':
         add(b.id, b.heading)
