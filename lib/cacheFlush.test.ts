@@ -20,7 +20,9 @@ jest.mock('expo-file-system', () => ({ File: class {} }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
-import { flushLegacyCatalogCachesIfNeeded, CACHE_SCHEMA_VERSION } from './db';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { flushLegacyCatalogCachesIfNeeded, runCatalogCacheFlush, CACHE_SCHEMA_VERSION } from './db';
+import { CATALOG_FLUSH_MAX_SKIP_DAYS, CATALOG_FLUSH_SKIPS_KEY } from './inboxFoodRefs';
 
 type RawDb = InstanceType<typeof DatabaseSync>;
 
@@ -177,5 +179,99 @@ describe('flushLegacyCatalogCachesIfNeeded (B-354 PR 2 — one-time per-account 
 
     expect(counts(db)).toEqual({ foods: 1, meds: 1 });
     db.close();
+  });
+
+  // CUL-2542: a food named only by a capture still waiting in the widget inbox survives the
+  // flush, so the capture can still land once the app takes it in.
+  it('preserves a food named only by a waiting widget inbox capture, and drops the rest', async () => {
+    const db = freshDb();
+    const INBOX_FOOD = '22222222-2222-4222-9222-222222222222';
+    db.exec(`INSERT INTO food_items_cache (id, brand) VALUES ('${INBOX_FOOD}', 'Widget Food'), ('f2', 'Stranger');`);
+
+    await flushLegacyCatalogCachesIfNeeded(asyncAdapter(db), CACHE_SCHEMA_VERSION, [INBOX_FOOD]);
+
+    const ids = (db.prepare('SELECT id FROM food_items_cache').all() as { id: string }[]).map((r) => r.id);
+    expect(ids).toEqual([INBOX_FOOD]);
+    db.close();
+  });
+
+  it('keeps 600 inbox foods: past SQLite\'s 500-term compound limit, the flush still runs', async () => {
+    const db = freshDb();
+    const ids = Array.from({ length: 600 }, (_, i) => `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`);
+    db.exec(`INSERT INTO food_items_cache (id, brand) VALUES ${ids.map((id) => `('${id}', 'x')`).join(', ')}, ('f2', 'Stranger');`);
+    expect(await flushLegacyCatalogCachesIfNeeded(asyncAdapter(db), CACHE_SCHEMA_VERSION, ids)).toBe(true);
+    expect(counts(db).foods).toBe(600);
+    db.close();
+  });
+
+  it('never puts a keep id that is not a uuid into the SQL', async () => {
+    const db = freshDb();
+    db.exec(`INSERT INTO food_items_cache (id, brand) VALUES ('f1', 'A');`);
+    // Would keep f1 (and be an injection) if it reached the statement.
+    await flushLegacyCatalogCachesIfNeeded(asyncAdapter(db), CACHE_SCHEMA_VERSION, ["f1') OR ('1'='1", 'f1']);
+    expect(counts(db).foods).toBe(0);
+    db.close();
+  });
+});
+
+describe('inboxFoodIdsFromPayloads (CUL-2542)', () => {
+  it('names every uuid food a record carries, once, and nothing from a malformed file', () => {
+    const { inboxFoodIdsFromPayloads } = jest.requireActual('./inboxFoodRefs');
+    const A = '22222222-2222-4222-9222-222222222222';
+    const B = '33333333-3333-4333-9333-333333333333';
+    expect(
+      inboxFoodIdsFromPayloads([
+        JSON.stringify({ kind: 'meal', foodItemId: A }),
+        JSON.stringify({ kind: 'treat', foodItemId: A }),
+        // a newer-schema record the ingest defers still names its food
+        JSON.stringify({ schemaVersion: 99, kind: 'snack', foodItemId: B }),
+        JSON.stringify({ kind: 'bowl_topup' }),
+        JSON.stringify({ foodItemId: 'not-a-uuid' }),
+        '{broken',
+        'null',
+      ]),
+    ).toEqual([A, B]);
+  });
+});
+
+// CUL-2572: initDb's step, over the real flush. An inbox read that is not whole skips, the skip
+// is bounded by distinct days, and the bound keeps the inbox foods that could be read.
+describe('runCatalogCacheFlush (CUL-2572: the skip is bounded)', () => {
+  const INBOX_FOOD = '22222222-2222-4222-9222-222222222222';
+  const day = (n: number) => new Date(Date.UTC(2026, 10, 1 + n, 12));
+  const incomplete = () => ({ ids: [INBOX_FOOD], complete: false, listed: true });
+
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+  });
+
+  it('skips while the inbox will not read whole, then flushes on the fifth distinct day keeping what it read', async () => {
+    const db = freshDb();
+    seed(db);
+    db.exec(`INSERT INTO food_items_cache (id, brand) VALUES ('${INBOX_FOOD}', 'Inbox');`);
+    for (let n = 0; n < CATALOG_FLUSH_MAX_SKIP_DAYS - 1; n++) {
+      expect(await runCatalogCacheFlush(asyncAdapter(db), incomplete, day(n))).toBe(false);
+      expect(userVersion(db)).toBe(0);
+    }
+    expect(await runCatalogCacheFlush(asyncAdapter(db), incomplete, day(CATALOG_FLUSH_MAX_SKIP_DAYS - 1))).toBe(true);
+    expect(userVersion(db)).toBe(CACHE_SCHEMA_VERSION);
+    expect(db.prepare('SELECT id FROM food_items_cache').all()).toEqual([{ id: INBOX_FOOD }]);
+    expect(await AsyncStorage.getItem(CATALOG_FLUSH_SKIPS_KEY)).toBeNull();
+  });
+
+  it('counts no skip, and reads no inbox, while no flush is due', async () => {
+    const db = freshDb();
+    db.exec(`PRAGMA user_version = ${CACHE_SCHEMA_VERSION};`);
+    const read = jest.fn(incomplete);
+    expect(await runCatalogCacheFlush(asyncAdapter(db), read, day(0))).toBe(false);
+    expect(read).not.toHaveBeenCalled();
+    expect(await AsyncStorage.getItem(CATALOG_FLUSH_SKIPS_KEY)).toBeNull();
+  });
+
+  it('a whole read flushes on the first launch', async () => {
+    const db = freshDb();
+    seed(db);
+    expect(await runCatalogCacheFlush(asyncAdapter(db), () => ({ ids: [], complete: true, listed: true }), day(0))).toBe(true);
+    expect(counts(db)).toEqual({ foods: 0, meds: 0 });
   });
 });

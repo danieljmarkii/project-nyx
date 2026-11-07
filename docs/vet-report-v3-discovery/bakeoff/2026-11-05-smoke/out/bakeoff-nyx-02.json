@@ -1,0 +1,97 @@
+{
+ "fixture": "bakeoff-nyx",
+ "n": 2,
+ "result": {
+  "outcome": "rejected",
+  "reason": "verifier"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "verifier",
+   "fact_hash": "9350ac7ec14bccb7ba498488f34f3d8170662c4c4f6609e069df38dd8d1d4c63",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": null,
+   "sentences": null,
+   "verifier_errors": [
+    {
+     "sentence": 3,
+     "check": "order"
+    },
+    {
+     "sentence": 3,
+     "check": "absence"
+    }
+   ],
+   "checker": null,
+   "attempts": 2,
+   "at": "2026-11-05T16:30:11.882Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, UNCONFIRMED, photo not retained.",
+      "cites": [
+       "S1"
+      ]
+     },
+     {
+      "text": "AI photo reads, 18 legible of 23 entries: undigested food 12, bile or foam 5, hairball 1, all UNCONFIRMED.",
+      "cites": [
+       "L1"
+      ]
+     },
+     {
+      "text": "She is free-fed all day on Nature's Variety Duck and Royal Canin Weight Care; intake not directly observed.",
+      "cites": [
+       "L2"
+      ]
+     }
+    ]
+   },
+   "ms": 12280
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, UNCONFIRMED, photo not retained.",
+      "cites": [
+       "S1"
+      ]
+     },
+     {
+      "text": "All 23 entries carry an owner-logged time between 10:00 and 14:00, timing only, not an association.",
+      "cites": [
+       "L5"
+      ]
+     },
+     {
+      "text": "Not recorded: weight, body condition, medication, medical conditions, neuter status.",
+      "cites": [
+       "L6"
+      ]
+     }
+    ]
+   },
+   "ms": 10759
+  }
+ ],
+ "wall_ms": 23049
+}

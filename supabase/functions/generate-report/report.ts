@@ -93,6 +93,7 @@ import {
   type EmptyStomachTimingFinding,
   type TimingStoryFinding,
   type StapleWashoutDiagnostic,
+  INTAKE_TRIGGER_RANK,
 } from '../generate-signal/detection.ts'
 // The SHARED protein canonicalizer (lib/protein.ts via the generate-signal re-export —
 // same path detection.ts uses, so esbuild inlines one copy). The appendix-B tally MUST
@@ -108,6 +109,7 @@ import {
 // Re-deriving "which proteins here aren't the trial protein?" locally is the exact
 // failure B-417 §5.3 documents — three contradictory off-diet predicates, one of
 // them already shipped in this file. One implementation, imported.
+import { proteinSourceBase } from '../../../lib/proteinRelation.ts'
 import {
   offTrialProteins,
   offTrialProteinsInTrialFood,
@@ -119,7 +121,7 @@ import {
 // dependency-free precisely so both runtimes share one copy; a second map here is the
 // B-103 drift class, where a new enum value reaches one surface and not the other).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
-import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans } from '../../../lib/freeFedIntake.ts'
+import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans, type FreeFedIntakeSpan } from '../../../lib/freeFedIntake.ts'
 import { isKnownIntakeRating, isRefusedOrPickedRating } from '../../../lib/intakeEvidence.ts'
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
@@ -162,7 +164,7 @@ import {
 } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
-import { carriesTrialDiet, COVERAGE_FLOOR, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
+import { carriesTrialDiet, COVERAGE_FLOOR, VEHICLE_HOW_GIVEN, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
 import { weightStory, type WeightPoint, type WeightReading } from '../../../lib/weightStory.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 export type {
@@ -510,6 +512,9 @@ export interface ReportDoseInput {
   adherence: string | null // dose_adherence: 'given'|'partial'|'missed'|'refused'|null(unconfirmed)
   doseAmount: string | null
   pairedEventId: string | null // B-156 combo: the meal/treat this dose rode inside
+  /** CUL-2509 — `medication_administrations.how_given` (migration 022): 'direct' | 'in_food' |
+   *  'in_treat' | 'in_pill_pocket' | 'other', or null (unanswered). Optional for older fixtures. */
+  howGiven?: string | null
 }
 
 /**
@@ -692,6 +697,9 @@ export interface ReportConditionInput {
  * index.ts re-sniffs the transform output).
  */
 export interface ReportAttachmentInput {
+  /** PR-23b (CUL-2454, R3): `event_attachments.id` from the RLS-scoped pull. The ONLY key a photo
+   *  the owner left out is matched on; never a request value, never rendered. */
+  id: string
   eventId: string
   storagePath: string
   mimeType: string | null
@@ -1545,7 +1553,17 @@ export interface ScopeInfo extends ReportScope {
      * field exists to end, one notch smaller. Descending by count, then by type name so
      * the same record always renders in the same order.
      */
-    byType: Array<{ type: ReportSymptomType; count: number }>
+    byType: Array<{
+      type: ReportSymptomType
+      count: number
+      /**
+       * CUL-2510 — of `count`, the episodes in the trial days BEFORE this window, and the earliest
+       * of them. The chronicity flag's floor is the window's; these say how far back the same
+       * report shows the sign. Optional: a copy stored before them is unknown, never "none".
+       */
+      beforeWindow?: number
+      earliestBeforeWindowIso?: string | null
+    }>
     /**
      * THE DENOMINATOR (cold read round 16, BLOCKING). "5 symptom events over 42 days" is
      * a rate if those days were logged and an unknown if they were not, and nothing said
@@ -1635,6 +1653,12 @@ export type SafetyFlag =
        * `ratedMealsConsidered` describe the window itself and the band row reads these instead.
        */
       sustainedRefusal?: SustainedRefusalFacts | null
+      /**
+       * CUL-2424: the engine's refusal fact — on `consecutive_low`, every recent rated meal was
+       * refused. The band row reads it to say "refused", never "reduced intake" (the render half
+       * rides the render.ts queue). Null on a finding that carries no such fact.
+       */
+      allRefused?: boolean | null
     }
   | {
       /**
@@ -2084,6 +2108,12 @@ export interface IncidentPhotoLeftOut {
   eventId: string
   type: string
   occurredAt: string
+  /** CUL-2455: the incident's time as the owner recorded it, so the dated line beside a flag
+   *  says it as the photo's caption would have ("sometime between …"). Optional only for a
+   *  copy saved before the fields existed, which falls back to the day. */
+  occurredAtConfidence?: OccurredAtConfidence | null
+  occurredAtEarliest?: string | null
+  occurredAtLatest?: string | null
   safety: IncidentPhotoSafety | null
 }
 
@@ -2095,6 +2125,10 @@ export interface IncidentPhotoLeftOut {
  * incident with two photos yields two entries sharing the incident's date/type/phenotype/safety).
  */
 export interface IncidentPhoto {
+  /** PR-23b (CUL-2454, R3, R8): the `event_attachments.id` this photo is, from the RLS-scoped pull
+   *  (`ReportAttachmentInput.id`). What the owner's leave-out choice is matched on and what the
+   *  saved copy records. NEVER rendered. */
+  attachmentId: string
   eventId: string
   /** Storage object path (nyx-event-attachments). Consumed only by index.ts for the signed fetch — NEVER rendered. */
   storagePath: string
@@ -2192,6 +2226,14 @@ export interface WeightSection {
    * renderer never prints the noise caveat from it (adversarial pass 1).
    */
   trialChange: WeightChangeView | null
+  /**
+   * CUL-2511 — the change ACROSS the trial's start: the story's latest counted reading up to the
+   * trial's evidence end, from the highest counted reading before it, kept only when that earlier
+   * end falls before the trial began and the latest inside it. `trialChange` is bounded to the trial
+   * span, so two readings straddling the start (Nyx: Jun 15 → Sep 16, about 15% down) reached no
+   * trial sentence. Optional: a copy stored before it is unknown, never "none".
+   */
+  acrossTrialStart?: WeightChangeView | null
   /** In-window owner estimates: listed beside the block, never counted, plotted or used as the latest. */
   notCounted: Array<{ kg: number; lbs: number; day: string }>
 }
@@ -2293,6 +2335,21 @@ export interface DietSummary {
    * implementation of the counter — the exact shape B-421 spent a PR deleting from
    * the client. Day N, the target and the overrun all come from `snapshot.trial`.
    */
+  /**
+   * CUL-2581 (stopgap, wording and classification await a clinical ruling): the trial diet reads
+   * as HYDROLYSED (its label, panel or protein keys say so), and these other foods list the same
+   * protein source with nothing saying it is hydrolysed. The protein model keys the trial as plain
+   * `chicken`, so a bowl of ordinary chicken beside a hydrolysed-chicken trial matched the target
+   * and was never marked: the exposure that breaks such a trial went unsaid. Display only: no
+   * count and no off-diet verdict moves on it. Null when the trial is not read as hydrolysed, or
+   * its protein names no usable source. Optional: absent on an older snapshot.
+   */
+  hydrolysedTrial?: {
+    /** The source the trial diet hydrolyses (`chicken`), as a canonical key. */
+    protein: string
+    /** Each other food listing that source intact, most-fed first; `feedings` is 0 for a bowl. */
+    intactFoods: Array<{ foodLabel: string; kind: 'free_fed' | 'meal' | 'treat'; feedings: number }>
+  } | null
   trial: {
     foodLabel: string | null
     primaryProtein: string | null
@@ -2452,6 +2509,18 @@ export interface DietSummary {
      * SAY which, the way the oral-route disclosure names its own exclusion.
      */
     countedInTally: number
+    /**
+     * CUL-2509 — doses in this window given in food whose food the row cannot name (logged "in
+     * food / a treat / a pill pocket" with no meal paired, or paired to no meal logged here). The
+     * row then exists with `feedings: 0` when these are its only content. Optional on older copies.
+     */
+    unresolvedDoses?: number
+    /**
+     * CUL-2525 (cold read) — per vehicle food: its dosed feedings and the first and last of them,
+     * so the row can place each vehicle against the trial's end (a chicken treat dosed after the
+     * trial read as an in-trial exposure). Same labels and order as `labels`. Optional on older copies.
+     */
+    byFood?: Array<{ label: string; feedings: number; firstAt: string; lastAt: string }>
   } | null
 }
 
@@ -2574,6 +2643,38 @@ export interface MedicationAdherence {
   refusedDoses: number
   /** Unconfirmed ≠ missed ≠ refused (adherence null) — kept distinct (spec §4). */
   unconfirmedDoses: number
+  /**
+   * CUL-2529 instance 5 — WHERE THE PARTIAL DOSES WENT, AND WHAT IS KNOWN OF THAT MEAL'S INTAKE.
+   * Over the whole record, the same population as `lifetimePartialDoses`. Nyx's prednisolone read
+   * "15 of 15 given, 11 partial" with nothing joining a dose to the meal it rode in, whose intake was
+   * unrecorded on 65 of 66 meals: in a cat losing weight, repeated partial doses may mean she is not
+   * finishing the dosed food, and the page could not say. Optional and additive: a stored copy
+   * without it renders nothing new (never a zero).
+   */
+  partialDoseVehicles?: PartialDoseVehicles
+}
+
+/** CUL-2529 — the partial doses of one course, sorted by what carried them. Counts partition `partial`. */
+/** CUL-2529 — one rated feeding that carried the trial diet (`trialDietRatings`). */
+export interface TrialDietRating {
+  eventId: string
+  occurredAt: string
+  foodLabel: string | null
+  intakeRating: IntakeRating
+  isTreat: boolean
+}
+
+export interface PartialDoseVehicles {
+  partial: number
+  /** Logged as given inside a meal or treat this report read. */
+  inMeal: number
+  /** Of `inMeal`: the meal's intake rating, each with its count, worst first; unrated counted apart. */
+  rated: Array<{ rating: IntakeRating; n: number }>
+  unrated: number
+  /** Paired to an event this report did not read (deleted, or before its lookback). */
+  pairedUnread: number
+  /** Not paired to any meal or treat. */
+  notPaired: number
 }
 
 export interface EstablishedCorrelation {
@@ -2668,11 +2769,19 @@ export interface CorrelationSummary {
  * because the label differs — "the trial diet (Greenies)" would be a false sentence about a
  * treat — and because the chart's face says `diet added`, never `diet start`.
  */
-export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'free_fed' | 'diet_allowed'
+export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'free_fed' | 'diet_allowed' | 'new_food'
 
 export interface ConcurrentChange {
   kind: InterventionKind
   label: string
+  /** `new_food` only (CUL-2512): the distinct local days in this window the food was logged as fed. */
+  fedDays?: number
+  /**
+   * CUL-2509 — BUILDER-WRITTEN PROVENANCE on a medication / supplement row: true when it came from
+   * an ad-hoc dose group, false from a regimen; absent on other kinds and on older copies.
+   */
+  adHoc?: boolean
+  itemId?: string | null
   /**
    * RENDER-LAYER ONLY, never written by the builder (CUL-2440). Set by `withRecordOverlaps`
    * (medicationFacts.ts) on an ad-hoc drug whose record reaches before this window: `startDate`
@@ -2791,6 +2900,12 @@ export interface SymptomLogEntry {
    * that said one photo was gone, and named neither.
    */
   photoRemoved: boolean
+  /**
+   * CUL-2442: a photo is attached to this incident (any member of a de-duplicated bout). With no
+   * read on record the row says "no photo" or "photo attached, no read on record" in words, never
+   * a dash. Optional: absent on an older snapshot, where the row cannot tell and says so.
+   */
+  photoAttached?: boolean
   occurredAt: string
   occurredAtConfidence: OccurredAtConfidence | null
   occurredAtEarliest: string | null
@@ -2886,6 +3001,13 @@ export interface IntakeLogEntry {
    */
   notCountedFreeFed: boolean
   /**
+   * CUL-2568: a free-fed bowl's rating in EITHER scope (`notCountedFreeFed` is the flag scope's
+   * marker only). `mealCompletion.recentNotFullyEatenRun` skips a bowl's "ate it all" (and only
+   * that), so a reader indexing the log against the run skips those rows too. Absent on an older
+   * snapshot (read as false).
+   */
+  freeFed?: boolean
+  /**
    * True when this row is the anchor PINNED back in past the most-recent cap (it is older than
    * every other shown row, with omitted meals between). Render draws an "earlier meals omitted"
    * break before it so it never reads as contiguous with the recent rows.
@@ -2969,6 +3091,14 @@ export interface Provenance {
    * on a stored copy from before it (read as unknown).
    */
   intakeFlagTrialMeals?: IntakeFlagTrialMeals | null
+  /**
+   * CUL-2529 instance 7 — every RATED feeding that carried the trial diet, treats included, oldest
+   * first: the Diet-not-eaten flag's population, listed. The flag read "2 of 4 rated feedings …
+   * between Sep 21 and Oct 8" while appendix E (meals only) held two trial-diet ratings and nothing
+   * on Oct 8, so two of the four appeared nowhere. Optional: absent on a stored copy, and the
+   * appendix then prints nothing new.
+   */
+  trialDietRatings?: TrialDietRating[]
   /** Appendix B — off-diet exposures (treats + human food). */
   confounders: ConfounderExposure[]
   /**
@@ -3368,6 +3498,14 @@ export interface ReportSnapshot {
   medicationHistory: MedicationHistoryTable | null
   correlation: CorrelationSummary
   concurrentChanges: ConcurrentChange[]
+  /**
+   * CUL-2512 — foods FIRST LOGGED inside this window, after at least `NEW_FOOD_MIN_PRIOR_DAYS` of
+   * meal record before them, and not already a change above (the trial diet, an allowed food, a
+   * free-fed bowl). Each is a `new_food` change: dated start, no end claimed (a food is not a course).
+   * Kept beside `concurrentChanges`, not in it, so a consumer that draws every change as a span
+   * (v2's chart) reads it by choice. Optional: a copy stored before it is unknown, never "none".
+   */
+  windowNewFoods?: ConcurrentChange[]
   proteinTimeline: ProteinTimeline
   provenance: Provenance
   /** CUL-975 — `ReportInput.incompletePulls`, carried through for the page-1 disclosure. */
@@ -3714,11 +3852,26 @@ function leftMostOfIt(rating: IntakeRating): boolean {
  * rather than trusted from the caller, because the window's events are not guaranteed to
  * arrive in time order and a run read off an unsorted list is a run of nothing.
  */
-export function recentNotFullyEatenRun(rated: Array<{ occurredAt: string; meal: { intakeRating: IntakeRating | null } | null }>): number {
+/** CUL-2581: the word that marks a food, panel or protein key as hydrolysed (either spelling). */
+const HYDROLYSED_WORD = /\bhydroly[sz]\w*/i
+
+export function recentNotFullyEatenRun(
+  rated: Array<{ occurredAt: string; meal: { intakeRating: IntakeRating | null; foodItemId?: string | null } | null }>,
+  freeFedSpans: readonly FreeFedIntakeSpan[] = [],
+): number {
   const newestFirst = [...rated].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
   let run = 0
   for (const e of newestFirst) {
-    if (e.meal?.intakeRating === 'all') break
+    // CUL-2568: a free-fed bowl's "ate it all" never ENDS the run. Intake from a bowl left down is
+    // not directly observed (the detector sets bowls aside, §11 #6), so a bowl "all" ended the run and
+    // a cat refusing every watched meal printed none. A bowl rating BELOW "all" still counts: it is an
+    // owner's observation of food left, and skipping it hid a bowl-only cat refusing for three days
+    // (adversarial pass 1, QUIET). Asymmetric on purpose: a bowl may only lengthen the run.
+    const isBowl = isFreeFedIntakeMeal(e.meal?.foodItemId ?? null, Date.parse(e.occurredAt), freeFedSpans)
+    if (e.meal?.intakeRating === 'all') {
+      if (isBowl) continue
+      break
+    }
     run++
   }
   return run
@@ -4226,7 +4379,7 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
         break
       }
       case 'intake_decline':
-        if (!intakeDecline) intakeDecline = finding as IntakeDeclineFinding
+        intakeDecline = reportIntakeOf(intakeDecline, finding as IntakeDeclineFinding)
         break
       case 'symptom_chronicity':
         // Every course, in the engine's rank order — the ranked list is already sorted
@@ -4896,15 +5049,42 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // sections deliberately do NOT use this: attribution must see every dose a drug ever had, or a
   // course configured after dosing began loses its early doses — the CUL-976 defect.
   const windowLookbackDoses = input.doses.filter((d) => !droppedEventIds.has(d.eventId))
-  const medications = input.medications.map((m) =>
-    buildMedicationAdherence(
+  // Every meal read, twins included: a dose paired to a de-duplicated twin rode in that meal, and
+  // reads the CLUSTER's worst rating (adversarial pass 1, QUIET: a dose paired to the unrated twin
+  // of a "refused" re-log read "never rated" while the diet table said refused).
+  const INTAKE_WORST: readonly IntakeRating[] = ['refused', 'picked', 'some', 'most', 'all']
+  const worse = (a: IntakeRating | null, b: IntakeRating | null): IntakeRating | null =>
+    a === null ? b : b === null ? a : INTAKE_WORST.indexOf(a) <= INTAKE_WORST.indexOf(b) ? a : b
+  // Normalised as `feedingWasFinished` reads them; a value outside the five is unrecorded, never
+  // ranked above "refused" (adversarial pass 2, hardening).
+  const norm = (r: string | null): IntakeRating | null => {
+    const k = r?.trim().toLowerCase() ?? null
+    return k !== null && (INTAKE_WORST as readonly string[]).includes(k) ? (k as IntakeRating) : null
+  }
+  const rawIntake = new Map<string, IntakeRating | null>()
+  for (const e of input.events) {
+    if (e.type === 'meal' && e.meal) rawIntake.set(e.id, norm(e.meal.intakeRating))
+  }
+  const mealIntakeOf = new Map<string, IntakeRating | null>(rawIntake)
+  for (const e of dedupedAll) {
+    if (e.type !== 'meal' || !e.meal) continue
+    const ids = [e.id, ...e.memberEventIds]
+    let r: IntakeRating | null = norm(e.meal.intakeRating)
+    for (const id of ids) r = worse(r, rawIntake.get(id) ?? null)
+    for (const id of ids) mealIntakeOf.set(id, r)
+  }
+  const medications = input.medications.map((m) => {
+    const attributed = medPass.byRegimen.get(m.id) ?? []
+    const adherence = buildMedicationAdherence(
       m,
-      medPass.byRegimen.get(m.id) ?? [],
+      attributed,
       medPass.courseByRegimen.get(m.id) ?? null,
       scope,
       tz,
-    ),
-  )
+    )
+    const vehicles = partialDoseVehiclesOf(attributed, mealIntakeOf)
+    return vehicles ? { ...adherence, partialDoseVehicles: vehicles } : adherence
+  })
   // Ad-hoc / OTC doses that belong to no configured regimen — surfaced separately so a drug the
   // owner logged (but never set up as a regimen) is still reported, not silently dropped (§3.8).
   // The set is the pass's OWN `unattributed` bucket, so this section and the regimen sections
@@ -5144,13 +5324,25 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const mealCompletionBreakdown = intakeBreakdownOf(
     ratedMeals.map((e) => e.meal!.intakeRating as IntakeRating),
   )
+  // CUL-2568: the bowls the intake detector sets aside, over the same arrangements it reads.
+  const mealRunFreeFedSpans = parseFreeFedIntakeSpans(
+    input.feedingArrangements
+      .filter((a) => a.method === 'free_choice')
+      .map((a) => ({
+        foodItemId: a.foodItemId ?? null,
+        createdAt: a.createdAt ?? null,
+        activeFrom: a.activeFrom,
+        activeUntil: a.activeUntil,
+        endedAt: a.endedAt ?? null,
+      })),
+  )
   const mealCompletion =
     ratedMeals.length > 0
       ? {
           ratedMeals: ratedMeals.length,
           finishedMeals,
           rate: finishedMeals / ratedMeals.length,
-          recentNotFullyEatenRun: recentNotFullyEatenRun(ratedMeals),
+          recentNotFullyEatenRun: recentNotFullyEatenRun(ratedMeals, mealRunFreeFedSpans),
           intakeBreakdown: mealCompletionBreakdown,
         }
       : null
@@ -5352,13 +5544,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // An ad-hoc group's span is first dose → last dose, which is all the record
         // supports.
         medications: [
-          ...medications,
+          ...medications.map((m, i) => ({ ...m, adHoc: false, itemId: input.medications[i]?.medicationItemId ?? null })),
           ...unlinkedMedications.map((u) => ({
             drugName: u.drugName,
             isSupplement: u.isSupplement,
             startedAt: u.firstDate,
             endedAt: u.lastDate,
             indication: null,
+            adHoc: true,
+            itemId: u.itemId,
           })),
         ],
         arrangements: input.feedingArrangements,
@@ -5383,6 +5577,35 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         timeZone: tz,
       })
     : null
+  // CUL-2509 instance 3 — an ad-hoc row's dose days in the trial days BEFORE this window. The
+  // builder's doses are the window's; the lifetime read reaches the trial's head. Same item key and
+  // the same administered predicate (given + partial) as the group's own `doseDays`. Unknown (null)
+  // without the lifetime read, never a zero.
+  if (trialBlock && trialBlock.trialDaysOutsideRange.before > 0) {
+    const headEnd = scope.startDayNum - 1
+    // Adversarial pass 1 (QUIET): a row with no item id cannot be matched to its doses, so its count is
+    // unknown, never 0; and a short dose pull loses the OLDEST doses first, so the count is a floor.
+    const dosesShort = (input.incompletePulls ?? []).includes('medication_administrations')
+    for (const row of trialBlock.medicationOverlap) {
+      if (row.adHoc !== true) continue
+      if (!input.lifetimeDoses || !row.itemId) {
+        row.adHocEarlierTrialDoseDays = null
+        continue
+      }
+      const days = new Set<number>()
+      for (const d of input.lifetimeDoses) {
+        if (d.medicationId !== null || droppedEventIds.has(d.eventId)) continue
+        if ((d.medicationItemId ?? null) !== (row.itemId ?? null)) continue
+        if (d.adherence !== 'given' && d.adherence !== 'partial') continue
+        const dn = eventDayNumber(d.occurredAt, tz)
+        if (dn !== null && dn >= trialBlock.elapsedStartDayIndex && dn <= headEnd) days.add(dn)
+      }
+      // Adversarial pass 2 (QUIET): a short pull loses the oldest doses first, so "at least 0" would read
+      // as none at the drug's confounding head. Zero from a short pull is unknown.
+      row.adHocEarlierTrialDoseDays = dosesShort && days.size === 0 ? null : days.size
+      if (dosesShort && days.size > 0) row.adHocEarlierTrialDoseDaysIsFloor = true
+    }
+  }
 
   const trial = trialBlock
     ? {
@@ -5493,6 +5716,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     bucketIndexOfDay,
     unlinkedMedications,
   )
+  const windowNewFoods = buildWindowNewFoods(input, dedupedAll, concurrentChanges, scope, tz, bucketIndexOfDay)
 
   // ── Safety flags (§3.1 order; §5.3 empty when none) ──────────────────────────
   const safetyFlags: SafetyFlag[] = []
@@ -5533,6 +5757,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       lastFullMealIso: f.lastFullMealIso,
       hoursSinceLastFullMeal,
       sustainedRefusal: f.sustainedRefusal ?? null,
+      allRefused: f.allRefused ?? null,
     })
   }
   // B-494 — THE REFUSED PRESCRIBED DIET REACHES THE BAND. Ordered immediately after
@@ -5964,6 +6189,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         eventId: e.id,
         type: e.type,
         photoRemoved: photoRemovedIds.has(e.id),
+        photoAttached: e.memberEventIds.some((mid) => (attachmentsByEvent.get(mid)?.length ?? 0) > 0),
         occurredAt: e.occurredAt,
         occurredAtConfidence: e.occurredAtConfidence,
         occurredAtEarliest: e.occurredAtEarliest,
@@ -6146,13 +6372,24 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       for (const mid of e.memberEventIds) survivorOfMember.set(mid, e.id)
     }
     const paired = new Set<string>()
+    const windowMealIds = new Set(windowMeals.map((e) => e.id))
+    // CUL-2509 instance 2 (QUIET): a dose given in food whose food this row cannot name — logged
+    // "in food / in a treat / in a pill pocket" with no meal paired (`how_given`, migration 022), or
+    // paired to a meal that is not a meal logged in this window. The row counted only pairings that
+    // resolve, so these went unmentioned. In-window doses only, as the row's own population.
+    let unresolvedVehicleDoses = 0
     for (const d of input.doses) {
       if (droppedEventIds.has(d.eventId)) continue
       if (d.pairedEventId) paired.add(survivorOfMember.get(d.pairedEventId) ?? d.pairedEventId)
+      if (!inWindow(d.occurredAt)) continue
+      const resolves = d.pairedEventId !== null && windowMealIds.has(survivorOfMember.get(d.pairedEventId) ?? d.pairedEventId)
+      const saysVehicle = d.howGiven != null && VEHICLE_HOW_GIVEN.has(d.howGiven.trim().toLowerCase())
+      if (!resolves && (saysVehicle || d.pairedEventId !== null)) unresolvedVehicleDoses++
     }
-    if (paired.size === 0) return null
+    if (paired.size === 0) return unresolvedVehicleDoses > 0 ? { labels: [], feedings: 0, countedInTally: 0, unresolvedDoses: unresolvedVehicleDoses } : null
     const inTally = new Set(confounderFeedings.map((e) => e.id))
     const counts = new Map<string, number>()
+    const spans = new Map<string, { firstAt: string; lastAt: string }>()
     let feedings = 0
     let countedInTally = 0
     for (const e of windowMeals) {
@@ -6160,16 +6397,136 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       feedings++
       if (inTally.has(e.id)) countedInTally++
       const label = mealFoodLabel(e.meal!)
-      if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
+      if (label) {
+        counts.set(label, (counts.get(label) ?? 0) + 1)
+        const sp = spans.get(label)
+        if (!sp) spans.set(label, { firstAt: e.occurredAt, lastAt: e.occurredAt })
+        else {
+          // Instants, never ISO strings (C-40): offsets and precision differ across rows.
+          const ms = Date.parse(e.occurredAt)
+          if (ms < Date.parse(sp.firstAt)) sp.firstAt = e.occurredAt
+          if (ms > Date.parse(sp.lastAt)) sp.lastAt = e.occurredAt
+        }
+      }
     }
-    if (feedings === 0) return null
+    if (feedings === 0) return unresolvedVehicleDoses > 0 ? { labels: [], feedings: 0, countedInTally: 0, unresolvedDoses: unresolvedVehicleDoses } : null
     const labels = [...counts.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([label]) => label)
-    return { labels, feedings, countedInTally }
+    const byFood = labels.map((label) => ({ label, feedings: counts.get(label)!, ...spans.get(label)! }))
+    return { labels, feedings, countedInTally, unresolvedDoses: unresolvedVehicleDoses, byFood }
+  })()
+
+  // CUL-2581 — the hydrolysed trial and the foods carrying its protein intact (see the field).
+  //
+  // THE WORD MUST QUALIFY THE TRIAL'S OWN PROTEIN (adversarial pass 1): "hydrolysed yeast" in an
+  // intact-chicken diet's panel, or a hydrolysed-SOY diet the owner keyed as chicken, printed
+  // "Chicken (hydrolysed)" to a vet. Only a protein key that hydrolyses the target's source, or text
+  // naming that source beside the word ("hydrolysed chicken liver", "chicken hydrolysate"), counts.
+  // And only the TRIAL'S OWN SPAN is scanned: a treat given before Day 1 was never "beside" the diet.
+  const hydrolysedTrial: DietSummary['hydrolysedTrial'] = (() => {
+    if (!reportTrialInput || !trial) return null
+    const base = proteinSourceBase(trialProteinTarget)
+    if (!base) return null
+    const src = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')
+    const qualifies = new RegExp(`\\bhydroly[sz]\\w*\\s+(?:[a-z-]+\\s+)?${src}\\b|\\b${src}(?:\\s+[a-z-]+)?\\s+hydroly[sz]\\w*`, 'i')
+    const hydrolysesBase = (key: string): boolean => HYDROLYSED_WORD.test(key) && proteinSourceBase(key) === base
+    // A GENERIC "hydrolysed protein" (Royal Canin "Hydrolyzed Protein HP") names no source, so it
+    // counts for the target only where the same text names no OTHER hydrolysed source: a soy panel
+    // under an owner-keyed chicken primary is not a hydrolysed chicken diet (adversarial case H).
+    // Words after "hydrolysed" that name a product, not a source ("Hydrolyzed HP", "Hydrolysed Diet").
+    const NOT_A_SOURCE = new Set(['protein', 'proteins', 'hp', 'diet', 'formula', 'food', 'recipe', 'treat', 'treats', 'loaf', 'kibble', 'isolate', 'partially', 'partly', 'extensively', 'and', 'with', 'of'])
+    // The source can sit AFTER the word ("hydrolysed soy") or BEFORE a suffix form ("yeast
+    // hydrolysate", "soy protein isolate hydrolysate"): both are read (adversarial pass 2).
+    const namedSources = (x: string): string[] =>
+      [
+        ...[...x.matchAll(/\bhydroly[sz]\w*(?:\s+([a-z][a-z-]*))?/gi)].map((m) => [m[1] ?? '']),
+        ...[...x.matchAll(/((?:[a-z][a-z-]*\s+){1,3})hydroly[sz]ates?\b/gi)].map((m) => m[1].trim().split(/\s+/)),
+      ]
+        .flat()
+        .map((w) => w.toLowerCase())
+        .filter((w) => w !== '' && !NOT_A_SOURCE.has(w))
+        .map((w) => proteinSourceBase(w))
+        .filter((b): b is string => b !== null)
+    const saysHydrolysedTarget = (...xs: Array<string | null | undefined>): boolean => {
+      const texts = xs.filter((x): x is string => typeof x === 'string')
+      if (texts.some((x) => qualifies.test(x))) return true
+      const generic = texts.some((x) => HYDROLYSED_WORD.test(x))
+      return generic && !texts.some((x) => namedSources(x).some((b) => b !== base))
+    }
+    const trialProteins = readProteinSet(reportTrialInput.proteins ?? null, reportTrialInput.primaryProtein ?? null)
+    if (!trialProteins.some(hydrolysesBase) && !saysHydrolysedTarget(reportTrialInput.foodLabel, reportTrialInput.ingredientsNotes)) return null
+    const startNum = dayNumber(reportTrialInput.startedAt.slice(0, 10))
+    // An end INSTANT is read on the owner's local day, never its UTC date (adversarial pass 2).
+    const endKey = reportTrialInput.endedAt ?? reportTrialInput.completedAt ?? null
+    const endNum = endKey ? dayNumber(endKey.length > 10 ? localDayKey(endKey, tz) ?? endKey.slice(0, 10) : endKey) : null
+    const inTrial = (iso: string): boolean => {
+      const d = eventDayNumber(iso, tz)
+      return d !== null && (startNum === null || d >= startNum) && (endNum === null || d <= endNum)
+    }
+    // A food carries the source INTACT when one of its keys names it and nothing (key, label or
+    // panel) says that source is hydrolysed. Per protein, not per label: a "Hydrolysed Salmon"
+    // treat whose panel lists chicken still carries intact chicken.
+    // Adversarial pass 2 (QUIET): any intact key lists the food, whatever else it carries; a key list
+    // of "chicken" plus "hydrolyzed chicken" is intact chicken until the record says otherwise. Only
+    // the PRODUCT'S OWN NAME saying the source is hydrolysed ("Hydrolyzed Chicken Treats") overrides
+    // its keys; a panel ingredient ("hydrolyzed chicken liver" as a palatant) never hides one.
+    //
+    // Cold read at the bundle's head (false claim): Cooper's own second trial food ("Hydrolyzed
+    // Protein HP Loaf") and his approved "Hydrolyzed Treats" were listed as intact soy. A trial-diet
+    // food is never its own exposure, and a product name saying hydrolysed with no OTHER source
+    // named counts for the target (the same rule as the trial's own name). A PERMITTED extra with an
+    // intact key and no such name is still listed: that is the breach §5.5 D-A exists for.
+    const carriesIntact = (proteins: readonly string[], label: string | null | undefined): boolean =>
+      proteins.some((p) => !HYDROLYSED_WORD.test(p) && proteinSourceBase(p) === base) &&
+      !saysHydrolysedTarget(label)
+    const found = new Map<string, { foodLabel: string; kind: 'free_fed' | 'meal' | 'treat'; feedings: number }>()
+    const bowlFoodIds = new Set<string>()
+    const trialDietIds = new Set<string>(
+      (reportTrialInput.allowedFoods ?? []).filter((f) => f.role === 'primary_diet' && f.foodItemId).map((f) => f.foodItemId as string),
+    )
+    if (trialFoodId) trialDietIds.add(trialFoodId)
+    for (const a of input.feedingArrangements) {
+      if (a.method !== 'free_choice') continue
+      const fromNum = a.activeFrom ? dayNumber(a.activeFrom) : -Infinity
+      const untilNum = a.activeUntil ? dayNumber(a.activeUntil) : Infinity
+      // Overlaps the trial's span (not merely the report window).
+      const lo = startNum ?? -Infinity
+      const hi = endNum ?? Infinity
+      if (!((fromNum ?? -Infinity) <= hi && lo <= (untilNum ?? Infinity))) continue
+      if (!((fromNum ?? -Infinity) <= endDayNum && startDayNum <= (untilNum ?? Infinity))) continue
+      if (a.foodItemId && trialDietIds.has(a.foodItemId)) continue
+      const label = a.foodLabel?.trim() || 'A free-fed bowl'
+      if (!carriesIntact(readProteinSet(a.proteins ?? null, a.primaryProtein ?? null), label)) continue
+      if (a.foodItemId) bowlFoodIds.add(a.foodItemId)
+      if (!found.has(`bowl:${label}`)) found.set(`bowl:${label}`, { foodLabel: label, kind: 'free_fed', feedings: 0 })
+    }
+    for (const e of windowMeals) {
+      if (!inTrial(e.occurredAt)) continue
+      const m = e.meal!
+      const parts: Array<ReportFoodProteinInput & { foodItemId: string | null; brand: string | null; productName: string | null; format?: FoodFormat | null; foodType: 'meal' | 'treat' | 'other' | null; primaryProtein: string | null }> =
+        m.bowl ? m.bowl.components : [m]
+      for (const c of parts) {
+        if (isReportTrialFood(c) || (c.foodItemId && trialDietIds.has(c.foodItemId))) continue
+        // The bowl's own food is named once, as the bowl.
+        if (c.foodItemId && bowlFoodIds.has(c.foodItemId)) continue
+        const label = mealFoodLabel(c)?.trim()
+        if (!label) continue
+        if (!carriesIntact(readProteinSet(c.proteins ?? null, c.primaryProtein ?? null), label)) continue
+        const kind = c.foodType === 'treat' || c.format === 'treat' ? 'treat' : 'meal'
+        const prev = found.get(`fed:${label}`)
+        if (prev) prev.feedings++
+        else found.set(`fed:${label}`, { foodLabel: label, kind, feedings: 1 })
+      }
+    }
+    const intactFoods = [...found.values()].sort(
+      (x, y) => (x.kind === 'free_fed' ? -1 : 0) - (y.kind === 'free_fed' ? -1 : 0) || y.feedings - x.feedings || x.foodLabel.localeCompare(y.foodLabel),
+    )
+    return { protein: base, intactFoods }
   })()
 
   const diet: DietSummary = {
+    hydrolysedTrial,
     trialTargetProtein: trialProteinTarget,
     trialProteinProvenance,
     trialProteinMismatch,
@@ -6403,7 +6760,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // and taggable — never left cited-but-invisible. Everything between is disclosed as omitted.
     const anchorInHead = anchorMeal !== null && head.includes(anchorMeal)
     const oldestShown = head.length > 0 ? Date.parse(head[head.length - 1].occurredAt) : Infinity
-    const floorMs = anchorMeal !== null ? Math.min(oldestShown, Date.parse(anchorMeal.occurredAt)) : oldestShown
+    // CUL-2568 (adversarial pass 2, QUIET): the not-fully-eaten run counts a bowl's refusals, so with
+    // no anchor the bowl rows reach back past the oldest watched row shown; floored there, a cat with
+    // three watched refusals after eight bowl ones read "the last 3 refused, Oct 14 to 15" over a
+    // six-day refusal. The bowl rows keep their own cap.
+    const floorMs = anchorMeal !== null ? Math.min(oldestShown, Date.parse(anchorMeal.occurredAt)) : -Infinity
     const bowlShown = bowlRows.filter((e) => Date.parse(e.occurredAt) >= floorMs).slice(0, INTAKE_LOG_CAP)
     const inList = new Set([...head, ...bowlShown].map((e) => e.id))
     const merged = ratedForLog.filter((e) => inList.has(e.id)) // keeps the list's most-recent-first order
@@ -6442,9 +6803,27 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       intakeRating: e.meal!.intakeRating as IntakeRating,
       isLastFullMeal: anchorMeal !== null && e.id === anchorMeal.id,
       notCountedFreeFed: intakeLogScope === 'intake_flag' && isIntakeFreeFed(e),
+      freeFed: isIntakeFreeFed(e),
       pinned: !anchorInHead && anchorMeal !== null && e.id === anchorMeal.id,
     }))
   }
+
+  // CUL-2529 instance 7: the flag's population, from the same classification the trial block keyed.
+  const trialDietIds = trialBlock && Array.isArray(trialBlock.trialDietFeedingEventIds)
+    ? new Set(trialBlock.trialDietFeedingEventIds)
+    : null
+  const trialDietRatings: TrialDietRating[] | undefined = trialDietIds
+    ? windowMeals
+        .filter((e) => trialDietIds.has(e.id) && e.meal!.intakeRating != null)
+        .sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .map((e) => ({
+          eventId: e.id,
+          occurredAt: e.occurredAt,
+          foodLabel: mealFoodLabel(e.meal!),
+          intakeRating: e.meal!.intakeRating as IntakeRating,
+          isTreat: e.meal!.foodType === 'treat' || e.meal!.format === 'treat',
+        }))
+    : undefined
 
   const provenance: Provenance = {
     ownerReported: true,
@@ -6459,6 +6838,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     intakeLogFreeFedAfterAnchor,
     intakeLogScope,
     intakeFlagTrialMeals,
+    ...(trialDietRatings ? { trialDietRatings } : {}),
     confounders,
     proteinExposureTally,
     proteinUnknownCount,
@@ -6513,6 +6893,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         : null
     for (const at of atts) {
       incidentPhotos.push({
+        attachmentId: at.id,
         eventId: e.id,
         storagePath: at.storagePath,
         type: e.type,
@@ -6587,6 +6968,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     let mostRecentIso: string | null = null
     let mostRecentType: ReportSymptomType | null = null
     const tally = new Map<ReportSymptomType, number>()
+    const headTally = new Map<ReportSymptomType, { n: number; earliest: string }>()
     // The cropped days themselves, so the count above can be read as a rate. Collected in
     // the SAME pass and with the same two predicates, so the numerator and its denominator
     // can never describe different spans.
@@ -6635,13 +7017,26 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       const t = e.type as ReportSymptomType
       count++
       tally.set(t, (tally.get(t) ?? 0) + 1)
+      if (dn < scope.startDayNum) {
+        const hd = headTally.get(t)
+        if (!hd) headTally.set(t, { n: 1, earliest: e.occurredAt })
+        else {
+          hd.n += 1
+          if (e.occurredAt < hd.earliest) hd.earliest = e.occurredAt
+        }
+      }
       if (mostRecentIso === null || e.occurredAt > mostRecentIso) {
         mostRecentIso = e.occurredAt
         mostRecentType = t
       }
     }
     const byType = [...tally.entries()]
-      .map(([type, n]) => ({ type, count: n }))
+      .map(([type, n]) => ({
+        type,
+        count: n,
+        beforeWindow: headTally.get(type)?.n ?? 0,
+        earliestBeforeWindowIso: headTally.get(type)?.earliest ?? null,
+      }))
       .sort((a, b) => b.count - a.count || (a.type < b.type ? -1 : a.type > b.type ? 1 : 0))
     // IS THIS COUNT A TOTAL OR A FLOOR? Only the HEAD can be short: the pull carries no
     // upper bound (`.gte` only, index.ts), so everything from the floor to `now` is in
@@ -6895,6 +7290,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
           trialBlock.evidenceEndDate,
         )
         : null,
+      acrossTrialStart: trialBlock
+        ? (() => {
+          const trialStartDay = new Date(trialBlock.elapsedStartDayIndex * 86_400_000).toISOString().slice(0, 10)
+          const c = weightChangeOf(
+            storyReadings,
+            scope.detectionNowIso,
+            input.pet.dateOfBirth,
+            tz,
+            undefined,
+            trialBlock.evidenceEndDate,
+          )
+          return c && c.highBefore && c.highBefore.day < trialStartDay && c.latest.day >= trialStartDay ? c : null
+        })()
+        : null,
     },
     atAGlance,
     symptoms,
@@ -6907,6 +7316,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     medicationHistory,
     correlation,
     concurrentChanges,
+    windowNewFoods,
     proteinTimeline,
     provenance,
     incompletePulls: input.incompletePulls ?? [],
@@ -7368,6 +7778,44 @@ export function partitionCourseDays(rows: readonly PartitionRow[], spanStart: nu
 }
 
 /**
+ * CUL-2529 instance 5 — the partial doses of one course, each joined to the meal or treat it was
+ * logged inside (`paired_event_id`) and that meal's intake rating. Null when the course has no
+ * partial dose. Same population as `lifetimePartialDoses`; the four buckets partition it, so the
+ * render can never state more doses than there were.
+ */
+export function partialDoseVehiclesOf(
+  doses: readonly ReportDoseInput[],
+  mealIntakeOf: ReadonlyMap<string, IntakeRating | null>,
+): PartialDoseVehicles | null {
+  const partials = doses.filter((d) => d.adherence === 'partial')
+  if (partials.length === 0) return null
+  const WORST_FIRST: readonly IntakeRating[] = ['refused', 'picked', 'some', 'most', 'all']
+  const byRating = new Map<IntakeRating, number>()
+  let inMeal = 0
+  let unrated = 0
+  let pairedUnread = 0
+  let notPaired = 0
+  for (const d of partials) {
+    if (!d.pairedEventId) {
+      notPaired++
+      continue
+    }
+    if (!mealIntakeOf.has(d.pairedEventId)) {
+      pairedUnread++
+      continue
+    }
+    inMeal++
+    const r = mealIntakeOf.get(d.pairedEventId) ?? null
+    // A rating outside the five is not a reading this sentence can state: counted as unrecorded, so
+    // the buckets still partition the partial doses (adversarial pass 1, hardening).
+    if (r === null || !WORST_FIRST.includes(r)) unrated++
+    else byRating.set(r, (byRating.get(r) ?? 0) + 1)
+  }
+  const rated = WORST_FIRST.filter((r) => byRating.has(r)).map((r) => ({ rating: r, n: byRating.get(r)! }))
+  return { partial: partials.length, inMeal, rated, unrated, pairedUnread, notPaired }
+}
+
+/**
  * Page 1 + Appendix D's per-regimen medication facts (§3.8, B-117 §7).
  *
  * `attributedDoses` are the doses the ONE shared attribution pass assigned to THIS regimen —
@@ -7717,6 +8165,100 @@ function buildMedicationHistory(
 }
 
 /**
+ * CUL-2512 — a food needs this much meal record BEFORE its first logged feeding to be called new.
+ * Without it every food on a record that starts at the window's edge reads as introduced there.
+ */
+export const NEW_FOOD_MIN_PRIOR_DAYS = 7
+
+/**
+ * CUL-2512 (QUIET) — the foods first logged inside this window. A plain meal food never became a
+ * change, so Nyx's chicken foods (first fed Oct 18, as vomiting rose) were missing from the chart's
+ * markers and from "N changes overlap this window". A mixed bowl counts by its components.
+ *
+ * "First logged" is a fact about the record this report READ, never a claim the pet had not eaten
+ * it before: an unlogged earlier feeding is always possible, so the render says so beside it.
+ */
+function buildWindowNewFoods(
+  input: ReportInput,
+  events: readonly ReportEventInput[],
+  changes: readonly ConcurrentChange[],
+  scope: ReportScope,
+  tz: string | null,
+  bucketIndexOfDay: (dn: number) => number,
+): ConcurrentChange[] {
+  const named = new Set(changes.map((c) => c.label.trim().toLowerCase()))
+  // Only the trial DIET of a trial that overlaps this window is already a change (`diet_trial`). A
+  // permitted extra, or any food of a past trial's list, is not one unless its permission opened in
+  // the window (`diet_allowed`, caught by the label check below), so it can still be new (pass 1).
+  const listed = new Set<string>()
+  for (const t of input.dietTrials) {
+    const start = dayNumber(t.startedAt.slice(0, 10))
+    const endValue = trialEndValue(t)
+    const end = endValue ? dayNumber(endValue.slice(0, 10)) : null
+    if (start === null || start > scope.endDayNum || (end !== null && end < scope.startDayNum)) continue
+    if (t.foodItemId) listed.add(t.foodItemId)
+    for (const f of t.allowedFoods ?? []) if (f.foodItemId && f.role === 'primary_diet') listed.add(f.foodItemId)
+  }
+  // A free-fed bowl is already its own change (`free_fed`); a meal-fed arrangement is not, so its
+  // food can still be new.
+  for (const a of input.feedingArrangements ?? []) if (a.method === 'free_choice') listed.add(a.foodItemId)
+  let firstMealDn: number | null = null
+  const foods = new Map<string, { label: string; firstDn: number; windowDays: Set<number> }>()
+  for (const e of events) {
+    if (e.type !== 'meal' || !e.meal) continue
+    const dn = eventDayNumber(e.occurredAt, tz)
+    if (dn === null) continue
+    if (firstMealDn === null || dn < firstMealDn) firstMealDn = dn
+    const parts: Array<{ id: string | null; label: string | null }> = e.meal.bowl
+      ? e.meal.bowl.components.map((c) => ({
+          // Keyed and labelled as a plain meal of the same food is, so a food fed alone and in a
+          // bowl is one food (the real-record run listed Applaws twice).
+          id: c.foodItemId,
+          label: mealFoodLabel({ brand: c.brand, productName: c.productName, format: c.format }) ?? c.snapshotLabel,
+        }))
+      : [
+          {
+            id: e.meal.foodItemId,
+            label: mealFoodLabel(e.meal),
+          },
+        ]
+    for (const p of parts) {
+      if (!p.label) continue
+      // One key for a food fed alone or in a bowl: its id, else its label (pass 1: a food with no id
+      // was keyed two ways and listed twice).
+      const key = p.id ?? `label:${p.label.trim().toLowerCase()}`
+      const f = foods.get(key)
+      const inWin = dn >= scope.startDayNum && dn <= scope.endDayNum
+      if (!f) {
+        if (p.id && listed.has(p.id)) continue
+        foods.set(key, { label: p.label, firstDn: dn, windowDays: new Set(inWin ? [dn] : []) })
+      } else {
+        if (dn < f.firstDn) f.firstDn = dn
+        if (inWin) f.windowDays.add(dn)
+      }
+    }
+  }
+  const out: ConcurrentChange[] = []
+  for (const f of foods.values()) {
+    if (f.firstDn < scope.startDayNum || f.firstDn > scope.endDayNum) continue
+    if (firstMealDn === null || f.firstDn - firstMealDn < NEW_FOOD_MIN_PRIOR_DAYS) continue
+    if (named.has(f.label.trim().toLowerCase())) continue
+    out.push({
+      kind: 'new_food',
+      label: f.label,
+      fedDays: f.windowDays.size,
+      startDate: dayKeyFromNumber(f.firstDn),
+      bucketIndex: bucketIndexOfDay(f.firstDn),
+      ongoing: false,
+      endInWindow: null,
+      endBucketIndex: null,
+      endIsDeclared: false,
+    })
+  }
+  return out.sort((a, b) => (a.startDate! < b.startDate! ? -1 : a.startDate! > b.startDate! ? 1 : a.label.localeCompare(b.label)))
+}
+
+/**
  * Interventions that STARTED within the window (GP-0, spec §3.5/§3.8): a diet trial,
  * a medication regimen, a supplement, or a free-fed arrangement introduced mid-window.
  * The single highest-consequence misread to prevent — a co-started drug letting the
@@ -7776,6 +8318,8 @@ function buildConcurrentChanges(
      * the A1 finding says must never be dropped.
      */
     onlyInWindowTransition = false,
+    /** CUL-2509 — a medication row's provenance, written onto the change. */
+    provenance?: { adHoc: boolean; itemId: string | null },
   ) => {
     // A NULL startDate = a standing arrangement whose start was never recorded (a free-fed bowl
     // "always down"). Treat it as active from before the window (spanStart -Infinity) so it is
@@ -7805,6 +8349,7 @@ function buildConcurrentChanges(
       // only set strictly before `endDayNum` — so this is a real index, never a clamp artefact.
       endBucketIndex: endInWindow !== null ? bucketIndexOfDay(activeEndDn as number) : null,
       endIsDeclared,
+      ...(provenance ?? {}),
     })
   }
   for (const t of input.dietTrials) {
@@ -7848,7 +8393,10 @@ function buildConcurrentChanges(
   }
   for (const m of input.medications) {
     // A regimen's `ended_at` is an owner action (the End tap), so its end is declared.
-    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt, true)
+    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt, true, false, {
+      adHoc: false,
+      itemId: m.medicationItemId,
+    })
   }
   for (const u of unlinkedMedications) {
     // `lastDate` is the last dose IN WINDOW, so an ongoing ad-hoc course reads as
@@ -7863,7 +8411,10 @@ function buildConcurrentChanges(
     // `med start` on the window's first day and the prose says "started" — a window-boundary
     // artefact wearing an exposure verb, and the mirror of the endpoint above. It is pre-existing
     // and fixing it changes the START lane on every existing report, so it is its own change.
-    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate, false)
+    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate, false, false, {
+      adHoc: true,
+      itemId: u.itemId,
+    })
   }
   for (const a of input.feedingArrangements) {
     // A free-fed arrangement's `activeFrom` is WHEN THE OWNER FIRST LOGGED THE FOOD in the app,
@@ -7887,5 +8438,18 @@ function buildConcurrentChanges(
   return out
 }
 
-
-
+/**
+ * The one intake finding the report carries, chosen by TRIGGER order (`INTAKE_TRIGGER_RANK`), never
+ * the ranker's. CUL-2593 lifted a cat's all-refused card (the call today) above refused_normal_food
+ * on the Signal, but the report's intake detail has no all-refused branch: taking the ranker's first
+ * card turned "refused a food it normally eats (the food)" into "below this pet's baseline for 1
+ * consecutive day" (adversarial pass 2, QUIET). Ties keep the earlier card, so the report's flag is
+ * exactly the one it carried before the lift.
+ */
+export function reportIntakeOf(
+  current: IntakeDeclineFinding | null,
+  next: IntakeDeclineFinding,
+): IntakeDeclineFinding {
+  if (!current) return next
+  return INTAKE_TRIGGER_RANK[next.trigger] < INTAKE_TRIGGER_RANK[current.trigger] ? next : current
+}

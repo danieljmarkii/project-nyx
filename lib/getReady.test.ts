@@ -196,7 +196,9 @@ function signalFrom(flags: IntakeDeclineFlag[], pet = 'Mochi'): CachedFinding[] 
     text:
       f.trigger === 'refused_normal_food'
         ? `${pet} just turned down ${f.refusedFoodLabel ?? 'a food they usually finish'}, which ${pet} normally eats — worth keeping an eye on, and a word with your vet if it carries on.`
-        : `${pet} has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.`,
+        : f.allRefused === true
+          ? `${pet} refused every meal you rated today — worth keeping an eye on, and a word with your vet if it carries on.`
+          : `${pet} has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.`,
     finding: {
       type: 'intake_decline',
       priorityClass: 'safety',
@@ -205,6 +207,7 @@ function signalFrom(flags: IntakeDeclineFlag[], pet = 'Mochi'): CachedFinding[] 
       daysBelowBaseline: f.daysBelowBaseline,
       refusedFoodLabel: f.refusedFoodLabel,
       ratedMealsConsidered: f.ratedMealsConsidered,
+      ...(f.allRefused === undefined ? {} : { allRefused: f.allRefused }),
     },
   }));
 }
@@ -1030,6 +1033,25 @@ describe('CUL-950 — a decline the Signal already states is printed once, the S
     expect(rows[0].source).toBe('signal');
   });
 
+  it('CUL-2424: a device day of refusals is never dropped under a Signal dip (stale or pre-field cache)', () => {
+    // Today on a food with no history (so no refusal of a usual food can fire), both refused.
+    const NEW = { id: 'f-new', label: 'Hills z/d' };
+    const record = [...baseline(), meal(0, 8, NEW, 'refused'), meal(0, 10, NEW, 'refused')];
+    const device = detect(record, DETECT_NOW);
+    expect(device.map((f) => [f.trigger, f.allRefused])).toEqual([['consecutive_low', true]]); // the premise
+    const facts = intakeDeclineFacts(device, 'Mochi');
+
+    // A cache written before the fact existed: the same trigger, no refusal fact, "less" words.
+    const preField = signalFrom(device.map(({ allRefused: _drop, ...f }) => f));
+    const { rows } = buildWorthRaising(input({ findings: preField, intakeDecline: facts }));
+    expect(rows.map((r) => r.text)).toContain('Mochi refused every meal you rated today.');
+
+    // A fresh cache that carries the fact states it once, the Signal's.
+    const fresh = signalFrom(device);
+    const again = buildWorthRaising(input({ findings: fresh, intakeDecline: facts })).rows;
+    expect(again.map((r) => [r.source, r.text])).toEqual([['signal', fresh[0].text]]);
+  });
+
   it('both triggers on both sides: the Signal’s two rows, and none of the device’s', () => {
     // A cat that refused her usual food yesterday AND ate little today. The server
     // emits the two as two findings; the device holds the same two.
@@ -1371,7 +1393,11 @@ describe('CUL-950 — the intake order is the ENGINE’s, pinned to its source (
     );
     // PR-30s moved the order into one constant the comparator and I5's line placement share;
     // pin both the comparator's use of it and its body.
-    expect(/x\.type === 'intake_decline' && y\.type === 'intake_decline'\)\s*\{\s*return INTAKE_TRIGGER_RANK\[x\.trigger\] - INTAKE_TRIGGER_RANK\[y\.trigger\]/.test(src)).toBe(true);
+    // CUL-2593 lifted the call-today all-refused card above refused_normal_food (`intakeRankOf`),
+    // a step a device row cannot mirror (it carries no species); the trigger order beneath it is
+    // still this constant's, and that is what is pinned. The device row only places, never drops.
+    expect(/x\.type === 'intake_decline' && y\.type === 'intake_decline'\)\s*\{[^}]*return intakeRankOf\(x\) - intakeRankOf\(y\)/.test(src)).toBe(true);
+    expect(/function intakeRankOf\(f: IntakeDeclineFinding\): number \{\s*return allRefusedCallsToday\(f\) \? INTAKE_CALL_TODAY_RANK : INTAKE_TRIGGER_RANK\[f\.trigger\]/.test(src)).toBe(true);
     const block = /const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = \{([^}]*)\}/.exec(src);
     expect(block).not.toBeNull();
     const engine = Object.fromEntries(

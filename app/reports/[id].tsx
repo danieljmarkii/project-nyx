@@ -7,9 +7,9 @@ import { theme } from '../../constants/theme';
 import { Header, PrimaryButton, SkeletonCard, ThemedText } from '../../components/ui';
 import { VisitLinkSheet } from '../../components/reportV2/VisitLinkSheet';
 import { boxedPreviewHtml } from '../../components/reportV2/ReportPreviewV2';
-import { REPORT_WEBVIEW_ORIGINS, savedCopyWarningOf } from '../../lib/examRoom';
+import { savedCopyWarningOf } from '../../lib/examRoom';
 import { ANONYMOUS_PET_NAME, resolveRecordPetName, usePetStore } from '../../store/petStore';
-import { androidTextZoom, isPreviewLoadAllowed } from '../../lib/reportPreviewV2';
+import { REPORT_FRAME_PROPS, androidTextZoom } from '../../lib/reportPreviewV2';
 import {
   asSentLine,
   COPY_FAILED,
@@ -76,10 +76,11 @@ import { readVetVisitsHome } from '../../lib/vetVisits';
 // strip has no height cap, so a long line shrinks the paper, never the warning. A page whose line
 // cannot be read back shows no paper at all.
 //
-// BOXED IN LIKE THE PREVIEW (CUL-2487). The page carries the exam room's CSP (`boxedPreviewHtml`),
-// `originWhitelist` is `*` (REPORT_WEBVIEW_ORIGINS) so every navigation reaches the load
-// predicate instead of going to the system browser, Android's new-window path is refused, and
-// every `data:` navigation is refused (`savedCopyLoadAllowed`).
+// BOXED IN LIKE THE PREVIEW (CUL-2487, CUL-2469). The page opens with the one frame lock
+// (`boxedPreviewHtml`: the room's CSP, DNS prefetch off, the lock script, frame and link tags
+// renamed inert). The frame spreads REPORT_FRAME_PROPS (lib/reportPreviewV2.ts), as every v2 report frame does:
+// every navigation reaches the one load check (`reportFrameLoadAllowed`, which refuses every
+// `data:` navigation; privacy passes 1 and 2), and no window ever opens.
 
 type Copy =
   | { kind: 'loading' }
@@ -87,22 +88,6 @@ type Copy =
   | { kind: 'offline' }
   | { kind: 'unavailable' }
   | { kind: 'failed' };
-
-/** Android's new-window path, refused (CUL-2487): the window never opens. */
-function refuseWindow(): void {}
-
-/**
- * The saved copy's load check (CUL-2487, privacy passes 1 and 2). `isPreviewLoadAllowed` lets any
- * `data:` URL through; here a `data:` navigation can only be the page leaving itself (an injected
- * refresh to a `data:` document that carries no CSP), so it is refused outright. The copy's own
- * document never needs it: Android's `loadDataWithBaseURL` is an app-initiated load the check is
- * never asked about, and iOS reports it as `about:blank`. A gate on "has it loaded yet" lost the
- * race on Android (the check blocks the UI thread the load-end event needs), so there is none.
- * Wrong about a build, this fails closed: a blank paper, never a leak.
- */
-export function savedCopyLoadAllowed(url: string): boolean {
-  return !url.startsWith('data:') && isPreviewLoadAllowed(url);
-}
 
 export default function SavedReportScreen() {
   const pets = usePetStore((s) => s.pets);
@@ -230,7 +215,8 @@ export default function SavedReportScreen() {
           <WebView
             testID="report-copy"
             style={styles.web}
-            originWhitelist={REPORT_WEBVIEW_ORIGINS}
+            // The one frame lock (CUL-2469, CUL-2494): load check, no window, the lock head.
+            {...REPORT_FRAME_PROPS}
             source={{ html: boxedHtml }}
             // The stored print page carries no script; nothing on paper runs or loads.
             javaScriptEnabled={false}
@@ -238,8 +224,6 @@ export default function SavedReportScreen() {
             // (DocumentPdfViewer's precedent; rls-privacy-reviewer F2).
             incognito
             cacheEnabled={false}
-            onShouldStartLoadWithRequest={(req) => savedCopyLoadAllowed(req.url)}
-            onOpenWindow={refuseWindow}
             // The owner's text size reaches the page on Android, as in the preview.
             textZoom={Platform.OS === 'android' ? androidTextZoom(PixelRatio.getFontScale()) : undefined}
             showsVerticalScrollIndicator

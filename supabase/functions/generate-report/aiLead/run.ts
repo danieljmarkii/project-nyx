@@ -15,8 +15,10 @@ import { runSummaryGate, summaryGateIO } from '../../_shared/reportSummaryGate.t
 import type { ReportSnapshot } from '../report.ts'
 import { buildLeadFacts, documentForLead, factTableHash } from './facts.ts'
 import { sendChecked } from './model.ts'
-import { runAiLead, type LeadIO, type LeadResult, type StoredVerdict } from './leadPipeline.ts'
-import { LEAD_VERIFIER_VERSION, type LeadSentence } from './verify.ts'
+import { runAiLead, type DraftRead, type LeadIO, type LeadResult, type StoredVerdict } from './leadPipeline.ts'
+import { h } from '../documentV2.ts'
+import { sha256Hex } from '../../_shared/engineStamps.ts'
+import { LEAD_VERIFIER_VERSION, multiFlagIssues, type LeadSentence } from './verify.ts'
 
 export interface DraftKey {
   reportId: string
@@ -26,7 +28,7 @@ export interface DraftKey {
 
 export function draftLeadIO(admin: SupabaseClient, user: SupabaseClient, key: DraftKey): LeadIO {
   const draftRow = () =>
-    admin.from('vet_reports').select('ai_lead_text, ai_lead_verdict')
+    admin.from('vet_reports').select('ai_lead_text, ai_lead_verdict, ai_lead_model')
       .eq('id', key.reportId).eq('pet_id', key.petId).eq('generated_by', key.uid).eq('status', 'draft')
   return {
     readDraft: async () => {
@@ -34,8 +36,8 @@ export function draftLeadIO(admin: SupabaseClient, user: SupabaseClient, key: Dr
       // A failed read is no draft: no count is spent and no model is called.
       if (error) console.warn('vet_reports draft read failed; no AI lead:', error.message)
       if (error || !data) return { found: false, text: null, verdict: null }
-      const row = data as { ai_lead_text: string | null; ai_lead_verdict: unknown }
-      return { found: true, text: row.ai_lead_text, verdict: row.ai_lead_verdict }
+      const row = data as { ai_lead_text: string | null; ai_lead_verdict: unknown; ai_lead_model?: string | null }
+      return { found: true, text: row.ai_lead_text, verdict: row.ai_lead_verdict, model: row.ai_lead_model ?? null }
     },
     runGate: (spend) => runSummaryGate(summaryGateIO(admin, user, key.uid, key.petId), key.uid, { spend }),
     send: (role, body, ticket, timeoutMs) => sendChecked(role, body, ticket, { timeoutMs }),
@@ -89,6 +91,10 @@ export async function storedLeadForSnapshot(
   if (stored.text === null || v?.outcome !== 'printed' || !Array.isArray(v.sentences)) return null
   const facts = buildLeadFacts(documentForLead(snap), leadContextOf(snap, false))
   if (!facts.eligible) return null
+  // CUL-2563 ruling (b): never on a record with 2+ live band items, whatever the stored verdict says.
+  // The hash would refuse one written by `runAiLead` today; this does not lean on it (adversarial
+  // review of PR #1461, finding A: a second writer, or the threshold moved without a version bump).
+  if (multiFlagIssues(facts.table).length > 0) return null
   if ((await factTableHash(facts.payload, LEAD_VERIFIER_VERSION)) !== v.fact_hash) return null
   const sentences = v.sentences as LeadSentence[]
   return sentences.map((s) => s.text).join(' ') === stored.text ? sentences : null
@@ -98,30 +104,138 @@ export async function storedLeadForSnapshot(
 export const LEAD_SLOT_MARK = 'data-block="ai-lead"'
 
 /**
+ * What the keep's ONE write does to the lead columns (CUL-2436): `set` is written in the same
+ * UPDATE that turns the row kept, and every column in `unchanged` must still hold the value read
+ * here (null: still null), or that UPDATE matches nothing and the keep is refused. A key may name
+ * a JSON path into the verdict (`ai_lead_verdict->>at`). Built only by `settleLeadForKeep`, so
+ * this file stays the only one that names a lead column (aiLead/storage.guard.test.ts);
+ * savedCopy.ts's `markKept` carries it without reading it.
+ */
+export interface KeepLead {
+  readonly set: Readonly<Record<string, unknown>>
+  readonly unchanged: Readonly<Record<string, string | null>>
+}
+
+/**
+ * Why a keep may not go ahead whatever is retried (savedCopy.ts answers 409, so the client says
+ * "not saved" at once and does not retry). `withdrawn`: the copy prints the summary and the
+ * owner's AI consent no longer allows it (CUL-2523, PM ruling (a) 2026-11-05). `mismatch`: the
+ * copy's summary slot does not hold the draft's summary, so no record of it can be true.
+ */
+export type KeepRefusal = { readonly refused: 'withdrawn' | 'mismatch' }
+
+/** The longest text pinned by its own value, URL-encoded, for a verdict written before
+ *  `text_sha` existed (CUL-2574). A PostgREST filter rides in the request URL, and a gateway may
+ *  refuse a long one. Such a verdict past this length is no pin: the keep is refused (500) and
+ *  retried, never kept on a weaker pin. */
+export const PIN_TEXT_URL_BUDGET = 2048
+
+/** The verdict fields the pin reads by path: `at` moves on every write; the rest make a write in
+ *  the same millisecond still differ. `text_sha` (CUL-2574) pins the text by its content. */
+const VERDICT_PINS = ['at', 'outcome', 'fact_hash', 'text_sha'] as const
+
+function verdictObject(v: unknown): Record<string, unknown> | null {
+  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+}
+
+/**
+ * Every lead column as read: a rewrite of any of them between this read and the keep refuses
+ * the keep, on BOTH branches (CUL-2523).
+ *
+ * THE TEXT IS PINNED BY ITS HASH (CUL-2574). `leadPipeline.ts` `record` writes `text_sha`, the
+ * text's SHA-256, in the same write as the text, so `ai_lead_verdict->>text_sha` moves whenever
+ * the text does, and the URL stays short however long the text is. The hash is checked against
+ * the text read here: one that does not match is no pin. A verdict from before `text_sha` falls
+ * back to pinning a short text by value; a long one is no pin. Timing (`at`) never stands in for
+ * the content, since two runs can stamp the same millisecond.
+ */
+async function pinsOf(draft: DraftRead): Promise<Record<string, string | null> | null> {
+  const verdict = verdictObject(draft.verdict)
+  if (draft.verdict !== null && verdict === null) return null // an unreadable verdict is no pin
+  const pins: Record<string, string | null> = { ai_lead_model: draft.model ?? null }
+  if (verdict === null) pins.ai_lead_verdict = null
+  else {
+    for (const key of VERDICT_PINS) {
+      const value = verdict[key]
+      if (value !== undefined && value !== null && typeof value !== 'string') return null
+      // A verdict that never had the key is pinned as missing (`->>` reads null for both).
+      pins[`ai_lead_verdict->>${key}`] = (value as string | undefined) ?? null
+    }
+  }
+  const sha = verdict?.text_sha
+  if (draft.text === null) {
+    if (typeof sha === 'string') return null // a hash with no text: no record can be true
+    pins.ai_lead_text = null
+  } else if (typeof sha === 'string') {
+    if ((await sha256Hex(draft.text)) !== sha) return null
+  } else if (encodeURIComponent(draft.text).length <= PIN_TEXT_URL_BUDGET) {
+    pins.ai_lead_text = draft.text
+  } else {
+    return null
+  }
+  return pins
+}
+
+/** The summary as the stored copy prints it: the one slot's sentence spans, joined as
+ *  `aiLeadSlot` joins them, still escaped. Null when the copy carries no slot or more than one. */
+export function printedLeadOf(storedHtml: string): string | null {
+  if (storedHtml.split(LEAD_SLOT_MARK).length !== 2) return null
+  const slot = storedHtml.slice(storedHtml.indexOf(LEAD_SLOT_MARK))
+  const body = slot.slice(0, slot.indexOf('</section>'))
+  const spans = [...body.matchAll(/<span class="ais">([\s\S]*?)<\/span>/g)].map((m) => m[1])
+  return spans.length > 0 ? spans.join(' ') : null
+}
+
+/**
  * VR2-20 (CUL-2300; spec §9.2): settle the draft's lead columns to what the copy being kept
- * actually printed, before the keep freezes them. A lead the stored HTML does not carry is
- * cleared, so a kept copy never claims a summary the vet did not get, and the verdict records
- * why (`at_send`). Today the preview's stored HTML is rendered before any lead exists, so this
- * clears every lead; when a send path renders the lead into the sent HTML, that path checks
- * withdrawal (`leadAllowedAtSend`) before it renders, and this step then keeps the text.
- * False on any failed read or write: the caller refuses the keep rather than freeze a misrecord.
+ * actually printed. A lead the stored HTML does not carry is cleared, so a kept copy never claims
+ * a summary the vet did not get, and the verdict records why (`at_send`). Today the preview's
+ * stored HTML is rendered before any lead exists, so this clears every lead.
+ *
+ * NOT A WRITE (CUL-2436, rls-privacy-reviewer F3 on PR-20). This only reads, and hands the keep
+ * the columns to write in its own single statement, with every lead column it read PINNED
+ * (CUL-2523): text, verdict and model on both branches, so a lead written or withdrawn between
+ * this read and the keep matches nothing, the keep is refused (500), and the client's retry
+ * settles fresh. Null on an unreadable draft: the caller refuses the keep rather than freeze a
+ * misrecord.
+ *
+ * A COPY THAT PRINTS A SUMMARY (CUL-2523) is kept only when its one slot holds exactly the
+ * draft's text, escaped as the slot escapes it (else `mismatch`), and only while the owner's
+ * consent and the flags still allow a summary (`runGate(false)`, the gate's own reads, spending
+ * nothing; else `withdrawn`). A gate whose refusal came from a read that failed is null, never
+ * a refusal: it is retried (CUL-2575). A slot over a draft whose text is gone (118's clear after a "no")
+ * is `mismatch`: the record could only say "not printed" over a copy that printed it.
  *
  * A lead not on the sent copy leaves no model output behind in the verdict either: `sentences` and
  * `checker` are dropped, the reason and the hash kept (rls-privacy-reviewer pass 2 on CUL-2377).
- * The kept row's verdict is frozen, so text the vet never got must not ride into it; and after a
- * withdrawal whose clear was skipped, migration 118's guard refuses any draft write that still
- * carries model output, which would otherwise refuse the Send itself on every retry.
+ * The kept row's verdict is frozen, so text the vet never got must not ride into it; and migration
+ * 118's guard refuses any draft write that still carries model output after a withdrawal.
  */
-export async function settleLeadForKeep(io: Pick<LeadIO, 'readDraft' | 'writeDraft'>, storedHtml: string): Promise<boolean> {
+export async function settleLeadForKeep(
+  io: Pick<LeadIO, 'readDraft' | 'runGate'>,
+  storedHtml: string,
+): Promise<KeepLead | KeepRefusal | null> {
   const draft = await io.readDraft()
-  if (!draft.found) return false
-  if (draft.text !== null && storedHtml.includes(LEAD_SLOT_MARK)) return true
-  const prior = draft.verdict !== null && typeof draft.verdict === 'object' && !Array.isArray(draft.verdict)
-    ? (draft.verdict as Record<string, unknown>)
-    : null
+  if (!draft.found) return null
+  const unchanged = await pinsOf(draft)
+  if (unchanged === null) return null
+  if (storedHtml.includes(LEAD_SLOT_MARK)) {
+    if (draft.text === null || printedLeadOf(storedHtml) !== h(draft.text)) return { refused: 'mismatch' }
+    const gate = await io.runGate(false)
+    // A read that failed says nothing about the owner's answer: null (500), so the client's retry
+    // and the next launch's drain ask again (CUL-2575). Every other "no" refuses for good, as
+    // ruled for withdrawal (CUL-2523 ruling (a)); which of the others should is still the PM's.
+    if (!gate.allow) return gate.unread ? null : { refused: 'withdrawn' }
+    return { set: {}, unchanged }
+  }
+  const prior = verdictObject(draft.verdict)
   const reason = draft.text !== null ? 'not_on_sent_copy' : prior === null ? 'not_ready' : 'not_printed'
-  const { sentences: _sentences, checker: _checker, ...record } = prior ?? {}
-  return io.writeDraft(null, { ...record, at_send: { printed: false, reason } } as unknown as StoredVerdict, null)
+  // The hash goes with the text it fingerprints: the cleared row claims no text (CUL-2574).
+  const { sentences: _sentences, checker: _checker, text_sha: _textSha, ...record } = prior ?? {}
+  return {
+    set: { ai_lead_text: null, ai_lead_verdict: { ...record, at_send: { printed: false, reason } }, ai_lead_model: null },
+    unchanged,
+  }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

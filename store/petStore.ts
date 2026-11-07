@@ -119,6 +119,27 @@ interface PetState {
    * next account at "not answered" (FR-9 parity, `wipeLocalSession`).
    */
   petsLoaded: boolean;
+  /**
+   * CUL-2542: the ids of this account's ARCHIVED pets, kept apart from `pets` (whose
+   * invariant is active-only, below). The widget capture inbox needs them: a capture
+   * tapped for a pet that was archived before the app took it in is still the owner's,
+   * and treating it as foreign let it age out and be deleted. Read by the inbox ingest
+   * and the inbox count only (lib/captureInbox.ts `withArchivedPetIds`); never a list
+   * to render. Filled by usePet beside the active read, grown by `removePet` (archive),
+   * cleared by `reset`. A restored pet may stay listed here: the set only has to
+   * contain every pet of the account, and a restored pet still is one.
+   */
+  archivedPetIds: string[];
+  /**
+   * Whether usePet's archived read has answered this session. Until it has, an empty
+   * `archivedPetIds` means "unknown", not "none", and the inbox errs loud. Cleared by `reset`.
+   */
+  archivedPetIdsLoaded: boolean;
+  /**
+   * The archived read answered: add its ids (a union, never a replace, so a read that
+   * started before an in-app archive cannot drop that id) and mark the list loaded.
+   */
+  addArchivedPetIds: (ids: string[]) => void;
   /** Replace the active-pet list (oldest-first) and resolve the selection against it. */
   setPets: (pets: Pet[], preferredId?: string | null) => void;
   /** The pet list read answered, possibly with nothing in it. */
@@ -163,6 +184,15 @@ export const usePetStore = create<PetState>((set, get) => ({
   activePet: null,
   isOnboarded: false,
   petsLoaded: false,
+  archivedPetIds: [],
+  archivedPetIdsLoaded: false,
+  addArchivedPetIds: (ids) => {
+    const state = get();
+    const fresh = ids.filter((id) => !state.archivedPetIds.includes(id));
+    // No-op when nothing changes: every subscriber of this store re-renders on a set.
+    if (fresh.length === 0 && state.archivedPetIdsLoaded) return;
+    set({ archivedPetIds: [...state.archivedPetIds, ...new Set(fresh)], archivedPetIdsLoaded: true });
+  },
   // INVARIANT: `pets` holds only NON-archived pets. Every loader filters
   // `is_active = true` (usePet) and archiving calls removePet, so an archived pet
   // never enters the list. The cross-pet safety banner (multi-pet §4) relies on
@@ -248,10 +278,16 @@ export const usePetStore = create<PetState>((set, get) => ({
       return {
         pets,
         activePet: resolveActivePet(pets, state.activePet?.id ?? null),
+        // CUL-2542: archiving keeps the pet in the account, so its waiting widget
+        // captures stay the owner's (see `archivedPetIds`).
+        archivedPetIds: state.archivedPetIds.includes(petId)
+          ? state.archivedPetIds
+          : [...state.archivedPetIds, petId],
       };
     });
     notifyPetsChanged();
   },
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
-  reset: () => set({ pets: [], activePet: null, isOnboarded: false, petsLoaded: false }),
+  reset: () =>
+    set({ pets: [], activePet: null, isOnboarded: false, petsLoaded: false, archivedPetIds: [], archivedPetIdsLoaded: false }),
 }));

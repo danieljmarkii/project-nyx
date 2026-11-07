@@ -15,6 +15,7 @@ import {
   MIN_INTERPRETABLE_DAYS,
   buildTrialContext,
   classifyDose,
+  doseRouteOf,
   classifyFeeding,
   computeTrialFacts,
   contaminationNote,
@@ -362,7 +363,37 @@ describe('§5.5 D-A — the standing fact covers permitted extras', () => {
     const facts = trialContamination(ctx());
     expect(facts).toHaveLength(1);
     expect(facts[0].food.foodItemId).toBe('rabbit-jerky');
-    expect(facts[0].extraProteins).toEqual(['chicken']);
+    // CUL-2513: measured against the trial, so the jerky's own rabbit is named too —
+    // the trial diet holds neither (and rung 1 already records rabbit as an antigen).
+    expect(facts[0].extraProteins).toEqual(['rabbit', 'chicken']);
+  });
+
+  it('CUL-2513 — names the novel protein, never the trial protein, on a permitted extra', () => {
+    // A duck trial; a permitted "Salmon Biscuit" whose label lists salmon and duck.
+    const biscuit: AllowedFood = { ...RABBIT_JERKY, foodItemId: 'salmon-biscuit', label: 'Salmon Biscuit', primaryProtein: 'salmon', proteins: ['salmon', 'duck'] };
+    const facts = trialContamination(buildTrialContext(TRIAL, [DRY_DUCK, biscuit]));
+    expect(facts).toHaveLength(1);
+    expect(facts[0].extraProteins).toEqual(['salmon']);
+    // A permitted extra built only on the trial protein is no finding.
+    const duckTreat: AllowedFood = { ...biscuit, foodItemId: 'duck-treat', primaryProtein: 'duck', proteins: ['duck'] };
+    expect(trialContamination(buildTrialContext(TRIAL, [DRY_DUCK, duckTreat]))).toEqual([]);
+    // B-529 kin, carried: a hydrolysed-chicken treat on a hydrolysed-chicken trial lists its own
+    // source; intact chicken on a beef chew still flags (kinship never crosses foods).
+    const ha = food({ foodItemId: 'ha', label: 'Purina HA', primaryProtein: 'hydrolyzed chicken', proteins: ['hydrolyzed chicken', 'chicken'] });
+    const haTreat: AllowedFood = { ...biscuit, foodItemId: 'ha-treat', primaryProtein: 'hydrolyzed chicken', proteins: ['hydrolyzed chicken', 'chicken'] };
+    const chew: AllowedFood = { ...biscuit, foodItemId: 'chew', primaryProtein: 'beef', proteins: ['beef', 'chicken'] };
+    const kin = trialContamination(buildTrialContext(TRIAL, [ha, haTreat, chew]));
+    expect(contaminationFindings(kin).map((f) => [f.food.foodItemId, f.extraProteins])).toEqual([['chew', ['beef', 'chicken']]]);
+    expect(kin.find((f) => f.food.foodItemId === 'ha-treat')?.derivedFromPrimary).toEqual(['chicken']);
+    expect(facts[0].measuredAgainst).toBe('trial');
+  });
+
+  it('CUL-2513 pass 1 — with no trial set to compare against, a fact says it was measured against its own front', () => {
+    // The trial diet has no designated primary, so the trial set is dark; the extra falls back.
+    const dark = food({ foodItemId: 'dark', label: 'Duck Diet', primaryProtein: null, proteins: ['duck'] });
+    const chew: AllowedFood = { ...RABBIT_JERKY, foodItemId: 'rd-chew', primaryProtein: 'rabbit', proteins: ['rabbit', 'duck'] };
+    const facts = trialContamination(buildTrialContext(TRIAL, [dark, chew]));
+    expect(facts.map((f) => [f.food.foodItemId, f.measuredAgainst])).toEqual([['rd-chew', 'own_primary']]);
   });
 
   it('flags a contaminated PRIMARY diet against its own designated protein', () => {
@@ -436,6 +467,46 @@ describe('§5.3 rung 4 — the oral route', () => {
         adherence: 'given',
       }),
     ).toBeNull();
+  });
+
+  // CUL-2525 (QUIET): the pairing is optional in the log sheet, so "given in food" with no
+  // meal paired is an ordinary record. Its vehicle is unknown, and an unknown vehicle counts.
+  it.each(['in_food', 'in_treat', 'in_pill_pocket'])('an unpaired dose logged %s is a food-vehicle exposure', (howGiven) => {
+    const hit = classifyDose(ctx(), {
+      eventId: 'd4',
+      occurredAt: at('2026-07-15'),
+      drugLabel: 'Zyrtec',
+      form: 'capsule',
+      pairedEventId: null,
+      adherence: 'partial',
+      howGiven,
+    });
+    expect(hit?.trigger).toBe('food_vehicle');
+  });
+
+  it('an unpaired dose given directly, or missed in food, is not', () => {
+    const base = { eventId: 'd5', occurredAt: at('2026-07-15'), drugLabel: 'Zyrtec', form: 'capsule', pairedEventId: null };
+    expect(doseRouteOf(ctx(), { ...base, adherence: 'given', howGiven: 'direct' })).toBeNull();
+    expect(doseRouteOf(ctx(), { ...base, adherence: 'missed', howGiven: 'in_food' })).toBeNull();
+    expect(doseRouteOf(ctx(), { ...base, adherence: 'given' })).toBeNull();
+  });
+
+  it('a pill in an allowed food is on the list, never an exposure, and names the food', () => {
+    const route = doseRouteOf(ctx(), {
+      eventId: 'd6',
+      occurredAt: at('2026-07-15'),
+      drugLabel: 'Prednisolone',
+      form: 'tablet',
+      pairedEventId: 'meal-10',
+      adherence: 'given',
+      howGiven: 'in_food',
+      vehicleFoodItemId: 'wet-duck',
+      vehicleFoodKey: null,
+    });
+    expect(route).toEqual({
+      kind: 'on_list',
+      onList: { eventId: 'd6', occurredAt: at('2026-07-15'), drugLabel: 'Prednisolone', vehicleLabel: 'Royal Canin Duck Wet' },
+    });
   });
 
   // §6.8 — a missed critical dose is a worse outcome than a contaminated trial.

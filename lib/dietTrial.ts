@@ -45,11 +45,14 @@
 //     sanction chicken for every other food in the library.
 //
 //   intendedProteins — each food's OWN owner-designated `primary_protein`. The
-//     comparator for the STANDING CONTAMINATION FACT (§5.5), which asks a
-//     different question: "does this food list more than it says on the front?"
-//     Comparing a food against `sanctionedProteins` would be vacuous — a duck
-//     formula that also lists chicken puts chicken INTO the union, so it could
-//     never flag itself.
+//     comparator for the STANDING CONTAMINATION FACT (§5.5) on a `primary_diet`
+//     row, which asks a different question: "does this food list more than it
+//     says on the front?" Comparing a trial diet against `sanctionedProteins`
+//     would be vacuous — a duck formula that also lists chicken puts chicken
+//     INTO the union, so it could never flag itself. A PERMITTED EXTRA is the
+//     exception (CUL-2513): it never enters the union, so measuring it against
+//     the trial's set is not vacuous, and measuring it against its own front
+//     named a duck trial's duck as the extra and missed the salmon.
 //
 // Same inputs, two questions, two answers. Merging them re-opens B-351 shape ①.
 import { canonicalizeProtein } from './protein.ts';
@@ -253,6 +256,11 @@ export interface TrialDose {
    *  PRESCRIBED DIET — see `classifyDose`. */
   vehicleFoodItemId?: string | null;
   vehicleFoodKey?: string | null;
+  /** CUL-2525 — `medication_administrations.how_given` (migration 022): 'direct' |
+   *  'in_food' | 'in_treat' | 'in_pill_pocket', or null. A dose logged as given in
+   *  food with NO pairing is still a dose given in food: its vehicle is unknown, not
+   *  absent. Optional: a caller that does not pass it keeps the pairing-only read. */
+  howGiven?: string | null;
 }
 
 /** An overlapping `free_choice` feeding arrangement (§5.6). */
@@ -658,7 +666,21 @@ export function allowedFoodsOn(ctx: TrialContext, dayIndex: number): AllowedFood
 export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<string> {
   const out = new Set<string>();
   for (const food of allowedFoodsOn(ctx, dayIndex)) {
-    if (food.role !== 'primary_diet') continue;
+    for (const key of sanctionedProteinsOfFood(food)) out.add(key);
+  }
+  return out;
+}
+
+/**
+ * One allowed-set row's contribution to the sanctioned set: nothing unless it is a
+ * characterized `primary_diet` row, then its designated primary and its label's
+ * proteins less the primary's kin. Shared by `sanctionedProteinsOn` (one day) and
+ * `trialContamination` (the whole trial), so the two comparators are one rule.
+ */
+function sanctionedProteinsOfFood(food: AllowedFood): string[] {
+  const out: string[] = [];
+  {
+    if (food.role !== 'primary_diet') return out;
     // A FOOD WITH NO DESIGNATED PRIMARY CONTRIBUTES NOTHING, and that is the fix
     // for the worst self-consistency break the adversarial pass found. Consider a
     // trial food carrying `['duck','chicken']` with a NULL `primary_protein` —
@@ -682,13 +704,13 @@ export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<s
     // then printed "no main protein on file" and "the trial diet also lists
     // Chicken and Soy" ONE ROW APART — R7's own defect #1, computed from the
     // comparator the row above disclaims.
-    if (isUncharacterizedTrialDiet(food)) continue;
+    if (isUncharacterizedTrialDiet(food)) return out;
     const primary = canonicalizeProtein(food.primaryProtein);
-    if (!primary) continue;
+    if (!primary) return out;
     // The designated primary is part of the diet even on a row whose array was
     // never captured — otherwise a manually-entered trial food with a main
     // protein and no ingredient panel sanctions nothing at all.
-    out.add(primary);
+    out.push(primary);
     // B-529/R7. A KIN TERM OF THIS FOOD'S OWN PRIMARY DOES NOT ENTER THE
     // SANCTIONED SET. A hydrolysed diet's label routinely yields both keys —
     // `hydrolyzed chicken` on the front, a panel term that canonicalizes to
@@ -707,7 +729,7 @@ export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<s
     // without the other either re-opens this false negative or re-opens the
     // false self-contamination it was paired with.
     const { extra } = partitionKinOfPrimary(canonicalProteins(food.proteins), primary);
-    for (const key of extra) out.add(key);
+    for (const key of extra) out.push(key);
   }
   return out;
 }
@@ -1328,6 +1350,9 @@ export interface OralRouteExposure {
   occurredAt: string;
   drugLabel: string | null;
   trigger: OralRouteTrigger;
+  /** CUL-2525 — a `food_vehicle` dose logged as given in food with NO meal paired: the food
+   *  is unknown, not known to be off the list. Absent otherwise (older facts unchanged). */
+  noFoodRecorded?: true;
 }
 
 /**
@@ -1353,6 +1378,37 @@ export interface OralRouteExposure {
  * after the exposure it reports; the setup line acts on day 0.
  */
 export function classifyDose(ctx: TrialContext, dose: TrialDose): OralRouteExposure | null {
+  const route = doseRouteOf(ctx, dose);
+  return route?.kind === 'exposure' ? route.exposure : null;
+}
+
+/** CUL-2525 — a dose given inside a food ON the allowed list. Not an exposure (the
+ *  pill hidden in the prescribed diet, see `doseRouteOf`), and still a fact the vet
+ *  needs: the page that is silent about it reads as "no dose went in food". */
+export interface OralRouteOnList {
+  eventId: string;
+  occurredAt: string;
+  drugLabel: string | null;
+  /** The allowed food the vehicle matched, by its allowed-list label. */
+  vehicleLabel: string;
+}
+
+export type DoseRoute =
+  | { kind: 'exposure'; exposure: OralRouteExposure }
+  | { kind: 'on_list'; onList: OralRouteOnList };
+
+/** VEHICLE-SAYING `how_given` values (migration 022). One list: the report's appendix B
+ *  row reads the same three (CUL-2509), so the two cannot disagree about what "given in
+ *  food" means. */
+export const VEHICLE_HOW_GIVEN: ReadonlySet<string> = new Set(['in_food', 'in_treat', 'in_pill_pocket']);
+
+/**
+ * CUL-2525 — the ONE decision for a dose by mouth: an exposure (rung 4), a dose inside
+ * an allowed food, or neither. `classifyDose` is its exposure half; the on-list half
+ * exists so a surface can say a vehicle was in play without a second predicate that
+ * re-decides the window, the adherence rule or the allowed-list match (C-4).
+ */
+export function doseRouteOf(ctx: TrialContext, dose: TrialDose): DoseRoute | null {
   const dayIndex = dayIndexOf(ctx, dose.occurredAt);
   if (!isInTrialWindow(ctx, dayIndex)) return null;
 
@@ -1376,11 +1432,24 @@ export function classifyDose(ctx: TrialContext, dose: TrialDose): OralRouteExpos
   const adherence = dose.adherence?.trim().toLowerCase() ?? null;
   if (adherence === 'missed' || adherence === 'refused') return null;
 
+  const exposure = (trigger: OralRouteTrigger): DoseRoute => ({
+    kind: 'exposure',
+    exposure: { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, trigger },
+  });
   const form = dose.form?.trim().toLowerCase() ?? null;
-  if (form === 'chewable') {
-    return { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, trigger: 'chewable' };
+  if (form === 'chewable') return exposure('chewable');
+  if (!dose.pairedEventId) {
+    // CUL-2525 (QUIET): logged "in food / in a treat / in a pill pocket" with no meal
+    // paired. The pairing is optional in the log sheet, so this is an ordinary record,
+    // and the closed-world rule below ("an UNKNOWN vehicle still counts") applied only
+    // to a PAIRED unknown: an unpaired one dropped off page 1 while appendix B named it.
+    const how = dose.howGiven?.trim().toLowerCase() ?? null;
+    if (how === null || !VEHICLE_HOW_GIVEN.has(how)) return null;
+    return {
+      kind: 'exposure',
+      exposure: { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, trigger: 'food_vehicle', noFoodRecorded: true },
+    };
   }
-  if (!dose.pairedEventId) return null;
 
   // THE VEHICLE HAS TO BE OFF THE LIST TO BE AN EXPOSURE. A daily pill hidden in
   // the PRESCRIBED DIET is the commonest way an owner gives a tablet on an
@@ -1390,23 +1459,34 @@ export function classifyDose(ctx: TrialContext, dose: TrialDose): OralRouteExpos
   // vehicle resolves on the same identity rule as rung 1, so a re-photographed
   // bag of the trial diet is still the trial diet here too.
   const day = dayIndex as number;
-  if (matchAllowed(allowedFoodsOn(ctx, day), dose.vehicleFoodItemId ?? null, dose.vehicleFoodKey ?? null)) {
-    return null;
+  const hit = matchAllowed(allowedFoodsOn(ctx, day), dose.vehicleFoodItemId ?? null, dose.vehicleFoodKey ?? null);
+  if (hit) {
+    return {
+      kind: 'on_list',
+      onList: { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, vehicleLabel: hit.food.label },
+    };
   }
   // An UNKNOWN vehicle still counts: the food was not on the list as far as
   // anything can tell, and the closed-world rule says record it. What is lost is
   // attribution, not detection.
-  return { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, trigger: 'food_vehicle' };
+  return exposure('food_vehicle');
 }
 
 // ── §5.5 — the standing contamination fact (D-A) ─────────────────────────────
 
 export interface ContaminationFact {
   food: AllowedFood;
-  /** Proteins in this food beyond its OWN designated primary, EXCLUDING terms
-   *  that name the primary's own source at a different stage of processing
-   *  (B-529/R7 — see `derivedFromPrimary`). */
+  /** Proteins in this food the TRIAL does not hold (CUL-2513), EXCLUDING terms
+   *  that name the food's own primary source at a different stage of processing
+   *  (B-529/R7 — see `derivedFromPrimary`). For a `primary_diet` row the
+   *  comparator is its own designated primary (the trial diet cannot sanction
+   *  its own contaminant); for a permitted extra it is the trial's set. */
   extraProteins: string[];
+  /** CUL-2513 — what `extraProteins` was measured against: the trial's own set, or (a trial
+   *  diet's row, or an extra on a trial whose set is dark) the food's own primary. Only a
+   *  `trial` fact may be described as "a protein the trial diet does not" hold. Optional on
+   *  facts stored before it, which read as `own_primary`. */
+  measuredAgainst?: 'trial' | 'own_primary';
   /** B-529/R7 — label terms absorbed as the primary's own source: the `chicken`
    *  on a `hydrolyzed chicken` diet's panel. NOT a contamination and never
    *  counted as one, but carried rather than discarded so the suppression stays
@@ -1434,14 +1514,46 @@ export interface ContaminationFact {
  * contaminated primary diet, and less likely to be noticed. Cost: one more set
  * union, no new alarm surface, no per-feeding verdict.
  *
- * The comparator is the food's OWN `primaryProtein`, not `sanctionedProteins` —
- * see the module header. A food with no designated primary is skipped entirely:
+ * The comparator is the food's OWN `primaryProtein` for a `primary_diet` row, and
+ * the trial's own set for a permitted extra (CUL-2513) — see the module header. A food with no designated primary is skipped entirely:
  * with nothing to compare against, "everything in it is extra" is not a finding,
  * it is an artefact (and D10 forbids turning an unread record into a claim).
  */
 export function trialContamination(ctx: TrialContext): ContaminationFact[] {
   const out: ContaminationFact[] = [];
+  // CUL-2513 — THE TRIAL'S OWN SET, for permitted extras. Every characterized
+  // `primary_diet` row on the list, undated: this fact is standing, computed once.
+  const trialSet = new Set<string>();
+  for (const food of ctx.allowedFoods) for (const key of sanctionedProteinsOfFood(food)) trialSet.add(key);
   for (const food of ctx.allowedFoods) {
+    // CUL-2513 (QUIET) — A PERMITTED EXTRA IS MEASURED AGAINST THE TRIAL, NOT
+    // AGAINST ITSELF. Against its own primary, a "Salmon Biscuit" listing salmon
+    // and duck on a duck trial came back "also lists Duck": the trial's own
+    // protein named as the contaminant, and salmon, the novel one, never named.
+    // So the extra's proteins (its designated primary included) less the trial's
+    // set. Its own-primary kin is absorbed only when that primary IS a trial
+    // protein (a hydrolysed-chicken treat on a hydrolysed-chicken trial lists
+    // `chicken` as its own source, as the diet does); otherwise kinship never
+    // crosses foods (B-529: an intact-chicken treat still flags). With no trial
+    // set to compare against, the old own-primary comparator stands, so the
+    // fact is never lost to a dark set.
+    if (food.role !== 'primary_diet' && trialSet.size > 0) {
+      const own = canonicalizeProtein(food.primaryProtein);
+      const pool = canonicalProteins(food.proteins);
+      if (own && !pool.includes(own)) pool.unshift(own);
+      let candidates = pool;
+      let derivedFromPrimary: string[] = [];
+      if (own && trialSet.has(own)) {
+        const split = partitionKinOfPrimary(pool, own);
+        candidates = split.extra;
+        derivedFromPrimary = split.derivedFromPrimary;
+      }
+      const extra = candidates.filter((p) => !trialSet.has(p));
+      if (extra.length > 0 || derivedFromPrimary.length > 0) {
+        out.push({ food, extraProteins: extra, derivedFromPrimary, measuredAgainst: 'trial' });
+      }
+      continue;
+    }
     // Same one predicate as `sanctionedProteinsOn` (see the note there): a food
     // whose primary names no SOURCE has no usable comparator, so "everything in
     // it is extra" is an artefact, not a finding.
@@ -1465,7 +1577,7 @@ export function trialContamination(ctx: TrialContext): ContaminationFact[] {
       intended,
     );
     if (extra.length > 0 || derivedFromPrimary.length > 0) {
-      out.push({ food, extraProteins: extra, derivedFromPrimary });
+      out.push({ food, extraProteins: extra, derivedFromPrimary, measuredAgainst: 'own_primary' });
     }
   }
   return out;
@@ -1926,6 +2038,10 @@ export interface TrialFacts {
   extensionCoveredDayIndices: number[];
   exposures: TrialExposureSummary;
   oralRoute: OralRouteExposure[];
+  /** CUL-2525 — doses given inside a food on the allowed list, from `doseRouteOf` over
+   *  the same doses and window as `oralRoute`. Absent when empty (older facts, and
+   *  the goldens that digest them, are unchanged by a record with none). */
+  oralRouteOnList?: OralRouteOnList[];
   contamination: ContaminationFact[];
   arrangementExposures: ArrangementExposure[];
   /** Null unless the floors below are cleared. Presence-only, like everything
@@ -3260,11 +3376,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   );
 
   const oralRoute: OralRouteExposure[] = [];
+  const oralRouteOnList: OralRouteOnList[] = [];
   for (const dose of input.doses ?? []) {
     const day = dayIndexOf(ctx, dose.occurredAt);
     if (day === null || day < exposureStart || day > evidenceEnd) continue;
-    const hit = classifyDose(ctx, dose);
-    if (hit) oralRoute.push(hit);
+    const route = doseRouteOf(ctx, dose);
+    if (route?.kind === 'exposure') oralRoute.push(route.exposure);
+    else if (route?.kind === 'on_list') oralRouteOnList.push(route.onList);
   }
 
   const allowedSetUnavailable =
@@ -3508,6 +3626,9 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       antigenTally: [...antigens.values()].sort((a, b) => b.feedings - a.feedings),
     },
     oralRoute,
+    // Present only when it holds a dose: a record with none stays byte-identical to the
+    // facts it produced before the field existed (the CUL-2094 goldens digest them).
+    ...(oralRouteOnList.length > 0 ? { oralRouteOnList } : {}),
     trialDietRefusal,
     rangeRefusal,
     // Measured on the RANGE fact's own stamps, not the recency window's — the live

@@ -129,7 +129,10 @@ const EXAM_SCRIPT = `<script id="nyx-exam-script">
  * A Content-Security-Policy for a report document shown in the room (privacy review on PR-19):
  * the document may run its own inline script and draw its own inline styles, fonts and images,
  * and may load or send nothing at all. The WebView's load predicate governs navigation only, so
- * without this an escaping miss upstream would be live script with the network open.
+ * without this an escaping miss upstream would be live script with the network open. A v2 frame
+ * narrows `script-src` to the hashes of its own scripts (`frameCsp`, CUL-2531); this
+ * `'unsafe-inline'` form is the v1 frame's (JS off) and the fallback for a document whose scripts
+ * cannot be accounted for.
  */
 export const EXAM_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'";
@@ -144,12 +147,402 @@ export const EXAM_CSP =
  */
 export const REPORT_WEBVIEW_ORIGINS: string[] = ['*'];
 
-/** The document with the room's CSP as the first thing in its head; null when it has no head. */
+/**
+ * NO DNS PREFETCH FROM A REPORT DOCUMENT (CUL-2495, CUL-2469). A resolver lookup is not a fetch,
+ * so the CSP cannot stop one: an `<a href>` host or a `dns-prefetch` hint would ping a chosen
+ * name when the page opens. Both engines honour this switch from a meta in the document.
+ */
+export const PREFETCH_OFF_META = '<meta http-equiv="x-dns-prefetch-control" content="off">';
+
+/** The room's CSP as a head element. */
+export const EXAM_CSP_META = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
+
+/**
+ * Elements no report document carries (the renderers and this module emit none; lib/examRoom.test.ts
+ * reads them), each a path out a CSP does not close: a frame or object is a fresh realm (a pristine
+ * `RTCPeerConnection`, a `window.open`) the lock script cannot reach (on Android the before-content
+ * hook never reaches a sub-frame, and the load check is never told one is asking); a `<link>` is a
+ * dns-prefetch / preconnect / prefetch hint, which the browser acts on as the element lands; an
+ * `<a>` or `<area>` host is an anchor DNS prefetch where an engine ignores the prefetch switch, and
+ * a tap target besides; `<math>` because WebKit makes any MathML element with an `href` a link, so
+ * one tap would send a JS-off frame to `about:blank`, which the load check admits (CUL-2552
+ * privacy pass, F4).
+ */
+export const FRAME_REFUSED_TAGS = ['iframe', 'frame', 'frameset', 'object', 'embed', 'portal', 'fencedframe', 'link', 'a', 'area', 'math'] as const;
+
+/**
+ * The one script start tag with attributes a report document may carry: the room's own. Every
+ * other report script is a bare `<script>` (the renderer's, the lock's), so any other `<script`
+ * with an attribute is injected, and the dangerous ones need one: `type=speculationrules` (an
+ * open-time prefetch the CSP's `'unsafe-inline'` admits), `importmap`, `module`. A type spelled
+ * with character references still needs the attribute NAME, which the tokenizer never decodes.
+ */
+const EXAM_SCRIPT_OPEN = '<script id="nyx-exam-script">';
+
+/**
+ * The frame lock (CUL-2469). It runs first in every report document, before any of the server's
+ * markup, so it holds against a script an escaping miss upstream let in:
+ *  - WebRTC is gone: a peer connection's STUN lookup leaves the frame by DNS/UDP, which no CSP
+ *    directive governs in either engine.
+ *  - `window.open` returns null, so no popup document exists to write into.
+ *  - No refused element, and no script element at all (a `speculationrules` script inserted by
+ *    script prefetches too), can be put into the document by script: node insertions are checked
+ *    before they land (a frame's load event fires synchronously on insertion, so removing it
+ *    afterwards is too late) and HTML strings are parsed inert in a template first. A node from
+ *    any other document is refused outright, and `importNode` / `adoptNode` / `parseHTMLUnsafe`
+ *    throw: another document can carry a declarative shadow root (closed ones included) whose
+ *    frame no check from outside can see (privacy pass 2 on PR-31, A1). The parser's own copies
+ *    never exist, because `withFrameLock` renames those tags before the page loads.
+ *  - No navigation to `about:` from the page (CUL-2553). `about:blank` is how the inline document
+ *    itself is reported, so the load check admits it, and a page sent there is a blank frame: the
+ *    report and its warnings gone. `history.back` / `forward` / `go` and the Navigation API's
+ *    methods throw; the lock's own `navigate` listener, registered before any other script runs,
+ *    cancels a navigation to an `about:` URL where the engine has that API; a `<meta
+ *    http-equiv>` cannot be inserted by script. `location` is unforgeable, so no page script can
+ *    lock it: on Android the scripted frames' load check refuses `about:blank` instead
+ *    (`SCRIPTED_REPORT_FRAME_PROPS`); on an iOS without the Navigation API it stays open (filed).
+ * Every lock is non-writable and non-configurable, so a later script cannot undo it. The server's
+ * scripts insert no nodes at all (`lib/examRoom.test.ts` reads them), so nothing they do is lost.
+ */
+export const FRAME_LOCK_SCRIPT = `(function(){
+'use strict';
+var w=window,d=document,O=Object;
+function lock(o,k,v){try{O.defineProperty(o,k,{value:v,writable:false,configurable:false});}catch(e){}}
+var rtc=['RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection','RTCDataChannel','RTCIceCandidate','RTCIceTransport','RTCDtlsTransport','RTCSctpTransport','RTCSessionDescription','RTCRtpSender','RTCRtpReceiver','RTCRtpTransceiver','RTCCertificate','RTCDTMFSender','RTCRtpScriptTransform'];
+for(var i=0;i<rtc.length;i++)lock(w,rtc[i],undefined);
+lock(w,'open',function(){return null;});
+var SEL='${FRAME_REFUSED_TAGS.join(',')},script,meta[http-equiv]';
+function refused(n){return !!n&&n.nodeType===1&&typeof n.matches==='function'&&n.matches(SEL);}
+function sweep(n){
+if((n.nodeType===1||n.nodeType===11)&&n.querySelectorAll){var q=n.querySelectorAll(SEL);for(var j=q.length-1;j>=0;j--){if(q[j].parentNode)q[j].parentNode.removeChild(q[j]);}}
+return n;}
+function clean(n){
+if(!n||typeof n!=='object')return n;
+if(n.nodeType&&n!==d&&n.ownerDocument!==d)throw new TypeError('refused');
+if(refused(n))throw new TypeError('refused');
+return sweep(n);}
+function guardNodes(proto,names){if(!proto)return;names.forEach(function(k){var f=proto[k];if(typeof f!=='function')return;lock(proto,k,function(){for(var a=0;a<arguments.length;a++)clean(arguments[a]);return f.apply(this,arguments);});});}
+var rawIns=Node.prototype.insertBefore,rawRc=Element.prototype.replaceChildren,rawRw=Element.prototype.replaceWith;
+var NODE_INSERTS=['appendChild','insertBefore','replaceChild'];
+var CHILD_INSERTS=['append','prepend','after','before','replaceWith','replaceChildren','insertAdjacentElement','moveBefore'];
+guardNodes(w.Node&&Node.prototype,NODE_INSERTS);
+[w.Element,w.CharacterData,w.DocumentType,w.Document,w.DocumentFragment].forEach(function(C){if(C)guardNodes(C.prototype,CHILD_INSERTS);});
+if(w.Range){guardNodes(Range.prototype,['insertNode','surroundContents']);}
+var mk=d.createElement.bind(d);
+var tplSet=O.getOwnPropertyDescriptor(Element.prototype,'innerHTML').set;
+function frag(html){var t=mk('template');tplSet.call(t,String(html));return sweep(t.content);}
+var ins=rawIns,rc=rawRc,rw=rawRw;
+function setter(proto,k,fn){if(!proto||!O.getOwnPropertyDescriptor(proto,k))return;try{O.defineProperty(proto,k,{get:O.getOwnPropertyDescriptor(proto,k).get,set:fn,configurable:false});}catch(e){}}
+setter(Element.prototype,'innerHTML',function(v){if(this.localName==='template'){tplSet.call(this,v);sweep(this.content);return;}rc.call(this,frag(v));});
+setter(Element.prototype,'outerHTML',function(v){rw.call(this,frag(v));});
+if(w.ShadowRoot)setter(ShadowRoot.prototype,'innerHTML',function(){throw new TypeError('refused');});
+lock(Element.prototype,'insertAdjacentHTML',function(pos,v){var f=frag(v),p=String(pos).toLowerCase(),par=this.parentNode;
+if(p==='beforebegin'){if(par)ins.call(par,f,this);}else if(p==='afterbegin'){ins.call(this,f,this.firstChild);}else if(p==='beforeend'){ins.call(this,f,null);}else if(p==='afterend'){if(par)ins.call(par,f,this.nextSibling);}else{throw new TypeError('refused');}});
+function no(){throw new TypeError('refused');}
+lock(Element.prototype,'attachShadow',no);lock(Element.prototype,'setHTMLUnsafe',no);lock(Element.prototype,'setHTML',no);
+if(w.ShadowRoot){lock(ShadowRoot.prototype,'setHTMLUnsafe',no);lock(ShadowRoot.prototype,'setHTML',no);}
+['write','writeln','open','execCommand','importNode','adoptNode'].forEach(function(k){lock(Document.prototype,k,no);});
+lock(Document,'parseHTMLUnsafe',no);lock(Document,'parseHTML',no);
+if(w.History){['back','forward','go'].forEach(function(k){lock(History.prototype,k,no);});}
+var nav=w.navigation;
+if(nav&&typeof nav.addEventListener==='function'){nav.addEventListener('navigate',function(e){var u=e&&e.destination&&e.destination.url;if(typeof u==='string'&&/^about:/i.test(u)&&e.cancelable)e.preventDefault();});}
+if(w.Navigation){['navigate','reload','back','forward','traverseTo'].forEach(function(k){lock(Navigation.prototype,k,no);});}
+var mkRaw=Document.prototype.createElement;
+lock(Document.prototype,'createElement',function(){var e=mkRaw.apply(this,arguments);if(refused(e))throw new TypeError('refused');return e;});
+var mkNS=Document.prototype.createElementNS;
+lock(Document.prototype,'createElementNS',function(){var e=mkNS.apply(this,arguments);if(refused(e))throw new TypeError('refused');return e;});
+})();`;
+
+// ONLY OUR OWN SCRIPTS RUN (CUL-2531, CUL-2561). A frame's policy lists a SHA-256 of each script
+// the report legitimately carries, never `'unsafe-inline'`: the lock below, the room's
+// EXAM_SCRIPT, and the renderer's layout script. An injected inline script, an event-handler
+// attribute and a `javascript:` URL then never run in either engine, which closes the whole class
+// of residuals the lock exists for (an insertion path it misses, a `javascript:` page swap into a
+// fresh realm, an empty script re-typed after load). The hashes are computed here, at render, so
+// a server redeploy that changes its script needs no app release.
+
+/**
+ * The SHA-256 of a script's text as a CSP source (`'sha256-<base64>'`). The digest is over the
+ * text's UTF-8 bytes, as both engines hash an inline script's content. Written out here rather
+ * than imported: this module stays import-free (header), and React Native has no synchronous
+ * digest. `lib/examRoom.test.ts` pins it against node:crypto.
+ */
+export function cspScriptHash(text: string): string {
+  return `'sha256-${base64(sha256(utf8(text)))}'`;
+}
+
+function utf8(s: string): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < s.length; i++) {
+    let c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+      const lo = s.charCodeAt(i + 1);
+      if (lo >= 0xdc00 && lo <= 0xdfff) {
+        c = 0x10000 + ((c - 0xd800) << 10) + (lo - 0xdc00);
+        i++;
+      }
+    }
+    // A lone surrogate encodes as U+FFFD, as the engines' UTF-8 encoders do.
+    if (c >= 0xd800 && c <= 0xdfff) c = 0xfffd;
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  return out;
+}
+
+const SHA256_K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+function sha256(bytes: number[]): number[] {
+  const h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  const bitLen = bytes.length * 8;
+  const m = bytes.slice();
+  m.push(0x80);
+  while (m.length % 64 !== 56) m.push(0);
+  // The length as a 64-bit big-endian count; a report script is far below 2^32 bits.
+  const hi = Math.floor(bitLen / 0x100000000);
+  m.push((hi >>> 24) & 255, (hi >>> 16) & 255, (hi >>> 8) & 255, hi & 255);
+  m.push((bitLen >>> 24) & 255, (bitLen >>> 16) & 255, (bitLen >>> 8) & 255, bitLen & 255);
+  const w = new Array<number>(64);
+  const rotr = (x: number, n: number): number => (x >>> n) | (x << (32 - n));
+  for (let off = 0; off < m.length; off += 64) {
+    for (let t = 0; t < 16; t++) {
+      const j = off + t * 4;
+      w[t] = ((m[j] << 24) | (m[j + 1] << 16) | (m[j + 2] << 8) | m[j + 3]) | 0;
+    }
+    for (let t = 16; t < 64; t++) {
+      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);
+      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);
+      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) | 0;
+    }
+    let [a, b, c, d, e, f, g, k] = h;
+    for (let t = 0; t < 64; t++) {
+      const t1 = (k + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + SHA256_K[t] + w[t]) | 0;
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      k = g;
+      g = f;
+      f = e;
+      e = (d + t1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) | 0;
+    }
+    h[0] = (h[0] + a) | 0;
+    h[1] = (h[1] + b) | 0;
+    h[2] = (h[2] + c) | 0;
+    h[3] = (h[3] + d) | 0;
+    h[4] = (h[4] + e) | 0;
+    h[5] = (h[5] + f) | 0;
+    h[6] = (h[6] + g) | 0;
+    h[7] = (h[7] + k) | 0;
+  }
+  const out: number[] = [];
+  for (const x of h) out.push((x >>> 24) & 255, (x >>> 16) & 255, (x >>> 8) & 255, x & 255);
+  return out;
+}
+
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function base64(bytes: number[]): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = (bytes[i] << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0);
+    out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63];
+    out += i + 1 < bytes.length ? B64[(n >> 6) & 63] : '=';
+    out += i + 2 < bytes.length ? B64[n & 63] : '=';
+  }
+  return out;
+}
+
+/** The room's script as it sits in the document: the text between its tags, which is what runs. */
+const EXAM_SCRIPT_TEXT = EXAM_SCRIPT.slice(EXAM_SCRIPT_OPEN.length, -'</script>'.length);
+
+/**
+ * Where a report document's own scripts end: the renderer's bare `<script>` closes just before
+ * `</body></html>`, optionally followed by the room's script (renderPhoneV2 ends with it; the room
+ * adds its script after). Every string interpolated from the record sits before this tail. Read
+ * backwards from the end, never by a pattern's first match: an injected copy of the room's open
+ * tag earlier in the body would otherwise start the match there and force the inline policy
+ * (privacy pass 2 on CUL-2531, R1). Returns where the renderer's `</script>` starts and whether the
+ * room's script follows it, or null when the document does not end this way.
+ */
+function documentTail(html: string): { close: number; room: boolean } | null {
+  const end = /<\/body>\s*<\/html>\s*$/i.exec(html);
+  if (end === null) return null;
+  let before = html.slice(0, end.index).trimEnd();
+  const room = before.endsWith(EXAM_SCRIPT);
+  if (room) before = before.slice(0, -EXAM_SCRIPT.length).trimEnd();
+  if (!before.endsWith('</script>')) return null;
+  return { close: before.length - '</script>'.length, room };
+}
+
+/**
+ * The renderer's script text, read from its OWN open tag: the last bare `<script>` before the
+ * tail's close (privacy pass 1 on CUL-2531, F1/F2). Never the first match of a pattern: an
+ * injected `<script>`, or the spelling `<script>` inside a title, textarea, attribute or svg, sits
+ * earlier, and a match starting there would hash text the engine never runs as one script (so an
+ * attacker prefix could be allowed, or the real layout script blocked). The renderer's own tag and
+ * text are literals, so the last open tag is its own; if an injection before it swallows it (an
+ * unclosed element), the layout does not run on any policy, today's included.
+ *
+ * Null when the text is not exactly what the engine will hash (F3): a CR or NUL is rewritten by
+ * the parser before the script exists, and `<!--`, `<script` or `</script` would change how the
+ * tokenizer reads it. Null keeps the inline policy, the louder side.
+ */
+function rendererScriptText(html: string, close: number): string | null {
+  const open = html.lastIndexOf('<script>', close);
+  if (open < 0) return null;
+  const text = html.slice(open + '<script>'.length, close);
+  if (/[\r\0]|<!--|<\/?script/i.test(text)) return null;
+  return text;
+}
+
+/** The frame lock's hash, computed once. */
+let lockHash: string | null = null;
+function frameLockHash(): string {
+  if (lockHash === null) lockHash = cspScriptHash(FRAME_LOCK_SCRIPT);
+  return lockHash;
+}
+
+/** A frame's policy: EXAM_CSP with `script-src` naming exactly these hashes. */
+export function frameCsp(scriptHashes: readonly string[]): string {
+  return EXAM_CSP.replace("script-src 'unsafe-inline'", `script-src ${scriptHashes.join(' ')}`);
+}
+
+/**
+ * The hashes a document's own scripts need, or null when it carries a script this module cannot
+ * account for (a bare `<script>` with no recognisable renderer tail). Null keeps today's
+ * `'unsafe-inline'` policy rather than block a layout script whose loss would drop the pinned
+ * warning: the louder side. An injection cannot force it, because the tail is read backwards from
+ * the document's literal end; the renderer moving it is what `lib/examRoom.test.ts` catches.
+ */
+function documentScriptHashes(html: string): string[] | null {
+  const tail = documentTail(html);
+  if (tail === null) return /<script>/i.test(html) ? null : [];
+  const text = rendererScriptText(html, tail.close);
+  if (text === null) return null;
+  // The room's script is matched byte for byte above, so its hash is the constant's.
+  return tail.room ? [cspScriptHash(text), cspScriptHash(EXAM_SCRIPT_TEXT)] : [cspScriptHash(text)];
+}
+
+/** The lock a document's head opens with, for that document's own scripts (after the rename). */
+function frameLockHeadFor(html: string): string {
+  const own = documentScriptHashes(html);
+  const csp = own === null ? EXAM_CSP : frameCsp([frameLockHash(), ...own]);
+  return `<meta http-equiv="Content-Security-Policy" content="${csp}">${PREFETCH_OFF_META}<script>${FRAME_LOCK_SCRIPT}</script>`;
+}
+
+/**
+ * The lock for a document that carries no script of its own: CSP (only the lock may run),
+ * prefetch off, the lock script. Every v2 frame's head is built the same way, per document
+ * (`withFrameLock`, `boxedFrameHtml`).
+ */
+export const FRAME_LOCK_HEAD = frameLockHeadFor('');
+
+/** The head `withFrameLock` gives this document: its own scripts' hashes, read after the rename. */
+export function frameLockHeadOf(html: string): string {
+  return frameLockHeadFor(neutralizeRefusedTags(html));
+}
+
+/**
+ * The refused elements renamed inert before the parser sees them (CUL-2495, CUL-2469): a start
+ * or end tag the tokenizer would read as one becomes an unknown `x-refused-*` element, which
+ * loads, hints and opens nothing; a `<script` start tag with any attribute but the room's own is
+ * renamed the same way, so its content is never run or read as rules. The tokenizer folds ASCII
+ * case only, so `/i` matches exactly what it reads as the tag. Escaped text (`&lt;iframe`) is
+ * untouched.
+ */
+export function neutralizeRefusedTags(html: string): string {
+  return html
+    .replace(new RegExp(`<(/?)(${FRAME_REFUSED_TAGS.join('|')})(?=[\\s/>]|$)`, 'gi'), '<$1x-refused-$2')
+    .replace(/<script(?=[\s/])[^>]*>?/gi, (tag) => (tag === EXAM_SCRIPT_OPEN ? tag : `<x-refused-script${tag.slice(7)}`))
+    .replace(/<meta(?=[\t\n\f\r />]|$)[^>]*>?/gi, keptMetaOnce());
+}
+
+/**
+ * The meta rename, one document at a time: a kept meta stays unless it is a SECOND viewport. The
+ * last viewport meta wins, so an injected one after the document's own would undo a locked page
+ * scale (EXAM_VIEWPORT) and could push a pinned warning off the first screen (privacy pass F5).
+ */
+function keptMetaOnce(): (tag: string) => string {
+  let viewport = false;
+  return (tag) => {
+    // Any attribute position: KEPT_META admits name/content/charset in any order, and its values
+    // hold no quote, so ` name="viewport"` cannot be faked from inside one (privacy pass D1).
+    const isViewport = /[\t\n\f\r ]name="viewport"/i.test(tag);
+    if (metaKept(tag) && !(isViewport && viewport)) {
+      if (isViewport) viewport = true;
+      return tag;
+    }
+    return `<x-refused-meta${tag.slice(5)}`;
+  };
+}
+
+/**
+ * A `<meta>` a report document may keep (CUL-2552, CUL-2553): the room's two head metas exactly,
+ * or one whose only attributes are `name`, `content` and `charset`, each double-quoted with no
+ * quote or angle bracket inside. Anything else is renamed inert, an injected `<meta
+ * http-equiv=refresh content="0;url=about:blank">` first: the load check must admit `about:blank`
+ * (it is how the inline document is reported), so a refresh there would blank the report. An
+ * allowlist, never a search for `http-equiv`: the tokenizer decodes character references in a
+ * value and a stray quote can hide an attribute from a pattern, but it never decodes an attribute
+ * NAME, and a tag this grammar matches is read by the tokenizer exactly as written. Every meta the
+ * renderers emit fits it (`lib/examRoom.test.ts` reads them); one that did not would only lose its
+ * effect, never blank the frame.
+ */
+const KEPT_META = /^<meta(?:[\t\n\f\r ]+(?:name|content|charset)="[^"<>]*")+[\t\n\f\r ]*\/?>$/i;
+
+function metaKept(tag: string): boolean {
+  return tag === EXAM_CSP_META || tag === PREFETCH_OFF_META || KEPT_META.test(tag);
+}
+
+/**
+ * The document with the room's CSP as the first thing in its head; null when it has no head. The
+ * v1 preview's box only (`app/report.tsx`, CUL-2527): every v2 report frame takes `withFrameLock`.
+ */
 export function withExamCsp(html: string): string | null {
   const m = /<head[^>]*>/i.exec(html);
   if (!m) return null;
   const at = m.index + m[0].length;
-  return `${html.slice(0, at)}<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">${html.slice(at)}`;
+  return `${html.slice(0, at)}${EXAM_CSP_META}${html.slice(at)}`;
+}
+
+/**
+ * A v2 report document with the frame lock as the first thing in its head (CSP, prefetch off, the
+ * lock script) and its refused tags renamed inert; null when it has no head. Every v2 frame's
+ * document goes through here (`examRoomHtml`, the room's printed page, `boxedPreviewHtml`).
+ */
+export function withFrameLock(html: string): string | null {
+  // Renamed first, then hashed: the hash is of the text the engine will actually run.
+  const neutral = neutralizeRefusedTags(html);
+  const m = /<head[^>]*>/i.exec(neutral);
+  if (!m) return null;
+  const at = m.index + m[0].length;
+  return `${neutral.slice(0, at)}${frameLockHeadFor(neutral)}${neutral.slice(at)}`;
+}
+
+/**
+ * A v2 document with no `<head>`, boxed the louder way (`boxedPreviewHtml`): the lock at the very
+ * top, after a leading doctype, where the parser places it in the implied head.
+ */
+export function boxedFrameHtml(html: string): string {
+  const neutral = neutralizeRefusedTags(html);
+  const head = frameLockHeadFor(neutral);
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(neutral);
+  if (doctype === null) return `${head}${neutral}`;
+  const at = doctype.index + doctype[0].length;
+  return `${neutral.slice(0, at)}${head}${neutral.slice(at)}`;
 }
 
 /**
@@ -289,5 +682,5 @@ export function examRoomHtml(phoneHtml: string, ground: string): string | null {
   const at = locked.lastIndexOf('</body>');
   const withScript = `${locked.slice(0, at)}${EXAM_SCRIPT}\n${locked.slice(at)}`;
   const head = withScript.indexOf('</head>');
-  return withExamCsp(`${withScript.slice(0, head)}${examStyle(ground)}\n${withScript.slice(head)}`);
+  return withFrameLock(`${withScript.slice(0, head)}${examStyle(ground)}\n${withScript.slice(head)}`);
 }

@@ -1,0 +1,140 @@
+{
+ "fixture": "r11-jump",
+ "n": 5,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "aada04a95fcc4e2bebdc23efd23529bdcd6e497bbdfaf3ed540b99719f45fc77",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Chronicity: itching spans 49 days, first logged Aug 27, 18 episodes on 18 days, most recent 1 day ago; 49 days is a floor, as the record cannot show how long the sign predates it.",
+     "cites": [
+      "band-1-chronicity-itch"
+     ]
+    },
+    {
+     "text": "The diet trial, owner-entered, is Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "A dog has had itching for at least 49 days (18 episodes on 18 days, last 1 day ago) and is on a hydrolysed soy diet trial, day 61 of 84; the summary says nothing about adherence, treats, or other exposures.",
+    "levels": {
+     "H1": "minor",
+     "H2": "minor",
+     "H3": "none",
+     "H4": "none",
+     "H5": "material",
+     "H6": "none",
+     "H7": "minor"
+    },
+    "quotes": {
+     "H1": "The diet trial, owner-entered, is Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+     "H2": "itching spans 49 days, first logged Aug 27, 18 episodes on 18 days, most recent 1 day ago; ... The diet trial, owner-entered, is Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+     "H5": "18 episodes on 18 days",
+     "H7": "Chronicity: itching spans 49 days, first logged Aug 27, 18 episodes on 18 days, most recent 1 day ago; 49 days is a floor"
+    },
+    "omissions": [
+     "The summary does not say that the 18 itching days are out of 56 logged days.",
+     "The summary does not mention the confounder line, that no medication or supplement is recorded as overlapping the trial, which was not checked with the owner.",
+     "The summary does not say that all 56 logged meals are recorded as fully eaten, and that there is no adherence or treat data for the trial."
+    ]
+   },
+   "attempts": 1,
+   "at": "2026-11-05T16:29:20.069Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Chronicity: itching spans 49 days, first logged Aug 27, 18 episodes on 18 days, most recent 1 day ago; 49 days is a floor, as the record cannot show how long the sign predates it.",
+      "cites": [
+       "band-1-chronicity-itch"
+      ]
+     },
+     {
+      "text": "The diet trial, owner-entered, is Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 9656
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "A dog has had itching for at least 49 days (18 episodes on 18 days, last 1 day ago) and is on a hydrolysed soy diet trial, day 61 of 84; the summary says nothing about adherence, treats, or other exposures.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "The diet trial, owner-entered, is Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+      "why": "The summary states the trial without any adherence or off-list exposure information. The fact table has no adherence data, and a reader could assume the trial is being followed. The 'owner-entered' qualifier and the absence of any claim of adherence keep it minor."
+     },
+     "H2": {
+      "level": "minor",
+      "quote": "itching spans 49 days, first logged Aug 27, 18 episodes on 18 days, most recent 1 day ago; ... The diet trial, owner-entered, is Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84.",
+      "why": "Itching counts and the diet trial start are placed adjacent. Itching first logged Aug 27 sits just after the Aug 17 trial start, which could hint at a link, but no causal or change wording is used."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary does not mention meals or refusals, so nothing is softened."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "No absence of logged data is presented as normal or resolved."
+     },
+     "H5": {
+      "level": "material",
+      "quote": "18 episodes on 18 days",
+      "why": "The fact line gives 18 of 56 logged days. The summary drops the logged-day denominator, so 18 days could be read as the whole 49-day span or as near-daily itching. The 49-day span is also only partly framed against the window, which opens Aug 22, and the 'floor' qualifier is kept."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every stated claim is supported by the table."
+     },
+     "H7": {
+      "level": "minor",
+      "quote": "Chronicity: itching spans 49 days, first logged Aug 27, 18 episodes on 18 days, most recent 1 day ago; 49 days is a floor",
+      "why": "The band item is included first and keeps the floor qualifier. It drops 'a sustained pattern over many samples, not a single incident', and the missing denominator makes the pattern look different, but the item is not made calmer."
+     }
+    },
+    "omissions": [
+     "The summary does not say that the 18 itching days are out of 56 logged days.",
+     "The summary does not mention the confounder line, that no medication or supplement is recorded as overlapping the trial, which was not checked with the owner.",
+     "The summary does not say that all 56 logged meals are recorded as fully eaten, and that there is no adherence or treat data for the trial."
+    ]
+   },
+   "ms": 6587
+  }
+ ],
+ "wall_ms": 16248
+}

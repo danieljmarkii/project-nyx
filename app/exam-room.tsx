@@ -42,7 +42,6 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useRotationUnlocked } from '../lib/screenOrientation';
 import {
   EXAM_IDLE_MS,
-  REPORT_WEBVIEW_ORIGINS,
   clampPage,
   examGoScript,
   examRoomHtml,
@@ -51,10 +50,10 @@ import {
   printedViewAllowed,
   printedWarningOf,
   sheetLabel,
-  withExamCsp,
+  withFrameLock,
 } from '../lib/examRoom';
 import { clearExamCopy, readExamCopy } from '../lib/examRoomCopy';
-import { androidTextZoom, isPreviewLoadAllowed } from '../lib/reportPreviewV2';
+import { REPORT_FRAME_PROPS, SCRIPTED_REPORT_FRAME_PROPS, androidTextZoom } from '../lib/reportPreviewV2';
 
 export const EXAM_PAGES_TEST_ID = 'exam-room-pages';
 export const EXAM_PAGER_TEST_ID = 'exam-room-pager';
@@ -69,9 +68,6 @@ export const EXAM_COPY = {
   missing: 'This report is no longer on this phone. Open it again from the preview.',
   pagerLabel: 'Report sheets',
 } as const;
-
-/** The room opens no window: a link or `window.open` goes nowhere. */
-function refuseWindow(): void {}
 
 export default function ExamRoomScreen() {
   const router = useRouter();
@@ -88,7 +84,7 @@ export default function ExamRoomScreen() {
   const html = useMemo(() => (copy ? examRoomHtml(copy.phoneHtml, theme.colorNeutralDark) : null), [copy]);
   // Withheld when the record has a confounder line whose pin cannot be read back (fails loud).
   const printHtml = useMemo(
-    () => (copy?.printHtml != null && printedViewAllowed(copy.phoneHtml, copy.printHtml) ? withExamCsp(copy.printHtml) : null),
+    () => (copy?.printHtml != null && printedViewAllowed(copy.phoneHtml, copy.printHtml) ? withFrameLock(copy.printHtml) : null),
     [copy],
   );
   const printedWarning = useMemo(() => (copy ? printedWarningOf(copy.phoneHtml) : null), [copy]);
@@ -243,14 +239,11 @@ export default function ExamRoomScreen() {
                 ref={web}
                 testID={EXAM_PAGES_TEST_ID}
                 style={styles.web}
-                originWhitelist={REPORT_WEBVIEW_ORIGINS}
+                // The one frame lock (CUL-2469), with the scripted frame's load check (CUL-2553).
+                {...SCRIPTED_REPORT_FRAME_PROPS}
                 source={{ html }}
                 // The reflow's layout script and the paging script must run (lib/examRoom.ts).
                 javaScriptEnabled
-                onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
-                // Android opens a new window in a fresh WebView that skips the load predicate
-                // (privacy review on PR-19): the room opens none.
-                onOpenWindow={refuseWindow}
                 // No pinch on Android either (lib/examRoom.ts EXAM_VIEWPORT locks it on iOS).
                 setBuiltInZoomControls={false}
                 textZoom={Platform.OS === 'android' ? androidTextZoom(fontScale) : undefined}
@@ -281,12 +274,10 @@ export default function ExamRoomScreen() {
                 <WebView
                   testID={EXAM_PRINTED_TEST_ID}
                   style={styles.web}
-                  originWhitelist={REPORT_WEBVIEW_ORIGINS}
+                  {...REPORT_FRAME_PROPS}
                   source={{ html: printHtml }}
                   // The printed page carries no script.
                   javaScriptEnabled={false}
-                  onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
-                  onOpenWindow={refuseWindow}
                   // No script to report a touch, so its scroll keeps the screen awake.
                   onScroll={touch}
                 />

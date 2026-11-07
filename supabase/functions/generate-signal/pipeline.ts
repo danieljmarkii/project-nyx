@@ -37,6 +37,7 @@
 
 import {
   chronicSymptomTypes,
+  compareSafetyFindings,
   detectSignals,
   detectWorsening,
   detectCoverage,
@@ -1381,11 +1382,14 @@ export function assembleSignal(
     text: texts[i],
     finding: r.finding,
   }))
-  // Carried cards (CUL-989) sit after this run's safety cards and before its insight cards.
+  // Carried cards (CUL-989) sit inside this run's safety band and before its insight cards. Each
+  // takes its place by the band's own order (CUL-2605): a carried call today goes ahead of a fresh
+  // "if it carries on", so Home's lead and Ask's safety line never drop the louder ask for a card
+  // the read reproduced. A fresh card is never moved, and the carried keep their prior order.
   const safetyCount = cachedFindings.filter((f) => f.finding.priorityClass === 'safety').length
   const withCarried: CachedFinding[] = result.carried.length === 0
     ? cachedFindings
-    : [...cachedFindings.slice(0, safetyCount), ...result.carried, ...cachedFindings.slice(safetyCount)]
+    : [...placeCarried(cachedFindings.slice(0, safetyCount), result.carried), ...cachedFindings.slice(safetyCount)]
         .map((f, i) => ({ ...f, rank: i }))
   // The headline. Over an incomplete read with nothing to show it is the disclosure, never the
   // "still getting to know" line: Home's one sentence must not describe an unread record as new.
@@ -1403,6 +1407,36 @@ export function assembleSignal(
     }
   }
   return { signalText, isBuilding: result.isBuilding, findings: entries, coverage: result.coverage, summary, standDownError }
+}
+
+/**
+ * CUL-2605: the safety band with the carried cards placed in it. The carried are put in the band's
+ * order first (`compareSafetyFindings`, the ranker's own rule; the prior row's order breaks a tie),
+ * since a row written before a rank change can hold them softest-first. Each then goes in front of
+ * the first fresh card it strictly outranks, and never in front of a carried card placed before it;
+ * with nothing to outrank it goes last. A tie leaves the fresh card first. The fresh cards keep
+ * their order: the merge only inserts.
+ */
+export function placeCarried(fresh: readonly CachedFinding[], carried: readonly CachedFinding[]): CachedFinding[] {
+  const out: CachedFinding[] = [...fresh]
+  const ordered = carried
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => compareSafetyFindings(a.c.finding as Finding, b.c.finding as Finding) || a.i - b.i)
+    .map((x) => x.c)
+  let floor = 0
+  for (const c of ordered) {
+    let at = out.length
+    for (let i = floor; i < out.length; i++) {
+      if (carried.includes(out[i])) continue
+      if (compareSafetyFindings(c.finding as Finding, out[i].finding as Finding) < 0) {
+        at = i
+        break
+      }
+    }
+    out.splice(at, 0, c)
+    floor = at + 1
+  }
+  return out
 }
 
 // Every card's deterministic sentence: what the shell writes when the model is off, fails

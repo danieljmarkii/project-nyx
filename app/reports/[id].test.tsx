@@ -53,9 +53,10 @@ jest.mock('../../lib/vetVisits', () => ({
   readVetVisitsHome: (...a: unknown[]) => mockHome(...a),
 }));
 
-import SavedReportScreen, { savedCopyLoadAllowed } from './[id]';
+import SavedReportScreen from './[id]';
+import { reportFrameLoadAllowed } from '../../lib/reportPreviewV2';
 import { boxedPreviewHtml } from '../../components/reportV2/ReportPreviewV2';
-import { EXAM_CSP } from '../../lib/examRoom';
+import { FRAME_LOCK_HEAD } from '../../lib/examRoom';
 
 const COOPER = { id: 'pet-cooper', name: 'Cooper' };
 const thisYear = new Date().getFullYear();
@@ -243,7 +244,8 @@ describe('boxed in like the preview (CUL-2487)', () => {
     const web = view.getByTestId('report-copy');
     // `['about:*', 'data:*']` handed a failing URL to the system browser, never to the predicate.
     expect(web.props.originWhitelist).toEqual(['*']);
-    expect(web.props.source.html).toContain(`<head><meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`);
+    // A saved copy carries no script, so only the lock may run (CUL-2531).
+    expect(web.props.source.html).toContain(`<head>${FRAME_LOCK_HEAD}`);
     expect(typeof web.props.onOpenWindow).toBe('function');
     for (const url of ['https://example.com/?d=record', 'nyx://reports', 'file:///etc/hosts', 'javascript:alert(1)']) {
       expect(web.props.onShouldStartLoadWithRequest({ url })).toBe(false);
@@ -260,8 +262,8 @@ describe('boxed in like the preview (CUL-2487)', () => {
     expect(web.props.onShouldStartLoadWithRequest({ url: 'data:text/html;charset=utf-8,x' })).toBe(false);
     // The copy's own document (iOS reports it as about:blank) still loads.
     expect(web.props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
-    expect(savedCopyLoadAllowed(hop)).toBe(false);
-    expect(savedCopyLoadAllowed('https://evil.example/')).toBe(false);
+    // The shared check, the one every v2 report frame passes (CUL-2494).
+    expect(web.props.onShouldStartLoadWithRequest).toBe(reportFrameLoadAllowed);
     // No load-end gate to race.
     expect(web.props.onLoadEnd).toBeUndefined();
   });

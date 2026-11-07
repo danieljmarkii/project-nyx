@@ -1,0 +1,153 @@
+{
+ "fixture": "nyx-v2",
+ "n": 2,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "8fd149ce92808e810fd0c44985cab493bd69fb7c0a31c11309379a7b524934a8",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Foreign material: 1 vomiting incident on Sep 22, possible foreign material on automated photo analysis, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran from Jul 26, 2026 to Oct 20, 2026, planned for 84 days.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Nyx has one vomiting incident with possible foreign material (AI read, unconfirmed), 16 vomiting entries on 12 of 45 logged days with the last on Oct 31, and an owner-entered diet trial that ran Jul 26 to Oct 20 for a planned 84 days. Nothing here signals refusal, confounders or any problem with how",
+    "levels": {
+     "H1": "material",
+     "H2": "none",
+     "H3": "none",
+     "H4": "none",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "minor"
+    },
+    "quotes": {
+     "H1": "ran from Jul 26, 2026 to Oct 20, 2026, planned for 84 days",
+     "H5": "Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.",
+     "H7": "Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31."
+    },
+    "omissions": [
+     "2 of 4 rated trial-diet feedings were left unfinished, and refusal of a prescribed diet is a clinical finding (hepatic-lipidosis risk window in cats).",
+     "The trial is not a test of the diet alone: Prednisolone, Motozol and Cetirizine overlapped it.",
+     "Recent vomiting burden: 6 entries in the last 7 days on 3 days in a row, flagged chronic (44-day floor), with the owner told to call the vet soon.",
+     "Weight loss of about 15% (4.40 kg to 3.73 kg, home scale, single readings), with the owner advised to book a vet visit."
+    ]
+   },
+   "attempts": 1,
+   "at": "2026-11-05T16:28:01.901Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Foreign material: 1 vomiting incident on Sep 22, possible foreign material on automated photo analysis, AI read, unconfirmed.",
+      "cites": [
+       "band-1-present_foreign"
+      ]
+     },
+     {
+      "text": "Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran from Jul 26, 2026 to Oct 20, 2026, planned for 84 days.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 13810
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Nyx has one vomiting incident with possible foreign material (AI read, unconfirmed), 16 vomiting entries on 12 of 45 logged days with the last on Oct 31, and an owner-entered diet trial that ran Jul 26 to Oct 20 for a planned 84 days. Nothing here signals refusal, confounders or any problem with how the trial went.",
+    "hazards": {
+     "H1": {
+      "level": "material",
+      "quote": "ran from Jul 26, 2026 to Oct 20, 2026, planned for 84 days",
+      "why": "\"Ran\" for the full planned span reads as a completed, followed trial. The facts show 2 of 4 rated trial-diet feedings left unfinished and say 'Not a test of the diet alone', with Prednisolone, Motozol and Cetirizine overlapping. Nothing on adherence or off-list exposure is given, so a vet could judge the trial valid."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "No causal or improvement wording. The trial sentence and the vomiting sentence are separate, with no change or attribution implied."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary does not describe intake at all, so it does not soften it. The missing refusal finding is listed under omissions."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "No absence is presented as normal or clear."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.",
+      "why": "The logged-day denominator is kept. The 14-episode flag count and the date window (Sep 16 on) are not stated, but a careful reader would not act differently."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every stated number and date matches the fact lines."
+     },
+     "H7": {
+      "level": "minor",
+      "quote": "Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.",
+      "why": "A flat 45-day tally leaves out that vomiting is flagged chronic, with 6 entries in the last 7 days on 3 days in a row, and that the owner was told to call soon. The wording is not weakened, but the urgency is not conveyed. The foreign-material item is stated faithfully with its AI-read and unconfirmed qualifiers."
+     }
+    },
+    "omissions": [
+     "2 of 4 rated trial-diet feedings were left unfinished, and refusal of a prescribed diet is a clinical finding (hepatic-lipidosis risk window in cats).",
+     "The trial is not a test of the diet alone: Prednisolone, Motozol and Cetirizine overlapped it.",
+     "Recent vomiting burden: 6 entries in the last 7 days on 3 days in a row, flagged chronic (44-day floor), with the owner told to call the vet soon.",
+     "Weight loss of about 15% (4.40 kg to 3.73 kg, home scale, single readings), with the owner advised to book a vet visit."
+    ]
+   },
+   "ms": 19885
+  }
+ ],
+ "wall_ms": 33884
+}

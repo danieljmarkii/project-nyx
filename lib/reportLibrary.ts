@@ -297,6 +297,9 @@ export function departureWords(sharedVia: string): string {
       return 'Shared by email';
     case 'print':
       return 'Printed';
+    case 'shown':
+      // Exam-room mode (CUL-2434): the report was shown across the table, never sent.
+      return 'Shown on this phone';
     default:
       return 'Shared';
   }

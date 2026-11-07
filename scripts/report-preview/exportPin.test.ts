@@ -18,9 +18,9 @@ import { READS } from './reads'
 // subject pet and its owner, or carry a column no render needs?), then paste the new hash
 // with that review's issue and date. A comment edit does not change the hash.
 const PIN: ExportPin = {
-  sha256: '9e1378c8750da6d29deeb088ec76cba8d9c4ad70b25a1fde33947828413953ce',
+  sha256: '74f582031446bf5752645855d94cf5c46faf38ed3633354455aecc38ff0c4b23',
   review:
-    'rls-privacy-reviewer, CUL-2308, 2026-10-31: every read and embed traced through subj (meals and diet_trial_foods pet-scoped on their own pet_id, food/medication items owner-scoped, allowlists cut to the owner); columns match generateReportForPet; pin mutants red; output path checked on real paths',
+    'rls-privacy-reviewer, CUL-2509, 2026-11-04: medication_administrations.how_given added (a closed enum on the same subj-scoped row, no new join); the parent-event embed still pet-scoped; only a count reaches the snapshot. Prior: CUL-2308, 2026-10-31, every read and embed traced through subj',
 }
 
 const SQL = readFileSync(join(__dirname, 'export.sql'), 'utf8')

@@ -32,7 +32,8 @@ const cooperInputCat = () => {
 }
 const cooper = assembleReport({ ...cooperInput(), audience: { kind: 'owner', includeLookNotes: false } })
 const cat = assembleReport(cooperInputCat())
-const NYX_BAND: LeadSentence = { text: 'Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.', cites: ['band-1-present_foreign'] }
+// Band item 1 is the band's first PRINTED row: on Nyx, the burden flag (CUL-2381 ruling (a), CUL-2532).
+const NYX_BAND: LeadSentence = { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] }
 const MED = 'medication-00000000-0000-4000-8000-000000000001'
 
 Deno.test('the strongest: a cat 50 h into reduced intake is never "short of the 48–72 h window"', () => {
@@ -49,7 +50,7 @@ Deno.test('a sentence citing only the exposure may not name a sign stopping', ()
 })
 
 Deno.test('every absence word is checked, and no line excuses one ("not a single" is not "single")', () => {
-  const first = { ...NYX_BAND, text: `${NYX_BAND.text.slice(0, -1)}, and coughing over 34 days was not a single incident and has stopped.`, cites: ['band-1-present_foreign', 'band-6-chronicity-cough'] }
+  const first = { ...NYX_BAND, text: `${NYX_BAND.text.slice(0, -1)}, and coughing over 34 days was not a single incident and has stopped.`, cites: ['band-3-symptom_burden-vomit', 'band-6-chronicity-cough'] }
   assert.ok(checks(nyx, [first]).filter((c) => c === 'absence').length >= 2)
   const single = { text: 'Chronicity: itching spans 49 days, a single incident, the most recent 1 day ago.', cites: [tableOf(r11jump).facts[0].id] }
   assert.ok(checks(r11jump, [single]).includes('absence'))
@@ -73,7 +74,7 @@ Deno.test('intake framing: no invented adequacy, no recombined counts, no short 
 })
 
 Deno.test('R-11: every number the flag prints leads, not only the bold one', () => {
-  const thin = { text: 'Itching is the flag: over at least 49 days, the most recent 1 day ago.', cites: ['band-r11'] }
+  const thin = { text: 'Itching is the flag, the trial\'s own sign: over at least 49 days, the most recent 1 day ago.', cites: ['band-r11'] }
   assert.ok(checks(r11, [thin]).includes('band-numbers'))
 })
 
@@ -82,8 +83,10 @@ Deno.test('spelled-out counts are refused', () => {
 })
 
 Deno.test('the careful leads still pass: the rules are loud, not deaf', () => {
-  assert.deepEqual(verifyLead(tableOf(nyx), { sentences: [NYX_BAND, { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] }] }).errors.filter((e) => e.check !== 'required'), [])
+  // Nyx carries six live flags, so `multi-flag` refuses any lead on it (CUL-2563); the sentence rules pass this one.
+  assert.deepEqual(verifyLead(tableOf(nyx), { sentences: [NYX_BAND, { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] }] }).errors.filter((e) => e.check !== 'required' && e.check !== 'multi-flag'), [])
   const band = tableOf(cooper).facts.find((f) => f.role === 'band')!.id
   const honest = { text: 'Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.', cites: [band] }
-  assert.deepEqual(verifyLead(tableOf(cooper), { sentences: [honest, { text: 'The owner-entered diet trial, Cooper\'s Venison LID, is at day 19 of 42, from Sep 28, 2026.', cites: ['trial'] }] }).errors, [])
+  // CUL-2532: the trial's reading bottom line and its confounder ride with it.
+  assert.deepEqual(verifyLead(tableOf(cooper), { sentences: [honest, { text: 'The owner-entered diet trial, Cooper\'s Venison LID, is at day 19 of 42, from Sep 28, 2026.', cites: ['trial'] }, { text: 'Trial diet was not fed exclusively; no medication or supplement is recorded as overlapping the trial, not checked with the owner.', cites: ['trial-reading-3', 'confounder'] }] }).errors, [])
 })

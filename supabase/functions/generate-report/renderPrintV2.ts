@@ -6,7 +6,8 @@
 // ids off the HTML, and the phone reflow (VR2-15) will be held to the same list.
 //
 // THE MARK LEXICON (spec §5.4, chart standard §4.3's row):
-//   - hatch means nothing logged, and nothing else (`hatchCol` is the only place it is drawn);
+//   - hatch means nothing logged, and nothing else (`hatchCol` is the only place it is drawn, as
+//     strokes, never an SVG pattern: see `hatchCol`);
 //   - one count scale across every stacked sign row, with a stated floor so one entry never
 //     draws at full height; the word "scale" never appears on the axis;
 //   - an empty cell is drawn as nothing at all, never a `0` (these signs are logged only when
@@ -18,7 +19,9 @@
 //     of the chart's facts;
 //   - every label over a mark wears the paper halo (`paint-order: stroke`).
 //
-// Fonts and the QR are VR2-11 (CUL-2291); this file names the families and draws no QR.
+// Fonts and the QR are VR2-11 (CUL-2291, `printAssetsV2.ts`): the stylesheet opens with the embedded
+// faces (tabular figures frozen into the cmap, so no `font-variant-numeric` anywhere), and the
+// colophon carries the tokenless QR on sheet 1.
 //
 // THE AI LEAD (VR2-25, CUL-2305; spec §5.3, §9.1). When a verified lead is handed in, it takes the
 // one serif slot where the lead sentence stands, under its label, and the code's line 1 drops to
@@ -28,8 +31,9 @@
 // each is followed by its citations, named by the lines' own nouns.
 import { BACK_STYLE_PRINT, backSheetHtml, bandPhotosHtml, pageHeadCss } from './renderBackV2.ts'
 import type { LeadSentence } from './aiLead/verify.ts'
-import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
+import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
+import { PRINT_ASSET_STYLE, qrBlockV2, reportFontFaceCss } from './printAssetsV2.ts'
 
 /** Never fewer than this many counts on the axis, so a single entry draws at a quarter height. */
 export const COUNT_AXIS_MIN_MAX = 4
@@ -40,6 +44,7 @@ const SIGN_ROW_H = 40
 const BAR_H = 26
 const SPAN_ROW_H = 16
 const AXIS_H = 26
+const BRACKET_H = 16
 
 function x0(i: number, n: number): number {
   return LABEL_W + (i * PLOT_W) / n
@@ -49,8 +54,27 @@ function colW(n: number): number {
   return PLOT_W / n
 }
 
+/** The hatch's stroke spacing, measured across the strokes, in points. */
+export const HATCH_PITCH = 4
+
+/**
+ * Nothing logged, hatched: one path of 45° strokes clipped to the cell by arithmetic. Not an SVG
+ * pattern: Chromium prints a pattern as a smoothed bitmap tile, which came out of the PDF at a mid
+ * grey (darkest pixel 95 of 255 at 200 dpi even in full ink) and vanished under a copier's blur and
+ * threshold (VR2-11's print-survival test). Strokes on a page-wide grid, so neighbouring cells join.
+ */
 function hatchCol(i: number, n: number, y: number, hgt: number): string {
-  return `<rect class="hatch" x="${x0(i, n).toFixed(1)}" y="${y}" width="${colW(n).toFixed(1)}" height="${hgt}" fill="url(#v2hatch)"/>`
+  const x = x0(i, n)
+  const w = colW(n)
+  const step = HATCH_PITCH * Math.SQRT2 // along x for a 45° stroke
+  const segs: string[] = []
+  for (let c = Math.ceil((x + y) / step) * step; c < x + w + y + hgt; c += step) {
+    const xa = Math.max(x, c - (y + hgt))
+    const xb = Math.min(x + w, c - y)
+    if (xb - xa < 0.3) continue
+    segs.push(`M${xa.toFixed(2)} ${(c - xa).toFixed(2)}L${xb.toFixed(2)} ${(c - xb).toFixed(2)}`)
+  }
+  return `<path class="hatch" d="${segs.join('')}"/>`
 }
 
 /** Labels longer than the label column are cut with an ellipsis; the twin carries the full name. */
@@ -68,6 +92,7 @@ function haloText(x: number, y: number, text: string, cls = 'cnt'): string {
 
 function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], top: number, axisMax: number, unit: LeadChart['unit']): string {
   const n = cols.length
+  const soFar_ = soFarCol(cols, unit)
   const base = top + SIGN_ROW_H - 4
   const parts: string[] = [rowLabel(r.label, base - 2, r.lead ? 'rl lead' : 'rl')]
   parts.push(`<line class="base" x1="${LABEL_W}" x2="${LABEL_W + PLOT_W}" y1="${base}" y2="${base}"/>`)
@@ -88,8 +113,11 @@ function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], to
     const full = unit === 'day' ? 1 : unit === 'week' ? 7 : 14
     const w = Math.max(2, colW(n) * 0.62 * Math.min(1, c.days / full))
     const x = x0(i, n) + colW(n) * 0.19 // a part bar starts where a full one does
-    parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
-    parts.push(haloText(x + w / 2, Math.max(top + 8, base - bh - 2), String(count)))
+    // CUL-2360: the short last column's bar is an outline, "so far", never a filled fall.
+    const soFar = i === soFar_ ? ' sofar' : ''
+    parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}${soFar}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
+    // CUL-2360: the short week's count carries its days ("2 in 4 d"), so it reads as a rate, never a fall.
+    parts.push(haloText(x + w / 2, Math.max(top + 8, base - bh - 2), soFar ? `${count} in ${c.days} d` : String(count)))
   })
   return parts.join('')
 }
@@ -110,6 +138,8 @@ function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[]
     const x = x0(i, n) + (colW(n) - w) / 2
     const refusedH = (cell.refused / cell.rated) * BAR_H
     const partlyH = ((cell.notFinished - cell.refused) / cell.rated) * BAR_H
+    // An intake bar is a share of the meals rated, so a short week does not shorten it: it stays
+    // filled, refused solid, never hollowed (adversarial pass 1 on PR-29: Cooper's newest column).
     if (refusedH > 0) parts.push(`<rect class="bar lead" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)
     if (partlyH > 0) parts.push(`<rect class="bar partly" x="${x.toFixed(1)}" y="${(base - refusedH - partlyH).toFixed(1)}" width="${w.toFixed(1)}" height="${partlyH.toFixed(1)}"/>`)
     parts.push(haloText(x + w / 2, Math.max(top + 8, base - refusedH - partlyH - 2), `${cell.notFinished} of ${cell.rated}`))
@@ -132,27 +162,51 @@ function coverageRow(r: Extract<ChartRow, { kind: 'coverage' }>, cols: ChartColu
   return parts.join('')
 }
 
-function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], top: number): string {
+/** A position in column units (`dayPos`) as an x on the plot, clamped to the frame (N9). */
+export function posX(pos: number, n: number): number {
+  return LABEL_W + Math.min(PLOT_W, Math.max(0, (pos * PLOT_W) / Math.max(1, n)))
+}
+
+function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], top: number, endPos: number): string {
   const n = cols.length
   const y = top + SPAN_ROW_H / 2
-  const xa = r.openStart ? LABEL_W : x0(r.fromCol, n) + colW(n) / 2
-  const xb = r.openEnd ? LABEL_W + PLOT_W : x0(r.toCol, n) + colW(n) / 2
+  // CUL-2360: on the span's own days, never a column's centre.
+  const xa = posX(r.openStart ? 0 : r.fromPos, n)
+  const xb = posX(r.toPos, n)
   const cls = r.hollow ? 'span hollow' : 'span'
-  // CUL-2480 instance 1: ad-hoc doses are ticks on the columns that hold one, never a bar.
+  // CUL-2480 instance 1 and CUL-2514: ad-hoc doses and off-diet feedings are ticks, never a bar.
   if (r.doseCols) {
     return [
       rowLabel(r.label, y + 3, 'rl span-l'),
-      ...r.doseCols.map((i) => {
-        const x = (x0(Math.floor(i), n) + (i - Math.floor(i)) * colW(n)).toFixed(1)
+      ...r.doseCols.map((p) => {
+        const x = posX(p, n).toFixed(1)
         return `<line class="span dose" x1="${x}" x2="${x}" y1="${y - 4}" y2="${y + 4}"/>`
       }),
     ].join('')
   }
   const parts = [rowLabel(r.label, y + 3, 'rl span-l'), `<line class="${cls}" x1="${xa.toFixed(1)}" x2="${Math.max(xa + 2, xb).toFixed(1)}" y1="${y}" y2="${y}"/>`]
+  // CUL-2360: no recorded end, so the course carries on dotted from its last logged dose to the edge.
+  if (r.openCourse) parts.push(`<line class="span open" x1="${Math.max(xa + 2, xb).toFixed(1)}" x2="${posX(endPos, n).toFixed(1)}" y1="${y}" y2="${y}"/>`)
   // The bracket ends: a tick where the record dates a start or an end, none where it runs off the edge.
   if (!r.openStart) parts.push(`<line class="${cls}" x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
   if (!r.openEnd && r.endDeclared) parts.push(`<line class="${cls}" x1="${xb.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
   return parts.join('')
+}
+
+/** CUL-2360: the burden flag's window, bracketed under the axis, with its words beside it. */
+function bracketRow(chart: LeadChart, top: number): string {
+  const b = chart.recentBracket
+  if (!b) return ''
+  const n = chart.columns.length
+  const xa = posX(b.fromPos, n)
+  const xb = posX(b.toPos, n)
+  const y = top + 4
+  return [
+    `<line class="bracket" x1="${xa.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y}" y2="${y}"/>`,
+    `<line class="bracket" x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="${y - 3}" y2="${y}"/>`,
+    `<line class="bracket" x1="${xb.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y - 3}" y2="${y}"/>`,
+    `<text class="ax part" x="${xb.toFixed(1)}" y="${y + 9}" text-anchor="end">${h(b.label.replace(/, as the burden flag counts them$/, ', flagged'))}</text>`,
+  ].join('')
 }
 
 function axis(chart: LeadChart, top: number): string {
@@ -172,7 +226,13 @@ function axis(chart: LeadChart, top: number): string {
       if (c.days < full) label = `${c.days}-day ${chart.unit === 'week' ? 'week' : 'bin'}${i === n - 1 ? ', so far' : ''}`
       else if (c.loggedDays > 0 && c.loggedDays < c.days) label = `logged ${c.loggedDays} of ${c.days}`
     }
-    if (label) parts.push(`<text class="ax part" x="${(x0(i, n) + 1).toFixed(1)}" y="${top + 21}">${h(label)}</text>`)
+    // N9 (CUL-2360): the last column's label ends at the frame's right edge, never past it.
+    if (label)
+      parts.push(
+        i === n - 1 && n > 1
+          ? `<text class="ax part" x="${(LABEL_W + PLOT_W).toFixed(1)}" y="${top + 21}" text-anchor="end">${h(label)}</text>`
+          : `<text class="ax part" x="${(x0(i, n) + 1).toFixed(1)}" y="${top + 21}">${h(label)}</text>`,
+      )
   })
   return parts.join('')
 }
@@ -192,13 +252,16 @@ export function chartSvg(chart: LeadChart): string {
     y += SIGN_ROW_H
   }
   for (const r of spans) {
-    body.push(spanRow(r, chart.columns, y))
+    body.push(spanRow(r, chart.columns, y, chart.endPos))
     y += SPAN_ROW_H
   }
   body.push(axis(chart, y))
   y += AXIS_H
-  const hatch = `<defs><pattern id="v2hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4" class="hatchline"/></pattern></defs>`
-  return `<svg class="chart" aria-hidden="true" focusable="false" viewBox="0 0 ${LABEL_W + PLOT_W} ${y}" width="${LABEL_W + PLOT_W}pt" height="${y}pt">${hatch}${body.join('')}</svg>`
+  if (chart.recentBracket) {
+    body.push(bracketRow(chart, y))
+    y += BRACKET_H
+  }
+  return `<svg class="chart" aria-hidden="true" focusable="false" viewBox="0 0 ${LABEL_W + PLOT_W} ${y}" width="${LABEL_W + PLOT_W}pt" height="${y}pt">${body.join('')}</svg>`
 }
 
 /** The label the spec prints over the lead (§9.1), unboxed: a frame is the band's register. */
@@ -239,7 +302,7 @@ function block(b: BlockV2, aiLead: string | null = null): string {
   const open = (tag: string, cls: string) => `<${tag} class="${cls}" data-block="${b.id}">`
   switch (b.kind) {
     case 'masthead':
-      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><h1>${h(b.name)}</h1><p class="sig">${h(b.signalment)}</p>${
+      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><p class="stamp">${h(b.stamp)}</p><h1>${h(b.name)}</h1><p class="sig">${h(b.signalment)}</p>${
         b.conditions ? `<p class="cond">${h(b.conditions)}</p>` : ''
       }<p class="win">${h(b.window)}</p><p class="last">${b.lastEntryHtml}.</p></header>`
     case 'disclosure':
@@ -254,20 +317,32 @@ function block(b: BlockV2, aiLead: string | null = null): string {
       return `${open('p', 'scope')}${h(b.text)}</p>`
     case 'changes':
       // Never framed like the band, never called a flag (PM ruling (a) on CUL-2323).
-      return `${open('section', `changes ${b.placement === 'band_slot' ? 'slot' : 'under'}`)}<h2 class="sech">${h(b.heading)}</h2><ul>${b.lines
+      return `${open('section', `changes ${b.placement === 'band_slot' ? 'slot' : 'under'}`)}<h2 class="sech">${h(b.heading)}</h2>${
+        // CUL-2361 ruling (a): on a zero-sign sheet the first change is the sheet's serif sentence.
+        b.serifLead && aiLead === null ? `<p class="lede serif" data-item="${h(b.lines[0].id)}">${h(b.lines[0].text)}.</p>` : ''
+      }${(b.serifLead && aiLead === null ? b.lines.slice(1) : b.lines).length > 0 ? `<ul>${(b.serifLead && aiLead === null ? b.lines.slice(1) : b.lines)
         .map((l) => `<li data-item="${h(l.id)}">${h(l.text)}.</li>`)
-        .join('')}</ul></section>`
+        .join('')}</ul>` : ''}</section>`
     case 'record_edge':
       return `${open('div', 'edge')}${b.lines.map((l) => `<p>${h(l)}</p>`).join('')}</div>`
     case 'lead_sentence':
       // With a lead, line 1 drops to body under it (spec §5.3: one serif sentence per sheet).
-      return aiLead === null ? `${open('p', 'lede serif')}${h(b.text)}</p>` : `${aiLead}\n${open('p', 'lede body')}${h(b.text)}</p>`
+      return aiLead === null ? `${open('p', b.serif ? 'lede serif' : 'lede body')}${h(b.text)}</p>` : `${aiLead}\n${open('p', 'lede body')}${h(b.text)}</p>`
     case 'lead_chart': {
       const c = b.chart
       return `${open('section', c.flagHtml ? 'leadchart flagged' : 'leadchart')}<h2 class="${c.flagHtml ? 'flagh' : 'charth'}">${h(c.heading)}</h2>${
         c.flagHtml ? `<p class="flagrow">${c.flagHtml}</p>` : ''
       }${c.reasonLine ? `<p class="why">${h(c.reasonLine)}</p>` : ''}${chartSvg(c)}<p class="twin">${h(c.twin)}</p></section>`
     }
+    case 'trial_reading':
+      // CUL-2551: v1's trial section as v1 prints it: its heading, every row in v1's order, then
+      // "Interpreting this record", so v1's own "(above)" stays true (already-escaped html).
+      return `${open('section', 'back trialread')}${b.heading !== null ? `<h2>${b.heading}</h2>` : ''}<div class="kvcol">${b.rows
+        .map((r) => `<div class="kv"><span class="k">${r.labelHtml}</span> <span>${r.html}</span></div>`)
+        .join('')}</div>${b.html !== null ? `<div class="callout"><span class="k">${h(b.label)}</span> ${b.html}</div>` : ''}</section>`
+    case 'carried':
+      // CUL-2551: a v1 page-1 section word for word; the back sheets' v1 styles dress it (`.back`).
+      return `${open('section', `back v1sec carry v1-${b.id}`)}${b.html}</section>`
     case 'confounder':
       return `${open('p', 'conf')}${h(b.text)}</p>`
     case 'record_lines':
@@ -281,7 +356,8 @@ function block(b: BlockV2, aiLead: string | null = null): string {
         .map((q) => `<li><span class="q">${h(q.text)}</span> <span class="ptr">${h(q.pointer)}</span></li>`)
         .join('')}</ol></section>`
     case 'colophon':
-      return `${open('footer', 'colo')}${h(b.text)}</footer>`
+      // The QR sits beside the colophon's words, never inside them (the line stays one run of text).
+      return `${open('footer', 'colo withqr')}<span class="colotext">${h(b.text)}</span>${qrBlockV2()}</footer>`
   }
 }
 
@@ -291,7 +367,12 @@ export function blockIdsOf(html: string): string[] {
 }
 
 const STYLE_V2 = `
-:root{--ink:#16181d;--ink2:#565961;--faint:#8a8d94;--hair:#d8d9dd;--paper:#ffffff;--concern:#9F1239;--partly:#d9a3b0;--cov:#c2c4c9;}
+:root{--ink:#16181d;--ink2:#565961;--faint:#8a8d94;--hair:#d8d9dd;--paper:#ffffff;--concern:#9F1239;--partly:#a34d64;--cov:#c2c4c9;}
+/* Print survival (VR2-11, scripts/report-extract/survival.py): a copier's blur and threshold erased
+   the light partly-eaten fill (#d9a3b0) and the faint hatch outright. --partly is now dark enough to
+   survive as ink, so on a copy the refused and partly-eaten shares merge into one not-finished bar
+   (the louder reading; the n of N label still prints) rather than the partly share vanishing. Its
+   own mono mark is a ruling for the PM (filed on CUL-2291). The hatch draws in ink-2, as strokes. */
 @page{size:auto;margin:36pt 40pt;}
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
@@ -302,7 +383,8 @@ html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
 ::marker{font-variant-numeric:normal;}
 body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:9.5pt;line-height:1.38;orphans:3;widows:3;}
 .sheet{width:515pt;margin:0 auto;}
-.serif{font-family:"Newsreader",Georgia,"Iowan Old Style",serif;}
+.serif{font-family:"Newsreader","Geist",Georgia,"Iowan Old Style",serif;}
+.mast .stamp{font-size:7.5pt;color:var(--ink2);margin:0;}
 .mast .eyebrow{font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);}
 .mast h1{font-size:20pt;line-height:1.1;margin:2pt 0 3pt;font-weight:650;}
 .mast p{margin:0 0 1.5pt;}
@@ -324,6 +406,34 @@ h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .edge p{font-size:10.5pt;font-weight:600;margin:8pt 0 0;}
 .lede{font-size:13pt;line-height:1.3;margin:10pt 0 0;}
 .lede.body{font-size:9.5pt;line-height:1.38;margin:6pt 0 0;}
+.changes .lede{margin:2pt 0 4pt;}
+.trialread .trow{margin:3pt 0 0;}
+/* CUL-2551: v1's two-column rows on sheet 1 read label, then words, so a PDF extractor (pdfminer)
+   never interleaves a row with its neighbour. */
+.carry .kv,.trialread .kv{display:block;}
+/* CUL-2585 ruling (a): v1's own trend and tile styles, so a carried block keeps v1's weight (a
+   rising halves count reads as loud as it does on v1). Scoped to .carry; v1's --muted is --ink2. */
+.carry .tiles{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);}
+.carry .tile{padding:6pt 8pt;}
+.carry .tile + .tile{border-left:1px solid var(--hair);}
+.carry .tile .v{font-size:16pt;font-weight:600;line-height:1.05;}
+.carry .tile .v small{font-size:9pt;color:var(--ink2);font-weight:600;}
+.carry .tile .v .arw{color:var(--faint);font-weight:400;}
+.carry .tile .l{font-size:8pt;color:var(--ink2);margin-top:3pt;line-height:1.35;}
+.carry .trend + .trend{margin-top:7pt;border-top:1px solid var(--hair);padding-top:7pt;}
+/* The name and its window stay one line, and the count drops under it when both don't fit: a
+   window wrapped beside the count is read out of order by a PDF's text layer. */
+.carry .trend .top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:2pt 12pt;}
+.carry .trend .who{font-size:10pt;font-weight:700;white-space:nowrap;}
+.carry .trend .who .win{font-weight:500;color:var(--ink2);font-size:8pt;margin-left:2px;}
+.carry .trend .big{text-align:right;line-height:1.1;}
+.carry .trend .big .n{font-size:16pt;font-weight:600;}
+.carry .trend .big .n small{font-size:9pt;color:var(--ink2);font-weight:600;}
+.carry .trend .big .delta{font-size:8pt;color:var(--ink2);margin-top:1px;}
+.carry .trend .big .delta b{color:var(--ink);font-weight:700;}
+.carry .trend .big .delta-caveat{font-size:7.5pt;color:var(--ink2);margin-top:1px;font-style:italic;}
+.carry .trend .subnote{font-size:8pt;color:var(--ink2);margin:2px 0 4pt;}
+.carry .kv .k,.trialread .kv .k{display:block;font-weight:650;}
 .ailead{margin:10pt 0 0;}
 .ailead .ailabel{font-size:7.5pt;letter-spacing:.04em;color:var(--ink2);margin:0;}
 .ailead .beta{text-transform:uppercase;letter-spacing:.1em;border:.5pt solid var(--ink2);padding:0 2pt;}
@@ -338,9 +448,14 @@ svg .cnt.nr{fill:var(--ink2);font-weight:400;}
 .lines{margin:8pt 0 0;padding-left:14pt;}
 .lines li{margin:0 0 2pt;}
 .qs .ptr{color:var(--ink2);font-size:8pt;}
-.colo{margin-top:14pt;padding-top:5pt;border-top:.5pt solid var(--hair);font-size:7.5pt;color:var(--ink2);}
-svg.chart{display:block;margin:2pt 0 0;overflow:visible;}
-svg .rl{font-size:8.5px;fill:var(--ink2);}
+/* The colophon prints in full ink (VR2-11): in ink-2 at 7.5pt the print-survival test watched "not a
+   diagnosis", the date, the report id and the sheet count dissolve on a copy, leaving only the QR. */
+.colo{margin-top:14pt;padding-top:5pt;border-top:.5pt solid var(--hair);font-size:7.5pt;color:var(--ink);}
+svg.chart{display:block;margin:2pt 0 0;overflow:visible;max-width:100%;height:auto;}
+/* Chart labels print in full ink (VR2-11): the print-survival test measured ink-2 at 7.5 to 8.5pt
+   dissolving under a copier's blur and threshold (the axis dates went first). Hierarchy is size and
+   weight here, never a grey a photocopy erases. */
+svg .rl{font-size:8.5px;fill:var(--ink);}
 svg .rl.lead{fill:var(--concern);font-weight:650;}
 svg .rl.sub{font-size:7px;}
 svg .base{stroke:var(--hair);stroke-width:.75;}
@@ -348,15 +463,20 @@ svg .bar{fill:var(--ink2);}
 svg .bar.lead{fill:var(--concern);}
 svg .bar.partly{fill:var(--partly);}
 svg .cov{fill:var(--cov);}
-svg .hatchline{stroke:var(--faint);stroke-width:1;}
+svg .hatch{fill:none;stroke:var(--ink2);stroke-width:1;}
 svg .span{stroke:var(--ink2);stroke-width:1.5;}
 svg .span.hollow{stroke-dasharray:3 2;stroke-width:1;fill:none;}
+svg .span.open{stroke-dasharray:1.5 2.5;}
+svg .bar.sofar{fill:none;stroke:var(--ink2);stroke-width:1.2;}
+svg .bar.lead.sofar{stroke:var(--concern);}
+svg .bar.partly.sofar{stroke:var(--partly);}
+svg .bracket{stroke:var(--ink);stroke-width:1;fill:none;}
 svg .cnt{font-size:8px;fill:var(--ink);font-weight:600;}
 svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linejoin:round;}
-svg .ax{font-size:7.5px;fill:var(--ink2);}
+svg .ax{font-size:7.5px;fill:var(--ink);}
 svg .ax.part{fill:var(--ink);}
 @media print{.sheet{width:auto;}}
-${BACK_STYLE_PRINT}`
+${BACK_STYLE_PRINT}${PRINT_ASSET_STYLE}`
 
 /** The whole v2 document as HTML: sheet 1 only until the back sheets ship (VR2-13). `aiLead`
  *  is a lead the send path read back with `storedLeadForDocument` (verified, same facts) or null. */
@@ -371,7 +491,8 @@ export function renderPrintV2(doc: DocumentV2, aiLead: readonly LeadSentence[] |
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="report-version" content="v2" />
 <title>${h(title)}</title>
-<style>${STYLE_V2}${pageHeadCss(doc)}</style>
+<style>${reportFontFaceCss()}
+${STYLE_V2}${pageHeadCss(doc)}</style>
 </head>
 <body>
 <main class="sheet" data-sheet="1">

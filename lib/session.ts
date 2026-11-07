@@ -1,6 +1,10 @@
 import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
+import { pendingKeepsBeforeSignOut } from './reportKeep';
+import { clearKeepSessionState } from './reportKeepLedger';
 import { clearWidgetData } from './appGroup';
+import { clearCatalogFlushSkips } from './inboxFoodRefs';
+import { countUnclaimedInbox, ingestCaptureInbox } from './captureInbox';
 import { fenceWidgetPublish } from './widgetSnapshot';
 import { clearWidgetTimeline } from './widgetBridge';
 import { clearRecoveryRequest } from './recoveryMarker';
@@ -94,17 +98,43 @@ export async function purgeStoredAuthSession(): Promise<boolean> {
  * the owner from signing out, so every failure degrades to "report what we know"
  * rather than throwing.
  */
+//
+// THE WIDGET INBOX (CUL-2508). A capture tapped on the iOS widget waits in the App Group
+// inbox until the app takes it in, and the wipe deletes that inbox (`clearWidgetData`). It is
+// in neither SQLite nor the server, so a count of rows alone let sign-out destroy it with the
+// warning silent. So, before the push, one ingest takes in whatever can land (it then rides
+// the push like any row); after it, what is STILL waiting is counted into `pendingCount`.
+// The inbox is counted BEFORE the rows: a record the ingest moves across between the two
+// reads is then counted twice, never zero. A listing that cannot be read counts one
+// (CUL-2507's ruling for the report's freshness line, kept the same here). The ingest runs
+// under the current sign-out epoch: it moves only inside `wipeLocalSession`, after this.
 export async function flushForSignOut(): Promise<{
   pendingCount: number;
   quarantinedCount: number;
+  /** Sent vet reports whose copy is not yet kept (CUL-2522), named apart in the warning. */
+  keepCount: number;
 }> {
+  const petIds = new Set(usePetStore.getState().pets.map((p) => p.id));
+  await ingestCaptureInbox(petIds).catch((e: unknown) =>
+    console.warn('[session] pre-sign-out inbox ingest failed:', e));
   await flushPendingForSignOut().catch((e) =>
     console.warn('[session] pre-sign-out flush failed:', e));
+  // CUL-2522: a sent report's keep the app was closed on lives in a local ledger the wipe takes
+  // with it; try it now, and count what still waits as unsent (it never throws).
+  const keeps = await pendingKeepsBeforeSignOut();
+  let inboxCount: number;
+  try {
+    inboxCount = countUnclaimedInbox(petIds);
+  } catch (e) {
+    console.warn('[session] pre-sign-out inbox read failed:', e);
+    inboxCount = 1;
+  }
   try {
     const status = await getSyncStatus();
     return {
-      pendingCount: status.pendingCount,
+      pendingCount: status.pendingCount + inboxCount,
       quarantinedCount: status.quarantinedCount,
+      keepCount: keeps,
     };
   } catch (e) {
     // A status read that fails tells us nothing, and "nothing" must not read as
@@ -112,7 +142,7 @@ export async function flushForSignOut(): Promise<{
     // device most likely to be holding unsent rows. Report one unsent item so the
     // owner is asked rather than assumed-at.
     console.warn('[session] pre-sign-out status read failed:', e);
-    return { pendingCount: 1, quarantinedCount: 0 };
+    return { pendingCount: 1 + inboxCount, quarantinedCount: 0, keepCount: keeps };
   }
 }
 
@@ -129,14 +159,26 @@ export async function flushForSignOut(): Promise<{
 export function unsentSignOutWarning(counts: {
   pendingCount: number;
   quarantinedCount: number;
+  keepCount?: number;
 }): { title: string; message: string } | null {
   const total = counts.pendingCount + counts.quarantinedCount;
-  if (total <= 0) return null;
+  const keeps = counts.keepCount ?? 0;
+  if (total <= 0 && keeps <= 0) return null;
+  // CUL-2522: a sent report whose copy is not kept is named as what it is, never as an "entry".
+  const copies = keeps === 1
+    ? 'A copy of a vet report you sent isn’t saved to your vet reports yet.'
+    : `${keeps} copies of vet reports you sent aren’t saved to your vet reports yet.`;
+  if (total <= 0) {
+    return {
+      title: 'A report copy isn’t saved yet',
+      message: `${copies} Signing out clears this phone, so it would be lost. You can stay signed in and try again later.`,
+    };
+  }
   const entries = total === 1 ? '1 entry' : `${total} entries`;
   return {
     title: 'Some entries are still on this phone',
     message:
-      `${entries} haven't reached your records yet. Signing out clears this ` +
+      `${entries} haven't reached your records yet.` + (keeps > 0 ? ` ${copies}` : '') + ' Signing out clears this ' +
       'phone, so they would be lost. You can stay signed in and try again later.',
   };
 }
@@ -177,6 +219,9 @@ export async function wipeLocalSession(): Promise<void> {
   // memory for a few seconds (`lib/removalNotice.ts`). An id matches no other account's
   // row, and it goes anyway: every place account state rests, not just SQLite.
   clearRemovalNotices();
+  // CUL-2576: the report-keep sets (in flight, answered, awaiting a dismissal) hold report ids of
+  // this account. They reach nothing under the next one, and they go anyway.
+  clearKeepSessionState();
   // CUL-1127 (rls-privacy-reviewer): realtime channels are account state too, and nothing
   // closed them. Each is a socket subscription joined under the signing-out owner's token
   // and filtered on one of their row ids, and its owner (a screen) is not guaranteed to
@@ -360,6 +405,11 @@ export async function wipeLocalSession(): Promise<void> {
   // shipped defaults until the first authenticated fetch, exactly as a fresh
   // install does.
   await clearCachedAppConfig();
+  // CUL-2572 — the catalog cache flush's skip ledger holds the inbox food ids read on the days it
+  // skipped, this account's ids, so it goes with the account. The wipe also empties the caches the
+  // flush exists to clean, so a count carried to the next account could only fire its flush early.
+  // Never throws.
+  await clearCatalogFlushSkips();
   // CUL-902 (VV-4) — the in-room paperwork pointers: appointment id → the Vet Files
   // document groups photographed during that visit, AsyncStorage-resident. Not the
   // record (the documents themselves are SQLite rows clearLocalData already wipes),

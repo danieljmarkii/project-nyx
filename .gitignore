@@ -63,3 +63,7 @@ components/**/__adv*.test.tsx
 # (captures carry demo-account content; renders are reproducible from source)
 scripts/store-screenshots/out/
 scripts/store-screenshots/captures/
+
+# Python bytecode (the report-extract scripts)
+__pycache__/
+*.pyc

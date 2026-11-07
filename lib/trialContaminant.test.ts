@@ -416,7 +416,8 @@ describe('trialFoodContaminants — shape ① (the allowed list itself)', () => 
         { ...TRIAL_FOOD, foodItemId: 'jerky', role: 'permitted_treat', primaryProtein: 'rabbit', proteins: ['rabbit', 'chicken'] },
       ],
     });
-    expect(trialFoodContaminants(withTreat)).toEqual(['chicken']);
+    // CUL-2513: the jerky's own rabbit is not on a duck trial either.
+    expect(trialFoodContaminants(withTreat)).toEqual(['rabbit', 'chicken']);
   });
 });
 
@@ -805,7 +806,8 @@ describe('B-529 — a hydrolysed trial diet does not flag itself on the card', (
       },
     ];
     const note = trialDietNote(withChew);
-    expect(note?.title).toMatch(/also has chicken/i);
+    // CUL-2513: measured against the trial, the chew's own beef is named beside the chicken.
+    expect(note?.title).toMatch(/also has beef and chicken/i);
   });
 });
 

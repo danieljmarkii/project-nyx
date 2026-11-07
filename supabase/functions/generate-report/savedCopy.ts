@@ -19,10 +19,12 @@
 // A FAILED SAVE NEVER BLOCKS THE REPORT. The owner still previews and sends; the response says
 // `report_id: null` and the colophon carries no short id (spec §5.10: never one nothing resolves).
 //
-// The AI lead's columns are not written here: aiLead/run.ts is their one writer
-// (aiLead/storage.guard.test.ts), and `keepCopy` takes its settle step as an argument.
+// The AI lead's columns are not NAMED here: aiLead/run.ts builds what the keep writes to them
+// (`KeepLead`, aiLead/storage.guard.test.ts), `keepCopy` takes that settle step as an argument,
+// and `markKept` carries its result into the keep's one UPDATE without reading it (CUL-2436).
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import type { KeepLead, KeepRefusal } from './aiLead/run.ts'
 
 export const VET_REPORTS_BUCKET = 'nyx-vet-reports'
 
@@ -46,8 +48,9 @@ export const SHORT_ID_ATTEMPTS = 5
 /** Crockford base32: no I, L, O, U. Migration 113's `vet_reports_short_id_crockford` CHECK. */
 export const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 
-/** How a kept copy left the phone. `shared_via` is free text (≤ 32) in 113; this is its set. */
-export const SHARED_VIA = ['email', 'print', 'share'] as const
+/** How a kept copy left the phone. `shared_via` is free text (≤ 32) in 113; this is its set.
+ *  `shown`: exam-room mode, the report shown across the table (CUL-2434, PM go (a) 2026-11-04). */
+export const SHARED_VIA = ['email', 'print', 'share', 'shown'] as const
 export type SharedVia = (typeof SHARED_VIA)[number]
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -81,23 +84,40 @@ export function snapshotForCopy(snapshot: unknown): Record<string, unknown> {
   return out as Record<string, unknown>
 }
 
-/** `{ mode: 'keep', reportId, sharedVia }`. Null for any other mode. A keep request with a
- *  malformed id or an unknown route is refused by the caller (400), never run against a guess. */
+/** What a keep request names. `sharedAt`: when the report left the phone, which the app sends on
+ *  every try since CUL-2522 (a retry can land hours after the send). Absent from an older app,
+ *  whose keep is stamped now. Bounded to [the Preview, now] (`clampSentAt`). */
+export interface KeepRequest {
+  reportId: string | null
+  sharedVia: SharedVia | null
+  sharedAt?: string | null
+}
+
+/** `{ mode: 'keep', reportId, sharedVia, sharedAt? }`. Null for any other mode. A keep request
+ *  with a malformed id or an unknown route is refused by the caller (400), never run against a
+ *  guess; a malformed `sharedAt` reads as none. */
 export function parseKeepRequest(body: {
   mode?: unknown
   reportId?: unknown
   report_id?: unknown
   sharedVia?: unknown
   shared_via?: unknown
-}): { reportId: string | null; sharedVia: SharedVia | null } | null {
+  sharedAt?: unknown
+}): KeepRequest | null {
   if (body.mode !== 'keep') return null
   const id = body.reportId ?? body.report_id
   const via = body.sharedVia ?? body.shared_via
+  const at = typeof body.sharedAt === 'string' && Number.isFinite(Date.parse(body.sharedAt)) ? body.sharedAt : null
   return {
     reportId: typeof id === 'string' && UUID.test(id) ? id.toLowerCase() : null,
     sharedVia: typeof via === 'string' && (SHARED_VIA as readonly string[]).includes(via) ? (via as SharedVia) : null,
+    sharedAt: at,
   }
 }
+
+/** The answer that tells the phone a new Preview is the only way to a kept copy (its "Preview the
+ *  report again" line): the stored copy's AI summary can no longer be kept (CUL-2523). */
+export const NEW_PREVIEW_ERROR = 'Saved copy needs a new preview'
 
 // ── The I/O, bound to one pet and one verified maker ─────────────────────────
 
@@ -112,6 +132,9 @@ export interface DraftRow {
   snapshot: Record<string, unknown>
   scope_basis: string
   short_id: string
+  /** PR-23b (CUL-2454): how many photos the owner left out of this copy (113's column). Which
+   *  ones rides in the snapshot's `incidentPhotosLeftOut`; the two come from one split. */
+  photos_left_out: number
 }
 
 export type InsertOutcome = 'ok' | 'short_id_taken' | 'failed'
@@ -121,6 +144,9 @@ export interface StoredRow {
   storage_path: string
   content_sha256: string | null
   created_at: string
+  /** The latest departure stamp; null on a draft. Optional: a reader that predates the replay
+   *  (CUL-2522) may not carry it, and a replay then reads as later. */
+  shared_at?: string | null
 }
 
 export interface SavedCopyIO {
@@ -135,7 +161,8 @@ export interface SavedCopyIO {
   /** 'error' on a failed read; null when no row of this pet and maker has the id. */
   readRow(id: string): Promise<StoredRow | null | 'error'>
   download(path: string): Promise<Uint8Array | null>
-  markKept(id: string, via: SharedVia, atIso: string, sha: string): Promise<boolean>
+  /** The keep: ONE statement that turns the draft kept and settles its lead (`lead`, CUL-2436). */
+  markKept(id: string, via: SharedVia, atIso: string, sha: string, lead: KeepLead): Promise<boolean>
   restamp(id: string, via: SharedVia, atIso: string): Promise<boolean>
   now(): number
 }
@@ -203,7 +230,7 @@ export function savedCopyIO(admin: SupabaseClient, key: CopyKey): SavedCopyIO {
       return !error
     },
     readRow: async (id) => {
-      const { data, error } = await admin.from('vet_reports').select('status, storage_path, content_sha256, created_at')
+      const { data, error } = await admin.from('vet_reports').select('status, storage_path, content_sha256, created_at, shared_at')
         .eq('id', id).eq('pet_id', key.petId).eq('generated_by', key.uid).maybeSingle()
       if (error) {
         warn('row read failed', error)
@@ -219,14 +246,19 @@ export function savedCopyIO(admin: SupabaseClient, key: CopyKey): SavedCopyIO {
       }
       return new Uint8Array(await data.arrayBuffer())
     },
-    markKept: async (id, via, atIso, sha) => {
+    markKept: async (id, via, atIso, sha, lead) => {
       // One write: 113's vet_reports_kept_complete CHECK needs snapshot, short_id, shared_at and
-      // content_sha256 together, and the freeze starts on the next statement.
-      const { data, error } = await admin.from('vet_reports')
-        .update({ status: 'kept', shared_via: via, shared_at: atIso, content_sha256: sha })
+      // content_sha256 together, and the freeze starts on the next statement. The lead's settled
+      // columns ride in the SAME statement (CUL-2436), so no lead write can land between the settle
+      // and the freeze; a pinned lead that changed since its read matches nothing here.
+      let q = admin.from('vet_reports')
+        .update({ ...lead.set, status: 'kept', shared_via: via, shared_at: atIso, content_sha256: sha })
         .eq('id', id).eq('pet_id', key.petId).eq('generated_by', key.uid).eq('status', 'draft')
         .eq('content_sha256', sha)
-        .select('id')
+      // A null pin is `IS NULL` (CUL-2523): `= NULL` matches nothing, which would refuse every
+      // keep over a cleared column rather than pin it.
+      for (const [column, value] of Object.entries(lead.unchanged)) q = value === null ? q.is(column, null) : q.eq(column, value)
+      const { data, error } = await q.select('id')
       if (error) warn('keep failed', error)
       return !error && Array.isArray(data) && data.length === 1
     },
@@ -254,6 +286,9 @@ export interface DraftInput {
   scopeBasis: string
   params: Record<string, unknown>
   snapshot: unknown
+  /** PR-23b (CUL-2454): `applyPhotosLeftOut`'s count for this very snapshot. A value that is not
+   *  a whole number at or above zero is written as 0 (113's CHECK refuses a negative). */
+  photosLeftOut: number
 }
 
 export interface Rendered<D> {
@@ -302,6 +337,7 @@ export async function saveDraft<D>(
       snapshot,
       scope_basis: input.scopeBasis,
       short_id: candidate,
+      photos_left_out: Number.isInteger(input.photosLeftOut) && input.photosLeftOut > 0 ? input.photosLeftOut : 0,
     })
     if (out === 'ok') shortId = candidate
     else if (out === 'failed') return unsaved()
@@ -343,20 +379,40 @@ export type KeepOutcome =
 
 /**
  * Keep the draft as sent. The stored file must still be the one its hash names; the AI lead's
- * columns are settled first (aiLead/run.ts, handed in as `settleLead`), because the freeze starts
- * with the keep. A copy already kept only moves its departure stamp.
+ * columns are settled IN the keep's one write (aiLead/run.ts builds them, handed in as
+ * `settleLead`; CUL-2436), because the freeze starts with the keep. A copy already kept only
+ * moves its departure stamp.
  */
+/** The phone's send time, never before the Preview that made the draft nor after now. */
+function clampSentAt(sentAt: string, createdAt: string, now: number): number {
+  const sent = Date.parse(sentAt)
+  const created = Date.parse(createdAt)
+  return Math.min(now, Math.max(Number.isFinite(created) ? created : now, sent))
+}
+
 export async function keepCopy(
   io: SavedCopyIO,
-  req: { reportId: string | null; sharedVia: SharedVia | null },
-  settleLead: (storedHtml: string) => Promise<boolean>,
+  req: KeepRequest,
+  settleLead: (storedHtml: string) => Promise<KeepLead | KeepRefusal | null>,
 ): Promise<KeepOutcome> {
   if (req.reportId === null || req.sharedVia === null) return { status: 400, body: { error: 'reportId and sharedVia required' } }
-  const at = new Date(io.now()).toISOString()
+  const replay = typeof req.sharedAt === 'string'
   const row = await io.readRow(req.reportId)
   if (row === 'error') return { status: 500, body: { error: 'Saved copy could not be read' } }
   if (row === null) return { status: 404, body: { error: 'Saved copy not found' } }
+  // A keep that names its send time is stamped with it, held between the Preview and now; one
+  // that does not (an older app) is stamped now. So a keep the phone retries at the next open, or
+  // after a background pause, never stamps that moment as the send (rls-privacy-reviewer F3).
+  const at = new Date(replay ? clampSentAt(req.sharedAt as string, row.created_at, io.now()) : io.now()).toISOString()
   if (row.status === 'kept') {
+    // A timed keep of a copy already kept (a second send, or a retry of one that landed before
+    // the app could clear its row) stamps only a departure LATER than the one on the copy: an
+    // earlier one is already logged, and a later send must still reach 119's departures
+    // (rls-privacy-reviewer R1).
+    if (replay) {
+      const stamped = row.shared_at ? Date.parse(row.shared_at) : Number.NaN
+      if (Number.isFinite(stamped) && Date.parse(at) <= stamped) return { status: 200, body: { kept: true, first: false } }
+    }
     return (await io.restamp(req.reportId, req.sharedVia, at))
       ? { status: 200, body: { kept: true, first: false } }
       : { status: 500, body: { error: 'Saved copy could not be updated' } }
@@ -370,8 +426,12 @@ export async function keepCopy(
   if (bytes === null || (await sha256Hex(bytes)) !== row.content_sha256) {
     return { status: 409, body: { error: 'Saved copy unavailable' } }
   }
-  if (!(await settleLead(new TextDecoder().decode(bytes)))) return { status: 500, body: { error: 'Saved copy could not be kept' } }
-  if (await io.markKept(req.reportId, req.sharedVia, at, row.content_sha256)) return { status: 200, body: { kept: true, first: true } }
+  const lead = await settleLead(new TextDecoder().decode(bytes))
+  if (lead === null) return { status: 500, body: { error: 'Saved copy could not be kept' } }
+  // A copy whose summary no record can make true, or whose summary the owner has since withdrawn
+  // (CUL-2523, PM ruling (a)): refused for good, so the owner is told now and resends without it.
+  if ('refused' in lead) return { status: 409, body: { error: NEW_PREVIEW_ERROR } }
+  if (await io.markKept(req.reportId, req.sharedVia, at, row.content_sha256, lead)) return { status: 200, body: { kept: true, first: true } }
   // Two sends racing: the other one kept it. Anything else is a failure, said as one.
   const again = await io.readRow(req.reportId)
   if (again !== 'error' && again !== null && again.status === 'kept') {

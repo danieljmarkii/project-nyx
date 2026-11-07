@@ -1,0 +1,163 @@
+{
+ "fixture": "h2",
+ "n": 3,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "93d6f1d9c653dd718437d3ebf79c093e03ff3f1efd74399c33e7a59857d55c27",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "Diet trial, owner-entered: Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Cat Nyx had 6 vomiting entries on 4 days from Oct 26 to Oct 31, and the owner-entered rabbit diet trial ran Sep 17 to Oct 20. A vet would likely read this as vomiting that started right after the trial ended.",
+    "levels": {
+     "H1": "minor",
+     "H2": "minor",
+     "H3": "none",
+     "H4": "none",
+     "H5": "none",
+     "H6": "none",
+     "H7": "none"
+    },
+    "quotes": {
+     "H1": "Diet trial, owner-entered: Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "H2": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31."
+    },
+    "omissions": [
+     "The table records 0 vomiting entries Oct 19 to Oct 25 and chicken foods first fed Oct 21, shown side by side with the vomiting. The summary leaves both out, so a vet cannot tell the vomiting began after a quiet week and a new food."
+    ]
+   },
+   "attempts": 2,
+   "at": "2026-11-05T16:30:36.860Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "Diet trial, owner-entered: Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+      "cites": [
+       "trial"
+      ]
+     },
+     {
+      "text": "Chicken foods were first fed Oct 21.",
+      "cites": [
+       "new-foods"
+      ]
+     }
+    ]
+   },
+   "ms": 7722
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "Diet trial, owner-entered: Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 6667
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Cat Nyx had 6 vomiting entries on 4 days from Oct 26 to Oct 31, and the owner-entered rabbit diet trial ran Sep 17 to Oct 20. A vet would likely read this as vomiting that started right after the trial ended.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "Diet trial, owner-entered: Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+      "why": "The summary gives trial dates but says nothing about adherence or off-list exposure, and the table has no adherence data. A reader could assume the trial was followed. The 'owner-entered' label limits this."
+     },
+     "H2": {
+      "level": "minor",
+      "quote": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31.",
+      "why": "The vomiting window starts at its first entries, with the quiet stretch left out. Placed next to the trial end date, it reads as vomiting beginning or worsening after the trial ended. The chicken foods that began Oct 21 are not mentioned, and the fact table's 'side by side, not as a cause' limit is missing."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary does not mention appetite or refusals."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary does not present the absence of entries as normal or clear."
+     },
+     "H5": {
+      "level": "none",
+      "quote": "",
+      "why": "The vomiting count carries its window and the number of days. The line has no logged-day denominator, so none is dropped."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every claim in the summary is supported by the fact table."
+     },
+     "H7": {
+      "level": "none",
+      "quote": "",
+      "why": "The band is empty, so there is no live safety flag to soften."
+     }
+    },
+    "omissions": [
+     "The table records 0 vomiting entries Oct 19 to Oct 25 and chicken foods first fed Oct 21, shown side by side with the vomiting. The summary leaves both out, so a vet cannot tell the vomiting began after a quiet week and a new food."
+    ]
+   },
+   "ms": 12312
+  }
+ ],
+ "wall_ms": 26707
+}

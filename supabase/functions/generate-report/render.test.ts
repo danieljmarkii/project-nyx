@@ -14,7 +14,7 @@
 // deterministic and do not depend on detection thresholds.
 
 import { strict as assert } from 'node:assert'
-import { chronicitySpanDaysShown, incidentPhotoCard, OFF_DIET_ZERO_MIN_MEAL_DAYS, renderReport, SHIPPED_STYLE, weightLossPct } from './render.ts'
+import { chronicitySpanDaysShown, dayListText, incidentPhotoCard, OFF_DIET_ZERO_MIN_MEAL_DAYS, renderReport, SHIPPED_STYLE, weightLossPct } from './render.ts'
 import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 // CUL-1041 — the window-move fixtures below are built by the PRODUCTION derivation,
 // so this file cannot drift from `trial.ts` without going red.
@@ -835,18 +835,22 @@ Deno.test('phenotype discloses the four AI states distinctly (assessed denominat
   )
   const text = html.replace(/<[^>]*>/g, ' ')
   assert.ok(/7\s+have a legible AI read/.test(text), 'assessed denominator = completed')
-  assert.ok(/uncertain/.test(text) && /not legible/.test(text), 'uncertain + failed disclosed distinctly')
+  assert.ok(/1 uncertain/.test(text) && /2 not read \(analysis did not complete\)/.test(text), 'uncertain + failed disclosed distinctly')
+  assert.ok(!/not legible/.test(text), 'CUL-2416: a failed analysis is never called illegible')
 })
 
 Deno.test('phenotype consistency: a tie for the top type is disclosed, not asserted as a majority', () => {
   const tie = renderReport(
     base({ vomitPhenotype: emptyPhenotype({ consistencyDistribution: { foamy: 2, watery: 2, chunky: 1 } }) }),
   )
-  assert.ok(/no single predominant reading/i.test(tie), 'a 2–2 tie is not called "most often foamy"')
+  assert.ok(!/most often/i.test(tie), 'a 2–2 tie is not called "most often foamy"')
+  assert.ok(/from the 5 reads where it was legible: foamy ×2 · watery ×2 · chunky ×1/.test(tie.replace(/<[^>]*>/g, '').replace(/&times;/g, '×').replace(/&middot;/g, '·')), 'CUL-2412: a tally, every value with its count')
   const clear = renderReport(
     base({ vomitPhenotype: emptyPhenotype({ consistencyDistribution: { foamy: 6, chunky: 2 } }) }),
   )
-  assert.ok(/most often foamy/i.test(clear), 'a clear majority still reads "most often X"')
+  // CUL-2412: a clear majority is tallied too, so the minority reading is never dropped.
+  assert.ok(!/most often/i.test(clear), 'never a modal line')
+  assert.ok(/foamy ×6 · chunky ×2/.test(clear.replace(/<[^>]*>/g, '').replace(/&times;/g, '×').replace(/&middot;/g, '·')), 'both readings, each with its count')
 })
 
 // ── §4 / B-117 adherence — never "compliant" on zero doses ─────────────────────────
@@ -1498,10 +1502,20 @@ Deno.test('stool: AI read, nothing present → Bristol line + "not a clearance" 
     },
   }))
   assert.ok(/Automated photo analysis/.test(html), 'aitag when a read exists')
-  assert.ok(/Type 4 — smooth, soft/.test(html), 'Bristol most-common named with plain label')
-  assert.ok(/most often brown/.test(html), 'colour predominant line')
+  assert.ok(/Type 4 — smooth, soft/.test(html), 'Bristol named with plain label')
+  const flat = html.replace(/<[^>]*>/g, '').replace(/&times;/g, '×').replace(/&middot;/g, '·')
+  // CUL-2412: every Bristol type and colour tallied over its own reads, never "most often".
+  assert.ok(/Colour, from the 3 reads where it was legible: brown ×3/.test(flat), 'colour tally')
+  assert.ok(/Type 6[^·]*×1/.test(flat), 'the minority Bristol type keeps its count')
+  assert.ok(!/most often/.test(flat), 'never a modal line')
+  // …and the photo line is counted over the photographed events, not every stool log.
+  assert.ok(/Photo reads cover 3 of the 4 stool events \(1 with no photo read on record\)/.test(flat), 'its own denominator')
+  assert.ok(!/Across all 4 stool events/.test(flat), 'never the pooled stool denominator')
+  const head = /<h2>Stool characteristics([\s\S]*?)<\/h2>/.exec(html)?.[1] ?? ''
+  assert.ok(/4 stool events · owner-described/.test(head.replace(/<[^>]*>/g, '')), 'the owner bar keeps owner-described under its heading')
+  assert.ok(!/Automated photo analysis/.test(head), 'CUL-2412: the AI badge heads the photo line, not the owner bar')
   assert.ok(/Not seen/.test(html) && /not<\/b> a clearance/.test(html), 'present-only absence framed as non-clearance')
-  assert.ok(/1 without a photo/.test(html), 'four-state denominator discloses the no-photo incident')
+  assert.ok(/1 with no photo read on record/.test(flat), 'four-state denominator discloses the no-photo incident')
   assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
 })
 
@@ -3497,6 +3511,7 @@ const PNG_1PX =
 
 function photo(over: Partial<IncidentPhoto> & { eventId: string; occurredAt: string }): IncidentPhoto {
   return {
+    attachmentId: over.attachmentId ?? `att-${over.eventId}`,
     eventId: over.eventId,
     storagePath: over.storagePath ?? `p/${over.eventId}.jpg`,
     type: over.type ?? 'vomit',
@@ -5765,7 +5780,7 @@ Deno.test('B-532/B-502 — with no photographed incident, the block collapses to
   )
   const t = plain(html)
   assert.ok(!/no legible read yet/.test(t), 'no chart furniture standing in for data that does not exist (B-532)')
-  assert.ok(/5 without a photo/.test(t), 'the denominator disclosure survives (§5.10)')
+  assert.ok(/5 with no photo read on record/.test(t), 'the denominator disclosure survives (§5.10)')
   // B-502 — the empty block collapses to ONE line: the section said "no photo" three ways (a
   // photo-read lead, a repeated body, and the blood block), ~100 words for one fact. The lead
   // that described a read that never happened is gone, the repeated body with it, and the
@@ -5820,10 +5835,10 @@ Deno.test('B-532 — the legend describes the page-1 intake line only when that 
       }),
     ),
   )
-  assert.ok(!/When intake drops, page 1 shows/.test(unfinished), 'no flag fired ⇒ no claim that the line is there')
+  assert.ok(!/When intake drops, the clinical summary shows/.test(unfinished), 'no flag fired ⇒ no claim that the line is there')
   assert.ok(/appears only when a reduced-intake flag fired/.test(unfinished))
   assert.ok(/not that intake was normal/.test(unfinished), 'and the silence is never an all-clear')
-  assert.ok(!/When intake drops, page 1 shows/.test(unfinished))
+  assert.ok(!/When intake drops, the clinical summary shows/.test(unfinished))
 
   const flagged = plain(
     renderReport(
@@ -5838,7 +5853,7 @@ Deno.test('B-532 — the legend describes the page-1 intake line only when that 
       }),
     ),
   )
-  assert.ok(/When intake drops, page 1 shows/.test(flagged), 'and it IS described when the flag population is listed')
+  assert.ok(/When intake drops, the clinical summary shows/.test(flagged), 'and it IS described when the flag population is listed')
 })
 
 Deno.test('B-532 ADV① — page 1 and the symptom panel never disagree about direction', () => {
@@ -7336,7 +7351,7 @@ Deno.test('R-13 item 6 — the photos appendix NAMES the removed incidents, and 
     base({
       incidentPhotos: [
         {
-          eventId: 'kept', type: 'vomit', occurredAt: '2026-06-21T14:00:00Z', dataUri: 'data:image/jpeg;base64,AAAA',
+          attachmentId: 'att-kept', eventId: 'kept', type: 'vomit', occurredAt: '2026-06-21T14:00:00Z', dataUri: 'data:image/jpeg;base64,AAAA',
           storagePath: 'pet/kept/1.jpg', occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null,
           notes: null, safety: null,
           phenotype: { kind: 'vomit', status: 'completed', colour: 'yellow', contentsCategory: 'bile', consistency: 'foamy', bloodPresent: null, foreignPresent: null, foreignNote: null, bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited: false },
@@ -8507,7 +8522,9 @@ Deno.test('CUL-1978 ① — off-diet feedings take the affirmative out of the ca
   )
   const callout = text(interpretingCallout(breached))
   assert.ok(!/supports interpreting it/.test(callout), callout)
-  assert.ok(/4 of 44 feedings during the trial did not match the trial diet .*cannot establish that the elimination was clean/.test(callout), callout)
+  // CUL-2516: the break is stated as a fact, never as an uncertainty about the record.
+  assert.ok(/The trial diet was not fed exclusively: 4 of 44 feedings during the trial did not match it \(appendix&nbsp;C; a floor, not a total\), so this record shows an elimination that was broken, not a clean one\./.test(callout), callout)
+  assert.ok(!/cannot establish that the elimination was clean/.test(callout), callout)
   const headline = text(/<div class="headline">[\s\S]*?<\/div>/.exec(breached)![0])
   assert.ok(/4 of 44 logged feedings did not match the trial diet/.test(headline), headline)
   assert.ok(/see the diet section before reading the trial as a result/.test(headline), headline)
@@ -8643,22 +8660,26 @@ Deno.test('CUL-1979 — the label-contamination row names the source of the food
 Deno.test('CUL-2505 — the contamination caveat names an allowed extra, the trial diet itself, or both', () => {
   const chew = { foodItemId: 'fi-chew', foodKey: null, label: 'Dental Chew', role: 'permitted_treat' as const, allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'duck', proteins: ['duck', 'chicken'] }
   const diet = { ...chew, foodItemId: 'fi-duck', label: 'Novel Duck', role: 'primary_diet' as const, proteins: ['duck', 'pea'] }
-  const caveat = (contamination: Array<{ food: typeof chew | typeof diet; extraProteins: string[]; derivedFromPrimary: string[] }>) => {
+  const caveat = (contamination: Array<{ food: typeof chew | typeof diet; extraProteins: string[]; derivedFromPrimary: string[]; measuredAgainst?: 'trial' | 'own_primary' }>) => {
     const html = text(renderReport(cleanTrialSnap(NO_HOUSEHOLD, { contamination })))
     const i = html.lastIndexOf('so this record cannot establish that the elimination was clean')
     assert.ok(i >= 0, 'the caveat renders')
     return html.slice(Math.max(0, i - 300), i)
   }
-  const extra = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] }])
-  assert.ok(/Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(extra), extra)
+  const extra = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [], measuredAgainst: 'trial' as const }])
+  // CUL-2513: an extra's proteins are measured against the trial, so the clause says so.
+  assert.ok(/Dental Chew, fed during the trial, lists Chicken, which the trial diet does not \(above\), $/.test(extra), extra)
+  // Adversarial pass 1: measured against its own front (a dark trial set, or a stored copy), it never says so.
+  const fallback = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] }])
+  assert.ok(/Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(fallback), fallback)
   const own = caveat([{ food: diet, extraProteins: ['pea'], derivedFromPrimary: [] }])
   assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea \(above\), $/.test(own), own)
   assert.ok(!/fed during the trial, also lists/.test(own), own)
   const both = caveat([
     { food: diet, extraProteins: ['pea'], derivedFromPrimary: [] },
-    { food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] },
+    { food: chew, extraProteins: ['chicken'], derivedFromPrimary: [], measuredAgainst: 'trial' as const },
   ])
-  assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea; and Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(both), both)
+  assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea; and Dental Chew, fed during the trial, lists Chicken, which the trial diet does not \(above\), $/.test(both), both)
 })
 
 Deno.test('CUL-1979 — appendix B names the source of the sets it lists, and the off-trial legend never says "no link"', () => {
@@ -8674,7 +8695,7 @@ Deno.test('CUL-1979 — appendix B names the source of the sets it lists, and th
   // CUL-1978 — page 1 may now name an association; the legend must not deny one exists.
   const html = sheet({ photo: 0, owner: 2 })
   assert.ok(!/draws no link/.test(html))
-  assert.ok(/not an association test &mdash; the food&ndash;symptom associations this report states are on page&nbsp;1/.test(html))
+  assert.ok(/not an association test &mdash; the food&ndash;symptom associations this report states are in the clinical summary under Timing vs symptoms/.test(html))
 })
 
 Deno.test('CUL-1978 ⑥ — an Established finding never silences a second one or any Early one (adversarial pass 2)', () => {
@@ -9030,8 +9051,17 @@ Deno.test('CUL-2357 — the refusal lead states its finding and its population b
     /Diet not eaten 4 of 4 rated feedings carrying the trial diet left unfinished \(entries with the diet in them, treats included\) on 3 days between Jun 2 and Jun 9; nothing rated since shows whether that has changed\./.test(row),
     row,
   )
-  assert.ok(row.indexOf('left unfinished') < row.indexOf('Food A'), 'the finding comes first')
-  assert.ok(/Trial diet: Food A \/ Food B \/ Food C \/ Food D \/ Food E \/ Food F\./.test(row), 'the names still print, after it')
+  // CUL-2529 (PM ruling (a)): past two foods, v1's band points at the diet-trial block, which names them.
+  assert.ok(
+    row.indexOf('left unfinished') < row.indexOf('Trial diet: the 6 trial-diet foods named in the diet-trial block.'),
+    'the finding comes first, then the pointer',
+  )
+  assert.ok(!/Food A/.test(row), 'six names are not repeated on the band')
+  const r = cul2357Refusal()
+  if (r.kind !== 'trial_diet_refusal') throw new Error('fixture')
+  const two = plain(renderReport(base({ safetyFlags: [{ ...r, trialDietLabels: ['Food A', 'Food B'] }] })))
+  const twoRow = two.slice(two.indexOf('Diet not eaten'), two.indexOf('Diet not eaten') + 600)
+  assert.ok(/Trial diet: Food A \/ Food B\./.test(twoRow), 'two names still print on the band, after the finding')
   assert.ok(/Dates covered: May 20 – Jun 30, 2026\./.test(row), 'the counted window is still stated')
 })
 
@@ -9191,9 +9221,10 @@ Deno.test('CUL-2390 instance 4 — a pending photo read is worded as pending, ne
   assert.ok(!/not clear enough/.test(pending), pending)
   assert.ok(!/AI read/.test(pending), 'an unread photo carries no AI-read badge')
   assert.match(card('failed'), /AI read/)
-  // Failed and uncertain were read, so they keep the legibility wording.
-  assert.match(card('failed'), /present but not legible — not clear enough to read/)
-  assert.match(card('uncertain'), /read uncertain — not clear enough to read/)
+  // CUL-2416: failed and uncertain each say what happened to the photo, and never share a caption.
+  assert.match(card('failed'), /photo not read \(the analysis did not complete\); ask to see the photo/)
+  assert.match(card('uncertain'), /read uncertain, findings not shown; ask to see the photo/)
+  assert.ok(!/not clear enough/.test(card('failed') + card('uncertain')))
 })
 
 Deno.test('CUL-2390 guard — no "0 of" ever sits beside blood, foreign material or mucus', () => {
@@ -9211,4 +9242,132 @@ Deno.test('CUL-2390 guard — no "0 of" ever sits beside blood, foreign material
       if (/\bblood|foreign|mucus/i.test(sentence)) assert.ok(!/\b0 of\b/.test(sentence), `"0 of" beside a present-only finding: ${sentence}`)
     }
   }
+})
+
+// ── Lane A (vet report v2): sections that read quieter than a fact the same report holds ──
+
+Deno.test('CUL-2516 — off-diet feedings state the break, its days, and the timing line that names their protein', () => {
+  // Cooper: beef jerky ×4 on the vomit days. 20606 is 2026-06-02 (UTC day index).
+  const beef = (day: number) => {
+    const x = exposureItem('derived_protein', null)
+    return { ...x, dayIndex: day, label: 'Beef Jerky', classification: { ...x.classification, antigens: ['beef'] } }
+  }
+  const snap = cleanTrialSnap(NO_HOUSEHOLD, {
+    exposures: {
+      totalFeedings: 44,
+      offDiet: 4,
+      byRung: { derived_protein: 4, unrecognised: 0 },
+      fedBeforePermitted: 0,
+      unclassifiable: 0,
+      items: [beef(20606), beef(20606), beef(20607), beef(20609)],
+    },
+    mayClaimAllMatched: false,
+  })
+  snap.correlation = {
+    ...snap.correlation,
+    early: [
+      { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 4, controlExposed: 0, riskDifference: 1, pValue: 0.03, symptomEventCount: 4, correlationWindowHours: 12 },
+    ],
+  }
+  const callout = text(interpretingCallout(renderReport(snap)))
+  assert.ok(
+    callout.includes(
+      'The trial diet was not fed exclusively: 4 of 44 feedings during the trial did not match it on Jun 2, Jun 3 and Jun 5, 2026 (appendix&nbsp;C; a floor, not a total), so this record shows an elimination that was broken, not a clean one. Of the proteins those feedings carried: Beef was in the 12&nbsp;h before 4 of 4 vomiting episodes (an early signal, not confirmed).',
+    ),
+    callout,
+  )
+  assert.ok(!/cannot establish that the elimination was clean/.test(callout), callout)
+  // Control: a timing finding on a protein the off-diet feedings did not carry is not pointed to.
+  snap.correlation = { ...snap.correlation, early: [{ ...snap.correlation.early![0], protein: 'lamb', proteins: ['lamb'] }] }
+  const other = text(interpretingCallout(renderReport(snap)))
+  assert.ok(/was broken, not a clean one\./.test(other) && !/Of the proteins those feedings carried/.test(other), other)
+})
+
+Deno.test('CUL-2516 — dayListText: up to four days named, more as a counted span, the year stamped once', () => {
+  assert.equal(dayListText(['2026-10-18']), 'on Oct 18, 2026')
+  assert.equal(dayListText(['2026-10-20', '2026-10-18', '2026-10-18']), 'on Oct 18 and Oct 20, 2026')
+  assert.equal(
+    text(dayListText(['2026-10-18', '2026-10-19', '2026-10-20', '2026-10-22', '2026-11-02'])),
+    'on 5 days between Oct 18 and Nov 2, 2026',
+  )
+  assert.equal(dayListText(['2025-12-30', '2026-01-02']), 'on Dec 30, 2025 and Jan 2, 2026')
+})
+
+Deno.test('CUL-2510 — the chronicity floor names how far back the trial section shows the same sign', () => {
+  const flag: SafetyFlag = {
+    kind: 'chronicity',
+    symptomType: 'vomit',
+    episodeCount: 8,
+    spanDays: 40,
+    activeWeeks: 5,
+    symptomDays: 8,
+    daysSinceLastEpisode: 2,
+    firstOnsetIso: '2026-04-03T14:00:00Z',
+    firstLoggedIso: '2026-04-03T14:00:00Z',
+    tier: 'standard',
+    windowDays: 56,
+  }
+  const crop = (byType: NonNullable<ReportSnapshot['scope']['trialCropSymptoms']>['byType']) => {
+    const s = base({ safetyFlags: [flag] })
+    s.scope.trialCropSymptoms = { count: 10, mostRecentIso: '2026-03-30T10:00:00Z', mostRecentType: 'vomit', byType, cropDays: 52, mealLoggedDaysInCrop: 50, countIsFloor: false }
+    const html = text(renderReport(s))
+    const i = html.indexOf('Vomiting spans')
+    return html.slice(i, html.indexOf('\n', i) > 0 ? html.indexOf('\n', i) : i + 1200)
+  }
+  const row = crop([{ type: 'vomit', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }])
+  assert.ok(
+    /This window opens Apr 3, but the record holds 10 vomiting episodes in the trial days before it, the earliest on Feb 10, 2026: the sign runs back at least that far\./.test(row),
+    row,
+  )
+  assert.ok(!/days is a floor/.test(row), row)
+  // Cold read: the lead no longer says "first logged" in the window, and scopes the span to it.
+  assert.ok(/^Vomiting spans \d+ days in this window: 8 episodes/.test(row), row)
+  assert.ok(!/first logged Apr 3/.test(row), row)
+  // Control: a copy stored before the field keeps B-532's floor sentence (unknown, never "none").
+  const old = crop([{ type: 'vomit', count: 10 }])
+  assert.ok(/days is a floor/.test(old) && !/the record holds/.test(old), old)
+  // Control: earlier episodes of a DIFFERENT sign are not read as this one's.
+  const other = crop([{ type: 'cough', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }])
+  assert.ok(!/the record holds/.test(other), other)
+  // Adversarial pass 1: a short events pull makes the count a floor and the date the earliest READ.
+  const s2 = base({ safetyFlags: [flag] })
+  s2.scope.trialCropSymptoms = { count: 10, mostRecentIso: '2026-03-30T10:00:00Z', mostRecentType: 'vomit', byType: [{ type: 'vomit', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }], cropDays: 52, mealLoggedDaysInCrop: 50, countIsFloor: false }
+  s2.incompletePulls = ['events']
+  assert.ok(/the record holds at least 10 vomiting episodes in the trial days before it, the earliest of those read on Feb 10, 2026/.test(text(renderReport(s2))))
+})
+
+Deno.test('CUL-2516 pass 1 — off-diet rows that are all "fed before it was permitted" keep the uncertain sentence', () => {
+  const x = exposureItem('derived_protein', '2026-06-12')
+  const snap = cleanTrialSnap(NO_HOUSEHOLD, {
+    exposures: { totalFeedings: 44, offDiet: 1, byRung: { derived_protein: 1, unrecognised: 0 }, fedBeforePermitted: 1, unclassifiable: 0, items: [x] },
+    mayClaimAllMatched: false,
+  })
+  const callout = text(interpretingCallout(renderReport(snap)))
+  assert.ok(/cannot establish that the elimination was clean/.test(callout) && !/not fed exclusively/.test(callout), callout)
+})
+
+Deno.test('CUL-2511 pass 1 — a loss under 1% across the trial start stays off the bottom line', () => {
+  const end = (kg: number, day: string) => ({ kg, lbs: kg * 2.2, day, source: 'home_scale' as const, single: true })
+  const snap = cleanTrialSnap(NO_HOUSEHOLD)
+  snap.weight = { ...snap.weight, acrossTrialStart: { latest: end(4.47, '2026-05-20'), highBefore: end(4.5, '2026-05-01'), deltaKg: -0.03, deltaLbs: -0.1, pct: 1, withinNoise: false } }
+  assert.ok(/Weight is down about 1% of body weight across the trial/.test(text(interpretingCallout(renderReport(snap)))))
+  snap.weight = { ...snap.weight, acrossTrialStart: { ...snap.weight.acrossTrialStart!, deltaKg: -0.02, pct: 0 } }
+  assert.ok(!/across the trial&rsquo;s start|across the trial’s start/.test(interpretingCallout(renderReport(snap))))
+})
+
+Deno.test('CUL-2516 pass 2 — the permitted-later sentence keeps the days and the timing counts', () => {
+  const beef = (day: number) => {
+    const x = exposureItem('derived_protein', '2026-06-20')
+    return { ...x, dayIndex: day, classification: { ...x.classification, antigens: ['beef'] } }
+  }
+  const snap = cleanTrialSnap(NO_HOUSEHOLD, {
+    exposures: { totalFeedings: 44, offDiet: 2, byRung: { derived_protein: 2, unrecognised: 0 }, fedBeforePermitted: 2, unclassifiable: 0, items: [beef(20606), beef(20607)] },
+    mayClaimAllMatched: false,
+  })
+  snap.correlation = {
+    ...snap.correlation,
+    early: [{ symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 4, controlExposed: 0, riskDifference: 1, pValue: 0.03, symptomEventCount: 4, correlationWindowHours: 12 }],
+  }
+  const callout = text(interpretingCallout(renderReport(snap)))
+  assert.ok(callout.includes('did not match the trial diet on Jun 2 and Jun 3, 2026 (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean. Of the proteins those feedings carried: Beef was in the 12&nbsp;h before 4 of 4 vomiting episodes (an early signal, not confirmed).'), callout)
 })

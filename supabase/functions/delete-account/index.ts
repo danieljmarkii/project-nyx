@@ -59,6 +59,8 @@ import {
   listPrefixRecursive,
   mergeSweepIds,
   readAllOwnedPaths,
+  scopeDropCounts,
+  scopeDropLine,
   STORAGE_BUCKETS,
   STORAGE_REMOVE_CHUNK,
   sweepBudget,
@@ -424,6 +426,10 @@ Deno.serve(async (req: Request) => {
 
     // 2. Build the ordered plan: purges first, auth delete last and once (FR-6).
     const plan = buildDeletionPlan(ownedPaths)
+    // CUL-2311: a key a scope guard refused is skipped by the row route without an
+    // error. Say so, counts only, so a writer/guard mismatch is loud in the log.
+    const dropped = scopeDropLine(userId, scopeDropCounts(ownedPaths))
+    if (dropped !== null) console.warn(dropped)
 
     // 3. Execute. Storage purges are best-effort (FR-5): aggregate failures and
     //    never abort on a missing/failed object or a not-yet-created bucket. The

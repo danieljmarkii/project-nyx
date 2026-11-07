@@ -3,6 +3,13 @@ import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
 import {
+  INBOX_FOOD_ID_RE,
+  clearCatalogFlushSkips,
+  inboxKeepForCatalogFlush,
+  readInboxFoodRefs,
+  type InboxFoodRefs,
+} from './inboxFoodRefs';
+import {
   LIBRARY_FOODS_QUERY,
   ARCHIVED_FOODS_QUERY,
   recentFoodsQuery,
@@ -84,14 +91,56 @@ interface CacheFlushDb {
 // internal integer constant, safe to interpolate into the PRAGMA (which can't take
 // a bound parameter); Math.trunc is belt-and-braces against a non-integer reaching
 // the SQL.
+//
+// CUL-2542: `keepFoodIds` is the widget capture inbox's foods (lib/inboxFoodRefs.ts). A capture
+// waiting there is not a row yet, so the unsynced-row keep-set cannot see it, and a food named
+// only by it was deleted: the capture then deferred until it aged out. Only ids of the
+// extension's uuid shape reach the SQL (the PRAGMA's interpolation reasoning: execAsync takes
+// no bound parameters); anything else is left out, never quoted in.
+// Whether the flush below would run: the local cache-schema version lags the target.
+export async function catalogCacheFlushDue(
+  database: CacheFlushDb,
+  targetVersion: number = CACHE_SCHEMA_VERSION,
+): Promise<boolean> {
+  const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+  return (row?.user_version ?? 0) < Math.trunc(targetVersion);
+}
+
+/**
+ * initDb's flush step: read the widget inbox only when a flush is due, skip while the inbox
+ * cannot be read whole (bounded, CUL-2572), and clear the skip ledger once the flush runs.
+ * Returns whether it flushed. `readRefs` is the inbox read, injectable for the test.
+ */
+export async function runCatalogCacheFlush(
+  database: CacheFlushDb,
+  readRefs: () => InboxFoodRefs = readInboxFoodRefs,
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (!(await catalogCacheFlushDue(database))) return false;
+  const inboxFoods = await inboxKeepForCatalogFlush(readRefs(), CACHE_SCHEMA_VERSION, now);
+  if (inboxFoods === null) {
+    console.warn('[db] catalog cache flush skipped: widget inbox unreadable');
+    return false;
+  }
+  const flushed = await flushLegacyCatalogCachesIfNeeded(database, CACHE_SCHEMA_VERSION, inboxFoods);
+  if (flushed) await clearCatalogFlushSkips();
+  return flushed;
+}
+
 export async function flushLegacyCatalogCachesIfNeeded(
   database: CacheFlushDb,
   targetVersion: number = CACHE_SCHEMA_VERSION,
+  keepFoodIds: readonly string[] = [],
 ): Promise<boolean> {
   const target = Math.trunc(targetVersion);
   const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   const current = row?.user_version ?? 0;
   if (current >= target) return false;
+  // An IN list, never a UNION term per id: SQLite caps a compound SELECT at 500 terms, and a
+  // flush that throws on every launch never runs (rls-privacy-reviewer).
+  const inboxIds = keepFoodIds.filter((id) => INBOX_FOOD_ID_RE.test(id));
+  const inboxKeep =
+    inboxIds.length === 0 ? '' : `\n         AND id NOT IN (${inboxIds.map((id) => `'${id}'`).join(', ')})`;
   await database.execAsync(
     `DELETE FROM food_items_cache
        WHERE id NOT IN (
@@ -100,7 +149,7 @@ export async function flushLegacyCatalogCachesIfNeeded(
          SELECT food_item_id FROM meal_components WHERE synced = 0 AND food_item_id IS NOT NULL
          UNION
          SELECT food_item_id FROM feeding_arrangements WHERE synced = 0 AND food_item_id IS NOT NULL
-       );
+       )${inboxKeep};
      DELETE FROM medication_items_cache
        WHERE id NOT IN (
          SELECT medication_item_id FROM medications WHERE synced = 0 AND medication_item_id IS NOT NULL
@@ -233,8 +282,15 @@ export async function initDb(): Promise<void> {
   // here must not abort init (the caches self-heal — a stale foreign row is a
   // privacy/UX wart, not a crash; the next successful launch retries the flush
   // because user_version was never bumped).
+  //
+  // CUL-2542: the widget inbox's foods are kept too. An inbox that cannot be read whole skips
+  // the flush for this launch (user_version stays behind, so the next launch retries) rather
+  // than delete a food a capture it could not see is waiting on.
+  // CUL-2572: but not forever. Skips on five distinct days run it, keeping the inbox foods it
+  // could read (lib/inboxFoodRefs.ts). The inbox is read only when a flush is due, so no skip
+  // is counted while none is waiting.
   try {
-    await flushLegacyCatalogCachesIfNeeded(database);
+    await runCatalogCacheFlush(database);
   } catch (e) {
     console.warn('[db] catalog cache flush failed:', e);
   }
@@ -1125,16 +1181,26 @@ export async function getSyncStatus(): Promise<{
   oldestPendingAt: string | null;
   quarantinedCount: number;
 }> {
-  const db = getDb();
-  const pending = await db.getFirstAsync<{ count: number; oldest: string | null }>(
-    pendingStatusSql(),
+  const row = await getDb().getFirstAsync<{ count: number; oldest: string | null; quarantined: number }>(
+    syncStatusSql(),
   );
-  const quarantined = await db.getFirstAsync<{ count: number }>(quarantineCountSql());
   return {
-    pendingCount: pending?.count ?? 0,
-    oldestPendingAt: pending?.oldest ?? null,
-    quarantinedCount: quarantined?.count ?? 0,
+    pendingCount: row?.count ?? 0,
+    oldestPendingAt: row?.oldest ?? null,
+    quarantinedCount: row?.quarantined ?? 0,
   };
+}
+
+/** CUL-2489: the banner's pending and refused counts from ONE statement, so one SQLite snapshot.
+ *  Two reads let a drain that re-arms a refused child between them (refused → pending) make both
+ *  answer zero while the child is still on this phone (the CUL-2471 hazard `countRecordGaps`
+ *  closed for the report). Same two queries as before, joined as derived tables; the banner keeps
+ *  the oldest pending time it keys on, which `countRecordGaps` does not carry. */
+export function syncStatusSql(): string {
+  return (
+    'SELECT p.count AS count, p.oldest AS oldest, q.count AS quarantined FROM\n' +
+    `(${pendingStatusSql()}) AS p,\n(${quarantineCountSql()}) AS q`
+  );
 }
 
 /** Q14 (CUL-772) / CUL-2037: rows a Signal rebuild must treat as missing from the server, from

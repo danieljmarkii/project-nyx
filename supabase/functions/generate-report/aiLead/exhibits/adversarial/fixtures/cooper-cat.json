@@ -14,7 +14,7 @@
   {
    "id": "line-1",
    "kind": "lead",
-   "text": "Meals (logged as meals, not treats): The last 4 rated meals in a row were not fully eaten. 44 logged; 44 rated; 4 not fully eaten, on 2 days."
+   "text": "Meals (logged as meals, not treats): The last 4 rated meals in a row were not fully eaten, the most recent on Oct 16. 44 logged; 44 rated; 4 not fully eaten, on 2 days, first Oct 15, last Oct 16 (the day of this report)."
   },
   {
    "id": "sign-vomit",
@@ -25,6 +25,31 @@
    "id": "confounder",
    "kind": "confounder",
    "text": "No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner."
+  },
+  {
+   "id": "trial-reading-1",
+   "kind": "trial_reading",
+   "text": "The reduced-intake flag fires on the trial diet (in the flags above), so this record cannot show the diet was eaten as fed — the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively."
+  },
+  {
+   "id": "trial-reading-2",
+   "kind": "trial_reading",
+   "text": "Weight is down about 2 % of body weight across the trial’s start (Sep 26, 2026 → Oct 10, 2026; above)."
+  },
+  {
+   "id": "trial-reading-3",
+   "kind": "trial_reading",
+   "text": "The trial diet was not fed exclusively: 4 of 42 feedings during the trial did not match it on Sep 30, Oct 4, Oct 8 and Oct 13, 2026 (the sheet headed “Diet history and food exposure”; a floor, not a total), so this record shows an elimination that was broken, not a clean one."
+  },
+  {
+   "id": "trial-reading-4",
+   "kind": "trial_reading",
+   "text": "Of the proteins those feedings carried: Beef was in the 12 h before 4 of 4 vomiting episodes (an early signal, not confirmed)."
+  },
+  {
+   "id": "trial-reading-5",
+   "kind": "trial_reading",
+   "text": "The trial diet’s ingredient panel ( Cooper's Venison LID ) was not read, so a protein in it beyond the one recorded would appear nowhere in this record, and the elimination cannot be confirmed clean from it."
   }
  ],
  "trial_line": {

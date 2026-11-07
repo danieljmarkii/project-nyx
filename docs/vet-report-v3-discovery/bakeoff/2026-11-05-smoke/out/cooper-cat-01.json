@@ -1,0 +1,161 @@
+{
+ "fixture": "cooper-cat",
+ "n": 1,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "33198e370b5a829e1246e65e0a8c769274635187906b13202299121f386f75f6",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Intake: below this pet's baseline for 1 consecutive day, baseline read over 24 recent rated meals; most recent fully-eaten meal Oct 14, about 50 h without a full meal; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "Diet trial, owner-entered: Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Cooper, a cat, has had reduced intake for 1 day with about 50 h since a full meal (hepatic-lipidosis risk window), and is on day 19 of a 42-day owner-entered venison diet trial.",
+    "levels": {
+     "H1": "minor",
+     "H2": "none",
+     "H3": "minor",
+     "H4": "none",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "minor"
+    },
+    "quotes": {
+     "H1": "Diet trial, owner-entered: Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+     "H3": "below this pet's baseline for 1 consecutive day",
+     "H5": "Diet trial, owner-entered: Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+     "H7": "below this pet's baseline for 1 consecutive day"
+    },
+    "omissions": [
+     "Vomiting on 4 of 22 logged days, last Oct 13, is not mentioned. It is a concurrent GI sign in a cat with reduced intake and matters to the clinical picture.",
+     "The last 4 rated meals in a row were not fully eaten (on 2 days), a worsening pattern, and the summary leaves it out; the band's 'recorded as a health signal, not picky' framing is also omitted."
+    ]
+   },
+   "attempts": 2,
+   "at": "2026-11-05T16:29:41.951Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Intake: below this pet's baseline for 1 consecutive day, baseline read over 24 recent rated meals; the most recent fully-eaten meal was Oct 14, about 50 h without a full meal; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+      "cites": [
+       "band-1-intake_decline"
+      ]
+     },
+     {
+      "text": "Diet trial, owner-entered: Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 13697
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Intake: below this pet's baseline for 1 consecutive day, baseline read over 24 recent rated meals; most recent fully-eaten meal Oct 14, about 50 h without a full meal; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+      "cites": [
+       "band-1-intake_decline"
+      ]
+     },
+     {
+      "text": "Diet trial, owner-entered: Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 7823
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Cooper, a cat, has had reduced intake for 1 day with about 50 h since a full meal (hepatic-lipidosis risk window), and is on day 19 of a 42-day owner-entered venison diet trial.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "Diet trial, owner-entered: Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+      "why": "The trial is stated with no adherence or off-list exposure information, and the fact table has none. A reader could assume the trial is on track, but nothing says it was followed. Mild, because the sentence only states the trial status."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "No sentence implies that the diet or anything else changed a sign or that a sign improved or worsened. The intake sentence and the trial sentence are separate and make no causal link."
+     },
+     "H3": {
+      "level": "minor",
+      "quote": "below this pet's baseline for 1 consecutive day",
+      "why": "The summary leaves out that the last 4 rated meals in a row were not fully eaten (the decline pattern) and uses only 'below baseline for 1 consecutive day', which sounds mild. The 50 h figure and the risk window partly offset this, so a careful reader would still see the concern."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary does not present any absence or gap as normal or clear."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "Diet trial, owner-entered: Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+      "why": "The trial line is kept with its 'owner-entered' qualifier. The intake sentence keeps the baseline window. Little scope is lost, but no logged-day denominator or record window is given for the intake figures."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every claim in the summary is supported by the band or trial line."
+     },
+     "H7": {
+      "level": "minor",
+      "quote": "below this pet's baseline for 1 consecutive day",
+      "why": "The band item is included first with the 50 h and risk-window numbers. It drops the declining trend of the recent meals (ate some → picked at it) and the 'not picky, health signal' framing. The '1 consecutive day' wording alone could make the decline read as brief, but the 50 h figure counters that."
+     }
+    },
+    "omissions": [
+     "Vomiting on 4 of 22 logged days, last Oct 13, is not mentioned. It is a concurrent GI sign in a cat with reduced intake and matters to the clinical picture.",
+     "The last 4 rated meals in a row were not fully eaten (on 2 days), a worsening pattern, and the summary leaves it out; the band's 'recorded as a health signal, not picky' framing is also omitted."
+    ]
+   },
+   "ms": 7208
+  }
+ ],
+ "wall_ms": 29931
+}

@@ -270,7 +270,9 @@ export const BACK_STYLE_PRINT = `${BACK_SHARED}
 .back table:not(.lg) thead th{font-size:7pt;}
 .back .lg th{font-size:7.5pt;}
 .back .lg td{width:22pt;height:16pt;font-size:8pt;}
-.back .barmix{height:16pt;}
+/* A gap under the bar keeps its segment counts out of the key's first line in a PDF extractor's
+   layout pass (pdfminer read "food ×2 · 2 1 Bile ×1" on Letter once Geist set the line; VR2-11). */
+.back .barmix{height:16pt;margin-bottom:5pt;}
 .back .barmix .seg{font-size:8pt;}
 .back .mixkey .sw{width:7pt;height:7pt;}
 .back .phimg{max-height:112pt;}

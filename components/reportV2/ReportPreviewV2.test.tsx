@@ -27,14 +27,25 @@ import {
   lockedPreviewHtml,
   type ReportPreviewV2Props,
 } from './ReportPreviewV2';
-import { EXAM_CSP, EXAM_VIEWPORT } from '../../lib/examRoom';
+import { EXAM_CSP, EXAM_VIEWPORT, FRAME_LOCK_HEAD, FRAME_LOCK_SCRIPT, PREFETCH_OFF_META, frameLockHeadOf } from '../../lib/examRoom';
 
-const CSP_META = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
-/** The document a frame shows, with the CSP checked and taken back out: the rest is the server's. */
+// CUL-2469: every frame opens with the one lock (CSP, prefetch off, the lock script); CUL-2531:
+// the CSP names that document's own scripts by hash.
+const CSP_OPEN = '<meta http-equiv="Content-Security-Policy" content="';
+const LOCK_TAIL = `${PREFETCH_OFF_META}<script>${FRAME_LOCK_SCRIPT}</script>`;
+/** The lock a frame's document opens with: exactly one, and the one built for that document. */
+function lockOf(html: string): string {
+  const at = html.indexOf(CSP_OPEN);
+  expect(at).toBeGreaterThanOrEqual(0);
+  expect(html.split(LOCK_TAIL)).toHaveLength(2);
+  const head = html.slice(at, html.indexOf(LOCK_TAIL) + LOCK_TAIL.length);
+  expect(head).toBe(frameLockHeadOf(html.replace(head, '')));
+  return head;
+}
+/** The document a frame shows, with the lock checked and taken back out: the rest is the server's. */
 function unboxed(source: unknown): string {
   const html = (source as { html: string }).html;
-  expect(html.split(CSP_META)).toHaveLength(2);
-  return html.replace(CSP_META, '');
+  return html.replace(lockOf(html), '');
 }
 import { REPORT_FRONT_BAND_SLOT_TEST_ID, REPORT_FRONT_SILHOUETTE_TEST_ID } from '../surfaces/waits/ReportFrontSilhouette';
 
@@ -232,7 +243,9 @@ it('CUL-2428: both frames load or send nothing (the room\'s CSP, first in the he
     const frame = s.getByTestId(id, { includeHiddenElements: true });
     const html = (frame.props.source as { html: string }).html;
     // First in the head, so it governs everything the document goes on to load.
-    expect(html).toMatch(new RegExp(`<head>${CSP_META.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    expect(html).toContain(`<head>${lockOf(html)}`);
+    // Only the document's own scripts run (CUL-2531).
+    expect(/script-src ([^;]*)/.exec(lockOf(html))?.[1]).not.toMatch(/unsafe/);
     expect(EXAM_CSP).toContain("default-src 'none'");
     expect(EXAM_CSP).toContain("connect-src 'none'");
     // Android's onCreateWindow path is taken (a handler is passed) and opens nothing.
@@ -247,18 +260,28 @@ it('CUL-2428: both frames load or send nothing (the room\'s CSP, first in the he
   }
 });
 
+// CUL-2553: both preview frames and the saved copy (app/reports/[id].tsx) box through here.
+it('boxedPreviewHtml renames a meta refresh inert, with a head or without one', () => {
+  for (const doc of ['<html><head></head><body>R</body></html>', '<!DOCTYPE html><body>R</body>', '<body>R</body>']) {
+    const out = boxedPreviewHtml(doc.replace('R', '<meta http-equiv=refresh content="0;url=about:blank">'));
+    expect(out).toContain('<x-refused-meta http-equiv=refresh');
+    expect(out).not.toMatch(/<meta http-equiv=refresh/i);
+    expect(out).toContain(lockOf(out));
+  }
+});
+
 it('CUL-2428: a document with no <head> is still boxed (the preview cannot refuse it the way the room does)', () => {
-  expect(boxedPreviewHtml('<html><body>x</body></html>')).toBe(`${CSP_META}<html><body>x</body></html>`);
+  expect(boxedPreviewHtml('<html><body>x</body></html>')).toBe(`${FRAME_LOCK_HEAD}<html><body>x</body></html>`);
   // After a leading doctype, so the page keeps its standards mode.
   expect(boxedPreviewHtml('<!DOCTYPE html><html><body>x</body></html>')).toBe(
-    `<!DOCTYPE html>${CSP_META}<html><body>x</body></html>`,
+    `<!DOCTYPE html>${FRAME_LOCK_HEAD}<html><body>x</body></html>`,
   );
   // A <header> is not a head: the policy still goes at the top, never into the body.
   expect(boxedPreviewHtml('<html><body><header>x</header></body></html>')).toBe(
-    `${CSP_META}<html><body><header>x</header></body></html>`,
+    `${FRAME_LOCK_HEAD}<html><body><header>x</header></body></html>`,
   );
   // With a head, exactly the room's placement.
   expect(boxedPreviewHtml('<html><head><title>t</title></head></html>')).toBe(
-    `<html><head>${CSP_META}<title>t</title></head></html>`,
+    `<html><head>${FRAME_LOCK_HEAD}<title>t</title></head></html>`,
   );
 });

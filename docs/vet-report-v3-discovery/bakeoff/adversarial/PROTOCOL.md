@@ -23,7 +23,7 @@ Stop (3) is also checked on every PR, without a model: `supabase/functions/gener
 
 | Fixture | What it is |
 |---|---|
-| `nyx-v2` | the live Nyx record: foreign material leads, 6 band items |
+| `nyx-v2` | the live Nyx record: foreign material leads, 6 band items ⚠ §V: the burden flag leads since set v2 |
 | `r11` | the R-11 itching dog: the exempt flag leads as band item 1 |
 | `r11-jump` | the same dog with the chronicity band item |
 | `cooper` | Cooper, a dog with reduced intake (band item 1) on a diet trial |
@@ -63,3 +63,26 @@ The bake-off measures these: stop (2) applies to them like any other item.
 1. Run the shipping configuration's writer on each fixture as `../spec.md` describes, and score every draft that would print, blind, under `../rubric.md`.
 2. Feed every set item and control through the shipped checker exactly as production calls it (`aiLead/leadPipeline.ts`), with the item's fixture as the fact table.
 3. Record each verdict beside the item's `expect`, and apply the stop rule before anything else is read.
+
+## §V. Set version 2 (2026-11-05, Vet report v2 PR-35: CUL-2532, CUL-2548, CUL-2550)
+
+Additive, so the rule above keeps its published wording. The re-run's rule is `../rerun/PREREGISTRATION.md`.
+
+- **The fact table follows sheet 1.** Band item 1 is the band's first printed row (CUL-2381 ruling (a)), so on `nyx-v2` it is the burden flag (`band-3-symptom_burden-vomit`), not foreign material.
+  - Every `nyx-v2` item that opened on `band-1-present_foreign` now opens on the burden flag.
+  - The 16 whose hazard sat in sentence 1 carry the same hazard on the burden flag (`p1-b7-a`, `p1-b7-b`, `p3-b4-a`, `p3-b5-a` to `-e`, `neg-a`, `neg-e`, `rv-script-a`, `-b`, `-d`, `rv-tense-a` to `-c`).
+- **A trial now prints with what the record says about it.** Beside a trial line, the confounder and the trial reading's bottom line are required facts. So every item that cites a trial on `nyx-v2`, `r11`, `r11-jump`, `cooper` or `cooper-cat` also cites them, and each item is still refused by its own rule.
+- **The checker's decision has a code half** (`checkerDecision`, CUL-2548): a draft whose sentence 1 is not band item 1 is H7 material, whatever the model says. Stop (2) is judged on that decision.
+- **Seven new items** come from the adversarial pass on PR-35. Each was a lead that printed through vr2-6 before its fix: a double negative around the trial's bottom line (`pr35-dneg-a` to `-c`, closed by `bottom-line`), an unused cite stripping "a floor, not a total" (`pr35-floor-a`, `-b`, closed by `floor`), off-list dates moved onto the trial start (`pr35-date-a`), and a zero week set across the whole trial through the side-by-side waiver (`pr35-date-b`, both closed by `date-anchor`).
+- **Seven more come from the second pass** (`pr35-wrap-a` to `-e`, closed by `bottom-line`: a negating wrapper behind a comma or bracket, the bottom line reversed through its own appositive, the confounder's scope double-negated; `pr35-floor-c`, `-d`, closed by `floor`: the off-list dates listed without their count).
+- **What the verifier at `vr2-6` does with the set (99 items):** 96 items are refused, the same 3 residual items pass, all 11 controls print, and every `closed_by` item is refused by its own rules alone (`aiLead/adversarialSet.test.ts`).
+
+
+## §V. Set version 3 (2026-11-06, CUL-2619)
+
+Additive, like §V's version 2 note above; the rule keeps its published wording.
+
+- **On `r11` the flag is the skin trial's own sign, and R-11's heading prints those words.** A lead that restates the flag without "the trial's own sign" is a shortened flag: the 2026-11-05 re-run's printed r11 runs 1 and 3 drew H7 minor for it. The verifier at `vr2-8` refuses it twice over: the `own-sign` code check (`verifyLead` and `checkerDecision` both read it) and the band fact's required clause.
+- **Every r11 sentence that cites `band-r11` or says "flag" now carries the four words**, so each item is still refused by its own rule and each control still prints. As written in v2, `ctl-r11-a` and `ctl-r11-b` were the shortened flag. To stay inside 80 words, `ctl-r11-b` drops ", a sustained pattern" and `neg-b`'s trial sentence drops "from Aug 17, 2026"; neither change touches what the item tests.
+- **Seven new items:** the re-run's two printed r11 leads, verbatim (`own-rr-1`, `own-rr-3`, closed by `own-sign` and `required-clause`); the flag restated in sentence 2 from a record line (`own-s2-a`, closed by `own-sign` alone); and four from the adversarial pass on this change's first commit, where the words printed but not on the flag: asked (`own-q-a`), negated through the band's own "cannot show how" (`own-neg-a`), attached to the window (`own-attach-a`), and a false order claim the exposure excuse hid (`own-order-a`), each closed by `own-sign` and `order`. So the words must stand once, on the flag, and only that copy is excused from the exposure test. After the second pass, a sentence carrying them opens on the flag in one of the heading's two shapes ("Itching is a live flag, the trial's own sign: …" or "Itching is a live flag: itching over at least 49 days, the trial's own sign …") and never asks (any script's question mark), says "cannot", "predates", "it" or "first"; `rv-tense-d` is now refused by `own-sign` and `order` beside `tense`.
+- **What the verifier at `vr2-8` does with the set (106 items):** 103 items are refused, the same 3 residual items pass, all 11 controls print, and every `closed_by` item is refused by its own rules alone (`aiLead/adversarialSet.test.ts`).

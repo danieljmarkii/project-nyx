@@ -7,7 +7,7 @@ import { cooperInput } from '../cooperDemo.testutil.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
 import { itchingSkinTrial } from '../v2Fixtures.testutil.ts'
 import { buildLeadFacts, canonicalJson, documentForLead } from './facts.ts'
-import { checkerDecision, parseChecker } from './leadPipeline.ts'
+import { modelDecision, parseChecker } from './leadPipeline.ts'
 import { HAZARDS } from './prompts.ts'
 import { verifyLead, type LeadSentence } from './verify.ts'
 
@@ -28,7 +28,8 @@ const r11 = assembleReport(itchingSkinTrial({ jump: false }))
 const nyx = nyxLiveSnapshot()
 const cooper = assembleReport({ ...cooperInput(), audience: { kind: 'owner', includeLookNotes: false } })
 const NYX_TRIAL: LeadSentence = { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.', cites: ['trial'] }
-const NYX_BAND: LeadSentence = { text: 'Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.', cites: ['band-1-present_foreign'] }
+// Band item 1 is the band's first PRINTED row: on Nyx, the burden flag (CUL-2381 ruling (a), CUL-2532).
+const NYX_BAND: LeadSentence = { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] }
 
 Deno.test('break 1, R-11: the exempt flag is band item 1, safety-live, and must lead', () => {
   const f = factsOf(r11)
@@ -43,16 +44,18 @@ Deno.test('break 1, R-11: the exempt flag is band item 1, safety-live, and must 
   assert.ok(e.includes('band-first') && e.includes('order'), String(e))
   // And the honest shape passes: the flag first with its floor, the trial on its own.
   const honest: LeadSentence[] = [
-    { text: 'Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.', cites: ['band-r11'] },
+    { text: 'Itching is the flag, the trial\'s own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.', cites: ['band-r11'] },
     { text: 'The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.', cites: ['trial'] },
+    // CUL-2532: the trial's reading and its confounder ride with it.
+    { text: 'The elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.', cites: ['trial-reading-2', 'confounder'] },
   ]
   assert.deepEqual(verifyLead(factsOf(r11).table, { sentences: honest }).errors, [])
 })
 
 Deno.test('break 2: an omission the checker lists is never thrown away', () => {
   const base = { takeaway: 'x', hazards: Object.fromEntries(HAZARDS.map((h) => [h, { level: 'none', quote: '', why: '' }])) }
-  assert.equal(checkerDecision(parseChecker({ ...base, omissions: [] })!), 'pass')
-  assert.equal(checkerDecision(parseChecker({ ...base, omissions: ['the burden flag'] })!), 'repair')
+  assert.equal(modelDecision(parseChecker({ ...base, omissions: [] })!), 'pass')
+  assert.equal(modelDecision(parseChecker({ ...base, omissions: ['the burden flag'] })!), 'repair')
   assert.equal(parseChecker({ ...base }), null, 'no omissions list is a checker we cannot read')
 })
 
@@ -77,7 +80,7 @@ Deno.test('break 5: an exposure and an observation share no sentence, by any wor
 Deno.test('breaks 6 and 7: a sign that stopped, ended or was single is reassurance by another word', () => {
   const cough = { text: 'Coughing was logged on 5 of 45 logged days and stopped after Oct 21.', cites: ['sign-cough'] }
   assert.ok(errorsOf(nyx, [NYX_BAND, cough, NYX_TRIAL]).includes('absence'))
-  const single = { ...NYX_BAND, text: 'Foreign material was a single possible find in 1 vomiting incident on Sep 22, an AI read, unconfirmed, and not seen again.' }
+  const single = { ...NYX_BAND, text: 'Burden is a single run of 6 vomiting entries in the last 7 days, on 3 days in a row, and not seen again.' }
   assert.ok(errorsOf(nyx, [single, NYX_TRIAL]).includes('absence'))
   const ended = { text: 'Vomiting was logged on 4 of 22 logged days and ended Oct 13.', cites: ['sign-vomit'] }
   assert.ok(errorsOf(cooper, [{ text: 'Intake is below baseline for 2 consecutive days, recorded as a health signal.', cites: ['band-1-intake_decline'] }, ended]).includes('absence'))

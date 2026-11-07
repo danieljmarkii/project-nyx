@@ -78,6 +78,8 @@ Deno.test('parity — every block says the PDF’s words; the phone adds only it
         p = p.replace(/<p class="verdict"[^>]*>[^<]*<\/p>/, '').replace(/<div class="chart"[\s\S]*?<\/div>(?=<p class="twin">)/, '')
         q = q.replace(/<svg class="chart"[\s\S]*?<\/svg>/, '')
       }
+      // The QR and its caption are print only (spec §5.10); the colophon's words are the same.
+      if (b.kind === 'colophon') q = q.replace(/<div class="qrblock"[\s\S]*?<\/span><\/div>/, '')
       assert.equal(textOf(p), textOf(q), `${name}: block ${b.id}`)
     }
     // The back sheets share one writer (renderBackV2.ts), so their words are the PDF's exactly.
@@ -188,7 +190,7 @@ Deno.test('keep — the lead chart, the lines under it and the confounder are on
     const conf = d.blocks.findIndex((b) => b.kind === 'confounder')
     const want = d.blocks.slice(lead, (conf > lead ? conf : lead) + 1).map((b) => b.id)
     assert.deepEqual(ids, want, name)
-    assert.ok(html.indexOf('<div class="keep-push" aria-hidden="true"></div><div class="keep"') >= 0, `${name}: the spacer sits before the unit`)
+    assert.ok(html.search(/<div class="keep-push" aria-hidden="true">(?:<p class="pushnote"[^>]*>[^<]*<\/p>)?<\/div><div class="keep"/) >= 0, `${name}: the spacer sits before the unit`)
     if (conf >= 0) withConf++
   }
   assert.ok(withConf >= 2, 'the confounder is exercised')

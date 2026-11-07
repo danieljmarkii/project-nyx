@@ -741,6 +741,50 @@
       <li><b>CUL-1865</b> four numbers that mislead: chicken counted in feedings not days, an onset that is only the first record, quiet days nobody logged, coverage half made of the symptom.</li>
     </ul>
   </section>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <section id="s09">
+    <div class="sec-head"><span class="sec-num">§09</span><h2>Leaving a photo out: the preview's picker and the delete note <span class="curtag">current</span></h2></div>
+    <p style="color:var(--ink-2);font-size:14.5px;max-width:720px">PR-23b (CUL-2454, ruling R-10). The owner can leave any photo out before sending, a flagged one included. The flag still prints, with "Photo left out by the owner (Jul 2)" beside it, and sheet 2 counts every photo left out (PR-23a, PR-33). The picker changes nothing until Done, which rebuilds the report once. Deleting a photo from an event names the saved reports that still hold it; those copies stay as sent.</p>
+    <div class="frames">
+      <div class="frame-slot narrow">
+        <div style="width:390px;max-width:100%;border-radius:28px;overflow:hidden;background:#FFFFFF;color:#121318;font-family:var(--sans);box-shadow:0 14px 40px rgba(19,17,46,0.16),0 0 0 1px rgba(27,26,46,0.10)">
+          <div style="height:180px;background:#ECEBF2;display:flex;align-items:center;justify-content:center;color:#6E7282;font-size:13px">the v2 preview, dimmed behind the sheet</div>
+          <div style="padding:10px 24px 24px;border-top-left-radius:24px;border-top-right-radius:24px;background:#FFFFFF">
+            <div style="width:32px;height:4px;border-radius:99px;background:#B9BDC7;margin:0 auto 12px"></div>
+            <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#45495A">Photos in this report</div>
+            <div style="font-size:14px;line-height:20px;color:#45495A;margin:6px 0 8px">A photo you leave out isn’t sent. The report still says it was taken, and any flag on it still prints.</div>
+            <div style="display:flex;align-items:center;gap:16px;padding:8px 0;border-bottom:1px solid #D5D8DF">
+              <div style="width:64px;height:64px;border-radius:8px;background:#C9B79C;opacity:0.4"></div>
+              <div style="flex:1"><div style="font-size:14px;font-weight:500">Vomit · Jul 2</div><div style="font-size:12px;color:#B4123B">Flagged: blood seen</div></div>
+              <div style="font-size:14px;font-weight:500">Left out</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;padding:8px 0;border-bottom:1px solid #D5D8DF">
+              <div style="width:64px;height:64px;border-radius:8px;background:#B8A27E"></div>
+              <div style="flex:1"><div style="font-size:14px;font-weight:500">Vomit · Jun 28</div></div>
+              <div style="font-size:14px;color:#45495A">Sending</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px;padding:8px 0">
+              <div style="width:64px;height:64px;border-radius:8px;background:#9E8A6A"></div>
+              <div style="flex:1"><div style="font-size:14px;font-weight:500">Loose stool · Jun 20</div></div>
+              <div style="font-size:14px;color:#45495A">Sending</div>
+            </div>
+            <div style="margin-top:10px;height:52px;border-radius:14px;background:#1B1A2E;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600">Done · sending 2 of 3</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>The picker · current</b>Opened from the bar's "Photos · 3 · Choose" row, which reads "Photos · 2 of 3 · Choose" once one is left out. A flagged photo says so and can still be left out: the flag prints either way. Thumbnails are the phone's own copy; the server sends no image and no link. Closing without Done keeps the report as built.</div>
+      </div>
+      <div class="frame-slot narrow">
+        <div style="width:390px;max-width:100%;border-radius:28px;overflow:hidden;background:#ECEBF2;font-family:var(--sans);box-shadow:0 14px 40px rgba(19,17,46,0.16),0 0 0 1px rgba(27,26,46,0.10);padding:120px 40px">
+          <div style="background:#F7F7FA;border-radius:14px;color:#121318;text-align:center;overflow:hidden">
+            <div style="padding:18px 16px 14px"><div style="font-size:17px;font-weight:600">Remove photo?</div><div style="font-size:13px;line-height:18px;margin-top:4px">The photo will be detached from this event. Also in 3 saved reports. Those copies keep it.</div></div>
+            <div style="display:flex;border-top:1px solid #D5D8DF;font-size:17px"><div style="flex:1;padding:11px;color:#0B7B6C;border-right:1px solid #D5D8DF">Cancel</div><div style="flex:1;padding:11px;color:#B4123B;font-weight:600">Remove</div></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>The delete note · current</b>Counts this pet's kept reports whose photos include this one; a report the photo was left out of is not counted. Informational: the delete is the same, and with no count (offline, a failed read) the confirm reads as it always has.</div>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script>

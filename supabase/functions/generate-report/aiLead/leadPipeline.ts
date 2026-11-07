@@ -7,14 +7,17 @@
 //   1. Read the draft row: the owner's own draft of this pet (id, pet, maker and status all in
 //      the filter). No draft, no run: there is nowhere to keep a lead.
 //   2. "Leave out the AI summary": record the choice on the copy and stop. No gate, no model.
-//   3. Not eligible (a thin record, nothing to summarise): record why and stop.
+//   3. Not eligible (a thin record, nothing to summarise): record why and stop. And a record with 2
+//      or more live band items (CUL-2563 ruling (b), verify.ts `multiFlagIssues`): the gate is read
+//      without spending, a closed one records its own outcome, an open one records not_eligible /
+//      multi_flag. Before the cache, so no stored lead is served on such a record.
 //   4. The cache: the same fact table (by hash) already printed on THIS draft. The gate still
 //      runs consent, both flags and the pet (it spends no count), so a withdrawn yes or a flag
 //      turned off clears the stored lead instead of serving it.
 //   5. The gate, spending one count.
 //   6. The writer; the verifier on the printed sentences; one repair if it fails.
-//   7. The checker (Anthropic, another model); a material finding, or a minor one on H3 or H7,
-//      rejects; another minor finding gets the repair if it is unspent, then both checks again.
+//   7. The checker (Anthropic, another model, plus a code half that reads H7 by order, CUL-2548);
+//      a material finding, or a minor one on H3 or H7, rejects; another minor finding gets the repair if it is unspent, then both checks again.
 //   8. Keep the lead, its verdict and the served model on the draft row, and nowhere else.
 //
 // Every failure records its reason on the row and prints the lines alone. A 60 s wall clock
@@ -26,11 +29,12 @@
 // row; no Map, no KV and no Storage object holds a lead (aiLead/storage.guard.test.ts).
 
 import { consentDecision, flagDecision, type SummaryGate } from '../../_shared/reportSummaryGate.ts'
+import { sha256Hex } from '../../_shared/engineStamps.ts'
 import { factTableHash, type LeadFacts, type LeadFactPayload } from './facts.ts'
 import { modelFor, requestBody, ticketFor, type GateTicket, type ModelResult, type Role } from './model.ts'
 import { HAZARDS, PROMPT_VERSION, type Hazard, type HazardLevel } from './prompts.ts'
-import { LEAD_VERIFIER_VERSION, printedLeadText, printedSentences, verifyLead, type LeadSentence, type LeadSummary } from './verify.ts'
-import type { VerifyIssue } from './verifyCore.ts'
+import { bandOrderIssues, LEAD_VERIFIER_VERSION, multiFlagIssues, ownSignIssues, printedLeadText, printedSentences, verifyLead, type LeadSentence, type LeadSummary } from './verify.ts'
+import type { FactTable, VerifyIssue } from './verifyCore.ts'
 
 export const LEAD_WALL_CLOCK_MS = 60_000
 const ROLE_TIMEOUT_MS: Record<Role, number> = { writer: 40_000, repair: 40_000, checker: 25_000 }
@@ -66,12 +70,17 @@ export interface StoredVerdict {
   checker: CheckerVerdict | null
   attempts: number
   at: string
+  /** SHA-256 hex of `ai_lead_text` as written beside this verdict, null when no text is
+   *  (CUL-2574). The keep pins the text by this field, so a request URL never carries the text. */
+  text_sha: string | null
 }
 
 export interface DraftRead {
   found: boolean
   text: string | null
   verdict: unknown
+  /** `ai_lead_model` as read. Optional: only the keep's settle pins it (CUL-2523). */
+  model?: string | null
 }
 
 export interface LeadIO {
@@ -142,14 +151,32 @@ export function parseChecker(json: unknown): CheckerVerdict | null {
   return { takeaway: o.takeaway.slice(0, QUOTE_MAX), levels, quotes, omissions }
 }
 
-/** Bake-off spec §5's rule, plus omissions. 'reject': any material, or a minor on the safety
- *  direction (H3, H7). 'repair': another minor, or any omission. 'pass': none and no omission. */
-export function checkerDecision(v: CheckerVerdict): 'pass' | 'repair' | 'reject' {
+/** The checker model's verdict alone: bake-off spec §5's rule, plus omissions. 'reject': any
+ *  material, or a minor on the safety direction (H3, H7). 'repair': another minor, or any omission.
+ *  'pass': none and no omission. The recorded October verdicts replay through this. */
+export function modelDecision(v: CheckerVerdict): 'pass' | 'repair' | 'reject' {
   const ls = HAZARDS.map((h) => [h, v.levels[h]] as const)
   if (ls.some(([, l]) => l === 'material')) return 'reject'
   if (ls.some(([h, l]) => l === 'minor' && (h === 'H3' || h === 'H7'))) return 'reject'
   if (ls.some(([, l]) => l === 'minor') || v.omissions.length > 0) return 'repair'
   return 'pass'
+}
+
+/** The checker's decision (step 7): the model's verdict, and a code half that reads H7 by order.
+ *  The model passed a lead that buried a live flag under a count twice (October's S-arm Nyx drafts;
+ *  the smoke bake-off's cr-a, CUL-2548), so a draft whose sentence 1 is not band item 1 is H7
+ *  material here whatever the model said. The draft and the table are required: no caller can ask
+ *  for the model's half alone and call it the checker. The verifier's band-first rule reads the same
+ *  function and stays on; neither net depends on the other. */
+export function checkerDecision(v: CheckerVerdict, ctx: { table: FactTable; draft: LeadSummary }): 'pass' | 'repair' | 'reject' {
+  // CUL-2563 ruling (b): a multi-flag record never prints a lead, whatever the checker scored.
+  if (multiFlagIssues(ctx.table).length > 0) return 'reject'
+  const printed = { sentences: printedSentences(ctx.draft).map((text, i) => ({ text, cites: ctx.draft.sentences[i].cites })) }
+  if (bandOrderIssues(ctx.table, printed).length > 0) return 'reject'
+  // CUL-2619: R-11's flag restated without "the trial's own sign" is a shortened flag (H7), whatever
+  // the model scored (the re-run's checker passed it; one judge scored it minor twice).
+  if (ownSignIssues(ctx.table, printed).length > 0) return 'reject'
+  return modelDecision(v)
 }
 
 /** Withdrawal at send (CUL-2331 promise 4, recommendation (a)): a draft's stored lead prints on a
@@ -171,9 +198,15 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
   const at = () => new Date(io.now()).toISOString()
   const base = (outcome: LeadOutcome, reason: string | null, hash: string | null): StoredVerdict => ({
     v: 1, outcome, reason, fact_hash: hash, prompt: PROMPT_VERSION, verifier: LEAD_VERIFIER_VERSION,
-    writer_model: null, checker_model: null, sentences: null, verifier_errors: [], checker: null, attempts: 0, at: at(),
+    writer_model: null, checker_model: null, sentences: null, verifier_errors: [], checker: null, attempts: 0, at: at(), text_sha: null,
   })
-  const record = async (v: StoredVerdict, text: string | null = null, model: string | null = null): Promise<LeadResult> => {
+  const record = async (built: StoredVerdict, text: string | null = null, model: string | null = null): Promise<LeadResult> => {
+    // `at` is stamped at the WRITE, not when the verdict was built (up to the wall clock earlier):
+    // the keep pins the verdict's `at` in place of a long text (aiLead/run.ts pinsOf, CUL-2523),
+    // so two runs that built their verdicts in one millisecond must still write different `at`s.
+    // `text_sha` is computed here, from the text this same write stores, so the two can never
+    // disagree (CUL-2574: the keep pins the text by it, whatever the text's length).
+    const v: StoredVerdict = { ...built, at: at(), text_sha: text === null ? null : await sha256Hex(text) }
     const wrote = await io.writeDraft(text, v, model)
     if (!wrote) return { outcome: 'draft_not_found' }
     if (v.outcome === 'printed' && text !== null && v.sentences) return { outcome: 'printed', sentences: v.sentences, text, cached: false }
@@ -182,6 +215,18 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
 
   if (opts.leaveOut) return record(base('left_out', 'owner', null))
   if (!facts.eligible) return record(base('not_eligible', facts.reason, null))
+  // CUL-2563 ruling (b): a record with 2+ live band items never prints a lead. Decided here, before
+  // the cache and before any model call, so no stored lead is served and no count is spent. The gate
+  // is read without spending, so a flag-off or declined owner keeps their own outcome (the preview
+  // says nothing to a flag-off owner).
+  if (multiFlagIssues(facts.table).length > 0) {
+    const g = await io.runGate(false)
+    if (!g.allow) {
+      const out = gateOutcome(g)
+      return record(base(out.outcome, out.reason, null))
+    }
+    return record(base('not_eligible', 'multi_flag', null))
+  }
   const hash = await factTableHash(facts.payload, LEAD_VERIFIER_VERSION)
 
   // 4. The cache, on this draft only.
@@ -255,7 +300,7 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
     const cv = parseChecker(r.json)
     if (!cv) return fail('checker_unparseable')
     verdict.checker = cv
-    const decision = checkerDecision(cv)
+    const decision = checkerDecision(cv, { table: facts.table, draft: summary })
     if (decision === 'reject') return reject('checker')
     if (decision === 'repair') {
       if (repairSpent) return reject('checker')

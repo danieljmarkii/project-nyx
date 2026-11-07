@@ -1,0 +1,52 @@
+{
+ "S-EAAA": {
+  "src": "bakeoff-nyx#A",
+  "arm": "A",
+  "fixture": "bakeoff-nyx"
+ },
+ "S-A679": {
+  "src": "cooper#1",
+  "arm": "AI",
+  "fixture": "cooper"
+ },
+ "S-ADAD": {
+  "src": "r11-jump#A",
+  "arm": "A",
+  "fixture": "r11-jump"
+ },
+ "S-6248": {
+  "src": "cooper#A",
+  "arm": "A",
+  "fixture": "cooper"
+ },
+ "S-F49D": {
+  "src": "cooper-cat#A",
+  "arm": "A",
+  "fixture": "cooper-cat"
+ },
+ "S-BB22": {
+  "src": "r11#A",
+  "arm": "A",
+  "fixture": "r11"
+ },
+ "S-A7A2": {
+  "src": "nyx-v2#A",
+  "arm": "A",
+  "fixture": "nyx-v2"
+ },
+ "S-2DE1": {
+  "src": "cooper#4",
+  "arm": "AI",
+  "fixture": "cooper"
+ },
+ "S-60B8": {
+  "src": "h2#A",
+  "arm": "A",
+  "fixture": "h2"
+ },
+ "S-5C0C": {
+  "src": "r11#5",
+  "arm": "AI",
+  "fixture": "r11"
+ }
+}

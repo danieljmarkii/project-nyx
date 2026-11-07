@@ -449,6 +449,43 @@ export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
   return candidates.filter((c) => c.paths.length > 0)
 }
 
+// CUL-2311 item 4 — how many keys each scope guard DROPPED, per bucket.
+//
+// Every scope guard above fails closed: a key in the wrong shape, or under an id this
+// account does not own, never reaches the purge. That is right for a crafted
+// cross-tenant key and QUIET for an honest one. If a writer ever stores a key the
+// guard does not expect (a third segment, a user-id folder, an upper-case pet id), the
+// row route skips it and the deletion still answers ok. The post-delete prefix sweep
+// and the orphan sweep may still reach the object, but nothing would SAY the two routes
+// disagreed. This count is what says it.
+//
+// Counts against cleanPaths on both sides, so a blank, a null or a duplicate is not a
+// "drop": only a real key the guard refused. Never returns a path or an id (a pet id is
+// the key to a folder of health files; a key is attacker-chosen text). An empty result
+// means every key reached its purge.
+export function scopeDropCounts(input: OwnedStoragePaths): Record<string, number> {
+  const scoped: Array<[string, ReadonlyArray<string | null | undefined>, Array<string | null | undefined>]> = [
+    [STORAGE_BUCKETS.petPhotos, input.petPhotoPaths, scopePetPhotoPaths(input.petPhotoPaths, input.ownedPetIds)],
+    [STORAGE_BUCKETS.vetDocuments, input.vetDocumentPaths, scopeVetDocumentPaths(input.vetDocumentPaths, input.ownedPetIds)],
+    [STORAGE_BUCKETS.vetReports, input.vetReportPaths, scopeVetReportPaths(input.vetReportPaths, input.ownedPetIds)],
+    [STORAGE_BUCKETS.medicationPhotos, input.medicationPhotoPaths, scopeMedicationPaths(input.medicationPhotoPaths, input.ownerUserId)],
+    [STORAGE_BUCKETS.foodPhotos, input.foodPhotoPaths, scopeFoodPaths(input.foodPhotoPaths, input.ownedFoodItemIds)],
+  ]
+  const out: Record<string, number> = {}
+  for (const [bucket, raw, kept] of scoped) {
+    const dropped = cleanPaths(raw).length - cleanPaths(kept).length
+    if (dropped > 0) out[bucket] = dropped
+  }
+  return out
+}
+
+// The one log line for a non-empty scopeDropCounts, or null. Counts and bucket names
+// only. `event` is fixed so a log search finds every occurrence.
+export function scopeDropLine(userId: string, counts: Record<string, number>): string | null {
+  if (Object.keys(counts).length === 0) return null
+  return JSON.stringify({ event: 'delete-account.scope_dropped', user: userId, dropped: counts })
+}
+
 // ── Prefix listing (CUL-1764) ─────────────────────────────────────────────────
 //
 // Rows alone cannot find every label photo. `app/medication-capture.tsx` uploads

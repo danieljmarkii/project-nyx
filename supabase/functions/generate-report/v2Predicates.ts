@@ -29,6 +29,12 @@ export const SKIN_TRIAL_SIGNS: readonly ReportSymptomType[] = ['itch', 'scratch'
 /** A gi trial's own signs, for the lead ladder's step 2 only (never a band decision). */
 const GI_TRIAL_SIGNS: readonly ReportSymptomType[] = ['vomit', 'diarrhea']
 
+/** A gi or skin trial's own signs (the lead ladder's list), empty without one. */
+export function trialOwnSignsOf(snap: ReportSnapshot): readonly ReportSymptomType[] {
+  const indication = snap.trial?.indication ?? null
+  return indication === 'skin' ? SKIN_TRIAL_SIGNS : indication === 'gi' ? GI_TRIAL_SIGNS : []
+}
+
 /** The lead-eligible set (v2 spec §4): the report's symptom types plus the intake measure.
  *  Exposures and Noticed looks never lead. */
 export type LeadSign = ReportSymptomType | 'intake'
@@ -71,6 +77,76 @@ function datedFrom(day: string, reportDate: string): string {
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
+}
+
+/** The local day key of an instant in the record's zone (the day boundary is local midnight). */
+function localKey(iso: string, tz: string | null): string {
+  const ms = Date.parse(iso)
+  if (Number.isNaN(ms)) return iso.slice(0, 10)
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: tz ?? 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms))
+  } catch {
+    return iso.slice(0, 10)
+  }
+}
+
+/**
+ * The meals v1's page 1 counts ("219 meals logged, intake not recorded for 216"): every meal food's
+ * feedings, and the ones carrying a rating. CUL-2536: `snap.v2.loggedMeals` counted another
+ * population (3 on Nyx, beside v1's 219), so a vet read an owner who barely logged meals. Read off
+ * `diet.mealItems`, the population v1 and the back sheets count, never computed anew.
+ */
+export function mealTotalsOf(snap: ReportSnapshot): { logged: number; rated: number } {
+  let logged = 0
+  let rated = 0
+  for (const i of snap.diet.mealItems) {
+    logged += i.count
+    rated += i.intakeBreakdown.reduce((a, b) => a + b.count, 0)
+  }
+  // `snap.v2` also counts a meal whose child row has not synced (adversarial pass 1, finding 5),
+  // which `mealItems` cannot hold. The population with more meals logged, its own rated count beside
+  // it (never one population's total over the other's ratings); on a tie, the one with fewer rated,
+  // so an unrated meal is never hidden (the louder reading).
+  const items = { logged, rated }
+  const v2 = { logged: snap.v2.loggedMeals, rated: snap.v2.ratedMeals }
+  if (items.logged !== v2.logged) return items.logged > v2.logged ? items : v2
+  return items.rated <= v2.rated ? items : v2
+}
+
+/** The days a Noticed concern word was marked in the window, oldest first (the appendix's own days). */
+export function concernWordDaysOf(snap: ReportSnapshot, key: string): string[] {
+  const n = snap.noticed
+  if (!n) return []
+  const from = snap.scope.startDate
+  const to = snap.scope.endDate
+  return n.days.filter((d) => d.day >= from && d.day <= to && d.entries.some((e) => e.words.some((w) => w.key === key))).map((d) => d.day)
+}
+
+/**
+ * The days a meal was not fully eaten, oldest first, read off the intake log's rows; null when the
+ * log cannot account for every one of `mealNotFinishedDays` (a capped log, or a row the count does not
+ * hold), so a date list is never a partial one passed off as whole.
+ */
+export function unfinishedMealDaysOf(snap: ReportSnapshot): string[] | null {
+  const days = [
+    ...new Set(
+      snap.provenance.intakeLog.filter((r) => !r.notCountedFreeFed && r.intakeRating !== 'all').map((r) => localKey(r.occurredAt, snap.timezone)),
+    ),
+  ].sort()
+  return days.length > 0 && days.length === snap.v2.mealNotFinishedDays ? days : null
+}
+
+/**
+ * CUL-2349: when a change happened. Dates only, never a span computed here (C-19): the first and the
+ * last day, and how the last sits against the report date ("the day of this report", "6 days before
+ * this report"). Six days in a row ending today and six scattered days read differently.
+ */
+export function datesClauseOf(days: readonly string[], reportDate: string): string {
+  if (days.length === 0) return ''
+  const first = days[0]
+  const last = days[days.length - 1]
+  const when = beforeReport(Math.max(0, daysBetween(last, reportDate)))
+  return first === last ? `, on ${datedFrom(last, reportDate)} (${when})` : `, first ${datedFrom(first, reportDate)}, last ${datedFrom(last, reportDate)} (${when})`
 }
 
 /** "13 days before this report", or "the day of this report" — never "0 days". */
@@ -145,7 +221,7 @@ export function r11Holds(c: R11Conditions): boolean {
 }
 
 export interface BandMembers {
-  /** The band's items, one per flag, in the snapshot's safety order. Two flags of one kind (a
+  /** The band's items, one per flag, in `bandOrder` (CUL-2381's ruling). Two flags of one kind (a
    *  vomiting and a cough chronicity flag) are two items: one sign per line, the cough↔vomit
    *  caveat riding on the flag that carries `coughVomitAdjacent`. */
   band: SafetyFlag[]
@@ -161,15 +237,35 @@ export interface BandMembers {
   leadFlag: ChronicityFlag | null
 }
 
+/**
+ * PM ruling (a) on CUL-2381 (2026-11-05): the flags measured over the last days, the ones that set
+ * how soon a vet acts, lead the band; every other flag follows in the snapshot's own safety order.
+ * Nyx's "6 vomits in 7 days" and "weight down about 15%" sat third and fourth, under an unconfirmed
+ * AI photo read and a refusal row listing six trial foods, and fell below the phone's first screen.
+ * Order only: the band's members are unchanged, and the lead sign keeps the snapshot's order
+ * (`leadSignOf`), so the ruling moves no chart.
+ */
+export const BAND_LEAD_KINDS: readonly SafetyFlag['kind'][] = ['symptom_burden', 'weight_loss', 'intake_decline']
+
+/** The band's order: `BAND_LEAD_KINDS` first, in that order, then the rest as the snapshot holds
+ *  them. Stable, so two flags of one kind keep their snapshot order. */
+export function bandOrder(flags: readonly SafetyFlag[]): SafetyFlag[] {
+  const rank = (f: SafetyFlag): number => {
+    const i = BAND_LEAD_KINDS.indexOf(f.kind)
+    return i === -1 ? BAND_LEAD_KINDS.length : i
+  }
+  return flags.map((f, i) => ({ f, i })).sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i).map((x) => x.f)
+}
+
 export function bandMembersOf(snap: ReportSnapshot): BandMembers {
   const flags = snap.safetyFlags
   for (const f of flags) {
     if (f.kind !== 'chronicity' || !r11Holds(r11ConditionsOf(snap, f))) continue
     const rest = flags.filter((o) => o !== f)
     if (rest.some((o) => flagSign(o) !== null)) continue
-    return { band: rest, leadFlag: f }
+    return { band: bandOrder(rest), leadFlag: f }
   }
-  return { band: [...flags], leadFlag: null }
+  return { band: bandOrder(flags), leadFlag: null }
 }
 
 // ── The lead (v2 spec §4) ────────────────────────────────────────────────────
@@ -234,7 +330,10 @@ function lead(sign: LeadSign, reason: LeadReason): Lead {
 export function leadSignOf(snap: ReportSnapshot): Lead | null {
   const { band, leadFlag } = bandMembersOf(snap)
   if (leadFlag) return lead(leadFlag.symptomType as ReportSymptomType, 'flag')
-  for (const f of band) {
+  // The snapshot's safety order, never the band's display order (CUL-2381): the ruling reorders
+  // the band only, so a refusing cat with a blood flag keeps the chart the record led with.
+  const members = new Set(band)
+  for (const f of snap.safetyFlags.filter((x) => members.has(x))) {
     const s = flagSign(f)
     if (s !== null) return lead(s, 'flag')
   }
@@ -376,13 +475,15 @@ export function gapLinesOf(snap: ReportSnapshot, printedFactIds: ReadonlySet<str
   if (snap.diet.freeFed.some((b) => b.isShared)) {
     out.push({ id: 'shared_bowl', lane: 'intake', factId: 'diet.freeFed.shared', text: 'Which pet ate from the shared bowl' })
   }
-  const unrated = snap.v2.loggedMeals - snap.v2.ratedMeals
+  // CUL-2351 / CUL-2536: v1's meal count (219 on Nyx), so 216 unrated meals are a gap, never none.
+  const meals = mealTotalsOf(snap)
+  const unrated = meals.logged - meals.rated
   if (unrated > 0) {
     out.push({
       id: 'meals_unrated',
       lane: 'intake',
       factId: 'diet.mealsUnrated',
-      text: `How much was eaten at ${unrated} of ${plural(snap.v2.loggedMeals, 'logged meal', 'logged meals')}`,
+      text: `How much was eaten at ${unrated} of ${plural(meals.logged, 'logged meal', 'logged meals')}`,
     })
   }
   // Coverage: course days with no row of the course. Keyed to the days with nothing logged, never
@@ -454,9 +555,13 @@ export function changesInWindowOf(snap: ReportSnapshot): ChangeLine[] | null {
       .filter((w) => w.dayCount >= CHANGES_NOTICED_MIN_DAYS)
       .sort((a, b) => b.dayCount - a.dayCount || a.key.localeCompare(b.key))
     for (const w of words) {
+      const dates = concernWordDaysOf(snap, w.key)
       out.push({
         id: 'noticed_concern',
-        text: `Marked ${w.label.toLowerCase()} on ${w.dayCount} of ${plural(n.answeredDays, 'day', 'days')} answered`,
+        // CUL-2349 / CUL-2535: the days themselves, so a cluster ending today reads as recent.
+        text: `Marked ${w.label.toLowerCase()} on ${w.dayCount} of ${plural(n.answeredDays, 'day', 'days')} answered${
+          dates.length === w.dayCount ? datesClauseOf(dates, snap.atAGlance.recordEdge.reportDate) : ''
+        }`,
       })
     }
   }
@@ -464,7 +569,8 @@ export function changesInWindowOf(snap: ReportSnapshot): ChangeLine[] | null {
   if (days >= CHANGES_MEALS_NOT_FINISHED_MIN_DAYS) {
     const mc = snap.diet.mealCompletion
     const meals = mc ? ` (${mc.ratedMeals - mc.finishedMeals} of ${plural(mc.ratedMeals, 'rated meal', 'rated meals')})` : ''
-    out.push({ id: 'meals_not_finished', text: `Meals not finished on ${days} days${meals}` })
+    const dates = unfinishedMealDaysOf(snap)
+    out.push({ id: 'meals_not_finished', text: `Meals not finished on ${days} days${meals}${dates ? datesClauseOf(dates, snap.atAGlance.recordEdge.reportDate) : ''}` })
   }
   const sg = snap.signalment
   if (sg.ageYears !== null && sg.ageYears * 12 + (sg.ageMonths ?? 0) > CHANGES_SENIOR_MONTHS) {

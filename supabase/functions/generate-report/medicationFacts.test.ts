@@ -175,7 +175,7 @@ Deno.test('adversarial 1 — a prescribed course is never relabelled ad-hoc by a
   const cc = out.concurrentChanges.find((c) => c.label === 'Prednisolone')!
   assert.equal(cc.recordStart, undefined)
   const t = plain(renderReport(s))
-  assert.match(t, /Prednisolone · (by mouth · )?Sep 21–Oct 11 · 21 d still running at the end of this window/)
+  assert.match(t, /Prednisolone · (by mouth · )?(for coughing · )?Sep 21–Oct 11 · 21 d still running at the end of this window/)
   assert.doesNotMatch(t, /Prednisolone · doses on record/)
 })
 
@@ -298,8 +298,8 @@ Deno.test('CUL-2480 instance 2 — "supplement" is never said bare (nyx-live, v1
 
 Deno.test('CUL-2480 (#1428) — the overlap line carries the route, and an ad-hoc row its doses, never a day span', () => {
   const t = v1('nyx-live')
-  assert.match(t, /Motozol · in the ear · since Jul 16, overlapping Jul 26–Aug 9 · 15 d\./)
-  assert.match(t, /Prednisolone · by mouth · Sep 21–Oct 11 · 21 d\./)
+  assert.match(t, /Motozol · in the ear · (for ear infection · )?since Jul 16, overlapping Jul 26–Aug 9 · 15 d\./)
+  assert.match(t, /Prednisolone · by mouth · (for coughing · )?Sep 21–Oct 11 · 21 d\./)
   assert.match(t, /overlapping Jul 26–Oct 20 · ad-hoc, dosed on 4 of the trial days this report covers; 21 doses on record in all/)
   assert.doesNotMatch(t, /Cetirizine[^.]*· 87 d/)
 })
@@ -318,7 +318,7 @@ Deno.test('adversarial B1 — the route is the row’s own record’s, never poo
   for (const m of s.medications) if (m.drugName === 'Prednisolone') m.route = null
   s.unlinkedMedications.push({ ...s.unlinkedMedications[0], itemId: 'pred-eye', drugName: 'Prednisolone', route: 'ophthalmic', firstDate: '2026-10-15', lastDate: '2026-10-15', doseDays: ['2026-10-15'] })
   const t = plain(renderReport(s))
-  assert.match(t, /Prednisolone · Sep 21–Oct 11 · 21 d\./)
+  assert.match(t, /Prednisolone · (for coughing · )?Sep 21–Oct 11 · 21 d\./)
   assert.doesNotMatch(t, /Prednisolone · in the eye/)
 })
 
@@ -340,4 +340,35 @@ Deno.test('adversarial R1 — a record-only row never takes a route from another
   assert.match(t, /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) · ad-hoc doses on record/)
   const row = t.slice(t.indexOf('Medication during the trial'), t.indexOf('Medication during the trial') + 600)
   assert.doesNotMatch(row, /in the eye/, row)
+})
+
+Deno.test('CUL-2509 instance 1 — provenance re-dates an ad-hoc row beside a same-day same-name regimen', () => {
+  const s = structuredClone(fixture('nyx-live'))
+  const cet = s.trial!.medicationOverlap.find((m) => m.drugName.startsWith('Cetirizine'))!
+  // A regimen of the same name starting on the ad-hoc group's first window day.
+  s.medications.push({ ...s.medications[0], regimenId: 'cet-rx', drugName: cet.drugName, startedAt: cet.startedAt! })
+  // Stored before provenance: the guess leaves the row exactly as built (the old, quieter read).
+  const guessed = withRecordOverlaps(s).trial!.medicationOverlap.find((m) => m.drugName === cet.drugName)!
+  assert.equal(guessed.recordStart, undefined)
+  // With the builder's provenance, the ad-hoc row is re-dated from its earliest dose on record.
+  const group = s.unlinkedMedications.find((u) => u.drugName === cet.drugName)!
+  cet.adHoc = true
+  cet.itemId = group.itemId
+  const cc = s.concurrentChanges.find((c) => c.label === cet.drugName)!
+  cc.adHoc = true
+  cc.itemId = group.itemId
+  const out = withRecordOverlaps(s)
+  assert.deepEqual(out.trial!.medicationOverlap.find((m) => m.drugName === cet.drugName)!.recordStart, { firstDoseDay: '2026-07-01', atHistoryFloor: true })
+  assert.deepEqual(out.concurrentChanges.find((c) => c.label === cet.drugName)!.recordStart, { firstDoseDay: '2026-07-01', atHistoryFloor: true })
+})
+
+Deno.test('CUL-2509 instance 1 — a regimen row the builder marks as one is never re-dated, whatever shares its name', () => {
+  const s = structuredClone(fixture('nyx-live'))
+  s.unlinkedMedications.push({ ...s.unlinkedMedications[0], itemId: 'pred-2', drugName: 'Prednisolone', firstDate: '2026-09-21' })
+  s.medicationHistory!.entries.push({ ...s.medicationHistory!.entries[0], key: 'item:pred-2', drugName: 'Prednisolone', firstDoseDay: '2026-06-01' })
+  const pred = s.trial!.medicationOverlap.find((m) => m.drugName === 'Prednisolone')!
+  pred.adHoc = false
+  pred.startedAt = '2026-09-21'
+  const out = withRecordOverlaps(s)
+  assert.equal(out.trial!.medicationOverlap.find((m) => m.drugName === 'Prednisolone')!.recordStart, undefined)
 })

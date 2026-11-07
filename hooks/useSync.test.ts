@@ -23,7 +23,17 @@ jest.mock('../lib/network', () => ({
   getIsOnline: jest.fn(async () => mockState.online),
 }));
 jest.mock('../lib/devColdStart', () => ({ consumeForcedColdStart: jest.fn(async () => false) }));
-jest.mock('../lib/captureInbox', () => ({ ingestCaptureInbox: jest.fn(async () => undefined) }));
+// captureInbox's real module pulls lib/signal (and the supabase client) in; only its pure merge
+// rule is used here.
+jest.mock('../lib/signal', () => ({ triggerSignalRegenDebounced: jest.fn() }));
+// The ingest and the inbox READ are stubbed (no App Group in jest); withUnclaimedInbox is the
+// real merge rule (C-34: stub the read, never the rule).
+jest.mock('../lib/captureInbox', () => ({
+  ingestCaptureInbox: jest.fn(async () => undefined),
+  readUnclaimedInbox: jest.fn(() => ({ count: 0, oldestAt: null, unknownAge: 0 })),
+  withUnclaimedInbox: jest.requireActual('../lib/captureInbox').withUnclaimedInbox,
+  UNKNOWN_AGE_PENDING_AT: jest.requireActual('../lib/captureInbox').UNKNOWN_AGE_PENDING_AT,
+}));
 
 let networkListener: ((state: { isConnected: boolean; isInternetReachable: boolean }) => void) | null = null;
 jest.mock('expo-network', () => ({
@@ -34,7 +44,9 @@ jest.mock('expo-network', () => ({
 }));
 
 import { COLD_START_CEILING_MS } from '../lib/coldStart';
-import { ingestCaptureInbox } from '../lib/captureInbox';
+import { ingestCaptureInbox, readUnclaimedInbox, UNKNOWN_AGE_PENDING_AT } from '../lib/captureInbox';
+import { getSyncStatus } from '../lib/db';
+import { usePetStore } from '../store/petStore';
 import { notifySignedOut } from '../lib/signOutEpoch';
 import { useAuthStore } from '../store/authStore';
 import { useSyncStore } from '../store/syncStore';
@@ -161,4 +173,66 @@ it("a session that starts after an earlier sign-out hands the ingest a fence tha
   await flush();
   expect(ingest).toHaveBeenCalledTimes(1);
   expect((ingest.mock.calls[0][1] as () => boolean)()).toBe(false);
+});
+
+// CUL-2489: the banner's unsent count sees the widget's capture inbox. A capture the ingest
+// deferred (its food not on this phone yet) is in neither SQLite nor the server.
+describe('the banner counts what still waits in the capture inbox (CUL-2489)', () => {
+  const PET = '11111111-1111-4111-9111-111111111111';
+  const readInbox = readUnclaimedInbox as jest.Mock;
+  const rows = getSyncStatus as jest.Mock;
+
+  beforeEach(() => {
+    mockState.hydrated = true;
+    usePetStore.setState({ pets: [{ id: PET }] as never });
+    readInbox.mockReset();
+    rows.mockReset();
+    rows.mockImplementation(async () => ({ pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 }));
+    useSyncStore.getState().setPendingStatus(0, null, 0);
+  });
+
+  it("a deferred widget capture counts as pending, with its own tap time to age", async () => {
+    readInbox.mockReturnValue({ count: 1, oldestAt: '2026-07-01T08:00:00.000Z', unknownAge: 0 });
+    renderHook(() => useSync());
+    await flush();
+    expect(readInbox).toHaveBeenCalledWith(new Set([PET]));
+    expect(useSyncStore.getState()).toMatchObject({
+      pendingCount: 1,
+      oldestPendingAt: '2026-07-01T08:00:00.000Z',
+      quarantinedCount: 0,
+    });
+  });
+
+  it('reads the inbox BEFORE the rows (a record caught mid-move counts twice, never by neither)', async () => {
+    const order: string[] = [];
+    readInbox.mockImplementation(() => {
+      order.push('inbox');
+      return { count: 0, oldestAt: null, unknownAge: 0 };
+    });
+    rows.mockImplementation(async () => {
+      order.push('rows');
+      return { pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 };
+    });
+    renderHook(() => useSync());
+    await flush();
+    expect(order).toEqual(['inbox', 'rows']);
+  });
+
+  it('an unreadable inbox counts one pending entry and never costs the row counts (CUL-2507)', async () => {
+    readInbox.mockImplementation(() => {
+      throw new Error('list');
+    });
+    rows.mockImplementation(async () => ({
+      pendingCount: 3,
+      oldestPendingAt: '2026-07-02T08:00:00.000Z',
+      quarantinedCount: 2,
+    }));
+    renderHook(() => useSync());
+    await flush();
+    expect(useSyncStore.getState()).toMatchObject({
+      pendingCount: 4,
+      oldestPendingAt: UNKNOWN_AGE_PENDING_AT,
+      quarantinedCount: 2,
+    });
+  });
 });

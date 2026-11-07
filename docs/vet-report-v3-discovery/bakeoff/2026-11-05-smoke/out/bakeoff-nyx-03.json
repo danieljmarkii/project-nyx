@@ -1,0 +1,103 @@
+{
+ "fixture": "bakeoff-nyx",
+ "n": 3,
+ "result": {
+  "outcome": "rejected",
+  "reason": "verifier"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "verifier",
+   "fact_hash": "9350ac7ec14bccb7ba498488f34f3d8170662c4c4f6609e069df38dd8d1d4c63",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": null,
+   "sentences": null,
+   "verifier_errors": [
+    {
+     "sentence": 3,
+     "check": "order"
+    },
+    {
+     "sentence": 3,
+     "check": "absence"
+    },
+    {
+     "sentence": 3,
+     "check": "negation"
+    }
+   ],
+   "checker": null,
+   "attempts": 2,
+   "at": "2026-11-05T16:30:13.893Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, and the photo was not retained.",
+      "cites": [
+       "S1"
+      ]
+     },
+     {
+      "text": "Her first entry of any kind is May 14; anything before May 14 is unknown.",
+      "cites": [
+       "W",
+       "U1"
+      ]
+     },
+     {
+      "text": "She is free-fed all day on Nature's Variety Duck and Royal Canin Weight Care; intake not directly observed.",
+      "cites": [
+       "L2"
+      ]
+     }
+    ]
+   },
+   "ms": 9870
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed; photo not retained.",
+      "cites": [
+       "S1"
+      ]
+     },
+     {
+      "text": "The first entry of any kind is May 14; anything before May 14 is unknown.",
+      "cites": [
+       "W",
+       "U1"
+      ]
+     },
+     {
+      "text": "Nyx is free-fed all day on Nature's Variety Duck and Royal Canin Weight Care, start not recorded; intake not directly observed.",
+      "cites": [
+       "L2"
+      ]
+     }
+    ]
+   },
+   "ms": 10204
+  }
+ ],
+ "wall_ms": 20085
+}

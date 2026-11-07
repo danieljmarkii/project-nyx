@@ -27,8 +27,8 @@
 // scroll can rest anywhere, and only the pinned sentence is beside the bars at every position
 // (adversarial pass on CUL-2295; the PM rules whether it may hide).
 // Frames are known only on the device (its height and text size), so the script measures there.
-import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, backSheetHtml, bandPhotosHtml } from './renderBackV2.ts'
-import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
+import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, backSheetHtml, bandPhotosHtml, labelTableCells } from './renderBackV2.ts'
+import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { COUNT_AXIS_MIN_MAX } from './renderPrintV2.ts'
 import { fmtDay } from './render.ts'
 
@@ -60,6 +60,11 @@ function x0(i: number, n: number): number {
 
 function colW(n: number): number {
   return PLOT_W / n
+}
+
+/** A position in column units (`dayPos`) as an x on the plot, clamped to the frame (N9). */
+function posX(pos: number, n: number): number {
+  return Math.min(PLOT_W, Math.max(0, (pos * PLOT_W) / Math.max(1, n)))
 }
 
 /** One row's SVG. Each carries its own hatch pattern: an id is page-unique, rows are many. */
@@ -105,8 +110,11 @@ function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], ax
     const full = unit === 'day' ? 1 : unit === 'week' ? 7 : 14
     const w = Math.max(2, colW(n) * 0.62 * Math.min(1, c.days / full))
     const x = x0(i, n) + colW(n) * 0.19
-    parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
-    parts.push(haloText(x + w / 2, base - bh - 2, String(count)))
+    // CUL-2360: the short last column's bar is an outline, "so far", never a filled fall.
+    const soFar = i === soFarCol(cols, unit) ? ' sofar' : ''
+    parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}${soFar}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
+    // CUL-2360: the short week's count carries its days ("2 in 4 d"), so it reads as a rate, never a fall.
+    parts.push(haloText(x + w / 2, base - bh - 2, soFar ? `${count} in ${c.days} d` : String(count)))
   })
   return rowWrap(r.label, r.lead ? 'rl lead' : 'rl', rowSvg(pid, base + 2, parts.join(''), hatched))
 }
@@ -129,6 +137,8 @@ function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[]
     const x = x0(i, n) + (colW(n) - w) / 2
     const refusedH = (cell.refused / cell.rated) * BAR_H
     const partlyH = ((cell.notFinished - cell.refused) / cell.rated) * BAR_H
+    // An intake bar is a share of the meals rated, so a short week does not shorten it: it stays
+    // filled, refused solid, never hollowed (adversarial pass 1 on PR-29: Cooper's newest column).
     if (refusedH > 0) parts.push(`<rect class="bar lead" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)
     if (partlyH > 0) parts.push(`<rect class="bar partly" x="${x.toFixed(1)}" y="${(base - refusedH - partlyH).toFixed(1)}" width="${w.toFixed(1)}" height="${partlyH.toFixed(1)}"/>`)
     parts.push(haloText(x + w / 2, base - refusedH - partlyH - 2, `${cell.notFinished} of ${cell.rated}`))
@@ -153,33 +163,38 @@ function coverageRow(r: Extract<ChartRow, { kind: 'coverage' }>, cols: ChartColu
   return rowWrap(r.label, 'rl', rowSvg(pid, SIGN_ROW_H - 8, parts.join(''), hatched))
 }
 
-function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], pid: string): string {
+function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], pid: string, endPos: number): string {
   const n = cols.length
   const y = SPAN_ROW_H / 2
-  const xa = r.openStart ? 0 : x0(r.fromCol, n) + colW(n) / 2
-  const xb = r.openEnd ? PLOT_W : x0(r.toCol, n) + colW(n) / 2
+  // CUL-2360: on the span's own days, never a column's centre; clamped to the frame (N9).
+  const xa = posX(r.openStart ? 0 : r.fromPos, n)
+  const xb = posX(r.toPos, n)
   const cls = r.hollow ? 'span hollow' : 'span'
-  // CUL-2480 instance 1: ad-hoc doses are ticks on the columns that hold one, never a bar.
+  // CUL-2480 instance 1 and CUL-2514: ad-hoc doses and off-diet feedings are ticks, never a bar.
   if (r.doseCols) {
-    const ticks = r.doseCols.map((i) => {
-      const x = (x0(Math.floor(i), n) + (i - Math.floor(i)) * colW(n)).toFixed(1)
+    const ticks = r.doseCols.map((p) => {
+      const x = posX(p, n).toFixed(1)
       return `<line class="span dose" x1="${x}" x2="${x}" y1="${y - 4}" y2="${y + 4}"/>`
     })
     return rowWrap(r.label, 'rl span-l', rowSvg(pid, SPAN_ROW_H, ticks.join(''), false))
   }
   const parts = [`<line class="${cls}" x1="${xa.toFixed(1)}" x2="${Math.max(xa + 2, xb).toFixed(1)}" y1="${y}" y2="${y}"/>`]
+  // CUL-2360: no recorded end, so the course carries on dotted from its last logged dose to the edge.
+  if (r.openCourse) parts.push(`<line class="span open" x1="${Math.max(xa + 2, xb).toFixed(1)}" x2="${posX(endPos, n).toFixed(1)}" y1="${y}" y2="${y}"/>`)
   // The bracket ends: a tick where the record dates a start or an end, none where it runs off the edge.
   if (!r.openStart) parts.push(`<line class="${cls}" x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
   if (!r.openEnd && r.endDeclared) parts.push(`<line class="${cls}" x1="${xb.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
   return rowWrap(r.label, 'rl span-l', rowSvg(pid, SPAN_ROW_H, parts.join(''), false))
 }
 
-/** The axis as HTML: the first and last column's dates, then each part column named by its date. */
+/** The axis as HTML: the window's first and last day at the frame's two ends, then each part column
+ *  named by its date. CUL-2546: the right end is the last column's LAST day (the window's end), never
+ *  its first: "Oct 28" at the edge read as a window that stopped three days before the newest entries. */
 function axisHtml(chart: LeadChart): string {
   const cols = chart.columns
   const n = cols.length
   const ends = n > 1
-    ? `<span>${fmtDay(cols[0].start)}</span><span>${fmtDay(cols[n - 1].start)}</span>`
+    ? `<span>${fmtDay(cols[0].start)}</span><span>${fmtDay(cols[n - 1].end)}</span>`
     : `<span>${fmtDay(cols[0]?.start ?? null)}</span>`
   const notes: string[] = []
   cols.forEach((c, i) => {
@@ -191,6 +206,17 @@ function axisHtml(chart: LeadChart): string {
     if (label) notes.push(`<li>${fmtDay(c.start)}: ${h(label)}</li>`)
   })
   return `<div class="axis">${ends}</div>${notes.length > 0 ? `<ul class="parts" role="list">${notes.join('')}</ul>` : ''}`
+}
+
+/** CUL-2360: the burden flag's window under the axis: a bracket over its days, its words in HTML. */
+function bracketHtml(chart: LeadChart): string {
+  const b = chart.recentBracket
+  if (!b) return ''
+  const n = chart.columns.length
+  const xa = posX(b.fromPos, n)
+  const xb = posX(b.toPos, n)
+  const svg = `<svg class="marks" aria-hidden="true" focusable="false" viewBox="0 0 ${PLOT_W} 8" preserveAspectRatio="xMinYMin meet"><line class="bracket" x1="${xa.toFixed(1)}" x2="${xb.toFixed(1)}" y1="6" y2="6"/><line class="bracket" x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="1" y2="6"/><line class="bracket" x1="${xb.toFixed(1)}" x2="${xb.toFixed(1)}" y1="1" y2="6"/></svg>`
+  return `<div class="crow bracketrow">${svg}<div class="rl sub">${h(b.label.replace(/, as the burden flag counts them$/, ', flagged'))}</div></div>`
 }
 
 /** The lead chart's rows: HTML labels over SVG marks, one count scale across every sign row. */
@@ -205,11 +231,11 @@ export function chartHtml(chart: LeadChart): string {
     if (r.kind === 'sign') rows.push(signRow(r, chart.columns, axisMax, chart.unit, pid))
     else if (r.kind === 'intake') rows.push(intakeRow(r, chart.columns, pid))
     else if (r.kind === 'coverage') rows.push(coverageRow(r, chart.columns, pid))
-    else rows.push(spanRow(r, chart.columns, pid))
+    else rows.push(spanRow(r, chart.columns, pid, chart.endPos))
   })
   // `aria-hidden` over the whole drawing, labels included: the twin is the only carrier of the
   // chart's facts (spec §5.4), so a screen reader hears it once, in words.
-  return `<div class="chart" aria-hidden="true">${rows.join('')}${axisHtml(chart)}</div>`
+  return `<div class="chart" aria-hidden="true">${rows.join('')}${axisHtml(chart)}${bracketHtml(chart)}</div>`
 }
 
 function block(b: BlockV2, lead: string | null): string {
@@ -219,7 +245,7 @@ function block(b: BlockV2, lead: string | null): string {
       // At font scale 1.6 the full signalment, the conditions and the window fold behind one line
       // (spec §6.3), so the band still starts in the first frame. What decides urgency never folds:
       // species, sex, age and weight (the model's brief; cold read on CUL-2295), and the last entry.
-      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><h1>${h(b.name)}</h1><p class="brief">${h(b.signalmentBrief)}</p><button class="more" type="button" aria-expanded="false" aria-controls="v2more">More details</button><div class="fold" id="v2more"><p class="sig">${h(b.signalment)}</p>${
+      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><p class="stamp">${h(b.stamp)}</p><h1>${h(b.name)}</h1><p class="brief">${h(b.signalmentBrief)}</p><button class="more" type="button" aria-expanded="false" aria-controls="v2more">More details</button><div class="fold" id="v2more"><p class="sig">${h(b.signalment)}</p>${
         b.conditions ? `<p class="cond">${h(b.conditions)}</p>` : ''
       }<p class="win">${h(b.window)}</p></div><p class="last">${b.lastEntryHtml}.</p></header>`
     case 'disclosure':
@@ -233,13 +259,16 @@ function block(b: BlockV2, lead: string | null): string {
     case 'scope_line':
       return `${open('p', 'scope')}${h(b.text)}</p>`
     case 'changes':
-      return `${open('section', `changes ${b.placement === 'band_slot' ? 'slot' : 'under'}`)}<h2 class="sech">${h(b.heading)}</h2><ul role="list">${b.lines
+      return `${open('section', `changes ${b.placement === 'band_slot' ? 'slot' : 'under'}`)}<h2 class="sech">${h(b.heading)}</h2>${
+        // CUL-2361 ruling (a): on a zero-sign sheet the first change is the sheet's serif sentence.
+        b.serifLead ? `<p class="lede serif" data-item="${h(b.lines[0].id)}">${h(b.lines[0].text)}.</p>` : ''
+      }${(b.serifLead ? b.lines.slice(1) : b.lines).length > 0 ? `<ul role="list">${(b.serifLead ? b.lines.slice(1) : b.lines)
         .map((l) => `<li data-item="${h(l.id)}">${h(l.text)}.</li>`)
-        .join('')}</ul></section>`
+        .join('')}</ul>` : ''}</section>`
     case 'record_edge':
       return `${open('div', 'edge')}${b.lines.map((l) => `<p>${h(l)}</p>`).join('')}</div>`
     case 'lead_sentence':
-      return `${open('p', 'lede serif')}${h(b.text)}</p>`
+      return `${open('p', b.serif ? 'lede serif' : 'lede body')}${h(b.text)}</p>`
     case 'lead_chart': {
       const c = b.chart
       // The repeat is `aria-hidden`: it exists for the eye that sees bars, and a screen reader
@@ -249,6 +278,15 @@ function block(b: BlockV2, lead: string | null): string {
         c.flagHtml ? `<p class="flagrow">${c.flagHtml}</p>` : ''
       }${c.reasonLine ? `<p class="why">${h(c.reasonLine)}</p>` : ''}${rep}${chartHtml(c)}<p class="twin">${h(c.twin)}</p></section>`
     }
+    case 'trial_reading':
+      // CUL-2551: v1's trial section as v1 prints it: its heading, every row in v1's order, then
+      // "Interpreting this record", so v1's own "(above)" stays true (already-escaped html).
+      return `${open('section', 'back trialread')}${b.heading !== null ? `<h2>${b.heading}</h2>` : ''}<div class="kvcol">${b.rows
+        .map((r) => `<div class="kv"><span class="k">${r.labelHtml}</span> <span>${r.html}</span></div>`)
+        .join('')}</div>${b.html !== null ? `<div class="callout"><span class="k">${h(b.label)}</span> ${b.html}</div>` : ''}</section>`
+    case 'carried':
+      // CUL-2551: a v1 page-1 section word for word; the back sheets' v1 styles dress it (`.back`).
+      return `${open('section', `back v1sec carry v1-${b.id}`)}${labelTableCells(b.html)}</section>`
     case 'confounder':
       return `${open('p', 'conf')}${h(b.text)}</p>`
     case 'record_lines':
@@ -267,6 +305,14 @@ function block(b: BlockV2, lead: string | null): string {
   }
 }
 
+/**
+ * CUL-2539: the keep-together spacer can leave most of a screen blank (about 600px after Cooper's
+ * meals line), which a vet scrolling reads as the end of sheet 1. Where the spacer is taller than a
+ * quarter of the frame it prints this line at its top. A part, never a block: it is navigation, the
+ * PDF has no spacer, and it never prints.
+ */
+export const PUSH_NOTE = 'Sheet 1 continues below with the chart for this window.'
+
 /** The blocks, with the lead chart, the lines under it and the confounder wrapped as one unit. */
 function body(doc: DocumentV2): string {
   const conf = doc.blocks.find((b): b is Extract<BlockV2, { kind: 'confounder' }> => b.kind === 'confounder')
@@ -277,7 +323,8 @@ function body(doc: DocumentV2): string {
   const confAt = doc.blocks.findIndex((b) => b.kind === 'confounder')
   const last = confAt > lead ? confAt : lead
   doc.blocks.forEach((b, i) => {
-    if (i === lead) out.push(`<div class="keep-push" aria-hidden="true"></div><div class="keep" data-keep="lead">`)
+    // CUL-2539: a spacer tall enough to read as the sheet's end says it is not one (`PUSH_NOTE`).
+    if (i === lead) out.push(`<div class="keep-push" aria-hidden="true"><p class="pushnote" data-part="push-note" hidden>${h(PUSH_NOTE)}</p></div><div class="keep" data-keep="lead">`)
     out.push(block(b, warning))
     if (i === last && lead >= 0) out.push('</div>')
   })
@@ -299,6 +346,7 @@ body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto
 .sheet{padding:1rem 16px 2rem;max-width:40rem;margin:0 auto;}
 #v2probe{position:absolute;left:-999rem;top:0;display:block;font-size:1rem;line-height:1;visibility:hidden;}
 .serif{font-family:"Newsreader",Georgia,"Iowan Old Style",serif;}
+.mast .stamp{font-size:0.75rem;color:var(--ink2);margin:0;}
 .mast .eyebrow{font-size:0.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);}
 .mast h1{font-size:1.6rem;line-height:1.15;margin:0.15rem 0 0.3rem;font-weight:650;}
 .mast p{margin:0 0 0.2rem;}
@@ -318,7 +366,41 @@ ul,ol{margin:0;padding:0;list-style:none;}
 .changes li,.gaps li{margin:0 0 0.3rem;}
 .edge p{font-weight:600;margin:0.8rem 0 0;}
 .lede{font-size:1.2rem;line-height:1.3;margin:1rem 0 0;}
+.lede.body{font-size:1rem;line-height:1.4;margin:0.6rem 0 0;}
+.changes .lede{margin:0.2rem 0 0.4rem;}
+.trialread .trow{margin:0.35rem 0 0;}
 .keep{margin:1rem 0 0;}
+.carry .kv,.trialread .kv{display:block;}
+/* CUL-2585 ruling (a): v1's own trend and tile styles, so a carried block keeps v1's weight (a
+   rising halves count reads as loud as it does on v1). Scoped to .carry; v1's --muted is --ink2.
+   Tiles wrap to two columns, and a trend's count drops under its name, so nothing scrolls sideways
+   at 320pt and large text. */
+.carry .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);}
+.carry .tile{padding:0.5rem 0.6rem;min-width:0;overflow-wrap:anywhere;}
+.carry .tile:nth-child(even){border-left:1px solid var(--hair);}
+.carry .tile:nth-child(n+3){border-top:1px solid var(--hair);}
+.carry .tile .v{font-size:1.375rem;font-weight:600;line-height:1.05;}
+.carry .tile .v small{font-size:0.75rem;color:var(--ink2);font-weight:600;}
+.carry .tile .v .arw{color:var(--faint);font-weight:400;}
+.carry .tile .l{font-size:0.75rem;color:var(--ink2);margin-top:0.25rem;line-height:1.35;}
+.carry .trend + .trend{margin-top:0.6rem;border-top:1px solid var(--hair);padding-top:0.6rem;}
+.carry .trend .top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:0.25rem 1rem;}
+.carry .trend .who{font-size:0.9rem;font-weight:700;min-width:0;overflow-wrap:anywhere;}
+.carry .trend .who .win{font-weight:500;color:var(--ink2);font-size:0.75rem;margin-left:2px;}
+.carry .trend .big{text-align:right;line-height:1.1;min-width:0;overflow-wrap:anywhere;}
+.carry .trend .big .n{font-size:1.375rem;font-weight:600;}
+.carry .trend .big .n small{font-size:0.75rem;color:var(--ink2);font-weight:600;}
+.carry .trend .big .delta{font-size:0.75rem;color:var(--ink2);margin-top:1px;}
+.carry .trend .big .delta b{color:var(--ink);font-weight:700;}
+.carry .trend .big .delta-caveat{font-size:0.7rem;color:var(--ink2);margin-top:1px;font-style:italic;}
+.carry .trend .subnote{font-size:0.75rem;color:var(--ink2);margin:2px 0 0.4rem;}
+.carry .kv .k,.trialread .kv .k{display:block;font-weight:650;}
+/* CUL-2551: v1's Noticed strip, carried in At a glance, wraps at large text rather than run past the
+   screen (28 day cells in one row clipped at 320pt × 2.35); its key labels may break. .carry.back
+   outranks the back sheets .back .ns-key rule (nowrap), which this stylesheet loads after. */
+@media screen{.carry.back .ns-row{flex-wrap:wrap;row-gap:0.25rem;}.carry.back .ns-cell{flex:0 0 auto;min-width:1.4rem;}.carry.back .ns-key{white-space:normal;}.carry.back .ns,.carry.back .ns-legend{overflow-wrap:anywhere;}}
+.keep-push{overflow:hidden;}
+.pushnote{margin:0;padding:1rem 0 0;text-align:center;color:var(--ink2);font-size:0.875rem;}
 .keep > section:first-child{margin-top:0;}
 .leadchart .flagh{color:var(--concern);}
 .leadchart.flagged{border:1.5px solid var(--ink);padding:0.6rem 10px;}
@@ -327,6 +409,7 @@ ul,ol{margin:0;padding:0;list-style:none;}
 .verdict[hidden]{display:none;}
 .chart{margin:0.2rem 0 0;}
 .crow{margin:0 0 0.35rem;}
+.bracketrow .rl.sub{text-align:right;}
 .rl{font-size:0.8125rem;line-height:1.25;color:var(--ink2);}
 .rl.lead{color:var(--concern);font-weight:650;}
 .rl.sub{font-size:0.75rem;}
@@ -348,6 +431,11 @@ svg .cov{fill:var(--cov);}
 svg .hatchline{stroke:var(--faint);stroke-width:1;}
 svg .span{stroke:var(--ink2);stroke-width:1.5;}
 svg .span.hollow{stroke-dasharray:3 2;stroke-width:1;fill:none;}
+svg .span.open{stroke-dasharray:1.5 2.5;}
+svg .bar.sofar{fill:none;stroke:var(--ink2);stroke-width:1.2;}
+svg .bar.lead.sofar{stroke:var(--concern);}
+svg .bar.partly.sofar{stroke:var(--partly);}
+svg .bracket{stroke:var(--ink);stroke-width:1;fill:none;}
 svg .cnt{font-size:${SVG_TEXT_MIN}px;fill:var(--ink);font-weight:600;}
 svg .cnt.nr{fill:var(--ink2);font-weight:400;}
 svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linejoin:round;}
@@ -382,6 +470,7 @@ html,body{font-size:9.5pt;}
 h2{font-size:9pt;}
 .changes h2,.sech,.colo{font-size:7.5pt;}
 .lede{font-size:13pt;}
+.lede.body{font-size:9.5pt;}
 .rl,.axis,.parts,.qs .ptr{font-size:8pt;}
 .rl.sub{font-size:7pt;}
 .verdict{display:none;}
@@ -406,6 +495,8 @@ const SCRIPT_PHONE = `
   // same page (adversarial pass 2 on PR-17: a spacer left from the last call flipped the pointer).
   function pushUnit(unit, push){
     push.style.height = '0px';
+    var note = push.querySelector('.pushnote');
+    if (note) note.hidden = true;
     var frame = window.innerHeight;
     if (!frame) return;
     if (unit.getBoundingClientRect().height > frame) return;
@@ -413,6 +504,8 @@ const SCRIPT_PHONE = `
     var k = Math.floor(top / frame);
     var end = top + unit.getBoundingClientRect().height;
     if (end > (k + 1) * frame) push.style.height = ((k + 1) * frame - top) + 'px';
+    // CUL-2539: a spacer over a quarter of the frame says the sheet continues.
+    if (note && parseFloat(push.style.height) > 0.25 * frame) note.hidden = false;
   }
   function lay(){
     // Every layout starts from the same page: no fold, no pointer, no spacer, no padding.

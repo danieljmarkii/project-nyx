@@ -8,7 +8,7 @@ import { buildDocumentV2, incidentTimeWords, textOf, type DocumentV2, type Docum
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, BACK_STYLE_PRINT, labelTableCells, pageHeadCss } from './renderBackV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
-import { leftOutRecord, partitionPhotos } from './photoLeaveOut.ts'
+import { applyPhotosLeftOut } from './photoLeaveOut.ts'
 import {
   backSheetsOf,
   EPISODES_HEADING,
@@ -23,6 +23,8 @@ import {
   KEPT_SHEET_TITLE,
   V2_SECTION_POINTERS,
   assertNoV1Pointer,
+  episodesBlock,
+  v1PointerLeak,
   keptEntries,
   keptSentencesOf,
   v2Pointers,
@@ -150,19 +152,10 @@ Deno.test('R-10 — a photo that could not be embedded still prints its date, an
 
 // ── Photos left out (PR-23, R-10, PM option A 2026-11-02) ───────────────────
 
-/** What index.ts does with the owner's choice: the chosen photos leave `incidentPhotos` for
- *  `incidentPhotosLeftOut`. The storage path stands in for the attachment id here; the document
- *  never reads either. */
+/** What index.ts does with the owner's choice: the production split (`applyPhotosLeftOut`), on
+ *  the photos' real attachment ids. */
 function leaveOut(s: ReportSnapshot, pick: (p: ReportSnapshot['incidentPhotos'][number]) => boolean): ReportSnapshot {
-  const { kept, leftOut } = partitionPhotos(
-    s.incidentPhotos.map((p) => ({ ...p, attachmentId: p.storagePath })),
-    s.incidentPhotos.filter(pick).map((p) => p.storagePath),
-  )
-  return {
-    ...s,
-    incidentPhotos: kept.map(({ attachmentId: _a, ...p }) => p),
-    incidentPhotosLeftOut: [...(s.incidentPhotosLeftOut ?? []), ...leftOut.map(leftOutRecord)],
-  }
+  return applyPhotosLeftOut(s, s.incidentPhotos.filter(pick).map((p) => p.attachmentId), true).snapshot
 }
 
 function bandOf(d: DocumentV2) {
@@ -188,11 +181,13 @@ Deno.test('R-10 — a flagged photo left out: its flag prints word for word, dat
   const foreign = after.items.find((i) => i.id.includes('present_foreign'))
   assert.ok(foreign)
   assert.equal(foreign.photos.length, 0, 'the photo itself is gone')
-  const day = fmtLocalDay(flagged[0].occurredAt, s.timezone)
-  assert.equal(foreign.photosLeftOutLine, `Photo left out by the owner (${day}).`, 'dated with the incident’s day')
+  // CUL-2455: dated with the incident's day AND time, the words its caption would have carried.
+  const when = `${textOf(fmtLocalDay(flagged[0].occurredAt, s.timezone))}, ${incidentTimeWords(flagged[0], s.timezone)}`
+  assert.equal(foreign.photosLeftOutLine, `Photo left out by the owner (${when}).`, 'dated with the incident’s day and time')
   for (const html of [renderPrintV2(docOf(left)), renderPhoneV2(docOf(left))]) {
     const li = itemHtml(html, foreign.id)
-    assert.ok(li.includes(`<span class="bleft">Photo left out by the owner (${day}).</span>`), 'inside its band line, print and phone')
+    assert.ok(textOf(li).includes(`Photo left out by the owner (${when}).`), 'inside its band line, print and phone')
+    assert.ok(li.includes('<span class="bleft">'), 'in the left-out span')
     assert.ok(!li.includes('class="bphoto"'), 'no image beside it')
   }
   for (const i of after.items.filter((x) => x !== foreign)) assert.equal(i.photosLeftOutLine, null, i.id)
@@ -371,38 +366,36 @@ Deno.test('present-only — no sheet of any fixture prints "0 of" beside blood, 
       const text = textOf(html.replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<script>[\s\S]*?<\/script>/g, ''))
       assert.deepEqual(zeroBesidePresentOnly(text), [], name)
     }
-    if (blockIn(d.backSheets, 'episodes')) episodes++
+    // CUL-2551 (brief 5a): v1's characteristics print on sheet 1, as v1's page 1 put them.
+    if (d.blocks.some((b) => b.id === 'episodes')) episodes++
   }
   assert.ok(episodes >= 3, `the guard reads real episode sections (${episodes})`)
 })
 
-Deno.test('episodes — v1’s sections word for word (with v2’s pointers), under the sheet’s heading; present findings only; "not a clearance" kept', () => {
+Deno.test('episodes — v1’s sections word for word (with v2’s pointers), on sheet 1 under the band (CUL-2551); present findings only; "not a clearance" kept', () => {
   const cat = assembleReport(nyxSafetyCat())
-  const ep = blockIn(backSheetsOf(cat), 'episodes')
+  assert.equal(blockIn(backSheetsOf(cat), 'episodes'), undefined, 'never on a back sheet too')
+  assert.ok(docOf(cat).blocks.some((b) => b.id === 'episodes'), 'on sheet 1')
+  const ep = episodesBlock(cat)
   assert.ok(ep)
   assert.equal(ep.heading, EPISODES_HEADING)
   const text = textOf(ep.html)
   // The non-completed states are named, each once, beside the assessed denominator.
-  assert.match(text, /Across all 7 vomiting incidents; 3 have a legible AI read \(1 uncertain, 1 not legible, 1 still processing, 1 without a photo\)\./)
+  assert.match(text, /Across all 7 vomiting incidents; 3 have a legible AI read \(1 uncertain, 1 not read \(analysis did not complete\), 1 still processing, 1 with no photo read on record\)\./)
   assert.match(text, /Possible foreign material — 1 incident:/)
   assert.doesNotMatch(text, /Possible blood/, 'blood prints only when present')
   assert.doesNotMatch(text, /appendix/i, 'no pointer to a sheet v2 does not print')
   // The same words as v1's section; the pointer sentence is back since VR2-14, aimed at the event log.
-  assert.equal(
-    text,
-    textOf(vomitCharacteristics(cat, V2_SECTION_POINTERS))
-      .replace(/page 1/g, 'sheet 1')
-      .replace('These lead the flags for review above.', 'These lead the flags for review on sheet 1.'),
-  )
+  assert.equal(text, textOf(vomitCharacteristics(cat, V2_SECTION_POINTERS)).replace(/page 1/g, 'this sheet'))
   assert.match(text, /Per-incident detail in the sheet headed “Event log”\./)
-  assert.match(text, /These lead the flags for review on sheet 1\./, 'the band is a sheet away, never "above"')
+  assert.match(text, /These lead the flags for review above\./, 'on sheet 1 the band is above it again, as on v1’s page 1')
   const dog = assembleReport(stoolPhotoDog())
-  const dt = textOf(blockIn(backSheetsOf(dog), 'episodes')?.html ?? '')
+  const dt = textOf(episodesBlock(dog)?.html ?? '')
   assert.match(dt, /Possible blood — 1 incident:/)
   assert.match(dt, /Mucus — 1 incident:/)
   assert.ok(dt.includes(textOf(stoolCharacteristics(dog, V2_SECTION_POINTERS))))
   // A record with nothing photographed keeps v1's "not a clearance" sentence word for word.
-  const mira = textOf(blockIn(backSheetsOf(fixture('mira')), 'episodes')?.html ?? '')
+  const mira = textOf(episodesBlock(fixture('mira'))?.html ?? '')
   assert.match(mira, /Not a clearance:/)
 })
 
@@ -510,7 +503,7 @@ Deno.test('ledger — a lead sign with no entry in the window never leaves a fla
   const normal = dog.events.find((e) => e.type === 'stool_normal')
   assert.ok(normal)
   dog.aiAnalyses = [{ ...dog.aiAnalyses[2], eventId: normal.id }]
-  dog.attachments = [{ eventId: normal.id, storagePath: 'x.jpg', mimeType: 'image/jpeg', sortOrder: 0 }]
+  dog.attachments = [{ id: 'att-normal', eventId: normal.id, storagePath: 'x.jpg', mimeType: 'image/jpeg', sortOrder: 0 }]
   dog.events.push(...[24, 20, 16, 12, 8, 5, 2].map((d) => symptom('vomit', d, 9)))
   const s = assembleReport(dog)
   assert.ok(s.safetyFlags.some((f) => f.kind === 'present_blood'))
@@ -668,7 +661,7 @@ Deno.test('VR2-14 kept — the absence rules in clinical words: no flag is not a
   assert.equal(e[0].term, 'No flag is not an all-clear')
   assert.match(e[0].text, /When no flag prints, no check fired; that is not the same as nothing being wrong\./)
   // B-494: every lane the checks watch is named, so a lane's silence is never read as a result.
-  for (const lane of ['chronicity', 'symptom burden', 'reduced intake', 'a prescribed diet going uneaten', 'weight loss', 'weight left unchecked', 'possible blood or foreign material', 'a protein the trial diet does not list', 'worsening', 'other patterns the detection engine raises']) assert.ok(e[0].text.includes(lane), lane)
+  for (const lane of ['chronicity', 'symptom burden', 'reduced intake', 'a prescribed diet going uneaten', 'weight loss', 'weight left unchecked', 'possible blood or foreign material', 'a trial protein the owner recorded that is not the main protein on the trial food’s label', 'A feeding off the trial diet is not a flag', 'worsening', 'other patterns the detection engine raises']) assert.ok(e[0].text.includes(lane), lane)
   assert.match(text, /Blood, foreign material and mucus are reported only when seen in an incident/)
   assert.match(text, /A read that was uncertain, failed or still processing is named as such and is never counted as clear\./)
   assert.match(text, /A day with nothing logged is not a day without signs\./)
@@ -728,15 +721,17 @@ Deno.test('VR2-14 pointers — no back sheet names an appendix or page 1, and ev
   assert.ok(pointed >= 50, `the fixtures carry pointers (${pointed})`)
 })
 
-Deno.test('VR2-14 pointers — mutation: an unmapped letter, a stray page 1 or a sheet-1 pointer v2 cannot honour throws', () => {
+Deno.test('VR2-14 pointers — mutation: an unmapped letter, a stray page 1 or a sheet-1 pointer v2 cannot honour is reported (at test time, CUL-2533)', () => {
   const s = fixture('mira')
-  assert.throws(() => v2Pointers('Listed in appendix&nbsp;G.', s), /appendix G has no v2 sheet/)
+  // CUL-2533: an unmapped letter is left as written, never thrown on a request; the leak check names it.
+  assert.equal(v2Pointers('Listed in appendix&nbsp;G.', s), 'Listed in appendix&nbsp;G.')
+  assert.match(v1PointerLeak(v2Pointers('Listed in appendix&nbsp;G.', s), 'x') ?? '', /names an appendix/)
   assert.throws(() => assertNoV1Pointer('<p>See the appendix for the rest.</p>', 'x'), /names an appendix/)
   assert.throws(() => assertNoV1Pointer('<p>See page&nbsp;1.</p>', 'x'), /names page 1/)
   assert.throws(() => assertNoV1Pointer('<p>The weight trend on sheet&nbsp;1.</p>', 'x'), /sheet 1 may not hold/)
   assert.doesNotThrow(() => assertNoV1Pointer('<p>any safety flag on sheet&nbsp;1 stands on its own.</p>', 'x'))
   assert.equal(v2Pointers('Dates in appendix&nbsp;C.', s, DIET_SHEET_TITLE), 'Dates on this sheet.')
-  assert.equal(v2Pointers('Dates in appendix&nbsp;C.', s, LOG_SHEET_TITLE), 'Dates on the sheet headed &ldquo;Diet, weight and food exposure&rdquo;.')
+  assert.equal(v2Pointers('Dates in appendix&nbsp;C.', s, LOG_SHEET_TITLE), 'Dates on the sheet headed &ldquo;Diet history and food exposure&rdquo;.')
 })
 
 Deno.test('VR2-14 event log — every photographed row names its read in words, completed included; no triage glyph', () => {
@@ -745,22 +740,24 @@ Deno.test('VR2-14 event log — every photographed row names its read in words, 
   assert.ok(log && log.kind === 'section')
   const photos = [...log.html.matchAll(/<b>Photo:<\/b> ([^<]*)/g)].map((m) => m[1])
   assert.ok(photos.length >= 4, `${photos.length}`)
-  for (const p of photos) assert.match(p, /^(read completed|read uncertain|present but not legible|still processing)/, p)
+  for (const p of photos) assert.match(p, /^(read completed|read uncertain|photo not read|still processing|no photo$|photo attached, no read on record$)/, p)
   assert.ok(photos.some((p) => p.startsWith('read completed')))
   assert.ok(photos.some((p) => p.startsWith('still processing')))
   assert.doesNotMatch(log.html, /[\u{1F534}\u{1F7E0}\u{1F7E1}\u{1F7E2}\u26A0]/u, 'no owner-facing triage glyph crosses over')
   assert.match(textOf(log.html), /Occurred \(owner-reported\)/)
 })
 
-Deno.test('VR2-14 medications and diet — the lifetime table leads the dose log; the trial precedes the block that says it is above', () => {
+Deno.test('VR2-14 medications and diet — the lifetime table leads the dose log; the diet sheet holds B and C, and on sheet 1 the trial precedes the block that says it is above (CUL-2551)', () => {
   const live = docOf(fixture('nyx-live'))
   const med = live.backSheets.find((x) => x.kind === 'medication')
   assert.deepEqual(med?.blocks.map((b) => b.id), ['medication-history', 'medication-log'])
   for (const [name, s] of all()) {
-    const ids = docOf(s).backSheets.find((x) => x.kind === 'diet')?.blocks.map((b) => b.id) ?? []
-    assert.equal(ids[0], 'weight', name)
-    if (ids.includes('diet-trial')) assert.ok(ids.indexOf('diet-trial') < ids.indexOf('diet-meds'), name)
-    assert.deepEqual(ids.slice(-2), ['diet-history', 'exposures'], name)
+    const d = docOf(s)
+    const ids = d.backSheets.find((x) => x.kind === 'diet')?.blocks.map((b) => b.id) ?? []
+    assert.deepEqual(ids, ['diet-history', 'exposures'], name)
+    const one = d.blocks.map((b) => b.id)
+    assert.ok(one.includes('weight') && one.includes('diet-meds'), `${name}: weight and the diet block on sheet 1`)
+    if (one.includes('trial-reading')) assert.ok(one.indexOf('trial-reading') < one.indexOf('diet-meds'), name)
   }
   // v1's weight sparkline is aria-hidden on v2; its words beside it are the twin.
   assert.match(renderPrintV2(live), /<svg class="spark"[^>]*aria-hidden="true"/)
@@ -780,8 +777,12 @@ Deno.test('VR2-14 kept — a rule never promises a line the record does not prin
     for (const [tag, word] of [['est', /\best an estimated/], ['range', /\brange a window/], ['unspecified', /\bunspecified means/]] as const) {
       assert.equal(word.test(tc), present.has(tag) && !s.provenance.symptomLog.every((x) => timeConfidence(x) === 'seen'), `${name}: ${tag}`)
     }
-    // No back sheet sends a reader to sheet 1 for "Timing vs symptoms": it is on the diet sheet.
-    assert.doesNotMatch(textOf(renderPrintV2(docOf(s))), /sheet 1 under Timing vs symptoms/, name)
+    // A back sheet sends a reader to sheet 1 for "Timing vs symptoms" only because sheet 1 prints it
+    // (CUL-2551: v1's diet block, with its Timing vs symptoms row, is on sheet 1).
+    const html = renderPrintV2(docOf(s))
+    if (/sheet 1 under Timing vs symptoms/.test(textOf(html))) {
+      assert.match(textOf(html.slice(0, html.indexOf('</main>'))), /Timing vs symptoms/, name)
+    }
   }
   assert.ok(custom >= 2, `hand-picked windows are exercised (${custom})`)
 })

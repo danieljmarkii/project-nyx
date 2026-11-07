@@ -161,7 +161,8 @@ Deno.test('R-11 condition 5 — any other flag on the sign keeps the flag in the
     assert.equal(r11ConditionsOf(t, f).onlyFlagOnSign, false, o.kind)
     const m = bandMembersOf(t)
     assert.equal(m.leadFlag, null, o.kind)
-    assert.deepEqual(m.band, [f, o], `${o.kind}: both print in the band`)
+    // CUL-2381 ruling (a): a burden flag leads the band; worsening keeps the snapshot's order.
+    assert.deepEqual(m.band, o.kind === 'symptom_burden' ? [o, f] : [f, o], `${o.kind}: both print in the band`)
   }
 })
 
@@ -373,8 +374,8 @@ Deno.test('changes — Olive: 11, "sleeping more" on 6 days, 3 meals not finishe
   const s = snap(olive())
   assert.equal(s.symptoms.every((x) => x.count === 0), true, 'a zero-sign sheet')
   assert.deepEqual(changesInWindowOf(s), [
-    { id: 'noticed_concern', text: 'Marked sleeping more on 6 of 42 days answered' },
-    { id: 'meals_not_finished', text: 'Meals not finished on 3 days (3 of 42 rated meals)' },
+    { id: 'noticed_concern', text: 'Marked sleeping more on 6 of 42 days answered, first Oct 6, last Oct 16 (the day of this report)' },
+    { id: 'meals_not_finished', text: 'Meals not finished on 3 days (3 of 42 rated meals), first Oct 13, last Oct 15 (1 day before this report)' },
     { id: 'weight_stale_senior', text: 'No weight since Sep 1, 45 days before this report' },
   ])
   assert.equal(bandMembersOf(s).band.length, 0, 'never a band member')

@@ -8,7 +8,7 @@
 // script does the compaction at large text, the keep-together spacer under the pinned warning and
 // `data-tight`; with JS off the band lands four to six screens down at AX5. The document is our
 // own server render with no external scripts, and the WebView may load nothing but it
-// (`isPreviewLoadAllowed`). The printed frame stays script-free: it has no script to run.
+// (`reportFrameLoadAllowed`). The printed frame stays script-free: it has no script to run.
 //
 // THE FRAME IS THE SCREEN BETWEEN THE BARS. The header above and the send bar below are flex
 // siblings, never overlays, so the script's `window.innerHeight` is the frame the owner actually
@@ -33,14 +33,16 @@
 //    (`lockedViewportHtml` → EXAM_VIEWPORT on iOS, `setBuiltInZoomControls={false}` on Android).
 //    The system's own Zoom and Magnification stay outside any app (acknowledged by the PM).
 //
-// BOXED IN LIKE THE EXAM ROOM (CUL-2428, privacy review on PR-19). Both frames carry the room's
-// Content-Security-Policy (`withExamCsp`): the document may run its own inline script and draw its
-// own inline styles, fonts and images, and may load or send nothing. `onShouldStartLoadWithRequest`
-// governs navigation only, so without it an escaping miss upstream would be live script with the
-// network open. `originWhitelist` is `*` (REPORT_WEBVIEW_ORIGINS) so every navigation reaches that
-// predicate: the library hands a URL failing the whitelist to the system browser, unasked.
-// `onOpenWindow` is passed (a no-op) on both, because Android otherwise opens
-// `target=_blank` / `window.open` in a fresh WebView that skips the load predicate entirely.
+// BOXED IN LIKE THE EXAM ROOM (CUL-2428, CUL-2469). Both frames open with the one frame lock
+// (`withFrameLock`, lib/examRoom.ts): the room's Content-Security-Policy (the document may run
+// only its own scripts, each named by hash (CUL-2531), draw its own inline styles, fonts and
+// images, and load or send nothing), DNS prefetch off, and the lock script (no WebRTC, no `window.open`, no frame or link
+// put in by script); frame and link tags are renamed inert before the parser sees them. Both
+// spread the frame props (lib/reportPreviewV2.ts): every navigation reaches the one load check,
+// which refuses all but the inline document, `data:` included, and no window ever opens. The
+// phone frame runs script, so it spreads SCRIPTED_REPORT_FRAME_PROPS, whose check also refuses
+// `about:blank` on Android (CUL-2553); every `<meta>` but a plain name/content/charset one is
+// renamed inert, so no refresh can blank either frame.
 //
 // PHONE ↔ PRINTED (spec §14). The swap happens in place, in this frame: no push, no flight. The
 // printed frame mounts on first ask and then stays mounted, so a second swap is a crossfade with
@@ -51,20 +53,20 @@ import { WebView } from 'react-native-webview';
 import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import {
-  EXAM_CSP,
   EXAM_VIEWPORT,
-  REPORT_WEBVIEW_ORIGINS,
+  boxedFrameHtml,
   lockedViewportHtml,
   printedViewAllowed,
   printedWarningOf,
-  withExamCsp,
+  withFrameLock,
 } from '../../lib/examRoom';
 import { ReportFrontSilhouette } from '../surfaces/waits/ReportFrontSilhouette';
 import { ThemedText } from '../ui/ThemedText';
 import {
   PREVIEW_READY_ANNOUNCEMENT,
+  REPORT_FRAME_PROPS,
+  SCRIPTED_REPORT_FRAME_PROPS,
   androidTextZoom,
-  isPreviewLoadAllowed,
   type PreviewView,
 } from '../../lib/reportPreviewV2';
 
@@ -93,21 +95,14 @@ export function lockedPreviewHtml(phoneHtml: string): string {
  * standards mode), where the parser places it in the implied head. Never shown without it.
  */
 export function boxedPreviewHtml(html: string): string {
-  // A real `<head>` only: withExamCsp's match also takes `<header>`, which would put the policy in
+  // A real `<head>` only: withFrameLock's match also takes `<header>`, which would put the policy in
   // the body, where the browser ignores it (CUL-2470).
   if (/<head(\s[^>]*)?>/i.test(html)) {
-    const withCsp = withExamCsp(html);
+    const withCsp = withFrameLock(html);
     if (withCsp !== null) return withCsp;
   }
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
-  const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
-  if (doctype === null) return `${meta}${html}`;
-  const at = doctype.index + doctype[0].length;
-  return `${html.slice(0, at)}${meta}${html.slice(at)}`;
+  return boxedFrameHtml(html);
 }
-
-/** Android's new-window path, refused (CUL-2428): the window never opens. */
-function refuseWindow(): void {}
 
 export interface ReportPreviewV2Props {
   /** Null while the first build is in flight: only the silhouette shows. */
@@ -217,13 +212,11 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
             key={docKey}
             testID={PREVIEW_PHONE_TEST_ID}
             style={styles.web}
-            originWhitelist={REPORT_WEBVIEW_ORIGINS}
+            // The one frame lock (CUL-2469), with the scripted frame's load check (CUL-2553).
+            {...SCRIPTED_REPORT_FRAME_PROPS}
             source={{ html: lockedPhoneHtml }}
             // CUL-2383: the reflow's layout script must run (header above).
             javaScriptEnabled
-            onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
-            // Android would open a new window in a fresh WebView that skips the predicate (CUL-2428).
-            onOpenWindow={refuseWindow}
             // No pinch on Android either (CUL-2430; EXAM_VIEWPORT locks it on iOS).
             setBuiltInZoomControls={false}
             textZoom={Platform.OS === 'android' ? androidTextZoom(fontScale) : undefined}
@@ -255,12 +248,10 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
             key={printKey}
             testID={PREVIEW_PRINTED_TEST_ID}
             style={styles.web}
-            originWhitelist={REPORT_WEBVIEW_ORIGINS}
+            {...REPORT_FRAME_PROPS}
             source={{ html: boxedPrintHtml }}
             // The printed page carries no script; the surface stays minimal.
             javaScriptEnabled={false}
-            onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
-            onOpenWindow={refuseWindow}
             showsVerticalScrollIndicator
           />
         </Animated.View>

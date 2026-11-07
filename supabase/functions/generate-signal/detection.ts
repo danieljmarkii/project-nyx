@@ -1255,6 +1255,14 @@ export interface IntakeDeclineFinding extends FindingBase {
    * hold the window's own mean and no surface reads them as a comparison.
    */
   sustainedRefusal?: SustainedRefusalFacts
+  /**
+   * CUL-2424 (PM ruling (a), 2026-11-02): true on a `consecutive_low` finding when every rated
+   * meal in its recent days was rated Refused (the recent score is the refused score). Such a day
+   * is a refusal, never "eating less", and every surface words it from this fact, never from the
+   * score. Set (true or false) on every `consecutive_low` this engine emits; absent on the other
+   * triggers and on a finding cached before the field existed.
+   */
+  allRefused?: boolean
 }
 
 /** A reflection only ever describes a FLAT ("same as last week") or IMPROVING (falling) trend. */
@@ -4341,7 +4349,7 @@ export function detectIntakeDecline(
   if (findings.length > 0) {
     // One line, on the card that leads (the ranker's own trigger order), so two intake cards
     // never print it twice.
-    const lead = findings.reduce((a, b) => (INTAKE_TRIGGER_RANK[b.trigger] < INTAKE_TRIGGER_RANK[a.trigger] ? b : a))
+    const lead = findings.reduce((a, b) => (intakeRankOf(b) < intakeRankOf(a) ? b : a))
     return findings.map((f) => (f === lead ? { ...f, refusedThenVomited: facts } : f))
   }
   return [
@@ -4365,12 +4373,40 @@ export function detectIntakeDecline(
 
 /** The ranker's order within intake_decline (refused_normal_food leads), shared with the line's
  *  placement so the line always sits on the card that leads. */
-const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = {
+export const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = {
   // A record with no good meal in three days leads: it is the one a vet would act on first.
   sustained_refusal: 0,
   refused_normal_food: 1,
   consecutive_low: 2,
   refused_then_vomited: 3,
+}
+
+/**
+ * CUL-2593 (PM ruling option (1), 2026-11-06): an all-refused consecutive-low card asks for a call
+ * today unless the pet is a dog. A cat can get into liver trouble inside about 48 hours of not
+ * eating, so a full day of refusal is not a "wait and see" card. Only `'dog'` keeps the
+ * conditional ask: a cat, `'other'` or a species the finding does not carry asks the louder one.
+ * The templates word it (phrasing.ts); the ranker leads with it (`intakeRankOf`). Mirrored on the
+ * client (`intakeAllRefusedCallsToday`, lib/signalCopy.ts); keep the two in sync.
+ */
+export function allRefusedCallsToday(f: IntakeDeclineFinding): boolean {
+  return f.trigger === 'consecutive_low' && f.allRefused === true && f.species !== 'dog'
+}
+
+/**
+ * CUL-2593 (adversarial pass 1): a cat refusing her USUAL food all day fires both
+ * `refused_normal_food` (the conditional ask) and an all-refused `consecutive_low` (the call
+ * today). By trigger alone the softer card led, so Ask's safety line and Home's lead dropped the
+ * call. The card that asks for a call today ranks between the sustained-refusal floor (which
+ * replaces it and never sits beside it) and `refused_normal_food`: the louder ask leads, as the
+ * floor's does. Get ready's device-row order (`INTAKE_TRIGGER_ORDER`) cannot follow it: a device
+ * row carries no species; it only places a stale device row, and never drops one.
+ */
+const INTAKE_CALL_TODAY_RANK = 0.5
+
+/** An intake card's place in its run: the call-today card's rank, else its trigger's. */
+export function intakeRankOf(f: IntakeDeclineFinding): number {
+  return allRefusedCallsToday(f) ? INTAKE_CALL_TODAY_RANK : INTAKE_TRIGGER_RANK[f.trigger]
 }
 
 /**
@@ -4663,6 +4699,9 @@ function detectIntakeDeclineRelative(
           refusedFoodLabel: null,
           ratedMealsConsidered: baselineMeals.length,
           lastFullMealIso,
+          // CUL-2424: the per-day means are means of 0..4 scores, so the recent mean sits at the
+          // refused score only when every recent rated meal was refused.
+          allRefused: recentMean === intakeScore('refused'),
         })
         break
       }
@@ -8181,6 +8220,52 @@ export function safetyRankOf(f: Finding): number {
 }
 
 /**
+ * The order of two safety findings in the band (CUL-2605: lifted out of `rankFindings`, unchanged, so
+ * the carried cards over an incomplete read take their place by the same rule as the fresh ones).
+ * Intake decline leads chronicity leads worsening (SAFETY_TYPE_ORDER); within intake decline the
+ * call-today card leads, then an outright refusal of a normally-eaten food. 0 when the two tie.
+ */
+export function compareSafetyFindings(x: Finding, y: Finding): number {
+  const safetyDiff = safetyRankOf(x) - safetyRankOf(y)
+  if (safetyDiff !== 0) return safetyDiff
+  // Two per-incident red-flag cards (a bloody vomit AND a bloody stool, B-364): both lead every
+  // other safety lane; between the two, vomit leads stool — a fixed, deterministic order (also
+  // the detector's emission order), so the surface never reorders on re-run. Neither is dropped.
+  if (x.type === 'incident_red_flag' && y.type === 'incident_red_flag') {
+    // Engines v3 PR-30a (CUL-1511): the louder new-rule call leads first (mock §03: call now
+    // "ranks first"), so a stool call now never sits under a vomit call today, and the pet's
+    // own band agrees with the cross-pet banner's pick (`bannerRankOf`). Family order breaks
+    // a tie, as it always has.
+    const callDiff = redFlagCallRank(y) - redFlagCallRank(x)
+    if (callDiff !== 0) return callDiff
+    return (
+      INCIDENT_CATEGORY_ORDER.indexOf(x.incidentType) -
+      INCIDENT_CATEGORY_ORDER.indexOf(y.incidentType)
+    )
+  }
+  if (x.type === 'intake_decline' && y.type === 'intake_decline') {
+    // CUL-2593: the trigger order, with the call-today card lifted above refused_normal_food.
+    return intakeRankOf(x) - intakeRankOf(y)
+  }
+  // Two chronicity cards (R4 both-stated, CUL-676) — the same shape as the two
+  // red-flags above, and stated EXPLICITLY for the same reason: the detector already
+  // emits them in this order, but relying on Array#sort's stability to preserve it
+  // would make the surface's card order an untested consequence of a language
+  // guarantee rather than a decision. Longest span leads, then most episodes, then
+  // the lane cell's order — a total order over the cell, so a re-run never reorders
+  // Home. Neither is dropped; this only decides which one leads.
+  if (x.type === 'symptom_chronicity' && y.type === 'symptom_chronicity') {
+    if (y.spanDays !== x.spanDays) return y.spanDays - x.spanDays
+    if (y.episodeCount !== x.episodeCount) return y.episodeCount - x.episodeCount
+    return (
+      LANE_SYMPTOM_TYPES.chronicity.indexOf(x.symptomType) -
+      LANE_SYMPTOM_TYPES.chronicity.indexOf(y.symptomType)
+    )
+  }
+  return 0
+}
+
+/**
  * Orders findings per §5: safety first, then the context-lead insight, then the
  * rest by evidence tier (Established before Early) and effect strength. Returns
  * findings tagged with their resolved rank.
@@ -8198,45 +8283,10 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
       return x.pValue - y.pValue
     }
 
-    // Among safety findings: intake-decline leads chronicity leads worsening
-    // (SAFETY_TYPE_ORDER); within intake-decline, an outright refusal of a normally-eaten
-    // food leads.
+    // Among safety findings: the shared safety order (`compareSafetyFindings`).
     if (x.priorityClass === 'safety' && y.priorityClass === 'safety') {
-      const safetyDiff = safetyRankOf(x) - safetyRankOf(y)
+      const safetyDiff = compareSafetyFindings(x, y)
       if (safetyDiff !== 0) return safetyDiff
-      // Two per-incident red-flag cards (a bloody vomit AND a bloody stool, B-364): both lead every
-      // other safety lane; between the two, vomit leads stool — a fixed, deterministic order (also
-      // the detector's emission order), so the surface never reorders on re-run. Neither is dropped.
-      if (x.type === 'incident_red_flag' && y.type === 'incident_red_flag') {
-        // Engines v3 PR-30a (CUL-1511): the louder new-rule call leads first (mock §03: call now
-        // "ranks first"), so a stool call now never sits under a vomit call today, and the pet's
-        // own band agrees with the cross-pet banner's pick (`bannerRankOf`). Family order breaks
-        // a tie, as it always has.
-        const callDiff = redFlagCallRank(y) - redFlagCallRank(x)
-        if (callDiff !== 0) return callDiff
-        return (
-          INCIDENT_CATEGORY_ORDER.indexOf(x.incidentType) -
-          INCIDENT_CATEGORY_ORDER.indexOf(y.incidentType)
-        )
-      }
-      if (x.type === 'intake_decline' && y.type === 'intake_decline') {
-        return INTAKE_TRIGGER_RANK[x.trigger] - INTAKE_TRIGGER_RANK[y.trigger]
-      }
-      // Two chronicity cards (R4 both-stated, CUL-676) — the same shape as the two
-      // red-flags above, and stated EXPLICITLY for the same reason: the detector already
-      // emits them in this order, but relying on Array#sort's stability to preserve it
-      // would make the surface's card order an untested consequence of a language
-      // guarantee rather than a decision. Longest span leads, then most episodes, then
-      // the lane cell's order — a total order over the cell, so a re-run never reorders
-      // Home. Neither is dropped; this only decides which one leads.
-      if (x.type === 'symptom_chronicity' && y.type === 'symptom_chronicity') {
-        if (y.spanDays !== x.spanDays) return y.spanDays - x.spanDays
-        if (y.episodeCount !== x.episodeCount) return y.episodeCount - x.episodeCount
-        return (
-          LANE_SYMPTOM_TYPES.chronicity.indexOf(x.symptomType) -
-          LANE_SYMPTOM_TYPES.chronicity.indexOf(y.symptomType)
-        )
-      }
     }
 
     // Same-band, different insight types (e.g. a correlation + a postprandial-timing

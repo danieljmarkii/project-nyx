@@ -1,29 +1,42 @@
 // The AI lead pipeline end to end over a recording fake I/O (CUL-2305, spec §9.2; CUL-2331).
 // The writer and checker answers are scripted; everything else is the production code path.
 import assert from 'node:assert/strict'
+import { sha256Hex } from '../../_shared/engineStamps.ts'
 import type { SummaryGate } from '../../_shared/reportSummaryGate.ts'
 import { buildDocumentV2 } from '../documentV2.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
-import { buildLeadFacts, factTableHash } from './facts.ts'
+import { buildLeadFacts, factTableHash, tableFromPayload, type LeadFacts } from './facts.ts'
 import type { ModelResult, Role } from './model.ts'
 import { assertSendable } from './model.ts'
-import { checkerDecision, leadAllowedAtSend, parseChecker, runAiLead, type LeadIO, type StoredVerdict } from './leadPipeline.ts'
+import { modelDecision, leadAllowedAtSend, parseChecker, runAiLead, type LeadIO, type StoredVerdict } from './leadPipeline.ts'
 import { CHECKER_MODEL, HAZARDS, WRITER_MODEL } from './prompts.ts'
 import { LEAD_VERIFIER_VERSION, type LeadSentence } from './verify.ts'
+import { leadContextOf, storedLeadForSnapshot } from './run.ts'
+import { documentForLead } from './facts.ts'
 
 const snap = nyxLiveSnapshot()
-const FACTS = buildLeadFacts(buildDocumentV2(snap, { owner: null, shortId: null, questions: [] }), {
+/** The live Nyx record as production builds it: six live band items, so no lead may print on it
+ *  (CUL-2563 ruling (b)). */
+const NYX_FACTS = buildLeadFacts(buildDocumentV2(snap, { owner: null, shortId: null, questions: [] }), {
   petName: snap.signalment.name,
   species: snap.signalment.species,
   recordStart: snap.scope.startDate,
   recordEnd: snap.scope.endDate,
   includeLookNotes: false,
 })
+if (!NYX_FACTS.eligible) throw new Error('the live Nyx record is eligible for a lead')
+/** The same record with one live flag (band item 1, the burden, alone): the record a lead may still
+ *  print on. Every pipeline path below runs on it; the multi-flag tests run on NYX_FACTS. */
+const ONE_FLAG_PAYLOAD = { ...NYX_FACTS.payload, band: NYX_FACTS.payload.band.slice(0, 1) }
+const FACTS: LeadFacts = { eligible: true, payload: ONE_FLAG_PAYLOAD, table: tableFromPayload(ONE_FLAG_PAYLOAD) }
 
+// Band item 1 is the band's first PRINTED row: on Nyx, the burden flag (CUL-2532), the one-flag record's
+// only flag. The trial
+// sentence carries the reading's bottom line and the confounder, both required beside it.
 const GOOD: LeadSentence[] = [
-  { text: 'Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.', cites: ['band-1-present_foreign'] },
+  { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] },
   { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] },
-  { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.', cites: ['trial'] },
+  { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026; the trial diet was not fed exclusively, and it is not a test of the diet alone.', cites: ['trial', 'trial-reading-3', 'confounder'] },
 ]
 const BAD: LeadSentence[] = [{ text: 'Vomiting improved on the trial.', cites: ['line-1'] }]
 
@@ -96,6 +109,31 @@ Deno.test('the golden path: written, verified, checked, kept on the draft with i
   assert.equal(w.verdict.fact_hash, await factTableHash(FACTS.payload, LEAD_VERIFIER_VERSION))
   // The checker read the same facts plus the draft, nothing else.
   assert.ok(f.sends[1].body.includes('\\"draft\\"'))
+})
+
+Deno.test('the verdict is stamped at its write, after the model calls, not when it was built (CUL-2523)', async () => {
+  // The keep pins a long lead by its verdict's `at` (run.ts pinsOf), so `at` must be the write's.
+  const f = fake({ answers: [writer(GOOD), checker()] })
+  let lastNow = 0
+  const now = f.io.now
+  f.io.now = () => (lastNow = now())
+  const write = f.io.writeDraft
+  let atWrite = 0
+  f.io.writeDraft = (text, verdict, model) => ((atWrite = lastNow), write(text, verdict, model))
+  await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.equal(Date.parse(f.writes[0].verdict.at), atWrite, 'the last clock read before the write is the stamp')
+  assert.ok(f.sends.length === 2, 'both model calls ran before it')
+})
+
+Deno.test('every write carries text_sha, the SHA-256 of the text it writes, null with no text (CUL-2574)', async () => {
+  const f = fake({ answers: [writer(GOOD), checker()] })
+  await runAiLead(f.io, FACTS, { leaveOut: false })
+  const w = f.writes[0]
+  assert.ok(w.text !== null)
+  assert.equal(w.verdict.text_sha, await sha256Hex(w.text!))
+  const g = fake({})
+  await runAiLead(g.io, FACTS, { leaveOut: true })
+  assert.equal(g.writes[0].verdict.text_sha, null)
 })
 
 Deno.test('leave out: recorded on the copy, no gate, no model', async () => {
@@ -212,12 +250,12 @@ Deno.test('a thin record records not_eligible and calls nothing', async () => {
   assert.deepEqual([f.gates.length, f.sends.length], [0, 0])
 })
 
-Deno.test('checkerDecision and parseChecker are bake-off spec §5\'s rule, and fail closed', () => {
+Deno.test('modelDecision and parseChecker are bake-off spec §5\'s rule, and fail closed', () => {
   const p = (o: Partial<Record<string, string>>) => parseChecker(checkerSays(o))
-  assert.equal(checkerDecision(p({})!), 'pass')
-  assert.equal(checkerDecision(p({ H1: 'minor' })!), 'repair')
-  assert.equal(checkerDecision(p({ H7: 'minor' })!), 'reject')
-  assert.equal(checkerDecision(p({ H4: 'material' })!), 'reject')
+  assert.equal(modelDecision(p({})!), 'pass')
+  assert.equal(modelDecision(p({ H1: 'minor' })!), 'repair')
+  assert.equal(modelDecision(p({ H7: 'minor' })!), 'reject')
+  assert.equal(modelDecision(p({ H4: 'material' })!), 'reject')
   assert.equal(parseChecker({ takeaway: 'x', hazards: { ...levels(), H6: { level: 'severe' } } }), null)
 })
 
@@ -229,4 +267,66 @@ Deno.test('withdrawal at send (promise 4, option a): a lead prints only while bo
   assert.equal(leadAllowedAtSend(no, on, 'u1'), false)
   assert.equal(leadAllowedAtSend(yes, [on[0]], 'u1'), false)
   assert.equal(leadAllowedAtSend(null, on, 'u1'), false)
+})
+
+Deno.test('step 7 decides with the checker\'s code half: the draft and the table, never the model alone (CUL-2548)', async () => {
+  // The verifier refuses an order-failing draft before the checker sees it, so no scripted run can
+  // reach step 7 with one; the wiring is pinned on the call itself.
+  const src = await Deno.readTextFile(new URL('./leadPipeline.ts', import.meta.url))
+  assert.ok(src.includes('checkerDecision(cv, { table: facts.table, draft: summary })'), 'step 7 calls checkerDecision with the draft and the table')
+  assert.ok(!/\bmodelDecision\(cv\)/.test(src), 'step 7 never decides on the model alone')
+})
+
+// ── CUL-2563 ruling (b): no lead on a record with 2 or more live band items ─────────────────────
+
+Deno.test('CUL-2563: the live Nyx record (six live flags) never prints: no model call, no count spent', async () => {
+  assert.ok(NYX_FACTS.eligible && NYX_FACTS.payload.band.length === 6, 'the fixture is the six-flag record')
+  // Scripted answers a model would give: the re-run's printed lead and a clean checker. Never asked.
+  const f = fake({ answers: [writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, NYX_FACTS, { leaveOut: false })
+  assert.deepEqual(r, { outcome: 'not_eligible', reason: 'multi_flag' })
+  assert.deepEqual([f.gates, f.sends.length, f.writes.length, f.writes[0].text], [[false], 0, 1, null])
+  assert.equal(f.writes[0].verdict.outcome, 'not_eligible')
+})
+
+Deno.test('CUL-2563: a stored printed lead on a multi-flag draft is never served, whatever its hash', async () => {
+  if (!NYX_FACTS.eligible) throw new Error('eligible')
+  const hash = await factTableHash(NYX_FACTS.payload, LEAD_VERIFIER_VERSION)
+  const text = GOOD.map((s) => s.text).join(' ')
+  const f = fake({ draft: { found: true, text, verdict: { outcome: 'printed', fact_hash: hash, sentences: GOOD } } })
+  assert.deepEqual(await runAiLead(f.io, NYX_FACTS, { leaveOut: false }), { outcome: 'not_eligible', reason: 'multi_flag' })
+  assert.deepEqual([f.sends.length, f.writes[0].text], [0, null])
+})
+
+Deno.test('CUL-2563: on a multi-flag record a closed gate keeps its own outcome (a flag-off owner hears nothing)', async () => {
+  for (const [gate, outcome] of [
+    [{ allow: false, reason: 'flag_off', flag: 'report_ai_lead' }, 'flag_off'],
+    [{ allow: false, reason: 'consent_declined', scope: 'report_summary' }, 'declined'],
+    [{ allow: false, reason: 'cap_reached', cap: 'daily' }, 'capped'],
+  ] as Array<[SummaryGate, string]>) {
+    const f = fake({ gate: () => gate })
+    const r = await runAiLead(f.io, NYX_FACTS, { leaveOut: false })
+    assert.equal(r.outcome, outcome)
+    assert.deepEqual([f.gates, f.sends.length, f.writes[0].text], [[false], 0, null])
+  }
+})
+
+Deno.test('CUL-2563: two live flags are enough; one still prints', async () => {
+  if (!NYX_FACTS.eligible) throw new Error('eligible')
+  const two = { ...NYX_FACTS.payload, band: NYX_FACTS.payload.band.slice(0, 2) }
+  const f = fake({ answers: [writer(GOOD), checker()] })
+  assert.deepEqual(await runAiLead(f.io, { eligible: true, payload: two, table: tableFromPayload(two) }, { leaveOut: false }), { outcome: 'not_eligible', reason: 'multi_flag' })
+  assert.equal(f.sends.length, 0)
+  const g = fake({ answers: [writer(GOOD), checker()] })
+  assert.equal((await runAiLead(g.io, FACTS, { leaveOut: false })).outcome, 'printed')
+})
+
+Deno.test('CUL-2563: the send path never serves a stored lead on a multi-flag record, even with a matching hash', async () => {
+  // A printed verdict no shipped writer can produce today (runAiLead refuses first): the send path
+  // still checks the record itself rather than trusting the hash (adversarial review, finding A).
+  const facts = buildLeadFacts(documentForLead(snap), leadContextOf(snap, false))
+  if (!facts.eligible) throw new Error('eligible')
+  const text = GOOD.map((s) => s.text).join(' ')
+  const verdict = { outcome: 'printed', fact_hash: await factTableHash(facts.payload, LEAD_VERIFIER_VERSION), sentences: GOOD }
+  assert.equal(await storedLeadForSnapshot(snap, { text, verdict }), null)
 })

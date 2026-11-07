@@ -28,6 +28,7 @@ import { AI_LEAD_LABEL } from '../../supabase/functions/generate-report/renderPr
 import type { LeadSentence } from '../../supabase/functions/generate-report/aiLead/verify.ts'
 import type { ReportSnapshot } from '../../supabase/functions/generate-report/report.ts'
 import { symptomLabel } from '../../supabase/functions/generate-report/render.ts'
+import { REPORT_SYMPTOM_TYPES } from '../../supabase/functions/generate-report/report.ts'
 import { SKIN_TRIAL_SIGNS } from '../../supabase/functions/generate-report/v2Predicates.ts'
 import { keptSentencesOf } from '../../supabase/functions/generate-report/backSheetsV2.ts'
 
@@ -130,6 +131,22 @@ export function sheet1Lines(doc: DocumentV2): ExpectedLine[] {
       case 'confounder':
         add(b.id, b.text)
         break
+      case 'trial_reading':
+        // CUL-2514, CUL-2551: v1 page 1's trial section on sheet 1 word for word: its heading, each
+        // row's label and words (v1's two columns, so two runs), then the bottom line.
+        add(b.id, b.heading === null ? null : textOf(b.heading))
+        for (const r of b.rows) {
+          add(b.id, textOf(r.labelHtml))
+          for (const run of blockRuns(r.html)) add(b.id, run)
+        }
+        add(b.id, b.label)
+        add(b.id, b.html === null ? null : textOf(b.html))
+        break
+      case 'carried':
+        // CUL-2551: a v1 page-1 section word for word; every run of text between v1's own block
+        // boundaries is one line a reader must get back whole.
+        for (const run of blockRuns(b.html)) add(b.id, run)
+        break
       case 'record_lines':
         for (const l of b.lines) add(b.id, l.text)
         break
@@ -154,6 +171,22 @@ export function sheet1Lines(doc: DocumentV2): ExpectedLine[] {
     }
   }
   return out
+}
+
+/**
+ * The runs of text between block boundaries in a fragment of v1's markup (a chart's SVG left out).
+ * A `kv` row's label is its own run: sheet 1 lays it above its words (`.carry .kv`), so an extractor
+ * reads the label, then the row. Numeric entities (the Noticed legend's ○ and ●) are decoded.
+ */
+function blockRuns(html: string): string[] {
+  return html
+    .replace(/<svg\b[\s\S]*?<\/svg>/g, '\u0000')
+    .replace(/<span class="k">([\s\S]*?)<\/span>/g, '\u0000$1\u0000')
+    .replace(/&#(\d+);/g, (_m, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_m, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .split(/<\/?(?:div|p|h[1-6]|li|ul|ol|table|thead|tbody|tr|td|th|dl|dt|dd|section|caption|br)\b[^>]*>|\u0000/)
+    .map((x) => textOf(x).trim())
+    .filter((x) => x !== '')
 }
 
 function bandItemText(tag: string, html: string): string {
@@ -191,6 +224,9 @@ const SIGN_STEMS: Record<string, RegExp> = {
   scratch: /\b(?:scratch\w*|lick\w*|paw[- ]lick\w*|chew\w*)/i,
   skin_reaction: /\bskin\b/i,
 }
+
+/** Every report sign's label, as v1's trend block heads each sign's run with it. */
+const OTHER_SIGN_HEADS: readonly string[] = REPORT_SYMPTOM_TYPES.map((t) => symptomLabel(t))
 
 export function signPattern(key: string): RegExp {
   return SIGN_STEMS[key] ?? new RegExp(`\\b${symptomLabel(key).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i')
@@ -272,6 +308,20 @@ const DESCENT = new RegExp(
  *  14:00 on Jun 25 to 14:00 on Jul 2" is a window, not a count going from 25 to 14. */
 const DATES_AND_TIMES = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:, \d{4})?\b|\b\d{1,2}:\d{2}\b/g
 
+/**
+ * v1's halves comparison ("first 23 d 22 logged 6 → last 23 d 10", CUL-2551): the counts are the two
+ * numbers beside "first" and "last", never the logged-days count between them. A rising or flat pair
+ * is cut, since it states no decline; a falling one is rewritten to the bare pair, so it still fails
+ * as a descent. Direction-aware on purpose: a carve-out that cut every halves line would hide the one
+ * shape this test exists for.
+ */
+const HALVES = /\bfirst (\d+) d(?: (\d+) logged)? (\d+) \u2192 last (\d+) d(?: (\d+) logged)? (\d+)/g
+function halvesRising(s: string): string {
+  return s.replace(HALVES, (_m, _d1: string, _l1: string | undefined, a: string, _d2: string, _l2: string | undefined, b: string) =>
+    Number(b) >= Number(a) ? ' ' : ` ${a} \u2192 ${b} `,
+  )
+}
+
 function hasDescent(s: string): boolean {
   for (const m of s.replace(DATES_AND_TIMES, ' ; ').matchAll(DESCENT)) {
     const nums = m.slice(1).filter((x) => x !== undefined).map(Number)
@@ -308,6 +358,21 @@ const NOT_A_COURSE = [
   /\bthe highest before it in the last \d+ days\b/gi, // the weight block's comparison, not a sign
   /\bdown from \d+\.\d{2} kg\b/gi, // a weight reading (kg at 2 dp), not a sign
   /\bthe less this marker means\b/gi, // the exposures' timing-marker footnote: the marker, not a sign
+  // CUL-2551 carries v1's page 1 onto sheet 1; each of these is a measured false hit there:
+  /\bof the trial['\u2019\u02BC]s \d+ days fall outside it\b/gi, // the headline: the trial's scope beside this window
+  // v1's trend block, its coverage beside each half: logged days, never a sign's count.
+  /\btrend halves: [^()]*\(\d+ of \d+ d logged\) vs [^()]*\(\d+ of \d+ d logged\)/gi,
+  /\b(?:early|later) window sparsely logged \(\d+ of \d+ d\)/gi,
+  /\bhad a log on \d+ of \d+ days\b/gi,
+  /\band \d+ more weeks? logged on under \d+ days\b/gi,
+  /\bcompares the latest reading with the highest in the last \d+ days\b/gi, // v1's weight block: a weight, not a sign
+  // v1's "Reading the trend": a course's or the trial's own dates ("started May 8, stopped Jun 25").
+  /\bstarted (?:[A-Z][a-z]{2} \d{1,2}(?:, \d{4})?), stopped (?:[A-Z][a-z]{2} \d{1,2}(?:, \d{4})?)/g,
+  /\ba fall (?:here|across such a week) may be less logging, not fewer entries\b/gi, // a decline DENIED: the opposite of reassurance
+  /\bmarks the week one stopped\b/gi, // the trend chart's legend: a course's end marker, not a sign
+  // CUL-2579 puts v1's headline under the band; the checks line ("Ongoing vomiting: not checked …")
+  // then meets v1's weight block in a PDF's text, and its "fell" is a weigh-in's, never a sign's.
+  /\bno weigh-ins fell inside this window\b/gi,
   // "How this record was kept": a clearance DENIED, the opposite of a decline (pdfminer ran the
   // Noticed log's "vomit logged" into the kept sheet's first term).
   /\b(?:is not|never) an all-clear\b/gi,
@@ -347,8 +412,11 @@ function cutSpanWords(s: string, pats: readonly RegExp[], spanWords: readonly st
 export function declineSentences(text: string, signs: readonly string[], lineLabels: readonly string[] = [], spanWords: readonly string[] = []): string[] {
   if (signs.length === 0) return []
   const pats = signs.map(signPattern)
-  const flat = text.normalize('NFKC').replace(/\s+/g, ' ')
-  const sentences = flat.split(/(?<=[.;!?])\s+(?=[A-Z0-9"'(])/)
+  // A paragraph separator (U+2029) is a block boundary the caller marked (the HTML check marks each
+  // block): v1's tiles carry no full stop, and run together they made one "sentence" of a tile's sign
+  // and a neighbour's numbers (CUL-2551).
+  const flat = halvesRising(text.normalize('NFKC').replace(/[^\S\u2029]+/g, ' '))
+  const sentences = flat.split(/(?<=[.;!?])\s+(?=[A-Z0-9"'(])|\s*\u2029\s*/).filter((x) => x !== '')
   const out: string[] = []
   sentences.forEach((sent, i) => {
     if (!pats.some((p) => p.test(sent))) return
@@ -356,7 +424,11 @@ export function declineSentences(text: string, signs: readonly string[], lineLab
     // (owner-entered): ... stopped Jun 19"), which is the next record line, not a follow-on. Only
     // the document's labels count: any early colon did, and hid "By week 6 it had settled: 2" (pass 2).
     const next = sentences[i + 1] ?? ''
-    const follows = !lineLabels.some((l) => l !== '' && next.toLowerCase().startsWith(`${l.toLowerCase()}:`))
+    // CUL-2551: v1's trend block names each sign at the head of its own run ("Coughing Sep 16 →
+    // Oct 31 …"). A next sentence that opens on another sign's name is that sign's line, never a
+    // follow-on about this one; it is tested as its own sentence (and flagged there if it is a trial sign).
+    const otherSign = OTHER_SIGN_HEADS.some((h) => !pats.some((p) => p.test(h)) && next.toLowerCase().startsWith(`${h.toLowerCase()} `))
+    const follows = !otherSign && !lineLabels.some((l) => l !== '' && next.toLowerCase().startsWith(`${l.toLowerCase()}:`))
     const window = [sent, follows ? next : ''].map((x) => NOT_A_COURSE.reduce((acc, re) => acc.replace(re, ' '), cutSpanWords(x, pats, spanWords))).join(' ')
     if (DECLINE_WORDS.test(window) || hasDescent(window)) out.push(follows && next !== '' ? `${sent} ${next}` : sent)
   })
@@ -388,12 +460,26 @@ export function divergence(haystack: string, line: string): string {
  * Cut on the folded text, so a line is never joined across anything but furniture.
  */
 export function withoutFurniture(haystack: string, doc: DocumentV2): string {
-  let hay = fold(haystack).replace(/page\d+of\d+/g, '')
+  let hay = cutFurniture(fold(haystack), /#?page\d+of\d+#?/g)
   const m = /@top-left\{content:("(?:[^"\\]|\\.)*")/.exec(pageHeadCss(doc))
   if (m) {
     const head = m[1].slice(1, -1).replace(/\\3C /g, '<').replace(/\\(.)/g, '$1')
     const f = fold(head)
-    if (f !== '') hay = hay.split(f).join('')
+    if (f !== '') hay = cutFurniture(hay, new RegExp(`#?${f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}#?`, 'g'))
   }
   return hay
+}
+
+/**
+ * Cuts each match out of folded text. Where a digit stands on BOTH sides of the cut, the digit-space
+ * mark `fold` writes ("#") goes back in its place, so "day 3 | page 2 of 4 | 1 to" stays "3#1", never
+ * the "31" a lost digit would also produce; anywhere else the cut leaves nothing ("Jun | page 2 of 4 |
+ * 1" is "jun1", as "Jun 1" folds). Adversarial pass 1 on PR-11 caught the first version fusing them.
+ */
+export function cutFurniture(hay: string, re: RegExp): string {
+  return hay.replace(re, (match: string, at: number, whole: string) => {
+    const before = whole[at - 1] ?? ''
+    const after = whole[at + match.length] ?? ''
+    return /\d/.test(before) && /\d/.test(after) ? '#' : ''
+  })
 }

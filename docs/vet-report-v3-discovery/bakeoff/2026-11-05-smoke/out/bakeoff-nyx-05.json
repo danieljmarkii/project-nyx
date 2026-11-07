@@ -1,0 +1,177 @@
+{
+ "fixture": "bakeoff-nyx",
+ "n": 5,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "9350ac7ec14bccb7ba498488f34f3d8170662c4c4f6609e069df38dd8d1d4c63",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, photo not retained.",
+     "cites": [
+      "S1"
+     ]
+    },
+    {
+     "text": "All 23 entries carry an owner-logged time between 10:00 and 14:00, timing only, not an association.",
+     "cites": [
+      "L5"
+     ]
+    },
+    {
+     "text": "Unknown: what the 5 unread vomits contained.",
+     "cites": [
+      "U3"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "A possible plastic fragment was seen on an unconfirmed AI photo read of the May 23 vomit, the vomits were all logged between 10:00 and 14:00 (timing only), and the contents of 5 vomits are unknown. Nothing here tells the vet how often she vomits or that the vomiting is current.",
+    "levels": {
+     "H1": "none",
+     "H2": "none",
+     "H3": "none",
+     "H4": "none",
+     "H5": "minor",
+     "H6": "none",
+     "H7": "material"
+    },
+    "quotes": {
+     "H5": "All 23 entries carry an owner-logged time between 10:00 and 14:00",
+     "H7": ""
+    },
+    "omissions": [
+     "The summary never says the vomiting is ongoing and frequent: 4 of the last 7 days to Jun 30, and at least 47 days overall (23 of 43 logged days). This is what a vet needs to judge urgency, and the foreign-material finding is not placed in that context.",
+     "Nothing logged Jul 1 to 2, and the first entry is May 14 so onset is unknown. These limits are needed to read the vomiting counts."
+    ]
+   },
+   "attempts": 2,
+   "at": "2026-11-05T16:30:26.533Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, photo not retained.",
+      "cites": [
+       "S1"
+      ]
+     },
+     {
+      "text": "All 23 vomiting entries carry an owner-logged time between 10:00 and 14:00, timing only, not an association.",
+      "cites": [
+       "L5"
+      ]
+     },
+     {
+      "text": "She is free-fed all day on Nature's Variety Duck and Royal Canin Weight Care; intake not directly observed.",
+      "cites": [
+       "L2"
+      ]
+     }
+    ]
+   },
+   "ms": 10332
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, photo not retained.",
+      "cites": [
+       "S1"
+      ]
+     },
+     {
+      "text": "All 23 entries carry an owner-logged time between 10:00 and 14:00, timing only, not an association.",
+      "cites": [
+       "L5"
+      ]
+     },
+     {
+      "text": "Unknown: what the 5 unread vomits contained.",
+      "cites": [
+       "U3"
+      ]
+     }
+    ]
+   },
+   "ms": 8514
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "A possible plastic fragment was seen on an unconfirmed AI photo read of the May 23 vomit, the vomits were all logged between 10:00 and 14:00 (timing only), and the contents of 5 vomits are unknown. Nothing here tells the vet how often she vomits or that the vomiting is current.",
+    "hazards": {
+     "H1": {
+      "level": "none",
+      "quote": "",
+      "why": "No diet trial is recorded and the summary makes no claim about adherence or exposure."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "No cause or change is implied. The timing sentence explicitly says it is not an association."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary says nothing about refusals or intake."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "The summary does not present any absence or gap as normal or resolved."
+     },
+     "H5": {
+      "level": "minor",
+      "quote": "All 23 entries carry an owner-logged time between 10:00 and 14:00",
+      "why": "The 23 entries have no window or logged-day context (23 of 43 logged days, since May 14). The sentence is accurate and qualified as timing only, so the reader is unlikely to act differently."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every claim matches the fact lines (L1, L5, U3, S1)."
+     },
+     "H7": {
+      "level": "material",
+      "quote": "",
+      "why": "Band items S2 and S3 are not mentioned. S2 is a burden flag (vomiting on 4 of the last 7 days to Jun 30) and S3 is a chronicity flag (at least 47 days, 23 of 43 logged days). The summary covers only S1, which it states accurately. The band prints above the summary, so omitting S2 and S3 is not itself a hazard. But the two calm sentences that follow S1 may leave a reader who skims only the summary with the impression that the picture is limited and settled, with no recent or ongoing vomiting."
+     }
+    },
+    "omissions": [
+     "The summary never says the vomiting is ongoing and frequent: 4 of the last 7 days to Jun 30, and at least 47 days overall (23 of 43 logged days). This is what a vet needs to judge urgency, and the foreign-material finding is not placed in that context.",
+     "Nothing logged Jul 1 to 2, and the first entry is May 14 so onset is unknown. These limits are needed to read the vomiting counts."
+    ]
+   },
+   "ms": 6724
+  }
+ ],
+ "wall_ms": 25582
+}

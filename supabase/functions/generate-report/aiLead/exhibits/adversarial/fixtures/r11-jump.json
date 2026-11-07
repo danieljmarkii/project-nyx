@@ -25,6 +25,16 @@
    "id": "confounder",
    "kind": "confounder",
    "text": "No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner."
+  },
+  {
+   "id": "trial-reading-1",
+   "kind": "trial_reading",
+   "text": "No allowed-food list is recorded, so nothing here has been checked against the trial."
+  },
+  {
+   "id": "trial-reading-2",
+   "kind": "trial_reading",
+   "text": "For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it — the elimination cannot be confirmed clean from this record."
   }
  ],
  "trial_line": {

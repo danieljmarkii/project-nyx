@@ -750,18 +750,20 @@ Deno.test('D-A — a permitted extra that also lists another protein is a standi
   ]
   const snap = assembleReport(input)
   assert.equal(snap.trial?.contamination.length, 1)
-  assert.deepEqual(snap.trial?.contamination[0].extraProteins, ['chicken'])
+  // CUL-2513: measured against the (soy) trial, the jerky's own rabbit is named beside the chicken.
+  assert.deepEqual(snap.trial?.contamination[0].extraProteins, ['rabbit', 'chicken'])
   const text = plain(renderReport(snap))
   // NAMED. The cold read could not act on an unnamed "a food on the allowed list":
   // the row called it as trial-invalidating as a contaminated primary diet and then
   // withheld which product to stop.
-  assert.ok(/Ziwi Rabbit Jerky also lists Chicken/.test(text))
+  assert.ok(/Ziwi Rabbit Jerky lists Rabbit and Chicken, which the trial diet does not/.test(text), text)
   assert.ok(/less likely to be noticed/.test(text))
   // And it defeats the §7.2 affirmative, whatever the coverage.
   assert.ok(/cannot establish that the elimination was clean/.test(text))
   assert.ok(!/supports interpreting it/.test(text), 'the clause a busy reader lifts must not open a paragraph that dismantles it')
   // …and it reaches the HEADLINE, which is where a 60-second scan stops.
-  assert.ok(/The record shows Chicken in Cooper\u2019s diet during the trial/.test(text))
+  // CUL-2513: the headline names every protein the trial diet does not hold, the jerky's own included.
+  assert.ok(/The record shows Rabbit and Chicken in Cooper\u2019s diet during the trial/.test(text), (text.match(/The record shows[^.]*/) ?? [''])[0])
 })
 
 // ── C3 — the oral route ──────────────────────────────────────────────────────
@@ -813,6 +815,104 @@ Deno.test('C3 — a pill hidden in the PRESCRIBED diet is not 32 exposures', () 
   input.events.push({ id: 'dose-x', type: 'medication', occurredAt: at('2026-06-10', '09:00:00'), occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null, severity: null, notes: null, loggedAt: at('2026-06-10', '09:00:00'), meal: null })
   const snap = assembleReport(input)
   assert.equal(snap.trial?.oralRoute.length, 0, 'the vehicle IS the trial diet')
+})
+
+// ── CUL-2525 — doses given in food, on page 1 and in appendix B (Nyx's shape) ──
+
+/** Nyx's record, 2026-11-04, by shape: a completed trial, daily pills hidden in the ALLOWED wet
+ *  food, one dose logged "in food" with no meal paired, a direct dose, and an off-list chicken
+ *  treat carrying a dose AFTER the trial ended. Page 1 said nothing about doses in food. */
+function nyxVehicleShape(): ReportInput {
+  const input = wellLoggedTrialInput({
+    medicationItems: [
+      { id: 'mi-pred', genericName: 'prednisolone', brandName: null, strength: null, route: 'oral', isPrescription: true, form: 'tablet' },
+      { id: 'mi-cet', genericName: 'cetirizine', brandName: 'Zyrtec', strength: null, route: 'oral', isPrescription: false, form: 'capsule' },
+    ],
+  })
+  input.dietTrials[0].status = 'completed'
+  input.dietTrials[0].endedAt = '2026-06-25'
+  const dose = (eventId: string, date: string, item: string, extra: Partial<ReportInput['doses'][number]>) => {
+    input.events.push({ id: eventId, type: 'medication', occurredAt: at(date, '09:30:00'), occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null, severity: null, notes: null, loggedAt: at(date, '09:30:00'), meal: null })
+    input.doses.push({ eventId, occurredAt: at(date, '09:30:00'), medicationId: null, medicationItemId: item, adherence: 'given', doseAmount: null, pairedEventId: null, ...extra })
+  }
+  input.doses = []
+  // Three pills in the trial diet itself (the vehicle IS on the list).
+  for (const d of ['2026-06-08', '2026-06-09', '2026-06-10']) {
+    const v = meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], time: '09:30:00' })
+    input.events.push(v)
+    dose(id('dose'), d, 'mi-pred', { pairedEventId: v.id, howGiven: 'in_food' })
+  }
+  // In food, no meal paired: the vehicle is unknown, and the closed-world rule counts it.
+  dose('dose-unpaired', '2026-06-12', 'mi-cet', { howGiven: 'in_food', adherence: 'partial' })
+  // Given directly: not a dose in food at all.
+  dose('dose-direct', '2026-06-13', 'mi-cet', { howGiven: 'direct' })
+  // An off-list chicken treat carrying a dose after the trial ended: appendix B's window only.
+  const treat = meal({ date: '2026-06-28', brand: 'Blue Buffalo', product: 'Chicken Puree', foodItemId: 'f-bb', foodType: 'treat', proteins: ['chicken'], time: '20:00:00' })
+  input.events.push(treat)
+  dose('dose-treat', '2026-06-28', 'mi-cet', { pairedEventId: treat.id, howGiven: 'in_food' })
+  return input
+}
+
+Deno.test('CUL-2525 — an unpaired dose logged in food is an oral-route exposure; a pill in the trial diet is stated, not counted', () => {
+  const snap = assembleReport(nyxVehicleShape())
+  const t = snap.trial!
+  assert.deepEqual(t.oralRoute.map((o) => [o.eventId, o.trigger]), [['dose-unpaired', 'food_vehicle']])
+  assert.equal(t.oralRouteOnList?.length, 3, 'the three pills in the allowed food')
+  assert.ok(t.oralRouteOnList!.every((o) => o.vehicleLabel === 'Royal Canin Hydrolyzed HP'))
+  assert.equal(t.mayClaimAllMatched, false, 'an unknown vehicle defeats the affirmative')
+})
+
+Deno.test('CUL-2525 — page 1 names the doses given in food, and appendix B quotes the same two counts', () => {
+  const text = plain(renderReport(assembleReport(nyxVehicleShape())))
+  // Page 1: both halves of the doses given in food during the trial.
+  // Cold read: the record holds no food for it, so the page says no food, and dates it.
+  assert.ok(/1 dose by mouth was logged as given in food with no food recorded \(Jun 12\) \(Zyrtec\)/.test(text), 'the unpaired dose')
+  assert.doesNotMatch(text, /off the allowed list or not identified/, 'no paired off-list vehicle exists in the trial days')
+  assert.ok(
+    /3 doses by mouth were logged as given inside a food on the allowed list \(Royal Canin Hydrolyzed HP × 3\), from Jun 8 to Jun 10, 2026 \(prednisolone\)/.test(text),
+    (text.match(/\d+ doses? by mouth were logged as given inside a food on the allowed list[^.]*/) ?? ['(absent)'])[0],
+  )
+  assert.ok(/1 dose by mouth during the trial may carry a protein/.test(text), 'the caveat fires on the unknown vehicle')
+  // Appendix B: the row's window-wide feedings, then page 1's split over the trial days.
+  const row = text.slice(text.indexOf('Food used to give medication'), text.indexOf('Entered as supplements'))
+  // Each vehicle dated, so the chicken treat dosed after the trial is placed against its last day.
+  assert.match(row, /Royal Canin Hydrolyzed HP × 3 \(from Jun 8 to Jun 10, 2026\); Blue Buffalo Chicken Puree × 1 \(Jun 28, 2026\) \(4 feedings carried a dose\)/)
+  assert.match(row, /This row counts the whole report window, from \w+ \d+ to \w+ \d+, 2026; during the trial \(to Jun 25, 2026\), the clinical summary counts 3 doses given inside a food on the allowed list and 1 dose logged as given in food with no food recorded\./)
+})
+
+Deno.test('CUL-2525 pass 1 (QUIET) — a pill in an allowed food whose label lists another protein is never reassured about', () => {
+  // ADV-7: the trial diet's own label lists chicken. Being on the list keeps the dose out of the
+  // count; it never licenses "carries no protein the trial excludes" beside the contamination fact.
+  const input = nyxVehicleShape()
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, proteins: ['soy', 'chicken'], ingredientsNotes: 'Hydrolysed soy protein, chicken fat, rice' }]
+  const snap = assembleReport(input)
+  assert.ok(snap.trial!.contamination.some((c) => c.food.label === 'Royal Canin Hydrolyzed HP'), 'precondition: the vehicle is a contamination fact')
+  const text = plain(renderReport(snap))
+  assert.doesNotMatch(text, /carries no protein/)
+  assert.match(text, /Being on the list, they are not counted as exposures\. Royal Canin Hydrolyzed HP is named above as listing a protein beyond the trial’s, so the doses given in it went in with that protein\./)
+})
+
+Deno.test('CUL-2525 pass 1 — a clean allowed vehicle states the rule and nothing about protein', () => {
+  const text = plain(renderReport(assembleReport(nyxVehicleShape())))
+  assert.match(text, /\(prednisolone\)\. Being on the list, they are not counted as exposures\./)
+  assert.doesNotMatch(text, /carries no protein|named above as listing a protein beyond/)
+})
+
+Deno.test('CUL-2525 cold read (QUIET) — a pill in an allowed food whose panel was never captured says so beside the count', () => {
+  // Nyx: both vehicles were foods with no captured ingredient panel, and "on the list" read as "clean".
+  const input = nyxVehicleShape()
+  input.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, ingredientsNotes: null, extractionConfidence: null }]
+  const snap = assembleReport(input)
+  assert.equal(snap.trial!.permittedFoods[0].panelComplete, false, 'precondition: the vehicle panel is unread')
+  const text = plain(renderReport(snap))
+  assert.match(text, /not counted as exposures\. The ingredient panel of Royal Canin Hydrolyzed HP was never captured, so this record cannot say what else the doses given in it went in with\./)
+})
+
+Deno.test('CUL-2525 — mutation: a pill in the trial diet with no dose in food leaves both lines silent', () => {
+  const input = nyxVehicleShape()
+  input.doses = input.doses.filter((d) => d.eventId === 'dose-direct')
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(!/by mouth were logged as given inside a food|page 1 counts/.test(text))
 })
 
 // ── §5.4 — identity is brand+product, not the UUID ───────────────────────────
@@ -984,7 +1084,7 @@ Deno.test('the challenge-window marker is forward-only, species-keyed, and never
   assert.ok(/not an attribution/.test(text))
   // CUL-1978 cold read 2 — its same-day exclusion is the MARKER's rule, not page 1's test,
   // which now names associations over a 12–24 h window.
-  assert.ok(/not the association test on page.1: .*this marker deliberately excludes same-day pairs/.test(text), text.slice(text.indexOf('Timing only'), text.indexOf('Timing only') + 300))
+  assert.ok(/not the association test in the clinical summary: .*this marker deliberately excludes same-day pairs/.test(text), text.slice(text.indexOf('Timing only'), text.indexOf('Timing only') + 300))
 })
 
 Deno.test('the challenge window is 7 days for a cat, 14 for a dog (Olivry & Mueller)', () => {
@@ -1348,10 +1448,11 @@ Deno.test('a PERMITTED extra\u2019s contamination never renders in the TRIAL FOO
   ]
   const text = plain(renderReport(assembleReport(input)))
   assert.ok(!/The trial food\u2019s own label also lists Chicken/.test(text), 'the trial diet is clean and must not be accused')
-  assert.ok(/Pedigree Dentastix, on the allowed list, also lists Chicken/.test(text), 'the finding names its own product, in its own voice')
+  // CUL-2513: measured against the (soy) trial, in its own voice; the fixture designates cereal as its primary.
+  assert.ok(/Pedigree Dentastix, on the allowed list, lists Cereal and Chicken, which the trial diet does not/.test(text), (text.match(/Pedigree Dentastix, on the allowed list[^(]*/) ?? [''])[0])
   // The headline names the PROTEIN and the PET, never the food, so promoting it there
   // cannot mis-attribute the source.
-  assert.ok(/The record shows Chicken in Cooper\u2019s diet during the trial/.test(text))
+  assert.ok(/The record shows Cereal and Chicken in Cooper\u2019s diet during the trial/.test(text), (text.match(/The record shows[^.]*/) ?? [''])[0])
 })
 
 Deno.test('§7.2 carries the medication confound, not only the exposure caveat', () => {
@@ -4372,18 +4473,25 @@ Deno.test('B-613 — the clause names the MIX, not just the most recent sign', (
   input.eventsSinceIso = '2026-01-03T00:00:00Z'
   const snap = assembleReport(input)
   // Descending by count, then by type name — the same record always renders the same way.
-  assert.deepEqual(snap.scope.trialCropSymptoms?.byType, [
+  const counts = (b: NonNullable<ReturnType<typeof assembleReport>['scope']['trialCropSymptoms']>['byType']) =>
+    b.map(({ type, count }) => ({ type, count }))
+  assert.deepEqual(counts(snap.scope.trialCropSymptoms!.byType), [
     { type: 'vomit', count: 5 },
     { type: 'itch', count: 2 },
     { type: 'diarrhea', count: 1 },
   ])
+  // CUL-2510: every one of these sits before the window, and the earliest of each is carried.
+  const itch = snap.scope.trialCropSymptoms!.byType.find((b) => b.type === 'itch')!
+  assert.equal(itch.beforeWindow, 2)
+  assert.ok(itch.earliestBeforeWindowIso!.startsWith('2026-04-21'), itch.earliestBeforeWindowIso!)
+  assert.equal(snap.scope.trialCropSymptoms!.byType.find((b) => b.type === 'vomit')!.beforeWindow, 5)
   assert.match(plain(renderReport(snap)), /8 symptom events were logged in those days \(5 vomiting, 2 itching, 1 loose stool; most recent: vomiting, May 24\)/)
   // A tie breaks on type name, so two equal counts cannot swap between renders.
   const tie = truncatedTrialInput()
   tie.eventsSinceIso = '2026-01-03T00:00:00Z'
   tie.events = tie.events.filter((e) => e.type !== 'vomit' || e.occurredAt >= '2026-06-02T00:00:00Z')
   tie.events.push(symptom('2026-05-02', 'vomit'), symptom('2026-05-03', 'itch'))
-  assert.deepEqual(assembleReport(tie).scope.trialCropSymptoms?.byType, [
+  assert.deepEqual(counts(assembleReport(tie).scope.trialCropSymptoms!.byType), [
     { type: 'itch', count: 1 },
     { type: 'vomit', count: 1 },
   ])
@@ -5571,28 +5679,30 @@ for (const [tz, now] of [
 // before they were replaced.
 // Re-captured at CUL-2443, which names the middle day an odd span leaves in neither half: a text
 // diff of all 21 renders against the merge-base differed only in that "Symptoms vs logging" line.
+// Re-recorded for CUL-2581: these trial fixtures run on a hydrolysed soy diet, so the trial line
+// now reads "Soy (hydrolysed)" (diffed: the only change in the rendered page).
 const CUL_2094_GOLDEN: Record<string, string> = {
-  'endedPast/America/Phoenix': 'cd5b6b8fb0e85a2d',
-  'endedPast/window/America/Phoenix': '857ee73830555eab',
-  'endedToday/America/Phoenix': 'f2e9823832db5920',
-  'endedToday/window/America/Phoenix': 'b4c2e0f1a6667f96',
-  'endedOnTarget/America/Phoenix': '25e5de5eb3117848',
-  'endedOnTarget/window/America/Phoenix': '719d9f6d3efd24ed',
-  'active/America/Phoenix': 'f8f887a36a5e2372',
-  'endedPast/Pacific/Noumea': 'cd5b6b8fb0e85a2d',
-  'endedPast/window/Pacific/Noumea': '857ee73830555eab',
-  'endedToday/Pacific/Noumea': 'f2e9823832db5920',
-  'endedToday/window/Pacific/Noumea': 'b4c2e0f1a6667f96',
-  'endedOnTarget/Pacific/Noumea': '25e5de5eb3117848',
-  'endedOnTarget/window/Pacific/Noumea': '719d9f6d3efd24ed',
-  'active/Pacific/Noumea': 'ded63778f07d5524',
-  'endedPast/UTC': 'cd5b6b8fb0e85a2d',
-  'endedPast/window/UTC': '857ee73830555eab',
-  'endedToday/UTC': 'f2e9823832db5920',
-  'endedToday/window/UTC': 'b4c2e0f1a6667f96',
-  'endedOnTarget/UTC': '25e5de5eb3117848',
-  'endedOnTarget/window/UTC': '719d9f6d3efd24ed',
-  'active/UTC': 'f8f887a36a5e2372',
+  'endedPast/America/Phoenix': '2ca9d025dc4f7dce',
+  'endedPast/window/America/Phoenix': 'e31eed18a8d69511',
+  'endedToday/America/Phoenix': 'cdff697079358379',
+  'endedToday/window/America/Phoenix': '43900bec3b050697',
+  'endedOnTarget/America/Phoenix': '9c2e6760f16a6fc4',
+  'endedOnTarget/window/America/Phoenix': '467c35cc0c46a2c5',
+  'active/America/Phoenix': '27ef27591220c685',
+  'endedPast/Pacific/Noumea': '2ca9d025dc4f7dce',
+  'endedPast/window/Pacific/Noumea': 'e31eed18a8d69511',
+  'endedToday/Pacific/Noumea': 'cdff697079358379',
+  'endedToday/window/Pacific/Noumea': '43900bec3b050697',
+  'endedOnTarget/Pacific/Noumea': '9c2e6760f16a6fc4',
+  'endedOnTarget/window/Pacific/Noumea': '467c35cc0c46a2c5',
+  'active/Pacific/Noumea': 'e4c89bf6a51923a0',
+  'endedPast/UTC': '2ca9d025dc4f7dce',
+  'endedPast/window/UTC': 'e31eed18a8d69511',
+  'endedToday/UTC': 'cdff697079358379',
+  'endedToday/window/UTC': '43900bec3b050697',
+  'endedOnTarget/UTC': '9c2e6760f16a6fc4',
+  'endedOnTarget/window/UTC': '467c35cc0c46a2c5',
+  'active/UTC': '27ef27591220c685',
 }
 
 Deno.test('CUL-2094 — every trial the fix does not reach renders byte-identically (before/after)', async () => {
@@ -5659,4 +5769,87 @@ Deno.test('CUL-2286 — two single readings on a refusing cat, no weight flag: t
   const band = text.slice(0, text.indexOf('Diet trial'))
   assert.ok(/Weight fell to 4\.25 kg/.test(band), 'the weight fact composes with the refusal, above the fold')
   assert.ok(!/moves about that much on its own/.test(text), 'never a discount beside a live refusal flag')
+})
+
+// ── CUL-2509 — medication rows carry where they came from ─────────────────────────────
+
+function cetirizineTrialInput(): ReportInput {
+  const input = truncatedTrialInput()
+  input.medicationItems = [{ id: 'mi-cet', genericName: 'cetirizine', brandName: 'Zyrtec', strength: null, route: 'oral', isPrescription: false, form: 'tablet' }]
+  // Ad-hoc doses: four in the trial days before the window (Apr 25, Apr 26 ×2, May 10), two inside it.
+  const dose = (id: string, date: string, over: Partial<ReportInput['doses'][number]> = {}) => ({
+    eventId: id, occurredAt: at(date, '09:00:00'), medicationId: null, medicationItemId: 'mi-cet', adherence: 'given', doseAmount: null, pairedEventId: null, ...over,
+  })
+  const earlier = [dose('c1', '2026-04-25'), dose('c2', '2026-04-26'), { ...dose('c3', '2026-04-26'), occurredAt: at('2026-04-26', '19:00:00') }, dose('c4', '2026-05-10'), dose('c5', '2026-05-12', { adherence: 'missed' })]
+  const inWindow = [dose('c6', '2026-06-25'), dose('c7', '2026-06-28', { howGiven: 'in_food' })]
+  input.doses = inWindow
+  input.lifetimeDoses = [...earlier, ...inWindow]
+  for (const d of [...earlier, ...inWindow]) {
+    input.events.push({ id: d.eventId, type: 'medication', occurredAt: d.occurredAt, occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null, severity: null, notes: null, loggedAt: d.occurredAt, meal: null })
+  }
+  return input
+}
+
+Deno.test('CUL-2509 — the builder writes each medication row’s provenance', () => {
+  const snap = assembleReport(cetirizineTrialInput())
+  const row = snap.trial!.medicationOverlap.find((m) => /cetirizine/i.test(m.drugName))!
+  assert.equal(row.adHoc, true)
+  assert.equal(row.itemId, 'mi-cet')
+  const cc = snap.concurrentChanges.find((c) => /cetirizine/i.test(c.label))!
+  assert.equal(cc.adHoc, true)
+  assert.equal(cc.itemId, 'mi-cet')
+})
+
+Deno.test('CUL-2509 instance 3 — an ad-hoc row counts its days dosed in the earlier trial days', () => {
+  const snap = assembleReport(cetirizineTrialInput())
+  const row = snap.trial!.medicationOverlap.find((m) => /cetirizine/i.test(m.drugName))!
+  // Apr 25, Apr 26 (twice), May 10 given; May 12 missed: 3 days.
+  assert.equal(row.adHocEarlierTrialDoseDays, 3)
+  const text = plain(renderReport(snap))
+  assert.match(text, /dosed on 3 of the 42 earlier trial days this report leaves out/)
+  // Without the lifetime read the count is unknown, never zero.
+  const noLife = cetirizineTrialInput()
+  delete noLife.lifetimeDoses
+  const unknown = assembleReport(noLife).trial!.medicationOverlap.find((m) => /cetirizine/i.test(m.drugName))!
+  assert.equal(unknown.adHocEarlierTrialDoseDays, null)
+  // Pass 2 (QUIET): said as uncounted, never left out.
+  assert.match(plain(renderReport(assembleReport(noLife))), /its dosing in the 42 earlier trial days this report leaves out could not be counted/)
+})
+
+Deno.test('CUL-2509 instance 2 — a dose logged "in food" with no meal paired reaches the diet history', () => {
+  const snap = assembleReport(cetirizineTrialInput())
+  assert.equal(snap.diet.medicationVehicles?.unresolvedDoses, 1)
+  const text = plain(renderReport(snap))
+  assert.match(text, /1 dose was logged in this window as given in food or a treat that does not resolve to a meal logged here, so the food is not named\./)
+  assert.doesNotMatch(text, /no dose in this window was logged as given in food/)
+  // Control: unanswered or "direct" is no vehicle.
+  const direct = cetirizineTrialInput()
+  direct.doses = direct.doses.map((d) => ({ ...d, howGiven: d.howGiven ? 'direct' : null }))
+  assert.equal(assembleReport(direct).diet.medicationVehicles, null)
+})
+
+Deno.test('CUL-2509 pass 1 — an ad-hoc row with no item id is unknown, never 0; a short dose pull is a floor', () => {
+  const noItem = cetirizineTrialInput()
+  noItem.medicationItems = []
+  noItem.doses = noItem.doses.map((d) => ({ ...d, medicationItemId: null }))
+  noItem.lifetimeDoses = noItem.lifetimeDoses!.map((d) => ({ ...d, medicationItemId: d.eventId === 'c6' || d.eventId === 'c7' ? null : 'mi-cet' }))
+  const row = assembleReport(noItem).trial!.medicationOverlap.find((m) => m.adHoc)!
+  assert.equal(row.adHocEarlierTrialDoseDays, null)
+  const short = cetirizineTrialInput()
+  short.incompletePulls = ['medication_administrations']
+  const snap = assembleReport(short)
+  assert.equal(snap.trial!.medicationOverlap.find((m) => m.adHoc)!.adHocEarlierTrialDoseDaysIsFloor, true)
+  assert.match(plain(renderReport(snap)), /dosed on at least 3 of the 42 earlier trial days/)
+})
+
+Deno.test('CUL-2509 pass 2 — a count that could not be taken is said, never left out or read as 0', () => {
+  // A short pull with nothing read in the earlier days: unknown, never "at least 0".
+  const short = cetirizineTrialInput()
+  short.incompletePulls = ['medication_administrations']
+  short.lifetimeDoses = short.lifetimeDoses!.filter((d) => d.eventId === 'c6' || d.eventId === 'c7')
+  const snap = assembleReport(short)
+  assert.equal(snap.trial!.medicationOverlap.find((m) => m.adHoc)!.adHocEarlierTrialDoseDays, null)
+  const text = plain(renderReport(snap))
+  assert.match(text, /its dosing in the 42 earlier trial days this report leaves out could not be counted/)
+  assert.doesNotMatch(text, /at least 0 of the/)
 })

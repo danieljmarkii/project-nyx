@@ -39,6 +39,9 @@ function localDay(iso: string, tz: string | null): string {
 export function nyxLiveSnapshot(): ReportSnapshot {
   const raw = structuredClone(NYX_LIVE) as unknown as { snapshot: Omit<ReportSnapshot, 'v2'> }
   const s = raw.snapshot
+  // The capture predates `IncidentPhoto.attachmentId` (PR-23b, CUL-2454). Production fills it from
+  // `event_attachments.id`; here the storage path, unique per attachment, stands in for it.
+  s.incidentPhotos = s.incidentPhotos.map((p) => ({ ...p, attachmentId: p.attachmentId ?? `att:${p.storagePath}` }))
   const tz = s.timezone
   const rated = s.diet.mealCompletion?.ratedMeals ?? 0
   const intake = s.provenance.intakeLog

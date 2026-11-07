@@ -143,7 +143,7 @@ export const READS: readonly ReadSpec[] = [
     name: 'medication_administrations',
     table: 'medication_administrations',
     select:
-      'event_id, medication_id, medication_item_id, adherence, dose_amount, paired_event_id, ' +
+      'event_id, medication_id, medication_item_id, adherence, dose_amount, paired_event_id, how_given, ' +
       `events!${DOSE_EVENT_FK}(occurred_at, deleted_at)`,
     order: NEWEST,
     preApplied: [PET],

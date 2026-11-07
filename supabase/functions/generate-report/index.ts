@@ -70,6 +70,7 @@ import {
   FAB_STOOL_SPLIT_KEY,
 } from './report.ts'
 import { renderReport } from './render.ts'
+import { applyPhotosLeftOut, parsePhotosLeftOut, photoManifestOf } from './photoLeaveOut.ts'
 import {
   addDays,
   afterOf,
@@ -84,7 +85,7 @@ import {
 } from './composer.ts'
 import { buildDocumentV2, type DocumentV2 } from './documentV2.ts'
 import { draftLeadIO, parseAiLeadRequest, runAiLeadForDraft, settleLeadForKeep } from './aiLead/run.ts'
-import { isUuid, keepCopy, openCopy, parseKeepRequest, parseOpenRequest, reapStaleDrafts, saveDraft, savedCopyIO, type DraftInput, type Rendered, type SaveResult, type SharedVia } from './savedCopy.ts'
+import { isUuid, keepCopy, openCopy, parseKeepRequest, parseOpenRequest, reapStaleDrafts, saveDraft, savedCopyIO, type DraftInput, type Rendered, type KeepRequest, type SaveResult, type SharedVia } from './savedCopy.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
 import { REPORT_DOCUMENT_FLAG, reportDocumentV2On } from './documentFlag.ts'
@@ -296,6 +297,8 @@ interface DoseRow {
   adherence: string | null
   dose_amount: string | null
   paired_event_id: string | null
+  /** CUL-2509 — migration 022's `dose_route_vehicle`; optional so an older fixture still maps. */
+  how_given?: string | null
   events: ParentEventJoin | ParentEventJoin[] | null
 }
 
@@ -777,6 +780,7 @@ export function mapDoseRows(rows: DoseRow[], lookbackMs?: number): ReportDoseInp
       adherence: r.adherence ?? null,
       doseAmount: r.dose_amount ?? null,
       pairedEventId: r.paired_event_id ?? null,
+      howGiven: r.how_given ?? null,
     })
   }
   return out
@@ -909,6 +913,7 @@ export function mapConditionRows(rows: ConditionRow[]): ReportConditionInput[] {
 
 export function mapAttachmentRows(rows: AttachmentRow[]): ReportAttachmentInput[] {
   return rows.map((r) => ({
+    id: r.id,
     eventId: r.event_id,
     storagePath: r.storage_path,
     mimeType: r.mime_type ?? null,
@@ -1141,10 +1146,24 @@ export async function generateReportForPet(
   // saved and the colophon carries no short id, the render every caller before PR-20 got. Only the
   // handler passes one, bound to the JWT-verified uid; it runs only on the v2 document.
   saveCopy: SaveCopy | null = null,
+  // PR-23b (CUL-2454): the attachment ids the owner left out, already parsed (`parsePhotosLeftOut`).
+  // Honoured on the v2 document only; see `applyPhotosLeftOut`. Default none, every caller before.
+  photosLeftOut: readonly string[] = [],
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const built = await buildReportSnapshotForPet(supabase, petId, nowMs, requestedWindow, audience, callerJwt, requestTimezone)
   if (built.kind === 'response') return { status: built.status, body: built.body }
-  const { snapshot, timezone } = built
+  const { timezone } = built
+
+  // CUL-2290 — which document. v2 needs BOTH the request and the flag; the flag is read only when
+  // v2 was asked for, so a v1 request costs no extra read. PR-23b (R5): read BEFORE the embed, so
+  // the owner's choice is applied (v2) or dropped (v1) before any photo is fetched.
+  const documentV2On = documentRequest === 'v2' ? await reportDocumentV2On(supabase, callerJwt) : null
+  // PR-23b (CUL-2454): the picker's list is every photo the report held before the owner's choice,
+  // so a photo left out can be offered back. v2 only: v1 has no picker.
+  const photos = documentV2On === true ? photoManifestOf(built.snapshot.incidentPhotos) : null
+  // The split, on the assembled manifest, before the embed (R1): a left-out photo is never fetched
+  // and never takes an embed slot. v1 gets the snapshot back untouched (CUL-2590 guard 2).
+  const { snapshot, leftOutCount } = applyPhotosLeftOut(built.snapshot, photosLeftOut, documentV2On === true)
 
   // 4. (PR 7) embed the incident-photo bytes → pure render.
   //    assembleReport built the photo MANIFEST (which incidents, order, safety class); the ONE I/O
@@ -1154,9 +1173,6 @@ export async function generateReportForPet(
   if (adminClient && snapshot.incidentPhotos.length > 0) {
     photoStats = await embedIncidentPhotos(adminClient, snapshot.incidentPhotos)
   }
-  // CUL-2290 — which document. v2 needs BOTH the request and the flag; the flag is read last and
-  // only when v2 was asked for, so a v1 request costs no extra read.
-  const documentV2On = documentRequest === 'v2' ? await reportDocumentV2On(supabase, callerJwt) : null
   // VR2-17 (CUL-2297): the v2 path builds ONE document and lays it out twice, the printed page
   // (`html`, what the PDF and every caller before the preview read) and the phone reflow
   // (`phone_html`, the preview's main frame). One build, so the two can never disagree on a word,
@@ -1183,6 +1199,7 @@ export async function generateReportForPet(
             include_look_notes: audience.kind === 'owner' ? audience.includeLookNotes : false,
           },
           snapshot,
+          photosLeftOut: leftOutCount,
         }, render)
       : { saved: false, rendered: render(null) }
   }
@@ -1208,9 +1225,13 @@ export async function generateReportForPet(
       // Owner-visibility (spec §8 "the mitigation is owner visibility"): the app surfaces the count
       // so the owner knows how many of their photos this report hands to the vet. The interactive
       // "tap to exclude any" review is the deferred fast-follow (B-243) that builds on this count.
+      // PR-23b: the photos THIS report hands over, after the owner's choice.
       photo_count: photoStats.total,
       photo_embedded: photoStats.embedded,
       photo_omitted: photoStats.omitted,
+      // PR-23b (CUL-2454, R7, R4): the picker's list, v2 only, null on v1. Every photo held before
+      // the owner's choice; no storage path, no URL, no mark of which were left out.
+      photos,
       // R-16 (CUL-998 / CUL-861) — the report's own verdict that its trial has no
       // allowed-food list, returned so the owner hears it on the report screen BEFORE
       // Send, with a door to set the list up, rather than reading it in front of the vet.
@@ -1485,7 +1506,7 @@ export async function buildReportSnapshotForPet(
       supabase
       .from('medication_administrations')
       .select(
-        'event_id, medication_id, medication_item_id, adherence, dose_amount, paired_event_id, ' +
+        'event_id, medication_id, medication_item_id, adherence, dose_amount, paired_event_id, how_given, ' +
           'events!medication_administrations_event_id_fkey(occurred_at, deleted_at)',
         { count: 'exact' },
       )
@@ -1916,8 +1937,9 @@ const handler = async (req: Request): Promise<Response> => {
   let composer: { part: ComposerPart } | null = null
   let documentRequest: 'v1' | 'v2' = 'v1'
   let aiLead: { reportId: string | null; leaveOut: boolean } | null = null
-  let keep: { reportId: string | null; sharedVia: SharedVia | null } | null = null
+  let keep: KeepRequest | null = null
   let open: { reportId: string | null } | null = null
+  let photosLeftOut: string[] = []
   try {
     const body = (await req.json()) as {
       petId?: string
@@ -1948,6 +1970,12 @@ const handler = async (req: Request): Promise<Response> => {
       // VR2-21 (CUL-2301) — `mode: 'open'` returns one kept copy's stored HTML (savedCopy.ts).
       sharedVia?: string
       shared_via?: string
+      sharedAt?: string
+      // PR-23b (CUL-2454) — the attachment ids the owner left out of this preview. Read only by
+      // the report path, and honoured only on the v2 document (`applyPhotosLeftOut`); `keep`,
+      // `open`, the AI lead and the composer never see it (R6).
+      photosLeftOut?: unknown
+      photos_left_out?: unknown
     }
     keep = parseKeepRequest(body)
     open = parseOpenRequest(body)
@@ -1963,6 +1991,7 @@ const handler = async (req: Request): Promise<Response> => {
     // Nor does the AI lead: owner words never reach its fact table (R-12, spec §9.1).
     if (composer !== null || aiLead !== null) includeNotes = false
     documentRequest = body.reportVersion === 'v2' ? 'v2' : 'v1'
+    photosLeftOut = documentRequest === 'v2' ? parsePhotosLeftOut(body) : []
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }
@@ -2030,6 +2059,7 @@ const handler = async (req: Request): Promise<Response> => {
       requestTimezone,
       documentRequest,
       documentRequest === 'v2' ? draftSaver(supabase, adminClient, petId, callerJwt) : null,
+      photosLeftOut,
     )
     return Response.json(body, {
       status,
@@ -2108,13 +2138,14 @@ function draftSaver(supabase: SupabaseClient, adminClient: SupabaseClient, petId
 
 /**
  * VR2-20 (CUL-2300) — keep a draft as sent. The uid is the verified one; the row is named by id,
- * pet and maker (savedCopy.ts), and the lead's columns are settled by their one writer first.
+ * pet and maker (savedCopy.ts), and the lead's columns are settled in the keep's one write
+ * (aiLead/run.ts builds them, CUL-2436).
  */
 async function keepForPet(
   supabase: SupabaseClient,
   adminClient: SupabaseClient,
   petId: string,
-  req: { reportId: string | null; sharedVia: SharedVia | null },
+  req: KeepRequest,
   callerJwt: string | null,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   if (req.reportId === null || req.sharedVia === null) return { status: 400, body: { error: 'reportId and sharedVia required' } }

@@ -176,7 +176,11 @@ export const INTAKE_SHEET_TITLE = 'Intake per feeding'
 export const RECORD_SHEET_TITLE = 'The record by day'
 export const LOG_SHEET_TITLE = 'Event log'
 export const MEDICATION_SHEET_TITLE = 'Medications'
-export const DIET_SHEET_TITLE = 'Diet, weight and food exposure'
+/** CUL-2551 (brief 2a): v1 page 1's weight, trial and diet-and-medication sections print on sheet 1;
+ *  this sheet keeps v1's diet history and off-diet exposures, and its title says only that. */
+export const DIET_SHEET_TITLE = 'Diet history and food exposure'
+/** The `here` that names sheet 1 for `v2Pointers`: a pointer at sheet 1 printed on sheet 1 says "this sheet". */
+export const SHEET1_HERE = 'sheet 1'
 export const NOTICED_SHEET_TITLE = 'Noticed (owner’s observations)'
 export const KEPT_SHEET_TITLE = 'How this record was kept'
 
@@ -219,7 +223,16 @@ export function v2FlagPointersOf(sheets: readonly BackSheetV2[], snap: ReportSna
     mealsDetailIn: meals,
     // The event log lists every entry by date and time (VR2-14), as v1's appendix A did.
     logLists: `the event log ${titled(LOG_SHEET_TITLE)} lists`,
-    incidents: snap.incidentPhotos.length > 0 ? `see the incident photos ${titled(RECORD_SHEET_TITLE)}` : null,
+    // CUL-2455: the red flag behind this pointer names no incident, so once the owner left any
+    // photo out the pointer cannot promise the flagged one is on that sheet. No digit (PR-25).
+    incidents:
+      snap.incidentPhotos.length === 0
+        ? null
+        : `see the incident photos ${titled(RECORD_SHEET_TITLE)}${
+            (snap.incidentPhotosLeftOut ?? []).length > 0
+              ? '; the owner left some photos out of this report, so its photo may be one of them'
+              : ''
+          }`,
   }
 }
 
@@ -428,15 +441,18 @@ function ledgerBlock(snap: ReportSnapshot, intakeSheet: boolean): BackBlockV2 {
   return { kind: 'ledger', id: 'ledger', heading: 'Every day of the window', caption, fills: label, rows, lines }
 }
 
-function episodesBlock(snap: ReportSnapshot): BackBlockV2 | null {
-  const html = `${vomitCharacteristics(snap, V2_SECTION_POINTERS)}${stoolCharacteristics(snap, V2_SECTION_POINTERS)}`.trim()
-  if (html === '') return null
+export function episodesBlock(snap: ReportSnapshot): Extract<BackBlockV2, { kind: 'episodes' }> | null {
+  const v1 = `${vomitCharacteristics(snap, V2_SECTION_POINTERS)}${stoolCharacteristics(snap, V2_SECTION_POINTERS)}`.trim()
+  if (v1 === '') return null
+  // CUL-2551 (brief 5a): these print on sheet 1 under the band, as on v1's page 1, so v1's "These
+  // lead the flags for review above" is true as written; every other "page 1" is this sheet.
+  const html = v1.replace(/page&nbsp;1/g, 'this sheet')
   // v1's two sections sit under this sheet's own heading, so their headings step down one level.
   return {
     kind: 'episodes',
     id: 'episodes',
     heading: EPISODES_HEADING,
-    html: onSheets(html.replace(/<h2>/g, '<h3>').replace(/<\/h2>/g, '</h3>')),
+    html: html.replace(/<h2>/g, '<h3>').replace(/<\/h2>/g, '</h3>'),
   }
 }
 
@@ -470,18 +486,6 @@ function predicateLineOf(snap: ReportSnapshot): string | null {
     line += ` The dated list below ${holds} rated below “ate it all”, so it also lists ${or(listedFinished)} meals, which the flag counts as finished.`
   }
   return line
-}
-
-/** " (UTC)" when the record carries no usable zone: fmtLocalTime then prints UTC, and an
- *  unlabelled UTC minute reads as local (adversarial pass 1 on CUL-2293). */
-function utcMark(tz: string | null): string {
-  if (!tz) return ' (UTC)'
-  try {
-    new Intl.DateTimeFormat('en-GB', { timeZone: tz })
-    return ''
-  } catch {
-    return ' (UTC)'
-  }
 }
 
 /**
@@ -519,7 +523,7 @@ function lastAboveRefusedOf(snap: ReportSnapshot): string | null {
   const none = anyMostOrAll ? '' : ' No meal in this window was rated “ate most” or “ate it all”.'
   return `The last ${noun} rated “ate some” or better: ${plain(fmtLocalDay(hit.occurredAt, snap.timezone))} at ${plain(
     fmtLocalTime(hit.occurredAt, snap.timezone),
-  )}${utcMark(snap.timezone)} (${intakeLabel(hit.rating).toLowerCase()}).${none}${caveat}`
+  )} (${intakeLabel(hit.rating).toLowerCase()}).${none}${caveat}`
 }
 
 function intakeBlock(snap: ReportSnapshot): BackBlockV2 {
@@ -536,11 +540,8 @@ function intakeBlock(snap: ReportSnapshot): BackBlockV2 {
     lastAboveRefused: lastAboveRefusedOf(snap),
     // The same pointer swap and guard as VR2-14's sheets: the meal-items footnote points at the diet
     // sheet's "Timing vs symptoms", never at sheet 1 (cold read round 2).
-    tablesHtml: (() => {
-      const html = v2Pointers(tables, snap, INTAKE_SHEET_TITLE)
-      assertNoV1Pointer(html, 'intake')
-      return html
-    })(),
+    // CUL-2533: the pointer guard runs at test time over every fixture (`v1PointerLeak`), never here.
+    tablesHtml: v2Pointers(tables, snap, INTAKE_SHEET_TITLE),
   }
 }
 
@@ -565,18 +566,18 @@ function letterTitles(snap: ReportSnapshot): Map<string, string> {
 }
 
 /**
- * v1 page 1's sections that v2 reprints on the diet sheet point at each other as "page 1". On v2
- * they share a sheet, so each phrase says "this sheet"; read one by one, so a "page 1" this table
- * does not know falls through to "sheet 1" only where `assertNoV1Pointer` lets it.
+ * v1 page 1's diet-side sections (the weight trend, the diet trial, the diet and medication block
+ * with Timing vs symptoms) point at each other as "page 1". CUL-2551 (brief 2a) prints all of them
+ * on v2's sheet 1, so each phrase says "this sheet" there and "sheet 1" from a back sheet (the
+ * intake sheet's footnote, the event log). Read one by one, so a "page 1" this table does not know
+ * is left for the test-time guard (`v1PointerLeak`) to report.
  */
-/** v1 page 1's diet-side sections, which all print on v2's diet sheet: "this sheet" there, the
- *  diet sheet by title from any other (cold read round 2: the intake sheet's footnote said
- *  "sheet 1 under Timing vs symptoms"). */
 function dietSheetPointers(here: string | null): Array<readonly [string, string]> {
-  const at = here === DIET_SHEET_TITLE ? 'this sheet' : sheetHeaded(DIET_SHEET_TITLE)
+  const onOne = here === SHEET1_HERE
+  const at = onOne ? 'this sheet' : 'sheet&nbsp;1'
   return [
     ['Weight trend on page&nbsp;1', `Weight trend on ${at}`],
-    ['so page&nbsp;1 shows no weight trend', here === DIET_SHEET_TITLE ? 'so this sheet shows no weight trend' : `so ${sheetHeaded(DIET_SHEET_TITLE)} shows no weight trend`],
+    ['so page&nbsp;1 shows no weight trend', `so ${at} shows no weight trend`],
     ['on page&nbsp;1 under Timing vs symptoms', `on ${at} under Timing vs symptoms`],
     ['not the association test on page&nbsp;1', `not the association test on ${at}`],
     ['the diet-trial block on page&nbsp;1', `the diet-trial block on ${at}`],
@@ -618,16 +619,35 @@ const SHEET_ONE_TRUE = [
   /the &ldquo;last fully-eaten meal&rdquo; on sheet&nbsp;1/,
   /so sheet&nbsp;1 shows no &ldquo;last full meal&rdquo;/,
   /\(sheet&nbsp;1 anchor\)/,
+  // CUL-2551: v1 page 1's diet-side sections print on sheet 1, so these land where they say.
+  /Weight trend on sheet&nbsp;1/,
+  /so sheet&nbsp;1 shows no weight trend/,
+  /on sheet&nbsp;1 under Timing vs symptoms/,
+  /the association test on sheet&nbsp;1/,
+  /the diet-trial block on sheet&nbsp;1/,
+  /the adherence line on sheet&nbsp;1 counts the whole course/,
   /No count on sheet&nbsp;1 is measured over the trial as a whole/,
   /the chart on sheet&nbsp;1 spans the report/,
   /the symptom counts on sheet&nbsp;1 with it in view/,
   /in none of the counts on sheet&nbsp;1/,
 ]
 
-/** v1's whole-course adherence line is the diet sheet's; the dose log on the medication sheet says so. */
+/** v1's whole-course adherence line is sheet 1's (CUL-2551); the dose log on the medication sheet says so. */
 function medicationPointers(html: string): string {
-  return html.replace('page&nbsp;1&rsquo;s adherence line counts the whole course', `the adherence line on ${sheetHeaded(DIET_SHEET_TITLE)} counts the whole course`)
+  return html.replace('page&nbsp;1&rsquo;s adherence line counts the whole course', 'the adherence line on sheet&nbsp;1 counts the whole course')
 }
+
+/**
+ * On sheet 1 v1's own "above" and "below" mostly stay true: its page-1 sections keep v1's order
+ * there, under the band. One does not: v1's charts sat below the trial block, and v2 draws them as
+ * the lead chart, above it (CUL-2551 brief 3a).
+ */
+const SHEET1_RELATIVE: ReadonlyArray<readonly [string, string]> = [
+  ['the charts below span the report&rsquo;s', 'the chart above spans the report&rsquo;s'],
+  [' (named among the concurrent changes on page&nbsp;1)', ''],
+  // v1's Noticed line in At a glance: sheet 1 carries v1's page 1, so it lists no activity word either.
+  ['only an activity word, which page 1 never lists', 'only an activity word, which this sheet never lists'],
+]
 
 /**
  * Swap every v1 pointer in a reprinted v1 section for the v2 sheet that holds its target (rule 2:
@@ -638,16 +658,16 @@ export function v2Pointers(html: string, snap: ReportSnapshot, here: string | nu
   const titles = letterTitles(snap)
   // A pointer at the sheet it prints on says "this sheet": naming its own title sends a reader
   // to the running head they are already under (the diet sheet holds v1's B and C together).
-  const at = (l: string, onForm: boolean): string => {
+  const at = (l: string, onForm: boolean, whole: string): string => {
     const t = title(l)
+    if (t === null) return whole
     if (t === here) return onForm ? 'on this sheet' : 'this sheet'
     return onForm ? `on ${sheetHeaded(t)}` : sheetHeaded(t)
   }
-  const title = (letter: string): string => {
-    const t = titles.get(letter)
-    if (!t) throw new Error(`appendix ${letter} has no v2 sheet on this record`)
-    return t
-  }
+  // CUL-2533: never throws on content. A letter with no v2 sheet is left as written, and the
+  // test-time guard (`v1PointerLeak`, over every fixture) reports it: an owner-typed name such as
+  // "appendix B blend" must never fail the report.
+  const title = (letter: string): string | null => titles.get(letter) ?? null
   let out = html
     .replace(/<p class="appx-title serif"[^>]*>(?:Appendix [A-G] (?:—|&mdash;) )?([\s\S]*?)<\/p>/g, '<h2>$1</h2>')
     // v1's weight sparkline is role="img" with a label; on v2 every SVG is aria-hidden and its words
@@ -657,37 +677,103 @@ export function v2Pointers(html: string, snap: ReportSnapshot, here: string | nu
     // navigation only, and v2's sheets carry their titles, so it is left out whole.
     .replace(/\s*<p class="ref">Full event log, [\s\S]*?<\/p>/g, '')
   // v1 spells "page 1" both with a no-break space and without; each phrase matches either.
-  for (const [from, to] of [...dietSheetPointers(here), ...RELATIVE]) out = out.replaceAll(from, to).replaceAll(from.replaceAll('&nbsp;', ' '), to)
+  const relative = here === SHEET1_HERE ? SHEET1_RELATIVE : RELATIVE
+  for (const [from, to] of [...dietSheetPointers(here), ...relative]) out = out.replaceAll(from, to).replaceAll(from.replaceAll('&nbsp;', ' '), to)
   out = medicationPointers(out)
-    .replace(/\(appendix(?:&nbsp;| )([A-G])\)/g, (_m, l: string) => `(${at(l, true)})`)
-    .replace(/\bin appendix(?:&nbsp;| )([A-G])\b/g, (_m, l: string) => at(l, true))
-    .replace(/\bappendix(?:&nbsp;| )([A-G])\b/g, (_m, l: string) => at(l, false))
+    .replace(/\(appendix(?:&nbsp;| )([A-G])\)/g, (m, l: string) => `(${at(l, true, m.slice(1, -1))})`)
+    .replace(/\bin appendix(?:&nbsp;| )([A-G])\b/g, (m, l: string) => at(l, true, m))
+    .replace(/\bappendix(?:&nbsp;| )([A-G])\b/g, (m, l: string) => at(l, false, m))
   return onSheets(out)
 }
 
 /**
  * The guard behind the swap: no reprinted section may name an appendix, a page, or a "sheet 1"
- * that sheet 1 does not hold. Thrown at build time, so a v1 change that adds a pointer reds every
- * v2 test before it can print a dangling reference (the class v1 paid for with B-599).
+ * that sheet 1 does not hold. A test-time check (CUL-2533): the pointer tests run it over every
+ * block of every fixture, so a v1 change that adds a pointer reds the build before it can print a
+ * dangling reference (the class v1 paid for with B-599). It never runs on a request: it reads owner
+ * text too, and an owner's "Appendix formula" once failed the whole report.
  */
-export function assertNoV1Pointer(html: string, where: string): void {
+export function v1PointerLeak(html: string, where: string): string | null {
   const text = html.replace(/<[^>]*>/g, ' ')
   const appendix = /\bappendi(?:x|ces)\b/i.exec(text)
-  if (appendix) throw new Error(`${where}: names an appendix: “${text.slice(Math.max(0, appendix.index - 60), appendix.index + 40).trim()}”`)
+  if (appendix) return `${where}: names an appendix: “${text.slice(Math.max(0, appendix.index - 60), appendix.index + 40).trim()}”`
   const page = /\bpage(?:&nbsp;|\s)1\b/.exec(html)
-  if (page) throw new Error(`${where}: names page 1: “${html.slice(Math.max(0, page.index - 80), page.index + 40)}”`)
+  if (page) return `${where}: names page 1: “${html.slice(Math.max(0, page.index - 80), page.index + 40)}”`
   let rest = html
   for (const ok of SHEET_ONE_TRUE) rest = rest.replace(new RegExp(ok.source, 'g'), '')
   const s1 = /sheet&nbsp;1/.exec(rest)
-  if (s1) throw new Error(`${where}: points at sheet 1 for something sheet 1 may not hold: “${rest.slice(Math.max(0, s1.index - 80), s1.index + 40)}”`)
+  if (s1) return `${where}: points at sheet 1 for something sheet 1 may not hold: “${rest.slice(Math.max(0, s1.index - 80), s1.index + 40)}”`
+  return null
+}
+
+/** `v1PointerLeak` as an assertion, for tests. */
+export function assertNoV1Pointer(html: string, where: string): void {
+  const leak = v1PointerLeak(html, where)
+  if (leak !== null) throw new Error(leak)
 }
 
 /** A v1 section as a v2 block: pointers swapped, then held to the guard. Null when v1 prints nothing. */
+/** The opening of v1's bottom-line callout inside `dietTrialSection`, the one place v1's page 1 states
+ *  why a trial record is not clean (render.ts, "Interpreting this record"). */
+export const TRIAL_READING_LABEL = 'Interpreting this record'
+
+/**
+ * CUL-2514: v1 page 1's bottom line on the trial, word for word, for sheet 1. It is where v1 states
+ * the off-diet feedings with their days ("The trial diet was not fed exclusively: 11 of 167
+ * feedings … Oct 18, Oct 19 and Oct 20"), the timing clause ("Beef was in the 12 h before 4 of 4
+ * vomiting episodes"), the doses by mouth, the trial label's other proteins and the unread panels.
+ * v2's sheet 1 printed the trial as one line and left all of it sheets later, so sheet 1 read a
+ * cleaner trial than the report holds.
+ *
+ * Lifted out of `dietTrialSection` rather than re-worded (rule 2): the sentences are v1's and change
+ * with v1. Its pointers land on the diet sheet, which reprints the whole section; "(above)" there
+ * meant a v1 page-1 neighbour the diet sheet holds. The reduced-intake flag it points up at is in
+ * sheet 1's band, above this block, so that "(above)" stays. Null when v1 prints no callout. Throws
+ * when v1 prints the label but the callout cannot be lifted whole, so a change to v1's markup can
+ * never silently drop the bottom line from sheet 1.
+ */
+export function trialReadingOf(snap: ReportSnapshot): string | null {
+  const section = dietTrialSection(snap)
+  if (!section.includes(TRIAL_READING_LABEL)) return null
+  const m = /<div class="callout"><span class="k">Interpreting this record<\/span>([\s\S]*?)<\/div>/.exec(section)
+  if (!m || m[1].includes('<div')) throw new Error('trialReadingOf: v1 printed “Interpreting this record” but its callout could not be lifted whole')
+  // CUL-2551: the whole trial section prints on sheet 1 in v1's order, rows first, so v1's own
+  // "(above)" (a row of this section) stays true as written. Only the flag it points up at moves
+  // into words: that flag is in sheet 1's band. Anchored on v1's phrasing, never a bare "above":
+  // owner-typed names sit inside this callout (adversarial pass 1 on PR-29, "Cerenia (dose above)").
+  const body = m[1].trim().replace(/(flag fires (?:on the trial diet|over meals inside the trial)) \(above\)/g, '$1 (in the flags above)')
+  return v2Pointers(body, snap, SHEET1_HERE).trim()
+}
+
+/** v1's trial section heading ("Diet trial" and its aside), already-escaped html. Null with no trial. */
+export function trialHeadingOf(snap: ReportSnapshot): string | null {
+  const m = /<h2>([\s\S]*?)<\/h2>/.exec(dietTrialSection(snap))
+  return m ? m[1].trim() : null
+}
+
+/**
+ * CUL-2514 lifted three of v1's trial rows; CUL-2551 (brief 2a, with CUL-2545's "Record" and "Switch
+ * onto the diet") lifts every one, word for word, in v1's order: the trial section prints on sheet 1
+ * and nowhere else. v1's order keeps its relative pointers true ("the antigen tally above", "counted
+ * on neither side above"), so only appendix and page pointers move. Throws only on markup it cannot
+ * lift whole, never on content.
+ */
+export function trialRowsOf(snap: ReportSnapshot): Array<{ labelHtml: string; html: string }> {
+  const section = dietTrialSection(snap)
+  if (section === '') return []
+  const rows: Array<{ labelHtml: string; html: string }> = []
+  for (const m of section.matchAll(/<div class="kv"><span class="k">([\s\S]*?)<\/span><span>([\s\S]*?)<\/span><\/div>/g)) {
+    const keyText = m[1].replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+    if (m[2].includes('<div')) throw new Error(`trialRowsOf: the “${keyText}” row could not be lifted whole`)
+    rows.push({ labelHtml: m[1], html: v2Pointers(m[2], snap, SHEET1_HERE).trim() })
+  }
+  return rows
+}
+
 function sectionBlock(id: SectionBlockId, heading: string | null, v1Html: string, snap: ReportSnapshot, here: string): BackBlockV2 | null {
   if (v1Html.trim() === '') return null
-  const html = v2Pointers(v1Html, snap, here).trim()
-  assertNoV1Pointer(html, id)
-  return { kind: 'section', id, heading, html }
+  // CUL-2533: no pointer check here; `v1PointerLeak` runs over every fixture's blocks at test time.
+  return { kind: 'section', id, heading, html: v2Pointers(v1Html, snap, here).trim() }
 }
 
 // ── The event log, medication, diet and Noticed sheets ───────────────────────
@@ -720,12 +806,9 @@ function dietBlocks(snap: ReportSnapshot): BackBlockV2[] {
   const markedC = hasTrial && snap.provenance.confounders.some((c) => c.proteinSet.offTrial.length > 0)
   const key = offTrialFootnote(snap.diet.trialTargetProtein)
   const here = DIET_SHEET_TITLE
-  // v1 page 1's order: the weight trend, the diet trial, then the diet and medication block, whose
-  // "see the diet-trial block above" stays true only in that order.
+  // CUL-2551 (brief 2a): v1 page 1's weight, trial and diet-and-medication sections print on sheet
+  // 1 (documentV2's carried blocks), never twice; this sheet keeps v1's appendices B and C.
   return [
-    sectionBlock('weight', 'Weight', weightBlock(snap), snap, here),
-    sectionBlock('diet-trial', null, dietTrialSection(snap), snap, here),
-    sectionBlock('diet-meds', null, dietMeds(snap), snap, here),
     sectionBlock('diet-history', null, `${dietHistoryAppendix(snap)}${markedB ? key : ''}`, snap, here),
     sectionBlock('exposures', null, `${offDietAppendix(snap)}${!markedB && markedC ? key : ''}`, snap, here),
   ].filter((b): b is BackBlockV2 => b !== null)
@@ -784,7 +867,7 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
   const entries: KeptEntry[] = [
     {
       term: 'No flag is not an all-clear',
-      text: 'Flags for review print on sheet 1 only when a check fired, and they rest on the owner’s record, not a diagnosis. The checks look for chronicity, symptom burden, worsening, reduced intake, a prescribed diet going uneaten, weight loss or a weight left unchecked, possible blood or foreign material, a protein the trial diet does not list, and other patterns the detection engine raises. When no flag prints, no check fired; that is not the same as nothing being wrong.',
+      text: 'Flags for review print on sheet 1 only when a check fired, and they rest on the owner’s record, not a diagnosis. The checks look for chronicity, symptom burden, worsening, reduced intake, a prescribed diet going uneaten, weight loss or a weight left unchecked, possible blood or foreign material, a trial protein the owner recorded that is not the main protein on the trial food’s label, and other patterns the detection engine raises. A feeding off the trial diet is not a flag: sheet 1 states those feedings under the trial, with their days, and marks them on its chart. When no flag prints, no check fired; that is not the same as nothing being wrong.',
     },
     {
       term: 'Owner-reported',
@@ -853,7 +936,7 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
             // says so on the card, and its read and date stay.
             // A photo the owner removed has no card; the sheet discloses it and its read stays in the
             // event log (cold read round 4), so the grid is never offered as the complete set.
-            text: `The owner’s incident photos are on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first: each retained photo has a card with its read, and the image where it could be embedded. A photo the owner removed has no card; that sheet says so, and its read stays in the event log. A photo the owner left out of this report has no card either; that sheet counts it, and one flagged for blood or foreign material is dated beside its flag on sheet 1. An embedded image has its location, device and capture-time metadata removed and is downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
+            text: `The owner’s incident photos are on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first: each photo in this report has a card with its read, and the image where it could be embedded. A photo the owner removed has no card; that sheet says so, and its read stays in the event log. A photo the owner left out of this report has no card either; that sheet counts it, and one flagged for blood or foreign material is dated beside its flag on sheet 1. An embedded image has its location, device and capture-time metadata removed and is downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
           },
         ]
       : []),
@@ -916,8 +999,8 @@ export function backSheetsOf(snap: ReportSnapshot): BackSheetV2[] {
         const blocks: BackBlockV2[] = [photoBlock(snap), ledgerBlock(snap, hasIntake)]
         const noticed = noticedLineBlock(snap)
         if (noticed) blocks.push(noticed)
-        const ep = episodesBlock(snap)
-        if (ep) blocks.push(ep)
+        // CUL-2551 (brief 5a): v1's vomit and stool characteristics print on sheet 1 (`episodesBlock`
+        // is called there), so the record sheet holds the photos, the ledger and the Noticed line.
         return sheet(RECORD_SHEET_TITLE, blocks)
       }
       case 'log':

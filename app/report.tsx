@@ -19,6 +19,8 @@ import { useAllowlistFlag } from '../hooks/useAppConfig';
 import { useBetaOptIn } from '../lib/betaFeatures';
 import { ReportComposer } from '../components/report/ReportComposer';
 import { ReportNotesOption } from '../components/report/ReportNotesOption';
+import { PhotoLeaveOutSheet } from '../components/report/PhotoLeaveOutSheet';
+import { leftOutChanged, normaliseLeftOut, photoRowLabel } from '../lib/reportPhotoPicker';
 import { useReportComposer } from '../hooks/useReportComposer';
 import { WINDOW_LABEL, composerRange, type ComposerWindow } from '../lib/reportComposer';
 import {
@@ -34,7 +36,9 @@ import {
   confirmationCopy, liveForSend, sendCallCard, sendDocumentsOf, sendIsQuiet, sendRecordAllSent, sendStatusWords,
   type ConfirmationCopy, type SendCallCard as SendCallCardModel, type SendDocumentChoice, type SendResult,
 } from '../lib/reportSend';
-import { copyEmailText, emailReport, mailAvailable, printReport, shareReport } from '../lib/reportSendActions';
+import { copyEmailText, emailReport, keepShown, mailAvailable, printReport, shareReport, type SendOutcome } from '../lib/reportSendActions';
+import { keepMissLine, type KeepOutcome, type KeepVia } from '../lib/reportKeep';
+import { useLiveRegionAnnouncement } from '../hooks/useLiveRegionAnnouncement';
 import { openExamRoom } from '../lib/examRoomCopy';
 import { SEND_READ_TIMEOUT_MS, boundedRead, withKnownFlags, type ComposerLive } from '../lib/reportComposer';
 import {
@@ -42,10 +46,10 @@ import {
   bandSlotFor,
   hasPhonePreview,
   isBareV2Report,
-  isPreviewLoadAllowed,
+  REPORT_FRAME_PROPS,
   type PreviewView,
 } from '../lib/reportPreviewV2';
-import { EXAM_CSP, REPORT_WEBVIEW_ORIGINS, withExamCsp } from '../lib/examRoom';
+import { EXAM_CSP_META, PREFETCH_OFF_META, neutralizeRefusedTags } from '../lib/examRoom';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
 //
@@ -139,25 +143,32 @@ interface SendContext {
 type Status = 'loading' | 'ready' | 'error';
 export const V1_PREVIEW_TEST_ID = 'report-v1-preview';
 
-/** Android's new-window path, refused (CUL-2486): the v1 frame opens none, as the v2 frames don't. */
-function refuseWindow(): void {}
+/** The v1 frame's head (CUL-2486, CUL-2527): the room's CSP and DNS prefetch off. */
+const V1_HEAD = `${EXAM_CSP_META}${PREFETCH_OFF_META}`;
 
 /**
- * The v1 report with the room's CSP (CUL-2486), the way the v2 preview boxes its documents: in a
- * real `<head>` when there is one (`withExamCsp` alone would also take a `<header>`, CUL-2470),
- * else at the very top, after a doctype, where the parser places it in the implied head. Never
- * shown without it.
+ * The v1 report boxed the way the v2 preview boxes its documents (CUL-2486, CUL-2527): the room's
+ * CSP and the prefetch switch in a real `<head>` when there is one (never a `<header>`, CUL-2470),
+ * else at the very top, after a doctype, where the parser places them in the implied head; and
+ * every refused tag renamed inert (`neutralizeRefusedTags`). With JS off no lock script runs, so
+ * the rename is what stops an injected `<link rel=preconnect>` hint, and an `<iframe
+ * src=about:blank>` that iOS reports as the top frame. The v1 renderer emits none of those tags.
+ * Never shown without them.
  */
 export function boxedV1Html(html: string): string {
-  if (/<head(\s[^>]*)?>/i.test(html)) {
-    const withCsp = withExamCsp(html);
-    if (withCsp !== null) return withCsp;
+  return neutralizeRefusedTags(withV1Head(html));
+}
+
+function withV1Head(html: string): string {
+  const head = /<head(\s[^>]*)?>/i.exec(html);
+  if (head !== null) {
+    const at = head.index + head[0].length;
+    return `${html.slice(0, at)}${V1_HEAD}${html.slice(at)}`;
   }
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
   const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
-  if (doctype === null) return `${meta}${html}`;
+  if (doctype === null) return `${V1_HEAD}${html}`;
   const at = doctype.index + doctype[0].length;
-  return `${html.slice(0, at)}${meta}${html.slice(at)}`;
+  return `${html.slice(0, at)}${V1_HEAD}${html.slice(at)}`;
 }
 
 type RangeMode = 'default' | 'custom';
@@ -215,6 +226,14 @@ export default function ReportScreen() {
   const petId = subject.kind === 'pet' ? subject.petId : undefined;
   const petName = subject.kind === 'pet' ? subject.petName : null;
 
+  // PR-23b (CUL-2454): the photos the owner left out in the picker. Part of the request, so Done
+  // rebuilds the report once; a new pet starts with every photo in.
+  const [photosLeftOut, setPhotosLeftOut] = useState<string[]>([]);
+  const [photoSheetOpen, setPhotoSheetOpen] = useState(false);
+  useEffect(() => {
+    setPhotosLeftOut([]);
+  }, [petId]);
+
   const composerEligible = useAllowlistFlag('report_composer_v2');
   const composerOptedIn = useBetaOptIn('report_composer_v2');
   const composerOn = composerEligible && composerOptedIn;
@@ -263,10 +282,12 @@ export default function ReportScreen() {
     // dropping the field would silently drop notes the owner switched on. (Noticed is GA,
     // CUL-876, so the switch is always on screen; CUL-1464's hidden-switch-sends-false
     // rule went with the flag that could hide it.)
-    const base = { petId, includeNotes };
+    // PR-23b: the photos left out ride on both branches too; `generateVetReport` sends them on
+    // a v2 request only.
+    const base = { petId, includeNotes, ...(photosLeftOut.length > 0 ? { photosLeftOut } : {}) };
     if (rangeMode === 'default') return base;
     return { ...base, startDate: customStartKey, endDate: customEndKey };
-  }, [petId, rangeMode, customStartKey, customEndKey, includeNotes]);
+  }, [petId, rangeMode, customStartKey, customEndKey, includeNotes, photosLeftOut]);
 
   // CUL-371 — the params the report is actually BUILT from. An edit of the custom
   // window already on screen (From, then To) settles for CUSTOM_RANGE_SETTLE_MS before
@@ -379,6 +400,32 @@ export default function ReportScreen() {
   const [sendCtx, setSendCtx] = useState<SendContext | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<{ copy: ConfirmationCopy; quiet: boolean; card: SendCallCardModel | null } | null>(null);
+  // CUL-2434: every copy that leaves ends kept, or the owner is told. The keep runs behind the
+  // confirmation; when it ends unkept, its line lands on the card (`confirmKeepLine`), or, for the
+  // exam room, which makes no card, on this screen once the room closes (`keepMiss`). `sendSeq`
+  // drops a late answer from an earlier send, so a line is only ever about the copy just sent.
+  const [confirmKeepLine, setConfirmKeepLine] = useState<string | null>(null);
+  const [keepMiss, setKeepMiss] = useState<string | null>(null);
+  useLiveRegionAnnouncement(keepMiss, keepMiss);
+  const sendSeq = useRef(0);
+  const onKeep = useCallback(
+    (keep: Promise<KeepOutcome> | null, via: KeepVia, name: string, show: (line: string | null) => void) => {
+      const seq = ++sendSeq.current;
+      setConfirmKeepLine(null);
+      setKeepMiss(null);
+      if (keep === null) return;
+      keep.then(
+        (outcome) => {
+          if (seq === sendSeq.current) show(keepMissLine(outcome, name, via));
+        },
+        // keepReportCopy never rejects; a rejection here would be a bug, said as a miss, not hidden.
+        () => {
+          if (seq === sendSeq.current) show(keepMissLine('failed', name, via));
+        },
+      );
+    },
+    [],
+  );
   // The flags this screen has already read for this pet, KEPT ACROSS the composer's reloads: the
   // past-midnight Preview guard reloads the composer, which clears `open` before it re-reads, so
   // reading `composer.open` alone lost a flag the owner had just seen when the reload and then the
@@ -454,23 +501,32 @@ export default function ReportScreen() {
       // Exam-room mode (CUL-2299): the sheet has dismissed (C-14), so the room presents over this
       // screen. Staging the copy can fail (a full disk); then the room never opens empty. Showing
       // the report is not a send, so it makes no confirmation card.
+      const name = report.petName || petName || '';
       if (action.target === 'phone') {
         if (report.phoneHtml === null || !openExamRoom({ phoneHtml: report.phoneHtml, printHtml: report.html }, (r) => router.push(r))) {
           Alert.alert('Couldn’t show the report here', 'Please try again.');
+          return;
         }
+        // The room is up: the vet is reading it, so it is kept as shown (CUL-2434). A miss is said
+        // on this screen, behind the room, never over the vet's view.
+        onKeep(keepShown(report), 'shown', name, setKeepMiss);
         return;
       }
       setSharing(true);
       let result: SendResult;
+      let sent: SendOutcome | null = null;
       try {
         if (action.target === 'email') {
-          result = await emailReport(report, { subject: action.subject, body: action.body, documentUris: action.documentUris });
+          sent = await emailReport(report, { subject: action.subject, body: action.body, documentUris: action.documentUris });
+          result = sent.result;
           if (result === 'failed') Alert.alert('Mail isn’t available', 'Share the PDF instead, or copy the email text.');
         } else if (action.target === 'print') {
-          result = await printReport(report);
+          sent = await printReport(report);
+          result = sent.result;
           if (result === 'failed') Alert.alert('That didn’t print', 'Something went wrong with the print sheet. Give it another try.');
         } else if (action.target === 'share') {
-          result = await shareReport(report);
+          sent = await shareReport(report);
+          result = sent.result;
           if (result === 'failed') Alert.alert('Sharing isn’t available', 'This device can’t open a share sheet.');
         } else {
           result = await copyEmailText(action.subject, action.body);
@@ -485,6 +541,7 @@ export default function ReportScreen() {
         setSharing(false);
       }
       const words = sendStatusWords(action.target, Platform.OS, result);
+      if (sent !== null && action.target !== 'copy') onKeep(sent.keep, action.target, name, setConfirmKeepLine);
       if (words === null) return;
       setConfirmation({
         copy: confirmationCopy(report.petName || petName || '', report.startDate, report.endDate, sendCtx.today, words),
@@ -492,7 +549,7 @@ export default function ReportScreen() {
         card: sendCallCard(sendCtx.live, report.petName || petName || '', sendCtx.hour),
       });
     },
-    [report, sendCtx, petName],
+    [report, sendCtx, petName, onKeep],
   );
 
   const onShare = useCallback(async () => {
@@ -753,15 +810,15 @@ export default function ReportScreen() {
             <WebView
               testID={V1_PREVIEW_TEST_ID}
               style={styles.web}
-              // Boxed like every report frame (CUL-2486): every URL reaches the load check, which
-              // refuses all but the inline document; no new window; the room's CSP, so the page
-              // may load or send nothing. The v1 report is static, self-contained clinical HTML
-              // (photos are data: URIs, no web fonts), so the policy takes nothing it needs.
-              originWhitelist={REPORT_WEBVIEW_ORIGINS}
+              // Boxed like every report frame (CUL-2486, CUL-2527): it spreads the one set of
+              // frame props, so the load check admits the inline document as `about:blank` and
+              // refuses every `data:` URL, every sub-frame and every network or app scheme, and
+              // no window opens. A phone that reported the inline document as `data:` would get a
+              // blank frame above a working send bar, never a leak. JS stays off: the v1 report
+              // is static, self-contained clinical HTML (photos are data: URIs, no web fonts).
+              {...REPORT_FRAME_PROPS}
               source={{ html: v1Html ?? '' }}
               javaScriptEnabled={false}
-              onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
-              onOpenWindow={refuseWindow}
               showsVerticalScrollIndicator
             />
             )}
@@ -785,13 +842,50 @@ export default function ReportScreen() {
               // honest about being a step behind beats no report.
               <Text style={styles.barStale}>{staleLine}</Text>
             )}
-            {report.photoCount > 0 && (
+            {report.photos && report.photos.length > 0 ? (
+              // PR-23b (CUL-2454, R-10): on v2 the photo line is the door to the picker. Its count
+              // is the photos this report holds against every photo it could hold, computed over
+              // the manifest the server sent, never a count the server echoes back (R4).
+              <TouchableOpacity
+                testID="report-photos-choose"
+                style={styles.barPhotosRow}
+                onPress={() => setPhotoSheetOpen(true)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityHint="Choose photos to leave out of this report"
+              >
+                <ThemedText style={styles.barPhotosChoose}>
+                  {photoRowLabel(report.photos.length, normaliseLeftOut(report.photos, photosLeftOut).length)}
+                </ThemedText>
+              </TouchableOpacity>
+            ) : report.photoCount > 0 ? (
               // Owner visibility (spec §8): before sending, the owner sees how many of their own
-              // incident photos this report hands to the vet. The interactive "tap to exclude any"
-              // review is the deferred fast-follow (B-243) that builds on this.
-              <Text style={styles.barPhotos}>
-                Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
-              </Text>
+              // incident photos this report hands to the vet. v1 has no picker (R-10 is v2's).
+              <>
+                <Text style={styles.barPhotos}>
+                  Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
+                </Text>
+                {photosLeftOut.length > 0 && (
+                  // PR-23b privacy pass F1: a rebuild that came back as the older layout (the
+                  // layout switch or its flag changed mid-session) sends every photo, the ones the
+                  // owner left out included. Said before Send, never dropped in silence.
+                  <ThemedText style={styles.barStale} testID="report-photos-choice-dropped">
+                    This version of the report sends every photo, including the ones you left out.
+                  </ThemedText>
+                )}
+              </>
+            ) : null}
+            {report.photos && report.photos.length > 0 && (
+              <PhotoLeaveOutSheet
+                visible={photoSheetOpen}
+                photos={report.photos}
+                leftOut={normaliseLeftOut(report.photos, photosLeftOut)}
+                onClose={() => setPhotoSheetOpen(false)}
+                onDone={(next) => {
+                  setPhotoSheetOpen(false);
+                  if (leftOutChanged(normaliseLeftOut(report.photos ?? [], photosLeftOut), next)) setPhotosLeftOut(next);
+                }}
+              />
             )}
             {hasVetDocuments === true && (
               // R-16 (CUL-457) — D14's truth at the moment it matters. The Vet Files card
@@ -838,6 +932,11 @@ export default function ReportScreen() {
                 testID="report-send"
               />
             )}
+            {keepMiss !== null && (
+              <ThemedText style={styles.barHint} accessibilityLiveRegion="polite" testID="report-keep-miss">
+                {keepMiss}
+              </ThemedText>
+            )}
             {!sendFlow && (
               <Text style={styles.barHint}>
                 Creates a PDF you can email, message, or AirDrop to your vet.
@@ -864,6 +963,7 @@ export default function ReportScreen() {
           copy={confirmation.copy}
           quiet={confirmation.quiet}
           card={confirmation.card}
+          keepLine={confirmKeepLine}
           onDone={() => {
             setConfirmation(null);
             router.back();
@@ -1045,6 +1145,19 @@ const styles = StyleSheet.create({
     fontFamily: theme.fontBody,
     fontSize: theme.textXS,
     color: theme.colorTextSecondary,
+    textAlign: 'center',
+  },
+  // PR-23b: the photo line as a door. At the 44pt floor by its box, no slop (C-5): the lines
+  // above and below it in the bar are not touchable, but the send button is.
+  barPhotosRow: {
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
+  barPhotosChoose: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: colorRoles.action.onLight,
     textAlign: 'center',
   },
   // B-534's staleness line. One step up from barPhotos (size + primary colour)

@@ -694,6 +694,7 @@ export function sampleLine(finding: SignalFinding): string {
   }
   // CUL-2405: only the consecutive-low card compares with a usual; an unknown trigger never does.
   if (finding.trigger !== 'consecutive_low') return UNKNOWN_INTAKE_COPY.sample;
+  if (intakeAllRefused(finding)) return allRefusedSample(finding.daysBelowBaseline, finding.ratedMealsConsidered);
   return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, across ${count(
     finding.ratedMealsConsidered,
     'recent meal',
@@ -1212,6 +1213,17 @@ export function evidenceText(
   }
   // CUL-2405: an unknown trigger reads at its most cautious, never as the consecutive-low card.
   if (finding.trigger !== 'consecutive_low') return `${unknownIntakeSentence(petName)}${i5Tail}`;
+  if (intakeAllRefused(finding)) {
+    // CUL-2424: the mirror of phrasing.ts templateIntakeDecline's all-refused sentence, with the
+    // comparison this card's expanded text always carries.
+    return (
+      `${petName} refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)}, compared with ` +
+      `${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Refusing food can be an early sign ` +
+      (intakeAllRefusedCallsToday(finding)
+        ? `something's off, so it's worth a call to your vet today.${i5Tail}`
+        : `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`)
+    );
+  }
   return (
     `${petName} has eaten less than usual for ${count(finding.daysBelowBaseline, 'day', 'days')}, ` +
     `compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Eating less can be ` +
@@ -1938,6 +1950,64 @@ export function sustainedRefusalOf(finding: SignalFinding): SustainedRefusalFact
   return ok(r.meals) && ok(r.days) && ok(r.windowHours) && okZero(r.refused) && okZero(r.picked) && (r.some === undefined || okZero(r.some)) ? r : null;
 }
 
+/**
+ * CUL-2424 (PM ruling (a) + option 1, 2026-11-05): a consecutive-low card whose recent rated meals
+ * were all refused. The engine sets the fact (`allRefused`); no surface infers it from a score.
+ * Such a card is worded as refusal on every surface, never "eating less".
+ */
+export function intakeAllRefused(finding: SignalFinding): boolean {
+  return finding.type === 'intake_decline' && finding.trigger === 'consecutive_low' && finding.allRefused === true;
+}
+
+/**
+ * CUL-2593 (PM ruling option (1), 2026-11-06): an all-refused card asks for a call today unless the
+ * pet is a dog (a cat's liver window is about 48 hours). A cat, `'other'` or a missing species asks
+ * the louder one. The mirror of generate-signal detection.ts `allRefusedCallsToday`; keep the two in sync.
+ */
+export function intakeAllRefusedCallsToday(finding: SignalFinding): boolean {
+  return intakeAllRefused(finding) && finding.type === 'intake_decline' && finding.species !== 'dog';
+}
+
+/**
+ * CUL-2604: how loud a non-incident safety card's ask is, inside its own lane: 0 is the lane's
+ * softest ask. An intake card asking for a call today (an all-refused card, the sustained-refusal
+ * floor) is 1 over "if it carries on"; a burden card's "today" is 1 over "soon"; a chronicity or
+ * worsening tier counts up to `firm`. It never compares two lanes: the lane order does that. The
+ * spoken arrival re-speaks a card whose level rises (lib/signalSafetySpeech.ts), and the cross-pet
+ * banner breaks a same-lane tie by it (`bannerRankOf`).
+ */
+export function safetyAskLevel(finding: SignalFinding): number {
+  switch (finding.type) {
+    case 'intake_decline':
+      return finding.trigger === 'sustained_refusal' || intakeAllRefusedCallsToday(finding) ? 1 : 0;
+    case 'symptom_burden':
+      return finding.tier === 'today' ? 1 : 0;
+    case 'symptom_chronicity':
+      return finding.tier === 'firm' ? 1 : 0;
+    case 'symptom_worsening':
+      return finding.tier === 'firm' ? 2 : finding.tier === 'standard' ? 1 : 0;
+    default:
+      return 0;
+  }
+}
+
+/** CUL-2604: a red-flag card's call, as a level: a call now 2, a call today 1, no call 0. Speech only;
+ *  the banner keeps the incident order PR-30a and PR-30c ruled. */
+export function incidentAskLevel(finding: IncidentRedFlagFinding): number {
+  const call = incidentCallOf(finding);
+  return call === 'call_now' ? 2 : call === 'call_today' ? 1 : 0;
+}
+
+/** "today" or "over the last two days": the span an all-refused card names. */
+function allRefusedSpan(days: number): string {
+  return days <= 1 ? 'today' : `over the last ${days} days`;
+}
+
+/** The sample and count lines of an all-refused card: the days of refusals, and what they were compared with. */
+function allRefusedSample(days: number, compared: number): string {
+  return `${count(days, 'day', 'days')} of refused meals, against ${count(compared, 'recent meal', 'recent meals')}`;
+}
+
 /** The window, the mirror of phrasing.ts `sustainedRefusalSpan`. */
 function sustainedRefusalSpan(r: SustainedRefusalFacts): string {
   return r.anchoredToLastRating && r.endLocalDay
@@ -2492,6 +2562,14 @@ function phoneScriptFacts(
       // CUL-2405: an unknown trigger states no duration and no comparison it cannot back.
       return [{ label: 'Concern', value: UNKNOWN_INTAKE_COPY.concern }, ...i5Rows];
     }
+    if (intakeAllRefused(finding)) {
+      return [
+        { label: 'Concern', value: 'refused every meal you rated' },
+        { label: 'How long', value: count(finding.daysBelowBaseline, 'day', 'days') },
+        { label: 'Compared with', value: count(finding.ratedMealsConsidered, 'recent meal', 'recent meals') },
+        ...i5Rows,
+      ];
+    }
     return [
       { label: 'Concern', value: 'eating less than usual' },
       { label: 'How long', value: `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual` },
@@ -2568,8 +2646,14 @@ function bannerRankOf(f: BannerSafetyFinding, nowMs: number | undefined): number
     return laterCallTodayIsoOf(f) !== null || callTodaySaidSinceCallNow(f) ? BANNER_SAFETY_PRIORITY.incident_red_flag : 0.5;
   }
   if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 2.5;
-  return BANNER_SAFETY_PRIORITY[f.type];
+  // CUL-2604: inside a lane the louder ask leads, so a pet earlier in the list never takes the
+  // banner with "if it carries on" from a pet whose same-lane card asks for a call today. A tenth
+  // per level: never across a lane (the deepest is worsening's firm, 3.8, still under chronicity
+  // at 3), never past I5 (2.5) or a dated call now (0.5).
+  return BANNER_SAFETY_PRIORITY[f.type] - BANNER_ASK_STEP * safetyAskLevel(f);
 }
+
+const BANNER_ASK_STEP = 0.1;
 
 export type BannerSafetyFinding =
   | IncidentRedFlagFinding
@@ -2750,6 +2834,10 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
       // CUL-2405: an unknown trigger; no "less than usual", and the ask kept on the banner.
       return `: something in recent meals stood out — ${UNKNOWN_INTAKE_COPY.ask}.`;
     }
+    if (intakeAllRefused(finding)) {
+      // CUL-2424: a refusal reads as one on the banner too.
+      return ` refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)} — worth a look.`;
+    }
     const span =
       finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;
     return ` has eaten less than usual ${span} — worth a look.`;
@@ -2861,9 +2949,9 @@ export const STRIP_ASKS = {
   visit: 'Worth a vet visit',
   /** The card says "worth a word with your vet" (chronicity standard; worsening standard). */
   tell: 'Tell your vet',
-  /** The card says "a word with your vet if it carries on" (intake decline, both triggers; worsening soft). */
+  /** The card says "a word with your vet if it carries on" (intake decline, both triggers, save an all-refused non-dog card; worsening soft). */
   check: 'Check with your vet',
-  /** The card says "worth a call to your vet" (a photo red flag). */
+  /** The card says "worth a call to your vet" (a photo red flag; sustained refusal; an all-refused non-dog card, CUL-2593). */
   call: 'Call your vet',
 } as const;
 
@@ -2965,7 +3053,9 @@ export function stripNameLine(finding: SignalFinding): string | null {
           : finding.trigger === 'sustained_refusal'
             ? 'No meal eaten well'
             : finding.trigger === 'consecutive_low'
-              ? 'Eating less than usual'
+              ? intakeAllRefused(finding)
+                ? 'Refused every meal you rated'
+                : 'Eating less than usual'
               : UNKNOWN_INTAKE_COPY.name;
     case 'incident_red_flag':
       // Blood leads when both flags are set (the engine's own stable order, and the more
@@ -3026,6 +3116,8 @@ export function stripAskLine(finding: SignalFinding): string | null {
       // The sustained-refusal floor ends "worth a call to your vet today", an unconditional call.
       if (finding.trigger === 'sustained_refusal') return STRIP_ASKS.call;
       if (finding.trigger === 'refused_then_vomited') return STRIP_ASKS.tell;
+      // CUL-2593: an all-refused card that asks for a call today (every species but a dog) calls.
+      if (intakeAllRefusedCallsToday(finding)) return STRIP_ASKS.call;
       // CUL-2405: the two conditional cards are named; a trigger this build does not know calls.
       return finding.trigger === 'consecutive_low' || finding.trigger === 'refused_normal_food' ? STRIP_ASKS.check : STRIP_ASKS.call;
     case 'incident_red_flag':
@@ -3086,6 +3178,7 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
         return `${body}${since}`;
       }
       if (finding.trigger !== 'consecutive_low') return UNKNOWN_INTAKE_COPY.sample;
+      if (intakeAllRefused(finding)) return allRefusedSample(finding.daysBelowBaseline, finding.ratedMealsConsidered);
       return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`;
     case 'incident_red_flag':
       // "AI read" keeps it an unconfirmed read (the detail-screen register); the date is the

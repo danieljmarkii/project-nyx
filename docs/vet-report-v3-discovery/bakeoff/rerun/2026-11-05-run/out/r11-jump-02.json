@@ -1,0 +1,152 @@
+{
+ "fixture": "r11-jump",
+ "n": 2,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "6f3a4ff06da7a21d5de8a80aada8fb55858250472ee1e2ccd4a5aebc8de6322d",
+   "prompt": "vr2-lead-5",
+   "verifier": "vr2-6",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Chronicity is a live flag: itching spans 49 days, first logged Aug 27, with 18 episodes on 18 days; most recent 1 day ago.",
+     "cites": [
+      "band-1-chronicity-itch"
+     ]
+    },
+    {
+     "text": "Itching: 18 entries on 18 of 56 logged days, the last Oct 15.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+     "cites": [
+      "trial",
+      "trial-reading-2",
+      "confounder"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Itching has gone on for 49 days (18 episodes on 18 days, last 1 day ago), and the diet trial cannot be confirmed clean. A vet would read 49 days as the full duration.",
+    "levels": {
+     "H1": "minor",
+     "H2": "none",
+     "H3": "none",
+     "H4": "minor",
+     "H5": "material",
+     "H6": "none",
+     "H7": "minor"
+    },
+    "quotes": {
+     "H1": "no medication or supplement is recorded as overlapping the trial, not checked with the owner",
+     "H4": "no medication or supplement is recorded as overlapping the trial",
+     "H5": "itching spans 49 days, first logged Aug 27",
+     "H7": "itching spans 49 days, first logged Aug 27, with 18 episodes on 18 days"
+    },
+    "omissions": [
+     "The 49-day itching span is a floor: the record window opens Aug 22, so the true duration of the sign is unknown and could be longer."
+    ]
+   },
+   "attempts": 1,
+   "at": "2026-11-05T19:38:33.020Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Chronicity is a live flag: itching spans 49 days, first logged Aug 27, with 18 episodes on 18 days; most recent 1 day ago.",
+      "cites": [
+       "band-1-chronicity-itch"
+      ]
+     },
+     {
+      "text": "Itching: 18 entries on 18 of 56 logged days, the last Oct 15.",
+      "cites": [
+       "line-1"
+      ]
+     },
+     {
+      "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.",
+      "cites": [
+       "trial",
+       "trial-reading-2",
+       "confounder"
+      ]
+     }
+    ]
+   },
+   "ms": 15584
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Itching has gone on for 49 days (18 episodes on 18 days, last 1 day ago), and the diet trial cannot be confirmed clean. A vet would read 49 days as the full duration.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "no medication or supplement is recorded as overlapping the trial, not checked with the owner",
+      "why": "The summary does state 'cannot be confirmed clean'. It drops the confounder line's 'in this window' scope and the 'no allowed-food list is recorded' point. The medication sentence could read as cleaner than the record, though 'not checked with the owner' partly offsets it."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "No cause, improvement or worsening is suggested."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "Meals and refusals are not mentioned."
+     },
+     "H4": {
+      "level": "minor",
+      "quote": "no medication or supplement is recorded as overlapping the trial",
+      "why": "This is an absence of records, and it is framed as 'recorded' and 'not checked with the owner'. The missing 'in this window' scope leaves it slightly open to a reassuring read."
+     },
+     "H5": {
+      "level": "material",
+      "quote": "itching spans 49 days, first logged Aug 27",
+      "why": "The band line says 49 days is a floor, because the window opens Aug 22 and the record cannot show how long the sign predates it. The summary states 49 days as the span with no 'at least' or window qualifier, so a floor reads as a total."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every claim is supported by the fact table."
+     },
+     "H7": {
+      "level": "minor",
+      "quote": "itching spans 49 days, first logged Aug 27, with 18 episodes on 18 days",
+      "why": "Sentence 1 correctly leads with band item 1. It drops the floor wording and the 'sustained pattern, not a single incident' framing, which leaves the chronicity slightly smaller and more settled than the band says."
+     }
+    },
+    "omissions": [
+     "The 49-day itching span is a floor: the record window opens Aug 22, so the true duration of the sign is unknown and could be longer."
+    ]
+   },
+   "ms": 13312
+  }
+ ],
+ "wall_ms": 28903
+}

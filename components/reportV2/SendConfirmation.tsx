@@ -4,6 +4,7 @@ import { theme } from '../../constants/theme';
 import { CompletionMark, PrimaryButton, ThemedText } from '../ui';
 import { COMPLETION_MOTION, CARD_CLOCK_END_MS, EASE, easedSegment, type CompletionMarkMotion } from '../motion/completionMotion';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
+import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { SendCallCard } from './SendCallCard';
 import type { ConfirmationCopy, SendCallCard as SendCallCardModel } from '../../lib/reportSend';
 
@@ -21,8 +22,9 @@ import type { ConfirmationCopy, SendCallCard as SendCallCardModel } from '../../
 // to be branched on; this file is named in `guards/haptics.test.ts`'s ALWAYS_SCANNED so a buzz
 // added here reds the build.
 //
-// "SAVED" IS NOT SAID. Saved copies are VR2-20; until a copy is kept, the card claims only how
-// the report left, and "Open in Reports" waits for the library (VR2-21).
+// "SAVED" IS NOT SAID. The card claims only how the report left. What it DOES say is the miss:
+// a copy that left and was not kept gets one quiet line under the status (`keepLine`, CUL-2434),
+// which can arrive after the card does (the keep runs and retries behind it), so it is announced.
 
 interface Props {
   copy: ConfirmationCopy;
@@ -34,12 +36,15 @@ interface Props {
   quiet: boolean;
   /** The call card to repeat above Done, or null when there is none to repeat. */
   card: SendCallCardModel | null;
+  /** The "not saved" line (lib/reportKeep.ts `keepMissLine`), or null: kept, or not yet known. */
+  keepLine?: string | null;
   onDone: () => void;
 }
 
 const M = COMPLETION_MOTION;
 
-export function SendConfirmation({ copy, quiet, card, onDone }: Props) {
+export function SendConfirmation({ copy, quiet, card, keepLine = null, onDone }: Props) {
+  useLiveRegionAnnouncement(keepLine, keepLine);
   // One linear native clock, each beat a clamped segment of it (completionMotion's engine rule).
   // Reduce Motion starts the clock at its end: everything at rest in the first frame.
   const reduced = useRef(reducedMotionNow()).current;
@@ -91,6 +96,11 @@ export function SendConfirmation({ copy, quiet, card, onDone }: Props) {
           <ThemedText style={styles.line} testID="send-confirmation-line">
             {copy.line}
           </ThemedText>
+          {keepLine !== null && (
+            <ThemedText style={styles.line} accessibilityLiveRegion="polite" testID="send-confirmation-keep-line">
+              {keepLine}
+            </ThemedText>
+          )}
         </Animated.View>
       </View>
       <View style={styles.foot}>

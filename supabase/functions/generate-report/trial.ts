@@ -69,6 +69,7 @@ import {
   type Interpretability,
   type NewFoodIntroduced,
   type OralRouteExposure,
+  type OralRouteOnList,
   type TrialDietRefusal,
   type TrialDose,
   type TrialFeeding,
@@ -178,6 +179,8 @@ export interface TrialDoseSource {
   medicationItemId: string | null
   adherence: string | null
   pairedEventId: string | null
+  /** CUL-2525 — `how_given`: an unpaired dose logged in food is still a vehicle dose. */
+  howGiven?: string | null
 }
 
 export interface TrialMedItemSource {
@@ -193,6 +196,10 @@ export interface TrialMedicationSource {
   startedAt: string
   endedAt: string | null
   indication: string | null
+  /** CUL-2509 — provenance, carried onto the overlap row: a regimen (false) or an ad-hoc dose group (true). */
+  adHoc?: boolean
+  /** The medication item behind the row, when one is recorded. */
+  itemId?: string | null
 }
 
 export interface TrialArrangementSource {
@@ -247,6 +254,22 @@ export interface TrialMedicationOverlap {
    * row is made of: the days dosed in the trial days this report covers, and the doses on record in all.
    */
   adHocDoses?: { inTrialInWindowDays: number; onRecord: number }
+  /**
+   * CUL-2509 — BUILDER-WRITTEN PROVENANCE. True when the row was built from an ad-hoc (no-regimen)
+   * dose group, false from a regimen. Name plus start day could not tell a regimen from an ad-hoc
+   * group that began the same day, so the render left the ad-hoc row un-re-dated. Absent on a copy
+   * stored before it: the render then falls back to that name-and-day guess.
+   */
+  adHoc?: boolean
+  itemId?: string | null
+  /**
+   * CUL-2509 instance 3 — an ad-hoc row's DAYS dosed (administered doses, by local day) in the trial
+   * days BEFORE this window, read from the lifetime dose record. Null when this window holds the
+   * whole trial's head, or the lifetime read was not passed (unknown, never zero).
+   */
+  adHocEarlierTrialDoseDays?: number | null
+  /** True when the dose pull was short: the count is a floor ("at least"). */
+  adHocEarlierTrialDoseDaysIsFloor?: boolean
 }
 
 /**
@@ -792,6 +815,12 @@ export interface TrialBlock {
   mayStateRecordClean: boolean
 
   oralRoute: OralRouteExposure[]
+  /**
+   * CUL-2525 — doses by mouth given inside a food ON the allowed list, over the same doses and
+   * window as `oralRoute` (one decision, `doseRouteOf`). Not exposures; page 1 and appendix B
+   * state them so a vet can see a vehicle was in play. Optional: older copies lack it.
+   */
+  oralRouteOnList?: OralRouteOnList[]
   /**
    * `startRecorded` is FALSE when the bowl's `active_from` was never captured (B-233: the
    * column holds the day the owner first LOGGED the food, not the day the bowl went down,
@@ -1648,6 +1677,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // `rangeRefusal === null` all moved into `mayStateRecordClean` above.
       true,
     oralRoute: facts.oralRoute,
+    oralRouteOnList: facts.oralRouteOnList ?? [],
     arrangementExposures: facts.arrangementExposures.map((a) => ({
       label: a.label,
       // Read off the ORIGINAL input, not the mapped arrangement: the mapping above
@@ -1856,6 +1886,7 @@ function mapDoses(
       form: item?.form ?? null,
       pairedEventId: d.pairedEventId,
       adherence: d.adherence,
+      howGiven: d.howGiven ?? null,
       vehicleFoodItemId: vm?.foodItemId ?? null,
       vehicleFoodKey:
         vm && (vm.brand !== null || vm.productName !== null) ? trialFoodKey(vm.brand, vm.productName) : null,
@@ -1919,6 +1950,7 @@ function medicationOverlap(
       activeAtWindowEnd: endDn === null || endDn >= range.endDayIndex,
       overlapsLast7Days: to >= range.endDayIndex - 6,
       antibacterialInGiTrial: indication === 'gi' && looksAntibacterial(m.drugName),
+      ...(m.adHoc !== undefined ? { adHoc: m.adHoc, itemId: m.itemId ?? null } : {}),
     })
   }
   return out.sort(

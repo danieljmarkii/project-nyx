@@ -215,6 +215,28 @@ Deno.test('CUL-2441 — a weight rise, and a trial with one weigh-in', () => {
     one,
   )
   assert.ok(!/no change/i.test(one), one)
+  // CUL-2511: the two readings straddle the trial's start, and the row says so, dated, as a change
+  // across the start rather than over the trial (#10a still holds: it is not offered as trial evidence).
+  assert.ok(
+    one.includes('Across the trial’s start, weight is down about 9% of body weight: 33.00 kg (72.8 lb) on May 20, 2026 on a home scale, a single reading, before the trial began, → 30.00 kg (66.1 lb) on Jun 10, 2026 on a home scale, a single reading.'),
+    one,
+  )
+  // The builder carries it as its own field.
+  const snap = assembleReport(endedTrial({ weights: [weigh('2026-05-20', 33), weigh('2026-06-10', 30)] }))
+  assert.equal(snap.weight.acrossTrialStart?.highBefore?.day, '2026-05-20')
+  assert.equal(snap.weight.acrossTrialStart?.latest.day, '2026-06-10')
+  // Control: both readings inside the trial is the trial's own change, never "across its start".
+  assert.equal(assembleReport(endedTrial({ weights: [weigh('2026-06-02', 30), weigh('2026-06-27', 31.2)] })).weight.acrossTrialStart, null)
+  assert.ok(!/Across the trial/.test(rise), rise)
+})
+
+Deno.test('CUL-2511 — a loss across the trial start reaches "Interpreting this record"', () => {
+  const html = trialHtml(endedTrial({ weights: [weigh('2026-05-20', 33), weigh('2026-06-10', 30)] }))
+  const callout = plain(/<div class="callout">[\s\S]*?<\/div>/.exec(html)?.[0] ?? '')
+  assert.ok(callout.includes('Weight is down about 9% of body weight across the trial’s start (May 20, 2026 → Jun 10, 2026; above).'), callout)
+  // A gain is the trial section's to state, not the bottom line's.
+  const gain = trialHtml(endedTrial({ weights: [weigh('2026-05-20', 30), weigh('2026-06-10', 33)] }))
+  assert.ok(!/across the trial’s start/.test(plain(/<div class="callout">[\s\S]*?<\/div>/.exec(gain)?.[0] ?? '')))
 })
 
 Deno.test('CUL-2441 — the row prints whatever the owner said, and never says better or worse', () => {
@@ -256,6 +278,8 @@ Deno.test('CUL-2441 — Nyx: the week after the trial and the Weight flag reach 
   assert.ok(row.includes('The report’s Weight flag reads a loss of about 15% of body weight against the highest reading in the last 365 days.'), row)
   // The capture predates `weight.trialChange`: unknown, said as unknown, never "no weight".
   assert.ok(row.includes('The weight over the trial is not recorded in this copy.'), row)
+  // CUL-2511: but the copy's own change straddles the trial start, and the row now says so.
+  assert.ok(/Across the trial’s start, weight is down about 15% of body weight: .* on Jun 15, 2026 on a home scale, a single reading, before the trial began, → .* on Sep 16, 2026 on a home scale, a single reading\./.test(row), row)
   assert.ok(!row.includes('No weight recorded'), row)
 })
 

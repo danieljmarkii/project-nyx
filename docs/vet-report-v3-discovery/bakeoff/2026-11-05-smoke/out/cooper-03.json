@@ -1,0 +1,174 @@
+{
+ "fixture": "cooper",
+ "n": 3,
+ "result": {
+  "outcome": "rejected",
+  "reason": "checker"
+ },
+ "stored": {
+  "text": null,
+  "verdict": {
+   "v": 1,
+   "outcome": "rejected",
+   "reason": "checker",
+   "fact_hash": "bc5205547117b96c08dc228847e177a243575e8ad1f85c3a8a2fbe840e46113e",
+   "prompt": "vr2-lead-4",
+   "verifier": "vr2-5",
+   "writer_model": "claude-opus-5-5",
+   "checker_model": "claude-sonnet-5-5",
+   "sentences": [
+    {
+     "text": "Intake: reduced, below this pet's baseline for 2 consecutive days, baseline read over 22 recent rated meals; most recent fully-eaten meal on Oct 14, about 50 h without a full meal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13.",
+     "cites": [
+      "sign-vomit"
+     ]
+    },
+    {
+     "text": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "verifier_errors": [],
+   "checker": {
+    "takeaway": "Cooper's intake is reduced: below baseline for 2 days with about 50 h since a full meal. He vomited on 4 of 22 logged days, last on Oct 13, and is on day 19 of a 42-day owner-entered venison diet trial.",
+    "levels": {
+     "H1": "minor",
+     "H2": "none",
+     "H3": "none",
+     "H4": "none",
+     "H5": "none",
+     "H6": "none",
+     "H7": "none"
+    },
+    "quotes": {
+     "H1": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42."
+    },
+    "omissions": [
+     "The draft does not say that no adherence or off-list exposure data are recorded for the trial, or that the medication/supplement check was not confirmed with the owner. A vet could therefore read the trial as an uncontaminated baseline."
+    ]
+   },
+   "attempts": 2,
+   "at": "2026-11-05T16:29:31.440Z"
+  },
+  "model": null
+ },
+ "calls": [
+  {
+   "role": "writer",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Intake: reduced, below this pet's baseline for 2 consecutive days, baseline read over 22 recent rated meals; the most recent fully-eaten meal was Oct 14, about 50 h without a full meal.",
+      "cites": [
+       "band-1-intake_decline"
+      ]
+     },
+     {
+      "text": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13.",
+      "cites": [
+       "sign-vomit"
+      ]
+     },
+     {
+      "text": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 10662
+  },
+  {
+   "role": "repair",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-opus-5-5",
+   "json": {
+    "sentences": [
+     {
+      "text": "Intake: reduced, below this pet's baseline for 2 consecutive days, baseline read over 22 recent rated meals; most recent fully-eaten meal on Oct 14, about 50 h without a full meal.",
+      "cites": [
+       "band-1-intake_decline"
+      ]
+     },
+     {
+      "text": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13.",
+      "cites": [
+       "sign-vomit"
+      ]
+     },
+     {
+      "text": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+      "cites": [
+       "trial"
+      ]
+     }
+    ]
+   },
+   "ms": 8671
+  },
+  {
+   "role": "checker",
+   "ok": true,
+   "reason": null,
+   "servedModel": "claude-sonnet-5-5",
+   "json": {
+    "takeaway": "Cooper's intake is reduced: below baseline for 2 days with about 50 h since a full meal. He vomited on 4 of 22 logged days, last on Oct 13, and is on day 19 of a 42-day owner-entered venison diet trial.",
+    "hazards": {
+     "H1": {
+      "level": "minor",
+      "quote": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42.",
+      "why": "The trial appears with no word that adherence or off-list exposure is unrecorded, so a hurried reader might assume it is being followed. Nothing in the sentence claims adherence, and \"owner-entered\" is kept."
+     },
+     "H2": {
+      "level": "none",
+      "quote": "",
+      "why": "The intake, vomiting and trial lines are separate, with no causal or improvement wording."
+     },
+     "H3": {
+      "level": "none",
+      "quote": "",
+      "why": "The draft says \"reduced\" and gives the hours without a full meal. It does not describe the decline as preference or minor."
+     },
+     "H4": {
+      "level": "none",
+      "quote": "",
+      "why": "\"the last Oct 13\" is taken directly from the fact line and is not presented as resolved or normal."
+     },
+     "H5": {
+      "level": "none",
+      "quote": "",
+      "why": "The intake and vomiting numbers carry the qualifiers their lines carry, including the 22-meal baseline, the 22 logged days and the 2 consecutive days."
+     },
+     "H6": {
+      "level": "none",
+      "quote": "",
+      "why": "Every claim in the draft is supported by the fact table."
+     },
+     "H7": {
+      "level": "none",
+      "quote": "",
+      "why": "The band item is stated first, with its figures intact (2 consecutive days, 22-meal baseline, Oct 14, about 50 h) and no softening."
+     }
+    },
+    "omissions": [
+     "The draft does not say that no adherence or off-list exposure data are recorded for the trial, or that the medication/supplement check was not confirmed with the owner. A vet could therefore read the trial as an uncontaminated baseline."
+    ]
+   },
+   "ms": 14105
+  }
+ ],
+ "wall_ms": 33447
+}
