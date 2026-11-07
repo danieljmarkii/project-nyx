@@ -19,6 +19,7 @@ import { waitFor } from '@testing-library/react-native';
 import { syncNow } from './sync';
 import { countUnclaimedInbox, ingestCaptureInbox } from './captureInbox';
 import * as Print from 'expo-print';
+import { lockedPrintHtml } from './examRoom';
 import { fetchOwnerSurname } from './profile';
 import * as Sharing from 'expo-sharing';
 
@@ -359,7 +360,9 @@ describe('shareReportPdf', () => {
     mockedIsAvailable.mockResolvedValue(true);
     const ok = await shareReportPdf(report);
     expect(ok).toBe(true);
-    expect(mockedPrint).toHaveBeenCalledWith({ html: report.html });
+    // Locked before expo-print sees it (CUL-2649): its WebView is outside every report frame.
+    expect(mockedPrint).toHaveBeenCalledWith({ html: lockedPrintHtml(report.html) });
+    expect(mockedPrint.mock.calls[0][0].html).toContain('Content-Security-Policy');
     // Shares the renamed clinic-friendly file, not the raw temp uri.
     expect(mockedShare).toHaveBeenCalledWith(
       `file:///cache/transient/${NAMED}`,

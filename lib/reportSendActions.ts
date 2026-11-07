@@ -18,6 +18,7 @@
 
 import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
+import { lockedPrintHtml } from './examRoom';
 import { renderReportPdf, shareReportPdf, type VetReport } from './pdf';
 import type { SendResult } from './reportSend';
 import { keepAfterSend, type KeepOutcome } from './reportKeep';
@@ -92,7 +93,7 @@ export const PRINT_DISMISSED = /printing did not complete/i;
 
 export async function printReport(report: VetReport): Promise<SendOutcome> {
   try {
-    await Print.printAsync({ html: report.html });
+    await Print.printAsync({ html: lockedPrintHtml(report.html) });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     if (PRINT_DISMISSED.test(message)) return { result: 'cancelled', keep: null };

