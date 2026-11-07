@@ -34,6 +34,10 @@ Steps 0 to 4, 9 (the Legacy Backlog check), 11, 12 (the queue count and lane rea
 - **G3 (a).** CUL-1930, CUL-588, CUL-582, CUL-1915 and CUL-1879 lead the next docket; the next pass posts defaults on the low-risk rest of the 21-day pile.
 - **G4 (a).** CUL-2194 closed Done; CUL-1152 narrowed to deleting the Codespace secret.
 
+## After the pass: workflow throughput
+
+A sanity check on the board's shape concluded the constraint is the PM's rulings and the intake rate, not hygiene. The PM ruled a five-row plan, kept agnostic of the current priority, and adopted Row 1 as a better-than-the-rule call: a small, safe find is fixed in the same PR under an `## Along the way` heading, and anything else files as a class, never per instance. This unseats the 2026-08-16 "never folded in" clause. Filed as CUL-2655 (parent) with rows CUL-2656 to CUL-2660, one PR each, Row 1 first.
+
 ## Next
 
 The next pass runs the steps this one skipped (6, 7, 10, 16, 18) and posts the G3 defaults.
