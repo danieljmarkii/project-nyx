@@ -2,10 +2,10 @@
 
 **Date:** 2026-11-07
 **Mode:** DISCOVERY (Product Owner / Backlog Steward lens), attended: the PM asked for the pass
-**Outcome:** shipped via #1474 (this record only; the pass's writes are in Linear)
+**Outcome:** shipped via #1474 (this record, plus the 10-25 pass's record and its two research briefs, folded in from #1332 under G1; the pass's writes are in Linear)
 **Branch:** `claude/compassionate-hawking-0lifiz`
 **Report:** the standing grooming issue [CUL-1962](https://linear.app/projectnyx/issue/CUL-1962), comment of 2026-11-07. It holds the full report and the PM's four open calls (G1 to G4).
-**Predecessor:** the 2026-10-25 pass, whose record PR (#1332) is still an unmerged draft (G1).
+**Predecessor:** the 2026-10-25 pass. Its record PR (#1332) was still an unmerged draft; under G1 this PR carries its commit, so #1332 closes once this merges.
 
 ---
 
@@ -27,6 +27,13 @@ Steps 0 to 4, 9 (the Legacy Backlog check), 11, 12 (the queue count and lane rea
 - **A grooming record never landed.** #1332 (10-25) is still a draft, so two research briefs its rulings call saved are not on `main`.
 - **`STATUS.md`'s live-tracks table is behind Linear**: it omits *Every iPhone*, *Design system · colour fills and links*, *Design system · one kit* and *Mixed meals*, and lists tracks no longer in progress. Left for the next track-start edit rather than rewritten here.
 
+## PM rulings, same session: G1 to G4 as recommended
+
+- **G1 (a).** #1332's commit is merged into this branch (clean, guards green), because the steward gate lets a session merge only its own PR. #1332 closes when this lands.
+- **G2 (a).** Vet report v2's parked pile gets one sitting at the project's go-live, run by its dispatcher (noted on its index issue).
+- **G3 (a).** CUL-1930, CUL-588, CUL-582, CUL-1915 and CUL-1879 lead the next docket; the next pass posts defaults on the low-risk rest of the 21-day pile.
+- **G4 (a).** CUL-2194 closed Done; CUL-1152 narrowed to deleting the Codespace secret.
+
 ## Next
 
-The PM rules G1 to G4 on CUL-1962; the next pass applies the answers, runs the skipped steps, and prepares the vet report v2 parked sitting if G2 (b) is chosen.
+The next pass runs the steps this one skipped (6, 7, 10, 16, 18) and posts the G3 defaults.
