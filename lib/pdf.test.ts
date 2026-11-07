@@ -216,6 +216,22 @@ describe('generateVetReport — the version and the surname (CUL-2292)', () => {
     expect((await generateVetReport({ petId: 'p1', includeNotes: true })).phoneHtml).toBeNull();
   });
 
+  // The past-window stopgap (PM ruling (a) on CUL-2370): the server answers a v2 request on a past
+  // window or a custom range with v1 and says why. The app reads it as v1 on every surface: no
+  // preview (report.preview.test.tsx, "a v1 report renders as before"), no exam room
+  // (report.send.test.tsx, "is offered only when the report has its phone layout"), no draft to keep.
+  it('the past-window stopgap response is v1 everywhere: no phone layout, no draft id', async () => {
+    mockedInvoke.mockResolvedValue({
+      data: { html: '<html>v1</html>', phone_html: null, report_version: 'v1', report_id: null, report_v1_fallback: 'past_window', report_flags_read: { report_document_v2: true } },
+      error: null,
+    });
+    const r = await generateVetReport({ petId: 'p1', includeNotes: true });
+    expect(r.reportVersion).toBe('v1');
+    expect(r.phoneHtml).toBeNull();
+    expect(r.reportId ?? null).toBeNull();
+    expect(r.html).toBe('<html>v1</html>');
+  });
+
   it('no session, or a read that throws, leaves the surname out and the report still opens', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>', report_version: 'v2' }, error: null });
