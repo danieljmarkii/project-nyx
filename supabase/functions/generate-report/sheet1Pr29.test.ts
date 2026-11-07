@@ -11,7 +11,8 @@ import { renderPrintV2 } from './renderPrintV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
 import { dietTrialSection } from './render.ts'
 import { trialReadingOf, trialRowsOf } from './backSheetsV2.ts'
-import { BAND_LEAD_KINDS, bandMembersOf, bandOrder, isZeroSignSheet, leadSignOf } from './v2Predicates.ts'
+import { PARTLY_PRINT } from './renderBackV2.ts'
+import { BAND_LEAD_KINDS, BAND_PRESENT_KINDS, bandMembersOf, bandOrder, isZeroSignSheet, leadSignOf } from './v2Predicates.ts'
 import { cooperInput } from './cooperDemo.testutil.ts'
 import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
@@ -144,26 +145,56 @@ Deno.test('CUL-2361 — a zero-sign sheet with no change leads with the coverage
 
 // ── CUL-2381: the band's order (ruling (a)) and its short trial-food list ───
 
-Deno.test('CUL-2381 — Nyx’s band leads with the burden and weight flags, then v1’s order', () => {
+Deno.test('CUL-2627 ruling (a) — Nyx’s band leads with the foreign-material flag, then burden and weight, then v1’s order', () => {
   const d = docOf(nyxLiveSnapshot())
   const band = block(d, 'band')
   assert.ok(band)
-  assert.deepEqual(band.items.slice(0, 2).map((i) => i.tag), ['Burden', 'Weight'])
-  // The same order on the phone, which reads the same model.
-  const phone = renderPhoneV2(d)
-  assert.ok(phone.indexOf('Flag: burden') < phone.indexOf('Flag: foreign material'))
+  assert.deepEqual(band.items.map((i) => i.tag), ['Foreign material', 'Burden', 'Weight', 'Diet not eaten', 'Chronicity', 'Chronicity'])
+  // The same order on the phone and the print, which read the same model.
+  for (const html of [renderPhoneV2(d), renderPrintV2(d)]) {
+    const at = (s: string) => html.indexOf(s)
+    assert.ok(at('Flag: foreign material') >= 0 && at('Flag: foreign material') < at('Flag: burden'))
+    assert.ok(at('Flag: burden') < at('Flag: weight'))
+  }
 })
 
-Deno.test('CUL-2381 — bandOrder puts burden, weight loss and intake decline first, stable, and moves no member', () => {
+Deno.test('CUL-2627 + CUL-2381 — bandOrder: present blood, present foreign, then burden, weight loss, intake decline, then the rest; stable, and moves no member', () => {
   const s = nyxLiveSnapshot()
-  const flags = s.safetyFlags
+  const blood: SafetyFlag = { kind: 'present_blood', source: 'vomit', incidents: [{ eventId: 'vb', occurredAt: '2026-10-20T14:00:00Z', kind: 'fresh_red' }] } as SafetyFlag
+  // Blood placed last in the snapshot, so its lead is the order's doing, not the input's.
+  const flags = [...s.safetyFlags, blood]
   const ordered = bandOrder(flags)
   assert.equal(ordered.length, flags.length)
   assert.deepEqual(new Set(ordered), new Set(flags))
-  const leadCount = flags.filter((f) => BAND_LEAD_KINDS.includes(f.kind)).length
-  assert.ok(ordered.slice(0, leadCount).every((f) => BAND_LEAD_KINDS.includes(f.kind)))
-  const rest = ordered.slice(leadCount)
-  assert.deepEqual(rest, flags.filter((f) => !BAND_LEAD_KINDS.includes(f.kind)), 'the rest keep the snapshot’s order')
+  const order = [...BAND_PRESENT_KINDS, ...BAND_LEAD_KINDS]
+  const ranked = flags.filter((f) => order.includes(f.kind))
+  const head = ordered.slice(0, ranked.length)
+  assert.deepEqual(head.map((f) => f.kind), ['present_blood', 'present_foreign', 'symptom_burden', 'weight_loss'])
+  for (let i = 1; i < head.length; i++) assert.ok(order.indexOf(head[i - 1].kind) <= order.indexOf(head[i].kind))
+  assert.deepEqual(ordered.slice(ranked.length), flags.filter((f) => !order.includes(f.kind)), 'the rest keep the snapshot’s order')
+})
+
+Deno.test('CUL-2627 — on every fixture, a present flag opens the band, and "These lead the flags for review above" prints only when one does', () => {
+  let present = 0
+  let lead = 0
+  for (const [name, s] of [...v2DocFixtures(), ['nyx-live-real', nyxLiveSnapshot()] as const]) {
+    const d = docOf(s as ReportSnapshot)
+    const band = block(d, 'band')
+    const hasPresent = (s as ReportSnapshot).safetyFlags.some((f) => BAND_PRESENT_KINDS.includes(f.kind))
+    if (hasPresent) {
+      present++
+      assert.ok(band, `${name}: a present flag with no band`)
+      assert.ok(/^Possible blood|^Blood|^Foreign material/.test(band.items[0].tag) || BAND_PRESENT_KINDS.some((k) => band.items[0].id.includes(k)), `${name}: band opens with ${band.items[0].id}`)
+    }
+    const html = renderPrintV2(d)
+    const at = html.indexOf('These lead the flags for review above')
+    if (at >= 0) {
+      lead++
+      assert.ok(band && BAND_PRESENT_KINDS.some((k) => band.items[0].id.includes(k)), `${name}: "these lead" with the band opened by ${band?.items[0].id}`)
+      assert.ok(html.indexOf('data-block="band"') < at, `${name}: the band is above the line that says it leads`)
+    }
+  }
+  assert.ok(present >= 2 && lead >= 1, `present ${present}, lead lines ${lead}`)
 })
 
 Deno.test('CUL-2381 — the lead sign keeps the snapshot’s order: an intake decline moved up the band does not take the chart', () => {
@@ -181,7 +212,7 @@ Deno.test('CUL-2381 — the lead sign keeps the snapshot’s order: an intake de
     hoursSinceLastFullMeal: null,
   }
   s.safetyFlags = [...s.safetyFlags, decline]
-  assert.equal(bandMembersOf(s).band[2].kind, 'intake_decline', 'it leads the band after burden and weight')
+  assert.equal(bandMembersOf(s).band[3].kind, 'intake_decline', 'it follows the present flag, burden and weight (CUL-2627, CUL-2381)')
   assert.equal(leadSignOf(s)?.sign, 'vomit', 'the chart still leads with the sign the snapshot’s first flag names')
 })
 
@@ -343,4 +374,71 @@ Deno.test('cold read — inside a short last column a day keeps a full week’s 
   const last = k.columns.length - 1
   const within = (Date.parse('2026-10-13') - Date.parse(k.columns[last].start)) / 86_400_000
   assert.ok(Math.abs(off.doseCols[off.doseCols.length - 1] - (last + (within + 0.5) / 7)) < 1e-9)
+})
+
+// ── CUL-2627 instance 2: a past window's end warning sits under the header ───
+
+Deno.test('CUL-2627 ruling (a) — a past window’s end warning prints once, under the masthead, above the checks line it limits (Tama)', () => {
+  const byName = new Map(v2DocFixtures())
+  const s = byName.get('trial-report-past-window')
+  assert.ok(s)
+  const d = docOf(s)
+  const ids = d.blocks.map((b) => b.id)
+  const disclosure = block(d, 'disclosure')
+  assert.ok(disclosure && disclosure.html.includes('Window ends before this report.'), 'the disclosure block carries it')
+  assert.equal(ids.indexOf('disclosure'), ids.indexOf('masthead') + 1, ids.join(' '))
+  const checksAt = Math.max(ids.indexOf('checks'), ids.indexOf('band'))
+  assert.ok(checksAt > ids.indexOf('disclosure'), `the checks line follows it: ${ids.join(' ')}`)
+  for (const html of [renderPrintV2(d), renderPhoneV2(d)]) {
+    const main = html.slice(html.indexOf('<main'), html.indexOf('</main>'))
+    const sheet1 = main.slice(0, main.indexOf('data-sheet="2"') < 0 ? undefined : main.indexOf('data-sheet="2"'))
+    assert.equal(sheet1.split('Window ends before this report.').length - 1, 1, 'printed once')
+    assert.ok(sheet1.indexOf('Window ends before this report.') < sheet1.indexOf('Ran and did not trigger'))
+    assert.ok(sheet1.indexOf('Nothing after May 20 is counted or flagged') < sheet1.indexOf('Ran and did not trigger'))
+  }
+})
+
+Deno.test('CUL-2627 — no v1 disclosure line prints twice on sheet 1, on any fixture', () => {
+  let seen = 0
+  for (const [name, s] of [...v2DocFixtures(), ['nyx-live-real', nyxLiveSnapshot()] as const]) {
+    const d = docOf(s as ReportSnapshot)
+    assert.ok(!d.blocks.some((b) => b.kind === 'carried' && b.html.includes('class="cherry"')), `${name}: a v1 disclosure carried a second time`)
+    const disclosure = block(d, 'disclosure')
+    if (disclosure) seen++
+  }
+  assert.ok(seen >= 1, `${seen} fixtures with a disclosure`)
+})
+
+// ── CUL-2614 ruling (a): the partly-eaten tone on paper, and the twin's words ──
+
+/** Rec. 601 grey, the conversion pdftoppm -gray applies before survival.py's threshold. */
+const grey = (hex: string): number => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  return 0.299 * r + 0.587 * g + 0.114 * b
+}
+
+Deno.test('CUL-2614 — every printed document draws partly eaten in PARTLY_PRINT: dark enough for the copier, not the concern crimson', () => {
+  // survival.py thresholds at 128 after a 0.75px blur; a bar's interior keeps its grey.
+  assert.ok(grey(PARTLY_PRINT) < 128 - 10, `grey ${grey(PARTLY_PRINT).toFixed(0)}`)
+  assert.notEqual(PARTLY_PRINT.toLowerCase(), '#9f1239')
+  assert.notEqual(PARTLY_PRINT.toLowerCase(), '#a34d64', 'the stopgap tone that read as refused in colour')
+  const d = docOf(nyxLiveSnapshot())
+  const print = renderPrintV2(d)
+  assert.ok(print.includes(`--partly:${PARTLY_PRINT};`), 'the print sheet')
+  const phone = renderPhoneV2(d)
+  const media = phone.slice(phone.lastIndexOf('@media print{'))
+  assert.ok(media.includes(`--partly:${PARTLY_PRINT};`), 'the phone document’s own print, which kept the pale #d9a3b0')
+  assert.ok(phone.slice(0, phone.indexOf('@media print{')).includes('--partly:#d9a3b0;'), 'the phone screen keeps its light tone')
+  // The ledger's partly cell is dark on paper, so its count prints in paper, as the refused cell's does.
+  for (const css of [print, media]) assert.ok(css.includes('.back .lg td.lg-sign.lg-partly{color:var(--paper);}'))
+})
+
+Deno.test('CUL-2614 — the twin says what a copy shows: partly eaten in a paler tone, printed solid on a black-and-white copy', () => {
+  let seen = 0
+  for (const [name, s] of v2DocFixtures()) {
+    const html = renderPrintV2(docOf(s))
+    assert.ok(!html.includes('drawn light'), `${name}: the old wording`)
+    if (html.includes('partly eaten in a paler tone, which a black-and-white copy prints solid')) seen++
+  }
+  assert.ok(seen >= 1, 'a fixture draws a partly-eaten share')
 })

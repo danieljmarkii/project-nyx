@@ -27,7 +27,7 @@
 // scroll can rest anywhere, and only the pinned sentence is beside the bars at every position
 // (adversarial pass on CUL-2295; the PM rules whether it may hide).
 // Frames are known only on the device (its height and text size), so the script measures there.
-import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, backSheetHtml, bandPhotosHtml, labelTableCells } from './renderBackV2.ts'
+import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, PARTLY_PRINT, backSheetHtml, bandPhotosHtml, labelTableCells } from './renderBackV2.ts'
 import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { COUNT_AXIS_MIN_MAX } from './renderPrintV2.ts'
 import { fmtDay } from './render.ts'
@@ -462,6 +462,9 @@ ${BACK_STYLE_PHONE_SCREEN}
 [data-compact] .band h2{text-transform:none;letter-spacing:0;}
 }
 @media print{
+/* CUL-2614: on paper the partly tone is the print sheet's, which survives a copier; the screen's
+   light #d9a3b0 vanished from a photocopy of a printed phone copy. */
+:root{--partly:${PARTLY_PRINT};}
 html,body{font-size:9.5pt;}
 .sheet{padding:0;max-width:none;}
 .mast .eyebrow{font-size:7.5pt;}

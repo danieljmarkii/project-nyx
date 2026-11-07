@@ -97,7 +97,7 @@ export interface LedgerCell {
   state: 'none' | 'logged' | 'sign' | 'outside'
   count: number
   /** Intake fill only: true when every rated meal that day was refused (drawn solid); false when a
-   *  meal was not fully eaten but not every one was refused (drawn light), the lead chart's two fills. */
+   *  meal was not fully eaten but not every one was refused (a paler tone), the lead chart's two fills. */
   refusedAll?: boolean
 }
 

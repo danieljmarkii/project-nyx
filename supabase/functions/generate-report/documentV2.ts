@@ -38,6 +38,7 @@ import {
   fmtRange,
   h,
   lastEntryLine,
+  recordEdgeDisclosure,
   safetyChecksText,
   fmtLocalTime,
   fmtDayScopedTo,
@@ -1164,7 +1165,10 @@ function buildLeadChart(
       if (cells.some((c) => c.notFinished - c.refused > 0)) marks.add('intake_partly')
       const fills = [
         ...(marks.has('intake_refused') ? ['refused drawn solid'] : []),
-        ...(marks.has('intake_partly') ? ['partly eaten drawn light'] : []),
+        // PM ruling (a) on CUL-2614: on paper the partly tone is dark enough to survive a copier, so
+        // a black-and-white copy prints it solid like refused; the counts below ("(n refused)") keep
+        // the split. "Drawn light" was barely true in colour and false on a copy.
+        ...(marks.has('intake_partly') ? ['partly eaten in a paler tone, which a black-and-white copy prints solid'] : []),
       ]
       const bowl = snap.v2.intakeWeeksBowlExcluded
       const bowlNote = bowl > 0 ? `, not counting ${plural(bowl, 'rating', 'ratings')} of a free-fed bowl, which the intake check does not read` : ''
@@ -1575,11 +1579,16 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
     lastEntryHtml: lastEntryLine(snap),
   })
 
-  // v1's page-1 disclosures (the cherry-pick guard, a record that could not be read in full) carry
-  // over word for word: each one stops a short or hand-cropped record reading as a whole one.
+  // v1's page-1 disclosures (the cherry-pick guard, a window that ends before the report, a record
+  // that could not be read in full) carry over word for word, in v1's order, under the masthead as
+  // v1 prints them under its header: each one stops a short or hand-cropped record reading as a
+  // whole one. CUL-2627 instance 2 (PM ruling (a), 2026-11-07): the window-end line limits every
+  // check and count below it ("Nothing after May 20 is counted or flagged"), so it sits above the
+  // band and the checks line, never after them. v1's copies of these lines are not carried a second
+  // time (`V1_PAGE1_ELSEWHERE.cherry`).
   // CUL-2391: with no usable zone every date and time on the sheet is UTC, and v1's letterhead line
   // says so; v2 has no letterhead, so it rides here, beside the other record-reading disclosures.
-  const disclosure = `${cherryPickDisclosure(snap)}${truncationDisclosure(snap)}${utcNotice(snap.timezone)}`.trim()
+  const disclosure = `${cherryPickDisclosure(snap)}${recordEdgeDisclosure(snap)}${truncationDisclosure(snap)}${utcNotice(snap.timezone)}`.trim()
   if (disclosure !== '') blocks.push({ kind: 'disclosure', id: 'disclosure', html: disclosure })
 
   const { band, leadFlag } = bandMembersOf(snap)

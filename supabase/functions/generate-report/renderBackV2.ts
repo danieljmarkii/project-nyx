@@ -259,8 +259,23 @@ const BACK_V1_PRINT = `.back .appx-sub,.back .kv,.back .callout,.back .noticed-c
 .back .nb-track{height:6pt;}
 .back .ns-v{height:8pt;}`
 
+/**
+ * The partly-eaten tone on paper (PM ruling (a) on CUL-2614, 2026-11-06). Dark enough to survive a
+ * copier's threshold as ink (grey 114 under survival.py's 128), so on a black-and-white copy refused
+ * and partly eaten merge into one not-finished bar, the louder reading, and the split survives in
+ * words (the twin's "(n refused)" counts and each bar's "n of N"). A dusty mauve, not a light rose:
+ * #a34d64 sat 11.9 CIEDE2000 from the concern crimson #9F1239 and partly read as refused on a colour
+ * print; this sits 21.9 from it. Every printed document uses it, the phone's own print included.
+ */
+export const PARTLY_PRINT = '#8f5f86'
+
+/** On paper the ledger's partly cell is dark, so its count prints in paper as the refused cell's does:
+ *  ink on it would go black with the cell on a copy and the count with it (CUL-2614). */
+const BACK_PARTLY_PRINT = `.back .lg td.lg-sign.lg-partly{color:var(--paper);}`
+
 /** The print sheet's back-sheet rules: every size in absolute pt (spec §6.3). */
 export const BACK_STYLE_PRINT = `${BACK_SHARED}
+${BACK_PARTLY_PRINT}
 .back .runhead{font-size:7.5pt;}
 .back h2{font-size:9pt;}
 .back h3{font-size:8.5pt;}
@@ -313,6 +328,16 @@ const BACK_FIT_PHONE_SCREEN = `@media screen{
 .back table:not(.lg) td{width:auto!important;padding:0;border:0;text-align:left;overflow-wrap:break-word;}
 .back table:not(.lg) td.num{white-space:normal;}
 .back table:not(.lg) td[data-label]::before{content:attr(data-label) ": ";font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink2);}
+/* CUL-2626: the diet sheet's protein rows ran past the screen at large text (the food held 46% of a
+   narrow cell and its protein set could not shrink below its longest word). In a narrow container
+   the food takes its own line and the protein set wraps under it, every word kept. The Noticed strip
+   and its key wrap the way sheet 1's carried copy already does (CUL-2551), rather than clip. */
+.back .ptrow{flex-wrap:wrap;}
+.back .ptrow .ptfood,.back .ptrow .ptset{flex:1 1 100%;min-width:0;overflow-wrap:anywhere;}
+.back .ns-row{flex-wrap:wrap;row-gap:0.25rem;}
+.back .ns-cell{flex:0 0 auto;min-width:1.4rem;}
+.back .ns-key{white-space:normal;}
+.back .ns,.back .ns-legend{overflow-wrap:anywhere;}
 }`
 
 /** The phone's back-sheet rules for the screen: rem only, nothing under 11pt (spec §6.2, §6.3). */
@@ -344,6 +369,7 @@ ${BACK_FIT_PHONE_SCREEN}
 
 /** The phone's back-sheet rules inside its `@media print` block: absolute pt, like the print sheet. */
 export const BACK_STYLE_PHONE_PRINT = `
+${BACK_PARTLY_PRINT}
 .back .runhead{font-size:7.5pt;}
 .back h2{font-size:9pt;}
 .back h3{font-size:8.5pt;}

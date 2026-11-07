@@ -29,7 +29,7 @@
 // say). Everything above that slot, the band included, renders byte-for-byte as without a lead.
 // The sentences print exactly as stored and verified (`aiLeadSlot` adds markup, never words);
 // each is followed by its citations, named by the lines' own nouns.
-import { BACK_STYLE_PRINT, backSheetHtml, bandPhotosHtml, pageHeadCss } from './renderBackV2.ts'
+import { BACK_STYLE_PRINT, PARTLY_PRINT, backSheetHtml, bandPhotosHtml, pageHeadCss } from './renderBackV2.ts'
 import type { LeadSentence } from './aiLead/verify.ts'
 import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
@@ -367,12 +367,13 @@ export function blockIdsOf(html: string): string[] {
 }
 
 const STYLE_V2 = `
-:root{--ink:#16181d;--ink2:#565961;--faint:#8a8d94;--hair:#d8d9dd;--paper:#ffffff;--concern:#9F1239;--partly:#a34d64;--cov:#c2c4c9;}
+:root{--ink:#16181d;--ink2:#565961;--faint:#8a8d94;--hair:#d8d9dd;--paper:#ffffff;--concern:#9F1239;--partly:${PARTLY_PRINT};--cov:#c2c4c9;}
 /* Print survival (VR2-11, scripts/report-extract/survival.py): a copier's blur and threshold erased
-   the light partly-eaten fill (#d9a3b0) and the faint hatch outright. --partly is now dark enough to
-   survive as ink, so on a copy the refused and partly-eaten shares merge into one not-finished bar
-   (the louder reading; the n of N label still prints) rather than the partly share vanishing. Its
-   own mono mark is a ruling for the PM (filed on CUL-2291). The hatch draws in ink-2, as strokes. */
+   the light partly-eaten fill (#d9a3b0) and the faint hatch outright. --partly (PARTLY_PRINT) is dark
+   enough to survive as ink, so on a copy the refused and partly-eaten shares merge into one
+   not-finished bar (the louder reading; the n of N label and the twin's counts still print), and
+   clear of the concern crimson on a colour print (PM ruling (a) on CUL-2614: no mono mark of its
+   own, no hatch). The hatch draws in ink-2, as strokes. */
 @page{size:auto;margin:36pt 40pt;}
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}

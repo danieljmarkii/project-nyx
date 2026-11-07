@@ -40,6 +40,7 @@ export const V1_PAGE1_ELSEWHERE: Readonly<Record<string, string>> = {
   orient: 'navigation: v1’s contents line ("appendices A–G follow"); v2’s sheets carry their own titles',
   ident: 'the masthead (named reformat: name, signalment, conditions, owner, window, last entry)',
   safetyband: 'the band (named reformat: each flag row, v2’s pointers)',
+  cherry: 'the disclosure block, word for word in v1’s order (the cherry-pick guard, the window-end line, the partial record, the UTC notice; CUL-2627)',
 }
 
 /** The html of v1's page 1: the first sheet section, before the appendices. */
