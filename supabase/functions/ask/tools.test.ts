@@ -1183,6 +1183,13 @@ Deno.test('engineFindings — EN-9: a watched concern follows a raised one and r
   ])
   for (const f of stamped.findings) assert.equal('raisedAgainLatch' in (f.payload as object), false, `${f.type} relayed the latch`)
   assert.deepEqual((stamped.findings.find((f) => f.type === 'symptom_worsening')!.payload as { careState: unknown }).careState, { state: 'raised' })
+  // CUL-2662: nor a skipped run's care carry (answer ids and a reason code), alone or beside a latch.
+  const carry = { lapsed: ['57568862-6ca2-49c8-8a68-bdd3235638e2'], reason: 'rate' }
+  const carried = engineFindings([
+    { type: 'symptom_chronicity', priorityClass: 'safety', payload: { text: 'worth a word …', careCarry: carry } },
+    { type: 'symptom_worsening', priorityClass: 'safety', payload: { text: 'worth a word …', careCarry: carry, raisedAgainLatch: latch } },
+  ])
+  for (const f of carried.findings) assert.deepEqual(f.payload, { text: 'worth a word …' }, `${f.type} relayed the carry`)
 })
 
 Deno.test('engineFindings — a stood-down marker (CUL-786) is never relayed and never counts as a finding', () => {

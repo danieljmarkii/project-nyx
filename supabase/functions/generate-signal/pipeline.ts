@@ -120,6 +120,7 @@ import {
   concernSignOf,
   isWatched,
   latchOf,
+  priorCareCarry,
   readPriorMarkers,
   type CareRecord,
   type CareStateStep,
@@ -941,7 +942,21 @@ export function runSignalPipeline(
     const m = sign === null ? undefined : priorLatches?.get(sign)
     return m ? ({ ...f, raisedAgainLatch: latchOf(m) } as unknown as Finding) : f
   }
-  const decorated = priorLatches && priorLatches.size > 0 ? stepped.map((r) => ({ ...r, finding: withLatch(r.finding) })) : stepped
+  // CUL-2662 (ruled A): and every concern card it DETECTED keeps the prior row's answer state as a
+  // bare `careCarry` (no state, so this card is not quieter), when that prior vouched for the
+  // sign. The next full run then reads continuity as intact instead of lapsing every answer. A
+  // card carried from the prior row (below) gets none: this read did not see that concern.
+  const priorCarry = en9On && !careStepRuns
+    ? priorCareCarry(priorSignal?.findings ?? null, priorMs(priorSignal), args.priorReadFailed)
+    : null
+  const withCarry = (f: Finding): Finding => {
+    const sign = priorCarry ? concernSignOf(f) : null
+    const c = sign === null ? undefined : priorCarry?.get(sign)
+    return c ? ({ ...f, careCarry: c } as unknown as Finding) : f
+  }
+  const decorated = (priorLatches && priorLatches.size > 0) || (priorCarry && priorCarry.size > 0)
+    ? stepped.map((r) => ({ ...r, finding: withCarry(withLatch(r.finding)) }))
+    : stepped
   // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
   // Its absence here may be the rows the read did not reach, which is the resolution the ruling
   // withholds, so the prior card is carried forward as it was shown.
@@ -1307,7 +1322,8 @@ function carryPriorSafety(prior: readonly PriorSafetyEntry[], current: readonly 
       // EN-9 (PR-23, adversarial D1): a carried card never carries a care state. It is the
       // previous row's, owner-writable, and over an incomplete read no answer may quiet anything:
       // the card comes back asking.
-      const { careState: _dropped, ...rest } = p.finding as Finding & { careState?: unknown }
+      // Nor a care carry (CUL-2662): the carry vouches that a read saw the concern, and this one did not.
+      const { careState: _dropped, careCarry: _carry, ...rest } = p.finding as Finding & { careState?: unknown; careCarry?: unknown }
       const finding = { ...rest, carriedFrom: p.carriedFromIso } as Finding
       return { rank: i, text: templateCarried(finding, petName, p.carriedFromIso), finding }
     })
