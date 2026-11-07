@@ -72,8 +72,10 @@ Deno.test('CUL-2629: rv-script-d, 1 of 6 flags, is rejected with the record rule
   // Now: the code half rejects it on coverage, five flags left out, and only on coverage.
   assert.equal(sansRecordRule(RV_SCRIPT_D_VERDICT, NYX_TABLE, draft), 'reject')
   const issues = checkerCodeIssues(NYX_TABLE, draft)
-  assert.deepEqual([...new Set(issues.map((e) => e.check))], ['band-coverage'])
-  assert.equal(issues.length, 5)
+  // Five flags left out, by coverage; and the verifier's sentence rules (ruling (a)) on its own words.
+  assert.equal(issues.filter((e) => e.check === 'band-coverage').length, 5)
+  assert.deepEqual(bandCoverageIssues(NYX_TABLE, draft).length, 5)
+  assert.ok(issues.some((e) => e.check === 'script') && issues.some((e) => e.check === 'vocabulary'))
   // And the full decision still rejects it on the record rule first.
   assert.equal(checkerDecision(RV_SCRIPT_D_VERDICT, { table: NYX_TABLE, draft }), 'reject')
 })
@@ -154,10 +156,38 @@ Deno.test('adversarial pass 1 on the PR: a flag negated, asked, merged under a s
   assert.match(details('negated before a label'), /"no § /)
   assert.match(details('questioned, numbers kept'), /asks about a live flag/)
   assert.match(details('shared label, one sign'), /band-6-chronicity-cough \(chronicity\): none of its own numbers/)
-  // The residual this rule does not claim: an affirmative softening that keeps label, number and no
-  // negation. The verifier refuses it (vocabulary); the code half passes it, and says so here.
+  // What coverage alone does not claim, an affirmative softening that keeps label, number and no
+  // negation, is refused by the verifier's sentence rules inside the code half (ruling (a)).
   const softened = [{ text: ALL_SIX.replace('weight 3.73 kg', 'weight steady at 3.73 kg'), cites: ids }]
-  assert.deepEqual(run(softened).filter((e) => e.check === 'band-coverage'), [])
+  assert.deepEqual(bandCoverageIssues(NYX_TABLE, { sentences: softened }), [])
+  assert.equal(sansRecordRule(verdict('x'), NYX_TABLE, { sentences: softened }), 'reject')
+})
+
+Deno.test('CUL-2629 ruling (a): adversarial pass 2 on the PR, every shape coverage alone passed, is rejected by the code half', () => {
+  const ids = NYX.band.map((b) => b.id)
+  const fx = (name: string) => tableFromPayload(JSON.parse(Deno.readTextFileSync(new URL(`fixtures/${name}.json`, DIR))))
+  const R11 = fx('r11')
+  const COOPER = fx('cooper')
+  const r11Band = R11.facts.filter((f) => f.role === 'band').map((f) => f.id)
+  const cooperBand = COOPER.facts.filter((f) => f.role === 'band').map((f) => f.id)
+  const shapes: Array<[string, FactTable, LeadSentence[]]> = [
+    ['denial in a sentence citing no flag', NYX_TABLE, [{ text: ALL_SIX, cites: ids }, { text: 'None of these are live flags.', cites: ['line-1'] }]],
+    ['question in a sentence citing no flag', NYX_TABLE, [{ text: ALL_SIX, cites: ids }, { text: 'Are any of these real flags?', cites: ['line-1'] }]],
+    ['bare "not," before punctuation', NYX_TABLE, [{ text: `${ALL_SIX.slice(0, -1)}: not, on this record, live flags.`, cites: ids }]],
+    ['negation borrowed from another line', NYX_TABLE, [{ text: ALL_SIX.replace('foreign material on Sep 22', 'not a single foreign material on Sep 22'), cites: ids }]],
+    ['"absent"', NYX_TABLE, [{ text: `${ALL_SIX.slice(0, -1)}, all absent.`, cites: ids }]],
+    ['"ruled out"', NYX_TABLE, [{ text: `${ALL_SIX.slice(0, -1)}, all ruled out.`, cites: ids }]],
+    ['"nothing"', NYX_TABLE, [{ text: `${ALL_SIX.slice(0, -1)}, nothing urgent.`, cites: ids }]],
+    ['zero-width "not"', NYX_TABLE, [{ text: `${ALL_SIX.slice(0, -1)}, n\u200bot live.`, cites: ids }]],
+    ['shrunk count', NYX_TABLE, [{ text: ALL_SIX.replace('6 entries in 7 days', '1 entry in 7 days'), cites: ids }]],
+    ['merged chronicity, borrowed number', NYX_TABLE, [{ text: 'Burden is 6 entries in 7 days, weight 3.73 kg, foreign material on Sep 22, diet not eaten on 2 of 4, chronicity and chronicity of vomiting, 44 days, sneezing 10 days ago.', cites: ids }]],
+    ['r11: nothing here is a concern', R11, [{ text: 'Nothing here is a concern.', cites: r11Band }]],
+    ['cooper: not, at 50 h, a concern', COOPER, [{ text: 'Intake below baseline for 2 consecutive days: not, at 50 h, a concern.', cites: cooperBand }]],
+  ]
+  for (const [name, table, sentences] of shapes) {
+    assert.ok(checkerCodeIssues(table, { sentences }).length > 0, name)
+    assert.equal(sansRecordRule(verdict('x'), table, { sentences }), 'reject', name)
+  }
 })
 
 Deno.test('a band-empty record is unchanged: the code half has nothing to cover, and the checker decides as before', () => {

@@ -367,9 +367,10 @@ export function ownSignIssues(table: FactTable, summary: LeadSummary): VerifyIss
  *      prints: each negating word and the two words after it must be printed by a cited line or
  *      band label ("diet not eaten" is a label; "are not live flags", "no foreign material" are not).
  *  Adversarial pass 1 on the PR (negation, a question, a shared label, labels alone) broke the first
- *  version, which read the label word only. What this still cannot see: an affirmative softening
- *  that keeps the label, a number and no negation ("Weight is stable at 3.73 kg"). That is the
- *  verifier's (vocabulary, absence) and the model's H7, never claimed here. Read by the checker's
+ *  version, which read the label word only. What this alone still cannot see (pass 2: a denial in a
+ *  sentence citing no flag, a negation it does not list or borrows from another line, a borrowed or
+ *  shrunk number) the verifier's sentence rules refuse, and the checker's code half runs them beside
+ *  this (PM ruling (a) on CUL-2629, 2026-11-07). Read by the checker's
  *  decision (leadPipeline.ts `checkerCodeIssues`), whatever the model scored. Not a verifier rule:
  *  the verifier stays `vr2-9`, and the record rule (`liveFlagIssues`) refuses every record this could
  *  fire on. Errs loud: band-once leaves one sentence to carry every flag, so almost every lead on a

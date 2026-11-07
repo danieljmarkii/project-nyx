@@ -174,16 +174,26 @@ export function modelDecision(v: CheckerVerdict): 'pass' | 'repair' | 'reject' {
 
 /** The checker's code half (CUL-2548, CUL-2619, CUL-2629): what code alone decides about a draft,
  *  from the fact table and the printed words, with the record rule (`liveFlagIssues`) left to its
- *  caller. Order (`bandOrderIssues`: sentence 1 is band item 1; the model passed a buried flag twice,
- *  October's S-arm Nyx drafts and the smoke bake-off's cr-a), R-11's own sign (`ownSignIssues`; the
- *  re-run's checker passed r11's flag without it), and coverage (`bandCoverageIssues`: every live
- *  band item named; the third bake-off's checker passed `rv-script-d`, 1 of 6 flags). Any issue
- *  rejects, whatever the model said. Exported so the bake-off's "record rule set aside" read calls
- *  this function, never a hand copy of it (rerun-3's harness copied the body and would have missed
- *  coverage). */
+ *  caller. Any issue rejects, whatever the model said:
+ *    - order (`bandOrderIssues`): sentence 1 is band item 1 (the model passed a buried flag twice,
+ *      October's S-arm Nyx drafts and the smoke bake-off's cr-a);
+ *    - R-11's own sign (`ownSignIssues`; the re-run's checker passed r11's flag without it);
+ *    - coverage (`bandCoverageIssues`): every live band item cited, named, with one of its own
+ *      numbers (the third bake-off's checker passed `rv-script-d`, 1 of 6 flags);
+ *    - the verifier's sentence rules (`verifyLead`, every check but `live-flag`; PM ruling (a) on
+ *      CUL-2629, 2026-11-07, after the PR's second adversarial pass): a lexical coverage check cannot
+ *      rule out a flag denied, doubted, merged or shrunk ("None of these are live flags.", "all
+ *      absent", "1 entry in 7 days"), and the verifier's closed vocabulary, absence, negation,
+ *      band-numbers and required rules refuse every such shape. So the checker never passes what
+ *      the verifier refuses. In the pipeline the verifier has already passed the draft (step 6), so
+ *      this adds no refusal there; it makes the checker's own decision hold the same line wherever
+ *      it is read alone.
+ *  Exported so the bake-off's "record rule set aside" read calls this function, never a hand copy
+ *  of it (rerun-3's harness copied the body and would have missed coverage). */
 export function checkerCodeIssues(table: FactTable, draft: LeadSummary): VerifyIssue[] {
   const printed = { sentences: printedSentences(draft).map((text, i) => ({ text, cites: draft.sentences[i].cites })) }
-  return [...bandOrderIssues(table, printed), ...ownSignIssues(table, printed), ...bandCoverageIssues(table, printed)]
+  const sentenceRules = verifyLead(table, draft).errors.filter((e) => e.check !== 'live-flag')
+  return [...bandOrderIssues(table, printed), ...ownSignIssues(table, printed), ...bandCoverageIssues(table, printed), ...sentenceRules]
 }
 
 /** The checker's decision (step 7): the record rule, the code half, then the model's verdict. The
