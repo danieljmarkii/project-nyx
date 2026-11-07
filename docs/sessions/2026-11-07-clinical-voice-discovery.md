@@ -2,6 +2,8 @@
 
 **Date:** 2026-11-07 · **Issue:** CUL-2654 (sub-issue CUL-2665) · **Mode:** DISCOVERY · shipped via #1476
 
+**One thing:** P4 L1 — Leading vs lagging indicators: the call-answer rate is how we learn early whether softer words changed what owners do · check: pending
+
 **What:** a copy inventory of every owner-facing vet ask (`docs/clinical-voice-inventory-2026-11.md`) and mock round 1 (`docs/culprit-clinical-voice-mockups.html`, https://claude.ai/artifact/XXdfoMvDd5pmY4eYkBuPfZ), applying the PM's 2026-11-07 ruling A: defer to the owner except a four-sign floor.
 
 **Found:**
