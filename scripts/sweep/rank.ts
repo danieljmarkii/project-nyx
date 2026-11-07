@@ -79,7 +79,7 @@ export type SweepInput = {
   vetoed?: string[]; // `go except CUL-NNN`
 };
 
-export type Pick = {
+export type SweepPick = {
   kind: Kind;
   issues: string[]; // lead first
   what: string;
@@ -98,7 +98,7 @@ export type LinearWrite =
   | { id: string; action: 'update-description'; why: string };
 
 export type SweepResult = {
-  picks: Pick[];
+  picks: SweepPick[];
   held: { id: string; reason: string }[];
   writes: LinearWrite[];
   warnings: string[];
@@ -107,7 +107,7 @@ export type SweepResult = {
 const IMPACT_ORDER: Record<Impact, number> = { A: 0, B: 1, C: 2, D: 3 };
 const SIZE_WEIGHT: Record<Size, number> = { S: 1, M: 3, L: 6, XL: 12 };
 const priorityRank = (p: number) => (p >= 1 && p <= 4 ? p : 5); // "no priority" sorts last
-export const isLiveHarm = (c: Pick | SweepCandidate) => ('labels' in c ? c.labels.includes('Live harm') : c.liveHarm);
+export const isLiveHarm = (c: SweepPick | SweepCandidate) => ('labels' in c ? c.labels.includes('Live harm') : c.liveHarm);
 const GATED_LABELS = ['Gate: clinical', 'Gate: privacy', 'Area: Privacy/RLS'];
 
 // Every judgment the order relies on must be stated. A refusal names the issue and the gap.
@@ -119,7 +119,7 @@ export function validate(input: SweepInput): string[] {
     seen.add(c.id);
     if ((c.impact === 'A' || c.impact === 'B') && !c.impactWhy.trim()) errs.push(`${c.id}: tier ${c.impact} with no owner-visible sentence`);
     if (!c.relevanceWhy.trim()) errs.push(`${c.id}: no relevance reason`);
-    if (c.team.length === 0 && c.relevance !== 'fixed' && c.relevance !== 'superseded' && c.relevance !== 'duplicate') errs.push(`${c.id}: no team read`);
+    if (c.team.length === 0 && !closes(c)) errs.push(`${c.id}: no team read${c.relevance === 'valid' || c.relevance === 'updated' || c.relevance === 'unclear' ? '' : ' (its closing verdict has no usable evidence, so it can launch)'}`);
   }
   if (!Number.isInteger(input.slotsFree) || input.slotsFree < 0) errs.push(`slotsFree must be a whole number, got ${input.slotsFree}`);
   return errs;
@@ -133,7 +133,7 @@ export function compare(a: SweepCandidate, b: SweepCandidate): number {
     IMPACT_ORDER[a.impact] - IMPACT_ORDER[b.impact] ||
     priorityRank(a.priority) - priorityRank(b.priority) ||
     Number(!!b.blocksLiveTrack) - Number(!!a.blocksLiveTrack) ||
-    a.createdAt.localeCompare(b.createdAt) ||
+    Date.parse(a.createdAt) - Date.parse(b.createdAt) ||
     a.id.localeCompare(b.id, 'en', { numeric: true })
   );
 }
@@ -146,6 +146,14 @@ export function kindOf(c: SweepCandidate): Kind {
 
 const overlap = (a: string[], b: string[]) => a.some((f) => b.includes(f));
 
+// A closing verdict closes only on usable evidence, and never under someone's live work:
+// a claim or an open PR means the issue is being worked, whatever the read says.
+function closes(c: SweepCandidate): boolean {
+  if (c.liveClaim || c.openPr) return false;
+  const w = relevanceWrite(c);
+  return w !== null && w !== 'unclear' && w.action !== 'update-description';
+}
+
 // Linear's half of the relevance read. Evidence, never age, closes anything.
 function relevanceWrite(c: SweepCandidate): LinearWrite | 'unclear' | null {
   const ev = c.evidence?.trim();
@@ -155,7 +163,7 @@ function relevanceWrite(c: SweepCandidate): LinearWrite | 'unclear' | null {
     case 'superseded':
       return ev ? { id: c.id, action: 'propose-close', why: `${c.relevanceWhy} (${ev})` } : 'unclear';
     case 'duplicate':
-      return ev && /CUL-\d+/.test(ev) ? { id: c.id, action: 'duplicate', of: /CUL-\d+/.exec(ev)![0], why: c.relevanceWhy } : 'unclear';
+      { const of = ev ? /CUL-\d+/.exec(ev)?.[0] : undefined; return of && of !== c.id ? { id: c.id, action: 'duplicate', of, why: c.relevanceWhy } : 'unclear'; }
     case 'updated':
       return { id: c.id, action: 'update-description', why: c.relevanceWhy };
     default:
@@ -175,7 +183,8 @@ export function rankSweep(input: SweepInput): SweepResult {
   // 1. Relevance: closed work leaves the pool; a closing verdict with no evidence shapes.
   const pool: SweepCandidate[] = [];
   for (const c of input.candidates) {
-    const w = relevanceWrite(c);
+    // Live work outranks the read: no close is written, and the claim or PR holds it below.
+    const w = c.liveClaim || c.openPr ? (c.relevance === 'updated' ? relevanceWrite(c) : null) : relevanceWrite(c);
     if (w === 'unclear') {
       pool.push({ ...c, relevance: 'unclear', needsShaping: c.needsShaping ?? `${c.relevance} with no evidence named` });
       continue;
@@ -194,7 +203,7 @@ export function rankSweep(input: SweepInput): SweepResult {
   pool.sort(compare);
 
   // 2. Walk the order: hold what cannot start, bundle what belongs together, keep files disjoint.
-  const picks: Pick[] = [];
+  const picks: SweepPick[] = [];
   const taken = new Set<string>();
   let waiting = input.waitingOnPm;
   const slots = Math.min(MAX_SESSIONS, input.slotsFree);
@@ -208,13 +217,22 @@ export function rankSweep(input: SweepInput): SweepResult {
     const kind = kindOf(c);
     if (kind !== 'shape' && c.files.length === 0) { hold('its files are not named, so overlap cannot be checked'); continue; }
 
-    // Bundle: later candidates on the same surface, of the same kind, while the bundle stays M.
+    // The lead's own files decide whether it can start; a member never holds it.
+    const busy = (fs: string[]) => input.inFlight.find((f) => overlap(f.files, fs))?.holder ?? (picks.find((p) => overlap(p.files, fs)) ? `this batch's ${picks.find((p) => overlap(p.files, fs))!.issues[0]}` : undefined);
+    const leadBusy = busy(c.files);
+    if (leadBusy) { hold(`files overlap ${leadBusy}`); continue; }
+    if (picks.length >= slots) { hold(`no free slot (${slots} this run)`); continue; }
+    if (kind !== 'build' && waiting >= WAITING_ON_PM_LIMIT) { hold(`waits on the PM, and ${WAITING_ON_PM_LIMIT} already do`); continue; }
+
+    // Bundle: later candidates on the same surface (or the same files), each clean on its
+    // own, of the build kind, while the bundle stays M. A member that is not clean stays in
+    // the pool and is judged on its own turn.
     const members: SweepCandidate[] = [c];
     if (kind === 'build') {
       let weight = SIZE_WEIGHT[c.size];
       for (const o of pool) {
         if (o === c || taken.has(o.id) || members.length >= BUNDLE_MAX_ISSUES) continue;
-        if (vetoed.has(o.id) || o.liveClaim || o.openPr || kindOf(o) !== 'build' || o.files.length === 0) continue;
+        if (vetoed.has(o.id) || o.liveClaim || o.openPr || kindOf(o) !== 'build' || o.files.length === 0 || busy(o.files)) continue;
         const same = o.surface.trim().toLowerCase() === c.surface.trim().toLowerCase() || overlap(o.files, members.flatMap((m) => m.files));
         if (!same || weight + SIZE_WEIGHT[o.size] > SIZE_WEIGHT.M) continue;
         weight += SIZE_WEIGHT[o.size];
@@ -222,14 +240,6 @@ export function rankSweep(input: SweepInput): SweepResult {
       }
     }
     const files = [...new Set(members.flatMap((m) => m.files))];
-
-    const holder = input.inFlight.find((f) => overlap(f.files, files));
-    if (holder) { members.forEach((m) => { held.push({ id: m.id, reason: `files overlap ${holder.holder}` }); taken.add(m.id); }); continue; }
-    const clash = picks.find((p) => overlap(p.files, files));
-    if (clash) { members.forEach((m) => { held.push({ id: m.id, reason: `files overlap this batch's ${clash.issues[0]}` }); taken.add(m.id); }); continue; }
-
-    if (picks.length >= slots) { members.forEach((m) => { held.push({ id: m.id, reason: `no free slot (${slots} this run)` }); taken.add(m.id); }); continue; }
-    if (kind !== 'build' && waiting >= WAITING_ON_PM_LIMIT) { hold(`waits on the PM, and ${WAITING_ON_PM_LIMIT} already do`); continue; }
 
     if (kind !== 'build') waiting += 1;
     members.forEach((m) => taken.add(m.id));
@@ -261,7 +271,7 @@ function whyOf(c: SweepCandidate, kind: Kind, n: number): string {
 }
 
 // Session names (PM, 2026-11-07: descriptive, many runs a day). The what leads.
-export function sessionTitle(p: Pick): string {
+export function sessionTitle(p: SweepPick): string {
   const cut = p.what.slice(0, 47);
   const what = p.what.length > 48 ? `${(cut.lastIndexOf(' ') > 20 ? cut.slice(0, cut.lastIndexOf(' ')) : cut).trimEnd()}…` : p.what;
   const ids = p.issues.length > 1 ? `${p.issues[0]} +${p.issues.length - 1}` : p.issues[0];
@@ -277,8 +287,10 @@ export function sweepRunTitle(now: Date, launched: number): string {
 // The run-order rows and build notes for the Loose ends page, in dispatch's grammar
 // (page.ts), numbered from `next`. The sweep owns this page's table and notes; the Board
 // stays dispatch's.
-export function pageRows(picks: Pick[], next: number): { rows: string[]; notes: string[]; doneMeans: string } {
-  const ids = picks.map((_, i) => String(next + i));
+export function pageRows(picks: SweepPick[], next: number): { rows: string[]; notes: string[]; doneMeans: string } {
+  // page.ts reads a PR number as exactly two digits (ROW_ID), so the page holds 01 to 99.
+  if (!Number.isInteger(next) || next < 1 || next + picks.length - 1 > 99) throw new Error(`Loose ends rows run 01 to 99; nextRow ${next} with ${picks.length} picks does not fit: prune merged rows and renumber from 01`);
+  const ids = picks.map((_, i) => String(next + i).padStart(2, '0'));
   const clean = (s: string) => s.replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
   const rows = picks.map((p, i) => `| ${ids[i]} | ${p.issues.join(' · ')} | ${clean(p.what)} | — | ${p.kind} |`);
   const notes = picks.map((p, i) => {

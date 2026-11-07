@@ -11,7 +11,7 @@
 
 import * as fs from 'node:fs';
 
-import { FINDINGS_CAP, metricsLine, pageRows, rankSweep, sessionTitle, sweepRunTitle, type SweepInput } from './rank.ts';
+import { FINDINGS_CAP, MAX_SESSIONS, WAITING_ON_PM_LIMIT, metricsLine, pageRows, rankSweep, sessionTitle, sweepRunTitle, type SweepInput } from './rank.ts';
 
 const [cmd, file] = process.argv.slice(2);
 const say = (s = '') => process.stdout.write(`${s}\n`);
@@ -25,9 +25,10 @@ function main(): number {
   const input = data as SweepInput & { now: string; nextRow?: number };
   if (!input.now) { say('facts refused: no `now` (take it from date -u)'); return 2; }
   let r;
-  try { r = rankSweep(input); } catch (e) { say((e as Error).message); return 1; }
+  let page;
+  try { r = rankSweep(input); page = pageRows(r.picks, input.nextRow ?? 1); } catch (e) { say((e as Error).message); return 1; }
 
-  say(`Picks (${r.picks.length} of ${Math.min(6, input.slotsFree)} free slots; waiting on the PM before this run: ${input.waitingOnPm} of 3):`);
+  say(`Picks (${r.picks.length} of ${Math.min(MAX_SESSIONS, input.slotsFree)} free slots; waiting on the PM before this run: ${input.waitingOnPm} of ${WAITING_ON_PM_LIMIT}):`);
   r.picks.forEach((p, i) => {
     say(` ${i + 1}. [${p.kind}${p.liveHarm ? ', Live harm' : ''}] ${p.issues.join(' + ')} · ${p.what} · size ${p.size}`);
     say(`    why: ${p.why}`);
@@ -46,7 +47,7 @@ function main(): number {
   if (!r.writes.length) say(' nothing');
   for (const w of r.warnings) say(`⚠ ${w}`);
   say();
-  const { rows, notes, doneMeans } = pageRows(r.picks, input.nextRow ?? 1);
+  const { rows, notes, doneMeans } = page;
   say('--- page rows ---');
   rows.forEach((x) => say(x));
   say(doneMeans);

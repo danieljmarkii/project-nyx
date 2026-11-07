@@ -102,6 +102,46 @@ describe('no two picks on the same files (PM tip, 2026-11-07)', () => {
   });
 });
 
+describe('the review fixes (code-reviewer, 2026-11-07)', () => {
+  it('a bundle member on busy files never holds a clean lead; the member is judged on its own', () => {
+    const lead = cand({ id: 'CUL-100', size: 'S', surface: 'Foods tab', files: ['app/foods.tsx'] });
+    const busyMember = cand({ id: 'CUL-101', size: 'S', surface: 'Foods tab', files: ['lib/foodCache.ts'], priority: 4 });
+    const r = run([lead, busyMember], { inFlight: [{ holder: '#1470', files: ['lib/foodCache.ts'] }] });
+    expect(ids(r)).toEqual(['CUL-100']);
+    expect(r.held).toEqual([{ id: 'CUL-101', reason: 'files overlap #1470' }]);
+  });
+  it('a lead held for want of a slot takes no member down with it', () => {
+    const r = run([cand({ id: 'CUL-102', size: 'S', surface: 's' }), cand({ id: 'CUL-103', size: 'S', surface: 's' })], { slotsFree: 0 });
+    expect(r.held.map((h) => h.id)).toEqual(['CUL-102', 'CUL-103']);
+  });
+  it('nothing closes under live work, and a duplicate of itself is no duplicate', () => {
+    const r = run([
+      cand({ id: 'CUL-104', relevance: 'fixed', evidence: '#1400', liveClaim: 'claude/y' }),
+      cand({ id: 'CUL-105', relevance: 'duplicate', evidence: 'CUL-105' }),
+    ]);
+    expect(r.writes).toEqual([]);
+    expect(r.held).toEqual([{ id: 'CUL-104', reason: 'claimed by claude/y' }]);
+    expect(r.picks[0]).toMatchObject({ kind: 'shape', issues: ['CUL-105'] });
+  });
+  it('a closing verdict that cannot close can launch, so it needs a team read', () => {
+    expect(() => run([cand({ id: 'CUL-106', relevance: 'superseded', evidence: '', team: [] })])).toThrow(/CUL-106: no team read \(its closing verdict has no usable evidence/);
+  });
+  it('age compares as a date, whatever the offset form (C-40)', () => {
+    const later = cand({ id: 'CUL-107', createdAt: '2026-10-01T00:30:00-05:00' });
+    const earlier = cand({ id: 'CUL-108', createdAt: '2026-10-01T01:00:00Z' });
+    expect(ids(run([later, earlier]))).toEqual(['CUL-108', 'CUL-107']);
+  });
+  it('a new page numbers from 01, as dispatch reads it, and refuses past 99', () => {
+    const r = run([cand({ id: 'CUL-109' }), cand({ id: 'CUL-110' })]);
+    const { rows, notes, doneMeans } = pageRows(r.picks, 1);
+    const page = parsePage(['| PR | Issue(s) | What it is | After | Lane |', '|---|---|---|---|---|', ...rows, '', doneMeans, '', ...notes].join('\n'));
+    expect(page.rows.map((x) => [x.id, x.issues, x.note.startsWith('Routine')])).toEqual([['01', ['CUL-109'], true], ['02', ['CUL-110'], true]]);
+    expect(page.doneMeans).toEqual(['01', '02']);
+    expect(() => pageRows(r.picks, 99)).toThrow(/run 01 to 99/);
+    expect(pageRows(r.picks, 98).doneMeans).toBe('Done means (rows): 98, 99');
+  });
+});
+
 describe('bundles and sizes', () => {
   it('same-surface small work bundles up to size M and three issues; the rest runs on its own', () => {
     const s = (id: string) => cand({ id, size: 'S', surface: 'Foods tab' });
