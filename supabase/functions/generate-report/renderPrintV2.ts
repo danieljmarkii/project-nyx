@@ -29,7 +29,7 @@
 // say). Everything above that slot, the band included, renders byte-for-byte as without a lead.
 // The sentences print exactly as stored and verified (`aiLeadSlot` adds markup, never words);
 // each is followed by its citations, named by the lines' own nouns.
-import { BACK_STYLE_PRINT, backSheetHtml, bandPhotosHtml, pageHeadCss } from './renderBackV2.ts'
+import { BACK_STYLE_PRINT, PARTLY_PRINT, backSheetHtml, bandPhotosHtml, pageHeadCss } from './renderBackV2.ts'
 import type { LeadSentence } from './aiLead/verify.ts'
 import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
@@ -42,6 +42,8 @@ const LABEL_W = 118
 const PLOT_W = 392
 const SIGN_ROW_H = 40
 const BAR_H = 26
+/** The thinnest intake share drawn, in the plot's units: a thinner one vanished on a copy (CUL-2614). */
+const INTAKE_MIN_H = 2
 const SPAN_ROW_H = 16
 const AXIS_H = 26
 const BRACKET_H = 16
@@ -136,8 +138,15 @@ function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[]
     if (!cell || cell.rated === 0 || cell.notFinished === 0) return
     const w = Math.max(2, colW(n) * 0.62)
     const x = x0(i, n) + (colW(n) - w) / 2
-    const refusedH = (cell.refused / cell.rated) * BAR_H
-    const partlyH = ((cell.notFinished - cell.refused) / cell.rated) * BAR_H
+    // A share that is there is drawn, however thin: at 1 of 28 rated a partly-eaten share fell under a
+    // copier's blur and threshold, so a copy showed nothing (adversarial pass 1 on CUL-2614). One
+    // scale, h(k) = floor + k/rated of the rest, for the refused share and for the whole not-finished
+    // bar: it is the floor at 1 and the full bar at rated, and it never falls as either count rises,
+    // so a worse week never draws shorter or with less crimson (adversarial pass 2 broke a per-share
+    // floor that did). It overstates a share by at most the floor; the "n of N" label is exact.
+    const intakeH = (k: number): number => (k > 0 ? INTAKE_MIN_H + (k / cell.rated) * (BAR_H - INTAKE_MIN_H) : 0)
+    const refusedH = intakeH(cell.refused)
+    const partlyH = intakeH(cell.notFinished) - refusedH
     // An intake bar is a share of the meals rated, so a short week does not shorten it: it stays
     // filled, refused solid, never hollowed (adversarial pass 1 on PR-29: Cooper's newest column).
     if (refusedH > 0) parts.push(`<rect class="bar lead" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)
@@ -367,12 +376,13 @@ export function blockIdsOf(html: string): string[] {
 }
 
 const STYLE_V2 = `
-:root{--ink:#16181d;--ink2:#565961;--faint:#8a8d94;--hair:#d8d9dd;--paper:#ffffff;--concern:#9F1239;--partly:#a34d64;--cov:#c2c4c9;}
+:root{--ink:#16181d;--ink2:#565961;--faint:#8a8d94;--hair:#d8d9dd;--paper:#ffffff;--concern:#9F1239;--partly:${PARTLY_PRINT};--cov:#c2c4c9;}
 /* Print survival (VR2-11, scripts/report-extract/survival.py): a copier's blur and threshold erased
-   the light partly-eaten fill (#d9a3b0) and the faint hatch outright. --partly is now dark enough to
-   survive as ink, so on a copy the refused and partly-eaten shares merge into one not-finished bar
-   (the louder reading; the n of N label still prints) rather than the partly share vanishing. Its
-   own mono mark is a ruling for the PM (filed on CUL-2291). The hatch draws in ink-2, as strokes. */
+   the light partly-eaten fill (#d9a3b0) and the faint hatch outright. --partly (PARTLY_PRINT) is dark
+   enough to survive as ink, so on a copy the refused and partly-eaten shares merge into one
+   not-finished bar (the louder reading; the n of N label and the twin's counts still print), and
+   clear of the concern crimson on a colour print (PM ruling (a) on CUL-2614: no mono mark of its
+   own, no hatch). The hatch draws in ink-2, as strokes. */
 @page{size:auto;margin:36pt 40pt;}
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
@@ -391,7 +401,11 @@ body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto
 .mast .sig,.mast .cond{color:var(--ink);}
 .mast .win{color:var(--ink2);}
 .mast .last{font-size:10.5pt;font-weight:600;margin-top:3pt;}
-.disc{margin:6pt 0;color:var(--ink2);font-size:8.5pt;}
+/* PM ruling (a) on CUL-2627's brief A (2026-11-07): v1's page-1 disclosures (custom range, window
+   end, partial record, UTC) print as v1 prints them: full ink, body size, each behind a black rule.
+   In grey 8.5pt they read as the checks line's boilerplate (cold read at 49f9a24). */
+.disc{margin:6pt 0;color:var(--ink);font-size:9.5pt;}
+.disc .cherry{margin:4pt 0 0;border-left:2.25pt solid var(--ink);padding:0 0 0 8pt;}
 section{margin:10pt 0 0;}
 h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .band{border:1.25pt solid var(--ink);padding:7pt 9pt;}

@@ -2119,7 +2119,7 @@ export function fmtDayScopedTo(dayKey: string, windowEndKey: string): string {
  *   - symptom entries after it: their count, beside the guard that names the most recent.
  * Present-only: a window that runs to the report date renders nothing here.
  */
-function recordEdgeDisclosure(snap: ReportSnapshot): string {
+export function recordEdgeDisclosure(snap: ReportSnapshot): string {
   const e = snap.atAGlance.recordEdge
   if (e.windowEndDaysBeforeReport <= 0) return ''
   const end = snap.scope.endDate

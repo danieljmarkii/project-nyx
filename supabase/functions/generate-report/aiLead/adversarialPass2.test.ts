@@ -32,8 +32,9 @@ const cooperInputCat = () => {
 }
 const cooper = assembleReport({ ...cooperInput(), audience: { kind: 'owner', includeLookNotes: false } })
 const cat = assembleReport(cooperInputCat())
-// Band item 1 is the band's first PRINTED row: on Nyx, the burden flag (CUL-2381 ruling (a), CUL-2532).
-const NYX_BAND: LeadSentence = { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] }
+// Band item 1 is the band's first PRINTED row: on Nyx, the present foreign-material flag (CUL-2627
+// ruling (a), ahead of CUL-2381's burden; CUL-2532).
+const NYX_BAND: LeadSentence = { text: 'Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.', cites: ['band-1-present_foreign'] }
 const MED = 'medication-00000000-0000-4000-8000-000000000001'
 
 Deno.test('the strongest: a cat 50 h into reduced intake is never "short of the 48–72 h window"', () => {
@@ -50,7 +51,7 @@ Deno.test('a sentence citing only the exposure may not name a sign stopping', ()
 })
 
 Deno.test('every absence word is checked, and no line excuses one ("not a single" is not "single")', () => {
-  const first = { ...NYX_BAND, text: `${NYX_BAND.text.slice(0, -1)}, and coughing over 34 days was not a single incident and has stopped.`, cites: ['band-3-symptom_burden-vomit', 'band-6-chronicity-cough'] }
+  const first = { ...NYX_BAND, text: `${NYX_BAND.text.slice(0, -1)}, and coughing over 34 days was not a single incident and has stopped.`, cites: [...NYX_BAND.cites, 'band-6-chronicity-cough'] }
   assert.ok(checks(nyx, [first]).filter((c) => c === 'absence').length >= 2)
   const single = { text: 'Chronicity: itching spans 49 days, a single incident, the most recent 1 day ago.', cites: [tableOf(r11jump).facts[0].id] }
   assert.ok(checks(r11jump, [single]).includes('absence'))

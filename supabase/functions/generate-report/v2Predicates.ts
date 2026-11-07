@@ -221,7 +221,7 @@ export function r11Holds(c: R11Conditions): boolean {
 }
 
 export interface BandMembers {
-  /** The band's items, one per flag, in `bandOrder` (CUL-2381's ruling). Two flags of one kind (a
+  /** The band's items, one per flag, in `bandOrder` (CUL-2381's and CUL-2627's rulings). Two flags of one kind (a
    *  vomiting and a cough chronicity flag) are two items: one sign per line, the cough↔vomit
    *  caveat riding on the flag that carries `coughVomitAdjacent`. */
   band: SafetyFlag[]
@@ -247,12 +247,21 @@ export interface BandMembers {
  */
 export const BAND_LEAD_KINDS: readonly SafetyFlag['kind'][] = ['symptom_burden', 'weight_loss', 'intake_decline']
 
-/** The band's order: `BAND_LEAD_KINDS` first, in that order, then the rest as the snapshot holds
- *  them. Stable, so two flags of one kind keep their snapshot order. */
+/**
+ * PM ruling (a) on CUL-2627 (2026-11-07): a present-blood or present-foreign-material flag leads the
+ * band ahead of `BAND_LEAD_KINDS`, as the spec has it (§6.1, GAP-31) and as v1's page 1 prints it.
+ * A possible swallowed object or blood is the finding a vet acts on first, and the vomit section's
+ * "These lead the flags for review above" says so; Nyx's foreign-material flag sat third under it.
+ */
+export const BAND_PRESENT_KINDS: readonly SafetyFlag['kind'][] = ['present_blood', 'present_foreign']
+
+/** The band's order: `BAND_PRESENT_KINDS`, then `BAND_LEAD_KINDS`, each in that order, then the rest
+ *  as the snapshot holds them. Stable, so two flags of one kind keep their snapshot order. */
 export function bandOrder(flags: readonly SafetyFlag[]): SafetyFlag[] {
+  const order = [...BAND_PRESENT_KINDS, ...BAND_LEAD_KINDS]
   const rank = (f: SafetyFlag): number => {
-    const i = BAND_LEAD_KINDS.indexOf(f.kind)
-    return i === -1 ? BAND_LEAD_KINDS.length : i
+    const i = order.indexOf(f.kind)
+    return i === -1 ? order.length : i
   }
   return flags.map((f, i) => ({ f, i })).sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i).map((x) => x.f)
 }

@@ -82,8 +82,31 @@ Deno.test('CUL-2629: rv-script-d, 1 of 6 flags, is rejected with the record rule
 
 Deno.test('CUL-2629: the re-run nyx-v2 lead (runs 2 to 4) is rejected with the record rule set aside', () => {
   const draft = { sentences: RERUN_NYX_LEAD }
+  // Before: the old read printed it when burden led the band. CUL-2627 (#1468) put present foreign
+  // material first and regenerated nyx-v2, so the old read now rejects this lead too, but only on
+  // band order (sentence 1 opens on burden), never on coverage. Pinned exactly; the reordered lead
+  // below is the old exhibit's point carried onto the new band.
+  const printed = { sentences: printedSentences(draft).map((text, i) => ({ text, cites: draft.sentences[i].cites })) }
+  assert.deepEqual(bandOrderIssues(NYX_TABLE, printed).map((e) => e.check), ['band-first'])
+  assert.ok(bandOrderIssues(NYX_TABLE, printed)[0].detail.includes(NYX.band[0].id))
+  assert.deepEqual(ownSignIssues(NYX_TABLE, printed), [])
+  assert.equal(checkerCodeIssues(NYX_TABLE, draft).filter((e) => e.check === 'band-coverage').length, 5)
+  // The same lead with its first flag swapped for the new band's first: it opens on foreign material,
+  // keeps the re-run's other two sentences, and names no other flag. The old read prints it; the code
+  // half rejects it on coverage and on nothing else.
+  const reordered = { sentences: [
+    { text: 'Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.', cites: [NYX.band[0].id] },
+    ...RERUN_NYX_LEAD.slice(1),
+  ] }
+  assert.deepEqual([...new Set(checkerCodeIssues(NYX_TABLE, reordered).map((e) => e.check))], ['band-coverage'])
+  assert.equal(NYX.band[0].id, 'band-1-present_foreign')
   for (const [run, v] of Object.entries(RERUN_VERDICTS)) {
-    assert.equal(rerun3Read(v, NYX_TABLE, draft), 'pass', `${run}: the old read printed it`)
+    assert.equal(rerun3Read(v, NYX_TABLE, reordered), 'pass', `${run}, reordered: the old read prints it`)
+    assert.equal(sansRecordRule(v, NYX_TABLE, reordered), 'reject', `${run}, reordered`)
+  }
+  assert.equal(bandCoverageIssues(NYX_TABLE, reordered).length, 5)
+  for (const [run, v] of Object.entries(RERUN_VERDICTS)) {
+    assert.equal(rerun3Read(v, NYX_TABLE, draft), 'reject', `${run}: the old read now rejects it, on band order alone`)
     assert.equal(sansRecordRule(v, NYX_TABLE, draft), 'reject', run)
     assert.equal(checkerDecision(v, { table: NYX_TABLE, draft }), 'reject', run)
   }
