@@ -89,9 +89,10 @@ type ConsentRow = { scope?: unknown; granted?: unknown; copy_version?: unknown }
 
 /** Step 1, pure. `rows` is what the one read returned for this uid. A scope allows only on a
  *  row saying `granted === true` (nothing looser), and the summary scope only under the
- *  current copy. The boundary is judged first, so its decline is the reason named. */
+ *  current copy, unless `anyCopy` (the keep of a copy already sent, `runKeepGate`, CUL-2575). The boundary is judged first, so its decline is the reason named. */
 export function consentDecision(
   result: { data: unknown; error: unknown } | null | undefined,
+  opts: { anyCopy?: boolean } = {},
 ): SummaryGate {
   const rows: ConsentRow[] =
     result && !result.error && Array.isArray(result.data)
@@ -107,7 +108,7 @@ export function consentDecision(
     return copy === null || r.copy_version === copy
   }
   if (!yes(AI_CONSENT_SCOPE, null)) return { allow: false, reason: 'consent_declined', scope: 'ai_boundary' }
-  if (!yes(REPORT_SUMMARY_SCOPE, REPORT_SUMMARY_COPY_VERSION)) {
+  if (!yes(REPORT_SUMMARY_SCOPE, opts.anyCopy ? null : REPORT_SUMMARY_COPY_VERSION)) {
     return { allow: false, reason: 'consent_declined', scope: 'report_summary' }
   }
   return { allow: true }
@@ -167,14 +168,7 @@ export async function runSummaryGate(io: SummaryGateIO, uid: string, opts: { spe
   if (typeof uid !== 'string' || uid.length === 0) {
     return { allow: false, reason: 'consent_declined', scope: 'ai_boundary' }
   }
-  let consent: SummaryGate
-  try {
-    const read = await io.readConsent()
-    consent = consentDecision(read)
-    if (!consent.allow && (!read || read.error)) consent = { ...consent, unread: true }
-  } catch {
-    consent = { allow: false, reason: 'consent_declined', scope: 'ai_boundary', unread: true }
-  }
+  const consent = await consentStep(io, {})
   if (!consent.allow) return consent
 
   let config: { key: string; value: unknown }[] | null = null
@@ -187,14 +181,8 @@ export async function runSummaryGate(io: SummaryGateIO, uid: string, opts: { spe
   // readConfig answers null only for a read that failed; no rows is [].
   if (!flags.allow) return config === null ? { ...flags, unread: true } : flags
 
-  let owned: boolean | null = false
-  try {
-    owned = await io.petOwned()
-  } catch {
-    owned = null
-  }
-  if (owned === null) return { allow: false, reason: 'pet_not_owned', unread: true }
-  if (owned !== true) return { allow: false, reason: 'pet_not_owned' }
+  const pet = await petStep(io)
+  if (!pet.allow) return pet
   if (!opts.spend) return { allow: true }
 
   let counts: { dayCount: number; monthCount: number } | null = null
@@ -204,6 +192,52 @@ export async function runSummaryGate(io: SummaryGateIO, uid: string, opts: { spe
     counts = null
   }
   return capDecision(counts, resolveSummaryCaps(config?.find((r) => r.key === 'ai_caps')?.value))
+}
+
+/** Step 1 with its I/O. A read that errors or throws is a refusal marked unread. */
+async function consentStep(io: Pick<SummaryGateIO, 'readConsent'>, opts: { anyCopy?: boolean }): Promise<SummaryGate> {
+  try {
+    const read = await io.readConsent()
+    const consent = consentDecision(read, opts)
+    return !consent.allow && (!read || read.error) ? { ...consent, unread: true } : consent
+  } catch {
+    return { allow: false, reason: 'consent_declined', scope: 'ai_boundary', unread: true }
+  }
+}
+
+/** Step 3 with its I/O. Only `true` is the caller's pet; a failed read is a refusal marked unread. */
+async function petStep(io: Pick<SummaryGateIO, 'petOwned'>): Promise<SummaryGate> {
+  let owned: boolean | null = false
+  try {
+    owned = await io.petOwned()
+  } catch {
+    owned = null
+  }
+  if (owned === null) return { allow: false, reason: 'pet_not_owned', unread: true }
+  if (owned !== true) return { allow: false, reason: 'pet_not_owned' }
+  return { allow: true }
+}
+
+/**
+ * May a copy that ALREADY PRINTS a summary be kept? (CUL-2575, PM ruling (b) 2026-11-07.)
+ * Not the same question as the gate above, which asks whether a NEW summary may be made.
+ *
+ * The vet already holds the page, so the keep only decides whether the owner keeps a record of
+ * what was sent. Two answers still refuse it: a withdrawn yes at either scope (ruling (a) of
+ * 2026-11-05 stands), and a pet that is not the caller's (a boundary, never a timing question).
+ * Two do not: a flag switched off (it stops new summaries, never the record of one sent), and a
+ * yes given under an older summary wording (the yes covered the summary when it was made: the
+ * generation gate checked the wording then). So no config is read, and the summary scope counts
+ * a yes under any copy version. Never spends a count. A failed read is a refusal marked unread,
+ * which the keep retries.
+ */
+export async function runKeepGate(io: Pick<SummaryGateIO, 'readConsent' | 'petOwned'>, uid: string): Promise<SummaryGate> {
+  if (typeof uid !== 'string' || uid.length === 0) {
+    return { allow: false, reason: 'consent_declined', scope: 'ai_boundary' }
+  }
+  const consent = await consentStep(io, { anyCopy: true })
+  if (!consent.allow) return consent
+  return petStep(io)
 }
 
 /** The production wiring. `adminClient` is service-role; `userClient` carries the caller's

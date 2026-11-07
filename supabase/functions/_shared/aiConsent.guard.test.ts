@@ -86,6 +86,12 @@ Deno.test('consent guard — the AI lead: the one ticket comes from runSummaryGa
   assertEquals(pipeline.split('ticketFor(').length - 1, 1)
   const run = await read('generate-report/aiLead/run.ts')
   assert(/runGate: \(spend\) => runSummaryGate\(summaryGateIO\(admin, user, key\.uid, key\.petId\), key\.uid, \{ spend \}\)/.test(run), 'runGate is not the shared summary gate for the key\'s uid')
+  // The keep's gate (CUL-2575): the same reads, for the same verified key (rls-privacy-reviewer L1).
+  assert(/keepGate: \(\) => runKeepGate\(summaryGateIO\(admin, user, key\.uid, key\.petId\), key\.uid\)/.test(run), 'keepGate is not the shared keep gate for the key\'s uid')
+  const keepFn = (await read('generate-report/index.ts')).split('async function keepForPet(')[1] ?? ''
+  const keepBody = keepFn.slice(0, keepFn.indexOf('\n}\n'))
+  assert(/draftLeadIO\(adminClient, supabase, \{ reportId, petId, uid: user\.id \}\)/.test(keepBody), 'the keep\'s draft key uid is not the verified user.id')
+  assert(keepBody.indexOf('if (userErr || !user) return') >= 0 && keepBody.indexOf('if (userErr || !user) return') < keepBody.indexOf('draftLeadIO('), 'the keep uses the uid before it is verified')
   const index = await read('generate-report/index.ts')
   const fn = index.slice(index.indexOf('async function aiLeadForPet('))
   const body = fn.slice(0, fn.indexOf('\n}\n'))

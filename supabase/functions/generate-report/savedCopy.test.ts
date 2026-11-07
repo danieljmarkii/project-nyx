@@ -28,6 +28,8 @@ import {
 } from './savedCopy.ts'
 import { NEW_PREVIEW_ERROR } from './savedCopy.ts'
 import { sha256Hex as textSha } from '../_shared/engineStamps.ts'
+import { REPORT_SUMMARY_COPY_VERSION, REPORT_SUMMARY_SCOPE, runKeepGate } from '../_shared/reportSummaryGate.ts'
+import { AI_CONSENT_SCOPE } from '../_shared/aiConsent.ts'
 import { LEAD_SLOT_MARK, PIN_TEXT_URL_BUDGET, settleLeadForKeep, type KeepLead, type KeepRefusal } from './aiLead/run.ts'
 import { h } from './documentV2.ts'
 
@@ -326,15 +328,16 @@ Deno.test('a missing file, an unknown id, a failed lead settle or a bad request 
 // ── The lead on a kept copy (aiLead/run.ts) ──────────────────────────────────
 
 type SettleIO = Parameters<typeof settleLeadForKeep>[0]
-const ALLOW = { allow: true } as unknown as Awaited<ReturnType<SettleIO['runGate']>>
-const DENY = { allow: false, reason: 'consent_declined', scope: 'report_summary' } as unknown as Awaited<ReturnType<SettleIO['runGate']>>
+const ALLOW = { allow: true } as unknown as Awaited<ReturnType<SettleIO['keepGate']>>
+const DENY = { allow: false, reason: 'consent_declined', scope: 'report_summary' } as unknown as Awaited<ReturnType<SettleIO['keepGate']>>
 const AT = '2026-11-05T12:00:00.000Z'
 
 function leadIO(text: string | null, verdict: unknown, model: string | null = null, gate = ALLOW) {
-  const io = { readDraft: async () => ({ found: true, text, verdict, model }), runGate: async (spend: boolean) => {
-    assert.equal(spend, false, 'the keep never spends a count')
+  const io = { readDraft: async () => ({ found: true, text, verdict, model }), keepGate: async () => {
     io.gateCalls++
     return gate
+  }, runGate: () => {
+    throw new Error('the keep never asks the generation gate (CUL-2575)')
   }, gateCalls: 0 }
   return io as SettleIO & { gateCalls: number }
 }
@@ -417,17 +420,44 @@ Deno.test('a pinned keep after a withdrawal is refused, never frozen with the su
 
 Deno.test('a pinned keep whose consent, config or pet read failed is retried (500), never refused for good (CUL-2575)', async () => {
   for (const reason of ['consent_declined', 'flag_off', 'pet_not_owned']) {
-    const unread = { allow: false, reason, scope: 'ai_boundary', flag: 'report_ai_lead', unread: true } as unknown as Awaited<ReturnType<SettleIO['runGate']>>
+    const unread = { allow: false, reason, scope: 'ai_boundary', flag: 'report_ai_lead', unread: true } as unknown as Awaited<ReturnType<SettleIO['keepGate']>>
     const io = leadIO('Cooper vomited on 3 days.', { outcome: 'printed', at: AT }, 'm', unread)
     assert.equal(await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.'])), null, reason)
   }
   // End to end: the keep answers 500, which the phone retries, and the draft stays a draft.
   const f = await savedOne()
   await printingCopy(f, 'Cooper ate well.', { outcome: 'printed', at: AT }, 'm')
-  const gate = { allow: false, reason: 'consent_declined', scope: 'ai_boundary', unread: true } as unknown as Awaited<ReturnType<SettleIO['runGate']>>
-  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, (html) => settleLeadForKeep({ ...plainSettleIO(f), runGate: async () => gate }, html))
+  const gate = { allow: false, reason: 'consent_declined', scope: 'ai_boundary', unread: true } as unknown as Awaited<ReturnType<SettleIO['keepGate']>>
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, (html) => settleLeadForKeep({ ...plainSettleIO(f), keepGate: async () => gate }, html))
   assert.equal(out.status, 500)
   assert.equal(f.rows.get(ID)!.status, 'draft')
+})
+
+Deno.test('a flag switched off or an older summary wording keeps the printed copy as sent (CUL-2575, ruling (b))', async () => {
+  // The real keep gate over its reads. The config read throws: a keep that consulted the flags
+  // would refuse, so this proves it never does.
+  const gateIO = (summaryCopy: string, owned = true) => ({
+    readConsent: async () => ({ data: [{ scope: AI_CONSENT_SCOPE, granted: true, copy_version: 'x' }, { scope: REPORT_SUMMARY_SCOPE, granted: true, copy_version: summaryCopy }], error: null }),
+    readConfig: async () => { throw new Error('the keep never reads the flags') },
+    petOwned: async () => owned,
+    recordUsage: async () => { throw new Error('the keep never spends a count') },
+  })
+  const text = 'Cooper ate well.'
+  for (const summaryCopy of [REPORT_SUMMARY_COPY_VERSION, '2026-01-01']) {
+    const f = await savedOne()
+    await printingCopy(f, text, { outcome: 'printed', at: AT }, 'm')
+    const io = { ...plainSettleIO(f), keepGate: () => runKeepGate(gateIO(summaryCopy), 'u') }
+    const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, (html) => settleLeadForKeep(io, html))
+    assert.deepEqual(out, { status: 200, body: { kept: true, first: true } }, summaryCopy)
+    assert.equal(f.rows.get(ID)!.status, 'kept')
+    assert.equal(f.rows.get(ID)!.ai_lead_text, text, 'the kept row records the summary the vet received')
+  }
+  // Another owner's pet still refuses for good.
+  const g = await savedOne()
+  await printingCopy(g, text, { outcome: 'printed', at: AT }, 'm')
+  const out = await keepCopy(g.io, { reportId: ID, sharedVia: 'print' }, (html) => settleLeadForKeep({ ...plainSettleIO(g), keepGate: () => runKeepGate(gateIO(REPORT_SUMMARY_COPY_VERSION, false), 'u') }, html))
+  assert.equal(out.status, 409)
+  assert.equal(g.rows.get(ID)!.status, 'draft')
 })
 
 Deno.test('a refused settle answers 409 and leaves the draft a draft', async () => {
@@ -523,7 +553,7 @@ Deno.test('a cleared lead takes its text_sha with it: the kept verdict fingerpri
 })
 
 Deno.test('an unreadable draft fails the settle, so the keep is refused', async () => {
-  const io = { readDraft: async () => ({ found: false, text: null, verdict: null }), runGate: async () => ALLOW } as unknown as SettleIO
+  const io = { readDraft: async () => ({ found: false, text: null, verdict: null }), keepGate: async () => ALLOW } as unknown as SettleIO
   assert.equal(await settleLeadForKeep(io, '<html></html>'), null)
 })
 
@@ -541,7 +571,7 @@ function plainSettleIO(f: ReturnType<typeof fakeIO>) {
       const r = f.rows.get(ID)!
       return { found: true, text: r.ai_lead_text ?? null, verdict: r.ai_lead_verdict ?? null, model: r.ai_lead_model ?? null }
     },
-    runGate: async () => ALLOW,
+    keepGate: async () => ALLOW,
   } as unknown as Parameters<typeof settleLeadForKeep>[0]
 }
 
@@ -551,7 +581,7 @@ function racedSettle(f: ReturnType<typeof fakeIO>) {
       const r = f.rows.get(ID)!
       return { found: true, text: r.ai_lead_text ?? null, verdict: r.ai_lead_verdict ?? null, model: r.ai_lead_model ?? null }
     },
-    runGate: async () => ALLOW,
+    keepGate: async () => ALLOW,
   } as unknown as Parameters<typeof settleLeadForKeep>[0]
   const writeDraft = () => {
     const r = f.rows.get(ID)!

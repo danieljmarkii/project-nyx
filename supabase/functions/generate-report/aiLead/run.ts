@@ -11,7 +11,7 @@
 // draft row (CUL-2331 promise 1; aiLead/storage.guard.test.ts pins it).
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { runSummaryGate, summaryGateIO } from '../../_shared/reportSummaryGate.ts'
+import { runKeepGate, runSummaryGate, summaryGateIO, type SummaryGate } from '../../_shared/reportSummaryGate.ts'
 import type { ReportSnapshot } from '../report.ts'
 import { buildLeadFacts, documentForLead, factTableHash } from './facts.ts'
 import { sendChecked } from './model.ts'
@@ -26,7 +26,13 @@ export interface DraftKey {
   uid: string
 }
 
-export function draftLeadIO(admin: SupabaseClient, user: SupabaseClient, key: DraftKey): LeadIO {
+/** What the keep's settle reads: the draft, and whether a copy that prints the summary may be
+ *  kept (`runKeepGate`, CUL-2575). The generation gate (`runGate`) is never asked at a keep. */
+export interface SettleIO extends Pick<LeadIO, 'readDraft'> {
+  keepGate(): Promise<SummaryGate>
+}
+
+export function draftLeadIO(admin: SupabaseClient, user: SupabaseClient, key: DraftKey): LeadIO & SettleIO {
   const draftRow = () =>
     admin.from('vet_reports').select('ai_lead_text, ai_lead_verdict, ai_lead_model')
       .eq('id', key.reportId).eq('pet_id', key.petId).eq('generated_by', key.uid).eq('status', 'draft')
@@ -40,6 +46,7 @@ export function draftLeadIO(admin: SupabaseClient, user: SupabaseClient, key: Dr
       return { found: true, text: row.ai_lead_text, verdict: row.ai_lead_verdict, model: row.ai_lead_model ?? null }
     },
     runGate: (spend) => runSummaryGate(summaryGateIO(admin, user, key.uid, key.petId), key.uid, { spend }),
+    keepGate: () => runKeepGate(summaryGateIO(admin, user, key.uid, key.petId), key.uid),
     send: (role, body, ticket, timeoutMs) => sendChecked(role, body, ticket, { timeoutMs }),
     writeDraft: async (text, verdict, model) => {
       const { data, error } = await admin
@@ -119,7 +126,8 @@ export interface KeepLead {
 /**
  * Why a keep may not go ahead whatever is retried (savedCopy.ts answers 409, so the client says
  * "not saved" at once and does not retry). `withdrawn`: the copy prints the summary and the
- * owner's AI consent no longer allows it (CUL-2523, PM ruling (a) 2026-11-05). `mismatch`: the
+ * owner's AI consent no longer allows it (CUL-2523, PM ruling (a) 2026-11-05), or the pet is no
+ * longer the caller's. Never a flag switched off or a newer wording (CUL-2575, ruling (b)). `mismatch`: the
  * copy's summary slot does not hold the draft's summary, so no record of it can be true.
  */
 export type KeepRefusal = { readonly refused: 'withdrawn' | 'mismatch' }
@@ -201,8 +209,9 @@ export function printedLeadOf(storedHtml: string): string | null {
  *
  * A COPY THAT PRINTS A SUMMARY (CUL-2523) is kept only when its one slot holds exactly the
  * draft's text, escaped as the slot escapes it (else `mismatch`), and only while the owner's
- * consent and the flags still allow a summary (`runGate(false)`, the gate's own reads, spending
- * nothing; else `withdrawn`). A gate whose refusal came from a read that failed is null, never
+ * owner's yes still stands at both scopes and the pet is still theirs (`keepGate`, spending
+ * nothing; else `withdrawn`). A flag switched off or a newer summary wording does not refuse it
+ * (CUL-2575, PM ruling (b) 2026-11-07): those stop new summaries, never the record of one sent. A gate whose refusal came from a read that failed is null, never
  * a refusal: it is retried (CUL-2575). A slot over a draft whose text is gone (118's clear after a "no")
  * is `mismatch`: the record could only say "not printed" over a copy that printed it.
  *
@@ -212,7 +221,7 @@ export function printedLeadOf(storedHtml: string): string | null {
  * 118's guard refuses any draft write that still carries model output after a withdrawal.
  */
 export async function settleLeadForKeep(
-  io: Pick<LeadIO, 'readDraft' | 'runGate'>,
+  io: SettleIO,
   storedHtml: string,
 ): Promise<KeepLead | KeepRefusal | null> {
   const draft = await io.readDraft()
@@ -221,10 +230,11 @@ export async function settleLeadForKeep(
   if (unchanged === null) return null
   if (storedHtml.includes(LEAD_SLOT_MARK)) {
     if (draft.text === null || printedLeadOf(storedHtml) !== h(draft.text)) return { refused: 'mismatch' }
-    const gate = await io.runGate(false)
+    const gate = await io.keepGate()
     // A read that failed says nothing about the owner's answer: null (500), so the client's retry
-    // and the next launch's drain ask again (CUL-2575). Every other "no" refuses for good, as
-    // ruled for withdrawal (CUL-2523 ruling (a)); which of the others should is still the PM's.
+    // and the next launch's drain ask again (CUL-2575). The keep gate's other "no"s are a withdrawn
+    // yes (CUL-2523 ruling (a)) and another owner's pet, and they refuse for good. A flag switched
+    // off or an older summary wording never reaches here as a "no" (PM ruling (b), 2026-11-07).
     if (!gate.allow) return gate.unread ? null : { refused: 'withdrawn' }
     return { set: {}, unchanged }
   }
