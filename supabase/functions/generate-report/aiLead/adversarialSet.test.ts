@@ -114,7 +114,7 @@ Deno.test('mutation proof: each closed_by item is refused by those rules alone',
     const checks = checksOf(it)
     assert.ok(checks.length > 0 && checks.every((c) => it.closed_by!.includes(c)), `${it.id}: refused by ${checks}, not only ${it.closed_by}`)
   }
-  for (const rule of ['vocabulary', 'negation', 'script', 'tense', 'intake-positive', 'date-anchor']) {
+  for (const rule of ['vocabulary', 'negation', 'script', 'tense', 'intake-positive', 'date-anchor', 'own-sign']) {
     assert.ok(closed.some((i) => i.closed_by!.length === 1 && i.closed_by![0] === rule), `no item that ${rule} alone refuses`)
   }
 })

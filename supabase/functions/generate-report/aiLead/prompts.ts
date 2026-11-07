@@ -13,9 +13,11 @@
 // the band's first PRINTED row; the trial carries its reading's bottom line and its confounder; the
 // closed vocabulary, bound negation and the ended-trial shape are stated, not left for the verifier
 // to find; the worked example shows a synthesis, not a restatement.
+// vr2-lead-6 (CUL-2619): a band item printing "the trial's own sign" (R-11) keeps those words in
+// sentence 1, the one place "trial" may stand beside a sign.
 import { LEAD_FRAME } from './verify.ts'
 
-export const PROMPT_VERSION = 'vr2-lead-5'
+export const PROMPT_VERSION = 'vr2-lead-6'
 
 /** The writer. The larger model only (spec §9.1); the id is the `claude-api` skill's current Opus. */
 export const WRITER_MODEL = 'claude-opus-5-5'
@@ -36,6 +38,7 @@ Write 1 to 3 sentences, 80 words at most in all, that let the vet grasp the case
 
 REQUIRED, or the summary is discarded:
 - When "band" is not empty, sentence 1 states band item 1 and cites its id, and its first clause (before any comma, colon or semicolon) uses that item's "label" words. It keeps every number that item prints (outside its dates), written as digits. Cite band facts in that one sentence only; the band prints above you and is not restated twice. Nothing you write may read calmer than any band item.
+- When band item 1's text says "the trial's own sign", sentence 1 opens with them, word for word, once, in one of two shapes: "Itching is a live flag, the trial's own sign: …" or "Itching is a live flag: itching over at least 49 days, the trial's own sign, …" (with band item 1's own label and numbers). That sentence never asks anything and never says "cannot", "predates", "it" or "first". The flag is the very sign the trial is testing, and without them it reads shorter than it prints. Never call anything else a flag. This is the one place the word "trial" may stand in a sentence with a sign.
 - When band item 1's count carries no logged-day count and a record line on the same sign does ("on 12 of 45 logged days"), sentence 2 cites that line and gives it. When band item 1 is about meals or intake, sentence 2 gives the refusal count of the record line of kind "lead". One sign or flag per sentence: never cite two in one.
 - When "trial_line" is not null, one sentence cites it. When a "confounder" line prints, the trial's sentence (or the one after it) cites it and keeps its scope words ("not a test of the diet", "not checked with the owner"). When "trial_reading" lines print, cite the one that says "The trial diet was not fed exclusively" (or, when none does, the one that says the elimination "cannot be confirmed clean") beside the trial, keeping those words. The trial never prints without what the record says about it.
 - If you keep a count from a line that says "a floor, not a total", keep those words too.

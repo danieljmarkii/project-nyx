@@ -50,6 +50,10 @@
 //   multi-flag  CUL-2563 ruling (b): no lead at all on a record with 2 or more live band items
 //               (`multiFlagIssues`). Read off the table, never the draft, so nothing a model writes
 //               or scores can pass it; the pipeline asks it before any model call.
+//   own-sign    CUL-2619: a band row that prints "the trial's own sign" (R-11's heading) is never
+//               restated without those words (`ownSignIssues`), in any sentence that cites it or
+//               calls anything a flag: once, anchored to the flag, never in a question; read by the
+//               checker's decision too
 
 import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type FactTable, type VerifyIssue, type VerifyReport } from './verifyCore.ts'
 
@@ -58,7 +62,7 @@ import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type F
 export type LeadSentence = { text: string; cites: string[] }
 export type LeadSummary = { sentences: LeadSentence[] }
 
-export const LEAD_VERIFIER_VERSION = 'vr2-7'
+export const LEAD_VERIFIER_VERSION = 'vr2-8'
 export const LEAD_MAX_SENTENCES = 3
 /** PM ruling 2026-11-05 on CUL-2550 (was 60, 2026-10-31): the smoke bake-off's drafts sat at a
  *  median of 57 words and the cap squeezed out the trial's confounder and denominators first. */
@@ -268,6 +272,86 @@ export function bandOrderIssues(table: FactTable, summary: LeadSummary): VerifyI
   return []
 }
 
+/** CUL-2619: R-11's heading (documentV2.ts `leadChart`, spec §5.2) names a skin trial's chronicity
+ *  flag as "the trial’s own sign": the sign the trial is testing. A lead that restates the flag
+ *  without those words reads a shortened flag (the 2026-11-05 re-run's r11 runs 1 and 3, H7 minor).
+ *  Straight or curly apostrophe (`norm` straightens it); single spaces, nothing between the words. */
+export const OWN_SIGN_PHRASE = "the trial's own sign"
+const OWN_SIGN = /\bthe trial's own sign\b/gi
+/** Where the words may stand in a lead: the sentence opens on the flag in one of the heading's two
+ *  shapes, and nothing before it. "<Label> is a live flag, the trial's own sign: …", or "<Label> is a
+ *  live flag: <label> over at least N days, the trial's own sign …" ("the flag" for "a live flag").
+ *  Anywhere else the words name something other than the flag, or the flag sits inside a claim about
+ *  it: "is it the trial's own sign?", "this window, the trial's own sign, opens Aug 22" (adversarial
+ *  pass 1); "Is itching a live flag, the trial's own sign: …", "The record cannot show how itching is
+ *  a live flag, the trial's own sign: …" (pass 2). */
+function ownSignShape(text: string, label: string): boolean {
+  const l = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (l === '') return false
+  const a = new RegExp(`^${l} is (?:a live|the) flag, the trial's own sign:\\s`, 'i')
+  const b = new RegExp(`^${l} is (?:a live|the) flag:\\s+${l} over at least \\d+ days, the trial's own sign(?=\\s*[;,.]|\\s*$)`, 'i')
+  return a.test(text) || b.test(text)
+}
+/** In a sentence carrying the words, the rest never asks (any script's question mark), never borrows
+ *  the band's "cannot show" to doubt the flag, never says "predates" and never says "it" or "its",
+ *  whose nearest antecedent beside the words is the trial (pass 2: "…, the trial's own sign: itching
+ *  over at least 49 days predates it"), and never says "first", which can date a 49-day sign to its
+ *  latest entry ("first logged 1 day ago", pass 2). Each errs loud: an honest lead needs none. */
+const OWN_SIGN_QUESTION = /[?\u037E\u00BF\u061F\u203D\u2E2E\uFE56\uFF1F]/
+const OWN_SIGN_FORBIDDEN = /\b(?:cannot|can't|predat\w*|it|its|it's|first)\b/i
+
+/** The band row's label (the flag's sign word, "itching"), for the shape check. */
+function labelOf(f: { label?: unknown } | undefined): string {
+  return typeof f?.label === 'string' ? f.label.trim() : ''
+}
+
+/** Whether a line prints the own-sign phrase, word for word. */
+export function printsOwnSign(text: string): boolean {
+  return new RegExp(OWN_SIGN.source, 'i').test(norm(text))
+}
+
+/** The text with its one own-sign phrase blanked, for the exposure test only, and only in a sentence
+ *  citing a band row that prints the phrase, opening on the flag in one of its two shapes: there
+ *  "trial" names the sign the trial tests, not an exposure set beside it. Any other copy stays, and
+ *  still counts as an exposure (H2), as does any other exposure word in the sentence. */
+function withoutOwnSign(text: string, cites: string[], facts: Map<string, { role?: string; text?: string }>): string {
+  const row = cites.map((c) => facts.get(c)).find((f) => f?.role === 'band' && printsOwnSign(f?.text ?? ''))
+  if (!row) return text
+  const t = norm(text)
+  if ((t.match(OWN_SIGN) ?? []).length !== 1 || !ownSignShape(t, labelOf(row as { label?: unknown }))) return text
+  return t.replace(new RegExp(OWN_SIGN.source, 'i'), ' ')
+}
+
+/** own-sign: when a band row prints "the trial's own sign", every sentence that cites that row, or
+ *  says "flag" at all, carries the four words exactly once, opens on the flag in one of its two shapes
+ *  (`ownSignShape`), and holds none of `OWN_SIGN_QUESTION` / `OWN_SIGN_FORBIDDEN`. Multi-flag leaves
+ *  such a record one band item, so any "flag" in its lead is that flag. A function of the table and
+ *  the printed text alone, read by `verifyLead` AND by the checker's decision (leadPipeline.ts
+ *  `checkerDecision`), so neither the writer nor the checker model can pass a lead without the words.
+ *  Errs loud: an honest lead phrased another way drops, and four more required words inside the cap
+ *  drop leads that would otherwise print. */
+export function ownSignIssues(table: FactTable, summary: LeadSummary): VerifyIssue[] {
+  const rows = table.facts.filter((f) => f.role === 'band' && printsOwnSign(String(f.text ?? '')))
+  if (rows.length === 0) return []
+  const own = new Set(rows.map((f) => f.id))
+  const label = labelOf(rows[0] as { label?: unknown })
+  const out: VerifyIssue[] = []
+  const issue = (k: number, detail: string) => out.push({ sentence: k + 1, check: 'own-sign', detail: `${detail} (R-11, CUL-2619)` })
+  summary.sentences.forEach((s, k) => {
+    const t = norm(s.text)
+    const copies = (t.match(OWN_SIGN) ?? []).length
+    const restates = s.cites.some((c) => own.has(c)) || /\bflags?\b/i.test(t)
+    if (!restates && copies === 0) return
+    if (copies === 0) return issue(k, `restates the flag without ${JSON.stringify(OWN_SIGN_PHRASE)}`)
+    if (copies > 1) return issue(k, `${JSON.stringify(OWN_SIGN_PHRASE)} ${copies} times (once, on the flag)`)
+    if (!ownSignShape(t, label)) return issue(k, `does not open on the flag with ${JSON.stringify(OWN_SIGN_PHRASE)} ("${label} is a live flag, the trial's own sign: …" or "${label} is a live flag: ${label} over at least N days, the trial's own sign …")`)
+    if (OWN_SIGN_QUESTION.test(t)) return issue(k, 'the flag is asked about, not stated')
+    const bad = t.match(OWN_SIGN_FORBIDDEN)
+    if (bad) return issue(k, `${JSON.stringify(bad[0])} beside the trial's own sign`)
+  })
+  return out
+}
+
 /** CUL-2563 ruling (b), PM 2026-11-06: no AI lead prints on a record with this many live band items
  *  or more. The re-run measured ruling (a) (cite band item 1 only, band above): on nyx-v2 the lead
  *  named the burden and left five live flags unsaid, both judges scored it material, and the checker
@@ -305,6 +389,7 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
 
   for (const e of multiFlagIssues(table)) errors.push(e)
   for (const e of bandOrderIssues(table, printed)) errors.push(e)
+  for (const e of ownSignIssues(table, printed)) errors.push(e)
   const band = table.facts.filter((f) => f.role === 'band')
   const bandSentences = sents.filter((s) => s.cites.some((c) => facts.get(c)?.role === 'band')).length
   if (bandSentences > 1) err(null, 'band-once', `${bandSentences} sentences cite band facts (max 1)`)
@@ -330,7 +415,7 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     if (QUOTE_MARKS.test(s.text)) err(i, 'quotes', 'the lead never quotes (owner words never print in it)')
 
     // Classes from the cites AND the words: citing only the trial does not license naming a sign.
-    const exposure = s.cites.some(isExposure) || EXPOSURE_WORDS.test(s.text)
+    const exposure = s.cites.some(isExposure) || EXPOSURE_WORDS.test(withoutOwnSign(s.text, s.cites, facts))
     const observed = s.cites.some(observes) || SIGN_WORDS.test(s.text)
     // An exposure and an observation never share a sentence, whatever joins them: "after",
     // "during", "while" and "with" all set a change beside a count (H2). The one exception is a
@@ -344,7 +429,7 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     }
     // Across sentences: once an exposure has been named, an observation sentence may not be set
     // after it in time ("After it ended, vomiting…", "Vomiting then…").
-    const earlierExposure = sents.slice(0, idx).some((p) => p.cites.some(isExposure) || EXPOSURE_WORDS.test(p.text))
+    const earlierExposure = sents.slice(0, idx).some((p) => p.cites.some(isExposure) || EXPOSURE_WORDS.test(withoutOwnSign(p.text, p.cites, facts)))
     if (observed && !exposure && earlierExposure) {
       const seq = s.text.match(SEQUENCE_WORDS)
       if (seq) err(i, 'order', `${JSON.stringify(seq[0])} sets an observation after an exposure named earlier (H2, cause by order)`)

@@ -4,9 +4,13 @@
 import assert from 'node:assert/strict'
 import { buildDocumentV2 } from '../documentV2.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
-import { buildLeadFacts, tableFromPayload, type LeadFactPayload } from './facts.ts'
+import { buildLeadFacts, documentForLead, tableFromPayload, type LeadFactPayload } from './facts.ts'
 import { WRITER_SYSTEM } from './prompts.ts'
-import { framePatternHits, LEAD_FRAME, MULTI_FLAG_MIN_BAND, multiFlagIssues, printedLeadText, verifyLead, type LeadSentence } from './verify.ts'
+import { framePatternHits, LEAD_FRAME, MULTI_FLAG_MIN_BAND, multiFlagIssues, OWN_SIGN_PHRASE, ownSignIssues, printedLeadText, printsOwnSign, verifyLead, type LeadSentence } from './verify.ts'
+import { assembleReport } from '../report.ts'
+import { itchingSkinTrial } from '../v2Fixtures.testutil.ts'
+import { checkerDecision, parseChecker } from './leadPipeline.ts'
+import { HAZARDS } from './prompts.ts'
 
 const nyxSnap = nyxLiveSnapshot()
 const nyxFacts = buildLeadFacts(buildDocumentV2(nyxSnap, { owner: null, shortId: null, questions: [] }), {
@@ -300,4 +304,206 @@ Deno.test('multi-flag: two band items refuse; one, or none, still prints', () =>
   assert.deepEqual(multiFlagIssues(unmarked).map((e) => e.check), ['multi-flag'])
   // No band at all: the rule is silent (H2_TABLE's careful lead passes above).
   assert.deepEqual(multiFlagIssues(H2_TABLE), [])
+})
+
+// ── own-sign: CUL-2619 ──────────────────────────────────────────────────────────────────────────
+
+/** r11 and r11-jump as production builds them (v2Fixtures `itchingSkinTrial`). On r11 the R-11
+ *  exemption fires and the flag prints as the lead chart's heading, "…the trial's own sign"; on
+ *  r11-jump the folded worsening keeps the flag in the band, whose row never says it. */
+function r11Facts(jump: boolean) {
+  const s = assembleReport(itchingSkinTrial({ jump }))
+  const f = buildLeadFacts(documentForLead(s), {
+    petName: s.signalment.name, species: s.signalment.species, recordStart: s.scope.startDate, recordEnd: s.scope.endDate, includeLookNotes: false,
+  })
+  if (!f.eligible) throw new Error(`r11 (jump ${jump}) is eligible for a lead`)
+  return f
+}
+const R11 = r11Facts(false)
+const R11_JUMP = r11Facts(true)
+
+/** The 2026-11-05 re-run's printed r11 leads (runs 1 and 3, docs/vet-report-v3-discovery/bakeoff/
+ *  rerun/2026-11-05-run/out/), word for word: the skeptical GP scored the first sentence of each
+ *  H7 minor for dropping "the trial's own sign". */
+const RERUN_TRIAL: LeadSentence = { text: 'The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.', cites: ['trial', 'trial-reading-2', 'confounder'] }
+const RERUN_RUN_1: LeadSentence[] = [
+  { text: 'Itching is a live flag: itching over at least 49 days, with 15 episodes on 15 days, most recent 1 day ago.', cites: ['band-r11'] },
+  { text: 'Itching: 15 entries on 15 of 56 logged days, the last Oct 15.', cites: ['line-1'] },
+  RERUN_TRIAL,
+]
+const RERUN_RUN_3: LeadSentence[] = [
+  { text: 'Itching is a live flag: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.', cites: ['band-r11'] },
+  { text: 'Itching showed 15 entries on 15 of 56 logged days.', cites: ['line-1'] },
+  { text: 'The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is at day 61 of 84; the elimination cannot be confirmed clean from this record; no medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.', cites: ['trial', 'trial-reading-2', 'confounder'] },
+]
+const withOwnSign = (s: LeadSentence, apostrophe = "'"): LeadSentence =>
+  ({ ...s, text: s.text.replace('Itching is a live flag:', `Itching is a live flag, the trial${apostrophe}s own sign:`) })
+const ALL_NONE = parseChecker({ takeaway: 'x', hazards: Object.fromEntries(HAZARDS.map((h) => [h, { level: 'none', quote: '', why: '' }])), omissions: [] })!
+
+Deno.test('own-sign: r11 prints its flag as the trial\'s own sign, and the fact table requires the words', () => {
+  assert.equal(R11.payload.band.length, 1)
+  assert.equal(R11.payload.band[0].id, 'band-r11')
+  assert.ok(printsOwnSign(R11.payload.band[0].text), R11.payload.band[0].text)
+  const fact = R11.table.facts.find((f) => f.id === 'band-r11')!
+  assert.ok((fact.must_say ?? []).some((g) => g.includes(OWN_SIGN_PHRASE)), JSON.stringify(fact.must_say))
+})
+
+Deno.test('own-sign: the re-run\'s printed r11 leads are refused, by the verifier and by the checker whatever its model says', () => {
+  for (const lead of [RERUN_RUN_1, RERUN_RUN_3]) {
+    const v = verifyLead(R11.table, { sentences: lead })
+    assert.equal(v.pass, false)
+    const checks = [...new Set(v.errors.map((e) => e.check))].sort()
+    // Two independent nets: the code check and the band fact's required clause. Nothing else.
+    assert.deepEqual(checks, ['own-sign', 'required-clause'], JSON.stringify(v.errors))
+    assert.deepEqual(ownSignIssues(R11.table, { sentences: lead }).map((e) => e.sentence), [1])
+    assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'reject')
+  }
+})
+
+Deno.test('own-sign: the same lead with the four words prints, straight or curly apostrophe', () => {
+  for (const ap of ["'", '’']) {
+    const fixed = [withOwnSign(RERUN_RUN_3[0], ap), ...RERUN_RUN_3.slice(1)]
+    assert.deepEqual(verifyLead(R11.table, { sentences: fixed }).errors, [], fixed[0].text)
+    assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: fixed } }), 'pass')
+  }
+  // The residual, pinned so it shows in review: run 1 was 78 words, and the four words take it past
+  // the 80-word cap, so it drops rather than print a shortened flag. That errs loud.
+  const run1 = [withOwnSign(RERUN_RUN_1[0]), ...RERUN_RUN_1.slice(1)]
+  assert.deepEqual(verifyLead(R11.table, { sentences: run1 }).errors.map((e) => e.check), ['structure'])
+})
+
+Deno.test('own-sign: a later sentence that calls the sign a flag carries the words too, cited or not', () => {
+  const s2 = { text: 'Itching is a live flag: 15 entries on 15 of 56 logged days.', cites: ['line-1'] }
+  const trial = { text: 'The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.', cites: ['trial', 'trial-reading-2', 'confounder'] }
+  const lead = [withOwnSign(RERUN_RUN_3[0]), s2, trial]
+  // Nor can sentence 2 borrow the words: they are printed only in the band row, and band-once lets one
+  // sentence cite it. So the flag is said once, in sentence 1, with the words.
+  assert.equal(verifyLead(R11.table, { sentences: [lead[0], withOwnSign(s2), trial] }).pass, false)
+  assert.deepEqual(ownSignIssues(R11.table, { sentences: lead }).map((e) => e.sentence), [2])
+  assert.deepEqual([...new Set(verifyLead(R11.table, { sentences: lead }).errors.map((e) => e.check))], ['own-sign'])
+})
+
+Deno.test('own-sign: the phrase licenses "trial" beside the sign only in itself, and only in a sentence citing its row', () => {
+  // Any other exposure word in the flag's sentence is still H2.
+  const diet = { text: 'Itching is a live flag, the trial\'s own sign, on the trial: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.', cites: ['band-r11'] }
+  assert.ok(verifyLead(R11.table, { sentences: [diet, RERUN_TRIAL] }).errors.some((e) => e.check === 'order'))
+  // A sentence citing the trial line may not borrow the phrase to set the sign beside the trial.
+  const borrowed = { text: 'The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, the trial\'s own sign.', cites: ['trial'] }
+  const e = verifyLead(R11.table, { sentences: [withOwnSign(RERUN_RUN_1[0]), borrowed, RERUN_TRIAL] }).errors.map((x) => x.check)
+  assert.ok(e.includes('order') || e.includes('vocabulary'), String(e))
+})
+
+Deno.test('own-sign: on r11-jump the band row never says it, so the words are neither required nor printable', () => {
+  assert.ok(!printsOwnSign(R11_JUMP.payload.band[0].text))
+  const id = R11_JUMP.payload.band[0].id
+  const plain = { text: 'Chronicity: itching spans 49 days, 18 episodes on 18 days, the most recent 1 day ago, a sustained pattern.', cites: [id] }
+  assert.deepEqual(ownSignIssues(R11_JUMP.table, { sentences: [plain] }), [])
+  assert.ok(!verifyLead(R11_JUMP.table, { sentences: [plain] }).errors.some((x) => x.check === 'own-sign'))
+  const borrowed = { ...plain, text: 'Chronicity, the trial\'s own sign: itching spans 49 days, 18 episodes on 18 days, the most recent 1 day ago, a sustained pattern.' }
+  assert.ok(verifyLead(R11_JUMP.table, { sentences: [borrowed] }).errors.some((x) => x.check === 'vocabulary'))
+})
+
+Deno.test('own-sign: the writer is told to keep the words', () => {
+  assert.ok(WRITER_SYSTEM.includes('"the trial\'s own sign"'))
+})
+
+/** The adversarial pass on 9e4422d: the words printed, but not on the flag. Each printed through
+ *  verifyLead and checkerDecision there, because the words were only looked for, never placed, and the
+ *  exposure test blanked every copy. Each is refused here by own-sign, by both. */
+const R11_S2: LeadSentence = { text: 'Itching: 15 entries on 15 of 56 logged days, the last Oct 15.', cites: ['line-1'] }
+const R11_S3: LeadSentence = { text: 'The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84; the elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.', cites: ['trial', 'trial-reading-2', 'confounder'] }
+const FLAG = 'Itching is a live flag: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago'
+const DETACHED: string[] = [
+  // asked, not stated
+  `${FLAG}; is it the trial's own sign?`,
+  `${FLAG}, so is itching the trial's own sign?`,
+  // negated through the band's own "cannot show how"
+  `${FLAG}; the record cannot show how it is the trial's own sign.`,
+  `${FLAG}, so the record cannot show how itching is the trial's own sign.`,
+  // an order claim the mask hid (and false: the trial started first)
+  `${FLAG}, so itching predates the trial's own sign.`,
+  "Itching, the trial's own sign, is a live flag: itching over at least 49 days predates it, 15 episodes on 15 days, most recent 1 day ago.",
+  `${FLAG}; the trial's own sign predates it.`,
+  // attached to something other than the flag
+  `${FLAG}; this window, the trial's own sign, opens Aug 22.`,
+  `${FLAG}, so 49 days is a floor, the trial's own sign.`,
+  `${FLAG}; the record, the trial's own sign, cannot show how long.`,
+  `${FLAG}, and so is the trial's own sign.`,
+  `${FLAG}; the trial's own sign opens Aug 22.`,
+  // anchored, but asked
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago?",
+  // twice, and with punctuation inside it
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag, the trial's; own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag, the trial's-own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+]
+
+Deno.test('own-sign: the words name the flag, or the lead drops (adversarial pass on 9e4422d)', () => {
+  for (const text of DETACHED) {
+    for (const lead of [[{ text, cites: ['band-r11'] }, R11_S2, R11_S3], [{ text, cites: ['band-r11'] }, R11_S3]]) {
+      const v = verifyLead(R11.table, { sentences: lead })
+      assert.equal(v.pass, false, text)
+      assert.ok(v.errors.some((e) => e.check === 'own-sign'), `${text}: ${JSON.stringify(v.errors)}`)
+      assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'reject', text)
+    }
+  }
+})
+
+Deno.test('own-sign: the two anchored shapes print', () => {
+  for (const text of [
+    "Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+    "Itching is a live flag: itching over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
+    "Itching is a live flag: itching over at least 49 days, the trial’s own sign; 15 episodes on 15 days, most recent 1 day ago.",
+  ]) {
+    const lead = [{ text, cites: ['band-r11'] }, R11_S2, R11_S3]
+    assert.deepEqual(verifyLead(R11.table, { sentences: lead }).errors, [], text)
+    assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'pass', text)
+  }
+})
+
+Deno.test('own-sign: an unanchored or second copy is still an exposure beside the sign (H2), a second net behind own-sign', () => {
+  for (const text of [
+    `${FLAG}; the record cannot show how it is the trial's own sign.`,
+    `${FLAG}; this window, the trial's own sign, opens Aug 22.`,
+    `${FLAG}, so itching predates the trial's own sign.`,
+    "Itching is a live flag, the trial's own sign: itching over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
+  ]) {
+    const checks = verifyLead(R11.table, { sentences: [{ text, cites: ['band-r11'] }, R11_S3] }).errors.map((e) => e.check)
+    assert.ok(checks.includes('order'), `${text}: ${checks}`)
+  }
+})
+
+/** Adversarial pass 2 (f54f6d6): the words on the flag, the flag inside a claim about it. Each printed
+ *  through verifyLead and checkerDecision there. */
+const PASS_2: string[] = [
+  // asked, with no ASCII "?"
+  "Is itching a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag: is itching over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago？",
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago‽",
+  "¿Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  // doubted through the band's own "cannot show how"
+  "The record cannot show how itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "The record cannot show how long itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag, the trial's own sign: the record cannot show how itching spans at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag: the record cannot show how itching is over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
+  // an order claim behind the words
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days predates it, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag: itching over at least 49 days, the trial's own sign, predates it, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a live flag, the trial's own sign: the sign predates it, itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  // dated by its latest entry
+  "Itching is a live flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, first logged 1 day ago.",
+  // softened: not a live flag
+  "Itching is a floor flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+  "Itching is a flag, the trial's own sign: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.",
+]
+
+Deno.test('own-sign: the flag opens the sentence in its own shape, and nothing asks, doubts or dates it against the trial (pass 2)', () => {
+  for (const text of PASS_2) {
+    const lead = [{ text, cites: ['band-r11'] }, R11_S3]
+    const v = verifyLead(R11.table, { sentences: lead })
+    assert.equal(v.pass, false, text)
+    assert.ok(v.errors.some((e) => e.check === 'own-sign'), `${text}: ${JSON.stringify(v.errors)}`)
+    assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'reject', text)
+  }
 })

@@ -44,7 +44,7 @@ Deno.test('break 1, R-11: the exempt flag is band item 1, safety-live, and must 
   assert.ok(e.includes('band-first') && e.includes('order'), String(e))
   // And the honest shape passes: the flag first with its floor, the trial on its own.
   const honest: LeadSentence[] = [
-    { text: 'Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.', cites: ['band-r11'] },
+    { text: 'Itching is the flag, the trial\'s own sign: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.', cites: ['band-r11'] },
     { text: 'The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.', cites: ['trial'] },
     // CUL-2532: the trial's reading and its confounder ride with it.
     { text: 'The elimination cannot be confirmed clean from this record, and no medication or supplement is recorded as overlapping the trial, not checked with the owner.', cites: ['trial-reading-2', 'confounder'] },
