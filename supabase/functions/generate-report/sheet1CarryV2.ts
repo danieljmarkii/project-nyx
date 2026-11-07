@@ -40,6 +40,11 @@ export const V1_PAGE1_ELSEWHERE: Readonly<Record<string, string>> = {
   orient: 'navigation: v1’s contents line ("appendices A–G follow"); v2’s sheets carry their own titles',
   ident: 'the masthead (named reformat: name, signalment, conditions, owner, window, last entry)',
   safetyband: 'the band (named reformat: each flag row, v2’s pointers)',
+  // CUL-2638: v1's no-band checks line (`div.limit.checked`). v2's own `checks` block opens with v1's
+  // sentence word for word (`checksHtmlOf`), so carrying v1's copy printed "Ran and did not trigger"
+  // twice and let the quiet checks outweigh the warning beside them. With a band, v1 prints the line
+  // inside `safetyband`, already carried by v2's band.
+  limit: 'the checks block (v1’s “Ran and did not trigger” sentence word for word, then the intake and weight checks; CUL-2638)',
   cherry: 'the disclosure block, word for word (the cherry-pick guard, the window-end line and the partial record in v1’s order, then the UTC notice; CUL-2627)',
 }
 

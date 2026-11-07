@@ -572,7 +572,15 @@ function checkOutcomeClause(o: CheckOutcome, snap: ReportSnapshot): string {
 function checksHtmlOf(snap: ReportSnapshot): string | null {
   const checked = safetyChecksText(snap)
   const outcomes = snap.checkOutcomes ?? []
-  const quiet = outcomes.filter((o) => o.state === 'not_flagged').map((o) => checkOutcomeClause(o, snap))
+  // CUL-2635: the intake check and the trial-diet check read overlapping meals (the trial diet's
+  // feedings are rated meals). With one of them flagged, the other's "did not trigger" sat under it
+  // and read as the diet being accepted, softer than the flag above. The flag says more, so the quiet
+  // twin is not printed beside it; a twin that found something or could not run still prints.
+  const flaggedChecks = new Set(outcomes.filter((o) => o.state === 'flagged').map((o) => o.check))
+  const overlapsFlag = (o: CheckOutcome): boolean =>
+    (o.check === 'trial_diet_refusal' && flaggedChecks.has('intake_decline')) ||
+    (o.check === 'intake_decline' && flaggedChecks.has('trial_diet_refusal'))
+  const quiet = outcomes.filter((o) => o.state === 'not_flagged' && !overlapsFlag(o)).map((o) => checkOutcomeClause(o, snap))
   const thin = outcomes.filter((o) => o.state === 'too_few').map((o) => checkOutcomeClause(o, snap))
   const found = outcomes.filter((o) => o.state === 'found_not_flagged').map((o) => checkOutcomeClause(o, snap))
   const lead = checked?.lead ?? null

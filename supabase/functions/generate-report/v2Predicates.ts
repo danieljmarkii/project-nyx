@@ -14,6 +14,7 @@ import {
   type ReportSymptomType,
   type SafetyFlag,
 } from './report.ts'
+import { symptomLabel } from './render.ts'
 
 // ── The closed lists ─────────────────────────────────────────────────────────
 
@@ -288,6 +289,28 @@ export const LEAD_REASON_LINE: Record<LeadReason, string> = {
   most_days: 'Leads because it has the most days with an entry.',
 }
 
+/**
+ * CUL-2634: the line for a lead chosen by a present-finding flag (blood or foreign material seen in
+ * a photo) when no flag on that sign is the sign's own check (burden, chronicity, worsening). "It is
+ * flagged" read there as the sign's own count firing: on a dog whose one flag was blood in a stool
+ * photo, the chart led with loose stool "because it is flagged" while loose stool's own checks ran
+ * and stayed quiet. The reason stays `flag` (the composer and the app read that enum); only the
+ * printed line says which flag it is. With the sign's own flag also firing (Nyx), "flagged" is true.
+ */
+export function leadPresentLineOf(f: Extract<SafetyFlag, { kind: 'present_blood' | 'present_foreign' }>, sign: LeadSign): string {
+  // "From a stool photo", never "on it": a stool blood flag maps to loose stool even when the blood
+  // was in a formed stool, so the line names where the finding was, not which entries it sits on
+  // (adversarial pass 1 on CUL-2634).
+  const what = f.kind === 'present_blood' ? 'possible blood' : 'possible foreign material'
+  const family = f.kind === 'present_blood' && f.source === 'stool' ? 'stool' : 'vomit'
+  const photo = f.incidents.length > 1 ? `${family} photos` : `a ${family} photo`
+  // The sign by name (cold read at 799080f): "its own count" read as the blood's count.
+  return `Leads because the ${what} flagged above is from ${photo}; ${symptomLabel(sign).toLowerCase()}’s own count was not flagged.`
+}
+
+/** The flags that are a sign's own count check: what "it is flagged" claims about that sign. */
+const OWN_COUNT_KINDS: readonly SafetyFlag['kind'][] = ['chronicity', 'symptom_burden', 'symptom_worsening', 'intake_decline', 'trial_diet_refusal']
+
 export interface Lead {
   sign: LeadSign
   reason: LeadReason
@@ -344,7 +367,13 @@ export function leadSignOf(snap: ReportSnapshot): Lead | null {
   const members = new Set(band)
   for (const f of snap.safetyFlags.filter((x) => members.has(x))) {
     const s = flagSign(f)
-    if (s !== null) return lead(s, 'flag')
+    if (s === null) continue
+    if (f.kind === 'present_blood' || f.kind === 'present_foreign') {
+      // Every flag on the sign, band or not: an R-11 lead flag is still the sign's own count.
+      const ownCount = snap.safetyFlags.some((o) => OWN_COUNT_KINDS.includes(o.kind) && flagSign(o) === s)
+      if (!ownCount) return { sign: s, reason: 'flag', line: leadPresentLineOf(f, s) }
+    }
+    return lead(s, 'flag')
   }
   const days = entryDays(snap)
   const indication = snap.trial?.indication ?? null
@@ -593,4 +622,25 @@ export function changesInWindowOf(snap: ReportSnapshot): ChangeLine[] | null {
     }
   }
   return out.length > 0 ? out : null
+}
+
+// ── The past-window stopgap (PM ruling (a) on CUL-2370, narrowed by ruling (b), 2026-11-07) ──
+
+/**
+ * Why a report renders as v1 although the caller asked for v2 and the flag is on: its window ends
+ * before the report date. Sheet 1 still reads such a window as running to the report date in
+ * several lines (the cold reads behind CUL-2636 and CUL-2637), so until that class is closed these
+ * reports get v1, which states the window's end and what came after it on page 1.
+ *
+ * Past windows only (PM ruling (b) on CUL-2634): a custom range that runs to the report date stays
+ * on v2. Those lines need a window that closed before the report, which such a range does not have,
+ * and the cold read at 799080f found v1 quieter on one (Olive: three recent unfinished meals read
+ * as "39 of 42 fully eaten" on v1's page 1, said plainly on v2's sheet 1; CUL-2644).
+ * Null: v2 may render. Read in one place, `generateReportForPet`, so every surface (print, phone,
+ * preview, exam room, saved copy) follows the one response it returns.
+ */
+export type V1Fallback = 'past_window'
+
+export function v1FallbackOf(snap: ReportSnapshot): V1Fallback | null {
+  return snap.atAGlance.recordEdge.windowEndDaysBeforeReport > 0 ? 'past_window' : null
 }

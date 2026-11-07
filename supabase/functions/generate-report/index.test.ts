@@ -1784,3 +1784,65 @@ Deno.test('PR-23b R5 / CUL-2590 guard 2: v1, and v2 behind a closed flag, ignore
     assert.ok(!/left out/i.test(String(res.body.html)), `${name}: no left-out wording on v1`)
   }
 })
+
+// ── The past-window stopgap (PM ruling (a) on CUL-2370, 2026-11-07) ──────────────────────────────
+//
+// A past window renders as v1 with the flag on, exactly as a flag-off account gets it (a custom
+// range that runs to the report date stays on v2, PM ruling (b) on CUL-2634). One decision, one response; each surface it feeds is asserted on its own field: print
+// (`html`), phone and preview (`phone_html`, `report_version`), exam room (it opens only on a
+// `phone_html`), saved copy (the saver is never called, no `report_id`), and the photo picker.
+
+const day = (daysAgo: number): string => new Date(NOW_MS - daysAgo * MS_PER_DAY).toISOString().slice(0, 10)
+
+async function stopgapRun(window: { startDate: string; endDate: string } | null, flag: Record<string, unknown>) {
+  const client = withAuth(fakeClient(photoTables(flag)), 'u1')
+  const admin = recordingAdmin()
+  const saver = recordingSaver()
+  const res = await generateReportForPet(client, 'p1', NOW_MS, window, OWNER_AUDIENCE, 'jwt', admin.client, null, 'v2', saver.save, [PH_A])
+  return { res, saver, downloads: admin.downloads }
+}
+
+Deno.test('CUL-2370 stopgap: a past window renders as v1 on every surface, with the flag on; a custom range to today stays v2', async () => {
+  const ON = { enabled: false, allowlist: ['u1'] }
+  const OFF = { enabled: false, allowlist: [] }
+  // Control: the default window, flag on, renders v2 and saves (the stopgap is not v1 everywhere).
+  const control = await stopgapRun(null, ON)
+  assert.equal(control.res.body.report_version, 'v2')
+  assert.ok(isV2(control.res.body.html))
+  assert.ok(control.saver.seen.input !== null, 'non-vacuous: the default window saves a v2 copy')
+  assert.equal(control.res.body.report_v1_fallback, null)
+
+  // PM ruling (b) on CUL-2634: a custom range that runs to the report date stays on v2.
+  const today = await stopgapRun({ startDate: day(20), endDate: day(0) }, ON)
+  assert.equal(today.res.body.report_version, 'v2', 'a custom range to today renders v2')
+  assert.ok(isV2(today.res.body.html))
+  assert.equal(typeof today.res.body.phone_html, 'string')
+  assert.ok(today.saver.seen.input !== null, 'and saves its v2 copy')
+  assert.equal(today.res.body.report_v1_fallback, null)
+
+  const cases: Array<[string, { startDate: string; endDate: string }, string]> = [
+    ['a past window (ends 30 days before the report)', { startDate: day(60), endDate: day(30) }, 'past_window'],
+    ['a past window that ended yesterday', { startDate: day(20), endDate: day(1) }, 'past_window'],
+  ]
+  for (const [name, window, reason] of cases) {
+    const on = await stopgapRun(window, ON)
+    const off = await stopgapRun(window, OFF)
+    const b = on.res.body
+    assert.equal(on.res.status, 200, name)
+    assert.equal(b.report_v1_fallback, reason, name)
+    assert.deepEqual(b.report_flags_read, { report_document_v2: true }, `${name}: the flag read is still recorded truthfully`)
+    // Print: v1, byte for byte the html a flag-off account gets for the same window.
+    assert.equal(b.report_version, 'v1', `${name}: print`)
+    assert.ok(!isV2(b.html), `${name}: print`)
+    assert.equal(b.html, off.res.body.html, `${name}: print is the flag-off v1 document`)
+    // Phone and preview: no reflow, and the version the app branches on is v1.
+    assert.equal(b.phone_html, null, `${name}: phone`)
+    // Exam room: `openExamRoom` needs a phone_html, so it cannot open (asserted app-side too).
+    // Saved copy: the saver is never called and no draft id is returned (no AI lead can attach).
+    assert.equal(on.saver.seen.input, null, `${name}: saved copy`)
+    assert.equal(b.report_id, null, `${name}: saved copy`)
+    // The photo picker is v2's: dropped, and the owner's left-out choice is not applied (v1 behaviour).
+    assert.equal(b.photos, null, `${name}: picker`)
+    assert.deepEqual(on.downloads, off.downloads, `${name}: the same photos as flag-off`)
+  }
+})

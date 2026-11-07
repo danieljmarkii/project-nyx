@@ -89,6 +89,7 @@ import { isUuid, keepCopy, openCopy, parseKeepRequest, parseOpenRequest, reapSta
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
 import { REPORT_DOCUMENT_FLAG, reportDocumentV2On } from './documentFlag.ts'
+import { v1FallbackOf } from './v2Predicates.ts'
 // B-613 — the ONE "which trial is this report about?" predicate. Imported rather than
 // re-implemented so the pull is stretched for exactly the trial the block describes; two
 // copies of this test are what once anchored a window on an abandoned trial.
@@ -1158,12 +1159,17 @@ export async function generateReportForPet(
   // v2 was asked for, so a v1 request costs no extra read. PR-23b (R5): read BEFORE the embed, so
   // the owner's choice is applied (v2) or dropped (v1) before any photo is fetched.
   const documentV2On = documentRequest === 'v2' ? await reportDocumentV2On(supabase, callerJwt) : null
+  // The past-window stopgap (PM ruling (a) on CUL-2370, past windows only by ruling (b)): a past window renders as
+  // v1 even with the flag on, exactly as a flag-off account gets it. Decided here and only here, so
+  // print, phone, preview, exam room and saved copy all follow this one response.
+  const v1Fallback = documentV2On === true ? v1FallbackOf(built.snapshot) : null
+  const renderV2 = documentV2On === true && v1Fallback === null
   // PR-23b (CUL-2454): the picker's list is every photo the report held before the owner's choice,
   // so a photo left out can be offered back. v2 only: v1 has no picker.
-  const photos = documentV2On === true ? photoManifestOf(built.snapshot.incidentPhotos) : null
+  const photos = renderV2 ? photoManifestOf(built.snapshot.incidentPhotos) : null
   // The split, on the assembled manifest, before the embed (R1): a left-out photo is never fetched
   // and never takes an embed slot. v1 gets the snapshot back untouched (CUL-2590 guard 2).
-  const { snapshot, leftOutCount } = applyPhotosLeftOut(built.snapshot, photosLeftOut, documentV2On === true)
+  const { snapshot, leftOutCount } = applyPhotosLeftOut(built.snapshot, photosLeftOut, renderV2)
 
   // 4. (PR 7) embed the incident-photo bytes → pure render.
   //    assembleReport built the photo MANIFEST (which incidents, order, safety class); the ONE I/O
@@ -1180,7 +1186,7 @@ export async function generateReportForPet(
   // VR2-20 (CUL-2300): with a saver, the draft row is written first so its short id prints in the
   // colophon, and the print HTML stored is byte-for-byte the `html` returned (the copy that is sent).
   let saved: SaveResult<DocumentV2> | null = null
-  if (documentV2On === true) {
+  if (renderV2) {
     // The surname ONLY from `last_name` (spec §5.7): never the email fallback `ownerName` takes.
     const owner = await readOwnerNames(supabase)
     const render = (shortId: string | null): Rendered<DocumentV2> => {
@@ -1213,8 +1219,10 @@ export async function generateReportForPet(
       html,
       phone_html: phoneHtml,
       // Spec §3.6: which renderer ran and the flag it read (null: not read, because v1 was asked for).
-      report_version: documentV2On === true ? 'v2' : 'v1',
+      report_version: renderV2 ? 'v2' : 'v1',
       report_flags_read: { [REPORT_DOCUMENT_FLAG]: documentV2On },
+      // Why a v2 request with the flag on got v1 (the past-window stopgap); null otherwise.
+      report_v1_fallback: v1Fallback,
       // VR2-20 (CUL-2300): the draft saved copy this render is, for `mode: 'keep'` at send. Null:
       // not saved (v1, or the save failed), and the report still sends.
       report_id: saved !== null && saved.saved ? saved.reportId : null,

@@ -15,6 +15,7 @@ import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
 import { sampleCases } from '../../../scripts/render-trial-report-sample.deno.ts'
 import { assembleReport, type ReportInput } from './report.ts'
 import { dayKey, olive, symptom } from './v2Fixtures.testutil.ts'
+import { leadPresentLineOf } from './v2Predicates.ts'
 
 const OPTS: DocumentV2Options = { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: [] }
 
@@ -71,7 +72,12 @@ Deno.test('CUL-2565 — a check under its floor says it had too few to run, with
   const read: ReportSnapshot = { ...s, checkOutcomes: s.checkOutcomes!.map((o) => (o === intake ? { ...o, state: 'not_flagged' as const } : o)) }
   const moved = checksText(buildDocumentV2(read, OPTS))
   assert.ok(!moved.includes('too few entries to run'), moved)
-  assert.match(moved, /also ran and did not trigger: the intake check/)
+  // CUL-2635: Mira's trial-diet refusal flag fires on meals the intake check also reads, so a quiet
+  // intake check is not printed beside it; with that flag not firing, it prints as did not trigger.
+  assert.equal(s.checkOutcomes?.find((o) => o.check === 'trial_diet_refusal')?.state, 'flagged')
+  assert.ok(!moved.includes('the intake check ('), moved)
+  const unflagged: ReportSnapshot = { ...read, checkOutcomes: read.checkOutcomes!.map((o) => (o.check === 'trial_diet_refusal' ? { ...o, state: 'not_flagged' as const } : o)) }
+  assert.match(checksText(buildDocumentV2(unflagged, OPTS)), /ran and did not trigger: [^.]*the intake check/)
 })
 
 Deno.test('CUL-2565 — a flagged check is said once, in the band, never again on the checks line (Cooper’s intake)', () => {
@@ -298,4 +304,74 @@ Deno.test('v1 unchanged — renderReport is identical with and without checkOutc
     assert.equal(renderReport(s), renderReport(absent as ReportSnapshot), name)
   }
   assert.ok(carried >= 10, `only ${carried} fixtures carry the fact, so the comparison would be vacuous`)
+})
+
+// ── CUL-2634, CUL-2635, CUL-2638 (PM ruling (a) on CUL-2370, 2026-11-07) ──────
+
+/** A real symptom-burden flag (Nyx's), to give another sign its own count flag. */
+function nyxBurden(): ReportSnapshot['safetyFlags'][number] {
+  const f = nyxLiveSnapshot().safetyFlags.find((x) => x.kind === 'symptom_burden')
+  assert.ok(f, 'Nyx carries a burden flag')
+  return f
+}
+
+const PRESENT_BLOOD_LEAD = 'Leads because the possible blood flagged above is from a stool photo; loose stool’s own count was not flagged.'
+
+Deno.test('CUL-2634 — a lead chosen by a present-blood flag says so, never "it is flagged", when the sign’s own checks are quiet (stool-photo-dog), in print and on the phone', () => {
+  const s = fixture('stool-photo-dog')
+  const doc = buildDocumentV2(s, OPTS)
+  const t = sheet1(doc)
+  onBoth(t, PRESENT_BLOOD_LEAD, 'the present-blood lead line')
+  assert.ok(!t.print.includes(fold('Leads because it is flagged.')), 'never "it is flagged" for loose stool here')
+  // Mutation by construction: give loose stool its own burden flag and "flagged" is true again.
+  const own: ReportSnapshot = {
+    ...s,
+    safetyFlags: [...s.safetyFlags, { ...nyxBurden(), symptomType: 'diarrhea' } as ReportSnapshot['safetyFlags'][number]],
+  }
+  const ownLine = sheet1(buildDocumentV2(own, OPTS))
+  assert.ok(ownLine.print.includes(fold('Leads because it is flagged.')), 'with the sign’s own flag, "flagged" prints')
+  assert.ok(!ownLine.print.includes(fold(PRESENT_BLOOD_LEAD)))
+  // Adversarial pass 1: a stool blood flag leads loose stool even when the blood was in a formed
+  // stool, so the line names the photo it came from, never "sits on it". Every source and count.
+  const blood = s.safetyFlags.find((f) => f.kind === 'present_blood')
+  assert.ok(blood && blood.kind === 'present_blood' && blood.source === 'stool' && blood.incidents.length === 1)
+  assert.equal(leadPresentLineOf({ ...blood, incidents: [blood.incidents[0], blood.incidents[0]] }, 'diarrhea'), 'Leads because the possible blood flagged above is from stool photos; loose stool’s own count was not flagged.')
+  assert.equal(leadPresentLineOf({ ...blood, source: 'vomit' }, 'vomit'), 'Leads because the possible blood flagged above is from a vomit photo; vomiting’s own count was not flagged.')
+  assert.equal(leadPresentLineOf({ kind: 'present_foreign', incidents: [] }, 'vomit'), 'Leads because the possible foreign material flagged above is from a vomit photo; vomiting’s own count was not flagged.')
+})
+
+Deno.test('CUL-2634 — Nyx keeps "Leads because it is flagged.": vomiting’s own flags fire beside the foreign-material flag', () => {
+  const doc = buildDocumentV2(nyxLiveSnapshot(), OPTS)
+  onBoth(sheet1(doc), 'Leads because it is flagged.', 'Nyx’s lead line')
+})
+
+Deno.test('CUL-2635 — a quiet trial-diet check is not printed beside a firing intake flag (Cooper), and the converse', () => {
+  const s = fixture('cooper')
+  const outcome = (c: CheckOutcome['check']) => s.checkOutcomes?.find((o) => o.check === c)
+  assert.equal(outcome('intake_decline')?.state, 'flagged')
+  assert.equal(outcome('trial_diet_refusal')?.state, 'not_flagged', 'non-vacuous: Cooper’s trial check came back quiet')
+  assert.ok(!checksText(buildDocumentV2(s, OPTS)).includes('trial diet not eaten ('), 'never "did not trigger: trial diet not eaten" under the intake flag')
+  // Mutation: with the intake flag not firing, the quiet trial check prints again.
+  const quietIntake: ReportSnapshot = { ...s, checkOutcomes: s.checkOutcomes!.map((o) => (o.check === 'intake_decline' ? { ...o, state: 'not_flagged' as const } : o)) }
+  assert.match(checksText(buildDocumentV2(quietIntake, OPTS)), /trial diet not eaten \(/)
+  // The converse: the trial check fires, so a quiet intake check is not printed beside it.
+  const converse: ReportSnapshot = {
+    ...s,
+    checkOutcomes: s.checkOutcomes!.map((o) => ({ ...o, state: o.check === 'trial_diet_refusal' ? ('flagged' as const) : o.check === 'intake_decline' ? ('not_flagged' as const) : o.state })),
+  }
+  assert.ok(!checksText(buildDocumentV2(converse, OPTS)).includes('the intake check ('))
+})
+
+Deno.test('CUL-2638 — sheet 1 prints "Ran and did not trigger" once on every fixture, in print and on the phone (the past window included)', () => {
+  const needle = fold('Ran and did not trigger, which does not rule these out')
+  const count = (t: string) => t.split(needle).length - 1
+  let seen = 0
+  for (const [name, snap] of v2DocFixtures()) {
+    const t = sheet1(buildDocumentV2(snap, OPTS))
+    assert.ok(count(t.print) <= 1, `${name}: print says it ${count(t.print)} times`)
+    assert.ok(count(t.phone) <= 1, `${name}: the phone says it ${count(t.phone)} times`)
+    if (name === 'trial-report-past-window') assert.equal(count(t.print), 1, 'the no-band past window still says it once')
+    seen += count(t.print)
+  }
+  assert.ok(seen > 3, 'non-vacuous: several fixtures print the line')
 })
