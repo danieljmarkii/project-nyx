@@ -8,15 +8,17 @@
 //      the filter). No draft, no run: there is nowhere to keep a lead.
 //   2. "Leave out the AI summary": record the choice on the copy and stop. No gate, no model.
 //   3. Not eligible (a thin record, nothing to summarise): record why and stop. And a record with any
-//      live band item (CUL-2621 ruling (c), widening CUL-2563's (b); verify.ts `liveFlagIssues`): the
-//      gate is read without spending, a closed one records its own outcome, an open one records
-//      not_eligible / live_flag. Before the cache, so no stored lead is served on such a record.
+//      live band item (CUL-2621 ruling (c), widening CUL-2563's (b); verify.ts `liveFlagIssues`), or
+//      a draft whose own stored copy refuses one (CUL-2628, run.ts `copyRefusalOf`): the gate is read
+//      without spending, a closed one records its own outcome, an open one records not_eligible and
+//      why. Before the cache, so no stored lead is served on such a record.
 //   4. The cache: the same fact table (by hash) already printed on THIS draft. The gate still
 //      runs consent, both flags and the pet (it spends no count), so a withdrawn yes or a flag
 //      turned off clears the stored lead instead of serving it.
 //   5. The gate, spending one count.
 //   6. The writer; the verifier on the printed sentences; one repair if it fails.
-//   7. The checker (Anthropic, another model, plus a code half that reads H7 by order, CUL-2548);
+//   7. The checker (Anthropic, another model, plus a code half: order, CUL-2548; R-11's own sign,
+//      CUL-2619; every live band item named, CUL-2629);
 //      a material finding, or a minor one on H3 or H7, rejects; another minor finding gets the repair if it is unspent, then both checks again.
 //   8. Keep the lead, its verdict and the served model on the draft row, and nowhere else.
 //
@@ -33,7 +35,7 @@ import { sha256Hex } from '../../_shared/engineStamps.ts'
 import { factTableHash, type LeadFacts, type LeadFactPayload } from './facts.ts'
 import { modelFor, requestBody, ticketFor, type GateTicket, type ModelResult, type Role } from './model.ts'
 import { HAZARDS, PROMPT_VERSION, type Hazard, type HazardLevel } from './prompts.ts'
-import { bandOrderIssues, LEAD_VERIFIER_VERSION, liveFlagIssues, ownSignIssues, printedLeadText, printedSentences, verifyLead, type LeadSentence, type LeadSummary } from './verify.ts'
+import { bandCoverageIssues, bandOrderIssues, LEAD_VERIFIER_VERSION, liveFlagIssues, ownSignIssues, printedLeadText, printedSentences, verifyLead, type LeadSentence, type LeadSummary } from './verify.ts'
 import type { FactTable, VerifyIssue } from './verifyCore.ts'
 
 export const LEAD_WALL_CLOCK_MS = 60_000
@@ -81,7 +83,15 @@ export interface DraftRead {
   verdict: unknown
   /** `ai_lead_model` as read. Optional: only the keep's settle pins it (CUL-2523). */
   model?: string | null
+  /** The draft's own copy as the row stores it (CUL-2628): the snapshot its stored HTML was
+   *  rendered from, and the params it was saved with. Optional: run.ts's reader always carries it,
+   *  and a reader without it is read as an unreadable copy there (aiLead/run.ts `copyRefusalOf`). */
+  copy?: { snapshot: unknown; params: unknown }
 }
+
+/** Why the draft's own copy refuses a lead, read on its stored snapshot (CUL-2628): it has a live
+ *  band item, it is thin or has no record line, or it cannot be read (errs loud). */
+export type CopyRefusal = 'live_flag' | 'thin_record' | 'no_record_lines' | 'copy_unreadable'
 
 export interface LeadIO {
   readDraft(): Promise<DraftRead>
@@ -162,20 +172,38 @@ export function modelDecision(v: CheckerVerdict): 'pass' | 'repair' | 'reject' {
   return 'pass'
 }
 
-/** The checker's decision (step 7): the model's verdict, and a code half that reads H7 by order.
- *  The model passed a lead that buried a live flag under a count twice (October's S-arm Nyx drafts;
- *  the smoke bake-off's cr-a, CUL-2548), so a draft whose sentence 1 is not band item 1 is H7
- *  material here whatever the model said. The draft and the table are required: no caller can ask
- *  for the model's half alone and call it the checker. The verifier's band-first rule reads the same
- *  function and stays on; neither net depends on the other. */
+/** The checker's code half (CUL-2548, CUL-2619, CUL-2629): what code alone decides about a draft,
+ *  from the fact table and the printed words, with the record rule (`liveFlagIssues`) left to its
+ *  caller. Any issue rejects, whatever the model said:
+ *    - order (`bandOrderIssues`): sentence 1 is band item 1 (the model passed a buried flag twice,
+ *      October's S-arm Nyx drafts and the smoke bake-off's cr-a);
+ *    - R-11's own sign (`ownSignIssues`; the re-run's checker passed r11's flag without it);
+ *    - coverage (`bandCoverageIssues`): every live band item cited, named, with one of its own
+ *      numbers (the third bake-off's checker passed `rv-script-d`, 1 of 6 flags);
+ *    - the verifier's sentence rules (`verifyLead`, every check but `live-flag`; PM ruling (a) on
+ *      CUL-2629, 2026-11-07, after the PR's second adversarial pass): a lexical coverage check cannot
+ *      rule out a flag denied, doubted, merged or shrunk ("None of these are live flags.", "all
+ *      absent", "1 entry in 7 days"), and the verifier's closed vocabulary, absence, negation,
+ *      band-numbers and required rules refuse every such shape. So the checker never passes what
+ *      the verifier refuses. In the pipeline the verifier has already passed the draft (step 6), so
+ *      this adds no refusal there; it makes the checker's own decision hold the same line wherever
+ *      it is read alone.
+ *  Exported so the bake-off's "record rule set aside" read calls this function, never a hand copy
+ *  of it (rerun-3's harness copied the body and would have missed coverage). */
+export function checkerCodeIssues(table: FactTable, draft: LeadSummary): VerifyIssue[] {
+  const printed = { sentences: printedSentences(draft).map((text, i) => ({ text, cites: draft.sentences[i].cites })) }
+  const sentenceRules = verifyLead(table, draft).errors.filter((e) => e.check !== 'live-flag')
+  return [...bandOrderIssues(table, printed), ...ownSignIssues(table, printed), ...bandCoverageIssues(table, printed), ...sentenceRules]
+}
+
+/** The checker's decision (step 7): the record rule, the code half, then the model's verdict. The
+ *  draft and the table are required: no caller can ask for the model's half alone and call it the
+ *  checker. The verifier's band-first and own-sign rules read the same functions and stay on;
+ *  neither net depends on the other. */
 export function checkerDecision(v: CheckerVerdict, ctx: { table: FactTable; draft: LeadSummary }): 'pass' | 'repair' | 'reject' {
   // CUL-2621 ruling (c): a record with a live flag never prints a lead, whatever the checker scored.
   if (liveFlagIssues(ctx.table).length > 0) return 'reject'
-  const printed = { sentences: printedSentences(ctx.draft).map((text, i) => ({ text, cites: ctx.draft.sentences[i].cites })) }
-  if (bandOrderIssues(ctx.table, printed).length > 0) return 'reject'
-  // CUL-2619: R-11's flag restated without "the trial's own sign" is a shortened flag (H7), whatever
-  // the model scored (the re-run's checker passed it; one judge scored it minor twice).
-  if (ownSignIssues(ctx.table, printed).length > 0) return 'reject'
+  if (checkerCodeIssues(ctx.table, ctx.draft).length > 0) return 'reject'
   return modelDecision(v)
 }
 
@@ -191,7 +219,10 @@ export function leadAllowedAtSend(
   return consentDecision(consent).allow && flagDecision(config, uid).allow
 }
 
-export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: boolean }): Promise<LeadResult> {
+/** `copyRefusal`: the draft's own copy read on its stored snapshot (CUL-2628), null when it allows a
+ *  lead. The production entry, run.ts `runAiLeadForDraft`, always passes it (a required argument
+ *  there); a caller that omits it is judged on `facts` alone (the bake-off harness, the tests). */
+export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: boolean; copyRefusal?: CopyRefusal | null }): Promise<LeadResult> {
   const draft = await io.readDraft()
   if (!draft.found) return { outcome: 'draft_not_found' }
 
@@ -219,13 +250,16 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
   // the cache and before any model call, so no stored lead is served and no count is spent. The gate
   // is read without spending, so a flag-off or declined owner keeps their own outcome (the preview
   // says nothing to a flag-off owner).
-  if (liveFlagIssues(facts.table).length > 0) {
+  // CUL-2628: the same refusal when the draft's OWN copy (the snapshot its stored HTML was rendered
+  // from) has a live flag, is thin, or cannot be read, whatever the facts this run was handed say.
+  const copyRefusal = opts.copyRefusal ?? null
+  if (liveFlagIssues(facts.table).length > 0 || copyRefusal !== null) {
     const g = await io.runGate(false)
     if (!g.allow) {
       const out = gateOutcome(g)
       return record(base(out.outcome, out.reason, null))
     }
-    return record(base('not_eligible', 'live_flag', null))
+    return record(base('not_eligible', liveFlagIssues(facts.table).length > 0 ? 'live_flag' : copyRefusal, null))
   }
   const hash = await factTableHash(facts.payload, LEAD_VERIFIER_VERSION)
 

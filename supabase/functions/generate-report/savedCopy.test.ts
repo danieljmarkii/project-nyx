@@ -31,6 +31,7 @@ import { sha256Hex as textSha } from '../_shared/engineStamps.ts'
 import { REPORT_SUMMARY_COPY_VERSION, REPORT_SUMMARY_SCOPE, runKeepGate } from '../_shared/reportSummaryGate.ts'
 import { AI_CONSENT_SCOPE } from '../_shared/aiConsent.ts'
 import { LEAD_SLOT_MARK, PIN_TEXT_URL_BUDGET, settleLeadForKeep, type KeepLead, type KeepRefusal } from './aiLead/run.ts'
+import { flaggedCopy, hashOfCopy, oliveCopy, type StoredCopy } from './aiLead/storedCopy.testutil.ts'
 import { h } from './documentV2.ts'
 
 const PET = '11111111-2222-4333-8444-555555555555'
@@ -332,8 +333,15 @@ const ALLOW = { allow: true } as unknown as Awaited<ReturnType<SettleIO['keepGat
 const DENY = { allow: false, reason: 'consent_declined', scope: 'report_summary' } as unknown as Awaited<ReturnType<SettleIO['keepGate']>>
 const AT = '2026-11-05T12:00:00.000Z'
 
-function leadIO(text: string | null, verdict: unknown, model: string | null = null, gate = ALLOW) {
-  const io = { readDraft: async () => ({ found: true, text, verdict, model }), keepGate: async () => {
+/** The draft's own stored copy (CUL-2617, CUL-2628): a band-empty record, on which a lead may print. */
+const OLIVE = oliveCopy()
+const OLIVE_HASH = await hashOfCopy(OLIVE)
+/** A verdict that holds on OLIVE: printed, its facts, its sentences joining to the text. */
+const printingOn = (text: string, sentences: string[] = [text], extra: Record<string, unknown> = {}) =>
+  ({ outcome: 'printed', at: AT, fact_hash: OLIVE_HASH, sentences: sentences.map((t) => ({ text: t, cites: ['line-1'] })), ...extra })
+
+function leadIO(text: string | null, verdict: unknown, model: string | null = null, gate = ALLOW, copy: StoredCopy = OLIVE) {
+  const io = { readDraft: async () => ({ found: true, text, verdict, model, copy }), keepGate: async () => {
     io.gateCalls++
     return gate
   }, runGate: () => {
@@ -394,11 +402,11 @@ Deno.test('no lead yet is recorded as not ready and pinned as all-null; a declin
 
 Deno.test('a lead the stored copy prints is pinned on text, verdict and model, never rewritten', async () => {
   const text = 'Cooper vomited on 3 days. He ate <less> & slept.'
-  const io = leadIO(text, { outcome: 'printed', at: AT, fact_hash: 'h' }, 'writer-1')
+  const io = leadIO(text, printingOn(text, ['Cooper vomited on 3 days.', 'He ate <less> & slept.']), 'writer-1')
   const lead = await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.', 'He ate <less> & slept.']))
   assert.deepEqual(lead, {
     set: {},
-    unchanged: { ai_lead_model: 'writer-1', 'ai_lead_verdict->>at': AT, 'ai_lead_verdict->>outcome': 'printed', 'ai_lead_verdict->>fact_hash': 'h', 'ai_lead_verdict->>text_sha': null, ai_lead_text: text },
+    unchanged: { ai_lead_model: 'writer-1', 'ai_lead_verdict->>at': AT, 'ai_lead_verdict->>outcome': 'printed', 'ai_lead_verdict->>fact_hash': OLIVE_HASH, 'ai_lead_verdict->>text_sha': null, ai_lead_text: text },
   })
   assert.equal(io.gateCalls, 1, 'consent is re-checked before a pinned keep')
 })
@@ -413,15 +421,50 @@ Deno.test('a slot that does not hold the draft text refuses the keep for good (C
   assert.equal(io.gateCalls, 0)
 })
 
+Deno.test('CUL-2617, CUL-2628 (1): a slot is kept only when the lead holds on the snapshot the copy was rendered from', async () => {
+  const text = 'Cooper vomited on 3 days.'
+  const html = slotHtml([text])
+  // The control: the same lead on its own band-empty copy is kept.
+  assert.ok(!('refused' in (isLead(await settleLeadForKeep(leadIO(text, printingOn(text)), html)))))
+  // A copy with live flags (nyx-live, 6 band items): refused, whatever the verdict says. (This verdict's
+  // hash is not the copy's either; the next test gives it the copy's own hash, so only the record rule
+  // can refuse it there.)
+  const flagged = flaggedCopy()
+  const flaggedVerdict = { ...printingOn(text), fact_hash: 'not-read-before-the-rule' }
+  const io = leadIO(text, flaggedVerdict, 'm', ALLOW, flagged)
+  assert.deepEqual(await settleLeadForKeep(io, html), { refused: 'mismatch' })
+  assert.equal(io.gateCalls, 0, 'refused before the gate')
+  // A lead written from other facts than the copy's (a rebuild at another time or window): refused.
+  assert.deepEqual(await settleLeadForKeep(leadIO(text, { ...printingOn(text), fact_hash: 'h' }), html), { refused: 'mismatch' })
+  // Sentences that do not join to the text, or no stored snapshot at all: refused.
+  assert.deepEqual(await settleLeadForKeep(leadIO(text, printingOn(text, ['Cooper vomited.'])), html), { refused: 'mismatch' })
+  for (const copy of [{ snapshot: null, params: OLIVE.params }, { snapshot: 'x', params: OLIVE.params }, { snapshot: { scope: {} }, params: OLIVE.params }]) {
+    assert.deepEqual(await settleLeadForKeep(leadIO(text, printingOn(text), 'm', ALLOW, copy), html), { refused: 'mismatch' }, JSON.stringify(copy.snapshot))
+  }
+  // The copy's notes setting does not open the rule: the same flagged copy saved with notes on.
+  const notesOn = { ...flagged, params: { ...(flagged.params as Record<string, unknown>), include_look_notes: true } }
+  assert.deepEqual(await settleLeadForKeep(leadIO(text, flaggedVerdict, 'm', ALLOW, notesOn), html), { refused: 'mismatch' })
+})
+
+Deno.test('CUL-2617: the flagged copy refuses even with the hash of its own facts (the record rule, not the hash)', async () => {
+  // Rebuild the flagged copy's own fact hash, as a second writer or a moved threshold could store it
+  // (adversarial review of #1461, finding A): the keep must still refuse.
+  const flagged = flaggedCopy()
+  const own = await hashOfCopy(flagged)
+  const text = 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.'
+  const io = leadIO(text, { ...printingOn(text), fact_hash: own }, 'm', ALLOW, flagged)
+  assert.deepEqual(await settleLeadForKeep(io, slotHtml([text])), { refused: 'mismatch' })
+})
+
 Deno.test('a pinned keep after a withdrawal is refused, never frozen with the summary (PM ruling (a))', async () => {
-  const io = leadIO('Cooper vomited on 3 days.', { outcome: 'printed', at: AT }, 'm', DENY)
+  const io = leadIO('Cooper vomited on 3 days.', printingOn('Cooper vomited on 3 days.'), 'm', DENY)
   assert.deepEqual(await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.'])), { refused: 'withdrawn' })
 })
 
 Deno.test('a pinned keep whose consent, config or pet read failed is retried (500), never refused for good (CUL-2575)', async () => {
   for (const reason of ['consent_declined', 'flag_off', 'pet_not_owned']) {
     const unread = { allow: false, reason, scope: 'ai_boundary', flag: 'report_ai_lead', unread: true } as unknown as Awaited<ReturnType<SettleIO['keepGate']>>
-    const io = leadIO('Cooper vomited on 3 days.', { outcome: 'printed', at: AT }, 'm', unread)
+    const io = leadIO('Cooper vomited on 3 days.', printingOn('Cooper vomited on 3 days.'), 'm', unread)
     assert.equal(await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.'])), null, reason)
   }
   // End to end: the keep answers 500, which the phone retries, and the draft stays a draft.
@@ -569,7 +612,7 @@ function plainSettleIO(f: ReturnType<typeof fakeIO>) {
   return {
     readDraft: async () => {
       const r = f.rows.get(ID)!
-      return { found: true, text: r.ai_lead_text ?? null, verdict: r.ai_lead_verdict ?? null, model: r.ai_lead_model ?? null }
+      return { found: true, text: r.ai_lead_text ?? null, verdict: r.ai_lead_verdict ?? null, model: r.ai_lead_model ?? null, copy: { snapshot: r.snapshot, params: r.params } }
     },
     keepGate: async () => ALLOW,
   } as unknown as Parameters<typeof settleLeadForKeep>[0]
@@ -579,7 +622,7 @@ function racedSettle(f: ReturnType<typeof fakeIO>) {
   const io = {
     readDraft: async () => {
       const r = f.rows.get(ID)!
-      return { found: true, text: r.ai_lead_text ?? null, verdict: r.ai_lead_verdict ?? null, model: r.ai_lead_model ?? null }
+      return { found: true, text: r.ai_lead_text ?? null, verdict: r.ai_lead_verdict ?? null, model: r.ai_lead_model ?? null, copy: { snapshot: r.snapshot, params: r.params } }
     },
     keepGate: async () => ALLOW,
   } as unknown as Parameters<typeof settleLeadForKeep>[0]
@@ -626,10 +669,14 @@ Deno.test('the old two writes, replayed against the same race, froze the summary
 })
 
 async function printingCopy(f: ReturnType<typeof fakeIO>, text: string, verdict: Record<string, unknown>, model: string) {
-  // Make the stored copy one that prints a lead, with that lead on the draft.
+  // Make the stored copy one that prints a lead, with that lead on the draft, written from the
+  // row's own stored snapshot (a band-empty record), so the keep's record read holds (CUL-2617).
   const html = new TextEncoder().encode(slotHtml([text]))
   f.objects.set(`${PET}/${ID}.html`, html)
-  Object.assign(f.rows.get(ID)!, { content_sha256: await sha256Hex(html), ai_lead_text: text, ai_lead_verdict: verdict, ai_lead_model: model })
+  Object.assign(f.rows.get(ID)!, {
+    content_sha256: await sha256Hex(html), snapshot: OLIVE.snapshot, params: OLIVE.params,
+    ai_lead_text: text, ai_lead_verdict: { ...printingOn(text), ...verdict, fact_hash: OLIVE_HASH }, ai_lead_model: model,
+  })
 }
 
 Deno.test('a pinned lead rewritten between the settle and the keep refuses the keep', async () => {
