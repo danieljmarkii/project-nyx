@@ -737,6 +737,8 @@ describe('the report as expo-print receives it (CUL-2649)', () => {
     const out = lockedPrintHtml(bare);
     expect(out.startsWith(FRAME_LOCK_HEAD)).toBe(true);
     expect(out).not.toContain('<script>alert');
+    // A <header> is never taken for the head: the lock still goes first (fails closed).
+    expect(lockedPrintHtml('<header>Nyx</header><p>x</p>').startsWith(FRAME_LOCK_HEAD)).toBe(true);
     const typed = lockedPrintHtml('<!DOCTYPE html><body>Nyx</body>');
     expect(typed.startsWith(`<!DOCTYPE html>${FRAME_LOCK_HEAD}`)).toBe(true);
   });

@@ -561,7 +561,8 @@ export function boxedFrameHtml(html: string): string {
  */
 export function lockedPrintHtml(html: string): string {
   const neutral = neutralizeRefusedTags(html).replace(/<(\/?)script(?=[\s/>]|$)/gi, '<$1x-refused-script');
-  const head = /<head[^>]*>/i.exec(neutral);
+  // `<head` followed by a tag-name end, never `<header>`: a miss falls to the top (fails closed).
+  const head = /<head(?=[\t\n\f\r />])[^>]*>/i.exec(neutral);
   const at = head ? head.index + head[0].length : (/^\s*<!doctype[^>]*>/i.exec(neutral)?.[0].length ?? 0);
   return `${neutral.slice(0, at)}${FRAME_LOCK_HEAD}${neutral.slice(at)}`;
 }
