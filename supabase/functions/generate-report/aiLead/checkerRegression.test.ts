@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict'
 import { tableFromPayload, type LeadFactPayload } from './facts.ts'
 import { checkerDecision, modelDecision, parseChecker, type CheckerVerdict } from './leadPipeline.ts'
-import { verifyLead, type LeadSentence } from './verify.ts'
+import { bandOrderIssues, verifyLead, type LeadSentence } from './verify.ts'
 
 const DIR = new URL('./exhibits/', import.meta.url)
 const read = async (p: string) => JSON.parse(await Deno.readTextFile(new URL(p, DIR)))
@@ -111,13 +111,19 @@ Deno.test('CUL-2548: every band-order item is rejected by the checker whatever t
   }
 })
 
-Deno.test('CUL-2548: the code half is not blind: a lead that opens on band item 1 takes the model\'s decision', async () => {
-  // On the bake-off table's first flag alone: with all its band items the record is multi-flag and
-  // the code half rejects every lead (CUL-2563), which the last line pins.
+Deno.test('CUL-2548: the code half is not blind: a lead that opens on band item 1 clears the order read', async () => {
+  // On the bake-off table's first flag alone the order half finds nothing, but since CUL-2621 any
+  // live flag rejects every lead before order is read; only a band-empty record takes the model's
+  // decision (Olive, below).
   const table = await nyxTable({ firstBandOnly: true })
   const clean = parseChecker({ takeaway: 'x', hazards: Object.fromEntries(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7'].map((h) => [h, { level: 'none', quote: '', why: '' }])), omissions: [] })!
+  const minorH5 = parseChecker({ ...clean, hazards: { ...Object.fromEntries(['H1', 'H2', 'H3', 'H4', 'H6', 'H7'].map((h) => [h, { level: 'none', quote: '', why: '' }])), H5: { level: 'minor', quote: 'x', why: 'x' } } })!
   const lead: LeadSentence = { text: 'Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.', cites: ['S1'] }
-  assert.equal(checkerDecision(clean, { table, draft: { sentences: [lead] } }), 'pass')
-  assert.equal(checkerDecision(parseChecker({ ...clean, hazards: { ...Object.fromEntries(['H1', 'H2', 'H3', 'H4', 'H6', 'H7'].map((h) => [h, { level: 'none', quote: '', why: '' }])), H5: { level: 'minor', quote: 'x', why: 'x' } } })!, { table, draft: { sentences: [lead] } }), 'repair')
-  assert.equal(checkerDecision(clean, { table: await nyxTable(), draft: { sentences: [lead] } }), 'reject', 'the full table is multi-flag')
+  assert.deepEqual(bandOrderIssues(table, { sentences: [lead] }), [])
+  assert.equal(checkerDecision(clean, { table, draft: { sentences: [lead] } }), 'reject', 'one live flag: no lead (CUL-2621)')
+  assert.equal(checkerDecision(clean, { table: await nyxTable(), draft: { sentences: [lead] } }), 'reject', 'the full table: no lead')
+  const olive = tableFromPayload(JSON.parse(await Deno.readTextFile(new URL('./exhibits/adversarial/fixtures/olive.json', import.meta.url))))
+  const oliveLead: LeadSentence = { text: 'Meals: 42 logged, 3 not fully eaten, on 3 days, first Oct 13, last Oct 15.', cites: ['intake'] }
+  assert.equal(checkerDecision(clean, { table: olive, draft: { sentences: [oliveLead] } }), 'pass')
+  assert.equal(checkerDecision(minorH5, { table: olive, draft: { sentences: [oliveLead] } }), 'repair')
 })

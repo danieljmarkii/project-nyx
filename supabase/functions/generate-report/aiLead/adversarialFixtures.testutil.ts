@@ -6,7 +6,7 @@
 import { assembleReport, type ReportSnapshot } from '../report.ts'
 import { cooperInput } from '../cooperDemo.testutil.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
-import { itchingSkinTrial } from '../v2Fixtures.testutil.ts'
+import { itchingSkinTrial, olive } from '../v2Fixtures.testutil.ts'
 import { buildLeadFacts, documentForLead, type LeadFactPayload } from './facts.ts'
 
 function payloadOf(s: ReportSnapshot): LeadFactPayload {
@@ -63,5 +63,9 @@ export async function adversarialFixtures(): Promise<Record<string, LeadFactPayl
     'cooper-cat': payloadOf(assembleReport({ ...ci, pet: { ...ci.pet, species: 'cat' as const }, audience: { kind: 'owner', includeLookNotes: false } })),
     'bakeoff-nyx': await bakeoffNyx(),
     'h2': H2,
+    // CUL-2621 option (a), PM 2026-11-07: a real band-empty record, so the third run tests a lead
+    // that may print on shipped code's own table (CUL-2323's `looks-only` cat: no symptom entry,
+    // "sleeping more" on 6 days, 3 meals not finished in the last 3 days).
+    'olive': payloadOf(assembleReport(olive())),
   }
 }

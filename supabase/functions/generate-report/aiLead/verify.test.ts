@@ -6,7 +6,7 @@ import { buildDocumentV2 } from '../documentV2.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
 import { buildLeadFacts, documentForLead, tableFromPayload, type LeadFactPayload } from './facts.ts'
 import { WRITER_SYSTEM } from './prompts.ts'
-import { framePatternHits, LEAD_FRAME, MULTI_FLAG_MIN_BAND, multiFlagIssues, OWN_SIGN_PHRASE, ownSignIssues, printedLeadText, printsOwnSign, verifyLead, type LeadSentence } from './verify.ts'
+import { framePatternHits, LEAD_FRAME, LIVE_FLAG_MIN_BAND, liveFlagIssues, OWN_SIGN_PHRASE, ownSignIssues, printedLeadText, printsOwnSign, verifyLead, type LeadSentence } from './verify.ts'
 import { assembleReport } from '../report.ts'
 import { itchingSkinTrial } from '../v2Fixtures.testutil.ts'
 import { checkerDecision, parseChecker } from './leadPipeline.ts'
@@ -31,12 +31,18 @@ const GOOD: LeadSentence[] = [
   { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026; the trial diet was not fed exclusively, and it is not a test of the diet alone.', cites: ['trial', 'trial-reading-3', 'confounder'] },
 ]
 
-/** The sentence rules' verdict. The live Nyx record has six live band items, so `multi-flag` (a rule
- *  on the record, never on a sentence, CUL-2563) refuses every lead on it; the rule tests below each
- *  break one SENTENCE rule on that record, so they read the sentence rules without it. The multi-flag
- *  tests at the end read it directly. */
+/** The sentence rules' verdict. Every record with a live band item gets no lead (`live-flag`, a rule
+ *  on the record, never on a sentence; CUL-2621 ruling (c), widening CUL-2563's (b)), so it refuses
+ *  every lead on the live Nyx record and on r11. The rule tests below each break one SENTENCE rule,
+ *  which stay on as the second net, so they read the sentence rules without it. The live-flag tests
+ *  read `verifyLead` directly. */
+function sentenceVerdict(table: Parameters<typeof verifyLead>[0], summary: Parameters<typeof verifyLead>[1]) {
+  const v = verifyLead(table, summary)
+  const errors = v.errors.filter((e) => e.check !== 'live-flag')
+  return { ...v, errors, pass: errors.length === 0 }
+}
 function checks(sentences: LeadSentence[], table = nyxTable): string[] {
-  return verifyLead(table, { sentences }).errors.map((e) => e.check).filter((c) => c !== 'multi-flag')
+  return sentenceVerdict(table, { sentences }).errors.map((e) => e.check)
 }
 
 Deno.test('a careful three-sentence lead over the live Nyx record passes every sentence rule', () => {
@@ -76,7 +82,7 @@ Deno.test('scope: a cited line\'s scope words are never dropped (the confounder,
 
 Deno.test('required: with a trial, the reading\'s bottom line and the confounder are cited (CUL-2532)', () => {
   const trialAlone = { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.', cites: ['trial'] }
-  const v = verifyLead(nyxTable, { sentences: [GOOD[0], GOOD[1], trialAlone] })
+  const v = sentenceVerdict(nyxTable, { sentences: [GOOD[0], GOOD[1], trialAlone] })
   assert.deepEqual(v.errors.filter((e) => e.check === 'required').map((e) => e.detail.split(' ')[2]).sort(), ['confounder', 'trial-reading-3'])
 })
 
@@ -157,12 +163,14 @@ Deno.test('H2 exhibit without its one banned phrase: the order rule alone still 
   assert.ok(errors.includes('order'))
 })
 
+/** The H2 exhibit fixed: band empty, so the full verdict applies (the live-flag test reads it too). */
+const H2_CAREFUL: LeadSentence[] = [
+  { text: 'The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.', cites: ['trial'] },
+  { text: 'Chicken foods were first fed Oct 21; vomiting on 4 days Oct 26 to Oct 31 is set side by side, not as a cause.', cites: ['new-foods'] },
+]
+
 Deno.test('H2 exhibit fixed: the new-foods window side by side, not as a cause, passes', () => {
-  const fixed: LeadSentence[] = [
-    { text: 'The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.', cites: ['trial'] },
-    { text: 'Chicken foods were first fed Oct 21; vomiting on 4 days Oct 26 to Oct 31 is set side by side, not as a cause.', cites: ['new-foods'] },
-  ]
-  assert.deepEqual(verifyLead(H2_TABLE, { sentences: fixed }).errors, [])
+  assert.deepEqual(verifyLead(H2_TABLE, { sentences: H2_CAREFUL }).errors, [])
 })
 
 Deno.test('the waiver is narrow: another cause word beside "not as a cause" still rejects', () => {
@@ -186,7 +194,7 @@ Deno.test('the prompt\'s worked example passes the verifier it teaches', () => {
   const body = WRITER_SYSTEM.slice(WRITER_SYSTEM.indexOf('Fact table:\n') + 'Fact table:\n'.length)
   const table = JSON.parse(body.slice(0, body.indexOf('\nOutput:'))) as LeadFactPayload
   const out = JSON.parse(body.slice(body.indexOf('Output:\n') + 'Output:\n'.length, body.indexOf('\nWhy it works'))) as { sentences: LeadSentence[] }
-  assert.deepEqual(verifyLead(tableFromPayload(table), out).errors, [])
+  assert.deepEqual(sentenceVerdict(tableFromPayload(table), out).errors, [])
 })
 
 Deno.test('the printed text is the sentences, normalised, joined by one space', () => {
@@ -212,8 +220,8 @@ Deno.test('the frame is pinned, and no frame word can soften, time, defer or neg
 Deno.test('vocabulary: a softening word no list names is refused because no cited line prints it', () => {
   // Two sentences, so the trial line's absence is the only other error ('required').
   const quieter = { ...GOOD[1], text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31, quietening.' }
-  const v = verifyLead(nyxTable, { sentences: [GOOD[0], quieter] })
-  assert.deepEqual([...new Set(v.errors.map((e) => e.check))].filter((c) => c !== 'required' && c !== 'multi-flag'), ['vocabulary'])
+  const v = sentenceVerdict(nyxTable, { sentences: [GOOD[0], quieter] })
+  assert.deepEqual([...new Set(v.errors.map((e) => e.check))].filter((c) => c !== 'required' && c !== 'live-flag'), ['vocabulary'])
   assert.ok(v.errors.some((e) => e.detail.includes('"quietening"')))
   assert.deepEqual(checks([GOOD[0], GOOD[1]]).filter((c) => c !== 'required'), [], 'the same lead without the word passes')
 })
@@ -233,7 +241,7 @@ Deno.test('vocabulary: the pet\'s name, a possessive and a band label are known;
     record_lines: [], trial_line: null, record_edge: [],
   })
   const labelled = [{ text: 'Chronicity: itching spans 49 days, 18 episodes on 18 days, the most recent 1 day ago.', cites: ['band-1'] }]
-  assert.deepEqual(verifyLead(table, { sentences: labelled }).errors, [])
+  assert.deepEqual(sentenceVerdict(table, { sentences: labelled }).errors, [])
 })
 
 Deno.test('negation: bound to the two words a cited line prints after it', () => {
@@ -243,12 +251,12 @@ Deno.test('negation: bound to the two words a cited line prints after it', () =>
     record_lines: [], trial_line: null, record_edge: [],
   })
   const ok = [{ text: 'Itching is the flag: over at least 49 days, 15 episodes on 15 days, most recent 1 day ago, not a single incident.', cites: ['band-r11'] }]
-  assert.deepEqual(verifyLead(r11, { sentences: ok }).errors.filter((e) => e.check === 'negation'), [])
+  assert.deepEqual(sentenceVerdict(r11, { sentences: ok }).errors.filter((e) => e.check === 'negation'), [])
   const flipped = [{ ...ok[0], text: 'Itching is the flag: over at least 49 days, 15 episodes on 15 days, most recent 1 day ago, not a sustained pattern.' }]
-  assert.deepEqual([...new Set(verifyLead(r11, { sentences: flipped }).errors.map((e) => e.check))], ['negation'])
+  assert.deepEqual([...new Set(sentenceVerdict(r11, { sentences: flipped }).errors.map((e) => e.check))], ['negation'])
 })
 
-// ── multi-flag: CUL-2563 ruling (b), PM 2026-11-06 ──────────────────────────────────────────────
+// ── live-flag: CUL-2621 ruling (c), PM 2026-11-07 (widening CUL-2563's ruling (b), 2026-11-06) ──
 
 /** The lead the bake-off re-run printed on nyx-v2 in runs 2, 3 and 4 (CUL-2306,
  *  docs/vet-report-v3-discovery/bakeoff/rerun/2026-11-05-run/): the burden, said well, and five live
@@ -259,51 +267,51 @@ const RERUN_NYX_LEAD: LeadSentence[] = [
   { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran from Jul 26, 2026 to Oct 20, 2026; the trial diet was not fed exclusively, and it is not a test of the diet alone.', cites: ['trial', 'trial-reading-3', 'confounder'] },
 ]
 
-Deno.test('multi-flag: the live Nyx record (six live band items) refuses the lead the re-run printed', () => {
+Deno.test('live-flag: the live Nyx record (six live band items) refuses the lead the re-run printed', () => {
   assert.equal(nyxTable.facts.filter((f) => f.role === 'band').length, 6)
   const v = verifyLead(nyxTable, { sentences: RERUN_NYX_LEAD })
   assert.equal(v.pass, false)
   // It passes every sentence rule, as it did in the re-run: only the record rule stops it.
-  assert.deepEqual(v.errors.map((e) => e.check), ['multi-flag'])
+  assert.deepEqual(v.errors.map((e) => e.check), ['live-flag'])
   assert.equal(v.errors[0].sentence, null)
 })
 
-Deno.test('multi-flag: no draft passes, whatever it says or cites (the rule reads the record alone)', () => {
+Deno.test('live-flag: no draft passes, whatever it says or cites (the rule reads the record alone)', () => {
   const drafts: LeadSentence[][] = [
     RERUN_NYX_LEAD,
     [GOOD[0]],
     [{ text: 'Nyx.', cites: [] }],
     [],
-    // Every band item cited: still no lead (ruling (b), not (c)).
+    // Every band item cited: still no lead.
     nyxTable.facts.filter((f) => f.role === 'band').map((f) => ({ text: f.text ?? '', cites: [f.id] })),
   ]
   for (const sentences of drafts) {
     const v = verifyLead(nyxTable, { sentences })
     assert.equal(v.pass, false)
-    assert.ok(v.errors.some((e) => e.check === 'multi-flag'))
+    assert.ok(v.errors.some((e) => e.check === 'live-flag'))
   }
 })
 
-Deno.test('multi-flag: two band items refuse; one, or none, still prints', () => {
-  assert.equal(MULTI_FLAG_MIN_BAND, 2)
+Deno.test('live-flag: one band item refuses; only an empty band prints', () => {
+  assert.equal(LIVE_FLAG_MIN_BAND, 1)
   const band = [
     { id: 'band-1', label: 'Chronicity', text: 'Itching spans 49 days (first logged Aug 27): 18 episodes on 18 days; most recent 1 day ago.' },
     { id: 'band-2', label: 'Weight', text: 'Weight down 15% over 30 days.' },
   ]
   const base = { pet_name: 'Biscuit', species: 'dog', record_start: '2026-08-22', record_end: '2026-10-16', record_lines: [], trial_line: null, record_edge: [] }
-  // The vocabulary test's labelled lead: it passes every rule on its one-flag record.
+  // The vocabulary test's labelled lead: it passes every sentence rule on its one-flag record.
   const lead = [{ text: 'Chronicity: itching spans 49 days, 18 episodes on 18 days, the most recent 1 day ago.', cites: ['band-1'] }]
   const one = tableFromPayload({ ...base, band: band.slice(0, 1) })
-  assert.deepEqual(multiFlagIssues(one), [])
-  assert.deepEqual(verifyLead(one, { sentences: lead }).errors, [], 'the one-flag record still prints')
+  assert.deepEqual(liveFlagIssues(one).map((e) => e.check), ['live-flag'])
+  assert.deepEqual(verifyLead(one, { sentences: lead }).errors.map((e) => e.check), ['live-flag'], 'a lone flag no longer prints')
   const two = tableFromPayload({ ...base, band })
-  assert.deepEqual(multiFlagIssues(two).map((e) => e.check), ['multi-flag'])
-  assert.deepEqual(verifyLead(two, { sentences: lead }).errors.map((e) => e.check), ['multi-flag'])
+  assert.deepEqual(verifyLead(two, { sentences: lead }).errors.map((e) => e.check), ['live-flag'])
   // A row not marked live still counts: the rule errs loud.
-  const unmarked = { ...two, facts: two.facts.map((f) => (f.role === 'band' ? { ...f, live: false } : f)) }
-  assert.deepEqual(multiFlagIssues(unmarked).map((e) => e.check), ['multi-flag'])
-  // No band at all: the rule is silent (H2_TABLE's careful lead passes above).
-  assert.deepEqual(multiFlagIssues(H2_TABLE), [])
+  const unmarked = { ...one, facts: one.facts.map((f) => (f.role === 'band' ? { ...f, live: false } : f)) }
+  assert.deepEqual(liveFlagIssues(unmarked).map((e) => e.check), ['live-flag'])
+  // No band at all: the rule is silent, and the careful H2 lead prints in full (the full verdict).
+  assert.deepEqual(liveFlagIssues(H2_TABLE), [])
+  assert.deepEqual(verifyLead(H2_TABLE, { sentences: H2_CAREFUL }).errors, [])
 })
 
 // ── own-sign: CUL-2619 ──────────────────────────────────────────────────────────────────────────
@@ -350,7 +358,7 @@ Deno.test('own-sign: r11 prints its flag as the trial\'s own sign, and the fact 
 
 Deno.test('own-sign: the re-run\'s printed r11 leads are refused, by the verifier and by the checker whatever its model says', () => {
   for (const lead of [RERUN_RUN_1, RERUN_RUN_3]) {
-    const v = verifyLead(R11.table, { sentences: lead })
+    const v = sentenceVerdict(R11.table, { sentences: lead })
     assert.equal(v.pass, false)
     const checks = [...new Set(v.errors.map((e) => e.check))].sort()
     // Two independent nets: the code check and the band fact's required clause. Nothing else.
@@ -363,13 +371,15 @@ Deno.test('own-sign: the re-run\'s printed r11 leads are refused, by the verifie
 Deno.test('own-sign: the same lead with the four words prints, straight or curly apostrophe', () => {
   for (const ap of ["'", '’']) {
     const fixed = [withOwnSign(RERUN_RUN_3[0], ap), ...RERUN_RUN_3.slice(1)]
-    assert.deepEqual(verifyLead(R11.table, { sentences: fixed }).errors, [], fixed[0].text)
-    assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: fixed } }), 'pass')
+    assert.deepEqual(sentenceVerdict(R11.table, { sentences: fixed }).errors, [], fixed[0].text)
+    // On r11 the record rule rejects every draft (CUL-2621); own-sign is not why.
+    assert.deepEqual(ownSignIssues(R11.table, { sentences: fixed }), [])
+    assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: fixed } }), 'reject')
   }
   // The residual, pinned so it shows in review: run 1 was 78 words, and the four words take it past
   // the 80-word cap, so it drops rather than print a shortened flag. That errs loud.
   const run1 = [withOwnSign(RERUN_RUN_1[0]), ...RERUN_RUN_1.slice(1)]
-  assert.deepEqual(verifyLead(R11.table, { sentences: run1 }).errors.map((e) => e.check), ['structure'])
+  assert.deepEqual(sentenceVerdict(R11.table, { sentences: run1 }).errors.map((e) => e.check), ['structure'])
 })
 
 Deno.test('own-sign: a later sentence that calls the sign a flag carries the words too, cited or not', () => {
@@ -378,18 +388,18 @@ Deno.test('own-sign: a later sentence that calls the sign a flag carries the wor
   const lead = [withOwnSign(RERUN_RUN_3[0]), s2, trial]
   // Nor can sentence 2 borrow the words: they are printed only in the band row, and band-once lets one
   // sentence cite it. So the flag is said once, in sentence 1, with the words.
-  assert.equal(verifyLead(R11.table, { sentences: [lead[0], withOwnSign(s2), trial] }).pass, false)
+  assert.equal(sentenceVerdict(R11.table, { sentences: [lead[0], withOwnSign(s2), trial] }).pass, false)
   assert.deepEqual(ownSignIssues(R11.table, { sentences: lead }).map((e) => e.sentence), [2])
-  assert.deepEqual([...new Set(verifyLead(R11.table, { sentences: lead }).errors.map((e) => e.check))], ['own-sign'])
+  assert.deepEqual([...new Set(sentenceVerdict(R11.table, { sentences: lead }).errors.map((e) => e.check))], ['own-sign'])
 })
 
 Deno.test('own-sign: the phrase licenses "trial" beside the sign only in itself, and only in a sentence citing its row', () => {
   // Any other exposure word in the flag's sentence is still H2.
   const diet = { text: 'Itching is a live flag, the trial\'s own sign, on the trial: itching over at least 49 days, 15 episodes on 15 days, most recent 1 day ago.', cites: ['band-r11'] }
-  assert.ok(verifyLead(R11.table, { sentences: [diet, RERUN_TRIAL] }).errors.some((e) => e.check === 'order'))
+  assert.ok(sentenceVerdict(R11.table, { sentences: [diet, RERUN_TRIAL] }).errors.some((e) => e.check === 'order'))
   // A sentence citing the trial line may not borrow the phrase to set the sign beside the trial.
   const borrowed = { text: 'The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, the trial\'s own sign.', cites: ['trial'] }
-  const e = verifyLead(R11.table, { sentences: [withOwnSign(RERUN_RUN_1[0]), borrowed, RERUN_TRIAL] }).errors.map((x) => x.check)
+  const e = sentenceVerdict(R11.table, { sentences: [withOwnSign(RERUN_RUN_1[0]), borrowed, RERUN_TRIAL] }).errors.map((x) => x.check)
   assert.ok(e.includes('order') || e.includes('vocabulary'), String(e))
 })
 
@@ -398,9 +408,9 @@ Deno.test('own-sign: on r11-jump the band row never says it, so the words are ne
   const id = R11_JUMP.payload.band[0].id
   const plain = { text: 'Chronicity: itching spans 49 days, 18 episodes on 18 days, the most recent 1 day ago, a sustained pattern.', cites: [id] }
   assert.deepEqual(ownSignIssues(R11_JUMP.table, { sentences: [plain] }), [])
-  assert.ok(!verifyLead(R11_JUMP.table, { sentences: [plain] }).errors.some((x) => x.check === 'own-sign'))
+  assert.ok(!sentenceVerdict(R11_JUMP.table, { sentences: [plain] }).errors.some((x) => x.check === 'own-sign'))
   const borrowed = { ...plain, text: 'Chronicity, the trial\'s own sign: itching spans 49 days, 18 episodes on 18 days, the most recent 1 day ago, a sustained pattern.' }
-  assert.ok(verifyLead(R11_JUMP.table, { sentences: [borrowed] }).errors.some((x) => x.check === 'vocabulary'))
+  assert.ok(sentenceVerdict(R11_JUMP.table, { sentences: [borrowed] }).errors.some((x) => x.check === 'vocabulary'))
 })
 
 Deno.test('own-sign: the writer is told to keep the words', () => {
@@ -441,7 +451,7 @@ const DETACHED: string[] = [
 Deno.test('own-sign: the words name the flag, or the lead drops (adversarial pass on 9e4422d)', () => {
   for (const text of DETACHED) {
     for (const lead of [[{ text, cites: ['band-r11'] }, R11_S2, R11_S3], [{ text, cites: ['band-r11'] }, R11_S3]]) {
-      const v = verifyLead(R11.table, { sentences: lead })
+      const v = sentenceVerdict(R11.table, { sentences: lead })
       assert.equal(v.pass, false, text)
       assert.ok(v.errors.some((e) => e.check === 'own-sign'), `${text}: ${JSON.stringify(v.errors)}`)
       assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'reject', text)
@@ -456,8 +466,10 @@ Deno.test('own-sign: the two anchored shapes print', () => {
     "Itching is a live flag: itching over at least 49 days, the trial’s own sign; 15 episodes on 15 days, most recent 1 day ago.",
   ]) {
     const lead = [{ text, cites: ['band-r11'] }, R11_S2, R11_S3]
-    assert.deepEqual(verifyLead(R11.table, { sentences: lead }).errors, [], text)
-    assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'pass', text)
+    assert.deepEqual(sentenceVerdict(R11.table, { sentences: lead }).errors, [], text)
+    // On r11 the record rule rejects every draft (CUL-2621); own-sign is not why.
+    assert.deepEqual(ownSignIssues(R11.table, { sentences: lead }), [], text)
+    assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'reject', text)
   }
 })
 
@@ -468,7 +480,7 @@ Deno.test('own-sign: an unanchored or second copy is still an exposure beside th
     `${FLAG}, so itching predates the trial's own sign.`,
     "Itching is a live flag, the trial's own sign: itching over at least 49 days, the trial's own sign, 15 episodes on 15 days, most recent 1 day ago.",
   ]) {
-    const checks = verifyLead(R11.table, { sentences: [{ text, cites: ['band-r11'] }, R11_S3] }).errors.map((e) => e.check)
+    const checks = sentenceVerdict(R11.table, { sentences: [{ text, cites: ['band-r11'] }, R11_S3] }).errors.map((e) => e.check)
     assert.ok(checks.includes('order'), `${text}: ${checks}`)
   }
 })
@@ -501,7 +513,7 @@ const PASS_2: string[] = [
 Deno.test('own-sign: the flag opens the sentence in its own shape, and nothing asks, doubts or dates it against the trial (pass 2)', () => {
   for (const text of PASS_2) {
     const lead = [{ text, cites: ['band-r11'] }, R11_S3]
-    const v = verifyLead(R11.table, { sentences: lead })
+    const v = sentenceVerdict(R11.table, { sentences: lead })
     assert.equal(v.pass, false, text)
     assert.ok(v.errors.some((e) => e.check === 'own-sign'), `${text}: ${JSON.stringify(v.errors)}`)
     assert.equal(checkerDecision(ALL_NONE, { table: R11.table, draft: { sentences: lead } }), 'reject', text)
