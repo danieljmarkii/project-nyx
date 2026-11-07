@@ -288,6 +288,22 @@ export const LEAD_REASON_LINE: Record<LeadReason, string> = {
   most_days: 'Leads because it has the most days with an entry.',
 }
 
+/**
+ * CUL-2634: the line for a lead chosen by a present-finding flag (blood or foreign material seen in
+ * a photo) when no flag on that sign is the sign's own check (burden, chronicity, worsening). "It is
+ * flagged" read there as the sign's own count firing: on a dog whose one flag was blood in a stool
+ * photo, the chart led with loose stool "because it is flagged" while loose stool's own checks ran
+ * and stayed quiet. The reason stays `flag` (the composer and the app read that enum); only the
+ * printed line says which flag it is. With the sign's own flag also firing (Nyx), "flagged" is true.
+ */
+export const LEAD_PRESENT_LINE: Record<'present_blood' | 'present_foreign', string> = {
+  present_blood: 'Leads because the possible blood flagged above sits on it, not because its own count was flagged.',
+  present_foreign: 'Leads because the possible foreign material flagged above sits on it, not because its own count was flagged.',
+}
+
+/** The flags that are a sign's own count check: what "it is flagged" claims about that sign. */
+const OWN_COUNT_KINDS: readonly SafetyFlag['kind'][] = ['chronicity', 'symptom_burden', 'symptom_worsening', 'intake_decline', 'trial_diet_refusal']
+
 export interface Lead {
   sign: LeadSign
   reason: LeadReason
@@ -344,7 +360,13 @@ export function leadSignOf(snap: ReportSnapshot): Lead | null {
   const members = new Set(band)
   for (const f of snap.safetyFlags.filter((x) => members.has(x))) {
     const s = flagSign(f)
-    if (s !== null) return lead(s, 'flag')
+    if (s === null) continue
+    if (f.kind === 'present_blood' || f.kind === 'present_foreign') {
+      // Every flag on the sign, band or not: an R-11 lead flag is still the sign's own count.
+      const ownCount = snap.safetyFlags.some((o) => OWN_COUNT_KINDS.includes(o.kind) && flagSign(o) === s)
+      if (!ownCount) return { sign: s, reason: 'flag', line: LEAD_PRESENT_LINE[f.kind] }
+    }
+    return lead(s, 'flag')
   }
   const days = entryDays(snap)
   const indication = snap.trial?.indication ?? null
@@ -593,4 +615,23 @@ export function changesInWindowOf(snap: ReportSnapshot): ChangeLine[] | null {
     }
   }
   return out.length > 0 ? out : null
+}
+
+// ── The past-window stopgap (PM ruling (a) on CUL-2370, 2026-11-07) ──────────
+
+/**
+ * Why a report renders as v1 although the caller asked for v2 and the flag is on: its window ends
+ * before the report date (`past_window`), or the owner picked the range (`custom_range`). Sheet 1
+ * still reads such a window as running to the report date in several lines (the cold reads behind
+ * CUL-2636 and CUL-2637), so until that class is closed these reports get v1, the report every owner
+ * gets today. The louder side: v1 prints its window as a boxed range and counts nothing as "so far".
+ * Null: v2 may render. Read in one place, `generateReportForPet`, so every surface (print, phone,
+ * preview, exam room, saved copy) follows the one response it returns.
+ */
+export type V1Fallback = 'past_window' | 'custom_range'
+
+export function v1FallbackOf(snap: ReportSnapshot): V1Fallback | null {
+  if (snap.atAGlance.recordEdge.windowEndDaysBeforeReport > 0) return 'past_window'
+  if (snap.scope.basis === 'custom' || snap.scope.isCustomOverride) return 'custom_range'
+  return null
 }

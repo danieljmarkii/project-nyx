@@ -71,7 +71,12 @@ Deno.test('CUL-2565 — a check under its floor says it had too few to run, with
   const read: ReportSnapshot = { ...s, checkOutcomes: s.checkOutcomes!.map((o) => (o === intake ? { ...o, state: 'not_flagged' as const } : o)) }
   const moved = checksText(buildDocumentV2(read, OPTS))
   assert.ok(!moved.includes('too few entries to run'), moved)
-  assert.match(moved, /also ran and did not trigger: the intake check/)
+  // CUL-2635: Mira's trial-diet refusal flag fires on meals the intake check also reads, so a quiet
+  // intake check is not printed beside it; with that flag not firing, it prints as did not trigger.
+  assert.equal(s.checkOutcomes?.find((o) => o.check === 'trial_diet_refusal')?.state, 'flagged')
+  assert.ok(!moved.includes('the intake check ('), moved)
+  const unflagged: ReportSnapshot = { ...read, checkOutcomes: read.checkOutcomes!.map((o) => (o.check === 'trial_diet_refusal' ? { ...o, state: 'not_flagged' as const } : o)) }
+  assert.match(checksText(buildDocumentV2(unflagged, OPTS)), /ran and did not trigger: [^.]*the intake check/)
 })
 
 Deno.test('CUL-2565 — a flagged check is said once, in the band, never again on the checks line (Cooper’s intake)', () => {
