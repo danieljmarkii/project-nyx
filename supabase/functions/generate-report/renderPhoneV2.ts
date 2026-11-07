@@ -52,6 +52,8 @@ export const PIN_SHARE = 0.38
 
 const SIGN_ROW_H = 34
 const BAR_H = 22
+/** The thinnest intake share drawn, in the plot's units: a thinner one vanished on a copy (CUL-2614). */
+const INTAKE_MIN_H = 2
 const SPAN_ROW_H = 14
 
 function x0(i: number, n: number): number {
@@ -135,8 +137,12 @@ function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[]
     if (!cell || cell.rated === 0 || cell.notFinished === 0) return
     const w = Math.max(2, colW(n) * 0.62)
     const x = x0(i, n) + (colW(n) - w) / 2
-    const refusedH = (cell.refused / cell.rated) * BAR_H
-    const partlyH = ((cell.notFinished - cell.refused) / cell.rated) * BAR_H
+    // A share that is there is drawn, however thin: at 1 of 28 rated a partly-eaten share was under a
+    // copier's blur and threshold, so a copy showed nothing (adversarial pass 1 on CUL-2614). The
+    // floor is the sign row's own; the "n of N" label above it says the exact share.
+    const shareH = (k: number): number => (k > 0 ? Math.max(INTAKE_MIN_H, (k / cell.rated) * BAR_H) : 0)
+    const refusedH = shareH(cell.refused)
+    const partlyH = shareH(cell.notFinished - cell.refused)
     // An intake bar is a share of the meals rated, so a short week does not shorten it: it stays
     // filled, refused solid, never hollowed (adversarial pass 1 on PR-29: Cooper's newest column).
     if (refusedH > 0) parts.push(`<rect class="bar lead" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)

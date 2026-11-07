@@ -1587,7 +1587,8 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
   // band and the checks line, never after them. v1's copies of these lines are not carried a second
   // time (`V1_PAGE1_ELSEWHERE.cherry`).
   // CUL-2391: with no usable zone every date and time on the sheet is UTC, and v1's letterhead line
-  // says so; v2 has no letterhead, so it rides here, beside the other record-reading disclosures.
+  // says so; v2 has no letterhead, so it rides here, last, beside the other record-reading
+  // disclosures (v1 prints it first, in its letterhead's orient line).
   const disclosure = `${cherryPickDisclosure(snap)}${recordEdgeDisclosure(snap)}${truncationDisclosure(snap)}${utcNotice(snap.timezone)}`.trim()
   if (disclosure !== '') blocks.push({ kind: 'disclosure', id: 'disclosure', html: disclosure })
 

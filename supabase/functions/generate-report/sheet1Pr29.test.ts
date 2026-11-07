@@ -442,3 +442,43 @@ Deno.test('CUL-2614 — the twin says what a copy shows: partly eaten in a paler
   }
   assert.ok(seen >= 1, 'a fixture draws a partly-eaten share')
 })
+
+Deno.test('CUL-2614 (adversarial pass 1) — a thin share is drawn: 1 partly-eaten meal of 28 rated keeps a bar a copier can hold', () => {
+  for (const [name, snap] of v2DocFixtures()) {
+    const d = docOf(snap)
+    const chart = d.blocks.find((b) => b.kind === 'lead_chart')
+    if (!chart || chart.kind !== 'lead_chart') continue
+    const row = chart.chart.rows.find((r) => r.kind === 'intake')
+    if (!row || row.kind !== 'intake') continue
+    // The thinnest share a record can hold: 1 of 28, partly eaten, nothing refused, in every column.
+    const thin: DocumentV2 = {
+      ...d,
+      blocks: d.blocks.map((b) =>
+        b === chart ? { ...chart, chart: { ...chart.chart, rows: chart.chart.rows.map((r) => (r === row ? { ...row, cells: row.cells.map(() => ({ rated: 28, notFinished: 1, refused: 0 })) } : r)) } } : b,
+      ),
+    }
+    for (const html of [renderPrintV2(thin), renderPhoneV2(thin)]) {
+      const bars = [...html.matchAll(/<rect class="bar partly"[^>]*height="([\d.]+)"/g)].map((m) => Number(m[1]))
+      assert.ok(bars.length > 0, `${name}: a partly bar`)
+      for (const hgt of bars) assert.ok(hgt >= 2, `${name}: a 1-of-28 share drawn ${hgt} high`)
+    }
+    return
+  }
+  throw new Error('no fixture draws an intake row')
+})
+
+Deno.test('CUL-2627 (adversarial pass 1) — a record read short prints "Partial record" on sheet 1, under the masthead, once', () => {
+  const s = structuredClone(nyxLiveSnapshot())
+  s.incompletePulls = ['events']
+  const d = docOf(s)
+  const disclosure = block(d, 'disclosure')
+  assert.ok(disclosure && disclosure.html.includes('Partial record.'))
+  const ids = d.blocks.map((b) => b.id)
+  assert.equal(ids.indexOf('disclosure'), ids.indexOf('masthead') + 1)
+  for (const html of [renderPrintV2(d), renderPhoneV2(d)]) {
+    const main = html.slice(html.indexOf('<main'), html.indexOf('</main>'))
+    const sheet1 = main.slice(0, main.indexOf('data-sheet="2"'))
+    assert.equal(sheet1.split('Partial record.').length - 1, 1)
+    assert.ok(sheet1.indexOf('Partial record.') < sheet1.indexOf('data-block="band"'))
+  }
+})
