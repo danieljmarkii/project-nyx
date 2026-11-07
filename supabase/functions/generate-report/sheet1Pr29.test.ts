@@ -467,6 +467,48 @@ Deno.test('CUL-2614 (adversarial pass 1) — a thin share is drawn: 1 partly-eat
   throw new Error('no fixture draws an intake row')
 })
 
+Deno.test('CUL-2614 (adversarial pass 2) — at equal rated, the bar and its crimson never fall as refusals or unfinished meals rise, and never pass the full bar', () => {
+  const s = [...v2DocFixtures()].find(([, snap]) => {
+    const c = docOf(snap).blocks.find((b) => b.kind === 'lead_chart')
+    return c && c.kind === 'lead_chart' && c.chart.rows.some((r) => r.kind === 'intake')
+  })
+  assert.ok(s, 'a fixture draws an intake row')
+  const d = docOf(s[1])
+  const chart = d.blocks.find((b) => b.kind === 'lead_chart')
+  assert.ok(chart && chart.kind === 'lead_chart')
+  const row = chart.chart.rows.find((r) => r.kind === 'intake')
+  assert.ok(row && row.kind === 'intake')
+  const rated = 28
+  // Every (refused, notFinished) pair at 28 rated, one per column, read back from each renderer.
+  const pairs: Array<[number, number]> = []
+  for (let nf = 0; nf <= rated; nf++) for (let r = 0; r <= nf; r++) pairs.push([r, nf])
+  for (const render of [renderPrintV2, renderPhoneV2]) {
+    const at = (r: number, nf: number) => {
+      const one: DocumentV2 = {
+        ...d,
+        // The intake row alone, so every bar read back is an intake bar, never a sign row's.
+        blocks: d.blocks.map((b) => (b === chart ? { ...chart, chart: { ...chart.chart, rows: [{ ...row, cells: row.cells.map(() => ({ rated, notFinished: nf, refused: r })) }] } } : b)),
+      }
+      const html = render(one)
+      const h = (cls: string) => Number(new RegExp(`<rect class="bar ${cls}"[^>]*height="([\\d.]+)"`).exec(html)?.[1] ?? 0)
+      return { crimson: h('lead'), total: h('lead') + h('partly') }
+    }
+    const v = new Map(pairs.map(([r, nf]) => [`${r}/${nf}`, at(r, nf)]))
+    // Each height prints to 0.1, so a two-segment sum can read up to 0.1 high: two roundings' slack.
+    const eps = 0.11
+    const full = at(rated, rated).total
+    for (const [r, nf] of pairs) {
+      const here = v.get(`${r}/${nf}`)!
+      assert.ok(here.total <= full + eps, `${r}/${nf} passes the full bar`)
+      if (nf > 0) assert.ok(here.total >= 2 - eps, `${r}/${nf}: under the copier floor`)
+      const more = v.get(`${r}/${nf + 1}`)
+      if (more) assert.ok(more.total >= here.total - eps, `${r}/${nf} → ${r}/${nf + 1}: the bar fell`)
+      const worse = v.get(`${r + 1}/${nf}`) ?? v.get(`${r + 1}/${nf + 1}`)
+      if (worse) assert.ok(worse.crimson >= here.crimson - eps && worse.total >= here.total - eps, `${r}/${nf} → more refused: the bar or its crimson fell`)
+    }
+  }
+})
+
 Deno.test('CUL-2627 (adversarial pass 1) — a record read short prints "Partial record" on sheet 1, under the masthead, once', () => {
   const s = structuredClone(nyxLiveSnapshot())
   s.incompletePulls = ['events']

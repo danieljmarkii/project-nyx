@@ -138,12 +138,15 @@ function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[]
     if (!cell || cell.rated === 0 || cell.notFinished === 0) return
     const w = Math.max(2, colW(n) * 0.62)
     const x = x0(i, n) + (colW(n) - w) / 2
-    // A share that is there is drawn, however thin: at 1 of 28 rated a partly-eaten share was under a
-    // copier's blur and threshold, so a copy showed nothing (adversarial pass 1 on CUL-2614). The
-    // floor is the sign row's own; the "n of N" label above it says the exact share.
-    const shareH = (k: number): number => (k > 0 ? Math.max(INTAKE_MIN_H, (k / cell.rated) * BAR_H) : 0)
-    const refusedH = shareH(cell.refused)
-    const partlyH = shareH(cell.notFinished - cell.refused)
+    // A share that is there is drawn, however thin: at 1 of 28 rated a partly-eaten share fell under a
+    // copier's blur and threshold, so a copy showed nothing (adversarial pass 1 on CUL-2614). One
+    // scale, h(k) = floor + k/rated of the rest, for the refused share and for the whole not-finished
+    // bar: it is the floor at 1 and the full bar at rated, and it never falls as either count rises,
+    // so a worse week never draws shorter or with less crimson (adversarial pass 2 broke a per-share
+    // floor that did). It overstates a share by at most the floor; the "n of N" label is exact.
+    const intakeH = (k: number): number => (k > 0 ? INTAKE_MIN_H + (k / cell.rated) * (BAR_H - INTAKE_MIN_H) : 0)
+    const refusedH = intakeH(cell.refused)
+    const partlyH = intakeH(cell.notFinished) - refusedH
     // An intake bar is a share of the meals rated, so a short week does not shorten it: it stays
     // filled, refused solid, never hollowed (adversarial pass 1 on PR-29: Cooper's newest column).
     if (refusedH > 0) parts.push(`<rect class="bar lead" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)
