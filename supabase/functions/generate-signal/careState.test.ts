@@ -420,8 +420,8 @@ Deno.test('the pair: coughing turning chronic after the answer brings watched vo
 
 // ── A booked recheck (§4.7, AC 6, AC 16) ──
 
-Deno.test('a recheck about the sign moves with_vet to recheck_booked; anything else does not (AC 6, AC 16)', () => {
-  const appt = (over: Partial<CareRecord['appointments'][number]>) => ({ id: 'x', scheduledAt: at(-10, 10), cancelledAt: null, deletedAt: null, aboutSigns: ['vomit' as SymptomType], ...over })
+Deno.test('a booked visit within 30 days moves with_vet to recheck_booked; anything else does not (AC 6, AC 16, CUL-2652)', () => {
+  const appt = (over: Partial<CareRecord['appointments'][number]>) => ({ id: 'x', scheduledAt: at(-10, 10), cancelledAt: null, deletedAt: null, ...over })
   const with_ = (a: ReturnType<typeof appt>) => stateOf({ symptoms: STABLE, acks: [ack({ daysAgo: 40 })], record: { appointments: [a] } })
   const booked = with_(appt({}))
   assertStrictEquals(booked.state, 'recheck_booked')
@@ -429,7 +429,9 @@ Deno.test('a recheck about the sign moves with_vet to recheck_booked; anything e
   assertStrictEquals(with_(appt({ cancelledAt: at(1) })).state, 'with_vet')
   assertStrictEquals(with_(appt({ deletedAt: at(1) })).state, 'with_vet')
   assertStrictEquals(with_(appt({ scheduledAt: at(3) })).state, 'with_vet')
-  assertStrictEquals(with_(appt({ aboutSigns: ['itch'] })).state, 'with_vet', 'a dental never quiets vomiting')
+  // CUL-2652 ruling 2: no topic test; the guard is time. A visit 31 days out never quiets it.
+  assertStrictEquals(with_(appt({ scheduledAt: at(-31, 10) })).state, 'with_vet', 'a visit past the horizon')
+  assertStrictEquals(with_(appt({ scheduledAt: at(-30, 10) })).state, 'recheck_booked', 'the horizon is inclusive')
   // A worsening re-raises straight through a booked recheck.
   const doubling = events('vomit', [...everyNth(3.5, 170, 22).map(Math.round), ...range(20, 0).filter((d) => d % 7 !== 0)])
   assertStrictEquals(stateOf({ symptoms: doubling, acks: [ack({ daysAgo: 60 })], record: { appointments: [appt({})] } }).state, 'raised_again')
@@ -720,15 +722,15 @@ Deno.test('CUL-1290: counted from the later of the anchor and the day it was wri
 })
 
 Deno.test('CUL-1290: a recheck recorded ahead withholds it; a cancelled or past one does not', () => {
-  const appt = (over: Partial<CareRecord['appointments'][number]>) => ({ id: 'x', scheduledAt: at(-10, 10), cancelledAt: null, deletedAt: null, aboutSigns: [] as SymptomType[], ...over })
+  const appt = (over: Partial<CareRecord['appointments'][number]>) => ({ id: 'x', scheduledAt: at(-10, 10), cancelledAt: null, deletedAt: null, ...over })
   const q = (a: ReturnType<typeof appt>) => questionOf({ symptoms: STABLE, acks: [ack({ daysAgo: 70 })], record: { appointments: [a] } }).recheckQuestion
-  assertStrictEquals(q(appt({})), null, 'a visit booked within four weeks: the strip holds that ask')
+  assertStrictEquals(q(appt({})), null, 'a visit booked within four weeks is recheck_booked, which carries no question')
   assertStrictEquals(q(appt({ scheduledAt: at(-40, 10) })), 'Did your vet want to see Nyx again?', 'a visit 40 days out does not answer it')
   assertStrictEquals(q(appt({ cancelledAt: at(1) })), 'Did your vet want to see Nyx again?')
   assertStrictEquals(q(appt({ deletedAt: at(1) })), 'Did your vet want to see Nyx again?')
   assertStrictEquals(q(appt({ scheduledAt: at(5) })), 'Did your vet want to see Nyx again?')
-  // A recheck about the sign is recheck_booked, which carries no question.
-  const booked = questionOf({ symptoms: STABLE, acks: [ack({ daysAgo: 70 })], record: { appointments: [appt({ aboutSigns: ['vomit'] })] } })
+  // A booked visit within the horizon is recheck_booked, which carries no question.
+  const booked = questionOf({ symptoms: STABLE, acks: [ack({ daysAgo: 70 })], record: { appointments: [appt({})] } })
   assertStrictEquals(booked.state, 'recheck_booked')
   assertStrictEquals(booked.recheckQuestion, null)
 })
@@ -916,6 +918,121 @@ Deno.test('CUL-1600 adversarial round 2 F1: a course stopped with no end date ke
     assertStrictEquals(s.state, 'raised_again', `${status} with no end date`)
   }
   // As the newer answer it covers the older one only to its last dose (day −6), then the older one's re-raise surfaces.
-  const s = stateOf({ symptoms: DOUBLING, acks: [ack({ id: 'a', daysAgo: 60 }), course('b', 30, 'stopped', 6), ack({ id: 'c', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(12), createdAt: at(0, 13) })] })
+  const s = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ id: 'a', daysAgo: 60 }), course('b', 30, 'stopped', 6), ack({ id: 'c', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(12), createdAt: at(0, 13) })] })
   assertEquals([s.state, s.raisedAgainOn], ['raised_again', '2026-09-25'], 'the day after its last dose')
+})
+
+// ── A booked visit quiets "worth booking" (CUL-2652, ruled 2026-11-07) ──
+
+const apptAt = (over: Partial<CareRecord['appointments'][number]> & { daysAhead: number; hour?: number }) => ({
+  id: over.id ?? `appt-${over.daysAhead}`,
+  scheduledAt: over.scheduledAt ?? at(-over.daysAhead, over.hour ?? 15),
+  cancelledAt: over.cancelledAt ?? null,
+  deletedAt: over.deletedAt ?? null,
+})
+const worsening = (sign: SymptomType = 'vomit'): Finding =>
+  ({ type: 'symptom_worsening', priorityClass: 'safety', symptomType: sign, tier: 'firm', currentDays: 4, priorDays: 1, windowDays: 7 } as unknown as Finding)
+const weight = (): Finding =>
+  ({ type: 'weight_loss', priorityClass: 'safety', tier: 'firm', latestDay: dayOf(20) } as unknown as Finding)
+const BOOKED_DOUBLING = events('vomit', [...everyNth(3.5, 170, 22).map(Math.round), ...range(20, 0).filter((d) => d % 7 !== 0)])
+
+Deno.test('CUL-2652: Nyx on Nov 7, a raised concern with a visit booked a week out goes quiet and names the sign', () => {
+  const rows = step({
+    findings: [burden(), chronicity('vomit'), chronicity('cough')],
+    symptoms: [...STABLE, ...events('cough', everyNth(7, 160), 9)],
+    record: { appointments: [apptAt({ id: 'nov-14', daysAhead: 7 })] },
+  })
+  const vomit = careStateOf(rows.find((r) => r.finding.type === 'symptom_chronicity' && r.finding.symptomType === 'vomit')!.finding)!
+  assertStrictEquals(vomit.state, 'visit_booked')
+  assertStrictEquals(vomit.text, 'A vet visit is booked for Oct 7. Worth mentioning Nyx\'s vomiting.')
+  assertEquals(vomit.bookedVisit, { on: '2026-10-07', appointmentId: 'nov-14', passed: false })
+  assertStrictEquals(vomit.ackId, null, 'a booking is not an answer: nothing is acknowledged')
+  const cough = careStateOf(rows.find((r) => r.finding.type === 'symptom_chronicity' && r.finding.symptomType === 'cough')!.finding)!
+  assertStrictEquals(cough.text, 'A vet visit is booked for Oct 7. Worth mentioning Nyx\'s coughing.')
+  // The escalation leads, keeps its type, tier and every field, and gains only the date (AC-3).
+  assertStrictEquals(rows[0].finding.type, 'symptom_burden')
+  const { bookedVisit, ...rest } = rows[0].finding as unknown as Record<string, unknown>
+  assertEquals(rest, burden() as unknown as Record<string, unknown>)
+  assertEquals(bookedVisit, { on: '2026-10-07', appointmentId: 'nov-14', passed: false })
+  assertStrictEquals('careState' in rows[0].finding, false, 'an escalation never carries a care state')
+})
+
+Deno.test('CUL-2652 guard = A: only a standing visit within 30 days quiets the ask', () => {
+  const s = (a: ReturnType<typeof apptAt>) => stateOf({ symptoms: STABLE, record: { appointments: [a] } })
+  assertStrictEquals(s(apptAt({ daysAhead: 0 })).state, 'visit_booked', 'a visit today')
+  assertStrictEquals(s(apptAt({ daysAhead: 30 })).state, 'visit_booked', 'the horizon is inclusive')
+  assertStrictEquals(s(apptAt({ daysAhead: 31 })).state, 'raised', 'a visit further out leaves the ask standing')
+  assertStrictEquals(s(apptAt({ daysAhead: 7, cancelledAt: at(1) })).state, 'raised', 'cancelled')
+  assertStrictEquals(s(apptAt({ daysAhead: 7, deletedAt: at(1) })).state, 'raised', 'deleted')
+  assertStrictEquals(s(apptAt({ daysAhead: 7, scheduledAt: 'not a date' })).state, 'raised', 'a malformed date')
+  assertStrictEquals(stateOf({ symptoms: STABLE }).state, 'raised', 'no appointment')
+  assertStrictEquals('bookedVisit' in stateOf({ symptoms: STABLE }), false, 'no booking writes no key')
+})
+
+Deno.test('CUL-2652 frame 3 D: the week after the visit stays quiet and asks how it went; day 8 asks again', () => {
+  const s = (daysAgo: number) => stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ id: 'v', daysAhead: -daysAgo })] } })
+  const day1 = s(1)
+  assertStrictEquals(day1.state, 'visit_booked')
+  assertStrictEquals(day1.text, "Nyx's vomiting: the Sep 29 visit has passed, and how it went isn't recorded yet.")
+  assertEquals(day1.bookedVisit, { on: '2026-09-29', appointmentId: 'v', passed: true })
+  assertStrictEquals(s(7).state, 'visit_booked')
+  assertStrictEquals(s(8).state, 'raised', 'unanswered past the week, the ask returns')
+  // An upcoming visit wins over one just passed.
+  const both = stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ id: 'past', daysAhead: -2 }), apptAt({ id: 'next', daysAhead: 12 })] } })
+  assertEquals(both.bookedVisit, { on: '2026-10-12', appointmentId: 'next', passed: false })
+})
+
+Deno.test('CUL-2652 ruling A: a worsening card keeps its ask over a booking, and carries the upcoming date only', () => {
+  const rows = step({ findings: [worsening(), chronicity()], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7 })] } })
+  const w = careStateOf(rows.find((r) => r.finding.type === 'symptom_worsening')!.finding)!
+  assertStrictEquals(w.state, 'raised')
+  assertStrictEquals(w.text, null, "the lane's own sentence stands")
+  assertEquals(w.bookedVisit, { on: '2026-10-07', appointmentId: 'appt-7', passed: false })
+  assertStrictEquals(careStateOf(rows.find((r) => r.finding.type === 'symptom_chronicity')!.finding)!.state, 'visit_booked')
+  // The worsening card ranks above the quiet chronicity card.
+  assert(rows.findIndex((r) => r.finding.type === 'symptom_worsening') < rows.findIndex((r) => r.finding.type === 'symptom_chronicity'))
+  // Once the visit has passed, the worsening card is plainly raised: no date to call before.
+  const after = careStateOf(step({ findings: [worsening()], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -2 })] } })[0].finding)!
+  assertStrictEquals(after.state, 'raised')
+  assertStrictEquals('bookedVisit' in after, false)
+})
+
+Deno.test('CUL-2652: a re-raise punches straight through a booking and keeps its ask, with the date beside it', () => {
+  const s = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ daysAgo: 60 })], record: { appointments: [apptAt({ daysAhead: 7 })] } })
+  assertStrictEquals(s.state, 'raised_again')
+  assertEquals(s.bookedVisit, { on: '2026-10-07', appointmentId: 'appt-7', passed: false })
+  // With no answer at all, the burden card stays the net: it is never quieted (AC-3).
+  const rows = step({ findings: [burden(), chronicity()], symptoms: BOOKED_DOUBLING, record: { appointments: [apptAt({ daysAhead: 7 })] } })
+  assertStrictEquals(rows[0].finding.type, 'symptom_burden')
+  assertStrictEquals((rows[0].finding as { tier?: string }).tier, 'today')
+})
+
+Deno.test('CUL-2652 ruling 4 = A: the weight card goes quiet on a booking and is untouched without one', () => {
+  const booked = careStateOf(step({ findings: [weight()], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7 })] } })[0].finding)!
+  assertStrictEquals(booked.state, 'visit_booked')
+  assertStrictEquals(booked.text, "A vet visit is booked for Oct 7. Worth mentioning Nyx's weight.")
+  const none = step({ findings: [weight()], symptoms: STABLE })[0].finding
+  assertEquals(none, weight(), 'no booking: the weight card is the shipped one, no care state written')
+  const far = step({ findings: [weight()], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 45 })] } })[0].finding
+  assertEquals(far, weight())
+})
+
+Deno.test('CUL-2652: an insight is untouched by a booking, and no booking leaves every finding as it was', () => {
+  const rows = step({ findings: [burden(), insight()], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7 })] } })
+  assertEquals(rows[1].finding, insight())
+  const plain = step({ findings: [burden(), insight()], symptoms: STABLE })
+  assertEquals(plain.map((r) => r.finding), [burden(), insight()])
+})
+
+Deno.test('CUL-2652: the 30 days are LOCAL days (a Los Angeles owner, an evening visit)', () => {
+  // Now is Sep 30, 14:00 in Los Angeles. Oct 30 at 19:00 local is 02:00 UTC on Oct 31.
+  const run = (iso: string) =>
+    careStateOf(EN9_CARE_STATE_STEP([{ rank: 0, finding: chronicity() }], {
+      ...args({ symptoms: STABLE, record: { appointments: [{ id: 'x', scheduledAt: iso, cancelledAt: null, deletedAt: null }] } }),
+      timezone: 'America/Los_Angeles',
+    })[0].finding)!
+  const in30 = run('2026-10-31T02:00:00.000Z')
+  assertStrictEquals(in30.state, 'visit_booked', 'Oct 30 local is day 30')
+  assertStrictEquals(in30.bookedVisit?.on, '2026-10-30')
+  assertStrictEquals(run('2026-10-31T08:00:00.000Z').state, 'raised', 'Oct 31 local is day 31')
 })

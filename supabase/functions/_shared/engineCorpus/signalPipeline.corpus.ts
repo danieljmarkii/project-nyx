@@ -463,7 +463,7 @@ export const SIGNAL_PIPELINE_CORPUS: SignalPipelineCase[] = [
 ]
 
 // A populated care record (EN-9, PR-23): a "My vet knows" answer about vomiting three days ago,
-// a retracted answer about diarrhea, lethargy rows, and an appointment about vomiting. The
+// a retracted answer about diarrhea, lethargy rows, and an appointment four days out. The
 // flag-off guard hands it in with every flag state, so a gate that leaked would show.
 export const POPULATED_CARE_RECORD: CareRecord = {
   acknowledgements: [
@@ -472,7 +472,7 @@ export const POPULATED_CARE_RECORD: CareRecord = {
     { id: 'ack-3', sign: 'diarrhea', source: 'my_vet_knows', anchorOn: ago(8).slice(0, 10), createdAt: ago(8, 19), retracts: 'ack-2', trial: null, course: null },
   ],
   appointments: [
-    { id: 'appt-1', scheduledAt: ago(-4, 15), cancelledAt: null, deletedAt: null, aboutSigns: ['vomit'] },
+    { id: 'appt-1', scheduledAt: ago(-4, 15), cancelledAt: null, deletedAt: null },
   ],
   lethargyAt: [ago(2, 9), ago(1, 9)],
   history: null,

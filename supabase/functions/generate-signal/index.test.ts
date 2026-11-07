@@ -411,6 +411,35 @@ Deno.test('EN-8 reads — every weigh-in in the window with its source, and the 
   assertStrictEquals(thrown, null)
 })
 
+Deno.test('CUL-2652 reads — the appointments by date only; a failed or short read takes every answer and booking away', async () => {
+  const { readCareRecord } = await import('./index.ts')
+  const { EMPTY_CARE_RECORD } = await import('./careState.ts')
+  const NOW = Date.parse('2026-11-07T23:00:00.000Z')
+  const APPTS = [{ id: 'a1', scheduled_at: '2026-11-14T15:00:00+00:00', cancelled_at: null, deleted_at: null }]
+  const answer = (appt: { data: unknown; error: unknown; count?: number }) => (c: Call) =>
+    c.table === 'vet_appointments' ? appt : { data: [], error: null, count: 0 }
+  const { client, calls } = fakeClient(answer({ data: APPTS, error: null, count: 1 }))
+  const rec = await readCareRecord(client, 'pet-1', LOOKBACK, NOW)
+  assertEquals(rec.appointments, [{ id: 'a1', scheduledAt: '2026-11-14T15:00:00+00:00', cancelledAt: null, deletedAt: null }])
+  const a = calls.find((c) => c.table === 'vet_appointments')!
+  assertEquals(a.ops.filter(([op]) => op !== 'range'), [
+    // Never the reason, the questions, the clinic, the vet, the notes or the visit link (AC 10).
+    ['select', ['id, scheduled_at, cancelled_at, deleted_at', { count: 'exact' }]],
+    ['eq', ['pet_id', 'pet-1']],
+    ['gte', ['scheduled_at', '2026-10-30T23:00:00.000Z']],
+    ['order', ['scheduled_at', { ascending: false }]],
+    ['order', ['id', { ascending: false }]],
+  ])
+  // A short read (the count says 3 exist) or a failed one is the empty record: no booking quiets anything.
+  assertEquals(await readCareRecord(fakeClient(answer({ data: APPTS, error: null, count: 3 })).client, 'pet-1', LOOKBACK, NOW), EMPTY_CARE_RECORD)
+  assertEquals(await readCareRecord(fakeClient(answer({ data: null, error: { message: 'x' } })).client, 'pet-1', LOOKBACK, NOW), EMPTY_CARE_RECORD)
+  // vet_appointments is read inside readCareRecord and nowhere else in the shell.
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  assertStrictEquals(src.split(".from('vet_appointments')").length - 1, 1)
+  assertStrictEquals(src.slice(src.indexOf('export async function readCareRecord(')).includes(".from('vet_appointments')"), true)
+})
+
 Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the pipeline', async () => {
   const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
   const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))

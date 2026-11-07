@@ -1,6 +1,6 @@
 # Nyx Care State and Outcome Loop — Requirements (EN-9 + EN-14)
 
-**Version:** 1.4 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28; D6's vocabulary 2026-10-01) | **Date:** 2026-10-12 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
+**Version:** 1.5 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28; D6's vocabulary 2026-10-01; a booked visit, CUL-2652, 2026-11-07) | **Date:** 2026-11-07 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
 
 **Read with:** `docs/engines-v3-critique-2026-09.md` (R-2, BRK-4, GAP-15/16/17/19/23/27/29/32/33, MFU-3, PMD-4/5/6) · `docs/nyx-vet-visits-requirements.md` (AC 10, §5.6, "How did it go?") · `docs/nyx-signal-fold-requirements.md` (DF-5, DF-8, FS-3, FS-10, §3.3, §5.3, §7) · `docs/nyx-notification-foundation-requirements.md` (D2, D3, G1–G6) · `docs/nyx-diet-trial-requirements.md` · `supabase/migrations/075_engines_v3_stamps.sql` (the shown log).
 
@@ -85,6 +85,8 @@ The jobs:
 
 A **concern** is `(pet_id, symptom_type)` for a sign whose chronicity (⑦) or worsening lane fires with `priorityClass: 'safety'`. Two signs are two concerns, always — cough and vomiting included (GAP-29). A concern exists only while one of its lanes fires; when both stop, the concern is gone and the shipped stand-down path speaks.
 
+⚠ **CUL-2652 (ruling 4 = A, 2026-11-07):** the `weight_loss` card is a **booking-only** concern: `visit_booked` while a visit stands (§4.7), no care state at all otherwise. It takes no answer and has no re-raise test.
+
 **Out of scope, by rule:** an **escalation** — a photo red flag, a call-tier per-incident read, an intake decline, the burden card (CUL-1311) — is never a concern and never carries a care state. These are what the outcome loop (§6) keys on. **A care state never removes, reorders below itself, softens or re-words any of them** (test: §11 AC-3).
 
 ### 3.2 Acknowledgements — owner-entered, dated, per sign
@@ -114,7 +116,8 @@ An acknowledgement is a row the owner caused, stating that a vet knows about one
 |---|---|---|---|
 | `raised` | no live acknowledgement for the sign, or the only one lapsed | the shipped chronicity/worsening row, ask intact | rose |
 | `with_vet` | a live acknowledgement exists and no re-raise test fires | tag **Your vet knows** (D6) · "{source sentence}. {count since}, with something logged on {k} of {n} days." (plus "Last weighed {Mon d}." while §4.1's weight rule applies) · "Not asking you to book. Back here if it comes more often." | rose-soft |
-| `recheck_booked` | `with_vet`, and an appointment **about this sign** is booked (§4.7) | tag **Your vet knows** (D6) · "{source sentence}. Recheck booked for {date}." | rose-soft |
+| `recheck_booked` | `with_vet`, and a visit is booked within 30 days (§4.7, as CUL-2652 re-rules it) | tag **Your vet knows** (D6) · "{source sentence}. Recheck booked for {date}." | rose-soft |
+| `visit_booked` | CUL-2652: `raised` chronicity (or the weight card), and a visit is booked within 30 days, or its day passed in the last 7 (§4.7) | no tag (the owner said nothing about the vet) · the lane's headline and count, then a calendar line "Visit booked for {Mon d}. Worth mentioning the {sign}." · in the visit's week "{Mon d}'s visit. How did it go?", and the row opens that screen. Cached sentence (Get ready, Ask, the summary): "A vet visit is booked for {Mon d}. Worth mentioning {pet's} {sign}." | rose-soft |
 | `raised_again` | a live acknowledgement exists and a §4.2 or §4.3 trigger has fired; latched until a newer answer (§4.5) | "Back because it's coming more often" line (DF-8) + the lane's row with its ask + the compared pair + the earlier answer as a fact | rose |
 
 The source sentences, verbatim (nyx-voice pass at PR-35):
@@ -125,7 +128,7 @@ The source sentences, verbatim (nyx-voice pass at PR-35):
 
 Always **"you said"**, never "your vet saw" (the app knows only what the owner said).
 
-**Ranking** (one server re-rank that Home, Ask, Get ready and the banner inherit): escalations first (unchanged order), then `raised` and `raised_again` concerns, then `with_vet` / `recheck_booked` concerns, then insights. A `with_vet` concern still counts as a safety finding for Ask's `leadingSafetyText`, which therefore leads with the highest-ranked safety finding: a raised one over a watched one (Ask fixtures, §11 AC-7). The cross-pet banner keeps its type allow-list and additionally skips a pet whose only safety findings are `with_vet` or `recheck_booked`.
+**Ranking** (one server re-rank that Home, Ask, Get ready and the banner inherit): escalations first (unchanged order), then `raised` and `raised_again` concerns, then `with_vet` / `recheck_booked` / `visit_booked` concerns, then insights. A `with_vet` concern still counts as a safety finding for Ask's `leadingSafetyText`, which therefore leads with the highest-ranked safety finding: a raised one over a watched one (Ask fixtures, §11 AC-7). The cross-pet banner keeps its type allow-list and additionally skips a pet whose only safety findings are `with_vet` or `recheck_booked`.
 
 **Regeneration:** every acknowledgement write (and retraction) triggers the debounced regen the log path already uses, so the cached Signal reflects the answer on the next read. Offline, the answer writes locally and the cached Signal keeps asking until the server recomputes (mock 3e); the device never computes a care state.
 
@@ -198,6 +201,13 @@ Once raised again, a concern stays `raised_again`, ask and all, until the owner 
 - Meals logged with symptoms not logged.
 
 ### 4.7 A booked recheck (E-3)
+
+⚠ **Re-ruled 2026-11-07 (CUL-2652; this section's topic test is superseded, the rest stands as history).** Ruling 1 = A: a booking answers a `raised` concern directly, no "Your vet knows" first. Ruling 2: any upcoming visit, no "about this sign" test, so the shell reads appointment dates only (`id`, `scheduled_at`, `cancelled_at`, `deleted_at`, within AC 10 as amended); CUL-1531 and CUL-1542 are superseded for this purpose. **The guard is time:** only a standing visit whose local day falls from today to today + 30 counts (`BOOKED_VISIT_HORIZON_DAYS`); further out, the ask stands until it comes inside. The rules, as built:
+- `raised` chronicity + a booking → `visit_booked` (§3.3). The week after the visit's day it stays quiet and opens "How did it go?"; past day 7 unanswered, the ask returns. "It didn't" cancels the appointment and returns it at once. A "Talked about it" answer moves it to `with_vet`.
+- **A worsening card keeps its ask** (PM ruling A on the worsening brief, 2026-11-07): a firing worsening lane is "coming more often", and a never-answered concern has no reference to re-raise from. Home asks "worth calling before {Mon d}" in place of "worth booking a vet visit soon", with "Visit booked for {Mon d}." under it. The same on `raised_again` (mock frame 3 B). A softer ask is never re-worded.
+- `with_vet` + a booking after the anchor within the horizon → `recheck_booked`.
+- **An escalation is never quieted (§3.1, AC-3).** It gains only the upcoming date (`bookedVisit`, beside the finding, never a care state). Under a call-today ask Home adds "Visit booked for {Mon d}. A call today may still be worth it." (ruling 3, softened B). Under a call-**now** ask it adds nothing: the line would read softer than "now".
+- A failed or short appointment read is the empty care record: no booking, no answer, every concern asks (the louder reading).
 
 A `vet_appointments` row for the pet moves `with_vet` to `recheck_booked` only when **all** of these hold:
 - it is scheduled after the acknowledgement's anchor;
@@ -482,6 +492,7 @@ This spec's Read-These row in CLAUDE.md lands with PR-21 (CLAUDE.md is at its by
 
 | Version | Date | Change |
 |---|---|---|
+| 1.5 | 2026-11-07 | CUL-2652: a booked visit within 30 days quiets a raised chronicity concern (`visit_booked`) and the weight card; worsening, `raised_again` and escalations keep their asks (§3.1, §3.3, §4.7). PM rulings 1 = A, 2 (any visit, no topic test), guard = A (30 days), 3 = B, 4 = A, worsening = A. |
 | 1.4 | 2026-10-12 | D18 (a), PM on CUL-1825: outcome data from other accounts waits for a separate opt in, not a published purpose (§0.1, §6.6, row 36). CUL-1904. |
 | 1.3 | 2026-10-05 | §4.8: CUL-1290's eight-week question, built off (PR-34). The improvement gate was removed after the adversarial pass; the two-sided measurement and the DF-5 brief are recorded; the ruling is pending. §4.1's known gap points at it. |
 | 1.2 | 2026-10-03 | D6 (PM, 2026-10-01 on CUL-1440): the tag reads **Your vet knows**, with one line on what it does (§0.2 call 1, §3.3, §7); the server's cached sentence opens "…, your vet knows." Written with PR-35 (CUL-1418). |

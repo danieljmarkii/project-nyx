@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  bookedVisitOf,
+  bookedVisitRowLine,
   CARE_SIGNS,
   careBackLine,
   careStateBody,
@@ -10,6 +12,7 @@ import {
   careStateViewOf,
 } from './careState';
 import type { SignalFinding } from './signal';
+import { concernAskOverBooking } from './signalHomeLine';
 import { signalHomeLine } from './signalHomeLine';
 
 // EN-9 (Engines v3 PR-23, CUL-1417): the one client rule, and Home's ask through it.
@@ -132,5 +135,52 @@ describe('the watched row’s body and the back line', () => {
     // An older cache without the field: no back line, and nothing guessed out of the text.
     expect(careBackLine(view('raised_again', 'Back because the vomiting is coming more often. Lane.'))).toBeNull();
     expect(careBackLine(view('with_vet', 'Back because x.'))).toBeNull();
+  });
+});
+
+// ── CUL-2652: a booked visit ──────────────────────────────────────────────────────
+
+describe('CUL-2652 — a booked visit, as the client reads it', () => {
+  const v = { on: '2026-11-14', appointmentId: 'a1', passed: false };
+  const chron = (careState: unknown) =>
+    ({ type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'cough', tier: 'firm', careState }) as unknown as SignalFinding;
+  const worse = (careState: unknown) =>
+    ({ type: 'symptom_worsening', priorityClass: 'safety', symptomType: 'vomit', tier: 'firm', careState }) as unknown as SignalFinding;
+
+  it('visit_booked quiets a chronicity card only; on a worsening card it is ignored (ruling A)', () => {
+    expect(careStateQuietsAsk(chron({ state: 'visit_booked', bookedVisit: v }))).toBe(true);
+    expect(careStateQuietsAsk(worse({ state: 'visit_booked', bookedVisit: v }))).toBe(false);
+    expect(careStateQuietsAsk({ type: 'symptom_burden', priorityClass: 'safety', careState: { state: 'visit_booked' } } as unknown as SignalFinding)).toBe(false);
+  });
+
+  it('reads a booking only when every field is well formed, and never off an insight', () => {
+    expect(bookedVisitOf(chron({ state: 'visit_booked', bookedVisit: v }))).toEqual(v);
+    for (const bad of [{ ...v, on: '2026-13-01' }, { ...v, on: '2026-02-30' }, { ...v, appointmentId: '' }, { ...v, passed: 'no' }, null, 'x']) {
+      expect(bookedVisitOf(chron({ state: 'visit_booked', bookedVisit: bad }))).toBeNull();
+    }
+    // An escalation carries it beside the finding, never inside a care state.
+    expect(bookedVisitOf({ type: 'symptom_burden', priorityClass: 'safety', bookedVisit: v } as unknown as SignalFinding)).toEqual(v);
+    expect(bookedVisitOf({ type: 'reflection', priorityClass: 'insight', bookedVisit: v } as unknown as SignalFinding)).toBeNull();
+  });
+
+  it('frame 3 B: a "booking" ask over an upcoming visit asks for a call before it; nothing else is re-worded', () => {
+    const f = worse({ state: 'raised', bookedVisit: v });
+    expect(concernAskOverBooking(f, 'worth booking a vet visit soon')).toBe('worth calling before Nov 14');
+    // A softer ask is never made louder, a passed visit has no "before", an escalation is never re-worded.
+    expect(concernAskOverBooking(f, 'worth a word with your vet')).toBe('worth a word with your vet');
+    expect(concernAskOverBooking(worse({ state: 'raised', bookedVisit: { ...v, passed: true } }), 'worth booking a vet visit soon')).toBe('worth booking a vet visit soon');
+    const burden = { type: 'symptom_burden', priorityClass: 'safety', tier: 'soon', bookedVisit: v } as unknown as SignalFinding;
+    expect(concernAskOverBooking(burden, 'worth booking a vet visit soon')).toBe('worth booking a vet visit soon');
+    expect(concernAskOverBooking(f, null)).toBeNull();
+  });
+
+  it('the row line: quiet on the quiet state, a call line only under a call-today ask', () => {
+    expect(bookedVisitRowLine(chron({ state: 'visit_booked', bookedVisit: v }), null)).toEqual({ kind: 'quiet', text: 'Visit booked for Nov 14. Worth mentioning the coughing.', howDidItGoFor: null });
+    expect(bookedVisitRowLine(chron({ state: 'visit_booked', bookedVisit: { ...v, passed: true } }), null)?.howDidItGoFor).toBe('a1');
+    const esc = { type: 'symptom_burden', priorityClass: 'safety', tier: 'today', bookedVisit: v } as unknown as SignalFinding;
+    expect(bookedVisitRowLine(esc, 'worth a call to your vet today')?.kind).toBe('call');
+    expect(bookedVisitRowLine(esc, 'call your vet now')).toBeNull();
+    expect(bookedVisitRowLine(esc, 'worth booking a vet visit soon')).toBeNull();
+    expect(bookedVisitRowLine(chron({ state: 'raised' }), 'worth booking a vet visit')).toBeNull();
   });
 });

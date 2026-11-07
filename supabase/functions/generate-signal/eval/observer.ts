@@ -68,6 +68,8 @@ export const ASK_REGISTER: Readonly<Record<string, AskRegister>> = {
 
 export function registerOfAsk(ask: string | null): AskRegister {
   if (ask === null) return 'none'
+  // CUL-2652 frame 3 B: a booking ask over a booked visit asks for a call before it, dated.
+  if (/^worth calling before [A-Z][a-z]{2} \d{1,2}$/.test(ask)) return 'call'
   const r = ASK_REGISTER[ask]
   if (!r) throw new Error(`registerOfAsk: an ask the scorecard has no register for: "${ask}"`)
   return r
