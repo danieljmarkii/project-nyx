@@ -15,7 +15,7 @@ import { runSummaryGate, summaryGateIO } from '../../_shared/reportSummaryGate.t
 import type { ReportSnapshot } from '../report.ts'
 import { buildLeadFacts, documentForLead, factTableHash } from './facts.ts'
 import { sendChecked } from './model.ts'
-import { runAiLead, type DraftRead, type LeadIO, type LeadResult, type StoredVerdict } from './leadPipeline.ts'
+import { runAiLead, type CopyRefusal, type DraftRead, type LeadIO, type LeadResult, type StoredVerdict } from './leadPipeline.ts'
 import { h } from '../documentV2.ts'
 import { sha256Hex } from '../../_shared/engineStamps.ts'
 import { LEAD_VERIFIER_VERSION, liveFlagIssues, type LeadSentence } from './verify.ts'
@@ -28,7 +28,9 @@ export interface DraftKey {
 
 export function draftLeadIO(admin: SupabaseClient, user: SupabaseClient, key: DraftKey): LeadIO {
   const draftRow = () =>
-    admin.from('vet_reports').select('ai_lead_text, ai_lead_verdict, ai_lead_model')
+    // The row's own `snapshot` and `params` ride along (CUL-2628): the keep and the ai_lead request
+    // read the record rule on the copy the stored HTML was rendered from, never on a rebuild.
+    admin.from('vet_reports').select('ai_lead_text, ai_lead_verdict, ai_lead_model, snapshot, params')
       .eq('id', key.reportId).eq('pet_id', key.petId).eq('generated_by', key.uid).eq('status', 'draft')
   return {
     readDraft: async () => {
@@ -36,8 +38,11 @@ export function draftLeadIO(admin: SupabaseClient, user: SupabaseClient, key: Dr
       // A failed read is no draft: no count is spent and no model is called.
       if (error) console.warn('vet_reports draft read failed; no AI lead:', error.message)
       if (error || !data) return { found: false, text: null, verdict: null }
-      const row = data as { ai_lead_text: string | null; ai_lead_verdict: unknown; ai_lead_model?: string | null }
-      return { found: true, text: row.ai_lead_text, verdict: row.ai_lead_verdict, model: row.ai_lead_model ?? null }
+      const row = data as { ai_lead_text: string | null; ai_lead_verdict: unknown; ai_lead_model?: string | null; snapshot?: unknown; params?: unknown }
+      return {
+        found: true, text: row.ai_lead_text, verdict: row.ai_lead_verdict, model: row.ai_lead_model ?? null,
+        copy: { snapshot: row.snapshot ?? null, params: row.params ?? null },
+      }
     },
     runGate: (spend) => runSummaryGate(summaryGateIO(admin, user, key.uid, key.petId), key.uid, { spend }),
     send: (role, body, ticket, timeoutMs) => sendChecked(role, body, ticket, { timeoutMs }),
@@ -65,9 +70,70 @@ export interface LeadContext {
 
 /** The whole run for one draft, from the report's snapshot. The document is built here, the one
  *  way the lead allows (`documentForLead`: no incident notes, no questions); a snapshot with look
- *  notes is refused by buildLeadFacts (it throws, so nothing is gated, sent or written). */
-export function runAiLeadForDraft(io: LeadIO, snap: ReportSnapshot, includeLookNotes: boolean, leaveOut: boolean): Promise<LeadResult> {
-  return runAiLead(io, buildLeadFacts(documentForLead(snap), leadContextOf(snap, includeLookNotes)), { leaveOut })
+ *  notes is refused by buildLeadFacts (it throws, so nothing is gated, sent or written). `copy` is
+ *  the draft's own stored copy (CUL-2628), required: its record rule refuses the lead whatever
+ *  `snap` says, so a lead never lands on a flagged copy because the facts were rebuilt. */
+export function runAiLeadForDraft(
+  io: LeadIO,
+  snap: ReportSnapshot,
+  includeLookNotes: boolean,
+  leaveOut: boolean,
+  copy: DraftRead['copy'],
+): Promise<LeadResult> {
+  return runAiLead(io, buildLeadFacts(documentForLead(snap), leadContextOf(snap, includeLookNotes)), { leaveOut, copyRefusal: copyRefusalOf(copy) })
+}
+
+/** The draft's stored snapshot (savedCopy.ts `snapshotForCopy`: the report's own, photo bytes
+ *  dropped), or null when the row holds no object. The lead's facts read no photo bytes, so it
+ *  rebuilds the same fact table the Preview's snapshot does (aiLead/storedCopy.test.ts). */
+export function storedSnapshotOf(copy: DraftRead['copy']): ReportSnapshot | null {
+  const s = copy?.snapshot
+  return s !== null && typeof s === 'object' && !Array.isArray(s) ? (s as ReportSnapshot) : null
+}
+
+/**
+ * CUL-2628: what the draft's own copy says about a lead, read on its STORED snapshot, the one its
+ * stored HTML was rendered from. Null when it allows one. A copy with any live band item refuses
+ * (`liveFlagIssues`, ruling (c)), as does a thin one or one with no record line (no lead slot
+ * prints there), and one that cannot be read (errs loud: no copy, no lead).
+ *
+ * Nothing here is sent anywhere, so the copy's own audience does not matter to this read: the
+ * facts are built only to count the band, and `includeLookNotes` is passed false for that reason
+ * alone. What the writer reads is chosen by `leadSourceOf`, which keeps the notes rule.
+ */
+export function copyRefusalOf(copy: DraftRead['copy']): CopyRefusal | null {
+  const snap = storedSnapshotOf(copy)
+  if (snap === null) return 'copy_unreadable'
+  try {
+    const facts = buildLeadFacts(documentForLead(snap), leadContextOf(snap, false))
+    if (!facts.eligible) return facts.reason
+    return liveFlagIssues(facts.table).length > 0 ? 'live_flag' : null
+  } catch (e) {
+    console.warn('vet_reports draft copy unreadable; no AI lead:', e instanceof Error ? e.message : String(e))
+    return 'copy_unreadable'
+  }
+}
+
+/**
+ * CUL-2628 instance 2: where the ai_lead request's facts come from. Never the request body's
+ * window, and never a fresh window of its own choosing:
+ *   - a draft saved with look notes OFF (`params.include_look_notes === false`, written by the
+ *     Preview's saver) is summarised from its own stored snapshot, so the lead, the copy's HTML
+ *     and the send path's `storedLeadForSnapshot` all read one fact table;
+ *   - any other draft (notes on, or a params object that does not say) is rebuilt, notes off, over
+ *     the window the draft was requested with (`params.requested_window`, null for the default).
+ *     A lead written there is refused at keep and at send unless its facts hash to the copy's.
+ * Either way `copyRefusalOf` reads the copy's own record rule beside it.
+ */
+export function leadSourceOf(copy: DraftRead['copy']):
+  | { kind: 'stored'; snapshot: ReportSnapshot }
+  | { kind: 'rebuild'; window: { startDate: string; endDate: string } | null } {
+  const params = copy?.params !== null && typeof copy?.params === 'object' ? (copy.params as Record<string, unknown>) : {}
+  const snapshot = storedSnapshotOf(copy)
+  if (snapshot !== null && params.include_look_notes === false) return { kind: 'stored', snapshot }
+  const w = params.requested_window as { startDate?: unknown; endDate?: unknown } | null | undefined
+  const window = w && typeof w.startDate === 'string' && typeof w.endDate === 'string' ? { startDate: w.startDate, endDate: w.endDate } : null
+  return { kind: 'rebuild', window }
 }
 
 export function leadContextOf(snap: ReportSnapshot, includeLookNotes: boolean): LeadContext {
@@ -221,6 +287,19 @@ export async function settleLeadForKeep(
   if (unchanged === null) return null
   if (storedHtml.includes(LEAD_SLOT_MARK)) {
     if (draft.text === null || printedLeadOf(storedHtml) !== h(draft.text)) return { refused: 'mismatch' }
+    // CUL-2617, CUL-2628 instance 1: the slot is kept only when the lead holds on the snapshot this
+    // very HTML was rendered from: no live band item, the same facts by hash, the same text
+    // (`storedLeadForSnapshot`, the send path's own check). Anything else no record can make true.
+    const snap = storedSnapshotOf(draft.copy)
+    if (snap === null) return { refused: 'mismatch' }
+    let held: LeadSentence[] | null
+    try {
+      held = await storedLeadForSnapshot(snap, { text: draft.text, verdict: draft.verdict })
+    } catch (e) {
+      console.warn('vet_reports keep: copy unreadable; lead refused:', e instanceof Error ? e.message : String(e))
+      held = null
+    }
+    if (held === null) return { refused: 'mismatch' }
     const gate = await io.runGate(false)
     // A read that failed says nothing about the owner's answer: null (500), so the client's retry
     // and the next launch's drain ask again (CUL-2575). Every other "no" refuses for good, as

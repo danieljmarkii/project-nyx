@@ -84,7 +84,7 @@ import {
   type ComposerPart,
 } from './composer.ts'
 import { buildDocumentV2, type DocumentV2 } from './documentV2.ts'
-import { draftLeadIO, parseAiLeadRequest, runAiLeadForDraft, settleLeadForKeep } from './aiLead/run.ts'
+import { draftLeadIO, leadSourceOf, parseAiLeadRequest, runAiLeadForDraft, settleLeadForKeep } from './aiLead/run.ts'
 import { isUuid, keepCopy, openCopy, parseKeepRequest, parseOpenRequest, reapStaleDrafts, saveDraft, savedCopyIO, type DraftInput, type Rendered, type KeepRequest, type SaveResult, type SharedVia } from './savedCopy.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
@@ -2037,7 +2037,7 @@ const handler = async (req: Request): Promise<Response> => {
     }
     if (aiLead !== null) {
       // Its own request, after Preview; the report and Send never wait on it (spec §9.2).
-      const out = await aiLeadForPet(supabase, adminClient, petId, aiLead, requestedWindow, ownerArm, callerJwt, requestTimezone)
+      const out = await aiLeadForPet(supabase, adminClient, petId, aiLead, ownerArm, callerJwt, requestTimezone)
       return Response.json(out.body, { status: out.status, headers: { ...CORS_HEADERS, 'Cache-Control': 'private, no-store' } })
     }
     if (composer !== null) {
@@ -2081,17 +2081,18 @@ const handler = async (req: Request): Promise<Response> => {
 
 /**
  * VR2-25 (CUL-2305) — the AI lead for one draft. The uid is the one `auth.getUser()` verifies on
- * the request JWT, never a body value. The snapshot is the handler's owner arm with notes forced
- * off (buildLeadFacts refuses it otherwise); aiLead/ builds the lead's own document from it (no
- * incident notes, no questions), so no owner words reach the fact table (R-12). The gate, the
- * model calls and the write are aiLead/'s.
+ * the request JWT, never a body value. The draft is read first (CUL-2628): its facts come from the
+ * draft's own copy, never from the request body's window (`leadSourceOf`): its stored snapshot when
+ * it was saved with notes off, else a rebuild, notes off, over the window the draft was requested
+ * with; and the copy's own record rule refuses a lead whatever the facts say (`copyRefusalOf`, in
+ * `runAiLeadForDraft`). aiLead/ builds the lead's own document (no incident notes, no questions),
+ * so no owner words reach the fact table (R-12). The gate, the model calls and the write are aiLead/'s.
  */
 async function aiLeadForPet(
   supabase: SupabaseClient,
   adminClient: SupabaseClient,
   petId: string,
   req: { reportId: string | null; leaveOut: boolean },
-  requestedWindow: { startDate: string; endDate: string } | null,
   /** The handler's one owner arm, notes already forced off for this mode. */
   audience: ReportAudience,
   callerJwt: string | null,
@@ -2101,16 +2102,23 @@ async function aiLeadForPet(
   const { data: userData, error: userErr } = await supabase.auth.getUser(callerJwt ?? undefined)
   const user = userData?.user
   if (userErr || !user) return { status: 401, body: { error: 'Unauthorized' } }
-  const built = await buildReportSnapshotForPet(supabase, petId, Date.now(), requestedWindow, audience, callerJwt, requestTimezone)
-  if (built.kind === 'response') return { status: built.status, body: built.body }
-  const { snapshot } = built
-  const result = await runAiLeadForDraft(
-    draftLeadIO(adminClient, supabase, { reportId: req.reportId, petId, uid: user.id }),
-    snapshot,
+  const io = draftLeadIO(adminClient, supabase, { reportId: req.reportId, petId, uid: user.id })
+  const draft = await io.readDraft()
+  if (!draft.found) return { status: 404, body: { error: 'Draft not found' } }
+  const source = leadSourceOf(draft.copy)
+  let snapshot: ReportSnapshot
+  let includeLookNotes: boolean
+  if (source.kind === 'stored') {
+    snapshot = source.snapshot
+    includeLookNotes = false // leadSourceOf takes the stored copy only when it was saved with notes off
+  } else {
+    const built = await buildReportSnapshotForPet(supabase, petId, Date.now(), source.window, audience, callerJwt, requestTimezone)
+    if (built.kind === 'response') return { status: built.status, body: built.body }
+    snapshot = built.snapshot
     // Fails closed: anything but an owner arm without notes reads as notes on, which is refused.
-    audience.kind === 'shared_link' ? true : audience.includeLookNotes,
-    req.leaveOut,
-  )
+    includeLookNotes = audience.kind === 'shared_link' ? true : audience.includeLookNotes
+  }
+  const result = await runAiLeadForDraft(io, snapshot, includeLookNotes, req.leaveOut, draft.copy)
   if (result.outcome === 'draft_not_found') return { status: 404, body: { error: 'Draft not found' } }
   return { status: 200, body: { ...result } }
 }

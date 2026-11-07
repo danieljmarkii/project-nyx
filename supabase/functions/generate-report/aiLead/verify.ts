@@ -352,6 +352,50 @@ export function ownSignIssues(table: FactTable, summary: LeadSummary): VerifyIss
   return out
 }
 
+/** band-coverage (CUL-2629, PM ruling (a) 2026-11-07): every live band item is named in the lead.
+ *  The third bake-off's `rv-script-d` named 1 of nyx-v2's 6 flags and the checker MODEL scored it
+ *  clean with no omission (the re-run's nyx-v2 runs 2 to 4 printed the same shape, CUL-2563), so a
+ *  flag left out is decided here, in code, from the table and the printed words alone:
+ *    - each band item is cited by at least one sentence, and
+ *    - the sentences citing it print its label as a word (case-insensitive), as many times as there
+ *      are band items carrying that label among the ones they cite (nyx-v2's two "Chronicity" rows
+ *      need the word twice), so one label cannot stand for two flags.
+ *  A cite alone is the model's claim; the label is what the vet reads. Read by the checker's
+ *  decision (leadPipeline.ts `checkerCodeIssues`), whatever the model scored. Not a verifier rule:
+ *  the verifier stays `vr2-9`, and the record rule (`liveFlagIssues`) already refuses every record
+ *  this could fire on. Errs loud: on a record of several flags, band-once leaves one sentence to
+ *  name them all, so almost every lead there is rejected. */
+export function bandCoverageIssues(table: FactTable, summary: LeadSummary): VerifyIssue[] {
+  const band = table.facts.filter((f) => f.role === 'band')
+  if (band.length === 0) return []
+  const out: VerifyIssue[] = []
+  const sents = summary.sentences.map((s) => ({ text: norm(s.text).toLowerCase(), cites: s.cites }))
+  const countOf = (text: string, label: string): number => {
+    const l = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return (text.match(new RegExp(`(?<![a-z0-9])${l}(?![a-z0-9])`, 'g')) ?? []).length
+  }
+  for (const f of band) {
+    const label = labelOf(f as { label?: unknown }).toLowerCase()
+    const citing = sents.filter((s) => s.cites.includes(f.id))
+    if (citing.length === 0) {
+      out.push({ sentence: null, check: 'band-coverage', detail: `live band item ${f.id} (${label || 'no label'}) is not cited (CUL-2629)` })
+      continue
+    }
+    // No label is no way to read the words: it rejects (a missing label is a bug).
+    if (label === '') {
+      out.push({ sentence: null, check: 'band-coverage', detail: `live band item ${f.id} has no label to read (CUL-2629)` })
+      continue
+    }
+    const sameLabel = band.filter((g) => labelOf(g as { label?: unknown }).toLowerCase() === label)
+    const need = Math.max(1, ...citing.map((s) => sameLabel.filter((g) => s.cites.includes(g.id)).length))
+    const have = citing.reduce((n, s) => n + countOf(s.text, label), 0)
+    if (have < need) {
+      out.push({ sentence: null, check: 'band-coverage', detail: `live band item ${f.id}: its label "${label}" prints ${have} time${have === 1 ? '' : 's'} where it is cited, ${need} needed (CUL-2629)` })
+    }
+  }
+  return out
+}
+
 /** CUL-2621 ruling (c), PM 2026-11-07, widening CUL-2563's ruling (b) (2026-11-06, two or more):
  *  no AI lead prints on a record with ONE or more live band items; a lead prints only when the band
  *  is empty. Under (b) a lone flag still printed, and the code forced only its numbers and scope
@@ -366,8 +410,8 @@ export const LIVE_FLAG_MIN_BAND = 1
  *  sentence, cite or checker verdict is read), so no model output can pass it. Read by `verifyLead`,
  *  by the checker's decision, by `runAiLead` before any model call (leadPipeline.ts), and by the
  *  send path's `storedLeadForSnapshot` (run.ts); removing it from one does not remove it from the
- *  others. Not yet read by the keep's `settleLeadForKeep`, nor on the draft's own snapshot by the
- *  `ai_lead` request (CUL-2628; no path renders a lead today). The sentence rules on band facts
+ *  others. On the draft's own stored snapshot it is read by the keep's `settleLeadForKeep` (through
+ *  `storedLeadForSnapshot`) and by the `ai_lead` request (`copyRefusalOf`, CUL-2628). The sentence rules on band facts
  *  (band-first, own-sign, floor, ...) stay on as the second net. */
 export function liveFlagIssues(table: FactTable): VerifyIssue[] {
   const n = table.facts.filter((f) => f.role === 'band').length
