@@ -217,7 +217,7 @@ describe('generateVetReport — the version and the surname (CUL-2292)', () => {
   });
 
   // The past-window stopgap (PM ruling (a) on CUL-2370): the server answers a v2 request on a past
-  // window or a custom range with v1 and says why. The app reads it as v1 on every surface: no
+  // window (ruling (b): not a custom range to today) with v1 and says why. The app reads it as v1 on every surface: no
   // preview (report.preview.test.tsx, "a v1 report renders as before"), no exam room
   // (report.send.test.tsx, "is offered only when the report has its phone layout"), no draft to keep.
   it('the past-window stopgap response is v1 everywhere: no phone layout, no draft id', async () => {

@@ -1787,8 +1787,8 @@ Deno.test('PR-23b R5 / CUL-2590 guard 2: v1, and v2 behind a closed flag, ignore
 
 // ── The past-window stopgap (PM ruling (a) on CUL-2370, 2026-11-07) ──────────────────────────────
 //
-// A past window or a custom range renders as v1 with the flag on, exactly as a flag-off account
-// gets it. One decision, one response; each surface it feeds is asserted on its own field: print
+// A past window renders as v1 with the flag on, exactly as a flag-off account gets it (a custom
+// range that runs to the report date stays on v2, PM ruling (b) on CUL-2634). One decision, one response; each surface it feeds is asserted on its own field: print
 // (`html`), phone and preview (`phone_html`, `report_version`), exam room (it opens only on a
 // `phone_html`), saved copy (the saver is never called, no `report_id`), and the photo picker.
 
@@ -1802,7 +1802,7 @@ async function stopgapRun(window: { startDate: string; endDate: string } | null,
   return { res, saver, downloads: admin.downloads }
 }
 
-Deno.test('CUL-2370 stopgap: a past window or a custom range renders as v1 on every surface, with the flag on', async () => {
+Deno.test('CUL-2370 stopgap: a past window renders as v1 on every surface, with the flag on; a custom range to today stays v2', async () => {
   const ON = { enabled: false, allowlist: ['u1'] }
   const OFF = { enabled: false, allowlist: [] }
   // Control: the default window, flag on, renders v2 and saves (the stopgap is not v1 everywhere).
@@ -1812,9 +1812,17 @@ Deno.test('CUL-2370 stopgap: a past window or a custom range renders as v1 on ev
   assert.ok(control.saver.seen.input !== null, 'non-vacuous: the default window saves a v2 copy')
   assert.equal(control.res.body.report_v1_fallback, null)
 
+  // PM ruling (b) on CUL-2634: a custom range that runs to the report date stays on v2.
+  const today = await stopgapRun({ startDate: day(20), endDate: day(0) }, ON)
+  assert.equal(today.res.body.report_version, 'v2', 'a custom range to today renders v2')
+  assert.ok(isV2(today.res.body.html))
+  assert.equal(typeof today.res.body.phone_html, 'string')
+  assert.ok(today.saver.seen.input !== null, 'and saves its v2 copy')
+  assert.equal(today.res.body.report_v1_fallback, null)
+
   const cases: Array<[string, { startDate: string; endDate: string }, string]> = [
     ['a past window (ends 30 days before the report)', { startDate: day(60), endDate: day(30) }, 'past_window'],
-    ['a custom range that runs to today', { startDate: day(20), endDate: day(0) }, 'custom_range'],
+    ['a past window that ended yesterday', { startDate: day(20), endDate: day(1) }, 'past_window'],
   ]
   for (const [name, window, reason] of cases) {
     const on = await stopgapRun(window, ON)

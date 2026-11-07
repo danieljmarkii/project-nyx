@@ -1159,7 +1159,7 @@ export async function generateReportForPet(
   // v2 was asked for, so a v1 request costs no extra read. PR-23b (R5): read BEFORE the embed, so
   // the owner's choice is applied (v2) or dropped (v1) before any photo is fetched.
   const documentV2On = documentRequest === 'v2' ? await reportDocumentV2On(supabase, callerJwt) : null
-  // The past-window stopgap (PM ruling (a) on CUL-2370): a past window or a custom range renders as
+  // The past-window stopgap (PM ruling (a) on CUL-2370, past windows only by ruling (b)): a past window renders as
   // v1 even with the flag on, exactly as a flag-off account gets it. Decided here and only here, so
   // print, phone, preview, exam room and saved copy all follow this one response.
   const v1Fallback = documentV2On === true ? v1FallbackOf(built.snapshot) : null
