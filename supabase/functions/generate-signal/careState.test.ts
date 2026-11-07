@@ -1036,3 +1036,17 @@ Deno.test('CUL-2652: the 30 days are LOCAL days (a Los Angeles owner, an evening
   assertStrictEquals(in30.bookedVisit?.on, '2026-10-30')
   assertStrictEquals(run('2026-10-31T08:00:00.000Z').state, 'raised', 'Oct 31 local is day 31')
 })
+
+// ── CUL-2652, adversarial pass 1 ──
+
+Deno.test('CUL-2652 adv #2: a passed visit before the concern began never quiets it; one after it does', () => {
+  const late = { ...chronicity(), firstOnsetIso: at(5) } as Finding
+  const before = stateOf({ findings: [late], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -6 })] } })
+  assertStrictEquals(before.state, 'raised', 'a vaccine visit six days before a new course')
+  const after = stateOf({ findings: [late], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -3 })] } })
+  assertStrictEquals(after.state, 'visit_booked')
+  // The weight card the same way, by its latest reading's day.
+  const w = { ...weight(), latestDay: dayOf(4) } as Finding
+  assertEquals(step({ findings: [w], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -6 })] } })[0].finding, w)
+  assertStrictEquals(careStateOf(step({ findings: [w], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -2 })] } })[0].finding)!.state, 'visit_booked')
+})

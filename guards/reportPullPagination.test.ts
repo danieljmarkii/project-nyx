@@ -214,7 +214,9 @@ function isPaged(s: Site): boolean {
  * name. A new pull ordering on something else adds it here with a reason, which is the
  * conversation this list exists to force.
  */
-const TIME_COLUMNS = ['occurred_at', 'created_at', 'started_at', 'visited_at', 'local_day'];
+// `scheduled_at` (CUL-2652): the Signal shell's appointment read, newest first, so a shortfall
+// drops the oldest bookings (and a short read is refused whole, every concern stays raised).
+const TIME_COLUMNS = ['occurred_at', 'created_at', 'started_at', 'visited_at', 'local_day', 'scheduled_at'];
 
 /** A site that returns AT MOST ONE ROW cannot truncate. `.limit(1)` is one row by
  *  definition (CUL-989: the active trial, the latest cached Signal), and says so in code.

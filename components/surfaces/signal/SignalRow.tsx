@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { signalRailStyle } from './railTint';
 import type { CachedFinding, ReflectionFinding, SignalFinding } from '../../../lib/signal';
@@ -7,7 +8,6 @@ import { type CompareRow, isTimingFinding, symptomWord, timingCompareRows } from
 import { askStandalone, rowReadsScreen, signalHomeLabel, timingRowDenominatorLine, trialSoFarClause, signalHomeLine, signalHomeLineFromScreen } from '../../../lib/signalHomeLine';
 import { countedHomePair } from '../../../lib/signalCounts';
 import { foldIdentity } from '../../../lib/signalFold';
-import { router } from 'expo-router';
 import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, bookedVisitRowLine, careBackLine, careStateBody, careStateViewOf, type CareStateView } from '../../../lib/careState';
 import { BookedVisitLine } from './BookedVisitLine';
 import { loadSignalRowScreen, loadSignalRowTrial, type SignalRowScreen } from '../../../lib/signalLead';
@@ -70,6 +70,8 @@ import { ThemedText } from '../../ui/ThemedText';
 /** A Signal door's hint (the rows and the lead card), told apart from the shipped card's
  *  "Shows the evidence…". */
 export const DOOR_A11Y_HINT = 'Opens this signal';
+/** CUL-2652: in a booked visit's week the row opens "How did it go?" instead, and says so. */
+export const HOW_DID_IT_GO_A11Y_HINT = 'Opens how the visit went';
 
 /** The row's floor: every door clears 44pt on its own box, with no slop to share. */
 export const ROW_MIN_HEIGHT = 44;
@@ -201,7 +203,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
       onPress={open}
       accessibilityRole="button"
       accessibilityLabel={[backLine, signalHomeLabel(spoken), booked?.text].filter((x): x is string => !!x).join(' ')}
-      accessibilityHint={DOOR_A11Y_HINT}
+      accessibilityHint={howDidItGo !== null ? HOW_DID_IT_GO_A11Y_HINT : DOOR_A11Y_HINT}
       style={styles.row}
       testID="signal-row"
     >

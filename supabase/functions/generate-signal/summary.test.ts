@@ -1049,3 +1049,13 @@ Deno.test('CUL-1630: a passing validateSummary never licenses model phrasing on 
   assert.equal(validateSummary(undoing, p), true, 'premise: the validator alone cannot catch an undoing tail')
   assert.equal(modelMayPhraseSummary(p, true), false)
 })
+
+Deno.test('CUL-2652 adv #1: a quiet chronicity card never hands its sentence to the worsening card for the same sign', () => {
+  const w = worseningFinding()
+  const lane = packetFor([w], [w]).clauses[0]
+  const chron = { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: w.symptomType } as unknown as Finding
+  const quiet = withCare(chron, 'visit_booked', "A vet visit is booked for Jun 20. Worth mentioning Pixel's vomiting.")
+  const p = packetFor([w], [withCare(w, 'raised', null), quiet])
+  assert.equal(p.clauses[0], lane, 'the worsening card keeps its own sentence and ask')
+  assert.equal(p.clauses.some((c) => /visit is booked/.test(c)), false)
+})

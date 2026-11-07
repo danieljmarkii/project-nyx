@@ -32,10 +32,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: theme.space1,
-    paddingTop: 2,
+    paddingTop: theme.spaceMicro,
   },
   glyph: {
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
     flexShrink: 0,
   },
   text: {

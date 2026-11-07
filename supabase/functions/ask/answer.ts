@@ -1179,14 +1179,16 @@ export function leadingSafetyText(
   return hasSafetyClass ? GENERIC_SAFETY_LEAD.replace('{pet}', petName) : null
 }
 
-/** A cached CONCERN whose care state carries no ask: `with_vet`, `recheck_booked` or (CUL-2652)
- *  `visit_booked`. A care state
- *  on any other type (an escalation) is ignored: it can only come from a tampered or malformed
- *  cache, and an escalation is never quieted (AC 3). */
+/** A cached CONCERN whose care state carries no ask: `with_vet`, `recheck_booked`, or
+ *  (CUL-2652) `visit_booked` on a chronicity card only. A care state on any other type (an
+ *  escalation) is ignored: it can only come from a tampered or malformed cache, and an
+ *  escalation is never quieted (AC 3). */
 export function isWatchedPayload(type: unknown, payload: unknown): boolean {
   if (type !== 'symptom_chronicity' && type !== 'symptom_worsening') return false
   const state = ((payload as { careState?: unknown } | null)?.careState as { state?: unknown } | undefined)?.state
-  return state === 'with_vet' || state === 'recheck_booked' || state === 'visit_booked'
+  // CUL-2652: the engine quiets chronicity only; on a worsening card it is a tampered cache.
+  if (state === 'visit_booked') return type === 'symptom_chronicity'
+  return state === 'with_vet' || state === 'recheck_booked'
 }
 
 /** The numerals in `text` that are NOT in `allowed` (canonicalized). A non-empty return is

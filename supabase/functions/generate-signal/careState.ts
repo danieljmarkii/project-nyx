@@ -1136,7 +1136,13 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
       // CUL-2652 (ruling 1 = A): a booked visit is the answer to "worth booking a vet visit", so a
       // raised concern with one inside the horizon goes quiet and names the visit. The worsening
       // card for the sign keeps its ask (ruling A on the worsening brief), below.
-      if (booked) {
+      // A PASSED visit quiets only a concern it could have been about: its day on or after the
+      // concern's first onset (§3.2's rule for a visit answer). A vaccine visit six days before a
+      // new course never quiets it (CUL-2652's adversarial pass). Unknown onset: louder.
+      const onsetIso = chronicOnset.get(sign) ?? null
+      const onsetMs = onsetIso === null ? NaN : Date.parse(onsetIso)
+      const covers = booked !== null && (!booked.fact.passed || (Number.isFinite(onsetMs) && booked.day >= localDayIndex(onsetMs, tz)))
+      if (booked && covers) {
         const quiet: CareStateFact = {
           state: 'visit_booked', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null,
           text: bookedVisitSentence(booked.fact, booked.day, ix.today, `${possessive(args.petName)} ${SYMPTOM_LABEL[sign]}`),
@@ -1320,6 +1326,11 @@ function withBookedVisit<T extends { rank: number; finding: Finding }>(
 ): T {
   if (r.finding.priorityClass !== 'safety') return r
   if (r.finding.type === 'weight_loss') {
+    // A passed visit quiets the weight card only if it fell on or after the latest reading's day:
+    // a visit before the drop was recorded was not about it.
+    const latest = (r.finding as { latestDay?: unknown }).latestDay
+    const latestDay = typeof latest === 'string' ? localDayIndexOf(latest, undefined) : null
+    if (booked.fact.passed && (latestDay === null || booked.day < latestDay)) return r
     const quiet: CareStateFact = {
       state: 'visit_booked', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null,
       text: bookedVisitSentence(booked.fact, booked.day, today, `${possessive(petName)} weight`),

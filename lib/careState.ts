@@ -35,7 +35,9 @@ export function careStateValueOf(finding: SignalFinding): CareStateValue | null 
 export function careStateQuietsAsk(finding: SignalFinding): boolean {
   if (finding.type !== 'symptom_chronicity' && finding.type !== 'symptom_worsening') return false;
   const s = careStateValueOf(finding);
-  if (s === 'visit_booked') return finding.type === 'symptom_chronicity';
+  // A visit_booked state with no well-formed booking beside it is malformed: the ask stays,
+  // rather than a silent row with neither an ask nor the line that replaces it.
+  if (s === 'visit_booked') return finding.type === 'symptom_chronicity' && bookedVisitOf(finding) !== null;
   return s === 'with_vet' || s === 'recheck_booked';
 }
 
