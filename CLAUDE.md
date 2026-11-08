@@ -190,6 +190,7 @@ Never hardcode a key or token in source; client variables use the `EXPO_PUBLIC_`
 - Any schema changes made
 - Any open questions this raises or resolves
 - Manual test steps (what to verify via QR code before merging)
+- `## Along the way`: each find fixed under the filing rule (§ Backlog Protocol), one line each
 
 **Rules:**
 - PRs required before merging to `main`. No direct commits to `main`.
@@ -212,10 +213,10 @@ Never hardcode a key or token in source; client variables use the `EXPO_PUBLIC_`
 **Merge → Linear status — reference `CUL-NNN` in every PR (instituted 2026-08-16).** Linear (team Culprit) owns issue status, and the native GitHub↔Linear integration moves an issue Todo/Backlog → In Progress → Done automatically **when a PR references it**. So:
 
 - Put the identifier (`CUL-NNN`) of each issue the PR **finishes** in its title or description; a PR finishing several names all of them.
-- A branch name links and closes every issue it names, like the PR text (CUL-1508: `claude/cul-1134-pr28-0930` closed its parent). Name an issue in a branch only when that one PR finishes it; agent sessions' `claude/<slug>` branches name none, so the PR body is their only trigger.
+- A branch name links and closes every issue it names, like the PR text. Name an issue in a branch only when that one PR finishes it; agent sessions' `claude/<slug>` branches name none, so the PR body is their only trigger.
 - **Backstop when auto-link didn't fire:** `/wrap` step 4 sets each touched issue's state with `save_issue`. A hand-made `create_attachment` link never closes anything (CUL-1035).
 - **The `CUL-NNN` token is what closes an issue (CUL-1397, measured):** every issue named in a PR's title or body goes `Done` when it merges, and deleting the attachment first does not stop it (CUL-973). So related or newly filed issues are pointed at in a Linear **comment**, never in the PR, and **a task that ships in several PRs gets one sub-issue per PR**: each PR names only its own sub-issue, the parent never appears in a PR, and whoever closes the last sub-issue closes the parent. After a merge, read back every issue the PR named and reopen any that closed early.
-- **Do not build a custom GitHub Action for this** — it would duplicate the native integration and fight it on status writes.
+- **No custom GitHub Action for this:** it would fight the native integration on status writes.
 
 **Migration Safety Pre-flight.** Any PR containing a schema migration carries the rollback plan, destructive y/n and backfill in its description. The full pre-flight is in `.claude/rules/migrations.md`; it is non-optional.
 
@@ -241,24 +242,20 @@ Then read the relevant docs for the confirmed track before writing any code.
 
 ### Starting from a Linear issue (instituted 2026-08-16, CUL-528)
 
-Most sessions now begin by pasting an issue from Linear (team Culprit) via its **"copy as prompt"** action. The workspace's coding-tool prompt template (Linear → Settings → Code & reviews) is a deliberately **thin router** — a *work-path* config a session never `Read`s (per the read-path→git / work-path→Linear rule); it front-loads the launch ritual and defers every rule back to this manual. The durable rules live here. The ritual is **claim → orient → name the mode → close out**:
+Most sessions now begin by pasting an issue from Linear (team Culprit) via its **"copy as prompt"** action. Its prompt template (Linear → Settings → Code & reviews) is a **thin router** that defers every rule to this manual; keep it one _(why: `docs/engineering-lessons.md` §P-5)_. The ritual is **claim → orient → name the mode → close out**:
 
 0. **Claim the issue — first, before reading anything else** (instituted 2026-08-30, CUL-624). `get_issue CUL-NNN`, then set `In Progress` (`save_issue`) **and** post the claim comment (`save_comment`), whose first line is the machine-greppable marker:
 
    > **Claimed** — branch `claude/<slug>`, `<ISO-8601 UTC>`, mode BUILD|DISCOVERY.
    > A different session reading this: stop and surface rather than starting. Released by this session's `/wrap` outcome comment.
 
-   **`In Progress` on its own is not a claim; the branch name in the comment is the discriminator** (the launch path sets `In Progress` minutes, sometimes seconds, before a session's first tool call). Another branch's claim, recent, no merged PR → **stop and surface** — name the branch and the claim time and ask. Another branch's claim >24h old with no open PR → stale; say so in one line, post a fresh claim, continue. An open PR already referencing the issue → work in review, not a claim → surface before touching it. Nothing at all → claim it and carry on.
-
-   This is the repo's only collision guardrail that covers the *issue* rather than a *file* (two sessions built CUL-599 in parallel on 2026-08-23 and opened near-identical PRs fifteen seconds apart); a session that claims and then dies leaves the issue looking taken, which the `backlog-groomer` skill adjudicates from the comment's branch.
+   **`In Progress` alone is not a claim; the comment's branch is**. Another branch's recent claim, no merged PR → **stop and surface**: name the branch and the claim time and ask. A claim >24h old with no open PR → stale; say so in one line, post a fresh claim, continue. An open PR referencing the issue → work in review; surface before touching it. Nothing → claim it and carry on. A dead session's claim is the `backlog-groomer`'s to adjudicate _(why: `docs/engineering-lessons.md` §P-3, §P-4)_.
 
 1. **Orient** as `/kickoff` does, but scoped to *this* issue — skim `STATUS.md` for the routing, then read the "Read These Before Writing Any Code" docs for the surface it touches; don't switch to a different task. The issue's **description and its comments** are the spec; newest comment wins on conflict. **A `/dispatch` child skips the every-session reads** (`STATUS.md`, `docs/personas.md`, the tech spec): its build note is its plan, so it reads the issue, the excerpt and the docs the note names (retro 4 D5).
 2. **Name the mode** — only once step 0's claim is yours (a contested claim is a stop, not a mode) — infer it (a `Feature`/`Fix` or `Research`/`Spec` label is a hint when present, but issues are largely unlabeled, so don't depend on one):
    - **BUILD** (feature / fix / migration / tooling) → deliver **code + a draft PR**. For anything non-trivial, **post a short plan (files touched + approach) and wait for a go-ahead before coding** — skip the plan only for genuinely mechanical fixes. **Anything touching RLS, Storage, deletion, or export is never "mechanical"**: always plan first and run the `rls-privacy-reviewer`. A `/dispatch` child takes its gate from its prompt (D2, CUL-1606): a routine row builds from its build note; a migration, RLS / deletion, clinical or Tier-2 row waits for a go typed in its own session.
    - **DISCOVERY** (research / investigation / a spec / a design-mock / a decision) → deliver a **recommendation or brief for the PM, posted to the issue** — not merged code, and never start building the thing you were asked to evaluate. Open a PR only if the deliverable is itself a committed file (a doc or mock); it merges once finished, never parked as a draft.
-3. **Close out** — BUILD with `/wrap`; DISCOVERY with an outcome comment on the issue (+ a `docs/sessions/` record if substantial). Either way the PR **must reference `CUL-NNN`** — the agent's `claude/<slug>` branch won't (§ Git Workflow → "Merge → Linear status") — it's one PR per session, and **out-of-scope work you discover → file a new `CUL` issue**, never folded in.
-
-Keep the Linear template a router.
+3. **Close out** — BUILD with `/wrap`; DISCOVERY with an outcome comment on the issue (+ a `docs/sessions/` record if substantial). Either way the PR **must reference `CUL-NNN`** — the agent's `claude/<slug>` branch won't (§ Git Workflow → "Merge → Linear status") — it's one PR per session, and a find along the way follows **the filing rule** (§ Backlog Protocol).
 
 ### Presenting decisions to the PM — decision briefs (instituted 2026-08-07, PM directive)
 
@@ -344,9 +341,11 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 
 ## Backlog Protocol
 
-**The backlog lives in Linear (team Culprit, `linear.app/projectnyx`) since 2026-08-15; `docs/backlog.md` is a frozen historical record, never added to.** Its 487 open rows became `CUL-28`–`CUL-514`, tagged `Legacy` with a `_Migrated from docs/backlog.md (B-NNN)_` footer; those outside a live track sit in the **Legacy Backlog** project.
+**The backlog lives in Linear since 2026-08-15; `docs/backlog.md` is a frozen historical record, never added to.** Its migrated rows are tagged `Legacy` and sit in the **Legacy Backlog** project.
 
 **When to file an issue:** any time you're about to say "we should do X later," "noted for future," or the PM says any of those phrases. File it immediately, in-session, before continuing the conversation — via the Linear MCP tools (`mcp__Linear__save_issue`). Do not batch-file at session end and do not wait for PM approval — filing an issue is reversible and cheap; losing the item is not.
+
+**The filing rule: leave it better (CUL-2656, ruled 2026-11-07).** A find along the way is fixed in the session's own PR when all hold: (1) it sits in a file the PR already touches, or the change is about 20 lines at most; (2) it is off the never-list (clinical, a safety invariant, privacy / RLS / Storage / deletion / export, money or Pets > $, schema, App Store, irreversible), and uncertain counts as on it; (3) a test covers it, existing or added in the PR; (4) the PR body lists it under `## Along the way`, one line each. Otherwise comment on an open issue of the same class, else file **one class issue** listing the instances; never one issue per instance. `guards/filingRule.test.ts` holds this text. _(why: `docs/engineering-lessons.md` §P-19)_
 
 **Issue shape:**
 
@@ -375,7 +374,7 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 - **Scope change discovered mid-build** (the feature turns out bigger / smaller / different than the issue says) → **update the issue description** with `save_issue` (use its `patch` for a surgical edit) so the issue keeps describing the real work. Don't leave the description stale while the truth sits in a comment.
 - **Decisions, persona conflicts, and review findings** (a Conflict-Protocol call, an `adversarial-reviewer` / `pm-feature-review` / `rls-privacy-reviewer` verdict, a resolved Open Question that bears on this issue) → **post an issue comment** with `save_comment`. This is the deliberation trail, and it belongs where the work is.
 - **Genuinely new scope** (a real deferral, not a change to this issue) → **file a new Linear issue**, state per the issue shape — never folded into an unrelated issue.
-- **Attribute lightly.** An agent-authored comment names the lens and session behind it — e.g. `— Data Scientist lens, session 2026-08-16-<slug>` — so a human skimming the issue knows who "said" it.
+- **Attribute lightly.** An agent-authored comment names the lens and session behind it — e.g. `— Data Scientist lens, session <date>-<slug>`, so a skimmer knows who "said" it.
 - **`docs/sessions/` stays** as the cross-issue narrative; the issue comments are the per-issue slice. `/wrap` step 4 writes both.
 
 ---
