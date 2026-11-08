@@ -264,6 +264,7 @@ describe('the two doors are gated SEPARATELY (CUL-966)', () => {
       day: 'Wed, Oct 28',
       where: 'Riverside Animal Hospital · recheck',
       isToday,
+      hasNotes: false,
     };
   }
 
@@ -320,6 +321,7 @@ describe('changing a booked appointment (CUL-952)', () => {
       day: 'Wed, Oct 28',
       where: 'Riverside Animal Hospital · recheck',
       isToday: days === 0,
+      hasNotes: false,
     };
   }
 
@@ -444,6 +446,7 @@ describe('a booking whose day has passed', () => {
           day: 'Mon, Sep 8',
           where: 'Riverside Animal Hospital · recheck',
           isToday: false,
+          hasNotes: false,
         },
       ],
       visits: [],
@@ -463,7 +466,7 @@ describe('a booking whose day has passed', () => {
       next: null,
       later: [],
       awaiting: [
-        { id: 'a-past', petId: 'pet-a', scheduledAt: instantDaysOut(-7), stamp: null, when: 'Mon, Sep 8', day: 'Mon, Sep 8', where: '', isToday: false },
+        { id: 'a-past', petId: 'pet-a', scheduledAt: instantDaysOut(-7), stamp: null, when: 'Mon, Sep 8', day: 'Mon, Sep 8', where: '', isToday: false, hasNotes: false },
       ],
       visits: [],
     };
@@ -707,7 +710,7 @@ describe('the list’s remove confirm names what goes with the row (CUL-987 D2)'
       later: [],
       awaiting: [{
         id: 'a-past', petId: 'pet-a', scheduledAt: instantDaysOut(-7), stamp: { day: '15', month: 'Sep' },
-        when: 'Tue, Sep 15', day: 'Tue, Sep 15', where: 'Riverside Animal Hospital', isToday: false,
+        when: 'Tue, Sep 15', day: 'Tue, Sep 15', where: 'Riverside Animal Hospital', isToday: false, hasNotes: false,
       }],
       visits: [],
     };

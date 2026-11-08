@@ -9,6 +9,12 @@ interface Props {
    */
   onAtTheVet?: () => void;
   /**
+   * Notes already exist for this booking. The door then reads *Your notes*: the
+   * owner coming back sees their notes are kept and that the door picks them up
+   * where they left off, instead of a *Take notes* that reads like a blank page.
+   */
+  hasNotes?: boolean;
+  /**
    * Opens "How did it go?". Optional because the doors are gated SEPARATELY and
    * this is one of the gated ones: see the header note.
    */
@@ -70,6 +76,7 @@ interface Props {
 // least-common action — while the shipped order under *Next* is untouched.
 export function AppointmentActions({
   onAtTheVet,
+  hasNotes = false,
   onHowDidItGo,
   onDidntHappen,
   onChange,
@@ -77,6 +84,7 @@ export function AppointmentActions({
   when,
 }: Props) {
   const which = when ? `, ${when}` : '';
+  const notesLabel = hasNotes ? 'Your notes' : 'Take notes';
   return (
     <View style={styles.row}>
       {onAtTheVet ? (
@@ -85,9 +93,9 @@ export function AppointmentActions({
           onPress={onAtTheVet}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`Take notes for ${petName}’s visit${which}`}
+          accessibilityLabel={`${notesLabel} for ${petName}’s visit${which}`}
         >
-          <ThemedText style={styles.actionLabel}>Take notes</ThemedText>
+          <ThemedText style={styles.actionLabel}>{notesLabel}</ThemedText>
         </TouchableOpacity>
       ) : null}
       {onHowDidItGo ? (
