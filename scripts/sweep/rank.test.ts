@@ -142,6 +142,40 @@ describe('the review fixes (code-reviewer, 2026-11-07)', () => {
   });
 });
 
+describe('the sanity-check gaps (PM, 2026-11-08)', () => {
+  it('prose is a reason, not evidence: a close needs a PR, a commit or the issue that replaced it', () => {
+    const prose = run([cand({ id: 'CUL-120', relevance: 'fixed', evidence: 'main no longer has the path' })]);
+    expect(prose.writes).toEqual([]);
+    expect(prose.picks[0]).toMatchObject({ kind: 'shape', issues: ['CUL-120'] });
+    const r = run([
+      cand({ id: 'CUL-121', relevance: 'fixed', evidence: 'merged in #1436' }),
+      cand({ id: 'CUL-122', relevance: 'fixed', evidence: 'commit 5f2fe228' }),
+      cand({ id: 'CUL-123', relevance: 'superseded', evidence: 'replaced by CUL-2275' }),
+      cand({ id: 'CUL-124', relevance: 'superseded', evidence: 'see CUL-124' }),
+    ]);
+    expect(r.writes.map((w) => [w.id, w.action])).toEqual([['CUL-121', 'close-done'], ['CUL-122', 'close-done'], ['CUL-123', 'propose-close']]);
+    expect(r.picks.map((p) => p.issues[0])).toEqual(['CUL-124']);
+  });
+  it('a build that deploys or touches the gate waits on the PM to merge, so it spends a place', () => {
+    const fn = cand({ id: 'CUL-125', files: ['supabase/functions/ask/index.ts'] });
+    const plain = cand({ id: 'CUL-126', files: ['app/log.tsx'] });
+    const r = run([fn, plain], { waitingOnPm: 3 });
+    expect(r.picks.map((p) => p.issues[0])).toEqual(['CUL-126']);
+    expect(r.held).toEqual([{ id: 'CUL-125', reason: 'waits on the PM to merge (it deploys or touches the gate), and 3 already do' }]);
+    // With a place free it launches, and spends it: a shaping pick after it is held.
+    const r2 = run([fn, cand({ id: 'CUL-127', size: 'XL', priority: 4 })], { waitingOnPm: 2 });
+    expect(r2.picks.map((p) => p.issues[0])).toEqual(['CUL-125']);
+    expect(r2.held[0]).toMatchObject({ id: 'CUL-127' });
+  });
+  it('a member never turns a plain bundle into one that waits when no place is free', () => {
+    const lead = cand({ id: 'CUL-128', size: 'S', surface: 'Ask', files: ['app/ask.tsx'] });
+    const fnMember = cand({ id: 'CUL-129', size: 'S', surface: 'Ask', files: ['supabase/functions/ask/index.ts'], priority: 4 });
+    const r = run([lead, fnMember], { waitingOnPm: 3 });
+    expect(r.picks.map((p) => p.issues.join('+'))).toEqual(['CUL-128']);
+    expect(r.held[0]).toMatchObject({ id: 'CUL-129' });
+  });
+});
+
 describe('bundles and sizes', () => {
   it('same-surface small work bundles up to size M and three issues; the rest runs on its own', () => {
     const s = (id: string) => cand({ id, size: 'S', surface: 'Foods tab' });

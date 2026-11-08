@@ -110,6 +110,22 @@ const priorityRank = (p: number) => (p >= 1 && p <= 4 ? p : 5); // "no priority"
 export const isLiveHarm = (c: SweepPick | SweepCandidate) => ('labels' in c ? c.labels.includes('Live harm') : c.liveHarm);
 const GATED_LABELS = ['Gate: clinical', 'Gate: privacy', 'Area: Privacy/RLS'];
 
+// A merge the PM must type (steward §7, CUL-1654): landing deploys an Edge Function or edits
+// the gate's files, or the PR holds a migration only the PM's `apply` lands. A build on these
+// files waits on the PM like a plan does, so it spends one of the three places.
+const PM_MERGE_PATHS = ['supabase/functions/', 'supabase/migrations/', '.claude/hooks/', '.claude/settings', '.github/workflows/', 'scripts/steward/', 'scripts/deploy'];
+export const touchesPmMerge = (files: string[]) => files.some((f) => PM_MERGE_PATHS.some((p) => f.startsWith(p)));
+export const waitsOnPm = (kind: Kind, files: string[]) => kind !== 'build' || touchesPmMerge(files);
+
+// Evidence a close can stand on: a PR number, a commit hash, or the issue that replaced it.
+// Prose ("main no longer has it") is a reason, not evidence (code-reviewer, 2026-11-07).
+const EVIDENCE = /(^|[^\w])#\d+\b|\b[0-9a-f]{7,40}\b|\bCUL-\d+\b/;
+export const usableEvidence = (c: SweepCandidate) => {
+  const ev = c.evidence?.trim() ?? '';
+  const m = ev.match(new RegExp(EVIDENCE.source, 'g')) ?? [];
+  return m.some((x) => x.trim() !== c.id) ? ev : '';
+};
+
 // Every judgment the order relies on must be stated. A refusal names the issue and the gap.
 export function validate(input: SweepInput): string[] {
   const errs: string[] = [];
@@ -156,7 +172,7 @@ function closes(c: SweepCandidate): boolean {
 
 // Linear's half of the relevance read. Evidence, never age, closes anything.
 function relevanceWrite(c: SweepCandidate): LinearWrite | 'unclear' | null {
-  const ev = c.evidence?.trim();
+  const ev = usableEvidence(c);
   switch (c.relevance) {
     case 'fixed':
       return ev ? { id: c.id, action: 'close-done', why: `${c.relevanceWhy} (${ev})` } : 'unclear';
@@ -222,7 +238,8 @@ export function rankSweep(input: SweepInput): SweepResult {
     const leadBusy = busy(c.files);
     if (leadBusy) { hold(`files overlap ${leadBusy}`); continue; }
     if (picks.length >= slots) { hold(`no free slot (${slots} this run)`); continue; }
-    if (kind !== 'build' && waiting >= WAITING_ON_PM_LIMIT) { hold(`waits on the PM, and ${WAITING_ON_PM_LIMIT} already do`); continue; }
+    const leadWaits = waitsOnPm(kind, c.files);
+    if (leadWaits && waiting >= WAITING_ON_PM_LIMIT) { hold(`waits on the PM${kind === 'build' ? ' to merge (it deploys or touches the gate)' : ''}, and ${WAITING_ON_PM_LIMIT} already do`); continue; }
 
     // Bundle: later candidates on the same surface (or the same files), each clean on its
     // own, of the build kind, while the bundle stays M. A member that is not clean stays in
@@ -233,6 +250,8 @@ export function rankSweep(input: SweepInput): SweepResult {
       for (const o of pool) {
         if (o === c || taken.has(o.id) || members.length >= BUNDLE_MAX_ISSUES) continue;
         if (vetoed.has(o.id) || o.liveClaim || o.openPr || kindOf(o) !== 'build' || o.files.length === 0 || busy(o.files)) continue;
+        // A member never turns a bundle into one that waits on the PM when no place is free.
+        if (!leadWaits && waiting >= WAITING_ON_PM_LIMIT && touchesPmMerge(o.files)) continue;
         const same = o.surface.trim().toLowerCase() === c.surface.trim().toLowerCase() || overlap(o.files, members.flatMap((m) => m.files));
         if (!same || weight + SIZE_WEIGHT[o.size] > SIZE_WEIGHT.M) continue;
         weight += SIZE_WEIGHT[o.size];
@@ -241,7 +260,7 @@ export function rankSweep(input: SweepInput): SweepResult {
     }
     const files = [...new Set(members.flatMap((m) => m.files))];
 
-    if (kind !== 'build') waiting += 1;
+    if (waitsOnPm(kind, files)) waiting += 1;
     members.forEach((m) => taken.add(m.id));
     picks.push({
       kind,
