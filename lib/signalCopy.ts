@@ -46,6 +46,7 @@ import type { BackBecauseReason } from './signalFold';
 import { formatTimingBandLabel } from './timingBandLabels';
 import { careClaimReason } from './careClaimScreens';
 import { correlationCluster } from './findingIdentity';
+import { DEFERENTIAL_ASK, FLOOR_ASK, WORD_STRIP_ASKS } from './incidentAskWords';
 import { TIER_WORDS } from './incidentTierWords';
 import { callNowIsDated, CALL_NOW_ASK, datedCallNowAsk, localCallDay } from './callNowDated';
 
@@ -188,7 +189,9 @@ export function datedCallNowIsoOf(finding: IncidentRedFlagFinding, nowMs: number
  *  is the dated form ("on Oct 3, the read said: call your vet now", PR-30c). */
 export function incidentRedFlagAsk(finding: IncidentRedFlagFinding, nowMs?: number): string {
   const call = incidentCallOf(finding);
-  if (call === null) return 'worth a call to your vet';
+  // CUL-2675 (a): an earlier-rule card is a photo flag (blood or foreign material, or a flag the
+  // cache cannot name), so it is the floor and says the floor's words.
+  if (call === null) return FLOOR_ASK.inline;
   const saidIso = datedCallNowIsoOf(finding, nowMs);
   if (saidIso !== null) {
     const d = localCallDay(saidIso);
@@ -901,7 +904,8 @@ export function evidenceText(
         : '';
     const tail =
       incidentCallOf(finding) === null
-        ? `It's still worth a call to your vet, who can look at what you logged and tell you what it means.`
+        // CUL-2675 (a): the earlier-rule card's photo flag is a floor sign: the floor's words.
+        ? `${capitalize(FLOOR_ASK.inline)}: they can look at what you logged and tell you what it means.`
         : otherRead
           ? `${otherRead}Your vet can look at what you logged and tell you what it means.`
           : `${capitalize(ask)}: they can look at what you logged and tell you what it means.${laterCallTodaySentence(finding)}`;
@@ -1897,15 +1901,16 @@ export const UNKNOWN_INTAKE_COPY = {
   name: 'Something in recent meals',
   /** The sample line and the strip's count line: where the facts came from, no count it cannot back. */
   sample: 'From the meals you logged',
-  /** The ask, verbatim, as Home and the evidence text say it. */
-  ask: 'worth a call to your vet today',
+  /** The ask, verbatim, as Home and the evidence text say it. A trigger this build does not know
+   *  is the floor (CUL-2667), so it is the floor's own words. */
+  ask: FLOOR_ASK.inline,
   /** The evidence row's concern. */
   concern: 'something in recent meals',
 } as const;
 
 /** The cautious evidence sentence for an unknown intake trigger. */
 export function unknownIntakeSentence(petName: string): string {
-  return `Something in ${petName}'s recent meals stood out in what you logged. That's ${UNKNOWN_INTAKE_COPY.ask}.`;
+  return `Something in ${petName}'s recent meals stood out in what you logged. ${capitalize(UNKNOWN_INTAKE_COPY.ask)}.`;
 }
 
 /** I5 (Engines v3 PR-30s): the refused-then-vomited facts on an intake card, or null. Present only
@@ -2810,12 +2815,18 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
     }
     const phrase = incidentFlagPhrase(finding.flags);
     const noun = finding.flaggedIncidentCount === 1 ? 'a logged photo' : 'logged photos';
-    return ` has ${noun} showing ${phrase} — worth a look.`;
+    // CUL-2667 (D4 ruled (a)): blood or foreign material is the floor, and the floor firms up
+    // where today's words were softer ("worth a look" over a blood photo).
+    return ` has ${noun} showing ${phrase} — ${FLOOR_ASK.inline}.`;
   }
   if (finding.type === 'intake_decline') {
     if (finding.trigger === 'sustained_refusal') {
       // The floor: what was rated, never "less than usual" (there is no usual to fall from).
-      return ` hasn't eaten well at any meal you watched and rated lately — worth a look.`;
+      // CUL-2667 (D3, D4): a non-dog's sustained refusal meets the cat floor and firms up; a
+      // dog's is deferential and keeps the banner's calm ask.
+      return finding.species === 'dog'
+        ? ` hasn't eaten well at any meal you watched and rated lately — worth a look.`
+        : ` hasn't eaten well at any meal you watched and rated lately — ${FLOOR_ASK.inline}.`;
     }
     if (finding.trigger === 'refused_then_vomited') {
       // I5 (PR-30s): the sequence, never a cause; the banner's own calm ask.
@@ -2836,7 +2847,8 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
     }
     if (intakeAllRefused(finding)) {
       // CUL-2424: a refusal reads as one on the banner too.
-      return ` refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)} — worth a look.`;
+      // CUL-2667 (D4): an all-refused card for any species but a dog is floor.
+      return ` refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)} — ${intakeAllRefusedCallsToday(finding) ? FLOOR_ASK.inline : 'worth a look'}.`;
     }
     const span =
       finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;
@@ -2948,11 +2960,14 @@ export const STRIP_ASKS = {
   /** The card says "worth booking a vet visit" (chronicity firm; worsening firm). */
   visit: 'Worth a vet visit',
   /** The card says "worth a word with your vet" (chronicity standard; worsening standard). */
-  tell: 'Tell your vet',
-  /** The card says "a word with your vet if it carries on" (intake decline, both triggers, save an all-refused non-dog card; worsening soft). */
-  check: 'Check with your vet',
-  /** The card says "worth a call to your vet" (a photo red flag; sustained refusal; an all-refused non-dog card, CUL-2593). */
-  call: 'Call your vet',
+  tell: WORD_STRIP_ASKS.tell,
+  /** The card says "a word with your vet if it carries on" (intake decline's conditional cards; worsening soft). */
+  check: WORD_STRIP_ASKS.check,
+  /** A floor finding (CUL-2667): a photo red flag, a call-only card, a cat's sustained refusal or
+   *  all-refused card, a cat meeting the 24 h predicate, and any trigger this build does not know. */
+  call: FLOOR_ASK.strip,
+  /** A deferential call today: burden today, a dog's sustained refusal or all-refused card. */
+  callToday: DEFERENTIAL_ASK.strip,
 } as const;
 
 /**
@@ -2965,6 +2980,9 @@ export const STRIP_ASKS = {
  */
 export interface StripContext {
   lastEpisodeIso?: string | null;
+  /** CUL-2667: the live D3 predicate for this pet (no meal rated Most or All in 24 h, for an
+   *  owner who rates meals). Only ever adds the floor. */
+  catNoGoodMeal24h?: boolean;
 }
 
 /** A year-less day for the strip: the short form printed, the spoken form for VoiceOver. */
@@ -3095,11 +3113,12 @@ export function stripNameLine(finding: SignalFinding): string | null {
  * one short line so it can never wrap mid-phrase. Null for every benign type: an ask on a
  * benign strip would be the escalation the S1 plainness rule reserves for the safety lane.
  */
-export function stripAskLine(finding: SignalFinding): string | null {
+export function stripAskLine(finding: SignalFinding, ctx: StripContext = {}): string | null {
   switch (finding.type) {
     case 'symptom_burden':
-      // templateBurden: today → "worth a call to your vet today"; soon → "worth booking a vet visit soon".
-      return finding.tier === 'today' ? STRIP_ASKS.call : STRIP_ASKS.visit;
+      // templateBurden: today → "worth a call to your vet today" (deferential, CUL-2667); soon →
+      // "worth booking a vet visit soon".
+      return finding.tier === 'today' ? STRIP_ASKS.callToday : STRIP_ASKS.visit;
     case 'symptom_chronicity':
       // templateChronicity: firm → "worth booking a vet visit", else "worth a word with your vet".
       return finding.tier === 'firm' ? STRIP_ASKS.visit : STRIP_ASKS.tell;
@@ -3111,17 +3130,18 @@ export function stripAskLine(finding: SignalFinding): string | null {
       // pm-feature-review's catch — `Tell your vet` hardened a conditional into an imperative).
       return finding.tier === 'firm' ? STRIP_ASKS.visit : finding.tier === 'soft' ? STRIP_ASKS.check : STRIP_ASKS.tell;
     case 'intake_decline':
-      // templateIntakeDecline: ② ends "a word with your vet if it carries on"; I5 (PR-30s) ends
-      // "That's worth mentioning to your vet.", an unconditional tell.
-      // The sustained-refusal floor ends "worth a call to your vet today", an unconditional call.
-      if (finding.trigger === 'sustained_refusal') return STRIP_ASKS.call;
-      if (finding.trigger === 'refused_then_vomited') return STRIP_ASKS.tell;
-      // CUL-2593: an all-refused card that asks for a call today (every species but a dog) calls.
+      // CUL-2667 (D3 ruled (a)): the floor is a cat with no meal rated Most or All in 24 h. Every
+      // non-dog sustained refusal and all-refused card meets it (a dog's sustained refusal is deferential); a cat meeting the live check
+      // wins over its card type; a trigger this build does not know is floor.
+      if (finding.trigger === 'sustained_refusal') return finding.species === 'dog' ? STRIP_ASKS.callToday : STRIP_ASKS.call;
+      // CUL-2593: an all-refused card asks for a call today for every species but a dog, whose
+      // card keeps its conditional ask (the strip never out-escalates its card).
       if (intakeAllRefusedCallsToday(finding)) return STRIP_ASKS.call;
-      // CUL-2405: the two conditional cards are named; a trigger this build does not know calls.
+      if (finding.species !== 'dog' && ctx.catNoGoodMeal24h === true) return STRIP_ASKS.call;
+      if (finding.trigger === 'refused_then_vomited') return STRIP_ASKS.tell;
       return finding.trigger === 'consecutive_low' || finding.trigger === 'refused_normal_food' ? STRIP_ASKS.check : STRIP_ASKS.call;
     case 'incident_red_flag':
-      // templateIncidentRedFlag: "worth a call to your vet".
+      // A photo flag is floor; a call-only card cannot name its reason, so it is floor too.
       return STRIP_ASKS.call;
     default:
       return null;

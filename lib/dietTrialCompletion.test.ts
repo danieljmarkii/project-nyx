@@ -628,3 +628,38 @@ describe('W1 — the cough fact line renders record-form, both tracked states', 
     expect(sheet.factLines).toEqual(['Cough: 3 during the trial.']);
   });
 });
+
+describe('trialDeclineVetLine: the decline line splits by the cat floor (CUL-2667, D3, mock §05)', () => {
+  const { trialDeclineVetLine } = jest.requireActual('./dietTrialCompletion') as typeof import('./dietTrialCompletion');
+  const FLOOR = 'A cat that stops eating needs a call today, whatever the trial is doing.';
+  it.each([
+    ['an all-refused day', { trigger: 'consecutive_low', allRefused: true }],
+    ['a sustained refusal', { trigger: 'sustained_refusal' }],
+    ['a trigger this build does not know', { trigger: 'something_new' }],
+    ['no facts at all', null],
+  ])('a cat with %s keeps the floor', (_n, fact) => {
+    expect(trialDeclineVetLine('cat', fact, 'Pixel')).toBe(FLOOR);
+  });
+
+  it.each([['consecutive_low'], ['refused_normal_food'], ['refused_then_vomited']])(
+    'a cat\'s partial decline (%s) is deferential and keeps the pointer to the floor',
+    (trigger) => {
+      expect(trialDeclineVetLine('cat', { trigger }, 'Pixel')).toBe(
+        'Worth keeping an eye on, and a word with your vet if it carries on. If Pixel goes a day without a full meal, call your vet today, whatever the trial is doing.',
+      );
+    },
+  );
+
+  const DEFER = 'A pet going off their food is worth a call to your vet, whatever the trial is doing.';
+  it('a dog is deferential on every trigger', () => {
+    expect(trialDeclineVetLine('dog', { trigger: 'sustained_refusal' }, 'Rex')).toBe(DEFER);
+    expect(trialDeclineVetLine('dog', null, 'Rex')).toBe(DEFER);
+  });
+
+  it('any species but a dog takes the floor on a refusal, and is deferential on a partial decline', () => {
+    for (const sp of ['other', null] as const) {
+      expect(trialDeclineVetLine(sp, { trigger: 'sustained_refusal' }, 'Rex')).toBe('A pet that stops eating needs a call today, whatever the trial is doing.');
+      expect(trialDeclineVetLine(sp, { trigger: 'consecutive_low' }, 'Rex')).toBe(DEFER);
+    }
+  });
+});

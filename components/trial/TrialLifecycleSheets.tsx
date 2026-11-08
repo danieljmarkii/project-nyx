@@ -41,6 +41,7 @@ export function TrialLifecycleSheets({
         pronouns={petPronouns(pet.sex ?? 'unknown')}
         dayCounter={lifecycle.sheetDayCounter}
         intakeDeclineHeadline={lifecycle.intakeDeclineHeadline}
+        intakeDeclineFact={lifecycle.intakeDeclineFact}
         onClose={lifecycle.closeCompletion}
         onExtend={lifecycle.extend}
         onChanged={lifecycle.reload}

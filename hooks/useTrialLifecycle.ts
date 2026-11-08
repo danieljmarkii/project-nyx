@@ -26,7 +26,7 @@ import type {
   CompletionSheetEndedRow, CompletionSheetTrial,
 } from '../components/profile/TrialCompletionSheet';
 import type { TrialWindowSheetTrial } from '../components/profile/TrialWindowPanel';
-import type { TrialCardInput } from '../lib/dietTrialCard';
+import type { IntakeDeclineFact, TrialCardInput } from '../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../lib/dietTrialCompletion';
 import { changeTrialWindow, extendTrial, TrialWindowRefused } from '../lib/dietTrialSetup';
 import { windowRefusedLine } from '../lib/trialWindowSheet';
@@ -57,6 +57,8 @@ export interface TrialLifecycle {
   sheetEndedRow: CompletionSheetEndedRow | null;
   sheetDayCounter: number;
   intakeDeclineHeadline: string | null;
+  /** CUL-2667: the first decline's trigger facts, so the closing sheet's vet line splits by D3. */
+  intakeDeclineFact: IntakeDeclineFact | null;
   /** Re-read after the completion sheet's own write. */
   reload: () => void;
   manageVisible: boolean;
@@ -328,6 +330,7 @@ export function useTrialLifecycle(params: {
     sheetEndedRow,
     sheetDayCounter,
     intakeDeclineHeadline: trialInput?.intakeDeclineHeadline ?? null,
+    intakeDeclineFact: trialInput?.intakeDeclineFacts?.[0] ?? null,
     reload: reloadTrial,
     manageVisible,
     closeManage,

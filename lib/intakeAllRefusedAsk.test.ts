@@ -50,13 +50,14 @@ const LOUD: [string, IntakeDeclineFinding][] = [
 describe("a full day of refusal asks for a call today, except for a dog (CUL-2593)", () => {
   it.each(LOUD)('%s: every surface asks for the call', (_name, f) => {
     expect(intakeAllRefusedCallsToday(f)).toBe(true);
-    expect(signalHomeAsk(f)).toBe(CALL);
+    // CUL-2667 (D3, D4): a non-dog all-refused card is the floor, so Home says the floor's words.
+    expect(signalHomeAsk(f)).toBe('call your vet today');
     expect(stripAskLine(f)).toBe(STRIP_ASKS.call);
     const evidence = evidenceText(f, 'Miso');
     expect(evidence).toMatch(/^Miso refused every meal you rated .*, so it's worth a call to your vet today\.$/);
     expect(evidence).not.toMatch(/carries on/);
-    // Home's ask is the server sentence's own vet clause.
-    expect(templateIntakeDecline(serverOf(f), 'Miso')).toContain(signalHomeAsk(f) ?? '<none>');
+    // The server sentence still says the earlier call today until row 3 (CUL-2668) moves it.
+    expect(templateIntakeDecline(serverOf(f), 'Miso')).toContain(CALL);
   });
 
   it('a dog keeps "if it carries on" on every surface', () => {
@@ -76,7 +77,8 @@ describe("a full day of refusal asks for a call today, except for a dog (CUL-259
     }
   });
 
-  it('the banner keeps its own calm ask on every species, like every banner', () => {
-    expect(bannerCopy(card() as BannerSafetyFinding, 'Miso').text).toBe('Miso refused every meal you rated today — worth a look.');
+  it('the banner firms up to the floor for every species but a dog (CUL-2667, D4)', () => {
+    expect(bannerCopy(card() as BannerSafetyFinding, 'Miso').text).toBe('Miso refused every meal you rated today — call your vet today.');
+    expect(bannerCopy(card({ species: 'dog' }) as BannerSafetyFinding, 'Miso').text).toBe('Miso refused every meal you rated today — worth a look.');
   });
 });

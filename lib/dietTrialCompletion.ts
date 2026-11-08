@@ -41,6 +41,7 @@
 // that it is testable without a database — pulling `./db` in through this file
 // would have dragged expo-sqlite into the card's test graph. Same split as
 // `dietTrialCard.ts` / `dietTrialFacts.ts`, for the same reason.
+import { FLOOR_ASK } from './incidentAskWords';
 import type { TrialIndication } from './dietTrialSetup';
 
 // ── The owner's read ─────────────────────────────────────────────────────────
@@ -568,12 +569,42 @@ export function densityLine(facts: TrialOutcomeFacts, petName: string): string {
   );
 }
 
+/**
+ * The vet line under a live intake decline, on the trial card and the closing sheet alike
+ * (CUL-2667; D3 ruled (a), mock §05). The floor is a cat with no meal rated Most or All in 24 h:
+ * an all-refused day, a sustained refusal, or a decline this build cannot name meets it and keeps
+ * the direct line. A cat's partial decline does not, so it takes the Signal's own conditional
+ * ask and keeps the pointer to the floor as a condition on the data. A dog is deferential
+ * (Pattern 11); any other species follows the Signal's "every species but a dog" refusal rule.
+ */
+export function trialDeclineVetLine(
+  species: 'dog' | 'cat' | 'other' | null | undefined,
+  fact: { trigger?: string | null; allRefused?: boolean } | null | undefined,
+  petName: string,
+): string {
+  const deferential = 'A pet going off their food is worth a call to your vet, whatever the trial is doing.';
+  if (species === 'dog') return deferential;
+  const partial =
+    !!fact &&
+    ((fact.trigger === 'consecutive_low' && fact.allRefused !== true) ||
+      fact.trigger === 'refused_normal_food' ||
+      fact.trigger === 'refused_then_vomited');
+  // Any species but a dog takes the floor on a refusal (the all-refused rule, CUL-2675); only a
+  // cat has the conditional pointer, because only a cat's floor is defined by its meals.
+  if (species !== 'cat') return partial ? deferential : 'A pet that stops eating needs a call today, whatever the trial is doing.';
+  if (!partial) return 'A cat that stops eating needs a call today, whatever the trial is doing.';
+  const name = petName.trim() || 'your cat';
+  return `Worth keeping an eye on, and a word with your vet if it carries on. If ${name} goes a day without a full meal, ${FLOOR_ASK.inline}, whatever the trial is doing.`;
+}
+
 export function buildOutcomeSheet(args: {
   facts: TrialOutcomeFacts;
   petName: string;
   species?: 'dog' | 'cat' | 'other';
   indication?: TrialIndication | null;
   intakeDeclineHeadline?: string | null;
+  /** CUL-2667: the decline's trigger facts; absent, a cat's line keeps the floor's words. */
+  intakeDeclineFact?: { trigger?: string | null; allRefused?: boolean } | null;
 }): TrialOutcomeSheetModel {
   const { facts, petName } = args;
 
@@ -660,9 +691,7 @@ export function buildOutcomeSheet(args: {
     // numbers" (B-561). The sibling was corrected for the same reason once the
     // decline branches stopped deleting the off-diet count; this copy tracks it.
     declineNote: declineLead
-      ? (args.species === 'cat'
-          ? 'A cat that stops eating needs a call today, whatever the trial is doing.'
-          : `A pet that goes off their food needs a call, whatever the trial is doing.`) +
+      ? trialDeclineVetLine(args.species, args.intakeDeclineFact, petName) +
         ' Culprit isn’t reading these days as a clean run while this is going on.'
       : null,
   };
