@@ -3,8 +3,9 @@
 // these are the words a read writes, never a rewrite of a stored row.
 
 import { assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import { buildContextualReadText, buildVisualFlagReadText, en4VomitCopy, floorSentence } from './index.ts'
-import { buildVisualFlagReadText as stoolVisual, en7StoolCopy } from '../analyze-stool/index.ts'
+import { buildContextualReadText, buildVisualFlagReadText, en0VomitCopy, en4VomitCopy, floorSentence, selectReadText as selectVomitReadText } from './index.ts'
+import { buildVisualFlagReadText as stoolVisual, en7StoolCopy, selectReadText as selectStoolReadText } from '../analyze-stool/index.ts'
+import { selectReadText as selectSharedReadText, type IncidentCopy } from '../_shared/incident-analysis.ts'
 import type { FloorResult } from '../../../lib/incidentFloor.ts'
 
 Deno.test('photo read: blood or foreign material names its clock; the model\'s own call keeps the shipped words', () => {
@@ -74,4 +75,74 @@ Deno.test('a floor stool photo beside vomiting names the photo first and keeps t
   }
   // The cat intake arm is the floor either way.
   assertStrictEquals(en7StoolCopy('intake').contextualWithPhotoFinding!('Rex', ['concurrent_vomiting'], ['blood']).endsWith('call your vet today.'), true)
+})
+
+// CUL-2682: the class, swept. Every NEWLY stored read sentence over a floor photo sign names the
+// finding and says the floor's words, on vomit and stool, whichever copy the run's flags picked,
+// with or without a contextual flag, and never in the model's own words.
+const FLOOR_PHOTOS: ReadonlyArray<readonly [string[], RegExp]> = [
+  [['blood'], /what looks like blood/],
+  [['suspected_foreign_material'], /something that doesn't look like food/],
+  [['blood', 'suspected_foreign_material'], /what looks like blood, and something that doesn't look like food/],
+]
+// "call your vet today" / "a call to your vet today" (§R), or D2's call-now words on en4's rows.
+const FLOOR_WORDS = /call (to )?your vet today\b|\bneeds? a call to your vet\./
+const MODEL = 'MODEL: calmly worth mentioning to your vet when you can.'
+
+type Select = (contextualFlags: string[], visualFlags: string[]) => string
+const viaCopy = (copy: IncidentCopy<string>): Select => (contextualFlags, visualFlags) =>
+  selectSharedReadText(copy, {
+    petName: 'Rex', recommendation: 'worth_a_call', contextualFlags, visualFlags,
+    modelReadText: MODEL, photoUnreadable: false, hasPhoto: true, modelEscalated: true,
+  })
+const viaWrapper = (sel: typeof selectVomitReadText): Select => (contextualFlags, visualFlags) =>
+  sel({ petName: 'Rex', recommendation: 'worth_a_call', contextualFlags: contextualFlags as never, visualFlags, modelReadText: MODEL, photoUnreadable: false, hasPhoto: true })
+
+const VOMIT_FLAGS = [[], ['repeated_vomiting'], ['concurrent_lethargy'], ['feline_reduced_intake'], ['repeated_vomiting', 'concurrent_lethargy'], ['feline_reduced_intake', 'repeated_vomiting']]
+const STOOL_FLAGS = [[], ['concurrent_vomiting'], ['repeated_loose_stool'], ['concurrent_lethargy'], ['repeated_loose_stool', 'concurrent_lethargy'], ['concurrent_vomiting', 'repeated_loose_stool']]
+
+function floorOf(rows: FloorResult['rows'], tier: 'call_now' | 'call_today'): FloorResult {
+  return { tier, rows, counts: { burst: 3, span: 3 } } as unknown as FloorResult
+}
+
+Deno.test('CUL-2682 · every stored sentence over a floor photo names the finding and says the floor, on vomit and stool', () => {
+  const en0 = en0VomitCopy({ intakeRecord: { window: 'before_vomit', mealsLogged: 2 } } as never) as IncidentCopy<string>
+  const vomit: Array<[string, Select]> = [
+    ['vomit flag-off', viaWrapper(selectVomitReadText)],
+    ['vomit en0', viaCopy(en0)],
+  ]
+  for (const row of ['T1', 'T2', 'T3', 'T6', 'T7', 'T8'] as const) {
+    const tier = row === 'T1' || row === 'T2' || row === 'T3' ? 'call_now' : 'call_today'
+    vomit.push([`vomit en4 ${row}`, viaCopy(en4VomitCopy(en0 as never, floorOf([row], tier)) as IncidentCopy<string>)])
+  }
+  const stool: Array<[string, Select]> = [['stool flag-off', viaWrapper(selectStoolReadText as never)]]
+  for (const reason of ['logged_loose', 'read_loose', 'read_hard', 'intake', 'repeats', 'unread'] as const) {
+    stool.push([`stool en7 ${reason}`, viaCopy(en7StoolCopy(reason) as IncidentCopy<string>)])
+  }
+  let checked = 0
+  for (const [variants, flagSets] of [[vomit, VOMIT_FLAGS], [stool, STOOL_FLAGS]] as const) {
+    for (const [name, select] of variants) {
+      for (const flags of flagSets) {
+        for (const [visual, finding] of FLOOR_PHOTOS) {
+          const t = select([...flags], [...visual])
+          const at = `${name} [${flags.join(',')}] [${visual.join(',')}]: "${t}"`
+          assertStrictEquals(t.includes('MODEL'), false, `model words stored: ${at}`)
+          assertStrictEquals(finding.test(t), true, `finding unnamed: ${at}`)
+          assertStrictEquals(FLOOR_WORDS.test(t), true, `not the floor: ${at}`)
+          assertStrictEquals(/same day|worth telling|worth a word/.test(t), false, `deferential over a floor photo: ${at}`)
+          checked++
+        }
+      }
+    }
+  }
+  assertStrictEquals(checked, (8 * VOMIT_FLAGS.length + 7 * STOOL_FLAGS.length) * FLOOR_PHOTOS.length)
+})
+
+Deno.test('CUL-2682 · without a floor photo sign, the model\'s own call and the flag-off context line are unchanged', () => {
+  // The model's self-escalation with no photo flag keeps its words (step 3).
+  assertStrictEquals(viaWrapper(selectVomitReadText)([], []), MODEL)
+  assertStrictEquals(viaWrapper(selectStoolReadText as never)([], []), MODEL)
+  // A contextual read beside no floor sign keeps the shipped line, word for word.
+  assertStrictEquals(viaWrapper(selectStoolReadText as never)(['repeated_loose_stool'], []), "Rex has had more than one loose stool in a short window. Diarrhea that keeps up like that is worth a call to your vet.")
+  assertStrictEquals(viaWrapper(selectVomitReadText)(['repeated_vomiting'], []), buildContextualReadText('Rex', ['repeated_vomiting']))
 })

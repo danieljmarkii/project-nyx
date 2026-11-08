@@ -211,7 +211,8 @@ Deno.test('pipeline diff B · 9/22: foreign material and the intake flag — the
     }
   })
   assertNoWarningLost(off, on)
-  assertStrictEquals(off.read_text, buildContextualReadText('Nyx', ['feline_reduced_intake']))
+  // CUL-2682: flag-off, the floor photo sign leads too.
+  assertStrictEquals(off.read_text, `I can see something that doesn't look like food in this photo. ${buildContextualReadText('Nyx', ['feline_reduced_intake'])}`)
   assertStrictEquals(
     on.read_text,
     "I can see something that doesn't look like food in this photo. When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, call your vet today.",

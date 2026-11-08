@@ -645,7 +645,8 @@ Deno.test('pipeline CUL-1323 — a HOLD clears a hide the owner may never have s
   const r = await run(w)
   assertStrictEquals(r.body.held, true)
   assertStrictEquals(w.row?.recommendation, 'worth_a_call')
-  assertStrictEquals(w.row?.read_text, 'MODEL: blood')
+  // The escalation's words, as its run stored them: over blood, the floor template (CUL-2682).
+  assertStrictEquals(w.row?.read_text, 'VISUAL:Mochi:blood')
   assertStrictEquals(w.row?.dismissed_at, null)
   assertEquals(w.writes, [{ mode: 'update', values: { dismissed_at: null } }])
 })

@@ -56,6 +56,7 @@ import {
   selectReadText as selectIncidentReadText,
   buildAnalysisWriteBack as buildIncidentAnalysisWriteBack,
   runIncidentAnalysis,
+  hasFloorVisual,
 } from '../_shared/incident-analysis.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 import { anyVomitMeetsRepeatRule, REPEAT_VOMIT_DAY_WINDOW_HOURS } from '../_shared/vomitRepeat.ts'
@@ -452,15 +453,21 @@ export function applyEscalationFloor(params: {
 // Highest-acuity flag wins: concurrent vomiting + diarrhea (fluid loss) leads,
 // then persistent diarrhea, then lethargy. Plain language, pet name, no
 // diagnosis, no alarm.
-export function buildContextualReadText(petName: string, flags: ContextualFlag[]): string {
+// `direct` (CUL-2682): the photo shows a floor sign (blood, foreign material), so the read is a
+// floor read and its context line says the floor's words.
+export function buildContextualReadText(petName: string, flags: ContextualFlag[], direct = false): string {
   const p = petName || 'Your pet'
   if (flags.includes('concurrent_vomiting')) {
-    return `${p} has been vomiting around the same time as this. Vomiting and loose stool together can run a pet down quickly, so it's worth a call to your vet.`
+    return `${p} has been vomiting around the same time as this. Vomiting and loose stool together can run a pet down quickly, so it's worth a call to your vet${direct ? ' today' : ''}.`
   }
   if (flags.includes('repeated_loose_stool')) {
-    return `${p} has had more than one loose stool in a short window. Diarrhea that keeps up like that is worth a call to your vet.`
+    return direct
+      ? `${p} has had more than one loose stool in a short window. Together with the photo, that's worth a call to your vet today.`
+      : `${p} has had more than one loose stool in a short window. Diarrhea that keeps up like that is worth a call to your vet.`
   }
-  return `${p} has also been low on energy around this. Together with the stool, that's worth a quick call to your vet.`
+  return direct
+    ? `${p} has also been low on energy around this. Together with the photo, that's worth a call to your vet today.`
+    : `${p} has also been low on energy around this. Together with the stool, that's worth a quick call to your vet.`
 }
 
 function buildNoFlagReadText(petName: string, hasPhoto: boolean): string {
@@ -532,11 +539,6 @@ function seenInStoolPhoto(visualFlags: string[]): string {
         : 'something worth a closer look'
 }
 
-/** A photo flag that is a floor sign (blood, suspected foreign material). */
-function hasFloorVisual(visualFlags: readonly string[]): boolean {
-  return visualFlags.includes('blood') || visualFlags.includes('suspected_foreign_material')
-}
-
 export function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
   const p = petName || 'your pet'
   const seen = seenInStoolPhoto(visualFlags)
@@ -558,11 +560,18 @@ function buildPhotoUnreadableReadText(petName: string): string {
 // covered by the reassurance-word regex test (Pattern 8) in index.test.ts —
 // NOT inherited from vomit's suite (D2).
 const STOOL_COPY: IncidentCopy<ContextualFlag> = {
-  contextual: buildContextualReadText,
+  contextual: (petName, flags) => buildContextualReadText(petName, flags),
   photoUnreadable: buildPhotoUnreadableReadText,
   monitor: buildMonitorReadText,
   visualFlagFallback: buildVisualFlagReadText,
   noFlag: buildNoFlagReadText,
+  // CUL-2682: a floor sign in the photo leads and the context keeps the floor's words (the
+  // blood went unsaid behind "worth a call to your vet."). Any other photo finding keeps the
+  // shipped contextual line, word for word.
+  contextualWithPhotoFinding: (petName, flags, visualFlags) =>
+    hasFloorVisual(visualFlags)
+      ? `I can see ${seenInStoolPhoto(visualFlags)} in this stool photo. ${buildContextualReadText(petName, flags, true)}`
+      : buildContextualReadText(petName, flags),
 }
 
 // The load-bearing read selection, pure + exported so the never-reassure
@@ -599,21 +608,21 @@ export function buildEn7VomitReadText(petName: string, reason: En7VomitReason, d
   const p = petName || 'Your pet'
   const lead = `${p} has vomited around the same time as this stool`
   if (reason === 'logged_loose') {
-    return `${lead}, which was logged as loose. Vomiting and loose stool together can run a pet down quickly, so ${direct ? 'call your vet' : "it's worth telling your vet the same day"}.`
+    return `${lead}, which was logged as loose. Vomiting and loose stool together can run a pet down quickly, so ${direct ? 'call your vet today' : "it's worth telling your vet the same day"}.`
   }
   if (reason === 'read_loose') {
-    return `${lead}, and it looks loose in the photo. Vomiting and loose stool together can run a pet down quickly, so ${direct ? 'call your vet' : "it's worth telling your vet the same day"}.`
+    return `${lead}, and it looks loose in the photo. Vomiting and loose stool together can run a pet down quickly, so ${direct ? 'call your vet today' : "it's worth telling your vet the same day"}.`
   }
   if (reason === 'read_hard') {
-    return `${lead}, and it looks hard and dry in the photo. Vomiting with a hard, dry stool can be a sign of dehydration, so ${direct ? 'call your vet' : "it's worth telling your vet the same day"}.`
+    return `${lead}, and it looks hard and dry in the photo. Vomiting with a hard, dry stool can be a sign of dehydration, so ${direct ? 'call your vet today' : "it's worth telling your vet the same day"}.`
   }
   if (reason === 'intake') {
     return `${lead}, and when I read this, no meal logged in the 24 hours before was marked Most or All. In a cat that's vomiting, call your vet today.`
   }
   if (reason === 'repeats') {
-    return `${p} has vomited more than once in the days around this stool. Vomiting that repeats like that ${direct ? 'is reason enough to call your vet' : 'is worth a call to your vet the same day'}.`
+    return `${p} has vomited more than once in the days around this stool. Vomiting that repeats like that ${direct ? 'is reason enough to call your vet today' : 'is worth a call to your vet the same day'}.`
   }
-  return `${lead}. With vomiting around it, ${direct ? 'call your vet' : "it's worth a call to your vet the same day"} rather than waiting to see how the next stool looks.`
+  return `${lead}. With vomiting around it, ${direct ? 'call your vet today' : "it's worth a call to your vet the same day"} rather than waiting to see how the next stool looks.`
 }
 
 export function en7StoolCopy(reason: En7VomitReason): IncidentCopy<ContextualFlag> {
@@ -627,7 +636,7 @@ export function en7StoolCopy(reason: En7VomitReason): IncidentCopy<ContextualFla
       `I can see ${seenInStoolPhoto(visualFlags)} in this stool photo. ${
         flags.includes('concurrent_vomiting')
           ? buildEn7VomitReadText(petName, reason, hasFloorVisual(visualFlags))
-          : buildContextualReadText(petName, flags)
+          : buildContextualReadText(petName, flags, hasFloorVisual(visualFlags))
       }`,
   }
 }
