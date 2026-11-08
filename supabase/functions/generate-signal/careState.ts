@@ -45,7 +45,9 @@
 // carries them. A re-raise from before the concern left the set and came back within one course
 // is rebuilt too (louder). The D4 lapse list lives in the cache row; a prior row the shell could
 // not read lapses every answer written before the run (CUL-1663, ruled expire: the owner answers
-// once more), and so does a missing row, or one whose findings say nothing (CUL-1667, ruled A). The replay reads a trial's or course's end date, status and newest dose as they
+// once more), and so does a missing row, or one whose findings say nothing (CUL-1667, ruled A). A run that
+// skips the step carries each detected concern's lapse list forward (`careCarry`, CUL-2662) when its own prior
+// vouched, so an incomplete read no longer voids every answer. The replay reads a trial's or course's end date, status and newest dose as they
 // stand TODAY, not as they stood on each past evening: a newer course that
 // lapsed over a dosing gap of more than 14 days and was dosed again reads as covering the gap, and
 // an end that synced late reads as on time. Both are quieter only with no prior row (the cache's
@@ -811,8 +813,25 @@ export function readPriorCare(raw: unknown): Map<string, PriorCare> {
   for (const e of raw) {
     const f = (e as { finding?: unknown } | null)?.finding as Record<string, unknown> | undefined
     if (!f || typeof f !== 'object' || !CONCERN_TYPES.has(f.type as Finding['type']) || typeof f.symptomType !== 'string') continue
+    // CUL-2662 adversarial X4: only a SAFETY concern speaks for a sign, as in `priorConcernSigns`;
+    // a care fact or carry on any other card (none the engine writes) could vouch for one with none.
+    if (f.priorityClass !== 'safety') continue
     const c = f.careState as Record<string, unknown> | undefined
-    if (!c || typeof c !== 'object') continue
+    if (!c || typeof c !== 'object') {
+      // CUL-2662: a run that skipped the step left a bare carry instead of a care fact. It vouches
+      // that the concern stayed in the set through that run, and it holds the lapses from before
+      // it. It reads as `raised` (no answer of its own, never quieter); this run rebuilds the state.
+      const carry = readCareCarry(f.careCarry)
+      if (!carry) continue
+      const prev = out.get(f.symptomType)
+      out.set(f.symptomType, {
+        state: prev && loud[prev.state] >= loud.raised ? prev.state : 'raised',
+        ackId: prev?.ackId ?? null,
+        reason: prev?.reason ?? carry.reason,
+        lapsed: [...new Set([...(prev?.lapsed ?? []), ...carry.lapsed])],
+      })
+      continue
+    }
     const state = c.state
     if (state !== 'raised' && state !== 'with_vet' && state !== 'recheck_booked' && state !== 'visit_booked' && state !== 'raised_again') continue
     const lapsed = Array.isArray(c.lapsed) ? (c.lapsed as unknown[]).filter((x): x is string => typeof x === 'string') : []
@@ -857,6 +876,43 @@ export function readPriorMarkers(raw: unknown, legacyMs: number | null, tz: stri
     if (lane === null) continue
     const pooled = laterMarker(out.get(f.symptomType) ?? null, lane)
     if (pooled) out.set(f.symptomType, pooled)
+  }
+  return out
+}
+
+/**
+ * The answer state a run that SKIPPED the step stamps on a concern card it detected (CUL-2662,
+ * ruled A 2026-11-07): the prior row's lapse list for the sign, and its re-raise reason. Without
+ * it the next full run reads "held the concern without a care fact" as continuity unknown and
+ * lapses every answer (D4's re-check), and an incomplete read is routine (unsent phone entries,
+ * CUL-1984), so one open with unsynced entries voided every answer for good.
+ */
+export interface CareCarry {
+  lapsed: string[]
+  reason: ReRaiseReason | null
+}
+
+function readCareCarry(raw: unknown): CareCarry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (!Array.isArray(r.lapsed)) return null
+  return { lapsed: r.lapsed.filter((x): x is string => typeof x === 'string'), reason: reasonOf(r.reason) }
+}
+
+/**
+ * Per sign, the carry a skipping run stamps, or nothing. It may vouch only for what ITS prior row
+ * vouched for: the read succeeded, the row has a generation time, and it holds the concern WITH a
+ * care fact or a carry. Any other prior (unreadable, missing, unbounded, the concern absent, or
+ * present with no care fact) gets no carry, so the next full run lapses exactly as it would have.
+ * Louder than the record by construction: the carry only ever adds the lapses it was handed.
+ */
+export function priorCareCarry(priorFindings: unknown, priorGeneratedAtMs: number | null, priorReadFailed: boolean): Map<string, CareCarry> {
+  const out = new Map<string, CareCarry>()
+  if (priorReadFailed || priorGeneratedAtMs === null || !Number.isFinite(priorGeneratedAtMs)) return out
+  const signs = priorConcernSigns(priorFindings)
+  if (signs === null) return out
+  for (const [sign, p] of readPriorCare(priorFindings)) {
+    if (signs.has(sign)) out.set(sign, { lapsed: [...p.lapsed].sort(), reason: p.reason })
   }
   return out
 }
@@ -1103,7 +1159,9 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     // A previous row that held the concern WITHOUT a care fact did not run this step (an
     // incomplete read, a failed flag or logging read, the flag-off engine), so it carried no lapse
     // list and cannot vouch that the concern never left (adversarial re-check of D4). Continuity
-    // unknown is treated as broken: the louder reading, and the owner answers once more.
+    // unknown is treated as broken: the louder reading, and the owner answers once more. A row
+    // that skipped the step with the key on stamps a `careCarry` instead (CUL-2662), which
+    // `readPriorCare` reads as the care fact it stands in for, so this does not fire on it.
     if (priorSigns !== null && priorGen !== null && (!priorSigns.has(sign) || !prior.has(sign))) {
       for (const a of args.record.acknowledgements) {
         if (a.sign === sign && Date.parse(a.createdAt) < priorGen) lapsed.add(a.id)

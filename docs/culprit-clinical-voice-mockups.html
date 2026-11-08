@@ -1,0 +1,637 @@
+<title>Clinical voice</title>
+<meta name="description" content="CUL-2654 mock round 1: every vet ask before and after the deferential voice, the four-sign floor kept direct, and the four decisions the inventory raised.">
+<meta name="mock-round" content="exploratory">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  /* ============================================================
+     Per-incident read tiers, mock round 1 (Engines v3 PR-24; CUL-1133 EN-3
+     + CUL-1134 EN-4, 2026-09-28). Its own current-proposal page, separate
+     from docs/culprit-engines-v3-mockups.html (PR-20 republishes that one).
+     Visual system copied from that page so the two rounds read as one
+     family: the Design v2 device tokens outside the frames, the app's real
+     light tokens (constants/theme.ts) inside them.
+     Layout: a masthead ledger, then one section per thing the plan asked
+     PR-24 to draw, then the ruling sheet and the decision briefs.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --note-ink: #7A4E00; --note-wash: #FDF3DC; --note-rule: #E3B85C;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens, inside the phone frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F4F4F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #E7E5E4;
+    --app-rose: #F43F5E; --app-rose-ink: #B4123B; --app-rose-soft: #FBB6C3;
+    --app-teal: #00C2A8; --app-teal-ink: #0B7B6C; --app-teal-wash: #E0FBF7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  a { color: var(--teal-ink); text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 500; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.needs { color: var(--note-ink); background: var(--note-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+
+  /* The ledger: each critique finding, and what moved on the page */
+  .ledger { display: grid; gap: 0; margin: 26px 0 0; }
+  .ledger div { display: grid; grid-template-columns: 250px 1fr; gap: 16px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-block: 9px; }
+  .ledger div > b { color: var(--ink); font-weight: 500; }
+  @media (max-width: 680px) { .ledger div { grid-template-columns: 1fr; gap: 3px; } }
+  .rule-key { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 22px; font-size: 13.5px; color: var(--ink-2); }
+  .rule-key span { display: inline-flex; align-items: center; gap: 8px; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 36px 0 6px; }
+  p { margin: 0 0 14px; }
+  .col p:last-child { margin-bottom: 0; }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 26px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 316px; max-width: 100%; }
+  .frame-cap { display: flex; flex-direction: column; gap: 5px; }
+  .frame-cap b { font-size: 14.5px; font-weight: 600; }
+  .frame-cap span, .frame-cap li { font-size: 13.5px; color: var(--ink-2); }
+  .frame-cap .pill { font-size: 10.5px; color: var(--teal-ink); }
+  .frame-cap .pill.dir { color: var(--ink-2); }
+  .frame-cap .pill.needs { color: var(--note-ink); }
+  .frame-cap ul { margin: 2px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+  .option { border: 1px dashed var(--rule); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 14px; max-width: 100%; }
+  .option-head { display: flex; flex-direction: column; gap: 4px; }
+  .option-head::before { content: "Option, drawn for the decision, not the current proposal"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .option-head b { font-size: 15px; }
+  .option-head span { font-size: 13.5px; color: var(--ink-2); max-width: 60ch; }
+  .option .frames { margin-top: 0; }
+  .side { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 26px; align-items: flex-start; }
+
+  /* The phone */
+  .phone { width: 316px; max-width: 100%; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.14); padding: 14px 12px 16px; color: var(--app-ink); font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 10px; }
+  .phone.short { padding-bottom: 12px; }
+  .appbar { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 2px; }
+  .appbar .pet { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #3a3a3a, #8a8a8a); }
+  .askpill { font-size: 12px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 10px; display: flex; align-items: center; gap: 5px; }
+  .askpill i { width: 6px; height: 6px; border-radius: 50%; background: var(--app-teal); display: inline-block; }
+  .card { background: var(--app-card); border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .zone-label { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 8px; }
+  .row-divider { height: 1px; background: var(--app-rule); margin: 11px 0; }
+  .zone-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; font-size: 10.5px; color: var(--app-ink-3); }
+  .zone-foot span:last-child { font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; white-space: nowrap; }
+  .fade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 54px; background: linear-gradient(rgba(250,250,250,0), var(--app-ground)); pointer-events: none; }
+
+  /* Signal rows (CUL-1270 as built: headline, count, ask, door) */
+  .door { display: flex; align-items: center; gap: 10px; position: relative; }
+  .door .body { flex: 1; min-width: 0; }
+  .railed { border-left: 3px solid var(--app-rose); padding-left: 10px; }
+  .railed.watch { border-left-color: var(--app-rose-soft); }
+  .plain-row { padding-left: 13px; }
+  .eyebrow-s { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .head { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .head.serif { font-family: var(--serif); font-weight: 500; font-size: 18px; line-height: 1.22; }
+  .asktxt { font-size: 12px; color: var(--app-rose-ink); font-weight: 500; margin-top: 2px; }
+  .sub { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .sub .ask-in { color: var(--app-rose-ink); }
+  .state { display: inline-block; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 4px; padding: 1px 5px; margin-right: 4px; vertical-align: 1px; }
+  .chev { width: 22px; height: 22px; flex-shrink: 0; color: var(--app-ink-3); }
+  .chev svg { display: block; }
+  .chev.big { width: 28px; height: 28px; border-radius: 50%; background: var(--app-subtle); display: grid; place-items: center; }
+  .lane { display: block; margin-top: 6px; }
+  .answers { display: flex; flex-wrap: wrap; column-gap: 16px; row-gap: 16px; margin-top: 9px; }
+  .answers span { font-size: 12px; font-weight: 500; border: 1px solid var(--app-rule); border-radius: 999px; padding: 6px 12px; min-height: 30px; display: inline-flex; align-items: center; color: var(--app-ink); background: var(--app-card); }
+  .answers span.pri { border-color: var(--app-ink); }
+
+  /* Strips (shipped register: context, never urgency) */
+  .strip { background: var(--app-card); border-radius: 14px; padding: 11px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .strip .sh { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; }
+  .strip .sh i { font-style: normal; color: var(--app-ink-3); font-weight: 400; }
+  .strip .sl { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .strip .bar { height: 4px; background: var(--app-subtle); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+  .strip .bar b { display: block; height: 100%; background: var(--app-teal); border-radius: 2px; }
+  .strip .doors { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .ghost { display: grid; gap: 8px; padding: 2px 0; }
+  .ghost i { display: block; height: 8px; border-radius: 4px; background: var(--app-rule); }
+  .ghost i:nth-child(2) { width: 72%; } .ghost i:nth-child(3) { width: 84%; }
+
+  /* Screens (Design v2's Signal screen and forms) */
+  .screen-head { background: var(--app-card); border-radius: 18px; padding: 14px; }
+  .back { font-size: 20px; color: var(--app-ink-2); line-height: 1; margin-bottom: 8px; }
+  .screen-title { font-family: var(--serif); font-size: 21px; line-height: 1.2; letter-spacing: -0.005em; margin-bottom: 6px; }
+  .screen-sent { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; }
+  .mini-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin: 12px 0 6px; }
+  .photo { height: 96px; border-radius: 10px; background: radial-gradient(circle at 38% 42%, #d8c9a8, #9c8a66 55%, #6e6048); position: relative; }
+  .photo::after { content: ""; position: absolute; left: 58%; top: 40%; width: 22px; height: 12px; border-radius: 4px; background: #4b4b52; transform: rotate(-18deg); }
+  .qblock { background: var(--app-subtle); border-radius: 12px; padding: 11px 12px 12px; margin-top: 12px; }
+  .qblock .q { font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .qblock .qs { font-size: 11.5px; color: var(--app-ink-2); margin-top: 3px; }
+  .qblock .answers span { background: var(--app-card); }
+  .form-row { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--app-rule); }
+  .form-row:first-of-type { border-top: 0; }
+  .form-row .fr-h { font-size: 13px; font-weight: 600; }
+  .form-row .fr-s { font-size: 11.5px; color: var(--app-ink-2); }
+  .seg { display: flex; gap: 0; margin-top: 7px; border: 1px solid var(--app-rule); border-radius: 10px; overflow: hidden; }
+  .seg span { flex: 1; text-align: center; font-size: 11.5px; font-weight: 500; padding: 7px 4px; min-height: 32px; display: grid; place-items: center; border-left: 1px solid var(--app-rule); }
+  .seg span:first-child { border-left: 0; }
+  .seg span.on { background: var(--app-ink); color: #fff; }
+  .read-pill { display: inline-block; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; border-radius: 999px; padding: 3px 9px; }
+  .read-pill.call { color: #fff; background: var(--app-rose); }
+  .read-pill.watchfor { color: var(--app-ink-2); background: var(--app-subtle); }
+  .obs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .obs span { font-size: 11px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 9px; color: var(--app-ink-2); }
+  .correction { margin-top: 10px; border-top: 1px solid var(--app-rule); padding-top: 9px; font-size: 11.5px; color: var(--app-ink-2); }
+  .correction b { color: var(--app-ink); font-weight: 600; }
+  .struck { color: var(--app-ink-3); }
+
+  /* The annotation layer: never app chrome. Marks a row the rules cannot draw yet. */
+  .needs-tag { display: inline-block; margin-bottom: 5px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: #7A4E00; background: #FDF3DC; border: 1px solid #E3B85C; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+  .needs-box { outline: 1.5px dashed #E3B85C; outline-offset: 4px; border-radius: 6px; }
+  .note { font-size: 13.5px; color: var(--ink-2); background: var(--note-wash); border-left: 3px solid var(--note-rule); padding: 10px 14px; border-radius: 0 6px 6px 0; max-width: 72ch; }
+  .note b { color: var(--ink); }
+
+  /* Briefs */
+  .briefs { display: grid; gap: 18px; margin-top: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 8px; }
+  .brief h4 { margin: 0; font-size: 16px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .brief p { margin: 0; }
+  .brief b { color: var(--ink); }
+  .brief ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; }
+  .next-list { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14.5px; max-width: 72ch; }
+  footer { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 8px 18px; }
+
+  /* Round 2: the loop diagram and the new screen parts */
+  .archive { margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+  .archive summary { cursor: pointer; color: var(--ink-2); font-size: 13.5px; }
+  .archive summary:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .ledger q { font-style: italic; quotes: "\201C" "\201D"; }
+  .diagram { margin: 28px 0 0; max-width: 980px; }
+  .diagram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; color: var(--ink); }
+  .diagram-scroll svg { display: block; width: 100%; min-width: 760px; height: auto; }
+  .diagram figcaption { font-size: 13.5px; color: var(--ink-2); margin-top: 10px; max-width: 72ch; }
+  .d-lane { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; fill: var(--ink-3); }
+  .d-label { font-family: var(--sans); font-size: 13px; font-weight: 500; fill: var(--ink); }
+  .d-small { font-family: var(--sans); font-size: 11.5px; fill: var(--ink-2); }
+  .d-node { fill: var(--paper-2); stroke: var(--rule); stroke-width: 1.2; }
+  .d-node-raised { stroke: var(--rose-ink); }
+  .d-node-new { stroke: var(--teal-ink); stroke-dasharray: 4 3; }
+  .d-shipped { stroke: var(--ink-3); stroke-width: 1.4; fill: none; }
+  .d-shipped-fill { fill: var(--ink-3); }
+  .d-new { stroke: var(--teal-ink); stroke-width: 2; fill: none; }
+  .d-new-fill { fill: var(--teal-ink); }
+  .d-new-text { fill: var(--teal-ink); font-weight: 500; }
+  .d-boundary { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 4; }
+  .links { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .links span { min-height: 30px; display: inline-flex; align-items: center; }
+  .field { margin-top: 10px; border: 1px solid var(--app-rule); border-radius: 10px; padding: 10px; font-size: 12.5px; line-height: 1.45; min-height: 74px; color: var(--app-ink); }
+  .field.slim { min-height: 36px; color: var(--app-ink-3); }
+  .save { margin-top: 12px; background: var(--app-ink); color: #fff; border-radius: 12px; text-align: center; font-weight: 600; font-size: 13px; padding: 10px; }
+  .tick-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; min-height: 36px; border-top: 1px solid var(--app-rule); }
+  .tick-row i { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--app-ink-3); flex-shrink: 0; position: relative; }
+  .tick-row.on i { background: var(--app-teal-ink); border-color: var(--app-teal-ink); }
+  .tick-row.on i::after { content: ""; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .choice { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; border-top: 1px solid var(--app-rule); font-size: 13px; font-weight: 500; }
+  .choice em { font-style: normal; font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; }
+  .vv-row { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-top: 1px solid var(--app-rule); font-size: 12px; color: var(--app-ink-2); }
+  .vv-row b { font-size: 13px; color: var(--app-ink); font-weight: 600; }
+  .vv-note { font-style: italic; color: var(--app-ink-2); }
+  .frame-cap code, .brief code, .col code { font-family: var(--mono); font-size: 0.86em; }
+
+  /* ── Round-specific: the tier chips (shape carries now vs today, never hue alone) ── */
+  .tier { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; line-height: 1.2; border-radius: 999px; padding: 3px 10px; border: 1.5px solid transparent; white-space: nowrap; }
+  .tier.now { background: var(--app-rose); color: #fff; }
+  .tier.today { background: var(--app-card); color: var(--app-rose-ink); border-color: var(--app-rose); }
+  .tier.pattern { background: var(--app-card); color: var(--app-ink); border-color: var(--app-rose-soft); border-style: dashed; }
+  .tier.eye { background: var(--app-subtle); color: var(--app-ink-2); }
+  .tier.nes { background: var(--app-subtle); color: var(--app-ink-3); }
+  .tier.legacy { background: var(--app-rose); color: #fff; }
+  .tier.legacy-calm { background: var(--app-subtle); color: var(--app-ink-2); }
+  .tier.page { font-size: 11px; }
+  .readcard { background: var(--app-card); border-radius: 16px; padding: 12px 14px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 7px; }
+  .readcard.r-call { border-left: 3px solid var(--app-rose); }
+  .readcard.r-pattern { border-left: 3px dashed var(--app-rose-soft); }
+  .rc-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .rc-eyebrow { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .rc-action { font-size: 13.5px; font-weight: 600; line-height: 1.35; }
+  .rc-why { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; }
+  .rc-script { font-size: 11.5px; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 8px; padding: 7px 9px; line-height: 1.45; }
+  .rc-script b { color: var(--app-ink); font-weight: 600; }
+  .rc-foot { font-size: 10.5px; color: var(--app-ink-3); }
+  .rc-door { font-size: 12px; font-weight: 500; color: var(--app-teal-ink); min-height: 30px; display: inline-flex; align-items: center; }
+  .watch { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--app-rule); padding-top: 8px; }
+  .watch p { margin: 0; font-size: 12px; line-height: 1.45; color: var(--app-ink); }
+  .watch p b { font-weight: 600; }
+  .watch .static { color: var(--app-rose-ink); }
+  .disclose { font-size: 11.5px; color: var(--app-ink); background: var(--app-subtle); border-radius: 8px; padding: 8px 9px; line-height: 1.45; display: flex; flex-direction: column; gap: 3px; }
+  .disclose span { color: var(--app-teal-ink); font-weight: 500; }
+  .raised { font-size: 11.5px; color: var(--app-ink-2); border-top: 1px solid var(--app-rule); padding-top: 7px; }
+  .raised b { color: var(--app-ink); font-weight: 600; }
+  .seam { font-size: 11px; color: var(--app-ink-2); border: 1px solid var(--app-rule); border-radius: 8px; padding: 7px 9px; line-height: 1.45; }
+  .meta-line { font-size: 10.5px; color: var(--app-ink-3); }
+  .nophoto { height: 58px; border-radius: 10px; background: var(--app-subtle); display: grid; place-items: center; font-size: 11px; color: var(--app-ink-3); }
+  .rec-title { font-family: var(--serif); font-size: 19px; line-height: 1.2; }
+  .rec-sub { font-size: 11.5px; color: var(--app-ink-2); }
+  .hrow { display: flex; align-items: center; gap: 10px; min-height: 44px; border-top: 1px solid var(--app-rule); font-size: 12.5px; }
+  .hrow:first-of-type { border-top: 0; }
+  .hrow .t { width: 58px; flex-shrink: 0; color: var(--app-ink-3); font-size: 11.5px; }
+  .hrow .w { flex: 1; min-width: 0; }
+  .hrow .w small { display: block; color: var(--app-ink-3); font-size: 10.5px; }
+  .hdiv { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--app-ink-3); padding: 8px 0 4px; border-top: 1px dashed var(--app-rule); }
+  .complete { background: var(--app-ink); color: #fff; border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }
+  .complete .c1 { font-size: 13.5px; font-weight: 600; }
+  .complete .c2 { font-size: 12px; color: #d4d4d4; line-height: 1.45; }
+  .complete .c3 { font-size: 12px; color: #7eecdc; font-weight: 500; }
+  .complete .c4 { font-size: 11.5px; color: #fbb6c3; font-weight: 600; }
+  .month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .month i { aspect-ratio: 1; max-width: 100%; border-radius: 6px; background: var(--app-subtle); font-style: normal; font-size: 9px; color: var(--app-ink-3); display: grid; place-items: start; padding: 2px 3px; position: relative; }
+  .month i.c { background: var(--app-rose); color: #fff; }
+  .month i.p { box-shadow: inset 0 0 0 1.5px var(--app-ink-3); }
+  .month i.seamday { box-shadow: inset 2px 0 0 0 var(--app-ink); }
+  .legend { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: var(--app-ink-2); margin-top: 8px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--app-rose); display: inline-block; flex-shrink: 0; }
+  .legend i.pp { background: transparent; box-shadow: inset 0 0 0 1.5px var(--app-ink-3); }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .tile { border-radius: 10px; background: var(--app-card); box-shadow: 0 1px 2px rgba(0,0,0,0.06); padding: 5px; display: flex; flex-direction: column; gap: 4px; }
+  .tile .ph { height: 42px; border-radius: 7px; background: radial-gradient(circle at 40% 45%, #d8c9a8, #9c8a66 60%, #6e6048); }
+  .tile .tl { font-size: 9.5px; color: var(--app-ink-3); }
+  .tile .tier { font-size: 9.5px; padding: 2px 6px; white-space: normal; }
+
+  /* Page-level tables */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 22px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-2); }
+  table.grid { border-collapse: collapse; width: 100%; font-size: 13px; color: var(--ink-2); min-width: 980px; }
+  table.grid th, table.grid td { text-align: left; vertical-align: top; padding: 9px 11px; border-top: 1px solid var(--rule-soft); }
+  table.grid thead th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; border-top: 0; background: var(--paper-2); position: sticky; top: 0; }
+  table.grid tbody th { color: var(--ink); font-weight: 600; font-size: 13px; min-width: 150px; }
+  table.grid td b { color: var(--ink); font-weight: 600; }
+  table.grid td small { display: block; color: var(--ink-3); font-size: 11.5px; margin-top: 2px; }
+  table.grid tr.contested td, table.grid tr.contested th { background: var(--note-wash); }
+  table.grid tr.held td, table.grid tr.held th { background: var(--rule-soft); }
+  .dir { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+  .dir.louder { color: var(--rose-ink); } .dir.same { color: var(--ink-3); } .dir.quieter { color: var(--note-ink); }
+  .speak { font-family: var(--serif); font-style: italic; color: var(--ink); }
+  .specimens { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 18px; padding: 16px; border-radius: 12px; background: var(--app-ground); color: var(--app-ink); border: 1px solid var(--rule); }
+  .specimens figure { margin: 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .specimens figcaption { font-family: var(--mono); font-size: 10px; color: var(--app-ink-3); letter-spacing: 0.04em; }
+  ol.spec { margin: 14px 0 0; padding-left: 22px; display: grid; gap: 9px; color: var(--ink-2); font-size: 14.5px; max-width: 76ch; }
+  ol.spec b { color: var(--ink); }
+  .toc { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 4px 24px; margin-top: 18px; font-size: 14px; }
+  .toc a { text-decoration: none; color: var(--ink-2); padding: 3px 0; border-bottom: 1px solid var(--rule-soft); display: flex; gap: 10px; }
+  .toc a span { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+  .toc a:hover { color: var(--ink); }
+</style>
+<style>
+  /* CUL-2654 additions: before / after pairs, the floor tag, the strip, the banner. */
+  .pair { display: flex; flex-wrap: wrap; gap: 20px 24px; margin-top: 26px; align-items: flex-start; }
+  .stamp { display: inline-flex; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; width: fit-content; }
+  .stamp.before { color: var(--ink-2); background: var(--rule-soft); }
+  .stamp.after { color: var(--teal-ink); background: var(--teal-wash); }
+  .stamp.floor { color: var(--rose-ink); background: var(--rose-wash); }
+  .tier.soft { background: var(--app-card); color: var(--app-rose-ink); border-color: var(--app-rose-soft); }
+  .tier.softnow { background: var(--app-card); color: var(--app-rose-ink); border-color: var(--app-rose); border-width: 2px; }
+  .optional { border: 1px dashed var(--app-rule); border-radius: 8px; padding: 6px 9px; font-size: 11.5px; color: var(--app-ink-2); }
+  .optional::before { content: "R-2 option · "; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--app-ink-3); }
+  .srow { display: flex; gap: 10px; align-items: flex-start; padding: 4px 0; }
+  .srow .body { flex: 1; min-width: 0; }
+  .srow.railed { padding-left: 10px; }
+  table.grid th small { display: block; color: var(--ink-3); font-size: 11.5px; font-weight: 400; margin-top: 2px; }
+  .s-head { font-weight: 600; font-size: 13.5px; line-height: 1.3; }
+  .s-count { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .s-ask { font-size: 12px; font-weight: 600; color: var(--app-rose-ink); margin-top: 4px; }
+  .s-ask.soft { color: var(--app-ink); font-weight: 500; }
+  .chev { color: var(--app-ink-3); font-size: 16px; padding-top: 2px; }
+  .banner { font-size: 12.5px; line-height: 1.4; background: var(--app-card); border-radius: 12px; padding: 10px 12px; border-left: 3px solid var(--app-rose); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .banner b { font-weight: 600; }
+  .door-sheet h4 { margin: 0 0 6px; font-size: 14px; }
+  .door-sheet .blk { font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin: 10px 0 4px; }
+  .door-sheet ul { margin: 0; padding-left: 16px; font-size: 12px; color: var(--app-ink-2); display: grid; gap: 3px; }
+  .door-sheet .met { font-weight: 600; color: var(--app-rose-ink); font-size: 13px; margin-top: 8px; }
+  .door-sheet .met.soft { color: var(--app-ink); }
+  .lines { display: grid; gap: 0; margin-top: 22px; border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--paper-2); }
+  .lines > div { display: grid; grid-template-columns: 200px 1fr 1fr; gap: 14px; padding: 11px 14px; border-top: 1px solid var(--rule-soft); font-size: 13.5px; color: var(--ink-2); }
+  .lines > div:first-child { border-top: 0; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .lines > div > b { color: var(--ink); font-weight: 600; font-size: 13px; }
+  .lines .new { color: var(--ink); }
+  @media (max-width: 760px) { .lines > div { grid-template-columns: 1fr; gap: 4px; } .lines > div:first-child { display: none; } }
+  .brief { border: 1px solid var(--rule); border-radius: 12px; padding: 16px 18px; background: var(--paper-2); margin-top: 18px; max-width: 82ch; font-size: 14.5px; color: var(--ink-2); }
+  .brief h3 { margin: 0 0 8px; color: var(--ink); }
+  .brief p { margin: 0 0 8px; }
+  .brief p:last-child { margin-bottom: 0; }
+  .brief b { color: var(--ink); }
+  .conflict { border-left: 3px solid var(--note-rule); padding-left: 12px; margin: 8px 0; }
+</style>
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 1 · exploratory</span><span>CUL-2654 · clinical voice</span><span>2026-11-07</span></p>
+    <h1>Every vet ask, before and after: the owner decides, except four signs</h1>
+    <p class="standfirst">The PM ruled option A on 2026-11-07. The app shows the data, gives a nudge, and leaves the call to the owner, who is closest to the pet. Four signs keep today's direct words: blood in vomit or stool, a possibly swallowed object, a cat not eating for a day or more, and collapse or a breathing sign. Each frame here shows today's words beside the proposal. The full inventory, about 150 strings with file and line, is <code>docs/clinical-voice-inventory-2026-11.md</code>.</p>
+    <div class="ledger">
+      <div><b>What the sweep found</b><span>The record picks its ask by tier, never by reason. "Call your vet today" is one string for a blood photo and for a dog that vomited twice, so the floor needs a words layer keyed on the stored reason (D1). <span class="pill open">decision · §06</span></span></div>
+      <div><b>The three "call now" rows</b><span>The only reads that say <i>now</i> come from vomit counts and vomiting with lethargy, and none of them is on the ruled floor. Dr. Chen and the Designer disagree. <span class="pill open">conflict · §03</span></span></div>
+      <div><b>A cat off food</b><span>The code holds six definitions of "not eating". The floor needs one. <span class="pill open">decision · §05</span></span></div>
+      <div><b>Floor cases that read soft today</b><span>Home's banner says "worth a look" over a blood photo. Should the floor get firmer where today's words are soft? <span class="pill open">decision · §04</span></span></div>
+      <div><b>The formula</b><span>Soften the verb, keep the clock, keep the reason. The deference never rests on a condition the owner's sense of normal can switch off. <span class="pill">current · §01</span> <span class="pill needs">reaction R-1</span></span></div>
+      <div><b>Already deferential, unchanged</b><span>Most Signal cards ("worth booking a vet visit soon", "worth a word with your vet"), every monitor and unreadable read, Ask's own lines, and every notification, none of which names the vet. <span class="pill">no change</span></span></div>
+    </div>
+    <div class="rule-key">
+      <span><span class="stamp before">Today</span> shipped words</span>
+      <span><span class="stamp after">Proposed</span> the deferential voice</span>
+      <span><span class="stamp floor">Floor</span> direct words kept</span>
+    </div>
+    <p class="note" style="margin-top:22px"><b>What the frames are.</b> Mochi is Jordan's dog, and Pixel is Sam's free-fed cat. The times are illustrative. Colour does not change in this round: a call keeps the rose, and only the words move.</p>
+    <nav class="toc" aria-label="Sections">
+      <a href="#s01"><span>01</span>The formula</a>
+      <a href="#s02"><span>02</span>The record: a call today</a>
+      <a href="#s03"><span>03</span>The record: the "now" rows (D2)</a>
+      <a href="#s04"><span>04</span>Home: the row, the strip, the banner (D4)</a>
+      <a href="#s05"><span>05</span>A cat off food (D3)</a>
+      <a href="#s06"><span>06</span>When to call the vet</a>
+      <a href="#s07"><span>07</span>The small lines</a>
+      <a href="#s08"><span>08</span>The four decisions</a>
+    </nav>
+  </header>
+
+  <!-- 01 -->
+  <section id="s01">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Soften the verb, keep the clock, keep the reason</h2></div>
+    <div class="col">
+      <p>Deference lives in the verb: "worth a call" in place of "call". The urgency lives in the data and the clock word, which stay. A deferential ask never drops <i>today</i> or <i>tonight</i>, never says something can wait, and never offers an out that rests on the owner's sense of normal.</p>
+      <p><b>Why that last rule (Data Scientist, falsification attempt).</b> The friendliest draft was "If this isn't like Mochi, a call today is worth it." It fails for a chronic vomiter: a dog that throws up twice a week <i>is</i> like Mochi, so the owner's baseline turns the call into a stand-down. That normalised, chronic case is the one vets most often hear about too late. The draft was rejected, and the rule holds.</p>
+    </div>
+    <div class="specimens" aria-label="The ask chips, today and proposed">
+      <figure><span class="tier today">Call your vet today</span><figcaption>today · every call_today</figcaption></figure>
+      <figure><span class="tier soft">Worth a call today</span><figcaption>proposed · non-floor call_today</figcaption></figure>
+      <figure><span class="tier today">Call your vet today</span><figcaption>floor · blood, object, cat off food</figcaption></figure>
+      <figure><span class="tier now">Call your vet now</span><figcaption>today · T1, T2, T3 (see §03)</figcaption></figure>
+      <figure><span class="tier eye">Keep an eye out</span><figcaption>unchanged</figcaption></figure>
+      <figure><span class="tier legacy">Worth a call</span><figcaption>earlier-rule rows · unchanged</figcaption></figure>
+    </div>
+  </section>
+
+  <!-- 02 -->
+  <section id="s02">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The record: a call today, deferential and floor</h2></div>
+    <div class="col"><p>On the left, Mochi has vomited twice within a day (floor row T6, a dog). That is not one of the four signs, so its words soften. On the right, Pixel's vomit photo shows what looks like blood, which is on the floor, so its words stay as they are today. Between them is R-2, an optional closing line on deferential call cards only, drawn dashed.</p></div>
+    <div class="pair">
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp before">Today</span><b>Mochi · two vomits in a day</b></div>
+        <div class="phone short">
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Nov 7, 4:10 PM</div><div class="rec-sub">Witnessed · Mochi</div></div>
+          <div class="readcard r-call">
+            <div class="rc-h"><span class="rc-eyebrow">Mochi's read</span><span class="tier today">Call your vet today</span></div>
+            <div class="rc-action">Call your vet today. If they're closed, call an emergency clinic.</div>
+            <div class="rc-why">Mochi has thrown up twice within a day. In a dog, that needs a call to your vet.</div>
+            <div class="rc-script"><b>What to tell them:</b> vomited at 7:40 AM and 4:10 PM.</div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp after">Proposed</span><b>Mochi · two vomits in a day</b><span>The data sentence leads, the chip becomes a nudge, and <i>today</i> and the clinic stay.</span></div>
+        <div class="phone short">
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Nov 7, 4:10 PM</div><div class="rec-sub">Witnessed · Mochi</div></div>
+          <div class="readcard r-call">
+            <div class="rc-h"><span class="rc-eyebrow">Mochi's read</span><span class="tier soft">Worth a call today</span></div>
+            <div class="rc-why">Mochi has thrown up twice within a day. In a dog, that's the kind of thing vets like to hear about the same day.</div>
+            <div class="rc-action">Worth a call today. If your vet is closed, an emergency clinic can talk it through.</div>
+            <div class="optional">You see Mochi every day. This is what the log shows.</div>
+            <div class="rc-script"><b>What to tell them:</b> vomited at 7:40 AM and 4:10 PM.</div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp floor">Floor</span><b>Pixel · blood in the photo</b><span>Unchanged apart from the read text, which gains its clock word, "today" (D4).</span></div>
+        <div class="phone short">
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Nov 7, 9:20 AM</div><div class="rec-sub">Found · Pixel</div></div>
+          <div class="photo"></div>
+          <div class="readcard r-call">
+            <div class="rc-h"><span class="rc-eyebrow">Pixel's read</span><span class="tier today">Call your vet today</span></div>
+            <div class="rc-action">Call your vet today. If they're closed, call an emergency clinic.</div>
+            <div class="rc-why">I can see what looks like blood in this photo. That's worth a call to your vet <b>today</b>.</div>
+            <div class="obs"><span>Blood: possible, fresh</span><span>Foreign material: none visible</span></div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ol class="spec">
+      <li><b>The words come from the reason, not the tier.</b> Blood (<code>blood_present</code>, <code>stool_blood_present</code>), a possible object (<code>foreign_material_present</code>) and a cat off food (<code>feline_reduced_intake</code>, per D3) get the floor words. Every other call gets the deferential ones. A reason this build does not know gets the floor words, so the layer fails loud (D1).</li>
+      <li><b>On a deferential card the data sentence moves above the action line.</b> The owner reads what happened before the nudge.</li>
+      <li><b>Only new reads change.</b> A stored read keeps its read text, as <code>worth_a_call</code> rows do today.</li>
+    </ol>
+  </section>
+
+  <!-- 03 -->
+  <section id="s03">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The "now" rows: three vomit counts and vomiting with lethargy (D2)</h2></div>
+    <div class="col"><p>T1 (3 vomits within half an hour), T2 (3 separate bouts within 4 hours) and T3 (vomiting with a lethargy log) are the record's only <i>now</i> reads. The door's "Subdued and vomiting" row is the same case. None is one of the four ruled signs, so the ruling, read literally, softens them. This is a persona conflict, and both options are drawn.</p></div>
+    <div class="pair">
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp before">Today</span><b>Mochi · three vomits in half an hour (T1)</b></div>
+        <div class="phone short">
+          <div class="readcard r-call">
+            <div class="rc-h"><span class="rc-eyebrow">Mochi's read</span><span class="tier now">Call your vet now</span></div>
+            <div class="rc-action">Call your vet now. If they're closed, call an emergency clinic.</div>
+            <div class="rc-why">Mochi has thrown up 3 times within about half an hour. That many close together needs a call to your vet.</div>
+          </div>
+        </div>
+      </div>
+      <div class="option">
+        <div class="option-head"><b>(a) The <i>now</i> tier joins the floor ★ Dr. Chen</b><span>The words don't change. The floor becomes "four signs, plus anything the read tiers as now".</span></div>
+        <div class="frames">
+          <div class="phone short">
+            <div class="readcard r-call">
+              <div class="rc-h"><span class="rc-eyebrow">Mochi's read</span><span class="tier now">Call your vet now</span></div>
+              <div class="rc-action">Call your vet now. If they're closed, call an emergency clinic.</div>
+              <div class="rc-why">Mochi has thrown up 3 times within about half an hour. That many close together needs a call to your vet.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="option">
+        <div class="option-head"><b>(b) Deferential, and the clock stays <i>now</i> ★ Designer, Jordan</b><span>Filled rose and the word "now" stay, so the tier stays distinct. Only the verb softens.</span></div>
+        <div class="frames">
+          <div class="phone short">
+            <div class="readcard r-call">
+              <div class="rc-h"><span class="rc-eyebrow">Mochi's read</span><span class="tier now">Worth a call now</span></div>
+              <div class="rc-why">Mochi has thrown up 3 times within about half an hour. Vets want to hear about that many close together tonight, not tomorrow.</div>
+              <div class="rc-action">Worth a call now. If your vet is closed, an emergency clinic can talk it through.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note" style="margin-top:22px"><b>Option (c), softening them to "worth a call today", is not drawn.</b> It drops the clock word, which the §01 formula forbids.</p>
+  </section>
+
+  <!-- 04 -->
+  <section id="s04">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Home: the Signal row, its strip verb, and the banner (D4)</h2></div>
+    <div class="col"><p>Most Signal sentences already defer ("worth booking a vet visit soon"). The directive words sit in the strip's short verbs and in call-only cards, which borrow the record's tier words. The banner runs the other way: it softens floor cases to "worth a look".</p></div>
+    <div class="pair">
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp before">Today</span><b>Signal rows</b></div>
+        <div class="phone short">
+          <div class="card">
+            <div class="zone-label">The Signal</div>
+            <div class="srow railed"><div class="body"><div class="s-head">Pixel refused every meal you rated today</div><div class="s-count">3 of 3 meals refused</div><div class="s-ask">Call your vet</div></div><span class="chev">›</span></div>
+            <div class="row-divider"></div>
+            <div class="srow railed"><div class="body"><div class="s-head">Mochi has vomited on 3 days in a row</div><div class="s-count">5 times since Nov 5</div><div class="s-ask">Call your vet</div></div><span class="chev">›</span></div>
+            <div class="row-divider"></div>
+            <div class="srow railed watch"><div class="body"><div class="s-head">Vomiting, coming back more often</div><div class="s-count">4 days this week, 1 the week before</div><div class="s-ask soft">Tell your vet</div></div><span class="chev">›</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp after">Proposed</span><b>Signal rows</b><span>Pixel meets the floor (D3) and keeps "Call your vet". Mochi's run softens and keeps <i>today</i>. "Tell" becomes "Worth telling".</span></div>
+        <div class="phone short">
+          <div class="card">
+            <div class="zone-label">The Signal</div>
+            <div class="srow railed"><div class="body"><div class="s-head">Pixel refused every meal you rated today</div><div class="s-count">3 of 3 meals refused</div><div class="s-ask">Call your vet</div></div><span class="chev">›</span></div>
+            <div class="row-divider"></div>
+            <div class="srow railed"><div class="body"><div class="s-head">Mochi has vomited on 3 days in a row</div><div class="s-count">5 times since Nov 5</div><div class="s-ask">Worth a call today</div></div><span class="chev">›</span></div>
+            <div class="row-divider"></div>
+            <div class="srow railed watch"><div class="body"><div class="s-head">Vomiting, coming back more often</div><div class="s-count">4 days this week, 1 the week before</div><div class="s-ask soft">Worth telling your vet</div></div><span class="chev">›</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp before">Today</span><b>Banner over a floor case</b></div>
+        <div class="phone short">
+          <div class="banner"><b>Pixel</b> has a logged photo showing possible blood — worth a look.</div>
+          <div class="banner"><b>Pixel</b> refused every meal you rated today — worth a look.</div>
+        </div>
+      </div>
+      <div class="option">
+        <div class="option-head"><b>D4 (a): the floor firms up on the banner ★</b><span>(b) leaves the banner as it is today.</span></div>
+        <div class="frames">
+          <div class="phone short">
+            <div class="banner"><b>Pixel</b> has a logged photo showing possible blood — call your vet today.</div>
+            <div class="banner"><b>Pixel</b> refused every meal you rated today — call your vet today.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 -->
+  <section id="s05">
+    <div class="sec-head"><span class="sec-num">05</span><h2>A cat off food: one definition for the floor (D3)</h2></div>
+    <div class="col"><p>Six predicates in the code each mean "not eating" to some surface. The floor needs exactly one, and the ones left off it soften.</p></div>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="The six not-eating predicates">
+      <table class="grid">
+        <thead><tr><th>Predicate</th><th>Where</th><th>Says today</th><th>Under D3 (a) ★</th></tr></thead>
+        <tbody>
+          <tr><th>No meal rated Most or All in 24 h<small>owner rates meals; EN-5 arm</small></th><td><code>feline_reduced_intake</code>, <code>MAY_WAIT_INTAKE_HOURS</code>, EN-7's intake arm</td><td>"worth a call to your vet sooner rather than later"</td><td><b>Floor:</b> "In a cat, that's a call to your vet today."</td></tr>
+          <tr><th>Every rated meal refused today</th><td><code>consecutive_low</code> + all refused, not a dog</td><td>"worth a call to your vet today"</td><td><b>Floor</b> (meets the 24 h predicate)</td></tr>
+          <tr><th>Any refused rating in 24 h</th><td>the door's "Not eating for a day"</td><td>"Call your vet today."</td><td><b>Floor</b>, unchanged</td></tr>
+          <tr><th>Trial refusal register<small>≥3 rated, ≥2 days, ≥50% refused</small></th><td><code>lib/dietTrial.ts:4545</code></td><td>"needs a call today"</td><td><b>Floor</b>, unchanged</td></tr>
+          <tr><th>72 h with no good meal</th><td><code>sustained_refusal</code>, both species</td><td>"worth a call to your vet today"</td><td>cat: <b>floor</b>; dog: unchanged (already deferential)</td></tr>
+          <tr class="contested"><th>Eating less than usual, not refused</th><td><code>consecutive_low</code>; a cat fires after one day</td><td>Signal: "worth keeping an eye on…"; trial card: "A cat that stops eating needs a call today"</td><td>Deferential on both. The trial card stops being louder than the Signal.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pair">
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp before">Today</span><b>Trial card · Pixel eating less</b></div>
+        <div class="phone short"><div class="card"><div class="zone-label">Diet trial · day 12</div><div class="s-head">Pixel has eaten less than usual today</div><div class="rc-why" style="margin-top:6px">A cat that stops eating needs a call today, whatever the trial is doing.</div></div></div>
+      </div>
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp after">Proposed</span><b>Trial card · Pixel eating less</b><span>Partial intake doesn't meet the 24 h predicate. The pointer to the floor stays, worded as a condition on the data.</span></div>
+        <div class="phone short"><div class="card"><div class="zone-label">Diet trial · day 12</div><div class="s-head">Pixel has eaten less than usual today</div><div class="rc-why" style="margin-top:6px">Worth keeping an eye on, and a word with your vet if it carries on. If Pixel goes a day without a full meal, call your vet today, whatever the trial is doing.</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 -->
+  <section id="s06">
+    <div class="sec-head"><span class="sec-num">06</span><h2>When to call the vet: the door keeps its list</h2></div>
+    <div class="col"><p>Collapse and breathing have no detector anywhere in the app. They exist only on this printed list, which is already direct and stays word for word. Only the line for a <i>met</i> row changes, and only when the row behind it is off the floor.</p></div>
+    <div class="pair">
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp floor">Floor</span><b>The list, unchanged</b></div>
+        <div class="phone short"><div class="card door-sheet"><h4>When to call the vet</h4><div class="blk">Call your vet now</div><ul><li>Breathing hard or struggling for breath, or panting while lying still and cool</li><li>Retching without bringing anything up, a swollen or tight belly</li><li>Can't stand or walk, collapsed</li><li>A fit or seizure</li><li>Pale, white or blue gums</li></ul></div></div>
+      </div>
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp before">Today</span><b>Mochi · a met row: vomiting again within 24 h</b></div>
+        <div class="phone short"><div class="card door-sheet"><div class="blk">Call today</div><div class="met">Call your vet today.</div></div></div>
+      </div>
+      <div class="frame">
+        <div class="frame-cap"><span class="stamp after">Proposed</span><b>Mochi · the same met row</b></div>
+        <div class="phone short"><div class="card door-sheet"><div class="blk">Worth a call today</div><div class="met soft">Mochi has vomited again within 24 hours. That's worth a call to your vet today.</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 07 -->
+  <section id="s07">
+    <div class="sec-head"><span class="sec-num">07</span><h2>The small lines</h2></div>
+    <div class="lines">
+      <div><span>Where</span><span>Today</span><span>Proposed</span></div>
+      <div><b>Stool + vomiting (EN-7)</b><span>…Vomiting and loose stool together can run a pet down quickly, so call your vet.</span><span class="new">…so it's worth a call to your vet today.</span></div>
+      <div><b>Stool, unread, with vomiting</b><span>…call your vet rather than waiting to see how the next stool looks.</span><span class="new">…worth a call today rather than waiting for the next stool.</span></div>
+      <div><b>Record vet line (no read)</b><span>If Mochi keeps vomiting, brings up something unusual, or seems unwell, call your vet.</span><span class="new">If Mochi keeps vomiting or seems unwell, it's worth a call to your vet. If you see blood or something that isn't food, call your vet today.</span></div>
+      <div><b>Consent card under a call</b><span>Whatever you choose, Mochi's log alone is reason to call your vet.</span><span class="new">Whatever you choose, Mochi's log alone is worth a call to your vet.</span></div>
+      <div><b>Photo reads used up</b><span>If Mochi keeps vomiting or seems off, don't wait for the read — check in with your vet.</span><span class="new">If Mochi keeps vomiting or seems off, you don't need the read to call your vet.</span></div>
+      <div><b>Late-day call today</b><span>Call your vet first thing tomorrow, or an emergency clinic tonight if Mochi vomits again or is low on energy.</span><span class="new">Worth a call first thing tomorrow, or to an emergency clinic tonight if Mochi vomits again or is low on energy.</span></div>
+      <div><b>Trial, a dog off food</b><span>A pet that goes off their food needs a call, whatever the trial is doing.</span><span class="new">A pet going off their food is worth a call to your vet, whatever the trial is doing.</span></div>
+      <div><b>Report send card</b><span>Call your vet today. If they're closed, call an emergency clinic. (any live flag)</span><span class="new">Filed separately as CUL-2663: it should borrow the loudest live flag's own ask.</span></div>
+    </div>
+  </section>
+
+  <!-- 08 -->
+  <section id="s08">
+    <div class="sec-head"><span class="sec-num">08</span><h2>The four decisions</h2></div>
+    <div class="brief"><h3>D1 · What the words are keyed on</h3>
+      <p><b>Deciding:</b> how the build tells blood from repeat vomiting, when the tier alone cannot.</p>
+      <p><b>Options:</b> (a) ★ a words layer keyed on the reason already stored on the row (blood, object, cat intake flags), shared by phone and server, with an unknown reason getting floor words. No schema change. (b) A new tier value: a migration, and installed builds rank it as <i>now</i>. (c) Soften every tier and leave the floor to the read text: a blood photo's chip would say "Worth a call today".</p>
+      <p><b>Consequence:</b> (a) is four rows: client copy, server copy, skills and specs, and the adversarial pass. That is one more than the issue's forecast of three, so it comes back to you before anything is built.</p></div>
+    <div class="brief"><h3>D2 · The "now" rows (persona conflict)</h3>
+      <div class="conflict"><p><b>Dr. Chen:</b> T1–T3 were tiered <i>now</i> because hours matter there: dehydration, an unseen obstruction, a lethargic vomiter. Soften them and no <i>now</i> read is left on the floor.</p>
+      <p><b>Designer / Jordan:</b> The ruling named four signs. A vomit count is something the owner watched happen. "Worth a call now" keeps the clock and still lets them decide.</p></div>
+      <p><b>PM decision needed:</b> (a) the <i>now</i> tier joins the floor; (b) deferential with the clock kept, as drawn in §03. (c), softening to <i>today</i>, breaks the formula and is not offered.</p></div>
+    <div class="brief"><h3>D3 · A cat not eating for 24 h</h3>
+      <p><b>Deciding:</b> which predicate the floor uses.</p>
+      <p><b>Options:</b> (a) ★ no meal rated Most or All in 24 h for an owner who rates meals. It already drives the record's cat call, and today's refused-day, trial and door predicates all meet it. (b) Any cat intake decline: louder than today's Signal. (c) 72 h of poor meals: two days later than the ruling's 24 h.</p>
+      <p><b>Consequence:</b> under (a) the trial card's "stops eating" line splits as in §05, and the dog side of 72 h refusal stays deferential.</p></div>
+    <div class="brief"><h3>D4 · Floor cases that read soft today</h3>
+      <p><b>Deciding:</b> whether the floor may get firmer where today's words are soft.</p>
+      <p><b>Options:</b> (a) ★ firm them up. The banner says "call your vet today" over blood, an object or a cat meeting D3, and the cat intake read text drops "sooner rather than later". Sam: owners read a cat off food as fussiness. (b) Leave them, since the ruling froze today's words.</p>
+      <p><b>Consequence:</b> (a) changes three banner strings and two read texts. (b) leaves the banner as the one place where blood says "worth a look".</p></div>
+    <p class="note" style="margin-top:22px"><b>Reactions wanted:</b> R-1, the formula and the deferential frames in §02, §04 and §07. R-2, the optional "You see Mochi every day" line. Dr. Chen's condition on R-2: never on a floor card, and never above the clock.</p>
+  </section>
+</div>

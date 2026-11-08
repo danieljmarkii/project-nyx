@@ -17,6 +17,7 @@ const appointment: AppointmentView = {
   day: 'Saturday',
   where: 'Northside Animal Clinic',
   isToday: false,
+  hasNotes: false,
 };
 
 function rowOf(fontScale: number): Record<string, unknown> {

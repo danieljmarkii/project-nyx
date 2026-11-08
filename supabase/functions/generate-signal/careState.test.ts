@@ -14,7 +14,9 @@ import {
   careStateOf,
   EMPTY_CARE_RECORD,
   EN9_CARE_STATE_STEP,
+  priorCareCarry,
   rankWatchedLast,
+  readPriorCare,
   rateTestFires,
   type AckFact,
   type CareRecord,
@@ -918,7 +920,7 @@ Deno.test('CUL-1600 adversarial round 2 F1: a course stopped with no end date ke
     assertStrictEquals(s.state, 'raised_again', `${status} with no end date`)
   }
   // As the newer answer it covers the older one only to its last dose (day −6), then the older one's re-raise surfaces.
-  const s = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ id: 'a', daysAgo: 60 }), course('b', 30, 'stopped', 6), ack({ id: 'c', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(12), createdAt: at(0, 13) })] })
+  const s = stateOf({ symptoms: DOUBLING, acks: [ack({ id: 'a', daysAgo: 60 }), course('b', 30, 'stopped', 6), ack({ id: 'c', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(12), createdAt: at(0, 13) })] })
   assertEquals([s.state, s.raisedAgainOn], ['raised_again', '2026-09-25'], 'the day after its last dose')
 })
 
@@ -1068,4 +1070,36 @@ Deno.test('CUL-2652 ruling A: one quiet window per course; a visit whose week pa
   // The weight card the same way, from its latest reading's day.
   const w = { ...weight(), latestDay: dayOf(30) } as Finding
   assertEquals(step({ findings: [w], symptoms: STABLE, record: { appointments: monthly } })[0].finding, w)
+})
+
+// ── A skipped run's carry vouches only for what its own prior vouched for (CUL-2662) ──
+
+Deno.test('CUL-2662: priorCareCarry stamps only over a readable, bounded row holding the concern with a care fact or a carry', () => {
+  const card = (extra: Record<string, unknown>, priorityClass = 'safety') =>
+    ({ rank: 0, text: 'x', finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass, ...extra } })
+  const held = [card({ careState: { state: 'with_vet', ackId: 'a1', lapsed: ['old'], reason: 'dense' } })]
+  const gen = Date.parse('2026-10-28T16:44:09Z')
+  assertEquals([...priorCareCarry(held, gen, false)], [['vomit', { lapsed: ['old'], reason: 'dense' }]])
+  // A carry is itself a care fact for the next skip, so a chain of skipped runs carries hop by hop.
+  assertEquals([...priorCareCarry([card({ careCarry: { lapsed: ['old'], reason: null } })], gen, false)], [['vomit', { lapsed: ['old'], reason: null }]])
+  // Every unknown stamps nothing, so the next full run lapses exactly as before.
+  assertStrictEquals(priorCareCarry(held, gen, true).size, 0, 'an unreadable prior (CUL-1663) was vouched for')
+  assertStrictEquals(priorCareCarry(held, null, false).size, 0, 'a prior with no generation time was vouched for')
+  assertStrictEquals(priorCareCarry(held, Number.NaN, false).size, 0, 'an unparseable generation time was vouched for')
+  assertStrictEquals(priorCareCarry(null, gen, false).size, 0, 'a missing row (CUL-1667) was vouched for')
+  assertStrictEquals(priorCareCarry({ not: 'a list' }, gen, false).size, 0, 'a row whose findings say nothing was vouched for')
+  assertStrictEquals(priorCareCarry([card({})], gen, false).size, 0, 'a concern with no care fact was vouched for')
+  assertStrictEquals(priorCareCarry([card({ careState: { state: 'with_vet', lapsed: [] } }, 'insight')], gen, false).size, 0, 'a card that is not a safety concern was vouched for')
+  assertStrictEquals(priorCareCarry([card({ careCarry: { lapsed: 'old' } })], gen, false).size, 0, 'a malformed carry was vouched for')
+})
+
+Deno.test('CUL-2662: readPriorCare reads a carry as a raised fact holding its lapses, pooled louder with a care state', () => {
+  const card = (extra: Record<string, unknown>) => ({ finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', ...extra } })
+  assertEquals(readPriorCare([card({ careCarry: { lapsed: ['b', 'a'], reason: 'rate' } })]).get('vomit'), { state: 'raised', ackId: null, reason: 'rate', lapsed: ['b', 'a'] })
+  const pooled = readPriorCare([card({ careState: { state: 'raised_again', ackId: null, lapsed: ['x'], reason: 'dense' } }), card({ careCarry: { lapsed: ['y'], reason: null } })]).get('vomit')
+  assertEquals(pooled, { state: 'raised_again', ackId: null, reason: 'dense', lapsed: ['x', 'y'] })
+  // X4: a care fact or carry on a card that is not a safety concern speaks for no sign.
+  const insight = (extra: Record<string, unknown>) => ({ finding: { type: 'symptom_worsening', symptomType: 'vomit', priorityClass: 'insight', ...extra } })
+  assertStrictEquals(readPriorCare([insight({ careCarry: { lapsed: [], reason: null } })]).size, 0, 'an insight card\'s carry vouched')
+  assertStrictEquals(readPriorCare([insight({ careState: { state: 'with_vet', ackId: 'a', lapsed: [] } })]).size, 0, 'an insight card\'s care state vouched')
 })

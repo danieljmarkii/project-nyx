@@ -425,6 +425,14 @@ export interface AppointmentView {
    * appointment wants, and it is VV-5's.
    */
   isToday: boolean;
+  /**
+   * The owner has already typed notes for this booking (a non-blank `notes_draft`).
+   * The notes door reads *Your notes* instead of *Take notes* when it is true, so
+   * someone coming back to a visit they prepared for can see the notes are there
+   * and that the door continues them rather than starting over (PM on device,
+   * 2026-11-07). False when the caller's read did not carry the draft.
+   */
+  hasNotes: boolean;
 }
 
 export interface VetVisitsHome {
@@ -491,7 +499,9 @@ export function buildVisitListRow(
 }
 
 export function buildAppointmentView(
-  appointment: LocalVetAppointment,
+  // `notes_draft` is optional because most reads of a booking never select it; only
+  // the list read below does, and that is the one whose doors show the notes label.
+  appointment: LocalVetAppointment & { notes_draft?: string | null },
   now: Date = new Date(),
 ): AppointmentView {
   return {
@@ -505,12 +515,18 @@ export function buildAppointmentView(
     // reading device's calendar day — the same rule `readVetVisitsHome`'s day split
     // uses, and never a text compare of two ISO spellings (C-40).
     isToday: localDateKey(new Date(appointment.scheduled_at)) === localDateKey(now),
+    hasNotes: hasNotesDraft(appointment.notes_draft),
     where: formatWhereLine({
       clinicName: appointment.clinic_name,
       vetName: appointment.vet_name,
       reason: appointment.reason,
     }),
   };
+}
+
+/** One test for "notes exist", shared by the list doors and Get ready's button. */
+export function hasNotesDraft(notesDraft: string | null | undefined): boolean {
+  return (notesDraft ?? '').trim().length > 0;
 }
 
 // ── The Pet-tab card (mock A1) ──────────────────────────────────────────────────
@@ -620,8 +636,10 @@ export async function readVetVisitsHome(petId: string, now: Date = new Date()): 
   //
   // The day bound is the start of the LOCAL day, not `now`: an appointment at 9am
   // today is still today's appointment at 5pm.
-  const appointments = await db.getAllAsync<LocalVetAppointment>(
-    `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments
+  // `notes_draft` rides along so each booking's notes door can say whether notes
+  // already exist (*Your notes* vs *Take notes*).
+  const appointments = await db.getAllAsync<LocalVetAppointment & { notes_draft: string | null }>(
+    `SELECT ${APPOINTMENT_COLUMNS}, notes_draft FROM vet_appointments
       WHERE pet_id = ? AND ${LIVE_APPOINTMENT_SQL}
       ORDER BY scheduled_at ASC`,
     [petId],
@@ -1387,7 +1405,7 @@ export function appointmentPrepNote(
   fate: 'stays' | 'goes' = 'stays',
 ): string | null {
   const count = parseAppointmentQuestions(questions).length;
-  const hasNotes = (notesDraft ?? '').trim().length > 0;
+  const hasNotes = hasNotesDraft(notesDraft);
   if (count === 0 && !hasNotes) return null;
   // Plural subjects take the bare verb; a single question takes the -s form.
   const plural = fate === 'stays' ? 'stay with it' : 'go with it';

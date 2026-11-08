@@ -1741,8 +1741,9 @@ export function engineFindings(
 // dated instant with no state word beside it, so it never reaches the model at all.
 function relayPayload(payload: unknown): unknown {
   if (!payload || typeof payload !== 'object') return payload
-  const { raisedAgainLatch, ...p } = payload as Record<string, unknown>
-  if (!('careState' in p)) return raisedAgainLatch === undefined ? payload : p
+  // CUL-2662: a skipped run's `careCarry` is answer ids and a reason code, never for the model.
+  const { raisedAgainLatch, careCarry, ...p } = payload as Record<string, unknown>
+  if (!('careState' in p)) return raisedAgainLatch === undefined && careCarry === undefined ? payload : p
   const state = (p.careState as { state?: unknown } | null)?.state
   return { ...p, careState: typeof state === 'string' ? { state } : null }
 }

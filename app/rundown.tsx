@@ -38,6 +38,7 @@ import { signalTrialWindowOf } from '../lib/signalScreen';
 import { syncPendingVetAppointments } from '../lib/sync';
 import {
   buildAppointmentView,
+  hasNotesDraft,
   parseAppointmentQuestions,
   readEditableAppointment,
   saveAppointmentQuestions,
@@ -420,7 +421,7 @@ export default function RundownScreen() {
                     on a screen this page could not reach. Secondary, because the
                     single primary here is the report (R-share, nine lenses). */}
                 <PrimaryButton
-                  label="Take notes"
+                  label={hasNotesDraft(getReady.appointment.notes_draft) ? 'Your notes' : 'Take notes'}
                   onPress={() =>
                     router.push(`/vet-visits/at-the-vet?appointment=${getReady.appointment.id}`)
                   }
