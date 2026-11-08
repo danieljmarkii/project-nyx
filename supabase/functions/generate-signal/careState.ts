@@ -1141,8 +1141,12 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
       // new course never quiets it (CUL-2652's adversarial pass). Unknown onset: louder.
       const onsetIso = chronicOnset.get(sign) ?? null
       const onsetMs = onsetIso === null ? NaN : Date.parse(onsetIso)
-      const covers = booked !== null && (!booked.fact.passed || (Number.isFinite(onsetMs) && booked.day >= localDayIndex(onsetMs, tz)))
-      if (booked && covers) {
+      const onsetDay = Number.isFinite(onsetMs) ? localDayIndex(onsetMs, tz) : null
+      const covers = booked !== null && (!booked.fact.passed || (onsetDay !== null && booked.day >= onsetDay))
+      // PM ruling A (2026-11-07, adversarial pass 1 #3): ONE quiet window per course. Once a visit
+      // in this course has passed its week with no answer, a later booking never quiets it again:
+      // the ask stands until the owner says how it went. Unknown onset: any spent window counts.
+      if (booked && covers && !quietWindowSpent(args, onsetDay, ix.today)) {
         const quiet: CareStateFact = {
           state: 'visit_booked', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null,
           text: bookedVisitSentence(booked.fact, booked.day, ix.today, `${possessive(args.petName)} ${SYMPTOM_LABEL[sign]}`),
@@ -1223,7 +1227,7 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
   }
   const decorated = findings.map((r) => {
     const sign = concernSignOf(r.finding)
-    if (sign === null) return booked ? withBookedVisit(r, booked, upcoming, ix.today, args.petName) : r
+    if (sign === null) return booked ? withBookedVisit(r, booked, upcoming, ix.today, args) : r
     const fact = stateFor(sign)
     // Ruling A (worsening brief, 2026-11-07): a firing worsening lane IS "coming more often", and a
     // never-answered concern has no reference to re-raise from, so a booking never quiets it. The
@@ -1297,6 +1301,19 @@ export function bookedVisitFor(args: CareStateArgs): { day: number; fact: Booked
   return last ? { day: last.day, fact: { on: dayKeyFromIndex(last.day), appointmentId: last.id, passed: true } } : null
 }
 
+/**
+ * PM ruling A (2026-11-07): a booking quiets a never-answered concern ONCE per course. The window
+ * is spent when a standing visit on or after the course's first day (`fromDay`; null reads the
+ * whole read) is more than BOOKED_VISIT_AFTER_DAYS behind today. An answered visit is not spent:
+ * "Talked about it" writes an answer, and the concern leaves this path for `with_vet`. "Not this
+ * time" writes nothing, so the window is spent and the ask returns, and stays. A cancelled visit
+ * ("It didn't") never spends one. Without it, a cat on a monthly injection always has a visit
+ * inside the horizon and its ask never comes back.
+ */
+export function quietWindowSpent(args: CareStateArgs, fromDay: number | null, today: number): boolean {
+  return standingAppointments(args).some((x) => (fromDay === null || x.day >= fromDay) && x.day < today - BOOKED_VISIT_AFTER_DAYS)
+}
+
 /** The quiet state's cached sentence (template-only, AC 8; nyx-voice). It stands alone, since Get
  *  ready, Ask and the summary relay it verbatim (GAP-17): it names the pet and the sign. Home's row
  *  draws the mock's shorter line from `bookedVisit` itself. `what` is "Nyx's vomiting" or "Nyx's
@@ -1322,8 +1339,9 @@ function withBookedVisit<T extends { rank: number; finding: Finding }>(
   booked: { day: number; fact: BookedVisit },
   upcoming: { day: number; fact: BookedVisit } | null,
   today: number,
-  petName: string,
+  args: CareStateArgs,
 ): T {
+  const petName = args.petName
   if (r.finding.priorityClass !== 'safety') return r
   if (r.finding.type === 'weight_loss') {
     // A passed visit quiets the weight card only if it fell on or after the latest reading's day:
@@ -1331,6 +1349,8 @@ function withBookedVisit<T extends { rank: number; finding: Finding }>(
     const latest = (r.finding as { latestDay?: unknown }).latestDay
     const latestDay = typeof latest === 'string' ? localDayIndexOf(latest, undefined) : null
     if (booked.fact.passed && (latestDay === null || booked.day < latestDay)) return r
+    // Ruling A: one quiet window per drop, counted from the latest reading's day.
+    if (quietWindowSpent(args, latestDay, today)) return r
     const quiet: CareStateFact = {
       state: 'visit_booked', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null,
       text: bookedVisitSentence(booked.fact, booked.day, today, `${possessive(petName)} weight`),

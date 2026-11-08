@@ -1173,10 +1173,12 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
   try {
     // Every read pages to the end (CUL-975): a capped read could drop the newest retraction and
     // leave the answer it takes back live. An incomplete one is refused, below.
-    // CUL-2652: appointments from BOOKED_VISIT_AFTER_DAYS before the lookback's own floor would
-    // be enough, but the window is days, so read every appointment scheduled from a week back (a
-    // day of slack for the zone). Cancelled and deleted rows are read and refused in the rule.
-    const apptSinceIso = new Date(nowMs - (BOOKED_VISIT_AFTER_DAYS + 1) * 86_400_000).toISOString()
+    // CUL-2652: every appointment from the Signal's lookback on (or a week back, a day of slack for
+    // the zone, if that is earlier): the quiet window looks back a week, and ruling A's "one quiet
+    // window per course" looks back to the course's first onset, which is inside the lookback.
+    // Cancelled and deleted rows are read and refused in the rule.
+    const weekBackMs = nowMs - (BOOKED_VISIT_AFTER_DAYS + 1) * 86_400_000
+    const apptSinceIso = new Date(Math.min(weekBackMs, Date.parse(lookbackIso) || weekBackMs)).toISOString()
     const [ackPull, lethargyPull, apptPull] = await Promise.all([
       fetchAll<AckRow>('care_acknowledgements', (r) => r.id, (from, to) =>
         supabase

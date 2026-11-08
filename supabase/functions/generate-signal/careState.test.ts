@@ -1050,3 +1050,22 @@ Deno.test('CUL-2652 adv #2: a passed visit before the concern began never quiets
   assertEquals(step({ findings: [w], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -6 })] } })[0].finding, w)
   assertStrictEquals(careStateOf(step({ findings: [w], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -2 })] } })[0].finding)!.state, 'visit_booked')
 })
+
+Deno.test('CUL-2652 ruling A: one quiet window per course; a visit whose week passed unanswered spends it', () => {
+  // A cat on a monthly injection: a visit 20 days ago (unanswered), the next one 9 days out.
+  const monthly = [apptAt({ id: 'past', daysAhead: -20 }), apptAt({ id: 'next', daysAhead: 9 })]
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: monthly } }).state, 'raised', 'the ask returns, and the next booking does not quiet it')
+  // Day 7 after is still the open week; day 8 spends it.
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -7 }), apptAt({ id: 'n', daysAhead: 9 })] } }).state, 'visit_booked')
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -8 }), apptAt({ id: 'n', daysAhead: 9 })] } }).state, 'raised')
+  // A cancelled visit ("It didn't") never spends the window; neither does one before the course began.
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -20, cancelledAt: at(19) }), apptAt({ id: 'n', daysAhead: 9 })] } }).state, 'visit_booked')
+  const late = { ...chronicity(), firstOnsetIso: at(15) } as Finding
+  assertStrictEquals(stateOf({ findings: [late], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -20 }), apptAt({ id: 'n', daysAhead: 9 })] } }).state, 'visit_booked')
+  // "Talked about it" writes an answer, and the concern leaves this path for with_vet / recheck_booked.
+  const answered = stateOf({ symptoms: STABLE, acks: [ack({ daysAgo: 20, source: 'visit_answer' })], record: { appointments: monthly } })
+  assertStrictEquals(answered.state, 'recheck_booked')
+  // The weight card the same way, from its latest reading's day.
+  const w = { ...weight(), latestDay: dayOf(30) } as Finding
+  assertEquals(step({ findings: [w], symptoms: STABLE, record: { appointments: monthly } })[0].finding, w)
+})

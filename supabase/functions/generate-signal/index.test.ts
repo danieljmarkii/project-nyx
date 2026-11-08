@@ -426,7 +426,8 @@ Deno.test('CUL-2652 reads — the appointments by date only; a failed or short r
     // Never the reason, the questions, the clinic, the vet, the notes or the visit link (AC 10).
     ['select', ['id, scheduled_at, cancelled_at, deleted_at', { count: 'exact' }]],
     ['eq', ['pet_id', 'pet-1']],
-    ['gte', ['scheduled_at', '2026-10-30T23:00:00.000Z']],
+    // From the Signal's lookback (ruling A reads back to the course's onset).
+    ['gte', ['scheduled_at', LOOKBACK]],
     ['order', ['scheduled_at', { ascending: false }]],
     ['order', ['id', { ascending: false }]],
   ])
