@@ -3,7 +3,7 @@
 **Date:** 2026-11-08
 **One thing:** P4 L1 — A lagging number at zero cannot tell you anything fell · check: pending
 
-Shipped via #1489, the record of CUL-2669 (row 4 of Clinical voice: the owner decides). A dispatched DISCOVERY row, plan-gated (clinical), with `Teach: yes`. The deliverable is the review posted on CUL-2669; this file holds the narrative and the teach block. No code changed.
+Shipped via #1491, the record of CUL-2669 (row 4 of Clinical voice: the owner decides). A dispatched DISCOVERY row, plan-gated (clinical), with `Teach: yes`. The deliverable is the review posted on CUL-2669; this file holds the narrative and the teach block. No code changed.
 
 ## What happened
 
