@@ -1751,6 +1751,8 @@ function relayPayload(payload: unknown): unknown {
 function watchedRank(f: RelayedFinding): number {
   if (f.type !== 'symptom_chronicity' && f.type !== 'symptom_worsening') return 0
   const state = ((f.payload as { careState?: { state?: unknown } } | null)?.careState)?.state
+  // CUL-2652: a booked visit quiets a chronicity card only (the engine's rule, ruling A).
+  if (state === 'visit_booked') return f.type === 'symptom_chronicity' ? 1 : 0
   return state === 'with_vet' || state === 'recheck_booked' ? 1 : 0
 }
 

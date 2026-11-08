@@ -23,7 +23,7 @@
 // The headline IS `signalTitle` — the screen's title — so the owner lands on the screen
 // they tapped, by name.
 
-import { careStateQuietsAsk } from './careState';
+import { bookedVisitCallBeforeAsk, bookedVisitOf, careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
 import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, intakeAllRefusedCallsToday, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, sustainedRefusalOf, symptomWord, UNKNOWN_INTAKE_COPY } from './signalCopy';
@@ -251,8 +251,21 @@ export function signalHomeLine(
     count: countLine(finding, nowMs),
     // EN-9 (PR-23): a concern the owner said the vet knows about asks nothing until a tested
     // change brings it back (`raised_again` keeps the lane's ask word for word).
-    ask: finding.priorityClass === 'safety' && !careStateQuietsAsk(finding) ? signalHomeAsk(finding, nowMs) : null,
+    ask: finding.priorityClass === 'safety' && !careStateQuietsAsk(finding) ? concernAskOverBooking(finding, signalHomeAsk(finding, nowMs)) : null,
   };
+}
+
+/**
+ * CUL-2652 frame 3 B (ruled with A on the worsening brief, 2026-11-07): a concern that still asks
+ * for a booking while a visit is booked asks for a call before it instead. Only a CONCERN, only an
+ * ask that says "booking", only an upcoming visit: an escalation's ask is never re-worded (AC 3,
+ * the call card gains a line instead), and a softer ask is left as it is rather than made louder.
+ */
+export function concernAskOverBooking(finding: SignalFinding, ask: string | null): string | null {
+  if (ask === null || (finding.type !== 'symptom_chronicity' && finding.type !== 'symptom_worsening')) return ask;
+  const v = bookedVisitOf(finding);
+  if (v === null || v.passed || !/\bbooking\b/.test(ask)) return ask;
+  return bookedVisitCallBeforeAsk(v);
 }
 
 /** The row types whose words the screen restates from the record (CUL-1569): the counted

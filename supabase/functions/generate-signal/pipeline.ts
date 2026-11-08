@@ -1087,23 +1087,27 @@ function chronicAsOf(input: DetectionInput, config: DetectionConfig): (sign: Sym
 // to your vet". The head only: the card's own sentence runs to three (the source and the since
 // line), and two watched signs would then overrun the summary's cap (adversarial pass); the
 // detail stays on the card. The head is cut from the card's text, never re-spelled here, and a
-// text without it is said whole (still not an ask). Keyed on the SIGN, since the state is one
-// per sign and `curated` holds the undecorated finding. Null for every other finding, `raised`
+// text without it is said whole (still not an ask). Keyed on the card's type and sign, since
+// `curated` holds the undecorated finding and CUL-2652 can quiet one card of a sign but not the other. Null for every other finding, `raised`
 // and `raised_again` included: those cards still ask, and so does the summary. Flag off, no
 // finding carries a care state, so this is null for all of them.
 export const WATCHED_HEAD_END = ', your vet knows.'
 export function watchedSentenceLookup(rows: { finding: Finding }[]): (f: Finding) => string | null {
-  const bySign = new Map<SymptomType, string>()
+  // Keyed on the CARD (type and sign), not the sign alone (CUL-2652's adversarial pass): a booked
+  // visit quiets the chronicity card and leaves the worsening card for the same sign asking, so a
+  // sign-keyed lookup handed the worsening card's summary clause the quiet sentence, ask and all gone.
+  const byCard = new Map<string, string>()
+  const key = (f: Finding, sign: SymptomType) => `${f.type}:${sign}`
   for (const r of rows) {
     const sign = concernSignOf(r.finding)
     const care = careStateOf(r.finding)
     if (sign === null || care === null || !isWatched(care.state) || !care.text) continue
     const end = care.text.indexOf(WATCHED_HEAD_END)
-    bySign.set(sign, end < 0 ? care.text : care.text.slice(0, end + WATCHED_HEAD_END.length))
+    byCard.set(key(r.finding, sign), end < 0 ? care.text : care.text.slice(0, end + WATCHED_HEAD_END.length))
   }
   return (f) => {
     const sign = concernSignOf(f)
-    return sign === null ? null : bySign.get(sign) ?? null
+    return sign === null ? null : byCard.get(key(f, sign)) ?? null
   }
 }
 

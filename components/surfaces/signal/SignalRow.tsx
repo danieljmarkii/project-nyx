@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { signalRailStyle } from './railTint';
 import type { CachedFinding, ReflectionFinding, SignalFinding } from '../../../lib/signal';
@@ -7,7 +8,8 @@ import { type CompareRow, isTimingFinding, symptomWord, timingCompareRows } from
 import { askStandalone, rowReadsScreen, signalHomeLabel, timingRowDenominatorLine, trialSoFarClause, signalHomeLine, signalHomeLineFromScreen } from '../../../lib/signalHomeLine';
 import { countedHomePair } from '../../../lib/signalCounts';
 import { foldIdentity } from '../../../lib/signalFold';
-import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, careBackLine, careStateBody, careStateViewOf, type CareStateView } from '../../../lib/careState';
+import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, bookedVisitRowLine, careBackLine, careStateBody, careStateViewOf, type CareStateView } from '../../../lib/careState';
+import { BookedVisitLine } from './BookedVisitLine';
 import { loadSignalRowScreen, loadSignalRowTrial, type SignalRowScreen } from '../../../lib/signalLead';
 import { useSyncStore } from '../../../store/syncStore';
 import { useMinuteNow } from '../../../hooks/useIncidentFloorFacts';
@@ -68,6 +70,8 @@ import { ThemedText } from '../../ui/ThemedText';
 /** A Signal door's hint (the rows and the lead card), told apart from the shipped card's
  *  "Shows the evidence…". */
 export const DOOR_A11Y_HINT = 'Opens this signal';
+/** CUL-2652: in a booked visit's week the row opens "How did it go?" instead, and says so. */
+export const HOW_DID_IT_GO_A11Y_HINT = 'Opens how the visit went';
 
 /** The row's floor: every door clears 44pt on its own box, with no slop to share. */
 export const ROW_MIN_HEIGHT = 44;
@@ -174,6 +178,15 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
     return <WatchedRow care={care} onOpen={() => onOpen(finding)} isLead={isLead} />;
   }
   const backLine = care ? careBackLine(care) : null;
+  // CUL-2652: a booked visit. Quiet (the ask is gone, the line stands in its place, the rail goes
+  // soft), or a line under an ask that still speaks. In the visit's week the row opens "How did
+  // it go?" for that appointment instead of the finding (frame 3 D).
+  const booked = bookedVisitRowLine(finding, line.ask);
+  const quiet = booked?.kind === 'quiet';
+  const howDidItGo = booked?.howDidItGoFor ?? null;
+  const open = howDidItGo !== null
+    ? () => router.push(`/vet-visits/after?appointment=${encodeURIComponent(howDidItGo)}` as never)
+    : () => onOpen(finding);
 
   const safety = finding.priorityClass === 'safety';
   // A frequency row whose pair renders prints its counts in the pair, not twice (S10).
@@ -187,14 +200,14 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
 
   return (
     <Pressable
-      onPress={() => onOpen(finding)}
+      onPress={open}
       accessibilityRole="button"
-      accessibilityLabel={backLine ? `${backLine} ${signalHomeLabel(spoken)}` : signalHomeLabel(spoken)}
-      accessibilityHint={DOOR_A11Y_HINT}
+      accessibilityLabel={[backLine, signalHomeLabel(spoken), booked?.text].filter((x): x is string => !!x).join(' ')}
+      accessibilityHint={howDidItGo !== null ? HOW_DID_IT_GO_A11Y_HINT : DOOR_A11Y_HINT}
       style={styles.row}
       testID="signal-row"
     >
-      <View style={[styles.rail, signalRailStyle(finding.priorityClass)]} testID="signal-row-rail" />
+      <View style={[styles.rail, quiet ? styles.railWatched : signalRailStyle(finding.priorityClass)]} testID="signal-row-rail" />
       <View style={styles.body}>
         {backLine ? (
           <ThemedText style={styles.backLine} testID="signal-row-back">
@@ -211,6 +224,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
         </ThemedText>
         {thumbnail}
         <SubLine count={subCount} ask={line.ask} />
+        {booked ? <BookedVisitLine line={booked} /> : null}
       </View>
       {/* G1 A (CUL-1525): the well on the zone's lead row only, a plain › on every other. */}
       <DoorMark well={isLead} />

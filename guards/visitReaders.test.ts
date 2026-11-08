@@ -286,7 +286,10 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'note is selected, pinned by SHELL_COLUMNS. readCareRecord (EN-9, PR-23, behind ' +
       'engines_v3_en9) reads the owner\'s answers about a sign by explicit columns: the sign, ' +
       'the source, the DATE it names, the trial or course it is scoped to, a retraction link and ' +
-      'when it was written; never the visit id. No appointment is read (CUL-1531).',
+      'when it was written; never the visit id. CUL-2652 adds the pet\'s appointments by DATE ' +
+      'ONLY (`scheduled_at`, `cancelled_at`, `deleted_at`, the three AC 10 as amended names), ' +
+      'so a booked visit within 30 days quiets a "worth booking" ask; never the reason, the ' +
+      'questions, the clinic, the vet or the notes, pinned by SHELL_COLUMNS.',
   },
 
   // ── The report ──
@@ -668,6 +671,9 @@ const SHELL_COLUMNS: Record<string, readonly string[]> = {
   // EN-9 (PR-23): AC 10 as amended lets the shell read "the owner's acknowledgement rows, by
   // explicit column list". `vet_visit_id` is deliberately absent: the answer's anchor IS the date.
   care_acknowledgements: ['id', 'symptom_type', 'source', 'anchor_on', 'diet_trial_id', 'medication_id', 'retracts', 'created_at'],
+  // CUL-2652: the amendment's three appointment dates, and the row id (for "How did it go?"'s
+  // link and a stable paging key). No reason, questions, clinic, vet, notes or visit link.
+  vet_appointments: ['id', 'scheduled_at', 'cancelled_at', 'deleted_at'],
 };
 
 /** Every `.from('<vet table>')` in `src` with the select list that follows it. */
@@ -691,7 +697,7 @@ describe('the Signal shell reads a vet table only by its sanctioned columns', ()
   const reads = vetTableSelects(src);
 
   it('finds the shell\'s read (non-vacuity)', () => {
-    expect(reads.map((r) => r.table).sort()).toEqual(['care_acknowledgements', 'vet_visits']);
+    expect(reads.map((r) => r.table).sort()).toEqual(['care_acknowledgements', 'vet_appointments', 'vet_visits']);
   });
 
   it('every read names exactly the columns the amendment allows, never `*`', () => {
