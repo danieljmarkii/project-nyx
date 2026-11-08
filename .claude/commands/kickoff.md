@@ -19,17 +19,15 @@ Produce a tight, skimmable orientation so a returning session (or the PM) can st
    - **Another branch's claim >24h old with no open PR** → stale. Say so in one line, post a fresh claim naming the stale one, continue.
    - **An open PR already references the issue** → that is work in review, not a claim. Surface it before touching anything.
 
-   **Do not key this check on status.** `In Progress` is set by the launch path at session start, so it tells you someone started and never who — and the someone is usually you. A status-only rule would have stopped the session that wrote this step (CUL-624; measured against CUL-726 / CUL-691 / CUL-624 `stateHistory`). The **branch name in the comment** is what discriminates; the status is what makes the issue visible in the step-2 sweep. Both, or the guard doesn't work.
+   **Key this on the comment's branch, never on status:** the launch path sets `In Progress`, usually for you (CUL-624).
 
-1. **Query Linear first — it is the state.** (Team **Culprit**, `linear.app/projectnyx`.) `STATUS.md` is a ~60-line pointer card, not a state store: it tells you which tracks are live and which two deploys are held, and it is deliberately silent on everything Linear owns. Read it for orientation, then get the actual state from Linear (step 2). Then read the **2–3 most recent session records** for what actually shipped last: `ls docs/sessions/ | sort -r | head -3`, and read those files. (`STATUS.md` carries no session list and no PM checklist — both moved; see `docs/sessions/README.md` and the `Waiting on PM` label.)
+1. **Query Linear first — it is the state.** (Team **Culprit**, `linear.app/projectnyx`.) `STATUS.md` is a pointer card: read it for orientation, then get the actual state from Linear (step 2). Then read the **2–3 most recent session records** for what actually shipped last: `ls docs/sessions/ | sort -r | head -3`, and read those files.
 
-2. **Pull the four views that make up "where are we?"** — `docs/backlog.md` is frozen, so don't grep it. Use the Linear MCP (not the whole team — a kickoff needs a handful of issues):
+2. **Pull the four views that make up "where are we?"** Use the Linear MCP (not the whole team — a kickoff needs a handful of issues):
    - **The live tracks:** `list_projects` (team Culprit). Each project carries its own status and summary; that is the parallel-track answer, and it is the one `STATUS.md` used to hold.
    - **In-flight:** `list_issues` `state: "In Progress"` (and `"In Review"`) — what is actively landing, possibly from a sibling session. For any issue this session might touch, read its **claim comment** (step 0) before assuming it is free: status names no branch, so it cannot tell a live sibling from a stale claim from your own launch.
    - **Waiting on the PM:** `list_issues` `label: "Waiting on PM"` — engineering-complete work with one named PM/device/decision step left. If the session's obvious next task is sitting behind one of these, say so in the brief rather than starting it. Print the label's total against the **WIP cap of 30** (CUL-1366); over the cap, name it in the brief, because this session then applies its default on low-risk calls instead of filing (CLAUDE.md § Backlog Protocol).
-   - **High-priority ready work:** `Todo` at `priority` Urgent/High — the Linear equivalent of the old `| Now |` scan.
-
-   Scope to the current track's **project** where you can (`project:` filter) — a phase-wide sweep returns hundreds of issues and buries the answer.
+   - **The candidates:** open `Todo` and `Backlog` issues, team-wide, with their relations (`includeRelations`), ordered by § Ranking.
 
    (For a fuller reconcile, the `backlog-groomer` skill is the on-demand Linear-hygiene procedure.)
 
@@ -37,7 +35,18 @@ Produce a tight, skimmable orientation so a returning session (or the PM) can st
 
 4. **Read the relevant docs for the confirmed step** (the CLAUDE.md "Read These Before Writing Any Code" table tells you which). Don't write code before this.
 
-5. **Sanity-check for doc drift.** The specific failure this catches is an orientation doc that has stopped tracking reality — it is how the repo ended up leading every session with "Step 10 — AI Signal" months after that stopped being true. One-line check, not a full audit: does `STATUS.md`'s Current phase still name the tracks Linear actually shows as live? If not, fix it in this session (it is a pointer card; correcting it is cheap) rather than working around it.
+5. **Sanity-check for doc drift.** One-line check, not a full audit: does `STATUS.md`'s Current phase still name the tracks Linear actually shows as live? If not, fix it in this session (it is a pointer card; correcting it is cheap) rather than working around it.
+
+## Ranking
+
+Rank the candidates by what each one frees (CUL-2659); the rule names no project. A candidate with a live claim (step 0) drops out. First difference wins:
+
+1. **Unblock:** its open `blocks` relations, direct count first, then transitive; most first.
+2. **Live harm:** a `Live harm` issue ranks above an equal unblock count.
+3. **Priority:** Urgent, High, Medium, Low, none.
+4. **Age:** oldest `createdAt` first.
+
+**Gates:** a candidate with a `Gate:` label, `Area: Privacy/RLS`, a migration, or clinical logic is listed as **needs the PM's go**, never proposed as a plain start. `STATUS.md`'s routing table orients; it never ranks.
 
 ## Output
 
@@ -47,8 +56,8 @@ Emit, in this order:
 - **Where we are** — phase + in-flight work, in 2–3 lines, from the Linear projects and the `In Progress` issues.
 - **Last shipped** — one line, with PR number(s), from the newest files in `docs/sessions/`.
 - **Blocked on / waiting on PM** — any blocking Open Question, plus anything on the `Waiting on PM` label that gates the recommended task. Name the `CUL-NNN`. If none, say "nothing blocking."
-- **Recommended first task** — the single concrete next step, naming the file/doc to open first and the issue (`CUL-NNN`) it advances. If a PM Action Item is a prerequisite, say so.
-- **Alternates** — 1–2 other live tracks the PM could pick instead (parallel food track, a ready-to-decide open question).
+- **Recommended first task** — the top ungated candidate in § Ranking, with its unblock count, the file/doc to open first and its `CUL-NNN`. If a PM Action Item is a prerequisite, say so.
+- **Alternates** — the next 1–2 candidates in § Ranking, gated ones marked.
 
 If running interactively with the PM present, end by asking the three Session Start questions from CLAUDE.md (which track? / decisions since last session? / scope change?). If non-interactive, skip the questions and proceed on what Linear says.
 
