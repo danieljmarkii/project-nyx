@@ -1,6 +1,6 @@
 # Nyx Care State and Outcome Loop — Requirements (EN-9 + EN-14)
 
-**Version:** 1.5 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28; D6's vocabulary 2026-10-01; a booked visit, CUL-2652, 2026-11-07) | **Date:** 2026-11-07 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
+**Version:** 1.6 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28; D6's vocabulary 2026-10-01; a booked visit, CUL-2652, 2026-11-07; call-ask wording, CUL-2666, 2026-11-08) | **Date:** 2026-11-08 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
 
 **Read with:** `docs/engines-v3-critique-2026-09.md` (R-2, BRK-4, GAP-15/16/17/19/23/27/29/32/33, MFU-3, PMD-4/5/6) · `docs/nyx-vet-visits-requirements.md` (AC 10, §5.6, "How did it go?") · `docs/nyx-signal-fold-requirements.md` (DF-5, DF-8, FS-3, FS-10, §3.3, §5.3, §7) · `docs/nyx-notification-foundation-requirements.md` (D2, D3, G1–G6) · `docs/nyx-diet-trial-requirements.md` · `supabase/migrations/075_engines_v3_stamps.sql` (the shown log).
 
@@ -10,7 +10,7 @@
 
 Today the app asks for a vet visit about a recurring symptom every evening, forever, even after the vet has seen the pet, because nothing the owner says ever reaches the engine. This spec gives every recurring concern a **care state**. It starts **raised** (the ask). When the owner tells the app the vet knows (a tick at the visit, an answer afterwards, "My vet knows", or "yes, the vet started this trial for it"), the concern moves to **with your vet**: Home stops asking and says instead who said what, when, and what has been logged since. It comes **back** only when a tested change in the record says so, never on a timer, and never quietly. A booked recheck hands the concern to the appointment strip. Safety warnings (a photo red flag, a pet not eating, a call-tier read, the burden card) are never quieted by any of this.
 
-The second half is the **outcome loop**. When the app says "call your vet" and the owner taps "I've called", the call becomes its own small record in the pet's Vet visits, with an optional note no AI reads. A couple of days later the app asks once, inside the app, "What did the vet say?" Those answers are how the app will eventually learn which warnings were worth making.
+The second half is the **outcome loop**. When the app asks for a call to the vet and the owner taps "I've called", the call becomes its own small record in the pet's Vet visits, with an optional note no AI reads. A couple of days later the app asks once, inside the app, "What did the vet say?" Those answers are how the app will eventually learn which warnings were worth making.
 
 **Ruled 2026-09-28:** a vet-started trial or course counts when the owner says so for that symptom; at most 5% of stable pets may be asked again within eight weeks; the AC 10 wording is approved.
 
@@ -59,7 +59,7 @@ Replayed over Nyx's record, Home asked for a vet about her vomiting on 110 eveni
 The jobs:
 - **J1 (Jordan, day 30 of a trial his vet started before the app):** stop asking me to book a visit my vet already made, and keep telling me if it gets worse.
 - **J2 (Sam, after a visit):** tell me what's happened since the vet saw her, in numbers I can say to the vet, without telling me she's fine.
-- **J3 (any owner after "call your vet"):** let me say I called, keep what the vet said, and don't nag.
+- **J3 (any owner after a call ask):** let me say I called, keep what the vet said, and don't nag.
 - **J4 (the product):** learn, per warning, whether the vet thought the call was worth it.
 
 ---
@@ -493,6 +493,7 @@ This spec's Read-These row in CLAUDE.md lands with PR-21 (CLAUDE.md is at its by
 
 | Version | Date | Change |
 |---|---|---|
+| 1.6 | 2026-11-08 | CUL-2666 (Tier 2, PM-approved): "after 'call your vet'" reads "after a call ask" (the opening, J3), since the clinical voice softens most asks. Wording only. |
 | 1.5 | 2026-11-07 | CUL-2652: a booked visit within 30 days quiets a raised chronicity concern (`visit_booked`) and the weight card; worsening, `raised_again` and escalations keep their asks (§3.1, §3.3, §4.7). PM rulings 1 = A, 2 (any visit, no topic test), guard = A (30 days), 3 = B, 4 = A, worsening = A, one quiet window per course = A. |
 | 1.4 | 2026-10-12 | D18 (a), PM on CUL-1825: outcome data from other accounts waits for a separate opt in, not a published purpose (§0.1, §6.6, row 36). CUL-1904. |
 | 1.3 | 2026-10-05 | §4.8: CUL-1290's eight-week question, built off (PR-34). The improvement gate was removed after the adversarial pass; the two-sided measurement and the DF-5 brief are recorded; the ruling is pending. §4.1's known gap points at it. |
