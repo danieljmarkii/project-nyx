@@ -11,6 +11,9 @@ import {
 import type { CachedFinding } from '../lib/signal';
 import * as signalCopy from '../lib/signalCopy';
 
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 // Multi-pet safety regression (code-reviewed on B-284 PR N2): a naive "read
 // petId from one store, findings from another hook's state" pairing can, on a
 // pet SWITCH, momentarily pair the NEW pet's id with the PREVIOUS pet's still-
@@ -73,7 +76,7 @@ const finding: CachedFinding = {
     refusedFoodLabel: null,
     ratedMealsConsidered: 9,
     // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
-    lastGoodMealIso: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    lastGoodMealIso: ATE_WELL_2H_AGO,
   },
 };
 

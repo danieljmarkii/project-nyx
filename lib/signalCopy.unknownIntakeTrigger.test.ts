@@ -21,6 +21,9 @@ import {
 import { signalHomeAsk, signalHomeLine } from './signalHomeLine';
 import type { IntakeDeclineFinding, IntakeDeclineTrigger, RefusedThenVomitedFacts } from './signal';
 
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 const I5: RefusedThenVomitedFacts = { episodeCount: 2, dayCount: 2, windowMinutes: 30, firstLocalDay: '2026-10-28' } as RefusedThenVomitedFacts;
 
 function card(trigger: string, extra: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
@@ -34,7 +37,7 @@ function card(trigger: string, extra: Partial<IntakeDeclineFinding> = {}): Intak
     refusedFoodLabel: null,
     ratedMealsConsidered: 6,
     // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
-    lastGoodMealIso: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    lastGoodMealIso: ATE_WELL_2H_AGO,
     ...extra,
   };
 }

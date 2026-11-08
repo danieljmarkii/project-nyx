@@ -47,6 +47,9 @@ import type {
   TrialResponseFinding,
 } from './signal';
 
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 // The §4 veto list — never on any fold surface.
 const VETOED = /\b(resolved|cleared|all clear|settled|better|improving|quieter|down|dismissed|hidden|snoozed|reminder|seen|nothing new)\b|↓|%|days? (clear|free)|streak/i;
 
@@ -203,7 +206,7 @@ const intake = (over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding 
   refusedFoodLabel: null,
   ratedMealsConsidered: 9,
   // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
-  lastGoodMealIso: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+  lastGoodMealIso: ATE_WELL_2H_AGO,
   ...over,
 });
 const redFlag = (over: Partial<IncidentRedFlagFinding> = {}): IncidentRedFlagFinding => ({

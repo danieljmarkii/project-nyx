@@ -14,6 +14,9 @@ import { templateIntakeDecline } from '../supabase/functions/generate-signal/phr
 import type { IntakeDeclineFinding as ServerIntakeDeclineFinding } from '../supabase/functions/generate-signal/detection';
 import type { IntakeDeclineFinding } from './signal';
 
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 const FLOOR = 'call your vet today';
 const SOFT = 'worth keeping an eye on, and a word with your vet if it carries on';
 
@@ -27,7 +30,7 @@ function card(extra: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
     refusedFoodLabel: null,
     ratedMealsConsidered: 6,
     // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
-    lastGoodMealIso: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    lastGoodMealIso: ATE_WELL_2H_AGO,
     allRefused: true,
     ...extra,
   };
