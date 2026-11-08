@@ -3,8 +3,8 @@
 // these are the words a read writes, never a rewrite of a stored row.
 
 import { assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import { buildContextualReadText, buildVisualFlagReadText, floorSentence } from './index.ts'
-import { buildVisualFlagReadText as stoolVisual } from '../analyze-stool/index.ts'
+import { buildContextualReadText, buildVisualFlagReadText, en4VomitCopy, floorSentence } from './index.ts'
+import { buildVisualFlagReadText as stoolVisual, en7StoolCopy } from '../analyze-stool/index.ts'
 import type { FloorResult } from '../../../lib/incidentFloor.ts'
 
 Deno.test('photo read: blood or foreign material names its clock; the model\'s own call keeps the shipped words', () => {
@@ -39,4 +39,39 @@ Deno.test('call now (T1–T3) keeps "needs a call"; T6–T8 are deferential with
     assertStrictEquals(t.endsWith('the kind of thing vets like to hear about the same day.'), true, t)
     assertStrictEquals(/needs a call|call your vet|\btoday\b|can wait|no rush/i.test(t), false, t)
   }
+})
+
+Deno.test('a floor photo beside a T6/T7/T8 count keeps the direct words (adversarial pass 1, B2)', () => {
+  const base = { contextual: () => 'BASE', photoUnreadable: () => '', monitor: () => '', visualFlagFallback: () => '', noFlag: () => '' }
+  for (const row of ['T6', 'T7', 'T8'] as const) {
+    const floor = { tier: 'call_today', rows: [row], counts: { burst: 2, span: 2 } } as unknown as FloorResult
+    const copy = en4VomitCopy(base as never, floor)
+    for (const visual of [['blood'], ['suspected_foreign_material']]) {
+      const t = copy.contextualWithPhotoFinding!('Rex', ['repeated_vomiting'], visual)
+      assertStrictEquals(t.startsWith('I can see '), true, t)
+      assertStrictEquals(/needs a call to your vet\.$/.test(t), true, t)
+      assertStrictEquals(/same day/.test(t), false, t)
+    }
+    // No floor sign in the photo (the model's own call): the count stays deferential.
+    assertStrictEquals(copy.contextualWithPhotoFinding!('Rex', ['repeated_vomiting'], []).endsWith('the same day.'), true)
+    // No photo finding at all: deferential.
+    assertStrictEquals(copy.contextual('Rex', ['repeated_vomiting']).endsWith('the same day.'), true)
+  }
+})
+
+Deno.test('a floor stool photo beside vomiting names the photo first and keeps the direct words (adversarial pass 1, B3)', () => {
+  for (const reason of ['logged_loose', 'read_loose', 'read_hard', 'repeats', 'unread'] as const) {
+    const copy = en7StoolCopy(reason)
+    for (const [visual, seen] of [[['blood'], 'what looks like blood'], [['suspected_foreign_material'], "something that doesn't look like food"]] as const) {
+      const t = copy.contextualWithPhotoFinding!('Rex', ['concurrent_vomiting'], [...visual])
+      assertStrictEquals(t.startsWith(`I can see ${seen} in this stool photo. `), true, t)
+      assertStrictEquals(/call your vet/.test(t), true, t)
+      assertStrictEquals(/same day|worth telling/.test(t), false, t)
+    }
+    // A photo finding that is no floor sign keeps the deferential EN-7 line, named after the photo.
+    const soft = copy.contextualWithPhotoFinding!('Rex', ['concurrent_vomiting'], [])
+    assertStrictEquals(/same day/.test(soft), true, soft)
+  }
+  // The cat intake arm is the floor either way.
+  assertStrictEquals(en7StoolCopy('intake').contextualWithPhotoFinding!('Rex', ['concurrent_vomiting'], ['blood']).endsWith('call your vet today.'), true)
 })

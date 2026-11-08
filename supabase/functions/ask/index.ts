@@ -348,7 +348,7 @@ async function runAskLoop(
           const plan = planPhotoRead(ctx, eventId, liveReadsUsed)
           if (plan.action === 'run') {
             liveReadsUsed++ // count the invoke BEFORE it runs — bounds the loop even on failure
-            result = await runLivePhotoRead(client, plan.eventId, plan.eventType, plan.incidentType, { petName: ctx.petName, timezone: ctx.timezone })
+            result = await runLivePhotoRead(client, plan.eventId, plan.eventType, plan.incidentType, { petName: ctx.petName, timezone: ctx.timezone, species: ctx.species })
           } else {
             result = buildPhotoReadResult(plan)
           }
@@ -553,7 +553,7 @@ type ReadRowDb = Record<string, unknown> & { event_id: string; incident_type: st
 /** Map an event_ai_analysis DB row (READ_COLS) to the AskCachedReadRow the tools relay. The
  *  correction is worded here, once, by the module the incident screen uses (CUL-1406), so Ask
  *  relays the screen's words with the pet's name and the owner's date. */
-function mapReadRow(r: ReadRowDb, words: { petName: string; timezone: string | null }): AskCachedReadRow {
+function mapReadRow(r: ReadRowDb, words: { petName: string; timezone: string | null; species: string | null }): AskCachedReadRow {
   const correction = intakeCorrectionOf(r as IntakeCorrectionColumns)
   return {
     eventId: r.event_id,
@@ -573,7 +573,7 @@ function mapReadRow(r: ReadRowDb, words: { petName: string; timezone: string | n
     stoolBloodPresent: (r.stool_blood_present as string) ?? null,
     stoolMucusPresent: (r.stool_mucus_present as string) ?? null,
     recommendation: (r.recommendation as string) ?? null,
-    tierWords: tierWordsOf(r),
+    tierWords: tierWordsOf(r, words.species),
     readText: (r.read_text as string) ?? null,
     readCorrection: correction ? intakeCorrectionSentence(correction, words.petName, words.timezone ?? undefined) : null,
   }
@@ -610,7 +610,7 @@ async function runLivePhotoRead(
   eventId: string,
   eventType: string,
   incidentType: PhotoReadIncident,
-  words: { petName: string; timezone: string | null },
+  words: { petName: string; timezone: string | null; species: string | null },
 ): Promise<PhotoReadResult> {
   const fn = incidentType === 'vomit' ? 'analyze-vomit' : 'analyze-stool'
   try {
@@ -917,7 +917,7 @@ async function fetchContext(
   const timezone = resolveIanaZone(requestTimezone, profile?.timezone)
 
   // ── reads ── (after the zone: a correction's date is the owner's local date, CUL-1406)
-  const reads: AskCachedReadRow[] = readsPull.rows.map((r) => mapReadRow(r, { petName: pet.name, timezone }))
+  const reads: AskCachedReadRow[] = readsPull.rows.map((r) => mapReadRow(r, { petName: pet.name, timezone, species: pet.species ?? null }))
 
   // ai_signals.findings is CachedFinding[] = { rank, text, finding{ type, priorityClass, ... } }.
   // Map to the engineFindings tool's relay shape (type + priorityClass + verbatim payload).

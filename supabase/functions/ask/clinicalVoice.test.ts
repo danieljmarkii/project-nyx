@@ -18,9 +18,20 @@ const tiered = {
   foreign_material_present: null,
 }
 
-Deno.test('Ask: a call today with known, floor-free reasons is the deferential label, as on the record', () => {
-  assert.equal(tierWordsOf({ ...tiered, contextual_flags: ['repeated_vomiting'], visual_flags: [] }), DEFERENTIAL_ASK.label)
-  assert.equal(tierWordsOf({ ...tiered, contextual_flags: ['repeated_loose_stool', 'concurrent_vomiting'], visual_flags: [] }), DEFERENTIAL_ASK.label)
+Deno.test('Ask: a dog\'s call today with known, floor-free reasons is the deferential label, as on the record', () => {
+  assert.equal(tierWordsOf({ ...tiered, contextual_flags: ['repeated_vomiting'], visual_flags: [] }, 'dog'), DEFERENTIAL_ASK.label)
+  assert.equal(tierWordsOf({ ...tiered, contextual_flags: ['repeated_loose_stool', 'concurrent_vomiting'], visual_flags: [] }, 'dog'), DEFERENTIAL_ASK.label)
+})
+
+Deno.test('Ask: every other species takes the cat floor, which Ask cannot re-check live (adversarial pass 1, B1)', () => {
+  // A cat's T8 vomit read, or an EN-7 stool read whose cat intake reason is stored only as
+  // concurrent_vomiting: the record would floor it on its live meal check; Ask must not be softer.
+  for (const species of ['cat', 'other', 'unknown', null, undefined]) {
+    assert.equal(tierWordsOf({ ...tiered, contextual_flags: ['repeated_vomiting'], visual_flags: [] }, species), FLOOR_ASK.label, String(species))
+    assert.equal(tierWordsOf({ ...tiered, contextual_flags: ['concurrent_vomiting'], visual_flags: [] }, species), FLOOR_ASK.label, String(species))
+  }
+  // The raise is for a call today only: an earlier-rule cat read keeps the record's words.
+  assert.equal(tierWordsOf({ status: 'completed', recommendation: 'worth_a_call', tier: null, engine_flags: [] }, 'cat'), TIER_WORDS.worth_a_call.label)
 })
 
 Deno.test('Ask: every floor reason, and every reason it cannot see, is the floor', () => {

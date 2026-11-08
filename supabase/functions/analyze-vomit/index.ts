@@ -426,10 +426,14 @@ function seenInPhoto(visualFlags: string[]): string {
 // concern plainly (the safe direction) and routes to the vet. CUL-2668 (inventory §3b): blood
 // or something that isn't food is the floor and names its clock, "today"; the model's own call
 // with no flag ("something worth a closer look") keeps the shipped words.
+/** A photo flag that is a floor sign (blood, suspected foreign material). */
+export function hasFloorVisual(visualFlags: readonly string[]): boolean {
+  return visualFlags.includes('blood') || visualFlags.includes('suspected_foreign_material')
+}
+
 export function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
   const p = petName || 'your pet'
-  const floor = visualFlags.includes('blood') || visualFlags.includes('suspected_foreign_material')
-  return floor
+  return hasFloorVisual(visualFlags)
     ? `I can see ${seenInPhoto(visualFlags)} in this photo. That's worth a call to your vet today.`
     : `I can see ${seenInPhoto(visualFlags)} in this photo. That's worth a call to your vet about ${p}.`
 }
@@ -622,8 +626,12 @@ export function floorFlags(floor: FloorResult): ContextualFlag[] {
 // T6, T7 and T8 are deferential (clinical-guardrails Pattern 11: soften the verb, keep the
 // clock, keep the reason): "the kind of thing vets like to hear about the same day". "The same
 // day" is relative to the vomiting, so it stays true however late the read is opened.
-export function floorSentence(petName: string, floor: FloorResult, row: FloorResult['rows'][number]): string {
+// `direct`: the photo beside the count shows a floor sign (blood, foreign material), so the read
+// is a floor read and its count sentence keeps the direct words too (adversarial pass 1, B2).
+export function floorSentence(petName: string, floor: FloorResult, row: FloorResult['rows'][number], direct = false): string {
   const p = petName || 'Your pet'
+  // The deferential close, or (direct) the shipped "needs a call to your vet." that keeps the floor.
+  const close = (deferential: string, shipped: string) => (direct ? shipped : deferential)
   switch (row) {
     case 'T1':
       return `${p} has thrown up ${floor.counts.burst} times within about half an hour. That many close together needs a call to your vet.`
@@ -636,17 +644,18 @@ export function floorSentence(petName: string, floor: FloorResult, row: FloorRes
       // calendar holds three in a row (CUL-2223: two vomits one morning and one the next were
       // read as "three days in a row"). A floor without the run's facts names no days at all.
       const run = floor.persistence
-      if (run?.consecutive) return `${p} has vomited on three days in a row. Vomiting that keeps up day after day is the kind of thing vets like to hear about the same day.`
-      if (run?.days) return `${p} has thrown up ${run.logs} times, on ${run.days} separate days. Vomiting that keeps coming back day after day is the kind of thing vets like to hear about the same day.`
-      if (run) return `${p} has thrown up ${run.logs} times across more than a day. Vomiting that keeps coming back like that is the kind of thing vets like to hear about the same day.`
-      return `${p} has kept vomiting for more than a day. Vomiting that keeps coming back like that is the kind of thing vets like to hear about the same day.`
+      const keepsUp = close('is the kind of thing vets like to hear about the same day.', 'needs a call to your vet.')
+      if (run?.consecutive) return `${p} has vomited on three days in a row. Vomiting that keeps up day after day ${keepsUp}`
+      if (run?.days) return `${p} has thrown up ${run.logs} times, on ${run.days} separate days. Vomiting that keeps coming back day after day ${keepsUp}`
+      if (run) return `${p} has thrown up ${run.logs} times across more than a day. Vomiting that keeps coming back like that ${keepsUp}`
+      return `${p} has kept vomiting for more than a day. Vomiting that keeps coming back like that ${keepsUp}`
     }
     case 'T6':
-      return `${p} has thrown up twice within a day. In a dog, that's the kind of thing vets like to hear about the same day.`
+      return `${p} has thrown up twice within a day. In a dog, ${close("that's the kind of thing vets like to hear about the same day.", 'that needs a call to your vet.')}`
     case 'T7':
       return floor.ageUnknown
-        ? `${p} has thrown up twice within a day. ${p}'s birthday isn't on file, so this is read the way it would be for a young animal, which can get dehydrated quickly. That's the kind of thing vets like to hear about the same day.`
-        : `${p} has thrown up twice within a day, and is under six months old. A young animal can get dehydrated quickly, so that's the kind of thing vets like to hear about the same day.`
+        ? `${p} has thrown up twice within a day. ${p}'s birthday isn't on file, so this is read the way it would be for a young animal, which can get dehydrated quickly. ${close("That's the kind of thing vets like to hear about the same day.", 'That needs a call to your vet.')}`
+        : `${p} has thrown up twice within a day, and is under six months old. A young animal can get dehydrated quickly, so ${close("that's the kind of thing vets like to hear about the same day.", 'that needs a call to your vet.')}`
   }
 }
 
@@ -655,15 +664,16 @@ export function floorSentence(petName: string, floor: FloorResult, row: FloorRes
 // row. `rows` come loudest first from the floor.
 export function en4VomitCopy(base: IncidentCopy<ContextualFlag>, floor: FloorResult): IncidentCopy<ContextualFlag> {
   const lead = floor.rows[0]
-  const contextual = (petName: string, flags: ContextualFlag[]): string => {
-    if (floor.tier === 'call_now' || !flags.includes('feline_reduced_intake')) return floorSentence(petName, floor, lead)
+  const contextual = (petName: string, flags: ContextualFlag[], direct = false): string => {
+    if (floor.tier === 'call_now' || !flags.includes('feline_reduced_intake')) return floorSentence(petName, floor, lead, direct)
     return base.contextual(petName, flags)
   }
   return {
     ...base,
-    contextual,
+    contextual: (petName, flags) => contextual(petName, flags),
+    // A floor sign in the photo makes the whole read a floor read (adversarial pass 1, B2).
     contextualWithPhotoFinding: (petName, flags, visualFlags) =>
-      `I can see ${seenInPhoto(visualFlags)} in this photo. ${contextual(petName, flags)}`,
+      `I can see ${seenInPhoto(visualFlags)} in this photo. ${contextual(petName, flags, hasFloorVisual(visualFlags))}`,
   }
 }
 
