@@ -639,7 +639,8 @@ export function floorFlags(floor: FloorResult): ContextualFlag[] {
 // clock, keep the reason): "the kind of thing vets like to hear about the same day". "The same
 // day" is relative to the vomiting, so it stays true however late the read is opened.
 // `direct`: the photo beside the count shows a floor sign (blood, foreign material), so the read
-// is a floor read and its count sentence keeps the direct words too (adversarial pass 1, B2).
+// is a floor read and its count sentence keeps the direct words too (adversarial pass 1, B2), with
+// the floor's clock, "today": these rows are call today, and §R exempts only call now (CUL-2682).
 export function floorSentence(petName: string, floor: FloorResult, row: FloorResult['rows'][number], direct = false): string {
   const p = petName || 'Your pet'
   // The deferential close, or (direct) the shipped "needs a call to your vet." that keeps the floor.
@@ -656,18 +657,18 @@ export function floorSentence(petName: string, floor: FloorResult, row: FloorRes
       // calendar holds three in a row (CUL-2223: two vomits one morning and one the next were
       // read as "three days in a row"). A floor without the run's facts names no days at all.
       const run = floor.persistence
-      const keepsUp = close('is the kind of thing vets like to hear about the same day.', 'needs a call to your vet.')
+      const keepsUp = close('is the kind of thing vets like to hear about the same day.', 'needs a call to your vet today.')
       if (run?.consecutive) return `${p} has vomited on three days in a row. Vomiting that keeps up day after day ${keepsUp}`
       if (run?.days) return `${p} has thrown up ${run.logs} times, on ${run.days} separate days. Vomiting that keeps coming back day after day ${keepsUp}`
       if (run) return `${p} has thrown up ${run.logs} times across more than a day. Vomiting that keeps coming back like that ${keepsUp}`
       return `${p} has kept vomiting for more than a day. Vomiting that keeps coming back like that ${keepsUp}`
     }
     case 'T6':
-      return `${p} has thrown up twice within a day. In a dog, ${close("that's the kind of thing vets like to hear about the same day.", 'that needs a call to your vet.')}`
+      return `${p} has thrown up twice within a day. In a dog, ${close("that's the kind of thing vets like to hear about the same day.", 'that needs a call to your vet today.')}`
     case 'T7':
       return floor.ageUnknown
-        ? `${p} has thrown up twice within a day. ${p}'s birthday isn't on file, so this is read the way it would be for a young animal, which can get dehydrated quickly. ${close("That's the kind of thing vets like to hear about the same day.", 'That needs a call to your vet.')}`
-        : `${p} has thrown up twice within a day, and is under six months old. A young animal can get dehydrated quickly, so ${close("that's the kind of thing vets like to hear about the same day.", 'that needs a call to your vet.')}`
+        ? `${p} has thrown up twice within a day. ${p}'s birthday isn't on file, so this is read the way it would be for a young animal, which can get dehydrated quickly. ${close("That's the kind of thing vets like to hear about the same day.", 'That needs a call to your vet today.')}`
+        : `${p} has thrown up twice within a day, and is under six months old. A young animal can get dehydrated quickly, so ${close("that's the kind of thing vets like to hear about the same day.", 'that needs a call to your vet today.')}`
   }
 }
 

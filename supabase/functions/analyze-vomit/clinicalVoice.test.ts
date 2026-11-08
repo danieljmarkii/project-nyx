@@ -50,7 +50,7 @@ Deno.test('a floor photo beside a T6/T7/T8 count keeps the direct words (adversa
     for (const visual of [['blood'], ['suspected_foreign_material']]) {
       const t = copy.contextualWithPhotoFinding!('Rex', ['repeated_vomiting'], visual)
       assertStrictEquals(t.startsWith('I can see '), true, t)
-      assertStrictEquals(/needs a call to your vet\.$/.test(t), true, t)
+      assertStrictEquals(/needs a call to your vet today\.$/.test(t), true, t)
       assertStrictEquals(/same day/.test(t), false, t)
     }
     // No floor sign in the photo (the model's own call): the count stays deferential.
@@ -85,8 +85,10 @@ const FLOOR_PHOTOS: ReadonlyArray<readonly [string[], RegExp]> = [
   [['suspected_foreign_material'], /something that doesn't look like food/],
   [['blood', 'suspected_foreign_material'], /what looks like blood, and something that doesn't look like food/],
 ]
-// "call your vet today" / "a call to your vet today" (§R), or D2's call-now words on en4's rows.
-const FLOOR_WORDS = /call (to )?your vet today\b|\bneeds? a call to your vet\./
+// "call your vet today" / "a call to your vet today" (§R). Only en4's call-now rows (T1–T3, D2)
+// may say "needs a call" without the clock; every call-today row carries "today".
+const FLOOR_WORDS = /call (to )?your vet today\b/
+const CALL_NOW_WORDS = /\bneeds? a call to your vet\./
 const MODEL = 'MODEL: calmly worth mentioning to your vet when you can.'
 
 type Select = (contextualFlags: string[], visualFlags: string[]) => string
@@ -113,7 +115,7 @@ Deno.test('CUL-2682 · every stored sentence over a floor photo names the findin
   ]
   for (const row of ['T1', 'T2', 'T3', 'T6', 'T7', 'T8'] as const) {
     const tier = row === 'T1' || row === 'T2' || row === 'T3' ? 'call_now' : 'call_today'
-    vomit.push([`vomit en4 ${row}`, viaCopy(en4VomitCopy(en0 as never, floorOf([row], tier)) as IncidentCopy<string>)])
+    vomit.push([`vomit en4 ${row}${tier === 'call_now' ? ' (call now)' : ''}`, viaCopy(en4VomitCopy(en0 as never, floorOf([row], tier)) as IncidentCopy<string>)])
   }
   const stool: Array<[string, Select]> = [['stool flag-off', viaWrapper(selectStoolReadText as never)]]
   for (const reason of ['logged_loose', 'read_loose', 'read_hard', 'intake', 'repeats', 'unread'] as const) {
@@ -128,7 +130,8 @@ Deno.test('CUL-2682 · every stored sentence over a floor photo names the findin
           const at = `${name} [${flags.join(',')}] [${visual.join(',')}]: "${t}"`
           assertStrictEquals(t.includes('MODEL'), false, `model words stored: ${at}`)
           assertStrictEquals(finding.test(t), true, `finding unnamed: ${at}`)
-          assertStrictEquals(FLOOR_WORDS.test(t), true, `not the floor: ${at}`)
+          const words = FLOOR_WORDS.test(t) || (name.endsWith('(call now)') && CALL_NOW_WORDS.test(t))
+          assertStrictEquals(words, true, `not the floor: ${at}`)
           assertStrictEquals(/same day|worth telling|worth a word/.test(t), false, `deferential over a floor photo: ${at}`)
           checked++
         }
