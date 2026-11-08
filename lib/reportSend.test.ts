@@ -387,7 +387,9 @@ describe('the send card asks as loudly as the loudest live flag (CUL-2663)', () 
     expect(card(flags(f), 'Nyx', NIGHT)!.rows[0].text).toBe('If your vet is closed, an emergency clinic can see Nyx now.');
   });
 
-  it('a partial eating-less flag is a word, like its Signal card', () => {
-    expect(card(flags({ kind: 'intake_decline', trigger: 'consecutive_low' }), 'Nyx', DAY)!.rows.map((r) => r.text)).toEqual(['Worth a word with your vet about it.']);
+  it('a partial eating-less flag keeps the floor: with no species and no meal check it may be a cat 37 h without a good meal', () => {
+    for (const trigger of ['consecutive_low', 'refused_normal_food', 'refused_then_vomited']) {
+      expect(card(flags({ kind: 'intake_decline', trigger }), 'Nyx', DAY)!.rows[0].text).toBe('Call your vet today.');
+    }
   });
 });

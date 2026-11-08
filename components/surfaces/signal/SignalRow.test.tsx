@@ -84,7 +84,7 @@ describe('S1 — a safety row is words: the headline and the ask, never a chart'
   it('the ask is the symptom INK, never the bright rose on white (C-1)', () => {
     const view = render(<SignalRow cached={cached(SAFETY[4])} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     expect(StyleSheet.flatten(view.getByTestId('signal-row-ask').props.style).color).toBe(theme.colorEventSymptomInk);
-    expect(view.getByTestId('signal-row-ask').props.children).toBe('Worth a call to your vet');
+    expect(view.getByTestId('signal-row-ask').props.children).toBe('Call your vet today') // CUL-2675 (a): a photo flag is the floor;
     expect(view.getByTestId('signal-row-eyebrow').props.children).toBe('Photo read · Sep 22');
   });
 });

@@ -573,14 +573,19 @@ export function densityLine(facts: TrialOutcomeFacts, petName: string): string {
  * The vet line under a live intake decline, on the trial card and the closing sheet alike
  * (CUL-2667; D3 ruled (a), mock §05). The floor is a cat with no meal rated Most or All in 24 h:
  * an all-refused day, a sustained refusal, or a decline this build cannot name meets it and keeps
- * the direct line. A cat's partial decline does not, so it takes the Signal's own conditional
- * ask and keeps the pointer to the floor as a condition on the data. A dog is deferential
+ * the direct line. A cat's partial decline may or may not (it can run 37 h with no good meal), so
+ * it is deferential, with the floor kept as a condition on the data, only once the live check
+ * says the predicate is unmet; no caller has that check yet, so every cat keeps the floor (filed). A dog is deferential
  * (Pattern 11); any other species follows the Signal's "every species but a dog" refusal rule.
  */
 export function trialDeclineVetLine(
   species: 'dog' | 'cat' | 'other' | null | undefined,
   fact: { trigger?: string | null; allRefused?: boolean } | null | undefined,
   petName: string,
+  /** The live D3 predicate. A cat's partial decline is deferential ONLY when this says the
+   *  predicate is unmet (false): a partial card can still be 37 h without a Most or All meal
+   *  (adversarial pass on CUL-2667), so an unchecked cat keeps the floor. */
+  catNoGoodMeal24h?: boolean,
 ): string {
   const deferential = 'A pet going off their food is worth a call to your vet, whatever the trial is doing.';
   if (species === 'dog') return deferential;
@@ -592,7 +597,7 @@ export function trialDeclineVetLine(
   // Any species but a dog takes the floor on a refusal (the all-refused rule, CUL-2675); only a
   // cat has the conditional pointer, because only a cat's floor is defined by its meals.
   if (species !== 'cat') return partial ? deferential : 'A pet that stops eating needs a call today, whatever the trial is doing.';
-  if (!partial) return 'A cat that stops eating needs a call today, whatever the trial is doing.';
+  if (!partial || catNoGoodMeal24h !== false) return 'A cat that stops eating needs a call today, whatever the trial is doing.';
   const name = petName.trim() || 'your cat';
   return `Worth keeping an eye on, and a word with your vet if it carries on. If ${name} goes a day without a full meal, ${FLOOR_ASK.inline}, whatever the trial is doing.`;
 }

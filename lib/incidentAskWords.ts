@@ -18,8 +18,10 @@
 //   2. A reason the build does not know is floor. So is a reasons field the caller never
 //      supplied (`undefined`): a surface that cannot see why the read called does not get to
 //      guess the quiet answer. Only a supplied, fully known, floor-free set is deferential.
-//   3. `visual_flags` count only on a row the owner never edited (an edit is the owner's own
-//      account of the photo; a rescue write carries the flag and no structured column).
+//   3. `visual_flags` count until the owner's own edit of THAT sign says none (`none_visible`,
+//      `no`): an edit is the owner's account of the photo, but only of the field they changed,
+//      and a rescue write carries the flag and no structured column. Louder than the spec's
+//      "on a row the owner never edited", on purpose (adversarial pass, finding 5b).
 //   4. The live cat check (`catNoGoodMeal24h`) can ADD the floor and never remove it.
 //   5. A floor flag on an earlier-rule or unknown tier gets the floor words too (CUL-2675 (a)):
 //      the floor is set by the sign, not by when the read was written.
@@ -99,10 +101,9 @@ export type FloorReason = 'call_now' | 'blood' | 'foreign_material' | 'cat_intak
  *  seen, and they must fail toward the floor, never throw. */
 export interface AskReasonRow {
   tier?: string | null;
-  recommendation?: string | null;
   /** The server's `text[]`, or the phone's JSON text of it. `undefined` = not supplied (floor). */
   contextual_flags?: unknown;
-  /** Read only when `edited_at` is null. `undefined` on an unedited row = not supplied (floor). */
+  /** The photo's own flags. `undefined` = not supplied (floor). */
   visual_flags?: unknown;
   edited_at?: string | null;
   blood_present?: string | null;
@@ -141,16 +142,22 @@ export function floorReasonOf(row: AskReasonRow | null | undefined, opts: AskOpt
   if (row.stool_blood_present === 'yes') return 'blood';
   if (row.foreign_material_present === 'yes') return 'foreign_material';
 
-  // Rule 3: the photo's flags speak only while the owner has not given their own account.
-  const unedited = row.edited_at === null || row.edited_at === undefined;
-  if (unedited) {
-    const visual = textArray(row.visual_flags);
-    if (visual === null) return 'unknown';
-    for (const f of visual) {
-      if (f === 'blood') return 'blood';
-      if (f === 'suspected_foreign_material') return 'foreign_material';
-      return 'unknown';
+  // Rule 3: the photo's flags speak until the owner's own account of THAT sign says none. An
+  // edit to another field (the colour) never silences a blood or foreign-material flag the model
+  // raised over an `unsure` or empty column (adversarial pass on CUL-2667).
+  const edited = row.edited_at !== null && row.edited_at !== undefined;
+  const visual = textArray(row.visual_flags);
+  if (visual === null) return 'unknown';
+  for (const f of visual) {
+    if (f === 'blood') {
+      if (edited && (row.blood_present === 'none_visible' || row.stool_blood_present === 'no')) continue;
+      return 'blood';
     }
+    if (f === 'suspected_foreign_material') {
+      if (edited && row.foreign_material_present === 'no') continue;
+      return 'foreign_material';
+    }
+    return 'unknown';
   }
 
   const contextual = textArray(row.contextual_flags);

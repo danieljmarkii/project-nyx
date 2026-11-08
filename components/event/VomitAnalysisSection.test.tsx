@@ -2543,3 +2543,66 @@ describe('VomitAnalysisSection — the ruled states (CUL-1912)', () => {
     expect(await view.findByText(' · Yellow, blood: none visible')).toBeTruthy();
   });
 });
+
+// ── CUL-2667: the call's words follow its reason, and a cat re-checks the 24 h predicate ──────
+describe('VomitAnalysisSection — the reason picks the words (CUL-2667)', () => {
+  const STAMP = ['engines_v3_en3', 'engines_v3_en4'];
+  const NOW = new Date(2026, 10, 8, 20, 0).getTime();
+  let nowSpy: jest.SpyInstance;
+  const callRow = (over: Record<string, unknown> = {}) =>
+    row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'], visual_flags: [], ...over });
+  const facts = (meals: { at: string; rating: string | null }[]) => ({
+    readAt: NOW, anchorAt: new Date(NOW - 3_600_000).toISOString(), serverAttachmentIds: [], localAttachmentIds: [],
+    unsynced: false, vomits: [], stoolAt: [], lethargyAt: [], meals,
+  });
+  const hoursAgo = (h: number) => new Date(NOW - h * 3_600_000).toISOString();
+  const setSpecies = (species: string | null) =>
+    usePetStore.setState({
+      pets: species === null ? [] : [{ id: 'pet-1', name: 'Pixel', species, breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'female', weight_kg: null, photo_path: null } as never],
+    });
+  beforeEach(() => { nowSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW); });
+  afterEach(() => { nowSpy.mockRestore(); mockRow = null; mockMayWaitFacts = null; });
+
+  it('a dog\'s repeat vomiting is deferential; blood beside it is the floor', async () => {
+    setSpecies('dog');
+    mockRow = callRow();
+    const soft = render(<VomitAnalysisSection eventId="r1" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await soft.findByText('Worth a call today')).toBeTruthy();
+    soft.unmount();
+    mockRow = callRow({ blood_present: 'fresh_red', visual_flags: ['blood'] });
+    const loud = render(<VomitAnalysisSection eventId="r2" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await loud.findByText('Call your vet today')).toBeTruthy();
+  });
+
+  it('a cat 25 h past its last Most/All meal is the floor; 23 h is deferential', async () => {
+    setSpecies('cat');
+    mockRow = callRow();
+    mockMayWaitFacts = facts([{ at: hoursAgo(25), rating: 'all' }, { at: hoursAgo(10), rating: 'some' }]);
+    const late = render(<VomitAnalysisSection eventId="c1" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await late.findByText('Call your vet today')).toBeTruthy();
+    late.unmount();
+    mockMayWaitFacts = facts([{ at: hoursAgo(23), rating: 'all' }]);
+    const fed = render(<VomitAnalysisSection eventId="c2" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await fed.findByText('Worth a call today')).toBeTruthy();
+  });
+
+  it('a cat whose facts have not answered, and a pet the store does not hold, keep the floor', async () => {
+    setSpecies('cat');
+    mockRow = callRow();
+    mockMayWaitFacts = null;
+    const loading = render(<VomitAnalysisSection eventId="c3" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await loading.findByText('Call your vet today')).toBeTruthy();
+    loading.unmount();
+    setSpecies(null);
+    const unknown = render(<VomitAnalysisSection eventId="c4" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await unknown.findByText('Call your vet today')).toBeTruthy();
+  });
+
+  it('an earlier-rule blood photo says the floor\'s words and service line (CUL-2675 (a))', async () => {
+    setSpecies('dog');
+    mockRow = row({ recommendation: 'worth_a_call', blood_present: 'fresh_red' });
+    const view = render(<VomitAnalysisSection eventId="e1" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await view.findByText('Call your vet today')).toBeTruthy();
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+  });
+});

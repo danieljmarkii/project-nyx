@@ -253,8 +253,10 @@ export function VomitAnalysisSection(
   const waitTick = `${Math.floor(clockNow / 60_000)}|${waitActive}`;
   // CUL-2667: a cat's call today re-checks the live 24 h intake predicate (D3), which can only
   // add the floor, so the same read of the record also runs for a cat's call today.
+  // A pet the store does not hold (archived, or before the list answers) has an unknown species,
+  // and an unknown fails toward the floor: it runs the cat check rather than skipping it.
   const recordSpecies = usePetStore((s) => s.pets.find((p) => p.id === petId)?.species ?? null);
-  const catCallToday = !!row && recordSpecies === 'cat' && tierDisplayOf(row) === 'call_today';
+  const catCallToday = !!row && (recordSpecies === 'cat' || recordSpecies === null) && tierDisplayOf(row) === 'call_today';
   const mayWaitFacts = useMayWaitFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}`, waitTick, lastLogged, waitCandidate || catCallToday);
   // CUL-1513 (tiers spec §5): the go-live day's lines. Both null until the key's own
   // `app_config` value carries a day for this owner, so the card is today's to the byte.

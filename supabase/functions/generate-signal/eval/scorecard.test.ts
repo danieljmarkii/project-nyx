@@ -22,7 +22,7 @@ import { visibleAt } from './asOf.ts'
 /** A stand-in for Home's ask with the same shape of answer: safety rows ask, benign rows do not.
  *  The real ask (and its exact strings) is proven in the jest suite. */
 function standInAsk(f: Finding): string | null {
-  if (f.type === 'incident_red_flag') return 'worth a call to your vet'
+  if (f.type === 'incident_red_flag') return 'call your vet today'
   if (f.priorityClass === 'safety') return 'worth a word with your vet'
   return null
 }

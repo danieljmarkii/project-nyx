@@ -67,13 +67,23 @@ describe('askLevelOf: the floor', () => {
     expect(askLevelOf({ ...clean, contextual_flags: '["repeated_vomiting"]', visual_flags: '[]' })).toBe('deferential');
   });
 
-  it('an owner edit silences the photo\'s own flags, never the structured fields', () => {
+  it('an owner edit silences the photo\'s flag only where the owner said none of THAT sign', () => {
     const edited = { ...clean, edited_at: '2026-11-01T10:00:00Z', visual_flags: ['blood'] };
-    expect(askLevelOf(edited)).toBe('deferential');
+    expect(askLevelOf(edited)).toBe('deferential'); // blood_present: none_visible, the owner's word
     expect(askLevelOf({ ...edited, blood_present: 'fresh_red' })).toBe('floor');
-    // An edited row needs no visual field at all.
+    // The adversarial pass's 5b: the owner edited the colour; blood stayed unsure under the model's flag.
+    expect(askLevelOf({ ...edited, blood_present: 'unsure' })).toBe('floor');
+    expect(askLevelOf({ ...edited, blood_present: null })).toBe('floor');
+    const foreign = { ...clean, edited_at: '2026-11-01T10:00:00Z', visual_flags: ['suspected_foreign_material'] };
+    expect(askLevelOf({ ...foreign, foreign_material_present: 'unsure' })).toBe('floor');
+    expect(askLevelOf({ ...foreign, foreign_material_present: 'no' })).toBe('deferential');
+    // A stool row's own blood column speaks for it.
+    const stool = { tier: 'call_today', contextual_flags: ['repeated_loose_stool'], visual_flags: ['blood'], edited_at: '2026-11-01T10:00:00Z' };
+    expect(askLevelOf({ ...stool, stool_blood_present: 'no' })).toBe('deferential');
+    expect(askLevelOf({ ...stool, stool_blood_present: 'unsure' })).toBe('floor');
+    // Edited or not, a visual field the caller never handed over is floor (rule 2).
     const { visual_flags: _v, ...editedNoVisual } = edited;
-    expect(askLevelOf(editedNoVisual)).toBe('deferential');
+    expect(askLevelOf(editedNoVisual)).toBe('floor');
   });
 
   it('the live cat check adds the floor and never removes it', () => {
@@ -85,14 +95,14 @@ describe('askLevelOf: the floor', () => {
 
 describe('hasFloorSign: an earlier-rule or unknown tier (CUL-2675 (a))', () => {
   it('a floor sign raises the shipped "Worth a call"', () => {
-    expect(hasFloorSign({ tier: null, recommendation: 'worth_a_call', blood_present: 'fresh_red' })).toBe(true);
+    expect(hasFloorSign({ tier: null, blood_present: 'fresh_red' })).toBe(true);
     expect(hasFloorSign({ tier: 'mystery', foreign_material_present: 'yes' })).toBe(true);
     expect(hasFloorSign({ tier: null, contextual_flags: ['feline_reduced_intake'] })).toBe(true);
     expect(hasFloorSign({ tier: null, visual_flags: ['blood'], edited_at: null })).toBe(true);
   });
 
   it('absent fields are not a sign here: an old read keeps its words', () => {
-    expect(hasFloorSign({ tier: null, recommendation: 'worth_a_call' })).toBe(false);
+    expect(hasFloorSign({ tier: null })).toBe(false);
     expect(hasFloorSign({ tier: null, contextual_flags: ['repeated_vomiting'] })).toBe(false);
   });
 

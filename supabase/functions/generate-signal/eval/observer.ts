@@ -58,7 +58,9 @@ export const FLAG_OFF: EngineFlags = { on: [], readOk: true }
  * runner asserts every string `signalHomeAsk` can return is here.
  */
 export const ASK_REGISTER: Readonly<Record<string, AskRegister>> = {
-  'worth a call to your vet': 'call',
+  // CUL-2667: the floor's words, on Home for a photo flag and an intake trigger the build does
+  // not know; the deferential call today stays its own key.
+  'call your vet today': 'call',
   'worth a call to your vet today': 'call',
   'worth booking a vet visit': 'book_visit',
   'worth booking a vet visit soon': 'book_visit',

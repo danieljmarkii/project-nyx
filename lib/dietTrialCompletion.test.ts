@@ -642,9 +642,11 @@ describe('trialDeclineVetLine: the decline line splits by the cat floor (CUL-266
   });
 
   it.each([['consecutive_low'], ['refused_normal_food'], ['refused_then_vomited']])(
-    'a cat\'s partial decline (%s) is deferential and keeps the pointer to the floor',
+    'a cat\'s partial decline (%s) keeps the floor until a live check says the predicate is unmet',
     (trigger) => {
-      expect(trialDeclineVetLine('cat', { trigger }, 'Pixel')).toBe(
+      expect(trialDeclineVetLine('cat', { trigger }, 'Pixel')).toBe(FLOOR);
+      expect(trialDeclineVetLine('cat', { trigger }, 'Pixel', true)).toBe(FLOOR);
+      expect(trialDeclineVetLine('cat', { trigger }, 'Pixel', false)).toBe(
         'Worth keeping an eye on, and a word with your vet if it carries on. If Pixel goes a day without a full meal, call your vet today, whatever the trial is doing.',
       );
     },

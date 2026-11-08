@@ -522,12 +522,12 @@ function flagWords(f: ComposerFlag): string {
 
 /**
  * How firmly one live flag asks (CUL-2663, CUL-2667): the ask the flag's own Signal card makes.
- *   floor  blood, foreign material, a refusal (a sustained refusal, an all-refused day, the trial
- *          diet refused: the flag carries no species, so the cat floor stands), and any kind or
- *          trigger this build does not know.
+ *   floor  blood, foreign material, any intake decline or trial-diet refusal (the flag carries no
+ *          species and no live meal check, so the cat floor stands), and any kind or trigger this
+ *          build does not know.
  *   call   a deferential call today: a burden of one sign this week.
  *   word   a word with the vet, no clock: weeks of a sign, a sign getting more frequent, weight,
- *          a protein mismatch, eating less, a usual food refused, refusing then vomiting.
+ *          a protein mismatch.
  */
 export type ComposerAskLevel = 'floor' | 'call' | 'word';
 
@@ -538,8 +538,8 @@ export function composerAskLevelOf(f: ComposerFlag): ComposerAskLevel {
     case 'trial_diet_refusal':
       return 'floor';
     case 'intake_decline':
-      if (f.trigger === 'consecutive_low') return f.allRefused === true ? 'floor' : 'word';
-      if (f.trigger === 'refused_normal_food' || f.trigger === 'refused_then_vomited') return 'word';
+      // The flag carries no species and no live meal check, and a cat's partial decline can be
+      // 37 h with no good meal (adversarial pass on CUL-2667), so every intake flag is the floor.
       return 'floor';
     case 'symptom_burden':
       return 'call';
