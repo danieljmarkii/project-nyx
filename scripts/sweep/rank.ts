@@ -154,9 +154,15 @@ export function compare(a: SweepCandidate, b: SweepCandidate): number {
   );
 }
 
+// CLAUDE.md: anything touching RLS, Storage, deletion or export is never mechanical: it plans
+// first and gets the rls-privacy-reviewer. dispatch's gate predicate (step 5) plan-gates the
+// same rows at launch, so the sweep must count them as waiting too (first run, 2026-11-08).
+const PLAN_PATHS = ['lib/storage.ts', 'supabase/migrations/', 'supabase/functions/delete-account/', 'supabase/functions/export', 'lib/deleteAccount', 'lib/export'];
+const touchesPlanPath = (files: string[]) => files.some((f) => PLAN_PATHS.some((p) => f.startsWith(p)));
+
 export function kindOf(c: SweepCandidate): Kind {
   if (c.needsShaping || c.relevance === 'unclear' || c.size === 'XL') return 'shape';
-  if (c.size === 'L' || c.labels.some((l) => GATED_LABELS.includes(l))) return 'plan';
+  if (c.size === 'L' || c.labels.some((l) => GATED_LABELS.includes(l)) || touchesPlanPath(c.files)) return 'plan';
   return 'build';
 }
 

@@ -190,6 +190,9 @@ describe('bundles and sizes', () => {
     expect(kindOf(cand({ size: 'XL' }))).toBe('shape');
     expect(kindOf(cand({ labels: ['Gate: clinical'] }))).toBe('plan');
     expect(kindOf(cand({ needsShaping: 'no one is named as hurt' }))).toBe('shape');
+    // Storage, migrations, deletion and export plan first, as dispatch's predicate does (CLAUDE.md).
+    expect(kindOf(cand({ files: ['app/medication-capture.tsx', 'lib/storage.ts'] }))).toBe('plan');
+    expect(kindOf(cand({ files: ['supabase/functions/delete-account/index.ts'] }))).toBe('plan');
   });
   it('a plan or shape never bundles: it waits on the PM alone', () => {
     const a = cand({ id: 'CUL-54', size: 'L', surface: 'x' });
