@@ -1400,6 +1400,9 @@ export async function buildReportSnapshotForPet(
   // the report's burden row states the louder of that tier and its own (report.ts
   // `burdenTierFromCard`). Logged, never thrown: the card can only raise a tier or qualify the
   // row, so a failed read costs the report a confirmation, never the report.
+  // JWT CLIENT ONLY; never the admin client. The read is scoped by RLS alone (ai_signals_owner):
+  // a service-role caller (a future share-link view) must pair it with the verified pet's owner,
+  // or skip it and state the computed tier (rls-privacy-reviewer, CUL-2676).
   let ownerSignal: OwnerSignalRead | null = null
   // A failed read is unknown, never "no card": the burden row then says it could not check the
   // ask against the card (adversarial pass, CUL-2676).

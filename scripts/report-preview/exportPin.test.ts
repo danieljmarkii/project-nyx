@@ -18,8 +18,9 @@ import { READS } from './reads'
 // subject pet and its owner, or carry a column no render needs?), then paste the new hash
 // with that review's issue and date. A comment edit does not change the hash.
 const PIN: ExportPin = {
-  sha256: '74f582031446bf5752645855d94cf5c46faf38ed3633354455aecc38ff0c4b23',
+  sha256: '35ffab6096e2e8cd6009f9d22e8963304514bd781f4c7ea16dad781348f2bd69',
   review:
+    'rls-privacy-reviewer, CUL-2676, 2026-11-08: ai_signals added (one row, the subj pet\'s newest by expires_at, scoped only by (select id from subj), no join; findings cut to symptom_burden cards projected to type/symptomType/tier/carriedFrom plus generated_at, the four keys burdenTierFromCard reads; only tier and a closed tierSource reach the snapshot). Prior: ' +
     'rls-privacy-reviewer, CUL-2509, 2026-11-04: medication_administrations.how_given added (a closed enum on the same subj-scoped row, no new join); the parent-event embed still pet-scoped; only a count reaches the snapshot. Prior: CUL-2308, 2026-10-31, every read and embed traced through subj',
 }
 

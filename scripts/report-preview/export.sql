@@ -44,8 +44,9 @@
 --     reads Storage; photos render as placeholders);
 --   * app_config allowlists are cut to the subject's owner (in or out), which leaves every
 --     flag resolving exactly as it does for the owner and carries no other account's id.
---   * ai_signals (CUL-2676) is the pet's latest Signal row cut to its burden cards: the
---     report reads only those (the burden row's held tier), so no other card's sentence leaves.
+--   * ai_signals (CUL-2676) is the pet's latest Signal row cut to its burden cards, each
+--     projected to its type, sign, tier and carry date: the four keys the burden row's held
+--     tier reads, so no card's sentence or context leaves.
 -- Kept, because the report prints them: event notes, the owner's display name, and the
 -- trial window's provenance columns (the vet report is their one sanctioned reader,
 -- guards/dietTrialProvenance.test.ts).
@@ -230,7 +231,9 @@ reads as (
     from capture_changes cc where cc.pet_id = (select id from subj) and cc.change_key = 'fab_stool_split'
   union all
   select 'ai_signals', count(*), coalesce(json_agg(json_build_object(
-      'findings', (select coalesce(jsonb_agg(e), '[]'::jsonb)
+      'findings', (select coalesce(jsonb_agg(jsonb_build_object('finding', jsonb_strip_nulls(jsonb_build_object(
+          'type', e->'finding'->'type', 'symptomType', e->'finding'->'symptomType',
+          'tier', e->'finding'->'tier', 'carriedFrom', e->'finding'->'carriedFrom')))), '[]'::jsonb)
         from jsonb_array_elements(case when jsonb_typeof(sg.findings) = 'array' then sg.findings else '[]'::jsonb end) e
         where e->'finding'->>'type' = 'symptom_burden'),
       'generated_at', sg.generated_at))::text, '[]')
