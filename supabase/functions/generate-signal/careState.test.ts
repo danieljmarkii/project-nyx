@@ -948,4 +948,8 @@ Deno.test('CUL-2662: readPriorCare reads a carry as a raised fact holding its la
   assertEquals(readPriorCare([card({ careCarry: { lapsed: ['b', 'a'], reason: 'rate' } })]).get('vomit'), { state: 'raised', ackId: null, reason: 'rate', lapsed: ['b', 'a'] })
   const pooled = readPriorCare([card({ careState: { state: 'raised_again', ackId: null, lapsed: ['x'], reason: 'dense' } }), card({ careCarry: { lapsed: ['y'], reason: null } })]).get('vomit')
   assertEquals(pooled, { state: 'raised_again', ackId: null, reason: 'dense', lapsed: ['x', 'y'] })
+  // X4: a care fact or carry on a card that is not a safety concern speaks for no sign.
+  const insight = (extra: Record<string, unknown>) => ({ finding: { type: 'symptom_worsening', symptomType: 'vomit', priorityClass: 'insight', ...extra } })
+  assertStrictEquals(readPriorCare([insight({ careCarry: { lapsed: [], reason: null } })]).size, 0, 'an insight card\'s carry vouched')
+  assertStrictEquals(readPriorCare([insight({ careState: { state: 'with_vet', ackId: 'a', lapsed: [] } })]).size, 0, 'an insight card\'s care state vouched')
 })

@@ -800,6 +800,9 @@ export function readPriorCare(raw: unknown): Map<string, PriorCare> {
   for (const e of raw) {
     const f = (e as { finding?: unknown } | null)?.finding as Record<string, unknown> | undefined
     if (!f || typeof f !== 'object' || !CONCERN_TYPES.has(f.type as Finding['type']) || typeof f.symptomType !== 'string') continue
+    // CUL-2662 adversarial X4: only a SAFETY concern speaks for a sign, as in `priorConcernSigns`;
+    // a care fact or carry on any other card (none the engine writes) could vouch for one with none.
+    if (f.priorityClass !== 'safety') continue
     const c = f.careState as Record<string, unknown> | undefined
     if (!c || typeof c !== 'object') {
       // CUL-2662: a run that skipped the step left a bare carry instead of a care fact. It vouches
