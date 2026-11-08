@@ -46,7 +46,7 @@ export function medicationCapCopy(cap: 'daily' | 'monthly'): string {
 export function vomitCapCopy(petName: string | null | undefined, cap: 'daily' | 'monthly'): string {
   const name = petName?.trim() || 'your pet';
   const resume = cap === 'monthly' ? 'at the start of next month' : 'tomorrow';
-  return `Today's photo reads are used up, so this read will run ${resume}. Everything you logged is saved. If ${name} keeps vomiting or seems off, don't wait for the read — check in with your vet.`;
+  return `Today's photo reads are used up, so this read will run ${resume}. Everything you logged is saved. If ${name} keeps vomiting or seems off, you don't need the read to call your vet.`;
 }
 
 // §7.3 stool read cap (B-247) — the sibling of the vomit cap, same sensitive class.
@@ -59,7 +59,7 @@ export function vomitCapCopy(petName: string | null | undefined, cap: 'daily' | 
 export function stoolCapCopy(petName: string | null | undefined, cap: 'daily' | 'monthly'): string {
   const name = petName?.trim() || 'your pet';
   const resume = cap === 'monthly' ? 'at the start of next month' : 'tomorrow';
-  return `Today's photo reads are used up, so this read will run ${resume}. Everything you logged is saved. If ${name}'s stool keeps looking off or ${name} seems unwell, don't wait for the read — check in with your vet.`;
+  return `Today's photo reads are used up, so this read will run ${resume}. Everything you logged is saved. If ${name}'s stool keeps looking off or ${name} seems unwell, you don't need the read to call your vet.`;
 }
 
 // Ask cap-hit copy (B-228 §9.3 / §16.1). Two shapes for two grains: the monthly

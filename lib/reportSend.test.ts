@@ -347,3 +347,47 @@ describe('sendRecordAllSent (CUL-2457)', () => {
     expect(sendRecordAllSent(null)).toBe(false);
   });
 });
+
+describe('the send card asks as loudly as the loudest live flag (CUL-2663)', () => {
+  const { sendCallCard: card } = jest.requireActual('./reportSend') as typeof import('./reportSend');
+  const flags = (...kinds: Array<{ kind: string; trigger?: string | null; allRefused?: boolean }>) => ({
+    state: 'flags' as const, startDate: '2026-09-14', endDate: '2026-11-08',
+    flags: kinds.map((k) => ({ kind: k.kind, sign: null, trigger: k.trigger ?? null, allRefused: k.allRefused })),
+  });
+  const DAY = 11;
+  const NIGHT = 22;
+
+  it('weight alone never sends the owner to an emergency clinic', () => {
+    for (const hour of [DAY, NIGHT]) {
+      const c = card(flags({ kind: 'weight_unchecked' }), 'Nyx', hour)!;
+      expect(c.rows.map((r) => r.text)).toEqual(['Worth a word with your vet about it.']);
+      expect(c.title).toBe('Nyx’s record has a flag worth telling your vet about');
+    }
+    expect(card(flags({ kind: 'protein_mismatch' }), 'Nyx', NIGHT)!.rows.map((r) => r.text).join(' ')).not.toMatch(/emergency/);
+  });
+
+  it('a burden this week is a deferential call today: the clock and the clinic kept', () => {
+    expect(card(flags({ kind: 'symptom_burden' }), 'Nyx', DAY)!.rows.map((r) => r.text)).toEqual([
+      'Worth a call to your vet today.',
+      'If yours is closed, an emergency clinic can talk it through.',
+    ]);
+    expect(card(flags({ kind: 'symptom_burden' }), 'Nyx', NIGHT)!.rows.map((r) => r.text).join(' ')).not.toMatch(/can see Nyx now/);
+  });
+
+  it.each([
+    ['blood', { kind: 'present_blood' }],
+    ['foreign material', { kind: 'present_foreign' }],
+    ['a sustained refusal', { kind: 'intake_decline', trigger: 'sustained_refusal' }],
+    ['an all-refused day', { kind: 'intake_decline', trigger: 'consecutive_low', allRefused: true }],
+    ['an unknown kind', { kind: 'something_new' }],
+    ['an unknown intake trigger', { kind: 'intake_decline', trigger: null }],
+  ])('%s keeps the floor\'s rows, whatever sits beside it', (_n, f) => {
+    const c = card(flags({ kind: 'weight_unchecked' }, f), 'Nyx', DAY)!;
+    expect(c.rows[0].text).toBe('Call your vet today.');
+    expect(card(flags(f), 'Nyx', NIGHT)!.rows[0].text).toBe('If your vet is closed, an emergency clinic can see Nyx now.');
+  });
+
+  it('a partial eating-less flag is a word, like its Signal card', () => {
+    expect(card(flags({ kind: 'intake_decline', trigger: 'consecutive_low' }), 'Nyx', DAY)!.rows.map((r) => r.text)).toEqual(['Worth a word with your vet about it.']);
+  });
+});

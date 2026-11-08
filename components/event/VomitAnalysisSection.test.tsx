@@ -200,7 +200,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     // The §7.3 cap copy, personalized + the vet escalation.
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
     expect(await findByText(/If Rex keeps vomiting/)).toBeTruthy();
-    expect(await findByText(/check in with your vet/i)).toBeTruthy();
+    expect(await findByText(/you don't need the read to call your vet/i)).toBeTruthy();
 
     // No retry affordance on a cap state.
     expect(queryByText(/Try again/i)).toBeNull();
@@ -233,7 +233,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     fireEvent.press(await findByTestId('record-consent-not-now'));
     expect(queryByTestId('record-consent-ask')).toBeNull();
     expect(await findByText("The photo wasn't read")).toBeTruthy();
-    expect(await findByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    expect(await findByText("If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.")).toBeTruthy();
     expect(mockSaveAiConsent).not.toHaveBeenCalled();
   });
 
@@ -258,7 +258,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     const { findByText, queryByTestId, getByTestId } = render(<VomitAnalysisSection eventId="e2d" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('AI reading is off')).toBeTruthy();
     expect(await findByText(/^Rex's photo is saved but wasn't read\./)).toBeTruthy();
-    expect(await findByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    expect(await findByText("If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.")).toBeTruthy();
     fireEvent.press(getByTestId('record-consent-turn-on'));
     expect(mockRouterPush).toHaveBeenCalledWith('/settings/ai-reading');
     expect(queryByTestId('record-consent-ask')).toBeNull();
@@ -270,7 +270,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     const trigger = triggerVomitAnalysis as jest.Mock;
     const { findByText, findByTestId } = render(<VomitAnalysisSection eventId="e2e" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Not read yet')).toBeTruthy();
-    expect(await findByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    expect(await findByText("If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.")).toBeTruthy();
     // Opening the record sent nothing: a resolved row is never re-invoked on mount.
     expect(trigger).not.toHaveBeenCalledWith('e2e');
     fireEvent.press(await findByTestId('record-consent-read-this'));
@@ -323,7 +323,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     const { findByText, getByTestId, queryByTestId, toJSON } = render(<VomitAnalysisSection eventId="e2i" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(getByTestId('record-consent-beside-call')).toBeTruthy();
-    expect(await findByText("AI reading is off. Rex's log alone is reason to call your vet.")).toBeTruthy();
+    expect(await findByText("AI reading is off. Rex's log alone is worth telling your vet about.")).toBeTruthy();
     expect(queryByTestId('record-consent-turn-on')).toBeNull();
     const text = JSON.stringify(toJSON());
     expect(text.indexOf('Worth a call')).toBeLessThan(text.indexOf("The photo wasn't read"));
@@ -336,7 +336,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(getByTestId('record-consent-ask')).toBeTruthy();
     // Under an unconditional call the card's vet line backs the log, never "if it goes on".
-    expect(await findByText("Whatever you choose, Rex's log alone is reason to call your vet.")).toBeTruthy();
+    expect(await findByText("Whatever you choose, Rex's log alone is worth telling your vet about.")).toBeTruthy();
   });
 
   it('a read that ran before a later no shows as a read, with nothing added', async () => {
@@ -2469,7 +2469,7 @@ describe('VomitAnalysisSection — the ruled states (CUL-1912)', () => {
     const view = render(<VomitAnalysisSection eventId="d820" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await view.findByText("The photo wasn't read")).toBeTruthy();
     const body = view.getByText("This photo hasn't been read yet. It's saved on Rex's record, and Try again sends it now.");
-    const vet = view.getByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.');
+    const vet = view.getByText("If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.");
     // Never heard as a verdict on a photo nobody read: no calm words, no "Not enough".
     for (const t of ["The photo wasn't read", body.props.children, vet.props.children]) {
       expect(REASSURE.test(String(t))).toBe(false);
@@ -2485,7 +2485,7 @@ describe('VomitAnalysisSection — the ruled states (CUL-1912)', () => {
     mockRow = row({ status: 'failed', recommendation: null, error: 'x' });
     const view = render(<VomitAnalysisSection eventId="d820f" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
-    expect(view.getByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    expect(view.getByText("If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.")).toBeTruthy();
     expect(view.getByTestId('incident-read-failed')).toBeTruthy();
   });
 

@@ -83,7 +83,7 @@ describe('vomit cap copy (§7.3) — the sensitive one', () => {
   });
   it('states the record is saved and gives escalation guidance', () => {
     expect(daily).toMatch(/everything you logged is saved/i);
-    expect(daily).toMatch(/check in with your vet/i);
+    expect(daily).toMatch(/you don't need the read to call your vet/i);
     expect(daily).toMatch(/keeps vomiting or seems off/i);
   });
   it('uses the pet name and the right reset wording, no exclamation', () => {
@@ -111,7 +111,7 @@ describe('stool cap copy (§7.3, B-247) — the sensitive sibling', () => {
   });
   it('states the record is saved and gives escalation guidance', () => {
     expect(daily).toMatch(/everything you logged is saved/i);
-    expect(daily).toMatch(/check in with your vet/i);
+    expect(daily).toMatch(/you don't need the read to call your vet/i);
     expect(daily).toMatch(/seems unwell/i);
   });
   it('is EVENT-NEUTRAL — never presumes diarrhea (renders for stool_normal too)', () => {

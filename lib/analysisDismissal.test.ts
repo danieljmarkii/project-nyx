@@ -41,6 +41,8 @@ const CALM = {
   recommendation: 'monitor',
   read_text: 'Nothing obviously concerning on its own.',
   tier: null as string | null,
+  contextual_flags: null as string[] | null,
+  visual_flags: null as string[] | null,
   description: 'Yellow foam.',
   colour: 'yellow',
   consistency: 'foamy',
@@ -73,6 +75,9 @@ describe('writeAnalysisDismissal', () => {
       ['eq', 'blood_present', 'none_visible'],
       ['is', 'foreign_material_present', null],
       ['is', 'foreign_material_note', null],
+      // CUL-2667: the reasons pick the call's words, so a Hide compares them too.
+      ['is', 'contextual_flags', null],
+      ['is', 'visual_flags', null],
       ['select', 'event_id'],
     ]);
   });
@@ -121,6 +126,11 @@ describe('sameShown', () => {
     expect(sameShown({ ...CALM, read_text: 'Worth a call to your vet.' }, seen)).toBe(false);
   });
 
+  it('a reason that moved under the same tier is a different read (CUL-2667: it moves the call\'s words)', () => {
+    expect(sameShown({ ...CALM, contextual_flags: ['feline_reduced_intake'] }, seen)).toBe(false);
+    expect(sameShown({ ...CALM, visual_flags: ['blood'] }, seen)).toBe(false);
+  });
+
   it('a new red flag under byte-identical words is a different read (adversarial round 2)', () => {
     expect(sameShown({ ...CALM, blood_present: 'fresh_red' }, seen)).toBe(false);
     expect(sameShown({ ...CALM, foreign_material_present: 'yes' }, seen)).toBe(false);
@@ -132,6 +142,7 @@ describe('sameShown', () => {
       recommendation: 'worth_a_call', read_text: 'Worth a call.', tier: null as string | null, description: null, stool_consistency: 'loose',
       stool_colour: 'brown', stool_content: null, stool_blood_present: 'yes', stool_blood_type: 'fresh_red',
       stool_mucus_present: 'no', foreign_material_present: 'unsure', foreign_material_note: null,
+      contextual_flags: [] as string[] | null, visual_flags: [] as string[] | null,
     };
     const seenStool = shownRead(stool, STOOL_DISMISSAL_COLUMNS);
     expect(sameShown({ ...stool, stool_blood_type: 'dark_tarry' }, seenStool)).toBe(false);

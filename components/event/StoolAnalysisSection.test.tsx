@@ -182,7 +182,7 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
 
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
     expect(await findByText(/If Rex's stool keeps looking off/)).toBeTruthy();
-    expect(await findByText(/check in with your vet/i)).toBeTruthy();
+    expect(await findByText(/you don't need the read to call your vet/i)).toBeTruthy();
 
     // No retry affordance on a cap state.
     expect(queryByText(/Try again/i)).toBeNull();
@@ -304,7 +304,7 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
     const { findByText, getByTestId, queryByTestId, toJSON } = render(<StoolAnalysisSection eventId="e2i" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(getByTestId('record-consent-beside-call')).toBeTruthy();
-    expect(await findByText("AI reading is off. Rex's log alone is reason to call your vet.")).toBeTruthy();
+    expect(await findByText("AI reading is off. Rex's log alone is worth telling your vet about.")).toBeTruthy();
     expect(queryByTestId('record-consent-turn-on')).toBeNull();
     const text = JSON.stringify(toJSON());
     expect(text.indexOf('Worth a call')).toBeLessThan(text.indexOf("The photo wasn't read"));
@@ -317,7 +317,7 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(getByTestId('record-consent-ask')).toBeTruthy();
     // Under an unconditional call the card's vet line backs the log, never "if it goes on".
-    expect(await findByText("Whatever you choose, Rex's log alone is reason to call your vet.")).toBeTruthy();
+    expect(await findByText("Whatever you choose, Rex's log alone is worth telling your vet about.")).toBeTruthy();
   });
 
   it('a read that ran before a later no shows as a read, with nothing added', async () => {

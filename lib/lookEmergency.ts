@@ -48,6 +48,7 @@
 // escalated on it would fire on every owner who had a busy Tuesday.
 
 import type { LookSpecies } from '../constants/lookWords';
+import { DEFERENTIAL_ASK, FLOOR_ASK } from './incidentAskWords';
 
 /** The sheet's title (§3.1a) and the door's own label (§3.7 — labelled for the
  *  ambiguous morning, not the alarmed one: the owner it exists for is the one who
@@ -60,17 +61,24 @@ export const EMERGENCY_DOOR_LABEL = 'Signs that mean call today ›';
  *  sheet would collapse to (Dr. Chen, ruled by the PM 2026-10-15), so a worried owner
  *  does not have to open the door to learn what is behind it. `signalDoorLabel` picks. */
 export const SIGNAL_DOOR_LABEL = 'When to call the vet ›';
-export const SIGNAL_DOOR_CALL_TODAY = 'Call your vet today ›';
+export const SIGNAL_DOOR_CALL_TODAY = FLOOR_ASK.door;
+/** CUL-2667: the door's label once the record meets only a row off the floor (a dog's rows). */
+export const SIGNAL_DOOR_WORTH_TODAY = DEFERENTIAL_ASK.door;
 export const SIGNAL_DOOR_CALL_NOW = 'Call your vet now ›';
 
-/** The imperative a met condition collapses to. One string, one place. */
-export const CALL_TODAY_IMPERATIVE = 'Call your vet today.';
+/** The imperative a met FLOOR condition collapses to, and the fail-closed line. One string, one
+ *  place (`lib/incidentAskWords.ts`). */
+export const CALL_TODAY_IMPERATIVE = FLOOR_ASK.imperative;
+/** CUL-2667: the collapse of a met row off the floor (Pattern 11: the verb softened, the clock kept). */
+export const WORTH_TODAY_IMPERATIVE = DEFERENTIAL_ASK.imperative;
 /** The call-now block's own collapse (Engines v3 PR-28b, CUL-1436): a record-dependent
  *  call-now row the record meets. */
 export const CALL_NOW_IMPERATIVE = 'Call your vet now.';
 
 export const CALL_NOW_HEADER = 'Call your vet now';
 export const CALL_TODAY_HEADER = 'Call today';
+/** CUL-2667: a dog's block header: none of its rows is a floor sign. */
+export const WORTH_TODAY_HEADER = DEFERENTIAL_ASK.label;
 
 /**
  * What the record says right now, reduced to the three facts the thresholds turn on.
@@ -97,6 +105,9 @@ interface TodayRow {
    *  every record and says so in its comment — an honest permanent threshold beats
    *  a predicate that pretends to read something. */
   met: (f: EmergencyFacts) => boolean;
+  /** CUL-2667: a floor sign (a cat not eating; vomiting with lethargy, the call-now row), whose
+   *  collapse keeps the direct words. A row off the floor collapses to the deferential line. */
+  floor: boolean;
 }
 
 // ── Call your vet now — the signs that are never an impression (§4.6) ─────────
@@ -144,6 +155,7 @@ const CALL_NOW_ROWS: Record<LookSpecies, readonly TodayRow[]> = {
       id: 'subdued_vomiting',
       threshold: 'Subdued and vomiting',
       met: (f) => f.lethargyRecently && f.vomitCount24h >= 1,
+      floor: true,
     },
   ],
   dog: [
@@ -151,6 +163,7 @@ const CALL_NOW_ROWS: Record<LookSpecies, readonly TodayRow[]> = {
       id: 'subdued_vomiting',
       threshold: 'Subdued and vomiting',
       met: (f) => f.lethargyRecently && f.vomitCount24h >= 1,
+      floor: true,
     },
   ],
 };
@@ -162,6 +175,7 @@ const CALL_TODAY: Record<LookSpecies, readonly TodayRow[]> = {
       id: 'subdued_not_eating_24h',
       threshold: 'Subdued and not eating a full meal in 24 hours',
       met: (f) => f.lethargyRecently && f.refusedRecently,
+      floor: true,
     },
     {
       // No leaf: hiding is a look word, and a look never feeds this door (T-5). It
@@ -170,11 +184,13 @@ const CALL_TODAY: Record<LookSpecies, readonly TodayRow[]> = {
       id: 'subdued_hiding',
       threshold: 'Subdued and hiding',
       met: () => false,
+      floor: true,
     },
     {
       id: 'not_eating_a_day',
       threshold: 'Not eating for a day',
       met: (f) => f.refusedRecently,
+      floor: true,
     },
   ],
   dog: [
@@ -182,11 +198,13 @@ const CALL_TODAY: Record<LookSpecies, readonly TodayRow[]> = {
       id: 'subdued_no_food_24h',
       threshold: 'Subdued and no food for 24 hours',
       met: (f) => f.lethargyRecently && f.refusedRecently,
+      floor: false,
     },
     {
       id: 'vomiting_again_24h',
       threshold: 'Vomiting again within 24 hours',
       met: (f) => f.vomitCount24h >= 2,
+      floor: false,
     },
     {
       // No leaf for drinking in the taxonomy (`drinking_less` is a look word, which
@@ -194,6 +212,7 @@ const CALL_TODAY: Record<LookSpecies, readonly TodayRow[]> = {
       id: 'wont_drink',
       threshold: 'Won’t drink',
       met: () => false,
+      floor: false,
     },
   ],
 };
@@ -212,10 +231,14 @@ export interface EmergencyDoorModel {
   /** `CALL_NOW_IMPERATIVE` when the record meets a call-now row; null otherwise, the
    *  failed read included (see CALL_NOW_ROWS). */
   nowImperative: string | null;
-  /** `CALL_TODAY_IMPERATIVE` when the record meets at least one threshold — or when
-   *  the facts have not answered (fail closed). Null on a loaded record that meets
-   *  none, where the thresholds speak for themselves. */
+  /** `CALL_TODAY_IMPERATIVE` when the record meets a floor threshold — or when the facts
+   *  have not answered (fail closed); `WORTH_TODAY_IMPERATIVE` when it meets only rows off
+   *  the floor (CUL-2667). Null on a loaded record that meets none, where the thresholds
+   *  speak for themselves. */
   imperative: string | null;
+  /** The call-today block's header: `Call today` while any row in it is a floor sign (a cat's),
+   *  else `Worth a call today` (a dog's, CUL-2667). */
+  todayHeader: string;
   /** The rows still worth stating as conditionals: the unmet ones on a loaded
    *  record, and NONE at all while the facts are unknown. A met row is not listed
    *  beside the imperative — it has BECOME the imperative, which is the collapse. */
@@ -248,11 +271,13 @@ export function resolveEmergencyDoor(
 ): EmergencyDoorModel {
   const nowRows = floorOn ? CALL_NOW_ROWS[species] : [];
   const rows = todayRows(species, floorOn);
+  const todayHeader = rows.some((r) => r.floor) ? CALL_TODAY_HEADER : WORTH_TODAY_HEADER;
   if (facts === null) {
     return {
       now: [...CALL_NOW[species], ...nowRows.map((r) => r.threshold)],
       nowImperative: null,
       imperative: CALL_TODAY_IMPERATIVE,
+      todayHeader,
       thresholds: [],
       metIds: [],
     };
@@ -262,7 +287,9 @@ export function resolveEmergencyDoor(
   return {
     now: [...CALL_NOW[species], ...nowRows.filter((r) => !nowMet.includes(r)).map((r) => r.threshold)],
     nowImperative: nowMet.length > 0 ? CALL_NOW_IMPERATIVE : null,
-    imperative: met.length > 0 ? CALL_TODAY_IMPERATIVE : null,
+    // CUL-2667: a floor row met keeps the direct words, whatever else is met beside it.
+    imperative: met.some((r) => r.floor) ? CALL_TODAY_IMPERATIVE : met.length > 0 ? WORTH_TODAY_IMPERATIVE : null,
+    todayHeader,
     thresholds: rows.filter((r) => !met.includes(r)).map((r) => r.threshold),
     metIds: [...nowMet, ...met].map((r) => r.id),
   };
@@ -281,7 +308,8 @@ export function signalDoorLabel(species: LookSpecies, read: EmergencyRead, floor
   if (read.status !== 'ready') return SIGNAL_DOOR_LABEL;
   const door = resolveEmergencyDoor(species, read.facts, floorOn);
   if (door.nowImperative !== null) return SIGNAL_DOOR_CALL_NOW;
-  if (door.imperative !== null) return SIGNAL_DOOR_CALL_TODAY;
+  if (door.imperative === CALL_TODAY_IMPERATIVE) return SIGNAL_DOOR_CALL_TODAY;
+  if (door.imperative !== null) return SIGNAL_DOOR_WORTH_TODAY;
   return SIGNAL_DOOR_LABEL;
 }
 
@@ -295,10 +323,13 @@ export function allEmergencyStrings(): string[] {
     SIGNAL_DOOR_LABEL,
     SIGNAL_DOOR_CALL_TODAY,
     SIGNAL_DOOR_CALL_NOW,
+    SIGNAL_DOOR_WORTH_TODAY,
     CALL_TODAY_IMPERATIVE,
+    WORTH_TODAY_IMPERATIVE,
     CALL_NOW_IMPERATIVE,
     CALL_NOW_HEADER,
     CALL_TODAY_HEADER,
+    WORTH_TODAY_HEADER,
   ];
   for (const species of ['cat', 'dog'] as const) {
     out.push(...CALL_NOW[species]);

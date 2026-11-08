@@ -34,6 +34,9 @@ const SKIP_DIRS = new Set(['node_modules', '.git', '.expo', 'ios', 'android', 'd
 
 /** The one file allowed to hold the phrase. */
 const MAP = 'lib/incidentTierWords.ts';
+/** The map's reason-keyed half (CUL-2667; tiers spec §2 rule 6): call today's two registers, of
+ *  which the deferential one is "Worth a call today". Part of the map, never a second voice. */
+const ASK_MAP = 'lib/incidentAskWords.ts';
 
 /** Exemptions, each with the reason it cannot be the map. An entry must still hold a hit
  *  (a stale entry would excuse whatever lands in it next, C-32). */
@@ -72,7 +75,7 @@ describe('the tier-word map is the only file that names a read', () => {
   });
 
   it('no client file but the map (and its named exemptions) says "worth a call"', () => {
-    expect(hits.filter((f) => f !== MAP && !(f in EXEMPT))).toEqual([]);
+    expect(hits.filter((f) => f !== MAP && f !== ASK_MAP && !(f in EXEMPT))).toEqual([]);
   });
 
   it('every exemption still holds the phrase (C-32)', () => {

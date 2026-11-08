@@ -471,13 +471,13 @@ export function missingFlagsOf(
 export function droppedFlagsLine(m: { missing: ComposerFlag[]; reason: DroppedReason }): string | null {
   if (m.missing.length === 0) return null;
   if (m.reason === 'unconfirmed') {
-    return 'Couldn’t confirm the report for these dates shows the flags above. Tell your vet about them.';
+    return 'Couldn’t confirm the report for these dates shows the flags above. Worth telling your vet about them.';
   }
   const words = joinWords([...new Set(m.missing.map(flagWords))]);
   if (m.reason === 'ended') {
-    return `These dates end before today, so the report may not show ${words} as it stands now. Tell your vet, or choose dates that run to today.`;
+    return `These dates end before today, so the report may not show ${words} as it stands now. Worth telling your vet, or choose dates that run to today.`;
   }
-  return `The report for these dates won’t show ${m.missing.length === 1 ? 'the flag' : 'the flags'} for ${words}. Tell your vet, or choose dates that cover more of the last ${LIVE_FLAG_DAYS} days.`;
+  return `The report for these dates won’t show ${m.missing.length === 1 ? 'the flag' : 'the flags'} for ${words}. Worth telling your vet, or choose dates that cover more of the last ${LIVE_FLAG_DAYS} days.`;
 }
 
 // The live-flag card. Each flag is named in a few plain words, never a number: the number is the
@@ -520,6 +520,50 @@ function flagWords(f: ComposerFlag): string {
   }
 }
 
+/**
+ * How firmly one live flag asks (CUL-2663, CUL-2667): the ask the flag's own Signal card makes.
+ *   floor  blood, foreign material, a refusal (a sustained refusal, an all-refused day, the trial
+ *          diet refused: the flag carries no species, so the cat floor stands), and any kind or
+ *          trigger this build does not know.
+ *   call   a deferential call today: a burden of one sign this week.
+ *   word   a word with the vet, no clock: weeks of a sign, a sign getting more frequent, weight,
+ *          a protein mismatch, eating less, a usual food refused, refusing then vomiting.
+ */
+export type ComposerAskLevel = 'floor' | 'call' | 'word';
+
+export function composerAskLevelOf(f: ComposerFlag): ComposerAskLevel {
+  switch (f.kind) {
+    case 'present_blood':
+    case 'present_foreign':
+    case 'trial_diet_refusal':
+      return 'floor';
+    case 'intake_decline':
+      if (f.trigger === 'consecutive_low') return f.allRefused === true ? 'floor' : 'word';
+      if (f.trigger === 'refused_normal_food' || f.trigger === 'refused_then_vomited') return 'word';
+      return 'floor';
+    case 'symptom_burden':
+      return 'call';
+    case 'chronicity':
+    case 'symptom_worsening':
+    case 'weight_loss':
+    case 'weight_unchecked':
+    case 'protein_mismatch':
+      return 'word';
+    default:
+      return 'floor';
+  }
+}
+
+const ASK_RANK: Record<ComposerAskLevel, number> = { floor: 2, call: 1, word: 0 };
+
+/** The loudest ask among the live flags: the send card asks no louder, and no softer. */
+export function loudestComposerAsk(flags: readonly ComposerFlag[]): ComposerAskLevel {
+  return flags.reduce<ComposerAskLevel>((best, f) => {
+    const l = composerAskLevelOf(f);
+    return ASK_RANK[l] > ASK_RANK[best] ? l : best;
+  }, 'word');
+}
+
 function joinWords(parts: string[]): string {
   if (parts.length <= 1) return parts[0] ?? '';
   if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
@@ -548,7 +592,8 @@ export function liveCardCopy(live: ComposerLive, petName: string): LiveCardCopy 
   return {
     // About the RECORD, not the report: whether a given window's report prints each flag is said
     // under the counts (`droppedFlagsLine`), so the card never promises what a window drops.
-    title: `${possessive} record has ${live.flags.length === 1 ? 'a flag' : 'flags'} worth a call to your vet`,
+    // CUL-2663: the title asks as loudly as the loudest flag, never louder.
+    title: `${possessive} record has ${live.flags.length === 1 ? 'a flag' : 'flags'} ${loudestComposerAsk(live.flags) === 'word' ? 'worth telling your vet about' : 'worth a call to your vet'}`,
     // A partial read names what it found and says the check is not whole (CUL-2425): the flags are
     // real, but their absence elsewhere is unproven.
     body: live.partial ? `${body} ${partialLiveLine()}` : body,

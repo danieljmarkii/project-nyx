@@ -356,9 +356,10 @@ export function callNowSignsOf(kind: 'vomit' | 'stool', petName: string | null |
  *  CUL-2667), so it speaks Pattern 11's register: the verb softened, the clock and the
  *  emergency clinic kept. */
 export function waitLine(band: ClockBand, signs: string): string {
-  if (band === 'day') return `Worth a call today. If they're closed, first thing tomorrow, or an emergency clinic tonight if ${signs}.`;
-  if (band === 'evening') return `Worth a call first thing tomorrow, or an emergency clinic tonight if ${signs}.`;
-  return `Worth a call first thing this morning, or an emergency clinic now if ${signs}.`;
+  const verb = DEFERENTIAL_ASK.verb;
+  if (band === 'day') return `${DEFERENTIAL_ASK.label}. If they're closed, first thing tomorrow, or an emergency clinic tonight if ${signs}.`;
+  if (band === 'evening') return `${verb} first thing tomorrow, or an emergency clinic tonight if ${signs}.`;
+  return `${verb} first thing this morning, or an emergency clinic now if ${signs}.`;
 }
 
 // ── The resolver ─────────────────────────────────────────────────────────────────────────────

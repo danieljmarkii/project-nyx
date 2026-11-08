@@ -48,6 +48,7 @@
 // PR-27b showed the phone cannot prove it alone), and names this file's call-now clauses as
 // the exception (CUL-1629).
 
+import { DEFERENTIAL_ASK } from './incidentAskWords';
 import { TIER_WORDS } from './incidentTierWords';
 import {
   FLOOR_LETHARGY_HOURS,
@@ -298,7 +299,7 @@ export function watchForList(input: WatchForInput): WatchForList | null {
   if (now.length > 0) lines.push(`Call your vet now if ${orList(now)}.`);
   // CUL-2667: every call-today clause here is a count row (T6, T7, T8), never a floor sign, so it
   // speaks Pattern 11's register; the call-now line keeps its words (D2 ruled (a)).
-  if (today.length > 0) lines.push(`Worth a call today if ${orList(today)}.`);
+  if (today.length > 0) lines.push(`${DEFERENTIAL_ASK.label} if ${orList(today)}.`);
   const emergency = input.species === 'dog' ? bloatLine(input.petName) : null;
   const a = Date.parse(input.anchor.at);
   const ageNote =

@@ -45,14 +45,19 @@ import { supabase } from './supabase';
 
 // `tier` since EN-3 (CUL-1133): on a new-rule read the card's words are the tier's, so a
 // tier that moved under the same verdict is a different read on screen.
+// `contextual_flags` and `visual_flags` since CUL-2667: they pick the call's words (floor or
+// deferential, `lib/incidentAskWords.ts`), so a reason that moved under the same tier is a
+// different read on screen ("Worth a call today" became "Call your vet today").
 export const VOMIT_DISMISSAL_COLUMNS = [
   'recommendation', 'read_text', 'tier', 'description',
   'colour', 'consistency', 'contents', 'blood_present', 'foreign_material_present', 'foreign_material_note',
+  'contextual_flags', 'visual_flags',
 ] as const;
 export const STOOL_DISMISSAL_COLUMNS = [
   'recommendation', 'read_text', 'tier', 'description',
   'stool_consistency', 'stool_colour', 'stool_content', 'stool_blood_present', 'stool_blood_type',
   'stool_mucus_present', 'foreign_material_present', 'foreign_material_note',
+  'contextual_flags', 'visual_flags',
 ] as const;
 
 type ShownValue = string | null | readonly string[];

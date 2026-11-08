@@ -35,6 +35,7 @@ export type AskLevel = 'floor' | 'deferential';
 
 /** The floor's words, verbatim from today's call-today row (unchanged by the ruling). */
 export const FLOOR_ASK = {
+  verb: 'Call your vet',
   label: 'Call your vet today',
   short: 'Call today',
   action: "Call your vet today. If they're closed, call an emergency clinic.",
@@ -50,6 +51,8 @@ export const FLOOR_ASK = {
 
 /** The deferential words (tiers spec §2's second call-today row; signal-home spec's strip row). */
 export const DEFERENTIAL_ASK = {
+  /** The nudge's verb alone, for a line that names its own clock ("… first thing tomorrow"). */
+  verb: 'Worth a call',
   label: 'Worth a call today',
   short: 'Worth a call today',
   action:
@@ -172,10 +175,14 @@ export function askLevelOf(row: AskReasonRow | null | undefined, opts: AskOption
  */
 export function hasFloorSign(row: AskReasonRow | null | undefined, opts: AskOptions = {}): boolean {
   if (!row) return false;
+  // Named fields, never a spread: a reader that copies the row reads every column it holds.
   const reason = floorReasonOf(
     {
-      ...row,
       tier: null,
+      edited_at: row.edited_at,
+      blood_present: row.blood_present,
+      stool_blood_present: row.stool_blood_present,
+      foreign_material_present: row.foreign_material_present,
       // An absent field is "no sign seen", here only: the shipped words already escalate.
       contextual_flags: row.contextual_flags === undefined ? [] : row.contextual_flags,
       visual_flags: row.visual_flags === undefined ? [] : row.visual_flags,
