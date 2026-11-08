@@ -203,6 +203,16 @@ export const READS: readonly ReadSpec[] = [
     single: true,
   },
   {
+    // CUL-2676: the card Home showed, the pet's latest Signal row. The burden row states the
+    // louder of its own tier and the card's. export.sql returns that one row (newest expiry).
+    name: 'ai_signals',
+    table: 'ai_signals',
+    select: 'findings, generated_at',
+    order: ['expires_at'],
+    preApplied: [PET],
+    single: true,
+  },
+  {
     // The items behind the pet's own doses. export.sql reads only ids its dose rows name.
     name: 'medication_items',
     table: 'medication_items',

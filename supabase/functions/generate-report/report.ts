@@ -866,6 +866,72 @@ export interface ReportInput {
    * (report.test.ts, "EN-11 — the report drops…").
    */
   engineFlags: EngineFlags
+  /**
+   * CUL-2676 — the pet's latest Signal row (`ai_signals`), read with the owner's JWT: the card
+   * Home showed. Over an incomplete read Home HOLDS a burden card at the tier the previous
+   * Signal showed (generate-signal/pipeline.ts `holdPriorTier`), or CARRIES it unchanged, so
+   * the report, which runs its own detection, could say the owner was told "soon" while the
+   * card said "today". The burden row takes the louder of the two (`burdenTierFromCard`).
+   * Null: the pet has no Signal row. `readFailed`: the read did not answer, and the row says
+   * the ask it states could not be checked against the card. Absent: not read (fixtures and
+   * the composer's callers that predate it); the computed tier, stated as before.
+   * `generateReportForPet` always passes it.
+   */
+  ownerSignal?: OwnerSignalRead | null
+}
+
+/** The owner's latest Signal row as read: its findings, untyped (any shape is tolerated), and
+ *  the time the row was generated; or a read that failed. */
+export type OwnerSignalRead =
+  | { findings: unknown; generatedAt: string | null; readFailed?: false }
+  | { readFailed: true }
+
+const BURDEN_TIER_LOUDNESS: Record<SymptomBurdenFinding['tier'], number> = { soon: 0, today: 1 }
+
+/** Where the burden row's tier came from: this report's own run, the owner's card (louder than
+ *  the run), or the run while the card could not be read. */
+export type BurdenTierSource = 'computed' | 'card' | 'card_unread'
+
+/**
+ * CUL-2676 — the tier the burden row states: the louder of the one this report computed and the
+ * one the owner's card shows for the same sign. Never lowers a tier.
+ *
+ * NO AGE BOUND (adversarial pass 2). The latest row IS what Home shows: the app renders it
+ * whatever its age (a regen that fails, or has not run, leaves it up), and generate-signal's own
+ * CARRY_MAX_DAYS bounds only what it may WRITE into a new row. Two bounds were tried here and
+ * both dropped a card Home was showing: the row's 7-day window (pass 1) and CARRY_MAX_DAYS
+ * measured from the report's clock (pass 2: a card carried at 13d 23h, still on Home an hour
+ * later). An old ask is instead DATED on the row (`cardReadIso`), so the vet sees how old it is.
+ *
+ * The card counts only when the report's window ends today: a past window's row is about that
+ * window and the card is about now (CUL-2677). A malformed row, another sign's card or an unknown
+ * tier is ignored, which leaves the computed tier. A failed read on a window that ends today says
+ * so (`card_unread`): the row cannot vouch that its ask is the one the owner saw.
+ */
+export function burdenTierFromCard(
+  f: Pick<SymptomBurdenFinding, 'symptomType' | 'tier'>,
+  ownerSignal: OwnerSignalRead | null | undefined,
+  windowEndsToday: boolean,
+): { tier: SymptomBurdenFinding['tier']; source: BurdenTierSource; cardReadIso: string | null } {
+  const computed = { tier: f.tier, source: 'computed' as BurdenTierSource, cardReadIso: null }
+  if (!windowEndsToday || !ownerSignal) return computed
+  if (ownerSignal.readFailed === true) return { ...computed, source: 'card_unread' }
+  if (!Array.isArray(ownerSignal.findings)) return computed
+  let out = computed as { tier: SymptomBurdenFinding['tier']; source: BurdenTierSource; cardReadIso: string | null }
+  for (const e of ownerSignal.findings) {
+    const card = e && typeof e === 'object' ? (e as { finding?: unknown }).finding : undefined
+    if (!card || typeof card !== 'object') continue
+    const c = card as { type?: unknown; symptomType?: unknown; tier?: unknown; carriedFrom?: unknown }
+    if (c.type !== 'symptom_burden' || c.symptomType !== f.symptomType) continue
+    if (typeof c.tier !== 'string' || !Object.prototype.hasOwnProperty.call(BURDEN_TIER_LOUDNESS, c.tier)) continue
+    const cardTier = c.tier as SymptomBurdenFinding['tier']
+    if (BURDEN_TIER_LOUDNESS[cardTier] <= BURDEN_TIER_LOUDNESS[out.tier]) continue
+    // The read that computed the card: a carried card keeps its own, a held one is the row's.
+    const origin = typeof c.carriedFrom === 'string' ? c.carriedFrom : ownerSignal.generatedAt
+    const originOk = typeof origin === 'string' && Number.isFinite(Date.parse(origin))
+    out = { tier: cardTier, source: 'card', cardReadIso: originOk ? origin : null }
+  }
+  return out
 }
 
 // ── Date / window helpers (tz-aware calendar-day math) ───────────────────────
@@ -1749,6 +1815,11 @@ export type SafetyFlag =
       runDays: number
       windowDays: number
       tier: SymptomBurdenFinding['tier']
+      /** CUL-2676: `card` when the owner's card held a louder tier than this run; `card_unread`
+       *  when the card could not be read, so the row cannot vouch the ask is the owner's. */
+      tierSource: BurdenTierSource
+      /** With `card`: the owner's local day of the read that computed the card, when known. */
+      cardReadDay: string | null
     }
   | {
       /** Home's weight card (CUL-2026): the latest reading and the highest before it, each with its
@@ -5867,6 +5938,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     })
   }
   for (const f of detection.burden) {
+    const told = burdenTierFromCard(f, input.ownerSignal, scope.detectionNowIso === input.now)
     safetyFlags.push({
       kind: 'symptom_burden',
       symptomType: f.symptomType,
@@ -5874,7 +5946,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       days: f.days,
       runDays: f.runDays,
       windowDays: f.windowDays,
-      tier: f.tier,
+      // CUL-2676: the tier the owner's card showed, when Home held it louder than this run.
+      tier: told.tier,
+      tierSource: told.source,
+      cardReadDay: told.cardReadIso ? localDayKey(told.cardReadIso, tz) : null,
     })
   }
   // CUL-2026 — Home's weight card, placed where Home ranks it (SAFETY_TYPE_ORDER: below burden,

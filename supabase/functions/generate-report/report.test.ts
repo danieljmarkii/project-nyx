@@ -16,6 +16,7 @@ import { strict as assert } from 'node:assert'
 import { kgToLbsNum, lbsToKg } from '../../../lib/weightUnits.ts'
 import {
   assembleReport,
+  burdenTierFromCard,
   partialDoseVehiclesOf,
   weightChangeOf,
   weightLaneFor,
@@ -5978,12 +5979,121 @@ Deno.test('CUL-2664 — the burden row quotes the ask the owner read, at each ti
     const ask = card.slice(card.indexOf(' — ') + 3, -1).replace('your vet', 'the vet')
     idSeq = 0
     const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')) }))
-    const flag: (typeof snap.safetyFlags)[number] = { kind: 'symptom_burden', symptomType: 'vomit', count: 6, days: 4, runDays: 3, windowDays: 7, tier }
+    const flag: (typeof snap.safetyFlags)[number] = { kind: 'symptom_burden', symptomType: 'vomit', count: 6, days: 4, runDays: 3, windowDays: 7, tier, tierSource: 'computed', cardReadDay: null }
     const p = readAs(renderReport({ ...snap, safetyFlags: [flag] }))
     const row = p.slice(p.indexOf('Burden 6'), p.indexOf('Burden 6') + 300)
     assert.ok(row.includes(`The owner was told it is ${ask}.`), `${tier}: "${ask}" missing from: ${row}`)
     assert.ok(!/to call the vet/.test(row), row)
   }
+})
+
+// ── CUL-2676 — the burden row states the tier the owner's card showed ────────────────────────
+//
+// Four vomits on alternate days in the last week: the count arm fires, no run of three, so the
+// report's own detection computes 'soon'. Home, over an incomplete read, held the previous
+// Signal's 'today' card. The row must say what the owner was told.
+const CUL2676_VOMITS = ['2026-06-25', '2026-06-27', '2026-06-29', '2026-07-01']
+function cul2676Input(ownerSignal: ReportInput['ownerSignal'], overrides: Partial<ReportInput> = {}): ReportInput {
+  idSeq = 0
+  const events = [
+    ...mealsOn(dayKeys('2026-04-04', '2026-07-02')),
+    ...CUL2676_VOMITS.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) })),
+  ]
+  return baseInput({ events, ownerSignal, ...overrides })
+}
+function burdenCard(tier: string, extra: Record<string, unknown> = {}): unknown {
+  return { rank: 0, finding: { type: 'symptom_burden', priorityClass: 'safety', symptomType: 'vomit', count: 6, days: 4, runDays: 3, windowDays: 7, tier, ...extra } }
+}
+const burdenTierOf = (input: ReportInput): string | undefined => {
+  const b = assembleReport(input).safetyFlags.find((f) => f.kind === 'symptom_burden')
+  return b && b.kind === 'symptom_burden' ? b.tier : undefined
+}
+
+Deno.test('CUL-2676 — the fixture computes soon on its own (the hold is what the tests below move)', () => {
+  assert.equal(burdenTierOf(cul2676Input(null)), 'soon')
+  assert.equal(burdenTierOf(cul2676Input(undefined)), 'soon')
+})
+
+Deno.test('CUL-2676 — a card Home held at today: the burden row says the owner was told to call today, and from which read', () => {
+  const input = cul2676Input({ findings: [burdenCard('today')], generatedAt: '2026-07-02T08:00:00Z' })
+  const snap = assembleReport(input)
+  const b = snap.safetyFlags.find((f) => f.kind === 'symptom_burden')
+  assert.ok(b && b.kind === 'symptom_burden' && b.tier === 'today' && b.tierSource === 'card', JSON.stringify(snap.safetyFlags))
+  const p = readAs(renderReport(snap))
+  const row = p.slice(p.indexOf('Burden '), p.indexOf('Burden ') + 400)
+  assert.ok(row.includes("The owner was told it is worth a call to the vet today; the app's card kept that ask from its read of Jul 2, 2026."), row)
+  assert.ok(!/worth booking a vet visit soon/.test(row), row)
+})
+
+Deno.test('CUL-2676 — a card that matches the run is the run\'s, and the row reads as before', () => {
+  const snap = assembleReport(cul2676Input({ findings: [burdenCard('soon')], generatedAt: '2026-07-02T08:00:00Z' }))
+  const b = snap.safetyFlags.find((f) => f.kind === 'symptom_burden')
+  assert.ok(b && b.kind === 'symptom_burden' && b.tier === 'soon' && b.tierSource === 'computed', JSON.stringify(b))
+  const p = readAs(renderReport(snap))
+  const row = p.slice(p.indexOf('Burden '), p.indexOf('Burden ') + 400)
+  assert.ok(/to compare\. The owner was told it is worth booking a vet visit soon\.( |$)/.test(row), row)
+})
+
+Deno.test('CUL-2676 adv 2 — Home shows the latest row whatever its age, so no age drops its card; the row dates it', () => {
+  // Pass 2's fixture: written 30 min before the report, carried from a read 13 d 23 h 45 m before that.
+  const nearLimit = { findings: [burdenCard('today', { carriedFrom: '2026-06-18T11:45:00Z' })], generatedAt: '2026-07-02T11:30:00Z' }
+  assert.equal(burdenTierOf(cul2676Input(nearLimit)), 'today')
+  const p = readAs(renderReport(assembleReport(cul2676Input(nearLimit))))
+  assert.ok(p.includes("the app's card kept that ask from its read of Jun 18, 2026."), p.slice(p.indexOf('Burden '), p.indexOf('Burden ') + 400))
+  // A held card on a row 15 days old, Home's regen failing since: still the card on the owner's screen.
+  const stale = { findings: [burdenCard('today')], generatedAt: '2026-06-17T09:00:00Z' }
+  assert.equal(burdenTierOf(cul2676Input(stale)), 'today')
+  // A row stamped after the report's now (a regen mid-build, or clock skew) counts as well.
+  assert.equal(burdenTierOf(cul2676Input({ findings: [burdenCard('today')], generatedAt: '2026-07-02T12:00:02Z' })), 'today')
+  // A card with no usable date still lifts the tier, and says "an earlier read".
+  const undated = assembleReport(cul2676Input({ findings: [burdenCard('today')], generatedAt: null }))
+  const ub = undated.safetyFlags.find((f) => f.kind === 'symptom_burden')
+  assert.ok(ub && ub.kind === 'symptom_burden' && ub.tier === 'today' && ub.cardReadDay === null, JSON.stringify(ub))
+  assert.ok(readAs(renderReport(undated)).includes("the app's card kept that ask from an earlier read."))
+})
+
+Deno.test('CUL-2676 adv — a failed card read is never vouched for: the row says the ask is the check\'s, unconfirmed', () => {
+  const snap = assembleReport(cul2676Input({ readFailed: true }))
+  const b = snap.safetyFlags.find((f) => f.kind === 'symptom_burden')
+  assert.ok(b && b.kind === 'symptom_burden' && b.tierSource === 'card_unread', JSON.stringify(b))
+  const p = readAs(renderReport(snap))
+  const row = p.slice(p.indexOf('Burden '), p.indexOf('Burden ') + 400)
+  assert.ok(row.includes("The app's check reads it as worth booking a vet visit soon. The owner's card could not be read for this report, so what they were shown is not confirmed here."), row)
+  assert.ok(!/The owner was told/.test(row), row)
+  // A past window is CUL-2677's: the failed read changes nothing there.
+  const past = assembleReport(cul2676Input({ readFailed: true }, { requestedWindow: { startDate: '2026-04-04', endDate: '2026-07-01' } }))
+  const pb = past.safetyFlags.find((f) => f.kind === 'symptom_burden')
+  assert.ok(!pb || (pb.kind === 'symptom_burden' && pb.tierSource === 'computed'), JSON.stringify(pb))
+})
+
+Deno.test('CUL-2676 — the card never lowers a tier, and is ignored where it is not about this row', () => {
+  const now = '2026-07-02T12:00:00Z'
+  const t = (f: { symptomType: 'vomit'; tier: 'today' | 'soon' }, sig: Parameters<typeof burdenTierFromCard>[1], ends = true) =>
+    burdenTierFromCard(f, sig, ends).tier
+  const today = { symptomType: 'vomit', tier: 'today' } as const
+  const soon = { symptomType: 'vomit', tier: 'soon' } as const
+  // A softer card leaves today, and the source stays the run's.
+  assert.equal(t(today, { findings: [burdenCard('soon')], generatedAt: now }), 'today')
+  assert.equal(burdenTierFromCard(today, { findings: [burdenCard('today')], generatedAt: now }, true).source, 'computed')
+  const held = { findings: [burdenCard('today')], generatedAt: '2026-07-01T12:00:00Z' }
+  assert.equal(t(soon, held), 'today')
+  // A past window: the card is about now, the row about that window.
+  assert.equal(t(soon, held, false), 'soon')
+  // Another sign's card, a malformed or unknown tier.
+  assert.equal(t(soon, { findings: [burdenCard('today', { symptomType: 'diarrhea' })], generatedAt: now }), 'soon')
+  assert.equal(t(soon, { findings: [burdenCard('call_now')], generatedAt: now }), 'soon')
+  assert.equal(t(soon, { findings: [{ finding: null }, 7, null], generatedAt: now }), 'soon')
+  assert.equal(t(soon, { findings: { not: 'an array' }, generatedAt: now }), 'soon')
+  assert.equal(t(soon, null), 'soon')
+})
+
+Deno.test('CUL-2676 — a past window ignores the card end to end', () => {
+  const input = cul2676Input(
+    { findings: [burdenCard('today')], generatedAt: '2026-07-02T08:00:00Z' },
+    { requestedWindow: { startDate: '2026-04-04', endDate: '2026-07-01' } },
+  )
+  const tier = burdenTierOf(input)
+  assert.ok(tier === undefined || tier === 'soon', String(tier))
 })
 
 Deno.test('CUL-2003 adv2 Q1 — a safety finding the report does not detail is still named, and opens the band', () => {
