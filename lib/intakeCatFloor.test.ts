@@ -104,30 +104,23 @@ describe('intakeMeetsCatFloor: the engine’s fact, then the clock, failing towa
   });
 });
 
-describe('the diet trial card and closing sheet take the phone detector’s D3 fact', () => {
+describe('the diet trial card and closing sheet hold the floor (CUL-2680; the softer split waits on CUL-2694)', () => {
   const meal = (iso: string, intakeRating: string): AnalyticsMeal =>
     ({ ms: Date.parse(iso), foodItemId: 'f1', foodLabel: 'Kibble', foodType: 'meal', primaryProtein: 'chicken', intakeRating }) as AnalyticsMeal;
   const days = Array.from({ length: 9 }, (_, i) => meal(new Date(Date.parse(LAST_ALL) - i * 24 * HOUR).toISOString(), 'all'));
   const meals = [...days, meal('2026-11-07T18:00:00Z', 'some'), meal('2026-11-08T08:00:00Z', 'some'), meal('2026-11-08T18:00:00Z', 'some')];
 
-  it('the issue’s cat: the detector says D3 is met, and the vet line keeps the floor', () => {
+  it('the issue’s cat: the phone detector says D3 is met (the mirror of the server), and the vet line is the floor', () => {
     const out = detectIntakeDecline({ timeZone: 'UTC', species: 'cat', nowMs: NOW, meals, freeFedSpans: [] });
     expect(out.status).toBe('watch');
     if (out.status !== 'watch') return;
     expect(out.flags.every((f) => f.noGoodMeal24h === true)).toBe(true);
     const [fact] = intakeDeclineFacts(out.flags, 'Kiki');
-    expect(fact.noGoodMeal24h).toBe(true);
-    expect(trialDeclineVetLine('cat', fact, 'Kiki', fact.noGoodMeal24h)).toBe('A cat that stops eating needs a call today, whatever the trial is doing.');
+    expect(trialDeclineVetLine('cat', fact, 'Kiki')).toBe('A cat that stops eating needs a call today, whatever the trial is doing.');
   });
 
-  it('a cat who ate Most this morning: the fact is false, and the line is deferential with the floor as its condition', () => {
-    // Most at 07:00 instead of the issue's 08:00 Some: a good meal 13 h ago, and the day still low.
-    const fed = meals.map((m) => (m.ms === Date.parse('2026-11-08T08:00:00Z') ? { ...m, ms: Date.parse('2026-11-08T07:00:00Z'), intakeRating: 'most' } : m));
-    const flags = detectIntakeDecline({ timeZone: 'UTC', species: 'cat', nowMs: NOW, meals: fed, freeFedSpans: [] });
-    if (flags.status === 'watch') expect(flags.flags.every((f) => f.noGoodMeal24h === false)).toBe(true);
-    const [fact] = intakeDeclineFacts([{ trigger: 'consecutive_low', class: 'health_watch', species: 'cat', baselineScore: 4, recentScore: 2, daysBelowBaseline: 1, refusedFoodLabel: null, ratedMealsConsidered: 9, allRefused: false, noGoodMeal24h: false }], 'Kiki');
-    expect(fact.noGoodMeal24h).toBe(false);
-    expect(trialDeclineVetLine('cat', fact, 'Kiki', fact.noGoodMeal24h)).toContain(`If Kiki goes a day without a full meal, ${FLOOR_ASK.inline}`);
+  it('an `other` pet’s partial decline holds the floor too, as the Signal does', () => {
+    expect(trialDeclineVetLine('other', { trigger: 'consecutive_low', allRefused: false }, 'Pip')).toBe('A pet that stops eating needs a call today, whatever the trial is doing.');
   });
 });
 

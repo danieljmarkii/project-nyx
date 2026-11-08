@@ -575,7 +575,7 @@ export function densityLine(facts: TrialOutcomeFacts, petName: string): string {
  * an all-refused day, a sustained refusal, or a decline this build cannot name meets it and keeps
  * the direct line. A cat's partial decline may or may not (it can run 37 h with no good meal), so
  * it is deferential, with the floor kept as a condition on the data, only once the live check
- * says the predicate is unmet; both callers hand the phone detector's D3 fact (CUL-2680), and a fact not read keeps the floor. A dog is deferential
+ * says the predicate is unmet; no caller passes it yet, so every cat keeps the floor until the line can re-check the clock (CUL-2694). A dog is deferential
  * (Pattern 11); any other species follows the Signal's "every species but a dog" refusal rule.
  */
 export function trialDeclineVetLine(
@@ -611,7 +611,7 @@ export function buildOutcomeSheet(args: {
   indication?: TrialIndication | null;
   intakeDeclineHeadline?: string | null;
   /** CUL-2667: the decline's trigger facts; absent, a cat's line keeps the floor's words. */
-  intakeDeclineFact?: { trigger?: string | null; allRefused?: boolean; noGoodMeal24h?: boolean } | null;
+  intakeDeclineFact?: { trigger?: string | null; allRefused?: boolean } | null;
 }): TrialOutcomeSheetModel {
   const { facts, petName } = args;
 
@@ -698,7 +698,7 @@ export function buildOutcomeSheet(args: {
     // numbers" (B-561). The sibling was corrected for the same reason once the
     // decline branches stopped deleting the off-diet count; this copy tracks it.
     declineNote: declineLead
-      ? trialDeclineVetLine(args.species, args.intakeDeclineFact, petName, args.intakeDeclineFact?.noGoodMeal24h) +
+      ? trialDeclineVetLine(args.species, args.intakeDeclineFact, petName) +
         ' Culprit isn’t reading these days as a clean run while this is going on.'
       : null,
   };
