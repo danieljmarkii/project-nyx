@@ -87,6 +87,7 @@ export function fixtureRows(mealDays = 30): Record<string, unknown[]> {
     event_attachments: [{ id: 'att-1', event_id: 'vomit-1', storage_path: 'withheld/att-1', mime_type: 'image/jpeg', sort_order: 0 }],
     looks: [],
     capture_changes: [],
+    ai_signals: [],
     medication_items: [],
   }
 }

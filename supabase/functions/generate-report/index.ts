@@ -1398,10 +1398,11 @@ export async function buildReportSnapshotForPet(
   // like every read here (RLS scopes it to the owner), the query generate-signal reads its prior
   // row with. Home holds a burden card at the previous Signal's tier over an incomplete read, and
   // the report's burden row states the louder of that tier and its own (report.ts
-  // `heldBurdenTier`). A failed read leaves the computed tier, which is what the report said
-  // before it read the card; it is logged, never thrown: the card can only raise a tier, so
-  // losing it never costs the report.
+  // `burdenTierFromCard`). Logged, never thrown: the card can only raise a tier or qualify the
+  // row, so a failed read costs the report a confirmation, never the report.
   let ownerSignal: OwnerSignalRead | null = null
+  // A failed read is unknown, never "no card": the burden row then says it could not check the
+  // ask against the card (adversarial pass, CUL-2676).
   try {
     const { data: signalRow, error: signalError } = await supabase
       .from('ai_signals')
@@ -1411,14 +1412,16 @@ export async function buildReportSnapshotForPet(
       .limit(1)
       .maybeSingle()
     if (signalError) {
-      console.warn('generate-report: ai_signals read failed; the burden row keeps its computed tier:', signalError.message)
+      ownerSignal = { readFailed: true }
+      console.warn('generate-report: ai_signals read failed; the burden row says so:', signalError.message)
     } else if (signalRow) {
       const row = signalRow as { findings: unknown; generated_at: string | null }
       ownerSignal = { findings: row.findings, generatedAt: row.generated_at }
     }
   } catch (signalErr) {
+    ownerSignal = { readFailed: true }
     const detail = signalErr instanceof Error ? signalErr.message : String(signalErr)
-    console.warn('generate-report: ai_signals read failed; the burden row keeps its computed tier:', detail)
+    console.warn('generate-report: ai_signals read failed; the burden row says so:', detail)
   }
 
   const profile = profileRes.data as { display_name: string | null; timezone: string | null } | null

@@ -3255,10 +3255,19 @@ export function safetyFlagRow(
       // vet got a wrong record of the advice (CUL-2664). report.test.ts pins both tiers to the card.
       const label = h(symptomLabel(f.symptomType).toLowerCase())
       const run = f.runDays >= 2 ? `, on ${num(f.runDays)} days in a row` : ''
-      const told = f.tier === 'today' ? 'it is worth a call to the vet today' : 'it is worth booking a vet visit soon'
+      const ask = f.tier === 'today' ? 'worth a call to the vet today' : 'worth booking a vet visit soon'
+      // CUL-2676: the tier is the owner's card's when Home held it louder than this report's run
+      // (the counts beside it are the report's, so the row says whose the ask is); and a card that
+      // could not be read is never vouched for: the row states the check's own ask and says so.
+      const told =
+        f.tierSource === 'card'
+          ? `The owner was told it is ${ask}; the app's card kept that ask from an earlier read.`
+          : f.tierSource === 'card_unread'
+            ? `The app's check reads it as ${ask}. The owner's card could not be read for this report, so what they were shown is not confirmed here.`
+            : `The owner was told it is ${ask}.`
       return row(
         'Burden',
-        `<b>${num(f.count)} ${label} ${f.count === 1 ? 'entry' : 'entries'} in the last ${num(f.windowDays)} days${run}.</b> A high count on its own, with no earlier week needed to compare. The owner was told ${told}.`,
+        `<b>${num(f.count)} ${label} ${f.count === 1 ? 'entry' : 'entries'} in the last ${num(f.windowDays)} days${run}.</b> A high count on its own, with no earlier week needed to compare. ${told}`,
       )
     }
     case 'weight_loss': {
