@@ -245,8 +245,9 @@ export function recordUnreadRetryBody(pet: string | null): string {
 
 /** The "when to call" line, on its own (frames F and H). */
 export function recordVetLine(kind: RecordKind, pet: string | null): string {
-  // CUL-2667 left this line as shipped: the inventory's split names blood, which the PM's
-  // 2026-10-12 ruling keeps off it (stool stays event-neutral). The conflict is filed for a ruling.
+  // Kept as shipped (PM, 2026-11-08, CUL-2679 ruled (a)): a general "when to call" pointer under
+  // the consent ask, not a read's ask. The 2026-10-12 ruling stands: it never names blood, and
+  // stool stays event-neutral, so the inventory's floor clause does not land here.
   return kind === 'vomit'
     ? `If ${petIs(pet)} keeps vomiting, brings up something unusual, or seems unwell, call your vet.`
     : `If ${petOf(pet)} stool stays unusual, has something odd in it, or ${petIs(pet)} seems unwell, call your vet.`;
