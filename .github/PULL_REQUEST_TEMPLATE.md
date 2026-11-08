@@ -14,6 +14,9 @@
 ## Open questions
 <!-- Any questions this raises or resolves. Reference the Open Questions table in CLAUDE.md if relevant. -->
 
+## Along the way
+<!-- Each find fixed under the filing rule (CLAUDE.md § Backlog Protocol), one line each. None = write "None". -->
+
 ## Manual test steps
 <!-- What to verify via QR code in Expo Go before merging -->
 - [ ] 
