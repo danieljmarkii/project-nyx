@@ -866,6 +866,61 @@ export interface ReportInput {
    * (report.test.ts, "EN-11 — the report drops…").
    */
   engineFlags: EngineFlags
+  /**
+   * CUL-2676 — the pet's latest Signal row (`ai_signals`), read with the owner's JWT: the card
+   * Home showed. Over an incomplete read Home HOLDS a burden card at the tier the previous
+   * Signal showed (generate-signal/pipeline.ts `holdPriorTier`), so the report, which runs its
+   * own detection, could say the owner was told "soon" while the card said "today". The burden
+   * row takes the louder of the two (`heldBurdenTier`). Absent or null (not read, read failed,
+   * no row): the computed tier, which is what the report said before this field existed.
+   * `generateReportForPet` always passes it.
+   */
+  ownerSignal?: OwnerSignalRead | null
+}
+
+/** The owner's latest Signal row as read: its findings, untyped (any shape is tolerated), and
+ *  the time the row was generated. */
+export interface OwnerSignalRead {
+  findings: unknown
+  generatedAt: string | null
+}
+
+const BURDEN_TIER_LOUDNESS: Record<SymptomBurdenFinding['tier'], number> = { soon: 0, today: 1 }
+
+/**
+ * CUL-2676 — the tier the burden row states: the louder of the one this report computed and the
+ * one the owner's card showed for the same sign. Never lowers a tier.
+ *
+ * The card counts only when (a) the report's window ends today, since a past window's row is
+ * about that window and the card is about now (the past-window guard is its own issue), and
+ * (b) the card's own read, `carriedFrom` when Home carried it, else the row's `generatedAt`,
+ * falls inside the finding's window: the row says "in the last N days", and a card computed
+ * before those days is not a card about them. A malformed row, an unknown tier or a card from
+ * the future is ignored, which leaves the computed tier.
+ */
+export function heldBurdenTier(
+  f: Pick<SymptomBurdenFinding, 'symptomType' | 'tier' | 'windowDays'>,
+  ownerSignal: OwnerSignalRead | null | undefined,
+  windowEndsToday: boolean,
+  nowIso: string,
+): SymptomBurdenFinding['tier'] {
+  if (!windowEndsToday || !ownerSignal || !Array.isArray(ownerSignal.findings)) return f.tier
+  const nowMs = Date.parse(nowIso)
+  const rowMs = Date.parse(String(ownerSignal.generatedAt ?? ''))
+  let tier = f.tier
+  for (const e of ownerSignal.findings) {
+    const card = e && typeof e === 'object' ? (e as { finding?: unknown }).finding : undefined
+    if (!card || typeof card !== 'object') continue
+    const c = card as { type?: unknown; symptomType?: unknown; tier?: unknown; carriedFrom?: unknown }
+    if (c.type !== 'symptom_burden' || c.symptomType !== f.symptomType) continue
+    if (typeof c.tier !== 'string' || !Object.prototype.hasOwnProperty.call(BURDEN_TIER_LOUDNESS, c.tier)) continue
+    const originMs = typeof c.carriedFrom === 'string' ? Date.parse(c.carriedFrom) : rowMs
+    if (!Number.isFinite(originMs) || !Number.isFinite(nowMs)) continue
+    if (originMs > nowMs || nowMs - originMs > f.windowDays * MS_PER_DAY) continue
+    const cardTier = c.tier as SymptomBurdenFinding['tier']
+    if (BURDEN_TIER_LOUDNESS[cardTier] > BURDEN_TIER_LOUDNESS[tier]) tier = cardTier
+  }
+  return tier
 }
 
 // ── Date / window helpers (tz-aware calendar-day math) ───────────────────────
@@ -5874,7 +5929,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       days: f.days,
       runDays: f.runDays,
       windowDays: f.windowDays,
-      tier: f.tier,
+      // CUL-2676: the tier the owner's card showed, when Home held it louder than this run.
+      tier: heldBurdenTier(f, input.ownerSignal, scope.detectionNowIso === input.now, input.now),
     })
   }
   // CUL-2026 — Home's weight card, placed where Home ranks it (SAFETY_TYPE_ORDER: below burden,

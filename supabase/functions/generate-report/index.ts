@@ -44,6 +44,7 @@ export { fetchAll, PULL_MAX_PAGES, PULL_PAGE } from '../_shared/pull.ts'
 import {
   assembleReport,
   resolveScope,
+  type OwnerSignalRead,
   type ReportInput,
   type ReportScope,
   type ReportPetInput,
@@ -1393,6 +1394,33 @@ export async function buildReportSnapshotForPet(
   // nothing yet, so the report is unchanged; see ReportInput.engineFlags.
   const engineFlags = await readEngineFlags(supabase, petRow.user_id)
 
+  // CUL-2676 — the card Home showed: the pet's latest Signal row, read with the caller's JWT
+  // like every read here (RLS scopes it to the owner), the query generate-signal reads its prior
+  // row with. Home holds a burden card at the previous Signal's tier over an incomplete read, and
+  // the report's burden row states the louder of that tier and its own (report.ts
+  // `heldBurdenTier`). A failed read leaves the computed tier, which is what the report said
+  // before it read the card; it is logged, never thrown: the card can only raise a tier, so
+  // losing it never costs the report.
+  let ownerSignal: OwnerSignalRead | null = null
+  try {
+    const { data: signalRow, error: signalError } = await supabase
+      .from('ai_signals')
+      .select('findings, generated_at')
+      .eq('pet_id', petId)
+      .order('expires_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (signalError) {
+      console.warn('generate-report: ai_signals read failed; the burden row keeps its computed tier:', signalError.message)
+    } else if (signalRow) {
+      const row = signalRow as { findings: unknown; generated_at: string | null }
+      ownerSignal = { findings: row.findings, generatedAt: row.generated_at }
+    }
+  } catch (signalErr) {
+    const detail = signalErr instanceof Error ? signalErr.message : String(signalErr)
+    console.warn('generate-report: ai_signals read failed; the burden row keeps its computed tier:', detail)
+  }
+
   const profile = profileRes.data as { display_name: string | null; timezone: string | null } | null
   const pet = mapPet(petRow)
   let ownerName = profile?.display_name?.trim() || null
@@ -1825,6 +1853,7 @@ export async function buildReportSnapshotForPet(
     incompletePulls,
     audience,
     engineFlags,
+    ownerSignal,
   }
 
   // 4. Pure assembly. The I/O after it (photo bytes, the render) is the caller's: the report
