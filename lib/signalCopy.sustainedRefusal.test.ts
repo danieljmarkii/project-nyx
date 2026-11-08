@@ -48,7 +48,8 @@ describe('the sustained-refusal card on the phone', () => {
     expect(all).not.toMatch(/less than usual|below the usual|picky|fussy|!/i);
     expect(sampleLine(f)).toBe('6 rated meals on 3 days, none eaten well');
     expect(evidenceText(f, 'Miso')).toMatch(/^Miso hasn't eaten well at any meal you watched and rated in the last 72 hours: 6 meals on 3 days \(4 refused, 2 picked at\)\. That's worth a call to your vet today\./);
-    expect(signalHomeAsk(f)).toBe('worth a call to your vet today');
+    // CUL-2667: a cat's sustained refusal is the floor on Home (the mirrored sentence moves in row 3).
+    expect(signalHomeAsk(f)).toBe(f.species === 'dog' ? 'worth a call to your vet today' : 'call your vet today');
     expect(stripAskLine(f)).toBe('Call your vet');
     expect(stripNameLine(f)).toBe('No meal eaten well');
   });

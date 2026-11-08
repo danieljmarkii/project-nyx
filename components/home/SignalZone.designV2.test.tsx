@@ -290,7 +290,8 @@ describe('the Signal stack on Home', () => {
     const headlines = view.getAllByTestId('signal-row-headline').map((h) => h.props.children);
     expect(headlines).toEqual(['Possible foreign material in a vomit photo', 'Vomiting in 5 of the last 8 weeks', 'Vomiting soon after meals']);
     // Every safety ask stays on Home, in words.
-    expect(view.getByText('Worth a call to your vet')).toBeTruthy();
+    // CUL-2675 (a): a photo flag is the floor.
+    expect(view.getByText('Call your vet today')).toBeTruthy();
     expect(view.getByText('worth a word with your vet')).toBeTruthy();
     // S1: the timing row draws its counts; the safety rows draw nothing.
     expect(view.getAllByTestId('signal-row-thumb-timing')).toHaveLength(1);

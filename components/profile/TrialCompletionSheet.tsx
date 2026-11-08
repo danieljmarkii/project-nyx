@@ -25,6 +25,7 @@
 // Read as permission to stop the diet. No completion vocabulary appears here, the
 // data leads and the question follows, and `Keep going` is never the weaker
 // option. The greppable guard lives in the pure module's test.
+import type { IntakeDeclineFact } from '../../lib/dietTrialCard';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
@@ -90,6 +91,8 @@ interface Props {
   dayCounter: number;
   /** §5.2's composition, carried onto this terminal surface too. */
   intakeDeclineHeadline?: string | null;
+  /** CUL-2667: the decline's trigger facts; absent, the vet line keeps the floor's words. */
+  intakeDeclineFact?: IntakeDeclineFact | null;
   onClose: () => void;
   /** `Keep going`. Owned by the host so the extension has one implementation. */
   onExtend: () => void;
@@ -105,7 +108,7 @@ function stepFor(entry: TrialCompletionEntry): Step {
 
 export function TrialCompletionSheet({
   entry, trial, endedRow, petName, species, pronouns, dayCounter,
-  intakeDeclineHeadline, onClose, onExtend, onChanged,
+  intakeDeclineHeadline, intakeDeclineFact = null, onClose, onExtend, onChanged,
 }: Props) {
   const [step, setStep] = useState<Step>('decision');
   // A read remembers the inputs it was read for (CUL-1560). A trial that changes
@@ -390,7 +393,7 @@ export function TrialCompletionSheet({
 
   const sheet: TrialOutcomeSheetModel | null = facts
     ? buildOutcomeSheet({
-        facts, petName, species, indication: trial?.indication, intakeDeclineHeadline,
+        facts, petName, species, indication: trial?.indication, intakeDeclineHeadline, intakeDeclineFact,
       })
     : null;
 

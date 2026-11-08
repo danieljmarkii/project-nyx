@@ -6,8 +6,8 @@
 // decided server-side (`supabase/functions/_shared/incidentMayWait.ts`, PR-27e) over every read's
 // flags and payload, which the phone does not hold. This module only ever TAKES that leave away:
 // every gate below can refuse a TRUE, none can grant one, and anything it cannot read refuses. The
-// louder line, `TIER_WORDS.call_today.action` ("If they're closed, call an emergency clinic."), is
-// what stands whenever this returns a refusal, and it is still what Home and History say.
+// louder line, the row's own register from `lib/incidentAskWords.ts` (CUL-2667), is what stands
+// whenever this returns a refusal; a floor row never reaches the wait at all.
 //
 // ── THE GATES (each a named refusal, each driven red on its own in the test) ─────────────────
 //   row        the new-rule call today, `tier = 'call_today'` itself, `may_wait` exactly TRUE
@@ -56,10 +56,11 @@
 //              the line louder within a minute of the answer turning two minutes old.
 //
 // ── THE WORDS (device local hour; PM ruling D1 = a: 6 AM / 6 PM / midnight) ──────────────────
-//   day          Call your vet today. If they're closed, first thing tomorrow, or an emergency
+//   day          Worth a call today. If they're closed, first thing tomorrow, or an emergency
 //                clinic tonight if {signs}.
-//   evening      Call your vet first thing tomorrow, or an emergency clinic tonight if {signs}.
-//   small hours  Call your vet first thing this morning, or an emergency clinic now if {signs}.
+//   evening      Worth a call first thing tomorrow, or an emergency clinic tonight if {signs}.
+//   small hours  Worth a call first thing this morning, or an emergency clinic now if {signs}.
+//   (Pattern 11's register since CUL-2667: the wait is only ever said over a deferential row.)
 // {signs} is count-free and has no deadline: a vomit says "{pet} vomits again or is low on
 // energy"; a stool says "{pet} is low on energy or vomits" (PM ruling D2 = a). The floor's own
 // clauses were tried first and failed the adversarial pass (finding 3): T2's "twice more by 1 AM"
@@ -77,7 +78,8 @@
 
 import { FLOOR_LETHARGY_HOURS, FLOOR_READ_HOURS, incidentFloor, type FloorVomit } from './incidentFloor';
 import { named } from './incidentFloorWords';
-import { isTieredRow, TIER_WORDS } from './incidentTierWords';
+import { DEFERENTIAL_ASK, FLOOR_ASK, type AskLevel } from './incidentAskWords';
+import { isTieredRow } from './incidentTierWords';
 
 const HOUR = 3_600_000;
 
@@ -202,6 +204,19 @@ export function intakeFlagAt(meals: readonly MayWaitMeal[], atMs: number): boole
   const tracks = meals.some((m) => m.rating !== null && within(m.at, MAY_WAIT_INTAKE_BASELINE_HOURS));
   const ate = meals.some((m) => (m.rating === 'most' || m.rating === 'all') && within(m.at, MAY_WAIT_INTAKE_HOURS));
   return tracks && !ate;
+}
+
+/**
+ * The live D3 predicate the record's words re-check for a cat's call today (CUL-2667,
+ * clinical-guardrails "the cat predicate is live"): an owner who rates meals has rated none Most
+ * or All in the last 24 h. Undefined when the row is not a cat's call today (nothing to add).
+ * Facts not yet read count as MET: the check can only add the floor, so the floor's words stand
+ * until the record answers, never the softer ones.
+ */
+export function catNoGoodMeal24hOf(catCallToday: boolean, facts: Pick<MayWaitFacts, 'meals'> | null, nowMs: number): boolean | undefined {
+  if (!catCallToday) return undefined;
+  if (!facts) return true;
+  return intakeFlagAt(facts.meals, nowMs);
 }
 
 /** Whether the offset moves anywhere in [fromMs, toMs]. Every DST change holds for hours, so
@@ -337,10 +352,14 @@ export function callNowSignsOf(kind: 'vomit' | 'stool', petName: string | null |
   return kind === 'vomit' ? `${p} vomits again or is low on energy` : `${p} is low on energy or vomits`;
 }
 
+/** The late-day line. Only ever said over a DEFERENTIAL call today (a floor row never waits,
+ *  CUL-2667), so it speaks Pattern 11's register: the verb softened, the clock and the
+ *  emergency clinic kept. */
 export function waitLine(band: ClockBand, signs: string): string {
-  if (band === 'day') return `Call your vet today. If they're closed, first thing tomorrow, or an emergency clinic tonight if ${signs}.`;
-  if (band === 'evening') return `Call your vet first thing tomorrow, or an emergency clinic tonight if ${signs}.`;
-  return `Call your vet first thing this morning, or an emergency clinic now if ${signs}.`;
+  const verb = DEFERENTIAL_ASK.verb;
+  if (band === 'day') return `${DEFERENTIAL_ASK.label}. If they're closed, first thing tomorrow, or an emergency clinic tonight if ${signs}.`;
+  if (band === 'evening') return `${verb} first thing tomorrow, or an emergency clinic tonight if ${signs}.`;
+  return `${verb} first thing this morning, or an emergency clinic now if ${signs}.`;
 }
 
 // ── The resolver ─────────────────────────────────────────────────────────────────────────────
@@ -393,9 +412,12 @@ export function mayWaitRefusalOf(input: MayWaitInput): MayWaitRefusal | null {
   return null;
 }
 
-/** Call today's action line on the record: the wait line on a TRUE every gate keeps, else the
- *  louder line. Never null, never calmer than "Worth a call". */
-export function callTodayActionOf(input: MayWaitInput): string {
-  if (mayWaitRefusalOf(input) !== null) return TIER_WORDS.call_today.action ?? '';
+/** Call today's action line on the record, in the register the row's REASON earns
+ *  (`lib/incidentAskWords.ts`, CUL-2667). A floor row always gets the floor's line and never
+ *  "first thing tomorrow" (tiers spec §2 rule 1), whatever `may_wait` says. A deferential row
+ *  gets the wait line on a TRUE every gate keeps, else the deferential line. Never null. */
+export function callTodayActionOf(input: MayWaitInput, level: AskLevel = 'floor'): string {
+  if (level === 'floor') return FLOOR_ASK.action;
+  if (mayWaitRefusalOf(input) !== null) return DEFERENTIAL_ASK.action;
   return waitLine(clockBandOf(input.nowMs), callNowSignsOf(input.kind, input.petName));
 }

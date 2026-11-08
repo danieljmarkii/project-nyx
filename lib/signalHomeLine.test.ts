@@ -317,12 +317,28 @@ describe('PARITY: the Home row counts from the sentence’s own fields (the scre
     expect(checked).toBeGreaterThan(400);
   });
 
+  // CUL-2667 (row 2) moved the phone's floor asks first; the server's sentences move in row 3
+  // (CUL-2668). Until then a FLOOR ask on the row may stand over the sentence's earlier ask, and
+  // only that: each pair below is the floor's words over the exact phrase the server still says.
+  // The exception expires itself: once the server says the floor's words, the pair's second half
+  // is gone from the sentence and the test fails until the pair is deleted.
+  const ROW_TWO_FLOOR_OVER_SERVER: ReadonlyArray<readonly [string, string]> = [
+    ['call your vet today', 'worth a call to your vet today'],
+    ['call your vet today', 'worth a call to your vet'],
+  ];
   it('the ask is the sentence’s own words, verbatim, on every safety finding', () => {
+    let excepted = 0;
     for (const f of everyFinding().filter((x) => x.priorityClass === 'safety')) {
       const ask = line(f).ask;
       expect(ask).not.toBeNull();
-      expect(sentence(f)).toContain(ask as string);
+      const said = sentence(f);
+      if (said.includes(ask as string)) continue;
+      const pair = ROW_TWO_FLOOR_OVER_SERVER.find(([floor, server]) => floor === ask && said.includes(server));
+      expect([f.type, ask, said, pair !== undefined]).toEqual([f.type, ask, said, true]);
+      excepted += 1;
     }
+    // The exception is in use (it is not a dead registry), and only on floor findings.
+    expect(excepted).toBeGreaterThan(0);
   });
 
   it('the photo read’s headline is the sentence’s own phrase (“possible …”) and its date the sentence’s UTC day', () => {
@@ -399,7 +415,7 @@ describe('the row’s words', () => {
       eyebrow: 'Photo read · Sep 22',
       headline: 'Possible foreign material in a vomit photo',
       count: null,
-      ask: 'worth a call to your vet',
+      ask: 'call your vet today', // CUL-2675 (a): a photo flag is the floor
     });
     const vomiting = chronicities('vomit').find((c) => c.episodeCount === 14 && c.tier === 'firm' && c.firstOnsetIso.startsWith('2026-08-01')) as SymptomChronicityFinding;
     expect(line(vomiting)).toEqual({
@@ -527,7 +543,7 @@ describe('the row’s words', () => {
 describe('the spoken label', () => {
   it('says every line, the eyebrow’s dot as a comma, and the ask with a capital', () => {
     const [redFlag] = redFlags();
-    expect(signalHomeLabel(line(redFlag))).toBe('Photo read, Sep 22. Possible blood in a vomit photo. Worth a call to your vet.');
+    expect(signalHomeLabel(line(redFlag))).toBe('Photo read, Sep 22. Possible blood in a vomit photo. Call your vet today.');
   });
 
   it('every safety row speaks its ask — never behind a tap, for any reader', () => {

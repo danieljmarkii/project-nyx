@@ -23,6 +23,7 @@
 // The headline IS `signalTitle` — the screen's title — so the owner lands on the screen
 // they tapped, by name.
 
+import { DEFERENTIAL_ASK, FLOOR_ASK } from './incidentAskWords';
 import { bookedVisitCallBeforeAsk, bookedVisitOf, careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
@@ -62,10 +63,12 @@ function numWord(n: number): string {
  *   worsening    firm "worth booking a vet visit soon" · soft "worth keeping an eye on, and a
  *                word with your vet if it carries on" · standard "worth a word with your vet"
  *   intake       "worth keeping an eye on, and a word with your vet if it carries on" (both);
- *                an all-refused card for any species but a dog "worth a call to your vet today" (CUL-2593)
+ *                an all-refused card or a sustained refusal for any species but a dog: the floor,
+ *                "call your vet today" (CUL-2593, CUL-2667); a dog's sustained refusal "worth a call
+ *                to your vet today"
  * The conditional asks keep their lead-in: cut to "a word with your vet if it carries on"
  * they read as a fragment with no verb (pm-feature-review).
- *   red flag     "worth a call to your vet"; a NEW-RULE call (Engines v3 PR-30a, CUL-1511) asks in
+ *   red flag     the floor, "call your vet today" (CUL-2675 (a)); a NEW-RULE call (Engines v3 PR-30a, CUL-1511) asks in
  *                the tier-word map's words, "call your vet now" / "call your vet today"; after
  *                its first day a call now is dated, "on Oct 3, the read said: call your vet now"
  *                (PR-30c, CUL-1739), when the caller hands the clock
@@ -84,17 +87,19 @@ export function signalHomeAsk(finding: SignalFinding, nowMs?: number): string | 
     case 'intake_decline':
       // I5 (PR-30s): its sentence ends on I4's tail, so its ask is that tail's words.
       if (finding.trigger === 'refused_then_vomited') return 'worth mentioning to your vet';
-      // The sustained-refusal floor's sentence ends on a call today.
-      if (finding.trigger === 'sustained_refusal') return 'worth a call to your vet today';
-      // CUL-2593: an all-refused card asks for a call today, every species but a dog.
-      if (intakeAllRefusedCallsToday(finding)) return 'worth a call to your vet today';
+      // The sustained-refusal floor's sentence ends on a call today. CUL-2667 (D3, D4): for every
+      // species but a dog it meets the cat floor and says the floor's words; a dog's stays the
+      // deferential call today.
+      if (finding.trigger === 'sustained_refusal') return finding.species === 'dog' ? DEFERENTIAL_ASK.inline : FLOOR_ASK.inline;
+      // CUL-2593: an all-refused card asks for a call today, every species but a dog: the floor.
+      if (intakeAllRefusedCallsToday(finding)) return FLOOR_ASK.inline;
       if (finding.trigger === 'consecutive_low' || finding.trigger === 'refused_normal_food') return 'worth keeping an eye on, and a word with your vet if it carries on';
       // CUL-2405: a trigger this build does not know asks at its most cautious.
       return UNKNOWN_INTAKE_COPY.ask;
     case 'incident_red_flag':
       return incidentRedFlagAsk(finding, nowMs);
     case 'symptom_burden':
-      return finding.tier === 'today' ? 'worth a call to your vet today' : 'worth booking a vet visit soon';
+      return finding.tier === 'today' ? DEFERENTIAL_ASK.inline : 'worth booking a vet visit soon';
     default:
       return null;
   }

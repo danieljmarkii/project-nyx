@@ -136,7 +136,7 @@ describe('the safety faces: the screen’s first sentence, no bar, no end date (
     expect(r.title).toBe('Diet trial · day 23 of 56');
     expect(r.alert).toEqual([
       DECLINE,
-      'A pet that goes off their food needs a call, whatever the trial is doing. Culprit isn’t reading these days as a clean run while this is going on.',
+      'A pet going off their food is worth a call to your vet, whatever the trial is doing. Culprit isn’t reading these days as a clean run while this is going on.',
     ]);
     expect(r.alert).toEqual(screenFor(i).safety!.slice(0, 2));
     expect(r.progressFraction).toBeNull();

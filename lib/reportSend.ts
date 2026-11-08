@@ -22,7 +22,8 @@
 // keys on the local clock against assumed clinic hours: it only changes which row leads, both
 // rows always print, and outside the assumed day the louder row leads.
 
-import { liveCardCopy, composerDate, composerRange, LIVE_FLAG_DAYS, type ComposerFlag, type ComposerLive } from './reportComposer';
+import { liveCardCopy, composerDate, composerRange, LIVE_FLAG_DAYS, loudestComposerAsk, type ComposerAskLevel, type ComposerFlag, type ComposerLive } from './reportComposer';
+import { FLOOR_ASK } from './incidentAskWords';
 
 // ── Targets and the status words (WBC-5) ─────────────────────────────────────────────────────
 
@@ -133,7 +134,25 @@ export function isAfterHours(localHour: number): boolean {
   return localHour < ASSUMED_CLINIC_OPEN_HOUR || localHour >= ASSUMED_CLINIC_CLOSE_HOUR;
 }
 
-/** The call rows, the emergency clinic first after hours (d5). */
+/** The rows for the loudest live flag's ask (CUL-2663): the floor's call rows, a deferential
+ *  call today (Pattern 11: the clock and the clinic kept, the verb softened, never "an emergency
+ *  clinic can see {name} now" over a flag that is not the floor), or one line for a word. */
+export function askRowsFor(level: ComposerAskLevel, localHour: number, petName: string): CallRow[] {
+  if (level === 'floor') return callRowsFor(localHour, petName);
+  if (level === 'word') return [{ id: 'clinic', text: 'Worth a word with your vet about it.' }];
+  if (isAfterHours(localHour)) {
+    return [
+      { id: 'clinic', text: 'Worth a call to your vet when they open.' },
+      { id: 'emergency', text: 'An emergency clinic can talk it through now.' },
+    ];
+  }
+  return [
+    { id: 'clinic', text: 'Worth a call to your vet today.' },
+    { id: 'emergency', text: 'If yours is closed, an emergency clinic can talk it through.' },
+  ];
+}
+
+/** The floor's call rows, the emergency clinic first after hours (d5). */
 export function callRowsFor(localHour: number, petName: string): CallRow[] {
   const name = petName.trim() || 'your pet';
   if (isAfterHours(localHour)) {
@@ -144,7 +163,7 @@ export function callRowsFor(localHour: number, petName: string): CallRow[] {
     ];
   }
   return [
-    { id: 'clinic', text: 'Call your vet today.' },
+    { id: 'clinic', text: FLOOR_ASK.imperative },
     { id: 'emergency', text: 'If they’re closed, call an emergency clinic.' },
   ];
 }
@@ -164,7 +183,7 @@ export interface SendCallCard {
 export function sendCallCard(live: ComposerLive, petName: string, localHour: number): SendCallCard | null {
   const copy = liveCardCopy(live, petName);
   if (!copy) return null;
-  return { ...copy, rows: live.state === 'flags' ? callRowsFor(localHour, petName) : [] };
+  return { ...copy, rows: live.state === 'flags' ? askRowsFor(loudestComposerAsk(live.flags), localHour, petName) : [] };
 }
 
 // ── The subject (BRK-12) ─────────────────────────────────────────────────────────────────────

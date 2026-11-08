@@ -102,7 +102,7 @@ describe('the vomit and stool record', () => {
   // The vet line never names blood alone (PM, 2026-10-12); stool stays event neutral,
   // because it also renders over a normal stool.
   it('the vet lines, word for word', () => {
-    expect(recordVetLine('vomit', 'Mochi')).toBe('If Mochi keeps vomiting, brings up something unusual, or seems unwell, call your vet.');
+    expect(recordVetLine('vomit', 'Mochi')).toBe("If Mochi keeps vomiting, brings up something unusual, or seems unwell, call your vet.");
     expect(recordVetLine('stool', 'Mochi')).toBe("If Mochi's stool stays unusual, has something odd in it, or Mochi seems unwell, call your vet.");
     expect(recordVetLine('stool', null)).toBe("If your pet's stool stays unusual, has something odd in it, or your pet seems unwell, call your vet.");
     for (const kind of ['vomit', 'stool'] as const) {
@@ -121,6 +121,6 @@ describe('the vomit and stool record', () => {
   it('F and G: a status, never a verdict', () => {
     expect(recordOffBody('Mochi')).toBe("Mochi's photo is saved but wasn't read. If you turn AI reading on, you can send this photo to Claude, an AI, for a read.");
     expect(recordOffBody(null)).toMatch(/^Your pet's photo/);
-    expect(recordOffBesideCall('Mochi')).toBe("AI reading is off. Mochi's log alone is reason to call your vet.");
+    expect(recordOffBesideCall('Mochi')).toBe("AI reading is off. Mochi's log alone is worth telling your vet about.");
   });
 });

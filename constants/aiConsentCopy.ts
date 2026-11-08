@@ -245,6 +245,9 @@ export function recordUnreadRetryBody(pet: string | null): string {
 
 /** The "when to call" line, on its own (frames F and H). */
 export function recordVetLine(kind: RecordKind, pet: string | null): string {
+  // Kept as shipped (PM, 2026-11-08, CUL-2679 ruled (a)): a general "when to call" pointer under
+  // the consent ask, not a read's ask. The 2026-10-12 ruling stands: it never names blood, and
+  // stool stays event-neutral, so the inventory's floor clause does not land here.
   return kind === 'vomit'
     ? `If ${petIs(pet)} keeps vomiting, brings up something unusual, or seems unwell, call your vet.`
     : `If ${petOf(pet)} stool stays unusual, has something odd in it, or ${petIs(pet)} seems unwell, call your vet.`;
@@ -273,10 +276,11 @@ export function recordOffBody(pet: string | null): string {
  *  conditional ("if {pet} keeps vomiting…"), and under an unconditional call that reads as
  *  "call only if it goes on"; this one backs the log, as G's off line does. */
 export function recordAskVetLineBesideCall(pet: string | null): string {
-  return `Whatever you choose, ${petOf(pet)} log alone is reason to call your vet.`;
+  // CUL-2667: deferential; a floor call's own card above already carries the direct words.
+  return `Whatever you choose, ${petOf(pet)} log alone is worth telling your vet about.`;
 }
 
 /** Frame G's off line, under a warning: it backs the log and offers no link. */
 export function recordOffBesideCall(pet: string | null): string {
-  return `AI reading is off. ${PetOf(pet)} log alone is reason to call your vet.`;
+  return `AI reading is off. ${PetOf(pet)} log alone is worth telling your vet about.`;
 }

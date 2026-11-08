@@ -188,3 +188,39 @@ describe('subdued and vomiting is call now, matched to the floor (T3)', () => {
     expect(door.imperative).toBe(CALL_TODAY_IMPERATIVE);
   });
 });
+
+describe('the door keys its collapse by the row, not the block (CUL-2667)', () => {
+  const { resolveEmergencyDoor: resolve, CALL_TODAY_IMPERATIVE: FLOOR, WORTH_TODAY_IMPERATIVE: WORTH } =
+    jest.requireActual('./lookEmergency') as typeof import('./lookEmergency');
+  const QUIET = { refusedRecently: false, vomitCount24h: 0, lethargyRecently: false };
+
+  it('a cat not eating is the floor: the direct words and the Call today header', () => {
+    const door = resolve('cat', { ...QUIET, refusedRecently: true });
+    expect(door.imperative).toBe(FLOOR);
+    expect(door.todayHeader).toBe('Call today');
+  });
+
+  it('a dog\'s met rows are off the floor: the deferential words and header (floor keys on)', () => {
+    const door = resolve('dog', { ...QUIET, vomitCount24h: 2 }, true);
+    expect(door.imperative).toBe(WORTH);
+    expect(door.imperative).toBe('Worth a call today.');
+    expect(door.todayHeader).toBe('Worth a call today');
+  });
+
+  it('an unanswered read fails closed to the floor on every species', () => {
+    expect(resolve('dog', null).imperative).toBe(FLOOR);
+    expect(resolve('cat', null).imperative).toBe(FLOOR);
+  });
+
+  it('with the floor keys off, a dog\'s subdued-and-vomiting row sits among the call-today rows and keeps the floor', () => {
+    const door = resolve('dog', { ...QUIET, lethargyRecently: true, vomitCount24h: 1 }, false);
+    expect(door.imperative).toBe(FLOOR);
+  });
+});
+
+describe('the dog header stays direct while a floor row sits in its block (floor keys off)', () => {
+  it('Subdued and vomiting is a call-today row there, so the header keeps "Call today"', () => {
+    const { resolveEmergencyDoor: resolve } = jest.requireActual('./lookEmergency') as typeof import('./lookEmergency');
+    expect(resolve('dog', { refusedRecently: false, vomitCount24h: 2, lethargyRecently: false }, false).todayHeader).toBe('Call today');
+  });
+});

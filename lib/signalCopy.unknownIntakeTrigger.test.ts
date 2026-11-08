@@ -73,10 +73,10 @@ describe('an intake trigger this build does not know (CUL-2405)', () => {
         expect([surface, text.length > 0]).toEqual([surface, true]);
       }
       // The vet ask, kept, at the loudest intake card's words.
-      expect(s.evidence).toBe("Something in Miso's recent meals stood out in what you logged. That's worth a call to your vet today.");
-      expect(s.banner).toBe('Miso: something in recent meals stood out — worth a call to your vet today.');
+      expect(s.evidence).toBe("Something in Miso's recent meals stood out in what you logged. Call your vet today.");
+      expect(s.banner).toBe('Miso: something in recent meals stood out — call your vet today.');
       expect(s.homeAsk).toBe(UNKNOWN_INTAKE_COPY.ask);
-      expect(signalHomeAsk(card(trigger))).toBe('worth a call to your vet today');
+      expect(signalHomeAsk(card(trigger))).toBe('call your vet today');
       expect(s.stripAsk).toBe('Call your vet');
       expect(s.stripName).toBe(UNKNOWN_INTAKE_COPY.name);
       expect(s.homeHeadline).toBe(UNKNOWN_INTAKE_COPY.name);
@@ -101,7 +101,7 @@ describe('an intake trigger this build does not know (CUL-2405)', () => {
 
   it('a refused-then-vomited fact on the unknown card still follows its sentence', () => {
     const f = card('some_future_trigger', { refusedThenVomited: I5 });
-    expect(evidenceText(f, 'Miso')).toMatch(/^Something in Miso's recent meals stood out in what you logged\. That's worth a call to your vet today\. Miso vomited within 30 minutes/);
+    expect(evidenceText(f, 'Miso')).toMatch(/^Something in Miso's recent meals stood out in what you logged\. Call your vet today\. Miso vomited within 30 minutes/);
     expect(phoneScript(f, 'Miso', false, null, null)?.map((r) => r.label)).toEqual(['Concern', 'Vomited soon after a refused meal', 'Within', 'First']);
   });
 
@@ -111,7 +111,7 @@ describe('an intake trigger this build does not know (CUL-2405)', () => {
     expect(s.sample).toBe('3 days below the usual, across 6 recent meals');
     expect(s.banner).toBe('Miso has eaten less than usual for 3 days — worth a look.');
     expect(s.stripName).toBe('Eating less than usual');
-    expect(s.stripAsk).toBe('Check with your vet');
+    expect(s.stripAsk).toBe('Worth asking a vet');
     expect(s.stripCount).toBe('3 days below the usual, 6 recent meals');
     expect(s.homeCount).toBe('The last three days');
     expect(s.homeAsk).toBe('worth keeping an eye on, and a word with your vet if it carries on');
@@ -119,7 +119,7 @@ describe('an intake trigger this build does not know (CUL-2405)', () => {
 
   it('the refused-normal-food card keeps its conditional ask (the second control)', () => {
     const f = card('refused_normal_food', { refusedFoodLabel: 'Kibble' });
-    expect(stripAskLine(f)).toBe('Check with your vet');
+    expect(stripAskLine(f)).toBe('Worth asking a vet');
     expect(signalHomeAsk(f)).toBe('worth keeping an eye on, and a word with your vet if it carries on');
   });
 });

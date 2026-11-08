@@ -1979,13 +1979,13 @@ describe('bannerCopy', () => {
 
   it('incident_red_flag — names what the photo showed, starts with the pet name, singular/plural', () => {
     const one = bannerCopy(incidentRedFlag({ flags: ['blood'], flaggedIncidentCount: 1 }), 'Pixel');
-    expect(one.text).toBe('Pixel has a logged photo showing possible blood — worth a look.');
+    expect(one.text).toBe('Pixel has a logged photo showing possible blood — call your vet today.'); // D4
     const many = bannerCopy(
       incidentRedFlag({ flags: ['blood', 'foreign_material'], flaggedIncidentCount: 2 }),
       'Pixel',
     );
     expect(many.text).toBe(
-      'Pixel has logged photos showing possible blood and possible foreign material — worth a look.',
+      'Pixel has logged photos showing possible blood and possible foreign material — call your vet today.',
     );
     expect(validateBannerPhrasing(one.text)).toBe(true);
     expect(validateBannerPhrasing(many.text)).toBe(true);

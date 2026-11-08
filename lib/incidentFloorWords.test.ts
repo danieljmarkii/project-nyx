@@ -205,7 +205,7 @@ describe('the watch-for list', () => {
     expect(list?.emergency).not.toMatch(/GDV/);
     expect(list?.lines).toEqual([
       'Call your vet now if you see Mochi vomit twice more by 1 AM tomorrow, each more than half an hour after the vomit before it or Mochi is low on energy by 9 PM tomorrow.',
-      'Call your vet today if Mochi vomits again by 9 PM tomorrow or Mochi vomits on each of the next two days.',
+      'Worth a call today if Mochi vomits again by 9 PM tomorrow or Mochi vomits on each of the next two days.',
     ]);
   });
 

@@ -44,23 +44,23 @@ const EVERY_NEW_RULE_CARD: IncidentRedFlagFinding[] = (['call_now', 'call_today'
   ]),
 );
 
-describe('the earlier rule keeps today’s words (the dark state)', () => {
-  it('the Home row, the banner and the evidence are the shipped strings', () => {
+describe('an earlier-rule photo flag says the floor (CUL-2675 (a): the sign sets the floor, not the rule)', () => {
+  it('the Home row, the banner and the evidence say the floor\'s words', () => {
     const line = signalHomeLine(card());
     expect(line).toEqual({
       eyebrow: 'Photo read · Oct 8',
       headline: 'Possible blood in a vomit photo',
       count: null,
-      ask: 'worth a call to your vet',
+      ask: 'call your vet today',
     });
-    expect(bannerCopy(card(), 'Nyx').text).toBe('Nyx has a logged photo showing possible blood — worth a look.');
-    expect(evidenceText(card(), 'Nyx')).toContain("It's still worth a call to your vet");
+    expect(bannerCopy(card(), 'Nyx').text).toBe('Nyx has a logged photo showing possible blood — call your vet today.');
+    expect(evidenceText(card(), 'Nyx')).toContain('Call your vet today: they can look at what you logged');
     expect(sampleLine(card())).toBe('From an AI read of 1 logged photo');
   });
 
-  it('a tier this build does not know keeps the shipped ask, never a guess', () => {
+  it('a tier this build does not know gets the floor, never a guess at a softer word', () => {
     const odd = card({ tier: 'call_soon' as unknown as 'call_now' });
-    expect(incidentRedFlagAsk(odd)).toBe('worth a call to your vet');
+    expect(incidentRedFlagAsk(odd)).toBe('call your vet today');
     expect(bannerCopy(odd, 'Nyx').text).toBe(bannerCopy(card(), 'Nyx').text);
   });
 
