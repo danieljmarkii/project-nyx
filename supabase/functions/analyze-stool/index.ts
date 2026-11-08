@@ -519,7 +519,7 @@ function buildMonitorReadText(petName: string): string {
 // Escalation on a model-raised visual flag, used when the model didn't write its
 // own read. Names the present concern plainly (the safe direction) and routes to
 // the vet.
-function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
+export function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
   const p = petName || 'your pet'
   const hasBlood = visualFlags.includes('blood')
   const hasForeign = visualFlags.includes('suspected_foreign_material')
