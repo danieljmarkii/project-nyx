@@ -26,6 +26,8 @@ function card(extra: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
     daysBelowBaseline: 1,
     refusedFoodLabel: null,
     ratedMealsConsidered: 6,
+    // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
+    lastGoodMealIso: new Date(Date.now() - 2 * 3_600_000).toISOString(),
     allRefused: true,
     ...extra,
   };

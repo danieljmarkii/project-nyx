@@ -290,6 +290,9 @@ export interface IntakeDeclineFact {
   headline: string;
   /** CUL-2424: the detector's refusal fact (`consecutive_low` only): part of the decline's identity. */
   allRefused?: boolean;
+  /** CUL-2680: D3 when the phone's detector read the meals (no meal rated Most or All in 24 h).
+   *  NOT part of the decline's identity; read only by the vet line. Absent counts as met. */
+  noGoodMeal24h?: boolean;
 }
 
 /**
@@ -2504,7 +2507,7 @@ function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
   lines.push({
     role: 'flag',
     text:
-      trialDeclineVetLine(input.species, input.intakeDeclineFacts?.[0] ?? null, input.petName) +
+      trialDeclineVetLine(input.species, input.intakeDeclineFacts?.[0] ?? null, input.petName, input.intakeDeclineFacts?.[0]?.noGoodMeal24h) +
       // "isn't showing the trial numbers" was true only while this branch
       // rendered none. Adding the off-diet floor to it — correct, and this PR's
       // own change — made it a flat false statement rendered directly above a

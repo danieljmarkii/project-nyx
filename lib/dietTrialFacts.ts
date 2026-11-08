@@ -1096,6 +1096,8 @@ export function intakeDeclineFacts(
     headline: declineHeadline(flag, petName),
     // Present only when true: absent reads as not refused everywhere it is compared.
     ...(flag.allRefused === true ? { allRefused: true } : {}),
+    // CUL-2680: D3 at the read, for the vet line (`trialDeclineVetLine`). Absent stays the floor.
+    ...(typeof flag.noGoodMeal24h === 'boolean' ? { noGoodMeal24h: flag.noGoodMeal24h } : {}),
   }));
 }
 

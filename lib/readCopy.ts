@@ -128,6 +128,16 @@ export const READ_COPY_COLUMNS =
   'event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags, tier, ' +
   'contextual_flags, visual_flags, blood_present, stool_blood_present, foreign_material_present';
 
+/** The read's reasons (CUL-2678): the columns a list chip needs to pick the record's
+ *  reason-keyed words (`lib/incidentAskWords.ts`). Enum-shaped signs, never words. */
+export const READ_COPY_REASON_COLUMNS = [
+  'contextual_flags',
+  'visual_flags',
+  'blood_present',
+  'stool_blood_present',
+  'foreign_material_present',
+] as const;
+
 /** The copy's key in `sync_watermarks` (wiped at sign-out with the rest). Renamed from
  *  `event_ai_verdicts` when the stamps arrived (PR-12): a new name has no watermark, so
  *  the first pull after the upgrade reads every row once and fills the stamps a row pulled

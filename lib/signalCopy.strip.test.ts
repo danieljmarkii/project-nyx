@@ -202,6 +202,8 @@ const intake = (over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding 
   daysBelowBaseline: 1,
   refusedFoodLabel: null,
   ratedMealsConsidered: 9,
+  // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
+  lastGoodMealIso: new Date(Date.now() - 2 * 3_600_000).toISOString(),
   ...over,
 });
 const redFlag = (over: Partial<IncidentRedFlagFinding> = {}): IncidentRedFlagFinding => ({

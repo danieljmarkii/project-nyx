@@ -38,7 +38,7 @@ import type {
   RankedFinding,
   SymptomType,
 } from './detection.ts'
-import { allRefusedCallsToday } from './detection.ts'
+import { allRefusedCallsToday, intakeMeetsCatFloor } from './detection.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
 import { TIER_WORDS } from '../../../lib/incidentTierWords.ts'
@@ -167,12 +167,19 @@ function sustainedRefusalCounts(r: SustainedRefusalFacts): string {
 }
 
 // CUL-2593: the predicate lives with the ranker that also reads it (detection.ts); re-exported here.
-export { allRefusedCallsToday }
+export { allRefusedCallsToday, intakeMeetsCatFloor }
+
+/**
+ * CUL-2680: why a partial decline takes the floor, said as the record says it (an owner's
+ * ratings, a named window), before the floor's words. Mirrored on the client
+ * (`NO_GOOD_MEAL_CLAUSE`, lib/signalCopy.ts); keep the two in sync.
+ */
+export const NO_GOOD_MEAL_CLAUSE = "hasn't eaten most of any meal you rated in the last 24 hours"
 
 /** The vet clause of an all-refused card: the floor's call today (every species but a dog, which
  *  meets the cat floor, CUL-2668 / CUL-2654 D3, D4), or (a dog) the conditional word. */
 function allRefusedAsk(f: IntakeDeclineFinding): string {
-  return allRefusedCallsToday(f)
+  return intakeMeetsCatFloor(f)
     ? FLOOR_ASK.inline
     : 'worth keeping an eye on, and a word with your vet if it carries on'
 }
@@ -180,14 +187,18 @@ function allRefusedAsk(f: IntakeDeclineFinding): string {
 export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string): string {
   // Safety finding: calm, clear, points toward keeping an eye on it + the vet.
   // Never reassures, never frames reduced eating as fussiness.
+  // CUL-2680: a partial card for a pet (not a dog) with no meal eaten well in 24 h is the floor.
+  const floor = intakeMeetsCatFloor(f)
   if (f.trigger === 'refused_then_vomited' && f.refusedThenVomited) {
-    return refusedThenVomitedSentence(f.refusedThenVomited, petName)
+    const sentence = refusedThenVomitedSentence(f.refusedThenVomited, petName)
+    return floor ? `${sentence} ${petName} ${NO_GOOD_MEAL_CLAUSE}, so ${FLOOR_ASK.inline}.` : sentence
   }
   if (f.trigger === 'sustained_refusal' && f.sustainedRefusal) {
     return sustainedRefusalSentence(f.sustainedRefusal, petName, f.species)
   }
   if (f.trigger === 'refused_normal_food') {
     const food = f.refusedFoodLabel ?? 'a food they usually finish'
+    if (floor) return `${petName} just turned down ${food}, which ${petName} normally eats, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`
     return `${petName} just turned down ${food}, which ${petName} normally eats — worth keeping an eye on, and a word with your vet if it carries on.`
   }
   const span = f.daysBelowBaseline <= 1 ? 'today' : `the last ${numWord(f.daysBelowBaseline)} days`
@@ -198,6 +209,7 @@ export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string):
     const when = f.daysBelowBaseline <= 1 ? 'today' : `over ${span}`
     return `${petName} refused every meal you rated ${when} — ${allRefusedAsk(f)}.`
   }
+  if (floor) return `${petName} has eaten less than usual ${span}, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`
   return `${petName} has eaten less than usual ${span} — worth keeping an eye on, and a word with your vet if it carries on.`
 }
 
@@ -743,7 +755,7 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
             : 'worth raising with your vet'
         : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
           ? 'worth booking a vet visit'
-        : f.type === 'intake_decline' && (f.trigger === 'sustained_refusal' || allRefusedCallsToday(f))
+        : f.type === 'intake_decline' && (f.trigger === 'sustained_refusal' || intakeMeetsCatFloor(f))
           ? // CUL-2668: the carried card keeps the live card's clock and register: the floor for
             // every species but a dog, a dog's sustained refusal the deferential call today.
             f.trigger === 'sustained_refusal' && f.species === 'dog'
@@ -913,6 +925,12 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // CUL-2424: NO MODEL SENTENCE IS EVER ACCEPTED on a day of nothing but refusals. The model is
     // handed "days eating less" and words it as less; the template says refused. index.ts routes
     // the card to its template; this is the backstop.
+    return false
+  }
+  if (finding.type === 'intake_decline' && intakeMeetsCatFloor(finding)) {
+    // CUL-2680: NO MODEL SENTENCE IS EVER ACCEPTED on a card that meets the floor. The model's
+    // payload has no 24-hour fact, so it words a partial card conditionally ("if it carries on");
+    // the template says the floor. The rejected sentence falls back to that template.
     return false
   }
   if (finding.type === 'intake_decline' && finding.refusedThenVomited !== undefined) {

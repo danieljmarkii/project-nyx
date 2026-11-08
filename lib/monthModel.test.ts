@@ -662,3 +662,32 @@ describe('Q12 (CUL-1539): the bar over a week a bout carries into says so', () =
     expect(m.weekly.weeks.some((w) => w.carriedIn)).toBe(false);
   });
 });
+
+// CUL-2678 (PM ruling (a), 2026-11-08): an earlier-rule day the record raises to the floor keeps
+// its rule's count and date, says the floor's words on its own day, and the earlier line names both.
+describe('a raised earlier-rule day (CUL-2678, ruling (a))', () => {
+  const raised = (over: Partial<MonthCallRead> = {}): MonthCallRead => ({ eventId: 'b', day: '2026-09-05', verdict: 'worth_a_call' as const, readAs: 'call today', ...over });
+
+  it('keeps the earlier count, speaks the floor on its day, and the earlier line names both words', () => {
+    const reads: MonthCallRead[] = [raised(), { eventId: 'c', day: '2026-09-11', verdict: 'worth_a_call', readAs: 'worth a call' }];
+    const m = septModel({ callReads: reads });
+    const byKey = new Map(m.days.map((d) => [d.key, d]));
+    expect(byKey.get('2026-09-05')?.callReadAs).toBe('call today');
+    expect(byKey.get('2026-09-11')?.callReadAs).toBe('worth a call');
+    expect(monthCallDays(m)).toEqual({ earlier: 2, tiered: 0, raised: 1 });
+    expect(monthA11yLabel(m, { meds: false, photos: false })).toContain('Read as worth a call or call today on 2 days.');
+  });
+
+  it('a day holding a plain earlier read and a raised one says the louder', () => {
+    const reads: MonthCallRead[] = [{ eventId: 'a', day: '2026-09-05', verdict: 'worth_a_call', readAs: 'worth a call' }, raised()];
+    const m = septModel({ callReads: reads });
+    expect(m.days.find((d) => d.key === '2026-09-05')?.callReadAs).toBe('call today');
+  });
+
+  it('with no raised day the earlier line is unchanged', () => {
+    const reads: MonthCallRead[] = [{ eventId: 'c', day: '2026-09-11', verdict: 'worth_a_call' }];
+    const m = septModel({ callReads: reads });
+    expect(monthA11yLabel(m, { meds: false, photos: false })).toContain('Read as worth a call on 1 day.');
+  });
+});
+

@@ -1204,12 +1204,17 @@ export function evidenceText(
   if (finding.trigger === 'refused_then_vomited') {
     // Only witnessed vomits count (a found pile's time is a guess), and nothing is said of the
     // nights she refused and did not vomit: ratings are exception-only, so no rate is honest.
+    const floorTail = intakeMeetsCatFloor(finding, nowMs) ? ` ${petName} ${NO_GOOD_MEAL_CLAUSE}, so ${FLOOR_ASK.inline}.` : '';
     return i5
-      ? `${i5} Only vomiting you saw is counted, each time measured from a meal you marked Refused.`
-      : `${petName} vomited soon after turning down a meal. That's worth mentioning to your vet.`;
+      ? `${i5} Only vomiting you saw is counted, each time measured from a meal you marked Refused.${floorTail}`
+      : `${petName} vomited soon after turning down a meal. That's worth mentioning to your vet.${floorTail}`;
   }
   if (finding.trigger === 'refused_normal_food') {
     const food = finding.refusedFoodLabel ?? 'a food they normally finish';
+    // CUL-2680: the mirror of phrasing.ts's floor sentence for this trigger.
+    if (intakeMeetsCatFloor(finding, nowMs)) {
+      return `${petName} just turned down ${food}, which is normally eaten, and ${NO_GOOD_MEAL_CLAUSE}. Eating less can be an early sign something's off, so ${FLOOR_ASK.inline}.${i5Tail}`;
+    }
     return (
       `${petName} just turned down ${food}, which is normally eaten. Eating less can be an early sign ` +
       `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`
@@ -1223,9 +1228,18 @@ export function evidenceText(
     return (
       `${petName} refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)}, compared with ` +
       `${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Refusing food can be an early sign ` +
-      (intakeAllRefusedCallsToday(finding)
+      (intakeMeetsCatFloor(finding, nowMs)
         ? `something's off, so ${FLOOR_ASK.inline}.${i5Tail}`
         : `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`)
+    );
+  }
+  if (intakeMeetsCatFloor(finding, nowMs)) {
+    // CUL-2680: a cat (any species but a dog) with no meal eaten well in 24 h is the floor,
+    // whatever the card's trigger. The mirror of phrasing.ts templateIntakeDecline.
+    return (
+      `${petName} has eaten less than usual for ${count(finding.daysBelowBaseline, 'day', 'days')}, ` +
+      `compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}, and ${NO_GOOD_MEAL_CLAUSE}. ` +
+      `Eating less can be an early sign something's off, so ${FLOOR_ASK.inline}.${i5Tail}`
     );
   }
   return (
@@ -1973,6 +1987,34 @@ export function intakeAllRefusedCallsToday(finding: SignalFinding): boolean {
   return intakeAllRefused(finding) && finding.type === 'intake_decline' && finding.species !== 'dog';
 }
 
+/** D3's window (clinical-guardrails line 85): no meal rated Most or All in this many hours.
+ *  The mirror of detection.ts `NO_GOOD_MEAL_HOURS`. */
+export const NO_GOOD_MEAL_HOURS = 24;
+
+/** Why a partial intake card takes the floor. The mirror of phrasing.ts `NO_GOOD_MEAL_CLAUSE`. */
+export const NO_GOOD_MEAL_CLAUSE = "hasn't eaten most of any meal you rated in the last 24 hours";
+
+/**
+ * CUL-2680 (D3, clinical-guardrails line 85: the predicate wins over the card type): whether an
+ * intake card meets the floor, for any species but a dog. An all-refused card does; so does a
+ * card whose pet has had no meal rated Most or All for 24 hours, by the engine's fact OR by the
+ * clock since its last good meal (`lastGoodMealIso`), so a cat crossing the 24 hours after the
+ * run firms up without waiting for one. The mirror of detection.ts `intakeMeetsCatFloor`, plus
+ * the clock.
+ *
+ * Fails toward the floor: a cache written before `lastGoodMealIso` reads the stricter All-only
+ * anchor (`lastFullMealIso`), and one with neither fact counts as met. `liveCheck` is a caller's
+ * own meal check (the strip's `catNoGoodMeal24h`); it can only add the floor.
+ */
+export function intakeMeetsCatFloor(finding: SignalFinding, nowMs: number = Date.now(), liveCheck?: boolean): boolean {
+  if (finding.type !== 'intake_decline' || finding.species === 'dog') return false;
+  if (intakeAllRefusedCallsToday(finding) || finding.noGoodMeal24h === true || liveCheck === true) return true;
+  const anchor = finding.lastGoodMealIso !== undefined ? finding.lastGoodMealIso : finding.lastFullMealIso;
+  if (anchor === undefined || anchor === null) return true;
+  const t = Date.parse(anchor);
+  return !Number.isFinite(t) || !Number.isFinite(nowMs) || nowMs - t >= NO_GOOD_MEAL_HOURS * 3_600_000;
+}
+
 /**
  * CUL-2604: how loud a non-incident safety card's ask is, inside its own lane: 0 is the lane's
  * softest ask. An intake card asking for a call today (an all-refused card, the sustained-refusal
@@ -1984,7 +2026,7 @@ export function intakeAllRefusedCallsToday(finding: SignalFinding): boolean {
 export function safetyAskLevel(finding: SignalFinding): number {
   switch (finding.type) {
     case 'intake_decline':
-      return finding.trigger === 'sustained_refusal' || intakeAllRefusedCallsToday(finding) ? 1 : 0;
+      return finding.trigger === 'sustained_refusal' || intakeMeetsCatFloor(finding) ? 1 : 0;
     case 'symptom_burden':
       return finding.tier === 'today' ? 1 : 0;
     case 'symptom_chronicity':
@@ -2835,9 +2877,11 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
         ? ` hasn't eaten well at any meal you watched and rated lately — worth a look.`
         : ` hasn't eaten well at any meal you watched and rated lately — ${FLOOR_ASK.inline}.`;
     }
+    // CUL-2680: a pet (not a dog) with no meal eaten well in 24 h is the floor on every trigger.
+    const look = intakeMeetsCatFloor(finding, nowMs) ? FLOOR_ASK.inline : 'worth a look';
     if (finding.trigger === 'refused_then_vomited') {
       // I5 (PR-30s): the sequence, never a cause; the banner's own calm ask.
-      return ` vomited soon after turning down a meal on more than one day — worth a look.`;
+      return ` vomited soon after turning down a meal on more than one day — ${look}.`;
     }
     if (finding.trigger === 'refused_normal_food') {
       // Names the refused food (intake, not a timing-only finding — naming it is
@@ -2845,8 +2889,8 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
       // label, drop the trailing clause so the sentence doesn't read "a meal they
       // usually finish, which they usually finish" (code-review fix).
       return food
-        ? ` turned down ${food}, which they usually finish — worth a look.`
-        : ` turned down a meal they usually finish — worth a look.`;
+        ? ` turned down ${food}, which they usually finish — ${look}.`
+        : ` turned down a meal they usually finish — ${look}.`;
     }
     if (finding.trigger !== 'consecutive_low') {
       // CUL-2405: an unknown trigger; no "less than usual", and the ask kept on the banner.
@@ -2855,11 +2899,11 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
     if (intakeAllRefused(finding)) {
       // CUL-2424: a refusal reads as one on the banner too.
       // CUL-2667 (D4): an all-refused card for any species but a dog is floor.
-      return ` refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)} — ${intakeAllRefusedCallsToday(finding) ? FLOOR_ASK.inline : 'worth a look'}.`;
+      return ` refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)} — ${look}.`;
     }
     const span =
       finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;
-    return ` has eaten less than usual ${span} — worth a look.`;
+    return ` has eaten less than usual ${span} — ${look}.`;
   }
   if (finding.type === 'symptom_burden') {
     // Engines v3 PR-14d (CUL-1410) — the run or the count, the card's own words; the ask lives
@@ -2990,6 +3034,8 @@ export interface StripContext {
   /** CUL-2667: the live D3 predicate for this pet (no meal rated Most or All in 24 h, for an
    *  owner who rates meals). Only ever adds the floor. */
   catNoGoodMeal24h?: boolean;
+  /** CUL-2680: the clock the 24 hours are read against; absent, the device's. */
+  nowMs?: number;
 }
 
 /** A year-less day for the strip: the short form printed, the spoken form for VoiceOver. */
@@ -3143,8 +3189,9 @@ export function stripAskLine(finding: SignalFinding, ctx: StripContext = {}): st
       if (finding.trigger === 'sustained_refusal') return finding.species === 'dog' ? STRIP_ASKS.callToday : STRIP_ASKS.call;
       // CUL-2593: an all-refused card asks for a call today for every species but a dog, whose
       // card keeps its conditional ask (the strip never out-escalates its card).
-      if (intakeAllRefusedCallsToday(finding)) return STRIP_ASKS.call;
-      if (finding.species !== 'dog' && ctx.catNoGoodMeal24h === true) return STRIP_ASKS.call;
+      // CUL-2680: and a pet (not a dog) with no meal eaten well in 24 h, by the engine's fact or
+      // the clock since its last good meal, or by a caller's own live check.
+      if (intakeMeetsCatFloor(finding, ctx.nowMs, ctx.catNoGoodMeal24h)) return STRIP_ASKS.call;
       if (finding.trigger === 'refused_then_vomited') return STRIP_ASKS.tell;
       return finding.trigger === 'consecutive_low' || finding.trigger === 'refused_normal_food' ? STRIP_ASKS.check : STRIP_ASKS.call;
     case 'incident_red_flag':

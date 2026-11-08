@@ -67,6 +67,11 @@ interface ServerRow {
   engine_flags?: unknown;
   model_id?: string | null;
   prompt_hash?: string | null;
+  contextual_flags?: unknown;
+  visual_flags?: unknown;
+  blood_present?: unknown;
+  stool_blood_present?: unknown;
+  foreign_material_present?: unknown;
 }
 interface Query {
   cols: string;
@@ -197,6 +202,7 @@ import { BASE_SCHEMA_SQL } from './localSchema';
 import { HYDRATE_WATERMARK_OVERLAP_MS } from './hydration';
 import {
   READ_COPY_COLUMNS,
+  READ_COPY_REASON_COLUMNS,
   READ_COPY_PAGE,
   READ_COPY_PULL_BUDGET_MS,
   READ_COPY_WATERMARK_KEY,
@@ -209,6 +215,7 @@ import {
   writeCopies,
 } from './readCopy';
 import { newSinceLineOf } from './ruleSeam';
+import { usePetStore } from '../store/petStore';
 
 const never = () => false;
 
@@ -995,5 +1002,124 @@ describe('readPetSeamReads — the pet\'s reads for EN-3\'s "New since" line (CU
     expect(newSinceLineOf('later', reads, '2026-10-20', 'Nyx')).toBeNull();
     // Milo has only new-rule reads: nothing to keep its words, so no line.
     expect(newSinceLineOf('other', await readPetSeamReads('milo'), '2026-10-20', 'Milo')).toBeNull();
+  });
+});
+
+// ── CUL-2678: the read's reasons, and the record's cat check ───────────────────────────────────
+describe('the reasons (CUL-2678): the copy keeps what a chip needs to pick the record’s words', () => {
+  const EN3 = ['engines_v3_en3'];
+  const reasonsOf = (id: string) =>
+    mockDb
+      .prepare('SELECT contextual_flags, visual_flags, blood_present, stool_blood_present, foreign_material_present FROM event_ai_verdicts WHERE event_id = ?')
+      .get(id);
+  const callToday = (id: string, over: Partial<ServerRow> = {}) => ({
+    ...stamped(id, '2026-09-30T10:00:00+00:00', { recommendation: 'worth_a_call', engine_flags: EN3 }),
+    tier: 'call_today',
+    contextual_flags: ['repeated_vomiting'],
+    visual_flags: [],
+    blood_present: 'none_visible',
+    foreign_material_present: 'no',
+    ...over,
+  });
+
+  it('a server row lands with its two flag arrays as JSON and its three signs as text', async () => {
+    await writeCopies(mockAdapter, [callToday('a', { visual_flags: ['blood'], blood_present: 'fresh_red' })], never);
+    expect(reasonsOf('a')).toEqual({
+      contextual_flags: '["repeated_vomiting"]',
+      visual_flags: '["blood"]',
+      blood_present: 'fresh_red',
+      stool_blood_present: null,
+      foreign_material_present: 'no',
+    });
+  });
+
+  it('an unreadable array is NULL (not supplied, so the floor), and an unreadable member is a flag no build knows', async () => {
+    await writeCopies(mockAdapter, [callToday('a', { contextual_flags: 'repeated_vomiting', visual_flags: ['Blood!', 'blood'] })], never);
+    expect(reasonsOf('a')).toMatchObject({ contextual_flags: null, visual_flags: '["?","blood"]' });
+  });
+
+  it('the same version fills reasons a row pulled before this build lacks, once', async () => {
+    const before = { ...callToday('a') } as Record<string, unknown>;
+    for (const k of ['contextual_flags', 'visual_flags', 'blood_present', 'stool_blood_present', 'foreign_material_present']) delete before[k];
+    await writeCopies(mockAdapter, [before as Partial<ServerRow>], never);
+    expect(reasonsOf('a')).toMatchObject({ contextual_flags: null, visual_flags: null });
+    expect(await writeCopies(mockAdapter, [callToday('a')], never)).toBe(1);
+    expect(reasonsOf('a')).toMatchObject({ contextual_flags: '["repeated_vomiting"]', visual_flags: '[]' });
+    expect(await writeCopies(mockAdapter, [callToday('a')], never)).toBe(0);
+  });
+
+  it('the pull asks for the five reasons, and never for the words', () => {
+    for (const c of READ_COPY_REASON_COLUMNS) expect(READ_COPY_COLUMNS).toContain(c);
+    expect(READ_COPY_COLUMNS).not.toMatch(/read_text|dismissed_at|ai_raw_payload|edited_at/);
+  });
+
+  describe('the cat check on a call today (the record’s `catNoGoodMeal24hOf`, read where the copy is)', () => {
+    // `Date.now()` is pinned to 2026-09-25T09:30Z above.
+    const NOW = Date.parse('2026-09-25T09:30:00Z');
+    const iso = (hoursAgo: number) => new Date(NOW - hoursAgo * 3_600_000).toISOString();
+    let mealN = 0;
+    const event = (id: string, petId: string) =>
+      mockDb.prepare("INSERT INTO events (id, pet_id, event_type, occurred_at) VALUES (?, ?, 'vomit', ?)").run(id, petId, iso(1));
+    const meal = (petId: string, hoursAgo: number, rating: string) => {
+      const id = `meal-${(mealN += 1)}`;
+      mockDb.prepare("INSERT INTO events (id, pet_id, event_type, occurred_at) VALUES (?, ?, 'meal', ?)").run(id, petId, iso(hoursAgo));
+      mockDb.prepare('INSERT INTO meals (id, event_id, pet_id, intake_rating) VALUES (?, ?, ?, ?)').run(`m-${id}`, id, petId, rating);
+    };
+    const pets = (list: { id: string; species: 'cat' | 'dog' | 'other' }[]) =>
+      usePetStore.setState({ pets: list.map((p) => ({ ...p, name: p.id })) } as never);
+
+    beforeEach(() => {
+      mockDb.exec('ALTER TABLE meals ADD COLUMN intake_rating TEXT');
+      pets([]);
+    });
+
+    it('a cat 37 hours past her last Most or All meal meets it; a cat who ate well this morning does not', async () => {
+      pets([{ id: 'kiki', species: 'cat' }, { id: 'momo', species: 'cat' }]);
+      event('k', 'kiki');
+      event('m', 'momo');
+      meal('kiki', 37, 'all');
+      for (const h of [26, 12, 2]) meal('kiki', h, 'some');
+      meal('momo', 3, 'most');
+      await writeCopies(mockAdapter, [callToday('k'), callToday('m')], never);
+      const got = await readCopies(['k', 'm']);
+      expect(got.get('k')?.catNoGoodMeal24h).toBe(true);
+      expect(got.get('m')?.catNoGoodMeal24h).toBe(false);
+    });
+
+    it('a dog and an `other` get no check; a pet the store does not know is checked as a cat; an event the phone lacks counts as met', async () => {
+      pets([{ id: 'rex', species: 'dog' }, { id: 'pip', species: 'other' }]);
+      event('r', 'rex');
+      event('p', 'pip');
+      event('u', 'unknown-pet');
+      event('u2', 'unknown-rater');
+      // The record's own rule: a species it cannot see is a cat's, read from the pet's meals.
+      for (const h of [30, 20, 6]) meal('unknown-rater', h, 'little');
+      await writeCopies(mockAdapter, [callToday('r'), callToday('p'), callToday('u'), callToday('u2'), callToday('gone')], never);
+      const got = await readCopies(['r', 'p', 'u', 'u2', 'gone']);
+      expect(got.get('r')?.catNoGoodMeal24h).toBeUndefined();
+      expect(got.get('p')?.catNoGoodMeal24h).toBeUndefined();
+      // No rated meal this week: not an owner who rates meals, so D3 cannot be met (the record's
+      // `intakeFlagAt`, the same answer).
+      expect(got.get('u')?.catNoGoodMeal24h).toBe(false);
+      expect(got.get('u2')?.catNoGoodMeal24h).toBe(true);
+      expect(got.get('gone')?.catNoGoodMeal24h).toBe(true);
+    });
+
+    it('only a call today is checked', async () => {
+      pets([{ id: 'kiki', species: 'cat' }]);
+      event('e', 'kiki');
+      await writeCopies(mockAdapter, [{ ...callToday('e'), tier: 'call_now' }], never);
+      expect((await readCopies(['e'])).get('e')?.catNoGoodMeal24h).toBeUndefined();
+    });
+
+    it('a meal read that fails keeps the floor', async () => {
+      pets([{ id: 'kiki', species: 'cat' }]);
+      event('k', 'kiki');
+      await writeCopies(mockAdapter, [callToday('k')], never);
+      mockDb.exec('DROP TABLE meals');
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      expect((await readCopies(['k'])).get('k')?.catNoGoodMeal24h).toBe(true);
+      warn.mockRestore();
+    });
   });
 });
