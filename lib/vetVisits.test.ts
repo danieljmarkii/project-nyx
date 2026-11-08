@@ -388,6 +388,16 @@ describe('the appointment view', () => {
     expect(buildAppointmentView(appointment(), new Date(2026, 8, 16, 23, 30)).isToday).toBe(true);
   });
 
+  // The notes door reads *Your notes* once a draft exists, so an owner coming back
+  // can see their notes are kept (PM on device, 2026-11-07). Whitespace is no notes.
+  it('says notes exist only for a non-blank draft', () => {
+    const now = new Date(2026, 8, 14);
+    expect(buildAppointmentView(appointment(), now).hasNotes).toBe(false);
+    expect(buildAppointmentView({ ...appointment(), notes_draft: null }, now).hasNotes).toBe(false);
+    expect(buildAppointmentView({ ...appointment(), notes_draft: '  \n ' }, now).hasNotes).toBe(false);
+    expect(buildAppointmentView({ ...appointment(), notes_draft: 'Ask about ears' }, now).hasNotes).toBe(true);
+  });
+
   it('is NOT today the day before, or the day after', () => {
     expect(buildAppointmentView(appointment(), new Date(2026, 8, 15, 23, 59)).isToday).toBe(false);
     expect(buildAppointmentView(appointment(), new Date(2026, 8, 17, 0, 1)).isToday).toBe(false);

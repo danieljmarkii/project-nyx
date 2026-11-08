@@ -92,6 +92,7 @@ export function VetVisitsCard({
               control inside one is hidden from assistive tech entirely. */}
           <AppointmentActions
             petName={petName}
+            hasNotes={model.next.hasNotes}
             onAtTheVet={() => onTakeNotes(model.next!.id)}
           />
         </>

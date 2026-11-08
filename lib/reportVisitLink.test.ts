@@ -134,7 +134,7 @@ describe('linkSavedReport', () => {
   });
 });
 
-const appt = (id: string, day: string, when: string, where = '') => ({ id, petId: PET, scheduledAt: '', stamp: null, when, day, where, isToday: day === 'Today' });
+const appt = (id: string, day: string, when: string, where = '') => ({ id, petId: PET, scheduledAt: '', stamp: null, when, day, where, isToday: day === 'Today', hasNotes: false });
 
 const HOME: VetVisitsHome = {
   next: appt(APPT, 'Tomorrow', 'Tomorrow · 3:00 pm', 'Riverside'),

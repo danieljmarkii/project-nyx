@@ -153,6 +153,23 @@ describe('the notes door (CUL-966)', () => {
     expect(props.onTakeNotes).toHaveBeenCalledWith('a1');
   });
 
+  it('reads "Your notes" once notes exist, and still opens the same booking', () => {
+    const withNotes = buildVetVisitsCardModel(
+      {
+        next: buildAppointmentView({ ...appointment, notes_draft: 'Ask about the ear' }, NOW),
+        later: [],
+        awaiting: [],
+        visits: [],
+      },
+      NOW,
+    );
+    const props = renderCard(withNotes);
+    expect(screen.queryByText('Take notes')).toBeNull();
+    fireEvent.press(screen.getByText('Your notes'));
+    expect(props.onTakeNotes).toHaveBeenCalledWith('a1');
+    expect(screen.getByLabelText('Your notes for Nyx’s visit')).toBeTruthy();
+  });
+
   it('never offers "How did it go?" here — that door is gated and is the list\'s', () => {
     renderCard(booked);
     expect(screen.queryByText('How did it go?')).toBeNull();
