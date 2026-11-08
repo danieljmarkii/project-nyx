@@ -11,7 +11,7 @@ Extracted from B-027 (`supabase/functions/analyze-vomit/`, `components/event/Vom
 
 > A single-incident AI read may **escalate** on the *presence* of a visible red flag → "worth a call to your vet," never a diagnosis. It must **never reassure** on the *absence* of one. Absence of a visible flag ≠ wellness. The clear-foam-once-but-cat-hasn't-eaten-36h case is the feline 48hr hepatic-lipidosis call. Reassurance, if ever, comes only from a cross-incident multi-sample read.
 
-**How firmly the app asks is set by the reason, not the tier (CUL-2654, PM 2026-11-07, `docs/clinical-voice-inventory-2026-11.md` §R).** The owner decides: every ask gives the data and a nudge (Pattern 11), except **the floor**, which keeps direct words ("Call your vet today. If they're closed, call an emergency clinic."): blood in vomit or stool · suspected foreign material · a cat with no meal rated Most or All in 24 h (for an owner who rates meals) · collapse or a breathing sign (the door's printed list) · any read tiered `call_now`. Softening the verb is never softening the escalation: every red flag still surfaces, and the floor never gets quieter.
+**How firmly the app asks is set by the reason, not the tier (CUL-2654, PM 2026-11-07, `docs/clinical-voice-inventory-2026-11.md` §R).** The owner decides: every ask gives the data and a nudge (Pattern 11), except **the floor**, which keeps direct words ("Call your vet today. If they're closed, call an emergency clinic."; a `call_now` read keeps its own "now" words): blood in vomit or stool · suspected foreign material · a cat with no meal rated Most or All in 24 h (for an owner who rates meals) · collapse or a breathing sign (the door's printed list) · any read tiered `call_now`. Softening the verb is never softening the escalation: every red flag still surfaces, and the floor never gets quieter.
 
 This skill is the citable, code-grounded version of that rule. A new per-incident AI feature (skin, eye, the rest of B-013) inherits these patterns by reference.
 
@@ -82,7 +82,7 @@ export function applyEscalationFloor(params: {
 
 **THE FLOOR IN TIERS (EN-3, CUL-1133).** The floor still returns one of the three verdicts, and the tier is mapped from it after every downstream step (the partial-read collapse included), so the floor has no path to a quiet tier over a flag either. Today every escalation maps to `call_today`; a `call_now` is written only by a rule that decides it, with its own review (EN-4's counts, EN-6's photo rows). **The model's own escalation** (its `worth_a_call` with no visual or contextual flag behind it, GAP-31) is `call_today`, keeps its words (Pattern 10 is unchanged: model text rides only the self-escalated path), and is told apart by `tierReasonOf` (`model_only`), never promoted to `call_now`. **Never-lower binds the call tiers only** (`_shared/incident-analysis.ts`): a stored call holds over a quieter verdict (`holdsOver`, reading the louder column), and a call written over a louder stored call keeps the stored tier while its own findings still land (`keepLouderTier`: a hold there would keep fresh blood off the structured columns); `logged` ↔ `not_enough_to_say` moves freely, so an unreadable or partial re-read can still collapse a calm read (B-203, CUL-812).
 
-**THE WORDS ARE KEYED BY REASON (D1, CUL-2654).** A tier cannot tell a blood photo from a dog that vomited twice, so one pure function shared by phone and server picks the words from the owner-editable structured fields (Pattern 9: `blood_present`, `stool_blood_present`, `foreign_material_present`), `contextual_flags` and the tier. **Any floor reason present wins**, whatever else is on the row: never key the words on `tierReasonOf`'s single reason (it returns `contextual` before `visual`). The cat predicate is live, not frozen at the read: a cat read shown after the 24 h mark re-checks it, and it wins over the card type (a `consecutive_low` cat that meets it is floor). On every surface, a reason, trigger or sign the build does not know gets the floor words. No literal floor string lives outside that module.
+**THE WORDS ARE KEYED BY REASON (D1, CUL-2654).** A tier cannot tell a blood photo from a dog that vomited twice, so one pure function shared by phone and server picks the words from the tier, `contextual_flags`, the structured fields (Pattern 9: `blood_present`, `stool_blood_present`, `foreign_material_present`) and, on a row the owner never edited, `visual_flags` (a rescue write has no structured column). **Any floor reason present wins**, whatever else is on the row: never key the words on `tierReasonOf`'s single reason (it returns `contextual` before `visual`). The cat predicate is live, not frozen at the read: a cat read shown after the 24 h mark re-checks it (the check can add the floor, never remove it), and it wins over the card type (a `consecutive_low` cat that meets it is floor). On every surface, a reason, trigger or sign the build does not know gets the floor words. No literal floor string lives outside that module.
 
 **A CONTEXTUAL FLAG MUST BE TRUE OF THIS SAMPLE, AND QUIETING NEEDS POSITIVE EVIDENCE (EN-7, CUL-1138).** A flag's words describe the incident it lands on: stool's `concurrent_vomiting` used to describe loose stool over a formed one. Under the key the flag is computed as before the read (so a capped, unreadable, failed or photoless read keeps the call), and is WITHDRAWN only after a complete read shows a formed stool (Bristol 2 to 4) and nothing else asks for it: not logged Loose, the vomiting not meeting the vomit read's repeat rule (`_shared/vomitRepeat.ts`), and not the vomit read's own feline intake arm (the stool asks the vomit's questions, because a photoless vomit gets no read of its own until its record is opened). Each reason has its own sentence. A withdrawal is a bounded framework exception (`ContextualRun.withdrawable` + `afterRead`, `mergeAfterRead`): only named flags, only on a COMPLETE read of a SINGLE-photo event (one set of structured fields cannot speak for several frames), never over an owner's corrected field, never on the cap or rescue path; and an owner's edit away from formed re-runs the read (`needsEn7Recheck`, `lib/stoolForm.ts`, CUL-1408), so a correction always gets the call back. Any other descriptor still cannot weaken the floor.
 
@@ -165,7 +165,7 @@ if (usableBlobs.length === 0) {
   const imageParts = await Promise.all(usableBlobs.map(blobToImagePart))
   try {
     analysis = await runVisionCall(imageParts)
-    if (!analysis) throw new Error('no analysis')
+    if (!analysis) throw new Error('Vision model did not return an analysis')
   } catch (visionErr) {
     const msg = visionErr instanceof Error ? visionErr.message : String(visionErr)
     if (msg.includes('Claude API error 400')) {
@@ -262,7 +262,7 @@ export function buildAnalysisWriteBack(params): AnalysisWriteBack {
 
 ## PATTERN 8: The Never-Reassure Invariant Is a Test Assertion, Not Just a Comment
 
-**RULE:** Every templated owner-facing string that the function can emit (contextual read text, no-flag fallback, photo-unreadable fallback) must be covered by a test that scans for reassurance words and asserts none appear. Documentation comments are not enough — the test is the guardrail.
+**RULE:** Every templated owner-facing string that the function can emit (contextual read text, no-flag fallback, photo-unreadable fallback) must be covered by a test that scans for reassurance words and asserts none appear. A comment is not enough: the test is the guardrail.
 
 **CANONICAL EXAMPLE** (`supabase/functions/analyze-vomit/index.test.ts:545–554`; the regex is now a file-local `REASSURE_VOCAB`, copied word for word at `analyze-stool/index.test.ts:537`, so widen both together):
 
@@ -280,7 +280,7 @@ Deno.test('buildContextualReadText — never reassures', () => {
 })
 ```
 
-**ANTI-PATTERN:** Adding a new templated read string and leaving the invariant as a code comment ("no reassurance here, by convention"). Future copy edits — by you, by me, by a future contributor copying the function for a sibling incident type — will quietly drift. Extend the regex test to every new template before merging.
+**ANTI-PATTERN:** A new template whose invariant is only a comment ("no reassurance here, by convention"): copy edits drift. Extend the regex test to every new template before merging.
 
 ---
 
@@ -356,7 +356,7 @@ analysis.description = selectDescription({
 
 **THE COUNTEREXAMPLE (why the Never column exists).** *"If this isn't like Mochi, a call today is worth it"* breaks on the chronic vomiter: a dog that vomits twice a week **is** like Mochi, so the owner's baseline turns the call into a stand-down, and vets say owners under-report normalised vomiting. The deference lives in the verb, never in a condition the owner's sense of normal can switch off.
 
-**THE NEVER COLUMN IS A TEST (Pattern 8):** the words module, phone and server, is scanned for it beside `REASSURE_VOCAB`.
+**THE NEVER COLUMN IS A TEST (Pattern 8):** every owner-facing ask string, phone and server, is scanned for it beside `REASSURE_VOCAB`.
 
 **ANTI-PATTERN:** softening a floor case ("worth a look" over a blood photo), or a softened ask that loses its clock. A floor case that reads softer than the floor today is firmed up, never left (D4).
 
