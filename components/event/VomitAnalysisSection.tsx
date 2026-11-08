@@ -974,7 +974,12 @@ export function VomitAnalysisSection(
   const datedCall = display === 'call_now' ? recordDatedCallNow(floorFacts?.anchor?.at ?? null, row.call_said_at ?? row.updated_at ?? null, clockNow) : null;
   // CUL-2667: the call's words follow its reason. A cat's facts not yet read count as the cat
   // floor (it can only add the floor, so the loud words stand until the record answers).
-  const askOpts = { catNoGoodMeal24h: catNoGoodMeal24hOf(catCallToday, mayWaitFacts, clockNow) };
+  // The owner's own edits (the diff against the model's payload) are the only thing that can
+  // silence the photo's flag, and only on the sign they changed.
+  const askOpts = {
+    catNoGoodMeal24h: catNoGoodMeal24hOf(catCallToday, mayWaitFacts, clockNow),
+    ownerEdited: deriveEditedFields(currentEditable(row), extractEditableFromPayload(row.ai_raw_payload)),
+  };
   const askLevel = askLevelOf(row, askOpts);
   const callLabel = datedCall?.label ?? incidentReadLabel(row, askOpts);
   const readLabel = pattern ? PATTERN_WORDS.label : callLabel;

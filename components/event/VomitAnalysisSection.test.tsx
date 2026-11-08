@@ -2598,6 +2598,28 @@ describe('VomitAnalysisSection — the reason picks the words (CUL-2667)', () =>
     expect(await unknown.findByText('Call your vet today')).toBeTruthy();
   });
 
+  it('the model\'s own "none" beside its blood flag is not the owner\'s word; the owner\'s change of that sign is', async () => {
+    setSpecies('dog');
+    // The suite stubs the diff; this case needs the real one (C-34: drive the real function).
+    const mocked = jest.requireMock('../../lib/analysis') as { deriveEditedFields: jest.Mock; extractEditableFromPayload: jest.Mock };
+    const real = jest.requireActual('../../lib/analysis') as typeof import('../../lib/analysis');
+    const diff = mocked.deriveEditedFields;
+    diff.mockImplementation(real.deriveEditedFields);
+    mocked.extractEditableFromPayload.mockImplementation(real.extractEditableFromPayload);
+    const model = { colour: 'yellow', consistency: 'foamy', contents: ['foam'], blood_present: 'none_visible', foreign_material_present: 'no', foreign_material_note: null, description: null };
+    // The owner changed only the colour: the photo's blood flag still stands (adversarial pass 2).
+    mockRow = callRow({ ...model, colour: 'brown', visual_flags: ['blood'], edited_at: '2026-11-08T10:00:00.000Z', ai_raw_payload: model });
+    const colourOnly = render(<VomitAnalysisSection eventId="o1" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await colourOnly.findByText('Call your vet today')).toBeTruthy();
+    colourOnly.unmount();
+    // The owner changed blood itself from unsure to none: their account of that sign stands.
+    mockRow = callRow({ ...model, visual_flags: ['blood'], edited_at: '2026-11-08T10:00:00.000Z', ai_raw_payload: { ...model, blood_present: 'unsure' } });
+    const ownerSaid = render(<VomitAnalysisSection eventId="o2" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await ownerSaid.findByText('Worth a call today')).toBeTruthy();
+    diff.mockImplementation(() => []);
+    mocked.extractEditableFromPayload.mockImplementation(() => null);
+  });
+
   it('an earlier-rule blood photo says the floor\'s words and service line (CUL-2675 (a))', async () => {
     setSpecies('dog');
     mockRow = row({ recommendation: 'worth_a_call', blood_present: 'fresh_red' });

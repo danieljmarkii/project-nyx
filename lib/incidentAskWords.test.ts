@@ -14,7 +14,6 @@ const clean: AskReasonRow = {
   tier: 'call_today',
   contextual_flags: ['repeated_vomiting'],
   visual_flags: [],
-  edited_at: null,
   blood_present: 'none_visible',
   foreign_material_present: 'no',
 };
@@ -67,23 +66,28 @@ describe('askLevelOf: the floor', () => {
     expect(askLevelOf({ ...clean, contextual_flags: '["repeated_vomiting"]', visual_flags: '[]' })).toBe('deferential');
   });
 
-  it('an owner edit silences the photo\'s flag only where the owner said none of THAT sign', () => {
-    const edited = { ...clean, edited_at: '2026-11-01T10:00:00Z', visual_flags: ['blood'] };
-    expect(askLevelOf(edited)).toBe('deferential'); // blood_present: none_visible, the owner's word
-    expect(askLevelOf({ ...edited, blood_present: 'fresh_red' })).toBe('floor');
-    // The adversarial pass's 5b: the owner edited the colour; blood stayed unsure under the model's flag.
-    expect(askLevelOf({ ...edited, blood_present: 'unsure' })).toBe('floor');
-    expect(askLevelOf({ ...edited, blood_present: null })).toBe('floor');
-    const foreign = { ...clean, edited_at: '2026-11-01T10:00:00Z', visual_flags: ['suspected_foreign_material'] };
-    expect(askLevelOf({ ...foreign, foreign_material_present: 'unsure' })).toBe('floor');
-    expect(askLevelOf({ ...foreign, foreign_material_present: 'no' })).toBe('deferential');
-    // A stool row's own blood column speaks for it.
-    const stool = { tier: 'call_today', contextual_flags: ['repeated_loose_stool'], visual_flags: ['blood'], edited_at: '2026-11-01T10:00:00Z' };
-    expect(askLevelOf({ ...stool, stool_blood_present: 'no' })).toBe('deferential');
-    expect(askLevelOf({ ...stool, stool_blood_present: 'unsure' })).toBe('floor');
-    // Edited or not, a visual field the caller never handed over is floor (rule 2).
-    const { visual_flags: _v, ...editedNoVisual } = edited;
-    expect(askLevelOf(editedNoVisual)).toBe('floor');
+  it('a photo flag is silenced only where the OWNER changed that sign\'s own column to none', () => {
+    const flagged = { ...clean, visual_flags: ['blood'] };
+    // The model's own none_visible beside its own blood flag is not the owner's word (pass 2).
+    expect(askLevelOf(flagged)).toBe('floor');
+    expect(askLevelOf(flagged, { ownerEdited: ['colour'] })).toBe('floor');
+    // The owner changed blood to none: their account of that sign stands.
+    expect(askLevelOf(flagged, { ownerEdited: ['blood_present'] })).toBe('deferential');
+    // The owner changed blood, but not to none.
+    expect(askLevelOf({ ...flagged, blood_present: 'unsure' }, { ownerEdited: ['blood_present'] })).toBe('floor');
+    // The other family's stale column never speaks for this row (pass 2's second finding).
+    expect(askLevelOf({ ...flagged, blood_present: 'unsure', stool_blood_present: 'no' }, { ownerEdited: ['blood_present'] })).toBe('floor');
+    // Stool: its own column, changed by the owner.
+    const stool = { tier: 'call_today', contextual_flags: ['repeated_loose_stool'], visual_flags: ['blood'], stool_blood_present: 'no' };
+    expect(askLevelOf(stool)).toBe('floor');
+    expect(askLevelOf(stool, { ownerEdited: ['stool_blood_present'] })).toBe('deferential');
+    // Foreign material, and one silenced sign never silences the other.
+    const both = { ...clean, visual_flags: ['blood', 'suspected_foreign_material'], foreign_material_present: 'unsure' };
+    expect(askLevelOf(both, { ownerEdited: ['blood_present'] })).toBe('floor');
+    expect(askLevelOf({ ...both, foreign_material_present: 'no' }, { ownerEdited: ['blood_present', 'foreign_material_present'] })).toBe('deferential');
+    // A visual field the caller never handed over is floor (rule 2).
+    const { visual_flags: _v, ...noVisual } = clean;
+    expect(askLevelOf(noVisual, { ownerEdited: ['blood_present'] })).toBe('floor');
   });
 
   it('the live cat check adds the floor and never removes it', () => {
@@ -98,7 +102,7 @@ describe('hasFloorSign: an earlier-rule or unknown tier (CUL-2675 (a))', () => {
     expect(hasFloorSign({ tier: null, blood_present: 'fresh_red' })).toBe(true);
     expect(hasFloorSign({ tier: 'mystery', foreign_material_present: 'yes' })).toBe(true);
     expect(hasFloorSign({ tier: null, contextual_flags: ['feline_reduced_intake'] })).toBe(true);
-    expect(hasFloorSign({ tier: null, visual_flags: ['blood'], edited_at: null })).toBe(true);
+    expect(hasFloorSign({ tier: null, visual_flags: ['blood'] })).toBe(true);
   });
 
   it('absent fields are not a sign here: an old read keeps its words', () => {

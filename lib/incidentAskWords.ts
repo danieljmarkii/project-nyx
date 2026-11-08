@@ -18,10 +18,11 @@
 //   2. A reason the build does not know is floor. So is a reasons field the caller never
 //      supplied (`undefined`): a surface that cannot see why the read called does not get to
 //      guess the quiet answer. Only a supplied, fully known, floor-free set is deferential.
-//   3. `visual_flags` count until the owner's own edit of THAT sign says none (`none_visible`,
-//      `no`): an edit is the owner's account of the photo, but only of the field they changed,
-//      and a rescue write carries the flag and no structured column. Louder than the spec's
-//      "on a row the owner never edited", on purpose (adversarial pass, finding 5b).
+//   3. `visual_flags` count until the OWNER changed that sign's own column to none (`none_visible`,
+//      `no`), as the caller's `ownerEdited` diff shows: an edit is the owner's account of the
+//      field they changed, never of the row, and a negative the model wrote is not the owner's.
+//      A rescue write carries the flag and no structured column. Louder than the spec's "on a
+//      row the owner never edited", on purpose (adversarial passes 1 and 2).
 //   4. The live cat check (`catNoGoodMeal24h`) can ADD the floor and never remove it.
 //   5. A floor flag on an earlier-rule or unknown tier gets the floor words too (CUL-2675 (a)):
 //      the floor is set by the sign, not by when the read was written.
@@ -105,7 +106,6 @@ export interface AskReasonRow {
   contextual_flags?: unknown;
   /** The photo's own flags. `undefined` = not supplied (floor). */
   visual_flags?: unknown;
-  edited_at?: string | null;
   blood_present?: string | null;
   stool_blood_present?: string | null;
   foreign_material_present?: string | null;
@@ -115,6 +115,10 @@ export interface AskOptions {
   /** The live D3 predicate, for a cat, at the moment of showing: an owner who rates meals has
    *  rated none Most or All in the last 24 h. Can only add the floor. */
   catNoGoodMeal24h?: boolean;
+  /** The structured columns the OWNER changed from the model's read (the record's diff against
+   *  `ai_raw_payload`, e.g. `deriveEditedFields`). A photo flag is silenced only when the owner
+   *  changed that sign's own column to none. Absent, every photo flag stands. */
+  ownerEdited?: readonly string[];
 }
 
 /** A text[] column as an array of strings, or null when it is absent or cannot be read. */
@@ -142,19 +146,25 @@ export function floorReasonOf(row: AskReasonRow | null | undefined, opts: AskOpt
   if (row.stool_blood_present === 'yes') return 'blood';
   if (row.foreign_material_present === 'yes') return 'foreign_material';
 
-  // Rule 3: the photo's flags speak until the owner's own account of THAT sign says none. An
-  // edit to another field (the colour) never silences a blood or foreign-material flag the model
-  // raised over an `unsure` or empty column (adversarial pass on CUL-2667).
-  const edited = row.edited_at !== null && row.edited_at !== undefined;
+  // Rule 3: the photo's flags speak until the OWNER changed THAT sign's own column to none. A
+  // negative the model wrote itself is not the owner's word, and an edit to another field (the
+  // colour) silences nothing (adversarial passes 1 and 2 on CUL-2667). The caller says which
+  // columns the owner changed (`ownerEdited`, the record's own diff against the model's payload);
+  // with no list, no flag is silenced.
+  const ownerSaid = new Set(opts.ownerEdited ?? []);
+  const ownerSaidNoBlood =
+    (ownerSaid.has('blood_present') && row.blood_present === 'none_visible') ||
+    (ownerSaid.has('stool_blood_present') && row.stool_blood_present === 'no');
+  const ownerSaidNoForeign = ownerSaid.has('foreign_material_present') && row.foreign_material_present === 'no';
   const visual = textArray(row.visual_flags);
   if (visual === null) return 'unknown';
   for (const f of visual) {
     if (f === 'blood') {
-      if (edited && (row.blood_present === 'none_visible' || row.stool_blood_present === 'no')) continue;
+      if (ownerSaidNoBlood) continue;
       return 'blood';
     }
     if (f === 'suspected_foreign_material') {
-      if (edited && row.foreign_material_present === 'no') continue;
+      if (ownerSaidNoForeign) continue;
       return 'foreign_material';
     }
     return 'unknown';
@@ -186,7 +196,6 @@ export function hasFloorSign(row: AskReasonRow | null | undefined, opts: AskOpti
   const reason = floorReasonOf(
     {
       tier: null,
-      edited_at: row.edited_at,
       blood_present: row.blood_present,
       stool_blood_present: row.stool_blood_present,
       foreign_material_present: row.foreign_material_present,
