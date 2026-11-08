@@ -25,6 +25,10 @@ import * as path from 'path';
 
 const MANUAL = path.resolve(__dirname, '..', 'CLAUDE.md');
 const manual = fs.readFileSync(MANUAL, 'utf8');
+// The template every PR body starts from: a heading the template lacks is one no PR writes.
+const TEMPLATE = path.resolve(__dirname, '..', '.github', 'PULL_REQUEST_TEMPLATE.md');
+const template = fs.readFileSync(TEMPLATE, 'utf8');
+const TEMPLATE_HEADING = '\n## Along the way\n';
 
 /** The text of one `## ` section, heading included; '' when the heading is missing. */
 function section(text: string, heading: string): string {
@@ -97,6 +101,11 @@ describe('the filing rule (CUL-2656)', () => {
 
   it('is present in CLAUDE.md, with the PR heading and the step 3 pointer', () => {
     expect(filingRuleProblems(manual)).toEqual([]);
+  });
+
+  it('has its heading in the PR template', () => {
+    expect(template).toContain('## What changed and why');
+    expect(template.split(TEMPLATE_HEADING).length - 1).toBe(1);
   });
 
   describe('mutation proof: each removal reds', () => {
