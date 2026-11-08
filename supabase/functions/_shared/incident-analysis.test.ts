@@ -18,6 +18,7 @@ import {
   applyEscalationFloor,
   shouldCollapsePartialRead,
   selectReadText,
+  hasFloorVisual,
   buildAnalysisWriteBack,
   buildFailureWrite,
   buildRescueRead,
@@ -215,9 +216,25 @@ Deno.test('selectReadText — the ONLY path that surfaces model text is worth_a_
   const out = selectReadText(SENTINEL_COPY, {
     ...readBase,
     recommendation: 'worth_a_call',
-    visualFlags: ['blood'],
+    visualFlags: [],
   })
   assertStrictEquals(out, MODEL_TEXT)
+})
+
+// CUL-2682: over a floor sign the model's words are never stored. It is told only to "calmly
+// suggest a vet call", so they could drop "today" or the finding, and Ask relays the sentence.
+Deno.test('selectReadText — over blood or foreign material the floor template replaces the model text', () => {
+  for (const visualFlags of [['blood'], ['suspected_foreign_material'], ['blood', 'suspected_foreign_material']]) {
+    const out = selectReadText(SENTINEL_COPY, { ...readBase, recommendation: 'worth_a_call', visualFlags })
+    assertStrictEquals(out, `VISUAL_FALLBACK:Pet:${visualFlags.join(",")}`)
+  }
+})
+
+Deno.test('hasFloorVisual — blood and suspected foreign material, nothing else', () => {
+  assertStrictEquals(hasFloorVisual(['blood']), true)
+  assertStrictEquals(hasFloorVisual(['suspected_foreign_material']), true)
+  assertStrictEquals(hasFloorVisual([]), false)
+  assertStrictEquals(hasFloorVisual(['something_else']), false)
 })
 
 Deno.test('selectReadText — a contextual flag overrides the model text even on worth_a_call', () => {

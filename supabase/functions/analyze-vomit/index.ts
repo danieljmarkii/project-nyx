@@ -49,6 +49,7 @@ import {
   selectReadText as selectIncidentReadText,
   buildAnalysisWriteBack as buildIncidentAnalysisWriteBack,
   runIncidentAnalysis,
+  hasFloorVisual,
 } from '../_shared/incident-analysis.ts'
 import { MEAL_BOWL_SELECT } from '../_shared/mealBowl.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
@@ -361,16 +362,22 @@ export function applyEscalationFloor(params: {
 // said "nothing concerning" — which now contradicts the forced worth_a_call.
 // Replace it with a specific, calm read that names the contextual reason.
 // Highest-acuity flag wins. Plain language, pet name, no diagnosis, no alarm.
-export function buildContextualReadText(petName: string, flags: ContextualFlag[]): string {
+// `direct` (CUL-2682): the photo beside the context shows a floor sign (blood, foreign
+// material), so the read is a floor read and its context line says the floor's words.
+export function buildContextualReadText(petName: string, flags: ContextualFlag[], direct = false): string {
   const p = petName || 'Your pet'
   if (flags.includes('feline_reduced_intake')) {
     // CUL-2668 (CUL-2654 D4): a cat off food is the floor, so it says the floor's words.
     return `${p} has been vomiting and hasn't eaten a full meal recently. In a cat, that combination is reason to call your vet today.`
   }
   if (flags.includes('repeated_vomiting')) {
-    return `${p} has thrown up more than once in a short window. Repeated vomiting like that is worth a call to your vet.`
+    return direct
+      ? `${p} has thrown up more than once in a short window. Together with the photo, that's worth a call to your vet today.`
+      : `${p} has thrown up more than once in a short window. Repeated vomiting like that is worth a call to your vet.`
   }
-  return `${p} has also been low on energy around this. Together, that's worth a quick call to your vet.`
+  return direct
+    ? `${p} has also been low on energy around this. Together with the photo, that's worth a call to your vet today.`
+    : `${p} has also been low on energy around this. Together, that's worth a quick call to your vet.`
 }
 
 function buildNoFlagReadText(petName: string, hasPhoto: boolean): string {
@@ -426,10 +433,8 @@ function seenInPhoto(visualFlags: string[]): string {
 // concern plainly (the safe direction) and routes to the vet. CUL-2668 (inventory §3b): blood
 // or something that isn't food is the floor and names its clock, "today"; the model's own call
 // with no flag ("something worth a closer look") keeps the shipped words.
-/** A photo flag that is a floor sign (blood, suspected foreign material). */
-export function hasFloorVisual(visualFlags: readonly string[]): boolean {
-  return visualFlags.includes('blood') || visualFlags.includes('suspected_foreign_material')
-}
+// The floor-sign predicate is the shared module's (CUL-2682), re-exported for this suite.
+export { hasFloorVisual }
 
 export function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
   const p = petName || 'your pet'
@@ -448,11 +453,17 @@ function buildPhotoUnreadableReadText(petName: string): string {
 // The vomit templates handed to the shared pipeline. Every string here is
 // covered by the reassurance-word regex test (Pattern 8) in index.test.ts.
 const VOMIT_COPY: IncidentCopy<ContextualFlag> = {
-  contextual: buildContextualReadText,
+  contextual: (petName, flags) => buildContextualReadText(petName, flags),
   photoUnreadable: buildPhotoUnreadableReadText,
   monitor: buildMonitorReadText,
   visualFlagFallback: buildVisualFlagReadText,
   noFlag: buildNoFlagReadText,
+  // CUL-2682: a floor sign in the photo leads and the context keeps the floor's words. Any
+  // other photo finding keeps the shipped contextual line, word for word.
+  contextualWithPhotoFinding: (petName, flags, visualFlags) =>
+    hasFloorVisual(visualFlags)
+      ? `I can see ${seenInPhoto(visualFlags)} in this photo. ${buildContextualReadText(petName, flags, true)}`
+      : buildContextualReadText(petName, flags),
 }
 
 // ── EN-0's copy (CUL-1130): the read states the record, anchored to the vomit ──────────
@@ -541,7 +552,7 @@ function intakeRecordSentence(p: string, record: IntakeRecord): string {
   return `When I read this, ${record.mealsLogged} meals had been logged for ${p} ${span}, and none was marked Most or All.`
 }
 
-export function buildEn0ContextualReadText(petName: string, flags: ContextualFlag[], intakeRecord?: IntakeRecord): string {
+export function buildEn0ContextualReadText(petName: string, flags: ContextualFlag[], intakeRecord?: IntakeRecord, direct = false): string {
   if (flags.includes('feline_reduced_intake')) {
     const p = petName || 'your pet'
     // EN0_CONTEXT_STEP sets the record whenever this flag can fire; the line after `??`
@@ -552,7 +563,7 @@ export function buildEn0ContextualReadText(petName: string, flags: ContextualFla
     // CUL-2668 (CUL-2654 D4): the floor's words.
     return `${record} In a cat that's vomiting, call your vet today.`
   }
-  return buildContextualReadText(petName, flags)
+  return buildContextualReadText(petName, flags, direct)
 }
 
 // A contextual escalation over a photo that escalated on its own: the photo finding leads,
@@ -564,7 +575,8 @@ export function buildEn0PhotoFirstReadText(
   visualFlags: string[],
   intakeRecord?: IntakeRecord,
 ): string {
-  return `I can see ${seenInPhoto(visualFlags)} in this photo. ${buildEn0ContextualReadText(petName, flags, intakeRecord)}`
+  // A floor sign keeps the floor's words in the context line too (CUL-2682).
+  return `I can see ${seenInPhoto(visualFlags)} in this photo. ${buildEn0ContextualReadText(petName, flags, intakeRecord, hasFloorVisual(visualFlags))}`
 }
 
 export function en0VomitCopy(context: ContextInput): IncidentCopy<ContextualFlag> {
@@ -627,7 +639,8 @@ export function floorFlags(floor: FloorResult): ContextualFlag[] {
 // clock, keep the reason): "the kind of thing vets like to hear about the same day". "The same
 // day" is relative to the vomiting, so it stays true however late the read is opened.
 // `direct`: the photo beside the count shows a floor sign (blood, foreign material), so the read
-// is a floor read and its count sentence keeps the direct words too (adversarial pass 1, B2).
+// is a floor read and its count sentence keeps the direct words too (adversarial pass 1, B2), with
+// the floor's clock, "today": these rows are call today, and §R exempts only call now (CUL-2682).
 export function floorSentence(petName: string, floor: FloorResult, row: FloorResult['rows'][number], direct = false): string {
   const p = petName || 'Your pet'
   // The deferential close, or (direct) the shipped "needs a call to your vet." that keeps the floor.
@@ -644,18 +657,18 @@ export function floorSentence(petName: string, floor: FloorResult, row: FloorRes
       // calendar holds three in a row (CUL-2223: two vomits one morning and one the next were
       // read as "three days in a row"). A floor without the run's facts names no days at all.
       const run = floor.persistence
-      const keepsUp = close('is the kind of thing vets like to hear about the same day.', 'needs a call to your vet.')
+      const keepsUp = close('is the kind of thing vets like to hear about the same day.', 'needs a call to your vet today.')
       if (run?.consecutive) return `${p} has vomited on three days in a row. Vomiting that keeps up day after day ${keepsUp}`
       if (run?.days) return `${p} has thrown up ${run.logs} times, on ${run.days} separate days. Vomiting that keeps coming back day after day ${keepsUp}`
       if (run) return `${p} has thrown up ${run.logs} times across more than a day. Vomiting that keeps coming back like that ${keepsUp}`
       return `${p} has kept vomiting for more than a day. Vomiting that keeps coming back like that ${keepsUp}`
     }
     case 'T6':
-      return `${p} has thrown up twice within a day. In a dog, ${close("that's the kind of thing vets like to hear about the same day.", 'that needs a call to your vet.')}`
+      return `${p} has thrown up twice within a day. In a dog, ${close("that's the kind of thing vets like to hear about the same day.", 'that needs a call to your vet today.')}`
     case 'T7':
       return floor.ageUnknown
-        ? `${p} has thrown up twice within a day. ${p}'s birthday isn't on file, so this is read the way it would be for a young animal, which can get dehydrated quickly. ${close("That's the kind of thing vets like to hear about the same day.", 'That needs a call to your vet.')}`
-        : `${p} has thrown up twice within a day, and is under six months old. A young animal can get dehydrated quickly, so ${close("that's the kind of thing vets like to hear about the same day.", 'that needs a call to your vet.')}`
+        ? `${p} has thrown up twice within a day. ${p}'s birthday isn't on file, so this is read the way it would be for a young animal, which can get dehydrated quickly. ${close("That's the kind of thing vets like to hear about the same day.", 'That needs a call to your vet today.')}`
+        : `${p} has thrown up twice within a day, and is under six months old. A young animal can get dehydrated quickly, so ${close("that's the kind of thing vets like to hear about the same day.", 'that needs a call to your vet today.')}`
   }
 }
 

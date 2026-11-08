@@ -280,6 +280,16 @@ export function resolveContextualRun<TFlag extends string, TAnalysis = unknown>(
   return Array.isArray(result) ? { flags: result, copy: fallback } : result
 }
 
+// ── The floor's photo signs (CUL-2654 §R, CUL-2682) ─────────────────────────────
+// Blood and suspected foreign material are the floor, on vomit and stool alike, so a read
+// over either stores the floor's words. One predicate, shared, so the two types cannot drift.
+export const FLOOR_VISUAL_FLAGS = ['blood', 'suspected_foreign_material'] as const
+
+/** A photo flag that is a floor sign (blood, suspected foreign material). */
+export function hasFloorVisual(visualFlags: readonly string[]): boolean {
+  return FLOOR_VISUAL_FLAGS.some((f) => visualFlags.includes(f))
+}
+
 export function selectReadText<TFlag extends string>(
   copy: IncidentCopy<TFlag>,
   params: {
@@ -309,7 +319,13 @@ export function selectReadText<TFlag extends string>(
   if (photoUnreadable) return copy.photoUnreadable(petName)
   // 3. Escalation — the ONLY path that surfaces the model's free text (a model-
   //    raised visual flag, or the model's own worth_a_call; a present-concern read).
-  if (recommendation === 'worth_a_call') return modelReadText ?? copy.visualFlagFallback(petName, visualFlags)
+  //    Over a floor sign the template is stored in its place (CUL-2682): the model is told
+  //    only to "calmly suggest a vet call", so its words could drop "today" or the finding,
+  //    and Ask relays this sentence as written. The template names the finding, then the floor.
+  if (recommendation === 'worth_a_call') {
+    if (hasFloorVisual(visualFlags)) return copy.visualFlagFallback(petName, visualFlags)
+    return modelReadText ?? copy.visualFlagFallback(petName, visualFlags)
+  }
   // 4. monitor — a clear photo, no flag. NEVER the model's read (the reassurance-
   //    on-absence risk); a deterministic forward-looking template instead.
   if (recommendation === 'monitor') return copy.monitor(petName)
