@@ -65,7 +65,7 @@
 // with a day of slack on each side, and the day a row belongs to is decided in JS from
 // the parsed instant. The slack costs a few rows; a text bound costs a boundary row.
 
-import { isCallDisplay, tierDisplayOf, type CallDisplay } from './incidentTierWords';
+import { isCallDisplay, tierChipOf, tierDisplayOf, type CallDisplay } from './incidentTierWords';
 import { getDb, getTimeline, type TimelineRow } from './db';
 import { boutSpansOf, episodeDaysOf, type BoutSpan } from './chartModels';
 import { collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type MealTimingConfig } from './mealTiming';
@@ -332,16 +332,16 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     photoEvents.push({ eventId: r.event_id, key: k });
     readEvents.set(r.event_id, k);
   }
-  const called = await readCallWords([...readEvents.keys()]);
+  const called = await readCallReads([...readEvents.keys()]);
   const photoReads: MonthPhotoRead[] = photoEvents.map((p) => ({
     eventId: p.eventId,
     day: p.key,
-    verdict: called?.get(p.eventId) ?? 'seen',
+    verdict: called?.get(p.eventId)?.verdict ?? 'seen',
   }));
   const callReads: MonthCallRead[] = [];
-  for (const [eventId, verdict] of called ?? []) {
+  for (const [eventId, { verdict, readAs }] of called ?? []) {
     const day = readEvents.get(eventId);
-    if (day !== undefined) callReads.push({ eventId, day, verdict });
+    if (day !== undefined) callReads.push({ eventId, day, verdict, readAs });
   }
   callReads.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
 
@@ -400,14 +400,22 @@ export async function readWorthACall(eventIds: readonly string[]): Promise<Set<s
  * failure, as `readWorthACall`.
  */
 export async function readCallWords(eventIds: readonly string[]): Promise<Map<string, CallDisplay> | null> {
-  const out = new Map<string, CallDisplay>();
+  const reads = await readCallReads(eventIds);
+  return reads === null ? null : new Map([...reads].map(([id, r]) => [id, r.verdict]));
+}
+
+/** `readCallWords`, with each call's "read as" words keyed by its reasons as the record keys
+ *  them (`tierChipOf`, CUL-2678): a deferential call today, an earlier-rule read over blood. */
+export async function readCallReads(eventIds: readonly string[]): Promise<Map<string, { verdict: CallDisplay; readAs: string }> | null> {
+  const out = new Map<string, { verdict: CallDisplay; readAs: string }>();
   if (eventIds.length === 0) return out;
   try {
     const copies = await readCopies(eventIds);
     for (const [eventId, copy] of copies) {
       if (!isWorthACall(copy)) continue;
       const display = tierDisplayOf(copy);
-      out.set(eventId, isCallDisplay(display) ? display : 'worth_a_call');
+      const verdict = isCallDisplay(display) ? display : 'worth_a_call';
+      out.set(eventId, { verdict, readAs: tierChipOf(verdict, copy).readAs });
     }
   } catch (e) {
     console.warn('[month] read copy failed:', e);

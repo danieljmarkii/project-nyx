@@ -447,7 +447,7 @@ describe('CUL-1200 (b): a call with no photo reaches the month', () => {
     expect(byKey.get('2026-09-03')?.photo).toBe('none');
     expect(byKey.get('2026-09-05')?.call).toBeNull();
     expect(byKey.get('2026-09-25')?.call).toBeNull();
-    expect(monthCallDays(m)).toEqual({ earlier: 1, tiered: 0 });
+    expect(monthCallDays(m)).toEqual({ earlier: 1, tiered: 0, raised: 0 });
     expect(monthA11yLabel(m, { meds: false, photos: false })).toContain('Read as worth a call on 1 day.');
     // No call at all: no "no calls", no zero. Absence never reassures.
     const quiet = septModel({ photoDays: [{ day: '2026-09-05', verdict: 'seen' }] });
@@ -459,7 +459,7 @@ describe('CUL-1200 (b): a call with no photo reaches the month', () => {
     const edge = m.rows.flat().find((d) => d.key === '2026-08-31');
     expect(edge?.outsideMonth).toBe(true);
     expect(edge?.call).toBe('worth_a_call');
-    expect(monthCallDays(m)).toEqual({ earlier: 0, tiered: 0 });
+    expect(monthCallDays(m)).toEqual({ earlier: 0, tiered: 0, raised: 0 });
   });
 });
 

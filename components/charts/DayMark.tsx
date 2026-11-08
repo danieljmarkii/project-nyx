@@ -279,6 +279,8 @@ export interface DayMarkProps {
   /** The loudest call on the day, photo or not (CUL-1200): drawn as the call diamond
    *  whatever the photo layer says, because presence escalates. */
   call?: CallDisplay | null;
+  /** The call in the record's reason-keyed words (CUL-2678), spoken in the label. */
+  callReadAs?: string | null;
   today?: boolean;
   selected?: boolean;
   /** A neighbouring month's day (see `DayMarkFace`'s `dim`). */
@@ -305,6 +307,7 @@ export function DayMark({
   medication = false,
   photo = 'none',
   call = null,
+  callReadAs = null,
   today = false,
   selected = false,
   dim = false,
@@ -316,7 +319,7 @@ export function DayMark({
   const unlogged = coverage === 'unlogged';
   const symptomDay = symptomLayer && holdsVomit({ count, continuesFrom }) && !ahead && !unlogged;
   const label = dayMarkA11yLabel(
-    { dayKey, count, continuesFrom, coverage, answers, refusedMeals, leftSomeMeals, medication, photo, call, symptomLayer, today, selected, episodes },
+    { dayKey, count, continuesFrom, coverage, answers, refusedMeals, leftSomeMeals, medication, photo, call, callReadAs, symptomLayer, today, selected, episodes },
     noun,
   );
   const box: DayMarkBox = ahead ? 'outlined' : unlogged ? 'grey' : symptomDay ? 'rose' : 'white';

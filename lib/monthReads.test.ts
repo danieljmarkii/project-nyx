@@ -293,8 +293,8 @@ describe('readMonthFacts against the production DDL', () => {
     verdict(look, 'worth_a_call');
     const facts = await readMonthFacts(PET, RANGE);
     expect(facts.callReads).toEqual([
-      { eventId: cat, day: '2026-09-03', verdict: 'worth_a_call' },
-      { eventId: stool, day: '2026-09-07', verdict: 'worth_a_call' },
+      { eventId: cat, day: '2026-09-03', verdict: 'worth_a_call', readAs: 'worth a call' },
+      { eventId: stool, day: '2026-09-07', verdict: 'worth_a_call', readAs: 'worth a call' },
     ]);
     // No photo layer fact is invented for them: the gallery and the Photos layer stay photos.
     expect(facts.photoDays).toEqual([]);
@@ -307,7 +307,7 @@ describe('readMonthFacts against the production DDL', () => {
     photo(a);
     verdict(a, 'worth_a_call');
     const facts = await readMonthFacts(PET, RANGE);
-    expect(facts.callReads).toEqual([{ eventId: a, day: '2026-09-02', verdict: 'worth_a_call' }]);
+    expect(facts.callReads).toEqual([{ eventId: a, day: '2026-09-02', verdict: 'worth_a_call', readAs: 'worth a call' }]);
     expect(facts.photoDays).toEqual([{ day: '2026-09-02', verdict: 'worth_a_call' }]);
     expect(mockSqlLog.filter((q) => /FROM event_ai_verdicts/.test(q))).toHaveLength(1);
   });

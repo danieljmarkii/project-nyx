@@ -116,7 +116,7 @@ import {
 import { analysisChainOutstanding } from './analysisChain';
 import { readCopies } from './readCopy';
 import { readVerdictOf, type ReadCopyRow } from './readState';
-import { isCallDisplay, louderCall, TIER_WORDS, TIERED_CALLS_READ_AS, type CallDisplay, type TierDisplay } from './incidentTierWords';
+import { isCallDisplay, louderCall, TIER_WORDS, TIERED_CALLS_READ_AS, type CallDisplay, type ChipWords, type TierDisplay } from './incidentTierWords';
 import { dayKeyFromIndex, formatCalendarDate, formatTime, localDayIndexOf, toLocalDayKey } from './utils';
 import { resolveRecordPetName, usePetStore } from '../store/petStore';
 
@@ -183,6 +183,9 @@ export interface SignalScreenInput {
   recordStart: string | null;
   /** Verdict by event id; an absent key is "no read yet". */
   verdicts: Readonly<Record<string, EpisodeVerdict | null>>;
+  /** A call tile's words by event id, keyed by its bout's reasons as the record keys them
+   *  (`tileChipOf`, CUL-2678). Absent: the map's words for the verdict, as before. */
+  chips?: Readonly<Record<string, ChipWords>>;
   doses: readonly SignalDoseDay[];
   /**
    * The pet's not-eating register (CUL-1216, BRK-6): `notEatingFact` over the route's pet's
@@ -230,6 +233,9 @@ export interface GalleryTile {
   timeWord: string;
   /** This episode's OWN read, or null when the record holds none yet. */
   verdict: EpisodeVerdict | null;
+  /** The call's words, keyed by its bout's reasons (CUL-2678); absent on a quiet tile, or
+   *  where the loader had none, which draws the map's words for `verdict`. */
+  chip?: ChipWords;
   photo: SignalScreenPhoto;
   /** The bout's rows the verdict was read across (`readTileVerdicts`), as the loader read
    *  them: what `carryTileRoses` checks before keeping a rose that may be another row's. */
@@ -420,6 +426,7 @@ function galleryOf(
   verdicts: SignalScreenInput['verdicts'],
   weeks: number,
   tracksPattern: boolean,
+  chips: SignalScreenInput['chips'] = {},
 ): SignalScreenEpisodes {
   const shown = [...inWeeks.onset, ...inWeeks.carried];
   const photographed = shown
@@ -437,6 +444,7 @@ function galleryOf(
       dateWord: formatCalendarDate(day) ?? day,
       timeWord: Number.isNaN(d.getTime()) ? '' : formatTime(d),
       verdict: verdicts[e.eventId] ?? null,
+      ...(chips[e.eventId] ? { chip: chips[e.eventId] } : {}),
       photo: e.photo,
       ...(e.boutIds ? { boutIds: [...e.boutIds] } : {}),
     };
@@ -930,7 +938,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     episodes:
       inWeeks.onset.length === 0 && inWeeks.carried.length === 0 && weeklyMaskOf(input.masking, weekly, input.today)
         ? null
-        : galleryOf(inWeeks, input.verdicts, weekly.weeks.length, findingTracksPattern(finding)),
+        : galleryOf(inWeeks, input.verdicts, weekly.weeks.length, findingTracksPattern(finding), input.chips),
     why,
     context: careContextLinesOf(finding),
     safety,
@@ -1374,8 +1382,17 @@ export async function readVerdicts(
   eventIds: readonly string[],
   eventType: string,
 ): Promise<Record<string, EpisodeVerdict | null> | null> {
+  return (await readVerdictReads(eventIds, eventType))?.verdicts ?? null;
+}
+
+/** `readVerdicts`, with each call's reason-keyed words beside its verdict (CUL-2678). */
+async function readVerdictReads(
+  eventIds: readonly string[],
+  eventType: string,
+): Promise<{ verdicts: Record<string, EpisodeVerdict | null>; chips: Record<string, ChipWords> } | null> {
   const out: Record<string, EpisodeVerdict | null> = {};
-  if (eventIds.length === 0) return out;
+  const chips: Record<string, ChipWords> = {};
+  if (eventIds.length === 0) return { verdicts: out, chips };
   let copies: Map<string, ReadCopyRow>;
   try {
     copies = await readCopies(eventIds);
@@ -1384,7 +1401,7 @@ export async function readVerdicts(
     return null;
   }
   for (const eventId of eventIds) {
-    out[eventId] = readVerdictOf({
+    const read = readVerdictOf({
       eventType,
       // The gallery asks about its tiles' bouts. `hasPhoto` only separates the states
       // that carry no verdict (none, unread, off), so a photoless row of a bout is still
@@ -1395,9 +1412,11 @@ export async function readVerdicts(
       // The gallery speaks only `display`, which `off` and `unread` share, so the owner's
       // choice changes nothing here (CUL-1174 wires it where the STATE draws: the rows).
       readingOff: false,
-    }).display;
+    });
+    out[eventId] = read.display;
+    if (isCallDisplay(read.display) && read.chip) chips[eventId] = read.chip;
   }
-  return out;
+  return { verdicts: out, chips };
 }
 
 /**
@@ -1416,14 +1435,43 @@ export async function readTileVerdicts(
   tiles: readonly Pick<SignalScreenEpisode, 'eventId' | 'boutIds'>[],
   eventType: string,
 ): Promise<Record<string, EpisodeVerdict | null> | null> {
+  return (await readTileReads(tiles, eventType))?.verdicts ?? null;
+}
+
+/** `readTileVerdicts`, with each call tile's words (`tileChipOf`, CUL-2678). */
+export async function readTileReads(
+  tiles: readonly Pick<SignalScreenEpisode, 'eventId' | 'boutIds'>[],
+  eventType: string,
+): Promise<{ verdicts: Record<string, EpisodeVerdict | null>; chips: Record<string, ChipWords> } | null> {
   const boutOf = (t: Pick<SignalScreenEpisode, 'eventId' | 'boutIds'>) => [t.eventId, ...(t.boutIds ?? [])];
-  const each = await readVerdicts([...new Set(tiles.flatMap(boutOf))], eventType);
+  const each = await readVerdictReads([...new Set(tiles.flatMap(boutOf))], eventType);
   if (each === null) return null;
   const out: Record<string, EpisodeVerdict | null> = {};
+  const chips: Record<string, ChipWords> = {};
   for (const tile of tiles) {
-    out[tile.eventId] = tileVerdictOf(tile.eventId, boutOf(tile), each);
+    out[tile.eventId] = tileVerdictOf(tile.eventId, boutOf(tile), each.verdicts);
+    const chip = tileChipOf(boutOf(tile), each.chips);
+    if (isCallDisplay(out[tile.eventId]) && chip) chips[tile.eventId] = chip;
   }
-  return out;
+  return { verdicts: out, chips };
+}
+
+/**
+ * A call tile's words from its bout's (CUL-2678): the LOUDEST words any row of the bout says,
+ * as the record of that row would (call now, then the floor, then a deferential call today,
+ * then an earlier-rule "Worth a call"). Ranked by words, not by tier, because a bout holding a
+ * deferential call today and an earlier-rule read over blood is a floor bout: that row's record
+ * says "Call your vet today", and the tile must not say less. Null with no call in the bout.
+ */
+export function tileChipOf(bout: readonly string[], chips: Readonly<Record<string, ChipWords>>): ChipWords | null {
+  const rank = (c: ChipWords) =>
+    c.label === TIER_WORDS.call_now.label ? 4 : c.label === TIER_WORDS.call_today.label ? 3 : c.label === TIER_WORDS.worth_a_call.label ? 1 : 2;
+  let loudest: ChipWords | null = null;
+  for (const id of bout) {
+    const c = chips[id];
+    if (c && (loudest === null || rank(c) > rank(loudest))) loudest = c;
+  }
+  return loudest;
 }
 
 /**
@@ -1578,10 +1626,12 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   // symptom is every bout row's type. Every episode is asked about, photographed or not
   // (CUL-1200, the PM's ruling (b)): a call with no photo is never a tile, and the count line
   // names it.
-  const tileVerdicts = episodes.length > 0 && symptom ? await readTileVerdicts(episodes, symptom) : {};
+  const tileReads = episodes.length > 0 && symptom ? await readTileReads(episodes, symptom) : { verdicts: {}, chips: {} };
+  const tileVerdicts = tileReads?.verdicts ?? null;
   // A copy that could not be read draws every tile "No read yet" here; the screen lays the
   // roses it already drew back over them (`carryTileRoses`, CUL-1198).
   const verdicts = tileVerdicts ?? {};
+  const chips = tileReads?.chips ?? {};
 
   const model = buildSignalScreenModel({
     cached,
@@ -1595,6 +1645,7 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     gateUnanswered: gateRead == null,
     recordStart: logged.recordStart,
     verdicts,
+    chips,
     doses,
     notEating,
     trialVomitingLine,
@@ -1634,8 +1685,8 @@ export function carryTileRoses(
   if (next.status !== 'ready' || !next.verdictsUnanswered || prev.status !== 'ready') return next;
   const before = prev.model.episodes?.tiles ?? [];
   const boutKey = (t: GalleryTile) => [t.eventId, ...(t.boutIds ?? [])].sort().join('|');
-  const calls = new Map<string, { verdict: CallDisplay; bout: string }>();
-  for (const t of before) if (isCallDisplay(t.verdict)) calls.set(t.eventId, { verdict: t.verdict, bout: boutKey(t) });
+  const calls = new Map<string, { verdict: CallDisplay; chip?: ChipWords; bout: string }>();
+  for (const t of before) if (isCallDisplay(t.verdict)) calls.set(t.eventId, { verdict: t.verdict, chip: t.chip, bout: boutKey(t) });
   const episodes = next.model.episodes;
   // The calls with no photo the count line named (CUL-1200) are kept the same way: on an
   // episode still in the window, still photoless, over the same bout.
@@ -1644,7 +1695,9 @@ export function carryTileRoses(
   if ((calls.size === 0 && lastPhotoless.size === 0) || !episodes) return next;
   const tiles = episodes.tiles.map((t) => {
     const call = calls.get(t.eventId);
-    return t.verdict === null && call && call.bout === boutKey(t) ? { ...t, verdict: call.verdict } : t;
+    return t.verdict === null && call && call.bout === boutKey(t)
+      ? { ...t, verdict: call.verdict, ...(call.chip ? { chip: call.chip } : {}) }
+      : t;
   });
   // Kept while every row the call could have been read off is still in the bout: a bout that
   // GREW keeps it (a re-log joined), a bout that lost a row drops it, because the call may have

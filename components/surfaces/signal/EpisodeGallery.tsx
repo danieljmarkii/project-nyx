@@ -72,10 +72,11 @@ const TILE_TRANSFORM = { width: 320, height: 320, resize: 'cover' as const };
 /** The word under a tile, or null for a calm read, which draws none (CUL-1233). A tile with
  *  no verdict on the record (in flight, failed, capped, never read) says `NO_READ_WORDS`. A
  *  new-rule `logged` read under a tracked finding says "Part of a pattern" (K2). */
-export function verdictWord(verdict: GalleryTile['verdict'], tracksPattern: boolean): string | null {
+export function verdictWord(verdict: GalleryTile['verdict'], tracksPattern: boolean, chip?: GalleryTile['chip']): string | null {
   if (isPatternRead(verdict, tracksPattern)) return PATTERN_WORDS.short;
   if (isCalmDisplay(verdict)) return null;
-  return verdict ? TIER_WORDS[verdict].short : NO_READ_WORDS;
+  // CUL-2678: a call's words follow its reasons, as the record's do.
+  return verdict ? (chip ?? TIER_WORDS[verdict]).short : NO_READ_WORDS;
 }
 
 /** The tile in one sentence, for the screen reader. */
@@ -84,7 +85,7 @@ export function tileA11yLabel(tile: GalleryTile, tracksPattern: boolean): string
   if (isPatternRead(tile.verdict, tracksPattern)) return `${when}, photographed, read as ${PATTERN_WORDS.label}`;
   if (isCalmDisplay(tile.verdict)) return `${when}, photographed`;
   return tile.verdict
-    ? `${when}, photographed, read as ${TIER_WORDS[tile.verdict].label}`
+    ? `${when}, photographed, read as ${(tile.chip ?? TIER_WORDS[tile.verdict]).label}`
     : `${when}, photographed, ${NO_READ_WORDS.toLowerCase()}`;
 }
 
@@ -173,7 +174,7 @@ function Tile({ tile, tracksPattern, widthStyle }: { tile: GalleryTile; tracksPa
   }, [needsRemote, storagePath]);
 
   const photo = resolveTilePhoto({ local, transform, raw }, failed);
-  const word = verdictWord(tile.verdict, tracksPattern);
+  const word = verdictWord(tile.verdict, tracksPattern, tile.chip);
   const markFailed = (uri: string) => setFailed((prev) => (prev.has(uri) ? prev : new Set(prev).add(uri)));
 
   return (

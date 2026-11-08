@@ -265,7 +265,18 @@ export const BASE_SCHEMA_SQL = `
       -- History, the month and the gallery speak the tier through the one word map
       -- (lib/incidentTierWords.ts) without waiting on the network. NULL on every read
       -- written before the Engines v3 key; declared here AND in COLUMN_UPGRADES.
-      tier            TEXT
+      tier            TEXT,
+      -- CUL-2678: the read's REASONS, so a list chip picks the record's reason-keyed words
+      -- (lib/incidentAskWords.ts) and never guesses from the tier. The two flag arrays are
+      -- the server's text[] as JSON text; the server holds them NOT NULL DEFAULT '{}', so a
+      -- local NULL means only "pulled before this build", which the resolver reads as not
+      -- supplied (the floor for a call today, today's words for an earlier-rule call).
+      -- Enum-shaped signs only, never the read's words. Declared here AND in COLUMN_UPGRADES.
+      contextual_flags          TEXT,
+      visual_flags              TEXT,
+      blood_present             TEXT,
+      stool_blood_present       TEXT,
+      foreign_material_present  TEXT
     );
 
     CREATE TABLE IF NOT EXISTS vet_visits (
@@ -851,6 +862,13 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   { table: 'event_ai_verdicts', column: 'rule_version', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'engine_flags', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'tier', type: 'TEXT' },
+  // CUL-2678: the read's reasons, for the list chips. NULL is "pulled before this build";
+  // lib/readCopy.ts re-pulls every row once under `:v4` and fills them.
+  { table: 'event_ai_verdicts', column: 'contextual_flags', type: 'TEXT' },
+  { table: 'event_ai_verdicts', column: 'visual_flags', type: 'TEXT' },
+  { table: 'event_ai_verdicts', column: 'blood_present', type: 'TEXT' },
+  { table: 'event_ai_verdicts', column: 'stool_blood_present', type: 'TEXT' },
+  { table: 'event_ai_verdicts', column: 'foreign_material_present', type: 'TEXT' },
   // Engines v3 PR-36: the call's cover (084) and the local made_here flag. The table is new
   // in the same PR, so only a phone that ran an earlier build of that branch lacks them.
   { table: 'vet_calls', column: 'covers_rank', type: 'INTEGER' },

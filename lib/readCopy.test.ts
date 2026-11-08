@@ -260,8 +260,12 @@ beforeEach(() => {
   mockQueries.length = 0;
 });
 
-// Seven columns until EN-3 (CUL-1133) added the tier; the name stays so the history reads.
-const SEVEN = ['event_id', 'status', 'recommendation', 'updated_at', 'photo_set_key', 'rule_version', 'engine_flags', 'tier'];
+// Seven columns until EN-3 (CUL-1133) added the tier and CUL-2678 the five reasons; the name
+// stays so the history reads.
+const SEVEN = [
+  'event_id', 'status', 'recommendation', 'updated_at', 'photo_set_key', 'rule_version', 'engine_flags', 'tier',
+  'contextual_flags', 'visual_flags', 'blood_present', 'stool_blood_present', 'foreign_material_present',
+];
 
 describe('what the phone keeps: seven columns, never the words, the hide or the payload stamps', () => {
   it('the real DDL builds exactly the seven columns', () => {
@@ -294,6 +298,11 @@ describe('what the phone keeps: seven columns, never the words, the hide or the 
         rule_version: null,
         engine_flags: null,
         tier: null,
+        contextual_flags: null,
+        visual_flags: null,
+        blood_present: null,
+        stool_blood_present: null,
+        foreign_material_present: null,
       },
     ]);
   });
@@ -949,7 +958,9 @@ describe('the tier (EN-3, CUL-1133)', () => {
   });
 
   it('the watermark key moved, so every phone re-pulls once and gains the tier', () => {
-    expect(READ_COPY_WATERMARK_KEY).toBe('event_ai_verdicts:v3');
+    // `:v3` gained the tier; CUL-2678's `:v4` re-pulls once more for the reasons.
+    expect(READ_COPY_WATERMARK_KEY).not.toBe('event_ai_verdicts:v2');
+    expect(READ_COPY_WATERMARK_KEY).toBe('event_ai_verdicts:v4');
   });
 });
 
