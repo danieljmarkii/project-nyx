@@ -11,6 +11,8 @@ Extracted from B-027 (`supabase/functions/analyze-vomit/`, `components/event/Vom
 
 > A single-incident AI read may **escalate** on the *presence* of a visible red flag → "worth a call to your vet," never a diagnosis. It must **never reassure** on the *absence* of one. Absence of a visible flag ≠ wellness. The clear-foam-once-but-cat-hasn't-eaten-36h case is the feline 48hr hepatic-lipidosis call. Reassurance, if ever, comes only from a cross-incident multi-sample read.
 
+**How firmly the app asks is set by the reason, not the tier (CUL-2654, PM 2026-11-07, `docs/clinical-voice-inventory-2026-11.md` §R).** The owner decides: every ask gives the data and a nudge (Pattern 11), except **the floor**, which keeps direct words ("Call your vet today. If they're closed, call an emergency clinic."): blood in vomit or stool · suspected foreign material · a cat with no meal rated Most or All in 24 h · collapse or a breathing sign (the door's printed list) · any read tiered `call_now`. Softening the verb is never softening the escalation: every red flag still surfaces, and the floor never gets quieter.
+
 This skill is the citable, code-grounded version of that rule. When building the next per-incident AI feature (stool, skin, eye, the rest of B-013), inherit these patterns by reference — do not re-derive them from prose.
 
 **Out of scope:** generic Edge Function patterns (auth, RLS, storage download, base64 encoding, image media-type sniffing). Those are technical hygiene used by `analyze-vomit` but separable; document them in a `nyx-edge-function-vision` skill if/when they recur.
@@ -79,6 +81,8 @@ export function applyEscalationFloor(params: {
 ```
 
 **THE FLOOR IN TIERS (EN-3, CUL-1133).** The floor still returns one of the three verdicts, and the tier is mapped from it after every downstream step (the partial-read collapse included), so the floor has no path to a quiet tier over a flag either. Today every escalation maps to `call_today`; a `call_now` is written only by a rule that decides it, with its own review (EN-4's counts, EN-6's photo rows). **The model's own escalation** (its `worth_a_call` with no visual or contextual flag behind it, GAP-31) is `call_today`, keeps its words (Pattern 10 is unchanged: model text rides only the self-escalated path), and is told apart by `tierReasonOf` (`model_only`), never promoted to `call_now`. **Never-lower binds the call tiers only** (`_shared/incident-analysis.ts`): a stored call holds over a quieter verdict (`holdsOver`, reading the louder column), and a call written over a louder stored call keeps the stored tier while its own findings still land (`keepLouderTier`: a hold there would keep fresh blood off the structured columns); `logged` ↔ `not_enough_to_say` moves freely, so an unreadable or partial re-read can still collapse a calm read (B-203, CUL-812).
+
+**THE WORDS ARE KEYED BY REASON (D1, CUL-2654).** A tier cannot tell a blood photo from a dog that vomited twice, so one pure function shared by phone and server picks the words from the stored `visual_flags`, `blood_present`, `stool_blood_present`, `foreign_material_present` and `contextual_flags` (`feline_reduced_intake`) beside the tier. It returns the floor words or the deferential ones; **a reason it does not know gets the floor words**, so the layer fails loud. No literal floor string lives outside that module.
 
 **A CONTEXTUAL FLAG MUST BE TRUE OF THIS SAMPLE, AND QUIETING NEEDS POSITIVE EVIDENCE (EN-7, CUL-1138).** A flag's words describe the incident it lands on: stool's `concurrent_vomiting` used to describe loose stool over a formed one. Under the key the flag is computed as before the read (so a capped, unreadable, failed or photoless read keeps the call), and is WITHDRAWN only after a complete read shows a formed stool (Bristol 2 to 4) and nothing else asks for it: not logged Loose, the vomiting not meeting the vomit read's repeat rule (`_shared/vomitRepeat.ts`), and not the vomit read's own feline intake arm (the stool asks the vomit's questions, because a photoless vomit gets no read of its own until its record is opened). Each reason has its own sentence. A withdrawal is a bounded framework exception (`ContextualRun.withdrawable` + `afterRead`, `mergeAfterRead`): only named flags, only on a COMPLETE read of a SINGLE-photo event (one set of structured fields cannot speak for several frames), never over an owner's corrected field, never on the cap or rescue path; and an owner's edit away from formed re-runs the read (`needsEn7Recheck`, `lib/stoolForm.ts`, CUL-1408), so a correction always gets the call back. Any other descriptor still cannot weaken the floor.
 
@@ -153,11 +157,7 @@ The model is also pinned to `tool_choice: { type: 'any' }` against a single tool
 **CANONICAL EXAMPLE** (`supabase/functions/analyze-vomit/index.ts` — the raw-size guard at ~`:702–712`, the templated fallback via `selectReadText` at ~`:389–397`):
 
 ```ts
-// Guard on the RAW byte size BEFORE encoding. Encoding a multi-MB image is
-// itself what OOM'd the worker (546, WORKER_RESOURCE_LIMIT) — a hard kill that
-// runs before any row is written — so an oversized photo must be skipped
-// *before* base64, never sent to Claude. (The old guard filtered on the encoded
-// length, i.e. after the OOM.)
+// Guard the RAW size BEFORE base64: encoding a multi-MB image OOM'd the worker (546).
 const usableBlobs = blobs.filter((b) => b.size > 0 && b.size <= MAX_CLAUDE_IMAGE_BYTES)
 if (usableBlobs.length === 0) {
   photoUnreadable = true // no photo within Claude's size limit (or all empty)
@@ -165,7 +165,7 @@ if (usableBlobs.length === 0) {
   const imageParts = await Promise.all(usableBlobs.map(blobToImagePart))
   try {
     analysis = await runVisionCall(imageParts)
-    if (!analysis) throw new Error('Vision model did not return an analysis')
+    if (!analysis) throw new Error('no analysis')
   } catch (visionErr) {
     const msg = visionErr instanceof Error ? visionErr.message : String(visionErr)
     if (msg.includes('Claude API error 400')) {
@@ -182,7 +182,7 @@ if (usableBlobs.length === 0) {
 //    your vet is the best call."
 ```
 
-**ANTI-PATTERN:** Returning a 500 on an unreadable image (the user sees a generic failure and loses the read entirely). Or, worse, returning a `monitor` recommendation with a "couldn't see the photo so probably fine" read — that's reassurance on absence, the exact rule violation Pattern 1 forbids.
+**ANTI-PATTERN:** A 500 on an unreadable image (the read is lost). Or, worse, returning a `monitor` recommendation with a "couldn't see the photo so probably fine" read — that's reassurance on absence, the exact rule violation Pattern 1 forbids.
 
 **A run that FAILS keeps the escalation it already computed (CUL-815).** A transient failure (a storage error, a 529, a failed write-back) still ends in the outer catch, but the catch no longer throws away the escalation the run worked out first: `buildRescueRead` takes the run's own post-floor escalation, or the contextual flags alone, and `buildFailureWrite` writes it as `status: 'failed'` with the read fields only (never a structured column). A stored escalation still outranks it (CUL-812, error-only), and an unreadable row still skips (fail closed). And no write is decided on an unanswered read: the step-3b existing-row read throws on error (`existingRowOrThrow`, CUL-817), before the cap gate spends a unit.
 
@@ -251,12 +251,12 @@ export function buildAnalysisWriteBack(params): AnalysisWriteBack {
 
 **Two rules on top, both in `resolveReanalysisWrite` (`_shared/incident-analysis.ts`), decided on a fresh read of the row taken after the vision call:**
 
-- **A re-analysis never LOWERS a stored escalation (CUL-1201 part 2, PM 2026-09-26).** A second run of one incident that sees less is absence, and absence is not wellness. A stored `worth_a_call` is held whatever the calmer run says, across re-reads and photo swaps, contextual escalations included: both descriptors count their context windows back from `Date.now()`, so a lapsed window cannot be told from an owner deleting a duplicate. Nothing is written except, on a row the last run left `failed`, this run's status (`completed` or `uncertain`). There is **no owner-correction exception yet**: `ai_raw_payload` is frozen at the read the owner edited, so it cannot say whether the stored verdict came from that read or from a later re-escalation the owner never saw. The owner's path to lower a verdict needs a read-time stamp (CUL-1201 part 1) or an explicit owner act on the verdict (CUL-1107 / CUL-409). So "a re-analysis refreshes the verdict" above holds only upward or sideways.
+- **A re-analysis never LOWERS a stored escalation (CUL-1201 part 2, PM 2026-09-26).** A second run of one incident that sees less is absence, and absence is not wellness. A stored `worth_a_call` is held whatever the calmer run says, across re-reads and photo swaps, contextual escalations included: both descriptors count their context windows back from `Date.now()`, so a lapsed window cannot be told from an owner deleting a duplicate. Nothing is written except, on a row the last run left `failed`, this run's status (`completed` or `uncertain`). There is **no owner-correction exception yet**: `ai_raw_payload` is frozen at the edited read, so it cannot say which read the stored verdict came from; lowering needs a read-time stamp (CUL-1201 part 1) or an owner act on the verdict (CUL-1107 / CUL-409). So "a re-analysis refreshes the verdict" above holds only upward or sideways.
 - **A stored red flag carries; a stored absence does not (CUL-532).** When the stored structured columns assert a flag (per the descriptor's `presentFlagsFromStructured`, the Pattern 9 derivation) that this run's columns don't, the write refreshes the read fields only. The capped branch never overwrites an existing row's structured columns, and a failed run over a stored flag writes the error only, so the retry frame never hides it. A stored "none visible" is never kept over a read that saw nothing. The per-field union of a stored flag and a DIFFERENT new one is CUL-1110's.
 
 **These are proven through the pipeline, not only the helpers:** `_shared/incident-analysis.pipeline.test.ts` drives the real `runIncidentAnalysis` through a fake client and model (`PipelineDeps`). A new write path or a rebase of this one adds its case there.
 
-**THE OWNER'S HIDE (CUL-1323, PM 2026-09-27).** `dismissed_at` is a statement about the read the owner saw, never about the incident, and every new read clears it: both builder modes, the capped escalation, the failure write's rescue, and a HOLD (it keeps the escalation's words, but a hide on file may predate the client that checks which read it was made on). Only a run that reads nothing keeps it: an error-only failure, a failed upsert, the cap state. A new write path that writes `read_text` or `recommendation` takes its values from `buildAnalysisWriteBack` / `resolveReanalysisWrite` / `buildFailureWrite`, and only those three touch the hide, or the sink scan in `incident-analysis.test.ts` fails the build. The client half is the order: Hide and Show write only over the read on screen, everything Hide takes off it: verdict, words, description and every observation, arrays included (`lib/analysisDismissal.ts`, pinned by rendering each section over a row that records every column it reads), so on that client a read that lands first is never hidden unseen. Builds already on phones hide unconditionally; closing that on the server is CUL-1357, and the same race on Edit is CUL-1356.
+**THE OWNER'S HIDE (CUL-1323, PM 2026-09-27).** `dismissed_at` speaks about the read the owner saw, never the incident, so every new read clears it (both builder modes, the capped escalation, the failure rescue, and a HOLD); only a run that reads nothing keeps it (error-only failure, failed upsert, the cap state). Only `buildAnalysisWriteBack` / `resolveReanalysisWrite` / `buildFailureWrite` touch the hide; the sink scan in `incident-analysis.test.ts` fails any other path that writes `read_text` or `recommendation`. Client half: Hide and Show write only over the read on screen and take off everything it shows (`lib/analysisDismissal.ts`). Installed builds hide unconditionally: CUL-1357 on the server, CUL-1356 for Edit.
 
 ---
 
@@ -343,14 +343,25 @@ analysis.description = selectDescription({
 
 ---
 
+## PATTERN 11: Soften the Verb, Keep the Clock, Keep the Reason
+
+**RULE (CUL-2654 R-1, inventory §2):** outside the floor (Origin and Scope), an ask leads with the data (what was logged, with counts and times) and turns the imperative into a nudge, keeping its clock word and its service line.
+
+| Keep | Change | Never |
+|---|---|---|
+| The data sentence first | "Call your vet…" → "Worth a call…" | A condition on the owner's sense of normal: "if this isn't like her", "if you're not worried" |
+| The clock: *today*, *tonight*, *now* | "needs a call" → "is the kind of thing vets like to hear about the same day" | "can wait", "no rush", "when convenient" |
+| The service: "If yours is closed, an emergency clinic…" | bare "call your vet" → "worth telling your vet" | Dropping the ask, or a vaguer clock ("soon" for "today") |
+| The "I've called" loop under every call | | A word implying the pet is fine (Pattern 1) |
+
+**THE COUNTEREXAMPLE (why the Never column exists).** *"If this isn't like Mochi, a call today is worth it"* breaks on the chronic vomiter: a dog that vomits twice a week **is** like Mochi, so the owner's baseline turns the call into a stand-down,, and vets say owners under-report normalised vomiting. The deference lives in the verb, never in a condition the owner's sense of normal can switch off.
+
+**ANTI-PATTERN:** softening a floor case ("worth a look" over a blood photo), or a softened ask that loses its clock. A floor case that reads softer than the floor today is firmed up, never left (D4).
+
+---
+
 ## Ambiguities Flagged
 
-These are gaps between what the skill claims and what the code currently enforces. #1, #2 and #4 have since been **RESOLVED** (see inline); remaining open items are left for PM decision rather than silently "fixed" in this skill.
+Gaps between what the skill claims and what the code enforces. #1 (model `read_text` not regex-tested), #2 (`description` prompt-only) and #4 (no cross-incident abstraction) are **resolved**: Pattern 10's two-layer gate and the shared `_shared/incident-analysis.ts` pipeline (B-247). The open item stays for the PM rather than being silently "fixed" here.
 
-1. **Model-emitted `read_text` is not regex-tested.** — **RESOLVED (B-060 + CUL-152).** `read_text` is guarded STRUCTURALLY, not by regex: the descriptor's parse nulls it unless the model self-escalated, and `selectReadText` surfaces it only on a non-contextual, readable, final `worth_a_call`. See **Pattern 10**. (A denylist was tried and rejected — ~86% miss.)
-
-2. **`description` field is guarded by prompt only.** — **RESOLVED (CUL-152 / B-179, 2026-08-17).** `description` now gets the identical two-layer gate as `read_text` (parse + the post-floor `selectDescription`). See **Pattern 10**. The original "worth a one-line assertion" under-scoped it: adversarial review showed a parse-only gate still leaks on a floor downgrade, so both layers are required.
-
-3. **`VomitAnalysisSection.tsx` carries the no-reassure rule as a comment (`:11–13`).** The component never renders an all-clear UI element — but that's enforced by the absence of a `looks_normal` enum value (Pattern 1), not by any test in the component itself. Acceptable as long as Pattern 1 holds. _(Still open — accepted.)_
-
-4. **No cross-incident-type abstraction yet.** — **RESOLVED (B-247 PR 2 / D2, 2026-07-16).** The pipeline is now the shared `_shared/incident-analysis.ts`, parameterized by an `IncidentDescriptor` (analyze-vomit + analyze-stool live on it). The patterns above are framework-owned there; a descriptor controls which findings become flags, never what flags do. A descriptor can still weaken the floor through its parse, which is why Pattern 9's write-time rule exists; both shipped parses now follow it (vomit since CUL-534).
+3. **`VomitAnalysisSection.tsx` carries the no-reassure rule as a comment (`:11–13`).** No all-clear element renders, but that rests on the absent `looks_normal` enum value (Pattern 1), not on a component test. Accepted while Pattern 1 holds.

@@ -132,6 +132,8 @@ diarrhea: { label: 'Loose stool', /* ... */ },
 
 **RULE:** Surface a health concern clearly, but without spiking anxiety before the data justifies it (CLAUDE.md copy standards: "No alarm language for health flags"). The forward-looking label, not the all-clear: the verdict copy must never assert wellness. This is the *copy face* of the `clinical-guardrails` n=1 asymmetry — read that skill for the enum/floor enforcement; this pattern is the wording rule.
 
+**THE DEFERENTIAL REGISTER (CUL-2654, PM 2026-11-07).** The owner is closest to the pet, so an ask gives the data and a nudge and the owner decides ("Worth a call today", not "Call your vet today"), except the floor, which keeps direct words. The floor list, the formula and its Never column are `clinical-guardrails` (Origin, Pattern 11). Deference is never a condition on the owner's sense of normal.
+
 **CANONICAL EXAMPLE** (`components/event/VomitAnalysisSection.tsx:67–69`):
 
 ```ts
@@ -190,12 +192,8 @@ Plain cause, a concrete recovery (replace the photo), and the honest health back
 
 ## Ambiguities Flagged
 
-Gaps between what this skill asserts and what the code currently enforces. Left open for PM decision rather than silently "fixed."
+Gaps between what this skill asserts and what the code enforces, left open for the PM. (#1, the `!` and jargon in rendered copy, is resolved by `guards/ownerFacingCopy.test.ts`, C-25.)
 
-1. **Resolved (CUL-445):** `guards/ownerFacingCopy.test.ts` now reds a `!` in rendered owner copy, untranslated clinical terms in error copy and raw error strings (`.claude/rules/copy.md`, C-25).
-
-2. **Model-emitted `read_text` is unguarded for voice, not just for reassurance.** `clinical-guardrails` Ambiguity #1 already flags that the model's own `read_text` isn't regex-checked for reassurance. The same gap applies to *voice*: the model could emit an exclamation mark or a jargon term ("emesis") in the clean-photo path, and nothing catches it before display. If a post-call check is added for reassurance, fold the `!` and jargon checks into the same pass.
-
-3. **No central copy module.** Strings live inline in each component (`SignalZone`, `TodayZone`, `VomitAnalysisSection`, …). That's fine at MVP scale and keeps copy next to context, but it means voice consistency is enforced by review, not structure, and there's no single place to audit tone or to localize later. If a `lib/copy.ts` or i18n layer is ever introduced, these patterns become its style guide. Not a defect — a scaling note.
-
-4. **Jargon translation (Pattern 5) is per-surface and hand-maintained.** Each component owns its own label map. A new structured field added to `event_ai_analysis` won't get a plain-language label automatically — the mapping has to be added wherever it's rendered. When the per-incident AI generalizes across types (stool, skin, eye — `clinical-guardrails` Ambiguity #4), the label maps should generalize with it, or new clinical enum values will leak to owners raw.
+2. **Model `read_text` is not checked for voice.** Pattern 10 of `clinical-guardrails` keeps model prose to the self-escalated path, but there it could still carry a `!` or "emesis". A post-call check would fold both in.
+3. **No central copy module.** Strings live in each component, so voice is enforced by review, not structure. A scaling note, not a defect.
+4. **Jargon labels (Pattern 5) are per-surface and hand-kept.** A new `event_ai_analysis` enum gets no plain label until each renderer adds one; new incident types should share the maps.
