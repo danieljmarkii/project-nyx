@@ -519,18 +519,32 @@ function buildMonitorReadText(petName: string): string {
 // Escalation on a model-raised visual flag, used when the model didn't write its
 // own read. Names the present concern plainly (the safe direction) and routes to
 // the vet.
-function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
-  const p = petName || 'your pet'
+/** What the stool photo showed, from the visual flags alone (never the model's words). */
+function seenInStoolPhoto(visualFlags: string[]): string {
   const hasBlood = visualFlags.includes('blood')
   const hasForeign = visualFlags.includes('suspected_foreign_material')
-  const seen = hasBlood && hasForeign
+  return hasBlood && hasForeign
     ? "what looks like blood, and something that doesn't look like food,"
     : hasBlood
       ? 'what looks like blood'
       : hasForeign
         ? "something that doesn't look like food"
         : 'something worth a closer look'
-  return `I can see ${seen} in this stool photo. That's worth a call to your vet about ${p}.`
+}
+
+/** A photo flag that is a floor sign (blood, suspected foreign material). */
+function hasFloorVisual(visualFlags: readonly string[]): boolean {
+  return visualFlags.includes('blood') || visualFlags.includes('suspected_foreign_material')
+}
+
+export function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
+  const p = petName || 'your pet'
+  const seen = seenInStoolPhoto(visualFlags)
+  // CUL-2668 (inventory §3b): blood or something that isn't food is the floor and names its
+  // clock; the model's own call with no flag keeps the shipped words.
+  return hasFloorVisual(visualFlags)
+    ? `I can see ${seen} in this stool photo. That's worth a call to your vet today.`
+    : `I can see ${seen} in this stool photo. That's worth a call to your vet about ${p}.`
 }
 
 // Photo present but unreadable (oversize / undecodable format). Honest about the
@@ -573,27 +587,33 @@ export function selectReadText(params: {
 // are pinned to this stool ("around the same time as this stool") and carry no "today" or
 // "in the last day": the read is stored, and a relative clock goes false by the time the
 // owner reads it (critique GAP-1). How soon to call is the tier's to say (PR-27's map).
+// CUL-2668 (CUL-2654 R-1, D3): every reason but the cat's intake is deferential (Pattern 11: soften
+// the verb, keep the clock), and its clock is "the same day", relative to the vomiting and the
+// stool, so it stays true (GAP-1). A cat with no meal rated Most or All is the floor: "call your
+// vet today", the one stored "today" here, as the ruling words it (the vomit read's D4 line).
 export type En7VomitReason = 'logged_loose' | 'read_loose' | 'read_hard' | 'intake' | 'repeats' | 'unread'
 
-export function buildEn7VomitReadText(petName: string, reason: En7VomitReason): string {
+// `direct`: the photo shows a floor sign (blood, foreign material), so the read is a floor read and
+// every reason keeps the shipped direct words (adversarial pass 1, B3).
+export function buildEn7VomitReadText(petName: string, reason: En7VomitReason, direct = false): string {
   const p = petName || 'Your pet'
   const lead = `${p} has vomited around the same time as this stool`
   if (reason === 'logged_loose') {
-    return `${lead}, which was logged as loose. Vomiting and loose stool together can run a pet down quickly, so call your vet.`
+    return `${lead}, which was logged as loose. Vomiting and loose stool together can run a pet down quickly, so ${direct ? 'call your vet' : "it's worth telling your vet the same day"}.`
   }
   if (reason === 'read_loose') {
-    return `${lead}, and it looks loose in the photo. Vomiting and loose stool together can run a pet down quickly, so call your vet.`
+    return `${lead}, and it looks loose in the photo. Vomiting and loose stool together can run a pet down quickly, so ${direct ? 'call your vet' : "it's worth telling your vet the same day"}.`
   }
   if (reason === 'read_hard') {
-    return `${lead}, and it looks hard and dry in the photo. Vomiting with a hard, dry stool can be a sign of dehydration, so call your vet.`
+    return `${lead}, and it looks hard and dry in the photo. Vomiting with a hard, dry stool can be a sign of dehydration, so ${direct ? 'call your vet' : "it's worth telling your vet the same day"}.`
   }
   if (reason === 'intake') {
-    return `${lead}, and when I read this, no meal logged in the 24 hours before was marked Most or All. In a cat that's vomiting, that's reason to call your vet.`
+    return `${lead}, and when I read this, no meal logged in the 24 hours before was marked Most or All. In a cat that's vomiting, call your vet today.`
   }
   if (reason === 'repeats') {
-    return `${p} has vomited more than once in the days around this stool. Vomiting that repeats like that is reason enough to call your vet.`
+    return `${p} has vomited more than once in the days around this stool. Vomiting that repeats like that ${direct ? 'is reason enough to call your vet' : 'is worth a call to your vet the same day'}.`
   }
-  return `${lead}. With vomiting around it, call your vet rather than waiting to see how the next stool looks.`
+  return `${lead}. With vomiting around it, ${direct ? 'call your vet' : "it's worth a call to your vet the same day"} rather than waiting to see how the next stool looks.`
 }
 
 export function en7StoolCopy(reason: En7VomitReason): IncidentCopy<ContextualFlag> {
@@ -601,6 +621,14 @@ export function en7StoolCopy(reason: En7VomitReason): IncidentCopy<ContextualFla
     ...STOOL_COPY,
     contextual: (petName, flags) =>
       flags.includes('concurrent_vomiting') ? buildEn7VomitReadText(petName, reason) : buildContextualReadText(petName, flags),
+    // A photo finding beside the vomiting leads, named from the flags, and a floor sign keeps the
+    // direct words (adversarial pass 1, B3: the blood went unsaid behind the EN-7 line).
+    contextualWithPhotoFinding: (petName, flags, visualFlags) =>
+      `I can see ${seenInStoolPhoto(visualFlags)} in this stool photo. ${
+        flags.includes('concurrent_vomiting')
+          ? buildEn7VomitReadText(petName, reason, hasFloorVisual(visualFlags))
+          : buildContextualReadText(petName, flags)
+      }`,
   }
 }
 

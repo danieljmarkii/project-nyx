@@ -1198,8 +1198,8 @@ export function evidenceText(
     // free-fed bowl and an unrated meal are not counted; neither is said to be eaten.
     const r = sustainedRefusalOf(finding);
     return r
-      ? `${sustainedRefusalSentence(r, petName)} Only meals you watched and rated are counted, and none in that time was rated "ate most" or better, so there's no recent normal to compare with.${i5Tail}`
-      : `${petName} hasn't eaten well at any meal you watched and rated lately. That's worth a call to your vet today.${i5Tail}`;
+      ? `${sustainedRefusalSentence(r, petName, finding.species)} Only meals you watched and rated are counted, and none in that time was rated "ate most" or better, so there's no recent normal to compare with.${i5Tail}`
+      : `${petName} hasn't eaten well at any meal you watched and rated lately${sustainedRefusalAsk(finding.species)}${i5Tail}`;
   }
   if (finding.trigger === 'refused_then_vomited') {
     // Only witnessed vomits count (a found pile's time is a guess), and nothing is said of the
@@ -1224,7 +1224,7 @@ export function evidenceText(
       `${petName} refused every meal you rated ${allRefusedSpan(finding.daysBelowBaseline)}, compared with ` +
       `${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Refusing food can be an early sign ` +
       (intakeAllRefusedCallsToday(finding)
-        ? `something's off, so it's worth a call to your vet today.${i5Tail}`
+        ? `something's off, so ${FLOOR_ASK.inline}.${i5Tail}`
         : `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`)
     );
   }
@@ -2031,10 +2031,17 @@ function sustainedRefusalCounts(r: SustainedRefusalFacts): string {
   return `${r.meals} meals on ${r.days} days (${parts.join(', ')})`;
 }
 
+/** The sustained-refusal card's ask, with its lead-in: the floor for every species but a dog (the
+ *  cat floor, CUL-2654 D3, D4; a species the cache does not carry is the floor), a dog's the
+ *  deferential call today. The mirror of phrasing.ts `sustainedRefusalSentence`'s tail (CUL-2668). */
+function sustainedRefusalAsk(species: string | null | undefined): string {
+  return species === 'dog' ? `. That's ${DEFERENTIAL_ASK.inline}.` : ` — ${FLOOR_ASK.inline}.`;
+}
+
 /** The mirror of `sustainedRefusalSentence` in generate-signal/phrasing.ts (keep the two in sync;
  *  signalCopy.sustainedRefusal.test.ts pins them). Counts over the named window and the call. */
-export function sustainedRefusalSentence(r: SustainedRefusalFacts, petName: string): string {
-  return `${petName} hasn't eaten well at any meal you watched and rated in ${sustainedRefusalSpan(r)}: ${sustainedRefusalCounts(r)}. That's worth a call to your vet today.`;
+export function sustainedRefusalSentence(r: SustainedRefusalFacts, petName: string, species?: string | null): string {
+  return `${petName} hasn't eaten well at any meal you watched and rated in ${sustainedRefusalSpan(r)}: ${sustainedRefusalCounts(r)}${sustainedRefusalAsk(species)}`;
 }
 
 function refusalCountOf(f: TimingStoryLike): number {

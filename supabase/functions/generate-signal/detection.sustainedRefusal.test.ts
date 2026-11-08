@@ -206,7 +206,8 @@ Deno.test('adversarial pass 1, B1: two weeks eaten well, then 72 hours refused, 
     const triggers = out.map((f) => f.trigger)
     assert.equal(triggers[0], 'sustained_refusal', `${species}: the floor leads`)
     assert.ok(!triggers.includes('consecutive_low'), `${species}: one "is she eating" card, the louder one`)
-    assert.match(templateIntakeDecline(out[0], 'Nyx'), /worth a call to your vet today/)
+    // CUL-2668: a cat's is the floor's words, a dog's the deferential call today.
+    assert.match(templateIntakeDecline(out[0], 'Nyx'), species === 'dog' ? /\. That's worth a call to your vet today\.$/ : / — call your vet today\.$/)
   }
 })
 
@@ -234,11 +235,14 @@ Deno.test('the floor sits beside a refusal of a normally-eaten food, and leads i
 Deno.test('the sentence: counts over the named window, a call today, never "less than usual" or "picky"', () => {
   const f = detectIntakeDecline(input('cat', p2bCat()))[0]
   const text = templateIntakeDecline(f, 'Nyx')
-  assert.equal(text, sustainedRefusalSentence(f.sustainedRefusal!, 'Nyx'))
-  assert.equal(text, "Nyx hasn't eaten well at any meal you watched and rated in the last 72 hours: 6 meals on 3 days (4 refused, 2 picked at). That's worth a call to your vet today.")
+  assert.equal(text, sustainedRefusalSentence(f.sustainedRefusal!, 'Nyx', 'cat'))
+  assert.equal(text, "Nyx hasn't eaten well at any meal you watched and rated in the last 72 hours: 6 meals on 3 days (4 refused, 2 picked at) — call your vet today.")
+  // A dog's keeps the deferential call today; a species the caller does not hand is the floor.
+  assert.equal(sustainedRefusalSentence(f.sustainedRefusal!, 'Nyx', 'dog'), "Nyx hasn't eaten well at any meal you watched and rated in the last 72 hours: 6 meals on 3 days (4 refused, 2 picked at). That's worth a call to your vet today.")
+  assert.equal(sustainedRefusalSentence(f.sustainedRefusal!, 'Nyx'), text)
   assert.doesNotMatch(text, /less than usual|picky|fussy|!/i)
   const base = { meals: 3, refused: 3, picked: 0, some: 0, days: 2, windowHours: 72, firstIso: NOW, endIso: NOW, endLocalDay: '2026-07-30', anchoredToLastRating: false }
-  assert.match(sustainedRefusalSentence(base, 'Nyx'), /: 3 meals on 2 days \(3 refused\)\./)
+  assert.match(sustainedRefusalSentence(base, 'Nyx', 'dog'), /: 3 meals on 2 days \(3 refused\)\./)
   assert.match(sustainedRefusalSentence({ ...base, anchoredToLastRating: true }, 'Nyx'), /in the 72 hours to July 30:/)
 })
 

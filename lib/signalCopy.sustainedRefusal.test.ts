@@ -38,7 +38,10 @@ function card(facts: SustainedRefusalFacts | undefined = FACTS): IntakeDeclineFi
 describe('the sustained-refusal card on the phone', () => {
   it('mirrors the server sentence word for word', () => {
     for (const f of [FACTS, { ...FACTS, refused: 6, picked: 0 }, { ...FACTS, refused: 1, picked: 2, some: 3 }, { ...FACTS, anchoredToLastRating: true }]) {
-      expect(sustainedRefusalSentence(f, 'Miso')).toBe(serverSentence(f, 'Miso'));
+      // Every species the card can carry, and none (CUL-2668: a dog's is deferential, every other the floor).
+      for (const sp of ['cat', 'dog', 'other', undefined] as const) {
+        expect(sustainedRefusalSentence(f, 'Miso', sp)).toBe(serverSentence(f, 'Miso', sp));
+      }
     }
   });
 
@@ -47,8 +50,10 @@ describe('the sustained-refusal card on the phone', () => {
     const all = [sampleLine(f), evidenceText(f, 'Miso'), stripNameLine(f), signalHomeAsk(f)].join(' | ');
     expect(all).not.toMatch(/less than usual|below the usual|picky|fussy|!/i);
     expect(sampleLine(f)).toBe('6 rated meals on 3 days, none eaten well');
-    expect(evidenceText(f, 'Miso')).toMatch(/^Miso hasn't eaten well at any meal you watched and rated in the last 72 hours: 6 meals on 3 days \(4 refused, 2 picked at\)\. That's worth a call to your vet today\./);
-    // CUL-2667: a cat's sustained refusal is the floor on Home (the mirrored sentence moves in row 3).
+    expect(evidenceText(f, 'Miso')).toMatch(/^Miso hasn't eaten well at any meal you watched and rated in the last 72 hours: 6 meals on 3 days \(4 refused, 2 picked at\) — call your vet today\./);
+    // CUL-2667 / CUL-2668: a cat's sustained refusal is the floor on Home and in its sentence.
+    expect(evidenceText(f, 'Miso')).toContain(signalHomeAsk(f) as string);
+    expect(evidenceText({ ...f, species: 'dog' }, 'Miso')).toMatch(/\(4 refused, 2 picked at\)\. That's worth a call to your vet today\./);
     expect(signalHomeAsk(f)).toBe(f.species === 'dog' ? 'worth a call to your vet today' : 'call your vet today');
     expect(stripAskLine(f)).toBe('Call your vet');
     expect(stripNameLine(f)).toBe('No meal eaten well');
@@ -57,7 +62,8 @@ describe('the sustained-refusal card on the phone', () => {
   it('a malformed cache reads as absent, and the card still escalates', () => {
     const broken = card({ ...FACTS, meals: Number.NaN });
     expect(sustainedRefusalOf(broken)).toBeNull();
-    expect(evidenceText(broken, 'Miso')).toMatch(/worth a call to your vet today/);
+    expect(evidenceText(broken, 'Miso')).toMatch(/ — call your vet today\./);
+    expect(evidenceText({ ...broken, species: 'dog' }, 'Miso')).toMatch(/lately\. That's worth a call to your vet today\./);
     expect(evidenceText(broken, 'Miso')).not.toMatch(/NaN/);
   });
 });

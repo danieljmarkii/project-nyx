@@ -20,7 +20,8 @@ import { leadingSafetyText } from '../ask/answer.ts'
 const MS_PER_HOUR = 3_600_000
 const NOW = '2026-07-30T20:00:00.000Z'
 const NOW_MS = Date.parse(NOW)
-const CALL = 'worth a call to your vet today'
+// CUL-2668: every species but a dog meets the cat floor, so the card says the floor's words.
+const CALL = 'call your vet today'
 const SOFT = 'worth keeping an eye on, and a word with your vet if it carries on'
 
 let seq = 0
@@ -102,7 +103,7 @@ Deno.test('CUL-2593: only the all-refused card moves; a cat\'s plain dip keeps i
 
 Deno.test('CUL-2593: a carried all-refused card keeps the call for a cat, the word for a dog', () => {
   const cat = templateCarried(lowFor('cat', ['refused', 'refused']), 'Miso', '2026-07-29T10:00:00.000Z')
-  assert.match(cat, /showed refusing every meal you rated — worth a call to your vet\. /)
+  assert.match(cat, /showed refusing every meal you rated — call your vet today\. /)
   const dog = templateCarried(lowFor('dog', ['refused', 'refused'], 2), 'Rex', '2026-07-29T10:00:00.000Z')
   assert.match(dog, /showed refusing every meal you rated — worth a word with your vet\. /)
 })

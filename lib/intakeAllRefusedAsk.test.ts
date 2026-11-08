@@ -14,7 +14,7 @@ import { templateIntakeDecline } from '../supabase/functions/generate-signal/phr
 import type { IntakeDeclineFinding as ServerIntakeDeclineFinding } from '../supabase/functions/generate-signal/detection';
 import type { IntakeDeclineFinding } from './signal';
 
-const CALL = 'worth a call to your vet today';
+const FLOOR = 'call your vet today';
 const SOFT = 'worth keeping an eye on, and a word with your vet if it carries on';
 
 function card(extra: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
@@ -54,10 +54,12 @@ describe("a full day of refusal asks for a call today, except for a dog (CUL-259
     expect(signalHomeAsk(f)).toBe('call your vet today');
     expect(stripAskLine(f)).toBe(STRIP_ASKS.call);
     const evidence = evidenceText(f, 'Miso');
-    expect(evidence).toMatch(/^Miso refused every meal you rated .*, so it's worth a call to your vet today\.$/);
-    expect(evidence).not.toMatch(/carries on/);
-    // The server sentence still says the earlier call today until row 3 (CUL-2668) moves it.
-    expect(templateIntakeDecline(serverOf(f), 'Miso')).toContain(CALL);
+    expect(evidence).toMatch(/^Miso refused every meal you rated .*, so call your vet today\.$/);
+    expect(evidence).not.toMatch(/carries on|worth a call/);
+    // CUL-2668: the server's sentence says the floor's words too, and no softer call.
+    const said = templateIntakeDecline(serverOf(f), 'Miso');
+    expect(said).toMatch(new RegExp(` — ${FLOOR}\\.$`));
+    expect(said).not.toMatch(/worth a call/);
   });
 
   it('a dog keeps "if it carries on" on every surface', () => {

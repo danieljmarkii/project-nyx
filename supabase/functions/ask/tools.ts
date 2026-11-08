@@ -65,7 +65,8 @@
 
 import { canonicalizeProtein, readProteinSet } from '../generate-signal/protein.ts'
 import { attributeDoses, type AttributableDose } from '../../../lib/medications.ts'
-import { TIER_WORDS, tierDisplayOf, type TierRow } from '../../../lib/incidentTierWords.ts'
+import { tierLabelOf, type TierRow } from '../../../lib/incidentTierWords.ts'
+import { DEFERENTIAL_ASK, FLOOR_ASK, type AskReasonRow } from '../../../lib/incidentAskWords.ts'
 
 // ── Shared constants ────────────────────────────────────────────────────────────
 
@@ -907,13 +908,29 @@ export function derivePresentFlags(read: AskCachedReadRow): DerivedFlag[] {
   return flags
 }
 
-/** The record's words for a read: the same resolver every client surface asks, handed the
- *  raw row's own four columns (status, tier, verdict, stamp), so Ask can never name a read
- *  differently from the screen it links to. Takes the DB row as it is, so nothing here
- *  rebuilds a stamp-shaped object (the one-writer guard, engineStamps.guard.test.ts). */
-export function tierWordsOf(row: TierRow): string | null {
-  const display = tierDisplayOf(row)
-  return display === null ? null : TIER_WORDS[display].label
+/** The record's words for a read: the same resolver the record asks (`tierLabelOf`, which
+ *  `incidentReadLabel` delegates to), handed the raw row's own columns (status, tier, verdict,
+ *  stamp, and since CUL-2668 the reasons: the structured sign columns, `contextual_flags` and
+ *  `visual_flags`), so Ask can never name a read differently from the screen it links to. Takes
+ *  the DB row as it is, so nothing here rebuilds a stamp-shaped object (the one-writer guard,
+ *  engineStamps.guard.test.ts).
+ *
+ *  THE CAT FLOOR (adversarial pass 1, B1): the record re-checks a cat's live meals and adds the
+ *  floor when none in 24 h was rated Most or All (`catNoGoodMeal24h`). Ask holds no live meal
+ *  read here, and an EN-7 stool read's cat intake reason is stored only as `concurrent_vomiting`,
+ *  so for every species but a dog (an unknown one included) a deferential call today is raised
+ *  to the floor here: the check can only add the floor, never remove it. Louder than the record
+ *  for a cat that has since eaten; never quieter.
+ *
+ *  STATED GAP, LOUD ONLY: Ask reads no raw model payload, so it cannot see which sign columns
+ *  the OWNER changed (the record's `ownerEdited` diff). A photo flag the owner cleared therefore
+ *  still reads as the floor here while the record says the deferential words: louder, never
+ *  quieter. A reason column missing from the row is the floor too (lib/incidentAskWords.ts). */
+export function tierWordsOf(row: TierRow & AskReasonRow, species?: string | null): string | null {
+  const label = tierLabelOf(row)
+  // Only a deferential call today can be raised by the cat check: an earlier-rule "Worth a call"
+  // keeps the words the record gives it without a live meal read.
+  return label === DEFERENTIAL_ASK.label && species !== 'dog' ? FLOOR_ASK.label : label
 }
 
 /** Project a cached read into the relayable, override-aware shape. A dismissed read hides

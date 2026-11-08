@@ -42,6 +42,7 @@ import { allRefusedCallsToday } from './detection.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
 import { TIER_WORDS } from '../../../lib/incidentTierWords.ts'
+import { DEFERENTIAL_ASK, FLOOR_ASK } from '../../../lib/incidentAskWords.ts'
 
 // §3.2 visible-card cap: governs the LOW/MEDIUM-priority insight set only.
 // Safety/concern findings are exempt — never withheld to honor the cap.
@@ -136,13 +137,18 @@ export function refusedThenVomitedSentence(r: RefusedThenVomitedFacts, petName: 
  * meal eaten is the feline liver window's far edge, so this is not a "keep an eye on it" card.
  * Never "less than usual" (there is no usual to compare with), never "picky". Mirrored on the
  * client (`sustainedRefusalSentence`, lib/signalCopy.ts); keep the two in sync.
+ *
+ * CUL-2668 (CUL-2654 D3, D4): for every species but a dog the card meets the cat floor (no meal
+ * rated Most or All in 24 h, and this card's window is 72), so it ends on the floor's words; a
+ * species the caller does not hand is the floor too. A dog's keeps the deferential call today.
  */
-export function sustainedRefusalSentence(r: SustainedRefusalFacts, petName: string): string {
+export function sustainedRefusalSentence(r: SustainedRefusalFacts, petName: string, species?: string | null): string {
   // The window is named in HOURS: 72 hours can touch four of the owner's days (adversarial pass 1,
   // B6). "Watched and rated": a free-fed bowl is not counted (B7). "Hasn't eaten well": since
   // CUL-2404 (a) an "ate some" no longer clears the floor, so "picked at or refused every meal"
   // could be false; the counts say which. A window anchored to an earlier day's last rating names it.
-  return `${petName} hasn't eaten well at any meal you watched and rated in ${sustainedRefusalSpan(r)}: ${sustainedRefusalCounts(r)}. That's worth a call to your vet today.`
+  const facts = `${petName} hasn't eaten well at any meal you watched and rated in ${sustainedRefusalSpan(r)}: ${sustainedRefusalCounts(r)}`
+  return species === 'dog' ? `${facts}. That's ${DEFERENTIAL_ASK.inline}.` : `${facts} — ${FLOOR_ASK.inline}.`
 }
 
 /** "the last 72 hours", or "the 72 hours to July 30" when the window ends at an earlier day's rating. */
@@ -163,10 +169,11 @@ function sustainedRefusalCounts(r: SustainedRefusalFacts): string {
 // CUL-2593: the predicate lives with the ranker that also reads it (detection.ts); re-exported here.
 export { allRefusedCallsToday }
 
-/** The vet clause of an all-refused card: a call today, or (a dog) the conditional word. */
+/** The vet clause of an all-refused card: the floor's call today (every species but a dog, which
+ *  meets the cat floor, CUL-2668 / CUL-2654 D3, D4), or (a dog) the conditional word. */
 function allRefusedAsk(f: IntakeDeclineFinding): string {
   return allRefusedCallsToday(f)
-    ? 'worth a call to your vet today'
+    ? FLOOR_ASK.inline
     : 'worth keeping an eye on, and a word with your vet if it carries on'
 }
 
@@ -177,7 +184,7 @@ export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string):
     return refusedThenVomitedSentence(f.refusedThenVomited, petName)
   }
   if (f.trigger === 'sustained_refusal' && f.sustainedRefusal) {
-    return sustainedRefusalSentence(f.sustainedRefusal, petName)
+    return sustainedRefusalSentence(f.sustainedRefusal, petName, f.species)
   }
   if (f.trigger === 'refused_normal_food') {
     const food = f.refusedFoodLabel ?? 'a food they usually finish'
@@ -365,11 +372,13 @@ const INCIDENT_NOUN: Record<IncidentCategory, string> = {
 }
 
 // Engines v3 PR-30a (CUL-1511; docs/nyx-incident-tiers-requirements.md §2, §4). A card whose
-// family holds a NEW-RULE call asks in the tier-word map's own words, lower-cased mid-sentence
-// ("call your vet now" / "call your vet today"); every other card keeps the shipped "worth a call
-// to your vet" to the byte, because an earlier-rule call is never relabelled (spec §5). The words
-// are read from the map, never restated, so Home, the banner and the record cannot drift apart.
-const RED_FLAG_LEGACY_ASK = 'worth a call to your vet'
+// family holds a NEW-RULE call now asks in the tier-word map's own words, lower-cased
+// mid-sentence ("call your vet now"). Every other card asks in the floor's words ("call your
+// vet today", lib/incidentAskWords.ts): a new-rule call today, because the card cannot name the
+// call's reason and an unseen reason is the floor (CUL-2667); and an earlier-rule card, because
+// it is a photo flag, blood or foreign material, which is the floor whenever the read was written
+// (CUL-2675 (a); CUL-2668 mirrors the phone, `lib/signalCopy.ts` incidentRedFlagAsk). The words are
+// read from the modules, never restated, so Home, the banner and the record cannot drift apart.
 
 function lowerFirst(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1)
@@ -377,7 +386,7 @@ function lowerFirst(s: string): string {
 
 /** The red-flag card's ask, verbatim as its sentence says it. */
 export function incidentRedFlagAsk(f: Pick<IncidentRedFlagFinding, 'tier'>): string {
-  return f.tier === 'call_now' || f.tier === 'call_today' ? lowerFirst(TIER_WORDS[f.tier].label) : RED_FLAG_LEGACY_ASK
+  return f.tier === 'call_now' ? lowerFirst(TIER_WORDS.call_now.label) : FLOOR_ASK.inline
 }
 
 /** A read's noun by family ("a vomit read", "a stool read"), for the card a record call raised. */
@@ -438,7 +447,7 @@ function templateIncidentRedFlagPhoto(f: IncidentRedFlagFinding, petName: string
  *  leading space), or nothing. The words are the map's, like the card's own ask. */
 function laterCallTodayClause(f: IncidentRedFlagFinding): string {
   if (f.tier !== 'call_now' || f.laterCallTodayIso === undefined) return ''
-  return ` A later read, on ${onsetDay(f.laterCallTodayIso)}, says to ${lowerFirst(TIER_WORDS.call_today.label)}.`
+  return ` A later read, on ${onsetDay(f.laterCallTodayIso)}, says to ${FLOOR_ASK.inline}.`
 }
 
 // The §9 adjacency note opens by naming the sign the card is NOT about, so an owner reading
@@ -726,7 +735,7 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
       ? incidentRedFlagAsk(f)
       : f.type === 'symptom_burden'
         ? f.tier === 'today'
-          ? 'worth a call to your vet'
+          ? DEFERENTIAL_ASK.inline
           : 'worth booking a vet visit'
         : f.type === 'weight_loss'
           ? f.tier === 'firm'
@@ -735,7 +744,11 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
         : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
           ? 'worth booking a vet visit'
         : f.type === 'intake_decline' && (f.trigger === 'sustained_refusal' || allRefusedCallsToday(f))
-          ? 'worth a call to your vet'
+          ? // CUL-2668: the carried card keeps the live card's clock and register: the floor for
+            // every species but a dog, a dog's sustained refusal the deferential call today.
+            f.trigger === 'sustained_refusal' && f.species === 'dog'
+            ? DEFERENTIAL_ASK.inline
+            : FLOOR_ASK.inline
           : 'worth a word with your vet'
   return `An earlier read of ${petName}'s record, on ${onsetDay(carriedFromIso)}, showed ${what} — ${ask}. Part of the record didn't load for this update, so it hasn't been checked again yet.`
 }
@@ -1300,7 +1313,9 @@ export const PHRASING_SYSTEM =
   'leave one unmentioned, and close by saying that feeding one without the other would tell them ' +
   'apart. ' +
   '(5) For an intake_decline: surface it calmly and clearly and point toward keeping an eye on it ' +
-  'and a word with the vet. NEVER reassure, NEVER say the pet is fine/okay/healthy, NEVER call the ' +
+  'and a word with the vet. The one exception is the floor: a cat with no meal rated Most or All in ' +
+  `the last 24 hours gets the plain words "${FLOOR_ASK.inline}", never a softer ask. ` +
+  'NEVER reassure, NEVER say the pet is fine/okay/healthy, NEVER call the ' +
   'pet "picky" or frame eating less as fussiness. ' +
   '(6) For a reflection: state the COUNT of episodes this week and compare it to last week as a plain ' +
   'fact — "about the same as last week" when direction is "flat", "fewer than last week" when ' +

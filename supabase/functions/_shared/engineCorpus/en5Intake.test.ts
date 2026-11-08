@@ -178,12 +178,12 @@ Deno.test('record replay: the words each read now says', () => {
   }
   assertStrictEquals(
     said(REPLAY[2]),
-    "I can see something that doesn't look like food in this photo. When I read this, one rated meal was logged for Nyx in the 24 hours before this vomit, and it wasn't marked Most or All. Another 5 had no rating. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "I can see something that doesn't look like food in this photo. When I read this, one rated meal was logged for Nyx in the 24 hours before this vomit, and it wasn't marked Most or All. Another 5 had no rating. In a cat that's vomiting, call your vet today.",
   )
   const on727 = ctx(rowsOf(REPLAY[3].meals, V727), V727, REPLAY[3].nowMs, EN5)
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', computeContextualFlags(on727), on727.intakeRecord),
-    "When I read this, 6 rated meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. Another one had no rating. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 6 rated meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. Another one had no rating. In a cat that's vomiting, call your vet today.",
   )
 })
 
@@ -266,7 +266,7 @@ Deno.test('I1: the Noticed predicate fires in union where no rating half does (l
   assertEquals(on.intakeRecord, { window: 'noticed', at: 'vomit', mealsLogged: 3, mealsRated: 3, refusedOrPicked: 2 })
   assertStrictEquals(
     buildEn0ContextualReadText('Pixel', computeContextualFlags(on), on.intakeRecord),
-    "Of the last 3 rated meals logged for Pixel before this vomit, 2 had been marked Refused or Picked. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "Of the last 3 rated meals logged for Pixel before this vomit, 2 had been marked Refused or Picked. In a cat that's vomiting, call your vet today.",
   )
 })
 
@@ -427,7 +427,11 @@ Deno.test('EN-5 copy: every sentence it can build never reassures, never conclud
         seen++
         assertStrictEquals(REASSURE_VOCAB.test(t), false, `reassured: "${t}"`)
         assertStrictEquals(t.includes('!'), false, t)
-        assertStrictEquals(/hasn't eaten|didn't eat|not eating|\brecently\b|\byesterday\b|\btoday\b|\blast night\b/i.test(t), false, `concluded or dated: "${t}"`)
+        // GAP-1, with ONE named exception: the floor's own ask (CUL-2654 D4, CUL-2668), which every
+        // one of these intake sentences ends on, as ruled. Nothing else may date.
+        assertStrictEquals(t.endsWith(" In a cat that's vomiting, call your vet today."), true, `not the floor: "${t}"`)
+        const undated = t.replace(/ call your vet today\.$/, ' call your vet.')
+        assertStrictEquals(/hasn't eaten|didn't eat|not eating|\brecently\b|\byesterday\b|\btoday\b|\blast night\b/i.test(undated), false, `concluded or dated: "${t}"`)
         assertStrictEquals(/vet/.test(t), true, t)
         assertStrictEquals(/\b1 (meal|more|rated|hours)|Another 1\b/.test(t), false, `a bare "1": "${t}"`)
       }
@@ -446,7 +450,7 @@ Deno.test('B: an after-vomit fire read more than a day later says "in the 24 hou
   assertEquals(on.intakeRecord, { window: 'after_vomit', mealsLogged: 1, mealsRated: 1, cappedAt24h: true })
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord),
-    "When I read this, one rated meal had been logged for Nyx in the 24 hours after this vomit, and it wasn't marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, one rated meal had been logged for Nyx in the 24 hours after this vomit, and it wasn't marked Most or All. In a cat that's vomiting, call your vet today.",
   )
 })
 
@@ -471,7 +475,7 @@ Deno.test('A (ruled 2026-10-10): a refusal 25 h before the vomit with nothing lo
   assertEquals(on.intakeRecord, { window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore: 25, rating: 'refused', setAside: false, unratedSince: 0 })
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord),
-    "The last rated meal logged for Nyx before this vomit, about 25 hours earlier, was marked Refused. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "The last rated meal logged for Nyx before this vomit, about 25 hours earlier, was marked Refused. In a cat that's vomiting, call your vet today.",
   )
   // Unrated meals since the refusal do not cancel it either.
   const withUnrated = rowsOf([meal(v - 40 * H, 'all'), meal(v - 25 * H, 'picked'), meal(v - 10 * H, null), meal(v - 2 * H, null)], v)
@@ -613,7 +617,7 @@ Deno.test('an answer of No or A little fires the cat arm on its own, over a reco
 })
 
 Deno.test('the answer\'s words: each form and answer, past tense, pinned to the vomit', () => {
-  const tail = " In a cat that's vomiting, that's worth a call to your vet sooner rather than later."
+  const tail = " In a cat that's vomiting, call your vet today."
   const say = (answerForm: 'meal_fed' | 'free_fed', answer: 'no' | 'a_little') =>
     buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'answer', mealsLogged: 0, mealsRated: 0, answerForm, answer })
   assertStrictEquals(say('meal_fed', 'no'), "When I read this, you'd said Nyx hadn't eaten a meal since the day before this vomit." + tail)
