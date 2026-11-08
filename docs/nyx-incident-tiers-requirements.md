@@ -1,6 +1,6 @@
 # The per-incident read in tiers: EN-3 + EN-4 requirements
 
-**Version:** 0.4 (discovery draft, PR-24; v0.2 folds in the adversarial pass, §13; v0.3 widens §8.6's re-run window, PM-approved 2026-09-30; v0.4 lets a stored `call_now` keep its words over a flag-off write, §1, PM-approved 2026-10-10, CUL-1516) · **Last Updated:** 2026-10-10
+**Version:** 0.5 (discovery draft, PR-24; v0.5 keys the §2 words by reason, the clinical voice floor, PM-approved 2026-11-08, CUL-2666; v0.2 folds in the adversarial pass, §13; v0.3 widens §8.6's re-run window, PM-approved 2026-09-30; v0.4 lets a stored `call_now` keep its words over a flag-off write, §1, PM-approved 2026-10-10, CUL-1516) · **Last Updated:** 2026-11-08
 **Issues:** CUL-1133 (EN-3), CUL-1134 (EN-4); frames CUL-819 (a), CUL-531
 **Project:** Engines v3: the accountable engine, Wave 4 (PR-24 → PR-25, PR-26, PR-27, PR-28, PR-30)
 **Design authority:** `docs/culprit-incident-tiers-mockups.html` round 1 (https://claude.ai/artifact/Ug8BR3wCSgDVAgnZKmw3ao). Its own page; the Engines v3 mock (`docs/culprit-engines-v3-mockups.html`) is PR-20's.
@@ -31,7 +31,8 @@ One module holds every owner-facing word for a tier. A build guard fails on the 
 | Stored | Chip | Record action line | Spoken on landing | "read as" | Colour | A call in counts? |
 |---|---|---|---|---|---|---|
 | `call_now` | Call your vet now | Call your vet now. If they're closed, call an emergency clinic. | "{Pet}'s read: call your vet now." | read as call now | rose, filled; rose rail | yes, new-rule population |
-| `call_today` | Call your vet today | Call your vet today. If they're closed, first thing tomorrow, or an emergency clinic tonight if {this pet's call-now signs}. | "{Pet}'s read: call your vet today." | read as call today | rose outline; rose rail | yes, new-rule population |
+| `call_today`, floor reason (blood, foreign material, a cat with no Most or All meal in 24 h for an owner who rates meals, or a reason the build does not know) | Call your vet today | Call your vet today. If they're closed, call an emergency clinic. | "{Pet}'s read: call your vet today." | read as call today | rose outline; rose rail | yes, new-rule population |
+| `call_today`, any other reason | Worth a call today | This is the kind of thing vets like to hear about the same day. If yours is closed, an emergency clinic can talk it through. Only on a stored `may_wait = true` (never on a floor reason), late in the day: Worth a call today. If they're closed, first thing tomorrow, or an emergency clinic tonight if {this pet's call-now signs}. | "{Pet}'s read: worth a call today." | read as call today | rose outline; rose rail | yes, new-rule population |
 | pattern (render only, §11 K2) | Part of a pattern | Home is tracking {Pet}'s {sign}, and this one is part of it. Door: See what Home is tracking. | "{Pet}'s read: part of a pattern Home is tracking." | not used: History, the month and chart text use `logged`'s words | dashed pale rose | no |
 | `logged` | Keep an eye out | The two-sentence watch-for list (§3). | "{Pet}'s read: keep an eye out. What would change that is below." | read as keep an eye out | grey | no |
 | `not_enough_to_say` | Not enough to say yet | Today's copy plus the watch-for list (every photoless vomit with no call lands here). | "{Pet}'s read: not enough to say yet." | not read | grey | no |
@@ -40,11 +41,12 @@ One module holds every owner-facing word for a tier. A build guard fails on the 
 | unknown | Worth a call | CUL-1277 fallback | "{Pet}'s read: worth a call." | read as worth a call | rose | yes |
 
 Rules:
-1. Every call names the service and resolves against the clock (GAP-13). "Now" appears on every call-now surface, the Home row and strip included. Late-day `call_today` becomes "first thing tomorrow", with the pet's call-now signs as the exception.
+1. Every call names the service and resolves against the clock (GAP-13). "Now" appears on every call-now surface, the Home row and strip included. Late-day deferential `call_today` with a stored `may_wait = true` becomes "first thing tomorrow", with the pet's call-now signs as the exception; a floor row never does (CUL-2666).
 2. A call carries "What to tell them": time, what was seen, courses on board, from **enum fields only** (`blood_present`, `foreign_material_present`, `texture`, the counts, the course names the owner entered). Never `foreign_material_note`, `description` or `read_text`: those are model free text (the note is filled on "unsure" too, CUL-240) and Pattern 10 gates them.
 3. No tier asserts wellness (Pattern 1). `logged` always carries its list and never comments on the absence of concern. The Pattern 8 regex runs over every template, the list sentences included.
 4. Colour never carries a tier alone: `call_now` and `call_today` share the rose; fill against outline and the words differ (GAP-32).
 5. Narrow rows (History, gallery) may use the short chip ("Call now", "Call today"); the accessible label is always the full phrase.
+6. The words are chosen by reason, not tier (CUL-2654 D1; CUL-2666, PM-approved 2026-11-08). One pure module, shared by phone and server, reads the tier, `contextual_flags`, the owner-editable structured fields and, on a row the owner never edited, `visual_flags` (a rescue write carries no structured column) and returns floor or deferential words. Any floor reason present wins over any other reason on the row; a reason it does not know gets the floor words, and so does a floor flag on an earlier-rule or unknown tier (CUL-2675 (a)). A cat read shown after the 24 h mark re-checks the live predicate, which can add the floor and never remove it. `call_now` keeps its own words (`Call your vet now`, the dated form, the watch-for line). Colour and the counts do not change: both `call_today` rows are a call.
 
 ## 3. The watch-for list
 

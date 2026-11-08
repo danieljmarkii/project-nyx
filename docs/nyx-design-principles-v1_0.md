@@ -1,5 +1,5 @@
 # Project Nyx — Design Principles
-**Version:** 2.3 | **Status:** Stable | **Last Updated:** 2026-10-31
+**Version:** 2.4 | **Status:** Stable | **Last Updated:** 2026-11-08
 
 ---
 
@@ -241,6 +241,10 @@ Nyx is not a pet brand. It is a health tool. Copy should feel like it was writte
 
 "Luna hasn't been logged today" not "Your pet hasn't been logged today." Using the pet's name creates the emotional stakes that make the nudge land. Jordan did not download an app for "their pet." They downloaded it for Luna.
 
+### The Owner Decides
+
+Nyx gives the data and a nudge; the owner, who is closest to the pet, decides. "Worth a call today", not "Call your vet today": soften the verb, keep the clock and the reason. A short floor keeps direct words: blood, something swallowed, a cat whose rated meals show no full or mostly full one in a day, collapse or a breathing sign, and any call-now read. Softer never means reassuring.
+
 ---
 
 ## Interaction Principles
@@ -314,6 +318,7 @@ These are intentionally deferred — answers belong in a future design sprint in
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2.4 | 2026-11-08 | Copy Principles gain *The Owner Decides*: the data and a nudge, the owner decides, except a short floor that keeps direct words (CUL-2666, PM-approved; rulings in `docs/clinical-voice-inventory-2026-11.md` §R). |
 | v2.3 | 2026-10-31 | Principle 6 rewritten: "Clinical grade, drawn in the house language: the patient leads, the maker signs" (CUL-2275 R-1, PM 2026-10-30). Adds: the report is paper, nothing on it moves; every absence rule prints on paper; one artifact, two layouts. Drops "severity averages" (contradicted spec rule 5). |
 | v2.2 | 2026-10-30 | Principle 9 gains *A tap may answer once*: a tab answers the tap that chose it with one gesture from its own glyph, never a loop, never on its own, still under Reduce Motion (CUL-2251; PM ruled option 3 on 2026-10-28, wording approved 2026-10-30). The tick stays the only loop. |
 | v2.1 | 2026-10-23 | Color: one accent becomes one action colour, indigo, and the hue table gives each hue one meaning (CUL-2145, D4 of CUL-1898; wording PM-approved 2026-10-23, building on G4 (C) of 2026-10-03). The trend line and chart paragraphs unchanged. |
