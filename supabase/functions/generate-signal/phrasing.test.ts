@@ -1246,7 +1246,7 @@ Deno.test('templateIncidentRedFlag — names the visible flag, routes to the vet
   assert.ok(t.includes('vomiting'), 'plain-language incident word, not the enum')
   assert.ok(/possible foreign material/i.test(t), 'names what the photo showed')
   assert.ok(/A photo you logged/i.test(t), 'attributes it to the owner-logged photo, singular')
-  assert.ok(/call to your vet/i.test(t), 'escalates — routes to the vet')
+  assert.ok(/call your vet today/i.test(t), 'escalates — the floor routes to the vet (CUL-2668)')
   assert.ok(/not a diagnosis/i.test(t), 'descriptive disclaimer')
   assert.equal(CAUSAL.test(t), false, 'a visible finding is not a cause')
   assert.equal(REASSURE.test(t), false, 'never reassures')
@@ -1268,7 +1268,7 @@ Deno.test('templateIncidentRedFlag — B-364: a STOOL flag reads the NEUTRAL "st
   assert.ok(/Mochi's stool/i.test(t), 'neutral stool noun')
   assert.equal(/loose stool/i.test(t), false, 'never asserts consistency on a safety card (formed stool can bleed)')
   assert.ok(/possible blood/i.test(t))
-  assert.ok(/call to your vet/i.test(t), 'escalates')
+  assert.ok(/call your vet today/i.test(t), 'escalates (the floor, CUL-2668)')
   assert.ok(/not a diagnosis/i.test(t))
   assert.ok(validatePhrasing(t, incidentRedFlag({ incidentType: 'stool', flags: ['blood'] })))
 })
@@ -1323,7 +1323,7 @@ Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(/we could time/.test(templateForFinding(postprandial(), 'Nyx')))
   assert.ok(/in the trial's/.test(templateForFinding(trialResponse(), 'Nyx')))
   assert.ok(/between 4am and 8am/.test(templateForFinding(timeofday(), 'Nyx')))
-  assert.ok(/call to your vet/i.test(templateForFinding(incidentRedFlag(), 'Nyx')))
+  assert.ok(/call your vet today/i.test(templateForFinding(incidentRedFlag(), 'Nyx')))
 })
 
 // ── SR-4 (B-721 §3.3): the falling-comparison density gate in templateReflection ──

@@ -539,12 +539,14 @@ function first<T>(v: T | T[] | null | undefined): T | null {
 // The event_ai_analysis columns Ask relays (§6.2 mode 2 — the override-aware structured
 // fields + the dismissible n=1 read, and since CUL-1406 the facts behind a dated correction
 // beside it, migration 085). Since CUL-1512 it also reads `tier` (079) and `engine_flags`
-// (075): the two columns the tier-word map needs to resolve the words the record shows.
+// (075): the two columns the tier-word map needs to resolve the words the record shows, and
+// since CUL-2668 `contextual_flags` and `visual_flags`, the reasons that pick a call today's
+// register (lib/incidentAskWords.ts; never relayed, like the tier).
 // Neither is relayed raw: `mapReadRow` turns them into those words (`tierWordsOf`). One literal, so supabase-js can type the select. Shared by
 // fetchContext (the cached-read snapshot) and
 // runLivePhotoRead (the post-run re-read), so both project from the identical column set.
 const READ_COLS =
-  'event_id, incident_type, status, dismissed_at, edited_at, description, colour, contents, consistency, blood_present, bile_present, foreign_material_present, foreign_material_note, stool_consistency, stool_blood_present, stool_mucus_present, recommendation, tier, engine_flags, read_text, intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all'
+  'event_id, incident_type, status, dismissed_at, edited_at, description, colour, contents, consistency, blood_present, bile_present, foreign_material_present, foreign_material_note, stool_consistency, stool_blood_present, stool_mucus_present, recommendation, tier, engine_flags, contextual_flags, visual_flags, read_text, intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all'
 
 type ReadRowDb = Record<string, unknown> & { event_id: string; incident_type: string; status: string }
 

@@ -5,16 +5,17 @@
 // THREE CHECKS.
 //   1. The floor's literal ("call your vet today", any case) appears in CODE (comments blanked,
 //      strings and JSX text kept) only in `lib/incidentAskWords.ts`, so no surface can mint its
-//      own floor or drop it quietly. One exemption, named and expiring: `lib/incidentTierWords.ts`
-//      still holds call today's row, which Ask and generate-signal read until row 3 (CUL-2668)
-//      moves the server copy onto the module.
+//      own floor or drop it quietly. No exemption since row 3 (CUL-2668) moved the tier-word map's
+//      call-today row and the server mirrors onto the module. The scan reaches the two Edge
+//      Functions that mirror the phone's words (generate-signal's sentences, Ask's rules).
 //   2. An unknown reason, tier, trigger or kind renders the floor's words on every surface that
 //      picks words by reason, driving the REAL functions (C-34: never a re-derived rule).
 //   3. Pattern 11's Never column: no ask any of those surfaces can print carries a condition on
 //      the owner's sense of normal, a "can wait" or a vaguer clock.
 //
-// NOT SCANNED: test files and `guards/` (their fixtures ARE the phrase, C-18); `supabase/functions/`
-// (row 3's half, with its own copy guards). STATED BLIND SPOT (C-38): a phrase assembled at
+// NOT SCANNED: test files and `guards/` (their fixtures ARE the phrase, C-18); the per-incident
+// read text in `analyze-vomit` / `analyze-stool`, which is STORED per row (a new read's words,
+// never a mirror of a surface) and has its own copy guards in those functions' suites. STATED BLIND SPOT (C-38): a phrase assembled at
 // runtime ('call your vet ' + 'today') is an evasion no source scan can see.
 
 import * as fs from 'fs';
@@ -37,15 +38,25 @@ import { trialDeclineVetLine } from '../lib/dietTrialCompletion';
 import type { SignalFinding } from '../lib/signal';
 
 const ROOT = path.resolve(__dirname, '..');
-const SCAN_DIRS = ['app', 'components', 'lib', 'store', 'hooks', 'constants', 'widgets'];
-const SKIP_DIRS = new Set(['node_modules', '.git', '.expo', 'ios', 'android', 'dist']);
+const SCAN_DIRS = [
+  'app',
+  'components',
+  'lib',
+  'store',
+  'hooks',
+  'constants',
+  'widgets',
+  'supabase/functions/generate-signal',
+  'supabase/functions/ask',
+];
+// `eval`: generate-signal's offline scorecard harness (never deployed, never shown to an owner),
+// whose observer maps each shipped ask phrase to its class and so must spell the floor.
+const SKIP_DIRS = new Set(['node_modules', '.git', '.expo', 'ios', 'android', 'dist', 'eval']);
 
 const MODULE = 'lib/incidentAskWords.ts';
-/** Each exemption names why it cannot be the module yet. It must still hold a hit (C-32). */
-const EXEMPT: Record<string, string> = {
-  'lib/incidentTierWords.ts':
-    "call today's row in the tier-word map, read by Ask and generate-signal; row 3 (CUL-2668) moves the server onto the module and deletes this entry",
-};
+/** Each exemption names why it cannot be the module yet. It must still hold a hit (C-32). Empty
+ *  since CUL-2668; a new entry is a floor spelled outside the module, so it needs a reason. */
+const EXEMPT: Record<string, string> = {};
 
 export const FLOOR_PHRASE = /call your vet today/i;
 
@@ -75,7 +86,16 @@ describe('1. the floor\'s literal lives in the ask module', () => {
     expect(hits).toContain(MODULE);
   });
 
-  it('no client file but the module (and its named exemption) says "call your vet today"', () => {
+  it('the scan reaches the server mirrors (non-vacuity: a file there is read)', () => {
+    const files: string[] = [];
+    walk(path.join(ROOT, 'supabase/functions/generate-signal'), files);
+    walk(path.join(ROOT, 'supabase/functions/ask'), files);
+    const rel = files.map((abs) => path.relative(ROOT, abs).split(path.sep).join('/'));
+    expect(rel).toContain('supabase/functions/generate-signal/phrasing.ts');
+    expect(rel).toContain('supabase/functions/ask/answer.ts');
+  });
+
+  it('no file but the module (and any named exemption) says "call your vet today"', () => {
     expect(hits.filter((f) => f !== MODULE && !(f in EXEMPT))).toEqual([]);
   });
 

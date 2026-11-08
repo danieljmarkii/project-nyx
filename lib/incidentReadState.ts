@@ -9,8 +9,8 @@
 
 import { isQuietVerdict } from './incidentVerdict';
 import { effectiveTierRank, TIER_RANK } from './incidentTier';
-import { askLevelOf, askWordsFor, FLOOR_ASK, hasFloorSign, type AskOptions, type AskReasonRow } from './incidentAskWords';
-import { INCIDENT_REC_LABEL, TIER_FINISHED_STATUSES, tierDisplayOf, TIER_WORDS } from './incidentTierWords';
+import { FLOOR_ASK, hasFloorSign, type AskOptions, type AskReasonRow } from './incidentAskWords';
+import { INCIDENT_REC_LABEL, TIER_FINISHED_STATUSES, tierDisplayOf, tierLabelOf } from './incidentTierWords';
 
 // Both incident sections render `status === 'failed'` ahead of the read card, so a
 // row that still holds `worth_a_call` + its read_text displayed as "Couldn't finish
@@ -145,14 +145,9 @@ export function incidentReadLabel(
   } & AskReasonRow,
   opts: AskOptions = {},
 ): string {
-  const display = tierDisplayOf(row);
-  // CUL-2667: call today's words are picked by the row's reason; a reason this surface cannot
-  // see is the floor's (`lib/incidentAskWords.ts`).
-  if (display === 'call_today') return askWordsFor(askLevelOf(row, opts)).label;
-  // CUL-2675 (a): an earlier-rule or unknown-tier call carrying a floor sign says the floor.
-  if (display === 'worth_a_call' && hasFloorSign(row, opts)) return FLOOR_ASK.label;
-  if (display) return TIER_WORDS[display].label;
-  return incidentVerdictLabel(row.recommendation ?? 'worth_a_call');
+  // CUL-2668: the one resolver Ask reads too (`tierLabelOf`): call today's words by reason
+  // (CUL-2667), a floor sign on an earlier-rule call raised to the floor (CUL-2675 (a)).
+  return tierLabelOf(row, opts) ?? incidentVerdictLabel(row.recommendation ?? 'worth_a_call');
 }
 
 /**

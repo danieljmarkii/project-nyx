@@ -317,28 +317,15 @@ describe('PARITY: the Home row counts from the sentence’s own fields (the scre
     expect(checked).toBeGreaterThan(400);
   });
 
-  // CUL-2667 (row 2) moved the phone's floor asks first; the server's sentences move in row 3
-  // (CUL-2668). Until then a FLOOR ask on the row may stand over the sentence's earlier ask, and
-  // only that: each pair below is the floor's words over the exact phrase the server still says.
-  // The exception expires itself: once the server says the floor's words, the pair's second half
-  // is gone from the sentence and the test fails until the pair is deleted.
-  const ROW_TWO_FLOOR_OVER_SERVER: ReadonlyArray<readonly [string, string]> = [
-    ['call your vet today', 'worth a call to your vet today'],
-    ['call your vet today', 'worth a call to your vet'],
-  ];
+  // CUL-2668 (row 3) moved the server's sentences onto the floor's words, so the row-2 exception
+  // (a floor ask on the row over the server's earlier ask) is gone: every safety ask is the
+  // sentence's own words, with no pair excepted.
   it('the ask is the sentence’s own words, verbatim, on every safety finding', () => {
-    let excepted = 0;
     for (const f of everyFinding().filter((x) => x.priorityClass === 'safety')) {
       const ask = line(f).ask;
       expect(ask).not.toBeNull();
-      const said = sentence(f);
-      if (said.includes(ask as string)) continue;
-      const pair = ROW_TWO_FLOOR_OVER_SERVER.find(([floor, server]) => floor === ask && said.includes(server));
-      expect([f.type, ask, said, pair !== undefined]).toEqual([f.type, ask, said, true]);
-      excepted += 1;
+      expect([f.type, ask, sentence(f).includes(ask as string)]).toEqual([f.type, ask, true]);
     }
-    // The exception is in use (it is not a dead registry), and only on floor findings.
-    expect(excepted).toBeGreaterThan(0);
   });
 
   it('the photo read’s headline is the sentence’s own phrase (“possible …”) and its date the sentence’s UTC day', () => {

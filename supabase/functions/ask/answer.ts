@@ -91,6 +91,7 @@ import {
 import { assessCourse, MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
 import { localDayIndex } from '../../../lib/utils.ts'
 import { TIER_WORDS, type TierDisplay } from '../../../lib/incidentTierWords.ts'
+import { DEFERENTIAL_ASK, FLOOR_ASK } from '../../../lib/incidentAskWords.ts'
 
 // ── Model & loop bounds ─────────────────────────────────────────────────────────
 
@@ -719,10 +720,14 @@ export function buildReadLine(result: PhotoReadResult, petName: string): string 
 
 /** The map's words that are a CALL: the one test of whether a read's words may be handed to
  *  the model on the read_photo path. Derived from the map's own `call` field, so a new call
- *  word joins without an edit here. */
-const CALL_WORDS: ReadonlySet<string> = new Set(
-  Object.values(TIER_WORDS).filter((w) => w.call).map((w) => w.label),
-)
+ *  word joins without an edit here, plus both of the ask module's call-today labels (CUL-2668):
+ *  a call today is worded by reason (`tierLabelOf`), and a deferential "Worth a call today" left
+ *  out of this set would be withheld from the model like a quiet read's words. */
+const CALL_WORDS: ReadonlySet<string> = new Set([
+  ...Object.values(TIER_WORDS).filter((w) => w.call).map((w) => w.label),
+  FLOOR_ASK.label,
+  DEFERENTIAL_ASK.label,
+])
 export function callWordsOf(words: string | null): string | null {
   return words !== null && CALL_WORDS.has(words) ? words : null
 }
@@ -1566,22 +1571,35 @@ export function buildDeflection(reason: DeflectionReason, petName: string, clari
  *  the read did not find, never what that means for the pet. */
 export const TIER_DEFINITIONS: Readonly<Record<TierDisplay, string>> = {
   call_now: "the read found a sign that needs a vet now; if they're closed, an emergency clinic",
-  call_today: "the read found a sign that needs a vet today; if they're closed, an emergency clinic",
+  // The floor's words (CUL-2668): call today's row is the floor, what a reason the record cannot
+  // see gets. The deferential call today is defined beside it (`DEFERENTIAL_DEFINITION`).
+  call_today: "the read found a sign that needs a vet today, said plainly; if they're closed, an emergency clinic",
   worth_a_call: 'the read found a sign to call the vet about, without saying how soon; older reads keep these words',
   logged: 'the read flagged nothing that needs a call, which never means the pet is well',
   monitor: 'the read flagged nothing that needs a call, which never means the pet is well',
   not_enough_to_say: "the read couldn't say anything from this one, which never means the pet is well",
 }
 
-/** Rule (11), built from the map's labels and the definitions above. */
+/** The deferential call today (CUL-2667 / CUL-2668; clinical-guardrails Pattern 11: soften the
+ *  verb, keep the clock). Still a call: the definition forbids the two quiet moves, a stand-down
+ *  and a vaguer clock. */
+export const DEFERENTIAL_DEFINITION =
+  "the read found a sign that is worth a call to the vet the same day; it is still a call, so never say it can wait and never drop the day; if they're closed, an emergency clinic can talk it through"
+
+/** Rule (11), built from the map's labels, the ask module's deferential label, and the
+ *  definitions above. */
 export function tierRule(): string {
   const seen = new Set<string>()
   const lines: string[] = []
-  for (const key of Object.keys(TIER_DEFINITIONS) as TierDisplay[]) {
-    const label = TIER_WORDS[key].label
-    if (seen.has(label)) continue
+  const push = (label: string, definition: string) => {
+    if (seen.has(label)) return
     seen.add(label)
-    lines.push(`"${label}" means ${TIER_DEFINITIONS[key]}.`)
+    lines.push(`"${label}" means ${definition}.`)
+  }
+  for (const key of Object.keys(TIER_DEFINITIONS) as TierDisplay[]) {
+    push(TIER_WORDS[key].label, TIER_DEFINITIONS[key])
+    // The two call-today registers sit together, the floor first.
+    if (key === 'call_today') push(DEFERENTIAL_ASK.label, DEFERENTIAL_DEFINITION)
   }
   return (
     "(11) A READ'S WORDS: a recalled vomit or stool read may carry tierWords, the exact words the owner's record shows for it. " +
@@ -1600,7 +1618,7 @@ export const SYSTEM_PROMPT =
   "(1) Every number in your answer MUST come from a tool result. Never estimate, never do arithmetic (no percentages the tools didn't return — phrase as 'N of M'). " +
   "(2) Plan first: call the tools you need (you may call several), then call provide_answer. If a needed fact isn't available from any tool, or the question is unclear, call decline instead — NEVER guess. " +
   "(3) NEVER diagnose, name a disease, or say what caused something. NEVER reassure: do not say the pet is fine/okay/healthy/normal, and a count of zero means 'nothing logged', never 'she's well' — absence of a symptom is not wellness. Never describe the ABSENCE of a red flag as reassuring — do NOT say 'no red flags', 'nothing concerning', 'looks good/fine', or 'in the clear'; only state what IS present in the record, and if a photo read is relayed, recount what it shows, never that it looked okay. " +
-  "(4) A pet eating less is a health signal, never 'picky', 'fussy', or a 'preference' — never explain eating less by saying she 'prefers' or 'has gone off' a food. Frame declines calmly and route to the vet if it continues. When asked what a pet 'prefers', answer only with which foods are fed/finished most (a positive rate over many meals), never as a verdict that a decline is just taste. " +
+  "(4) A pet eating less is a health signal, never 'picky', 'fussy', or a 'preference' — never explain eating less by saying she 'prefers' or 'has gone off' a food. Frame declines calmly and route to the vet if it continues. The one exception is the floor: a cat with no meal rated Most or All in the last 24 hours gets the plain words \"" + FLOOR_ASK.inline + "\", never a softer ask. When asked what a pet 'prefers', answer only with which foods are fed/finished most (a positive rate over many meals), never as a verdict that a decline is just taste. " +
   "(5) If a data tool returns not_enough_data, decline with a data-gap; don't invent a rate. " +
   "(6) If engine_findings returns a SAFETY finding relevant to the question, lead with it — relay it verbatim, never soften it. " +
   "(7) Plain, warm language; address the owner as 'you'; use the pet's name; no exclamation marks; never cute. One or two sentences of detail. " +
