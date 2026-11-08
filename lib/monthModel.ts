@@ -69,7 +69,7 @@
 // the other, refused first (the read decides), so the two counts partition the unfinished
 // meals and the accusing word is never the lighter one (C-4).
 
-import { isCallDisplay, louderCall, TIER_WORDS, TIERED_CALLS_READ_AS, type CallDisplay } from './incidentTierWords';
+import { isCallDisplay, louderCall, louderReadAs, TIER_WORDS, TIERED_CALLS_READ_AS, type CallDisplay } from './incidentTierWords';
 import { dayKeyFromIndex, localDayIndexOf, MONTHS } from './utils';
 import { weekdayOfIndex, weekStartIndex, weeklyBuckets, type BoutSpan, type WeeklyBucketsModel } from './chartModels';
 import { dateWord } from './chartCopy';
@@ -142,6 +142,9 @@ export interface MonthDay {
    *  presence escalates and the month is where an owner looks back before a visit. Null
    *  is "no call the phone holds", which is never drawn or spoken as an all-clear. */
   call: CallDisplay | null;
+  /** The day's call in the record's words (CUL-2678): the louder of its reads' reason-keyed
+   *  "read as" words (`louderReadAs`). Null with no call, or where no read carried words. */
+  callReadAs?: string | null;
   today: boolean;
 }
 
@@ -172,6 +175,9 @@ export interface MonthCallRead {
   eventId: string;
   day: string;
   verdict: CallDisplay;
+  /** The call's "read as" words, keyed by its reasons as the record keys them (`tierChipOf`,
+   *  CUL-2678). Absent: the map's words for `verdict`. */
+  readAs?: string;
 }
 
 /** The read half of the month's facts, which is all `carryMonthRoses` reads. */
@@ -279,7 +285,7 @@ export interface MonthModelInput {
   /** Every event whose read is a call, photographed or not (CUL-1200). A day holding two
    *  takes the louder (`louderCall`). Omitted → no call is drawn, which is never an
    *  all-clear: the month draws no "nothing called" mark. */
-  callReads?: readonly Pick<MonthCallRead, 'day' | 'verdict'>[];
+  callReads?: readonly (Pick<MonthCallRead, 'day' | 'verdict'> & { readAs?: string })[];
   /** The trial's start, marked on the bars at its day (kept and said when it falls off
    *  the chart — C-37). */
   trialMark?: { day: string; label: string } | null;
@@ -456,9 +462,12 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     photos.set(i, louderCall(prevCall, nextCall) ?? p.verdict);
   }
   const calls = new Map<number, CallDisplay>();
+  const callWords = new Map<number, string>();
   for (const c of input.callReads ?? []) {
     const i = indexOfKey(c.day, 'callReads[].day');
     calls.set(i, louderCall(calls.get(i) ?? null, c.verdict) ?? c.verdict);
+    const words = louderReadAs(callWords.get(i), c.readAs ?? TIER_WORDS[c.verdict].readAs);
+    if (words !== null) callWords.set(i, words);
   }
   const continues = new Map<number, string>();
   for (const c of input.continuationDays ?? []) {
@@ -507,6 +516,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
       medication: coverage !== 'ahead' && dosed.has(i),
       photo: coverage === 'ahead' ? 'none' : (photos.get(i) ?? 'none'),
       call: coverage === 'ahead' ? null : (calls.get(i) ?? null),
+      callReadAs: coverage === 'ahead' ? null : (callWords.get(i) ?? null),
       today: i === todayIdx,
     };
   };
@@ -712,15 +722,21 @@ export function buildLine(f: LineFacts, opts: { withCount?: boolean } = {}): str
  *  counted once, under the words it is painted in: a day holding both an earlier-rule call
  *  and a new-rule one counts in the new rule's line (`louderCall`), so the earlier line can
  *  run one day short across the seam. Neither line ever claims a day the other holds. */
-export function monthCallDays(model: Pick<MonthModel, 'days'>): { earlier: number; tiered: number } {
+export function monthCallDays(model: Pick<MonthModel, 'days'>): { earlier: number; tiered: number; raised: number } {
   let earlier = 0;
   let tiered = 0;
+  // CUL-2678 (PM ruling (a), 2026-11-08): an earlier-rule day the record raises to the floor
+  // (a blood or foreign-material read) stays in the earlier count, dated as before, and is
+  // counted here so the earlier line can name the floor's words beside its own.
+  let raised = 0;
   for (const d of model.days) {
     if (d.call === null) continue;
-    if (TIER_WORDS[d.call].rule === 'earlier') earlier += 1;
-    else tiered += 1;
+    if (TIER_WORDS[d.call].rule === 'earlier') {
+      earlier += 1;
+      if (d.callReadAs === TIER_WORDS.call_today.readAs) raised += 1;
+    } else tiered += 1;
   }
-  return { earlier, tiered };
+  return { earlier, tiered, raised };
 }
 
 /** The month in one sentence for a screen reader: the line, then the totals of the
@@ -738,13 +754,16 @@ export function monthA11yLabel(
   // The two rules' calls are counted apart and never added (EN-3, spec §5): an earlier
   // "worth a call" and a new "call today" are two populations, so a month spanning the
   // change says both and a steady cat never looks improved because the rule moved.
-  const { earlier, tiered } = monthCallDays(model);
+  const { earlier, tiered, raised } = monthCallDays(model);
   const parts = [`${model.label}.`, `${model.line}.`];
   // The calls lead, spoken whatever the layers say, photo or not (CUL-1200, ruling (b)):
   // the grid draws them on every layer and the ear hears what the eye sees. Nothing is
   // said when there are none: "no calls" would read as an all-clear the record cannot give.
   const dated = datedCallLinesOf(model, liveSince);
-  if (earlier > 0) parts.push(`${dated ? dated.before : 'Read as'} ${TIER_WORDS.worth_a_call.readAs} on ${earlier} ${plural(earlier, 'day')}.`);
+  // Ruling (a): an earlier line holding a raised day names both words, so a blood day is never
+  // spoken only as "worth a call". The two rules' counts stay apart and dated as before.
+  const earlierWords = raised > 0 ? `${TIER_WORDS.worth_a_call.readAs} or ${TIER_WORDS.call_today.readAs}` : TIER_WORDS.worth_a_call.readAs;
+  if (earlier > 0) parts.push(`${dated ? dated.before : 'Read as'} ${earlierWords} on ${earlier} ${plural(earlier, 'day')}.`);
   if (tiered > 0) parts.push(`${dated ? dated.from : 'Read as'} ${TIERED_CALLS_READ_AS} on ${tiered} ${plural(tiered, 'day')}.`);
   // The Meals layer's two counts over one denominator, as the legend prints them (CUL-1553).
   if (layers.meals === true && model.ratedMeals > 0 && (model.refusedMeals > 0 || model.leftSomeMeals > 0)) {

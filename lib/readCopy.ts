@@ -5,14 +5,24 @@
 // verdict from the server every time they drew it, so offline "Worth a call" simply
 // vanished: the month drew every photographed day as seen and Home drew nothing. The
 // copy holds four columns of the server's analysis row (event id, status, verdict,
-// change time) plus its three read stamps (PR-12, below), and `lib/readState.ts` decides
-// every surface's state from it.
+// change time), its three read stamps (PR-12, below), the tier, and the read's five
+// reasons (CUL-2678, below), and `lib/readState.ts` decides every surface's state from it.
+//
+// THE REASONS (CUL-2678). The record picks a call's words from its reason
+// (`lib/incidentAskWords.ts`): a deferential call today says "Worth a call today", and an
+// earlier-rule read over blood says the floor. A list that held only the tier could not, so
+// it said "Call today" for every call today (louder) and "Worth a call" over blood (quieter).
+// The copy now keeps the two flag arrays and the three structured signs, and `readCopies`
+// adds the record's live cat check (`catNoGoodMeal24h`, below), so every chip resolves
+// through the record's own resolver (`tierChipOf`). Enum-shaped signs only: never the
+// read's words. The owner's edits are not mirrored (they need the model's payload), so a
+// photo flag the owner cleared still speaks on a list: loud, never quiet.
 //
 // WHAT IT NEVER HOLDS. The read's words (`read_text`: no surface that reads the copy
 // shows any, and they are the model's free text about a pet's health) and the hide
 // stamp (`dismissed_at`: Hide hides words and never stands the rose down, H-4a).
 // `READ_COPY_COLUMNS` is the only column list this module sends, and
-// `lib/readCopy.test.ts` pins it and the real DDL to exactly the seven.
+// `lib/readCopy.test.ts` pins it and the real DDL to exactly the thirteen.
 //
 // ONE WRITER, THREE CALLERS (the PM's ruling on the plan, 2026-09-25). `writeCopies`
 // is the only statement that writes the table, and three things call it:
@@ -102,13 +112,32 @@ import { advanceWatermark, HYDRATE_WATERMARK_OVERLAP_MS, watermarkQueryFloor } f
 import type { ReadCopyRow } from './readState';
 import type { SeamRead } from './ruleSeam';
 import { supabase } from './supabase';
+import { tierDisplayOf } from './incidentTierWords';
+import { intakeFlagAt, MAY_WAIT_INTAKE_BASELINE_HOURS } from './mayWaitLine';
+import { mayBeFreeFedIntakeMeal, parseFreeFedIntakeSpans } from './freeFedIntake';
+import { usePetStore } from '../store/petStore';
+
+const HOUR_MS = 3_600_000;
+/** The SQL bound is padded by a day; `intakeFlagAt` compares parsed instants after it (C-40). */
+const DAY_PAD_MS = 24 * HOUR_MS;
 
 /**
- * Exactly the eight columns the copy keeps (the tier joined with EN-3, CUL-1133), and the only columns this module ever asks
+ * Exactly the thirteen columns the copy keeps (the tier joined with EN-3, CUL-1133; the five reasons with CUL-2678), and the only columns this module ever asks
  * the server for. Never `read_text`, never `dismissed_at`, never the payload stamps.
  */
 export const READ_COPY_COLUMNS =
-  'event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags, tier';
+  'event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags, tier, ' +
+  'contextual_flags, visual_flags, blood_present, stool_blood_present, foreign_material_present';
+
+/** The read's reasons (CUL-2678): the columns a list chip needs to pick the record's
+ *  reason-keyed words (`lib/incidentAskWords.ts`). Enum-shaped signs, never words. */
+export const READ_COPY_REASON_COLUMNS = [
+  'contextual_flags',
+  'visual_flags',
+  'blood_present',
+  'stool_blood_present',
+  'foreign_material_present',
+] as const;
 
 /** The copy's key in `sync_watermarks` (wiped at sign-out with the rest). Renamed from
  *  `event_ai_verdicts` when the stamps arrived (PR-12): a new name has no watermark, so
@@ -116,8 +145,9 @@ export const READ_COPY_COLUMNS =
  *  by an earlier build lacks. The old key's row is left to the sign-out wipe; nothing
  *  reads it. Rename it again whenever a column is added that existing rows must gain.
  *  `:v3` is EN-3's (CUL-1133): the tier. A row the server tiered before this build pulled
- *  it would otherwise sit behind the old watermark with no tier. */
-export const READ_COPY_WATERMARK_KEY = 'event_ai_verdicts:v3';
+ *  it would otherwise sit behind the old watermark with no tier. `:v4` is CUL-2678's: the
+ *  read's reasons, which every row pulled before this build lacks. */
+export const READ_COPY_WATERMARK_KEY = 'event_ai_verdicts:v4';
 
 /** Rows asked for per page. A server `max-rows` below this number costs pages, never
  *  rows: the cursor is the last row RECEIVED, whatever the page's length. */
@@ -155,7 +185,8 @@ export async function readCopies(eventIds: readonly string[]): Promise<Map<strin
     const chunk = ids.slice(i, i + READ_CHUNK);
     const marks = chunk.map(() => '?').join(', ');
     const rows = await db.getAllAsync<ReadCopyRow>(
-      `SELECT event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags, tier
+      `SELECT event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags, tier,
+              contextual_flags, visual_flags, blood_present, stool_blood_present, foreign_material_present
          FROM event_ai_verdicts
         WHERE event_id IN (${marks})`,
       chunk,
@@ -175,7 +206,97 @@ export async function readCopies(eventIds: readonly string[]): Promise<Map<strin
       out.set(row.event_id, { ...row, photoSetStale: photoSetStaleOf(row, shownByEvent.get(row.event_id) ?? null) });
     }
   }
+  await addCatChecks(db, out, Date.now());
   return out;
+}
+
+/**
+ * The record's live cat check (CUL-2667's `catNoGoodMeal24hOf`), added to every call-today
+ * copy so a list chip says what the record says (CUL-2678). The record checks a call today on
+ * a cat, or on a pet whose species it cannot see, and counts facts it could not read as MET:
+ * the check only adds the floor. This does the same, from the phone's own meals for the pet
+ * (unsynced included, as the record's read), at the moment of reading.
+ *
+ * Every other row gets no check (`undefined`): only a call today's words depend on it. A local
+ * read that fails, an event this phone does not hold, or a pet the store does not know all
+ * count as met, so the chip keeps the floor, which is what it said before this build.
+ *
+ * STRICTER THAN THE RECORD, ON PURPOSE (adversarial pass 2 on CUL-2678): a Most or All rating
+ * counts as the cat eating only when it was CERTAINLY watched: a single food that may not have
+ * been a free-fed bowl (`mayBeFreeFedIntakeMeal`, the Signal's own rule since CUL-2680). A mixed
+ * bowl (no food id) is not credited. The record's `intakeFlagAt` still credits any rating
+ * (CUL-2681), so on a shared bowl the chip can read the floor where the record does not: louder,
+ * never quieter than this chip said before this build, and never quieter than Home.
+ */
+async function addCatChecks(db: ReadCopyDb, copies: Map<string, ReadCopyRow>, nowMs: number): Promise<void> {
+  const callToday = [...copies.values()].filter((c) => tierDisplayOf(c) === 'call_today').map((c) => c.event_id);
+  if (callToday.length === 0) return;
+  const setAll = (ids: readonly string[], value: boolean) => {
+    for (const id of ids) {
+      const c = copies.get(id);
+      if (c) copies.set(id, { ...c, catNoGoodMeal24h: value });
+    }
+  };
+  try {
+    const petByEvent = new Map<string, string>();
+    for (let i = 0; i < callToday.length; i += READ_CHUNK) {
+      const chunk = callToday.slice(i, i + READ_CHUNK);
+      const found = await db.getAllAsync<{ id: string; pet_id: string }>(
+        `SELECT id, pet_id FROM events WHERE id IN (${chunk.map(() => '?').join(', ')})`,
+        chunk,
+      );
+      for (const e of found) petByEvent.set(e.id, e.pet_id);
+    }
+    // An event the phone does not hold: the record would not know the pet either.
+    setAll(callToday.filter((id) => !petByEvent.has(id)), true);
+    const species = (petId: string) => usePetStore.getState().pets.find((p) => p.id === petId)?.species ?? null;
+    const byPet = new Map<string, string[]>();
+    for (const [eventId, petId] of petByEvent) byPet.set(petId, [...(byPet.get(petId) ?? []), eventId]);
+    for (const [petId, eventIds] of byPet) {
+      const s = species(petId);
+      // The record's own rule (`catCallToday`): a cat, or a species it cannot see.
+      if (s !== null && s !== 'cat') continue;
+      try {
+        const from = new Date(nowMs - MAY_WAIT_INTAKE_BASELINE_HOURS * HOUR_MS - DAY_PAD_MS).toISOString();
+        const meals = await db.getAllAsync<{ occurred_at: string; intake_rating: string | null; food_item_id: string | null }>(
+          `SELECT e.occurred_at, m.intake_rating, m.food_item_id
+             FROM events e
+             JOIN meals m ON m.event_id = e.id
+            WHERE e.pet_id = ? AND e.event_type = 'meal' AND e.deleted_at IS NULL AND e.occurred_at >= ?`,
+          [petId, from],
+        );
+        const spans = parseFreeFedIntakeSpans(
+          (
+            await db.getAllAsync<{ food_item_id: string | null; created_at: string | null; active_from: string | null; active_until: string | null; ended_at: string | null }>(
+              `SELECT food_item_id, created_at, active_from, active_until, ended_at FROM feeding_arrangements
+                WHERE pet_id = ? AND method = 'free_choice' AND deleted_at IS NULL`,
+              [petId],
+            )
+          ).map((r) => ({ foodItemId: r.food_item_id, createdAt: r.created_at, activeFrom: r.active_from, activeUntil: r.active_until, endedAt: r.ended_at })),
+        );
+        // A good rating that was not certainly watched still says the owner rates meals, so it
+        // stays in the read, rated below "most": it can show tracking, never eating.
+        const watched = (m: { occurred_at: string; intake_rating: string | null; food_item_id: string | null }) =>
+          m.food_item_id !== null && !mayBeFreeFedIntakeMeal(m.food_item_id, Date.parse(m.occurred_at), spans);
+        setAll(
+          eventIds,
+          intakeFlagAt(
+            meals.map((m) => ({
+              at: m.occurred_at,
+              rating: (m.intake_rating === 'most' || m.intake_rating === 'all') && !watched(m) ? 'some' : m.intake_rating,
+            })),
+            nowMs,
+          ),
+        );
+      } catch (e) {
+        console.warn('[read-copy] cat meal check failed, keeping the floor:', e);
+        setAll(eventIds, true);
+      }
+    }
+  } catch (e) {
+    console.warn('[read-copy] cat check failed, keeping the floor:', e);
+    setAll(callToday, true);
+  }
 }
 
 /**
@@ -263,8 +384,9 @@ const STORED_SECONDS = secondsOf('event_ai_verdicts.updated_at');
  *     NULL) takes them from the same version when it carries them.
  */
 const UPSERT_SQL = `
-  INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags, tier)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at, photo_set_key, rule_version, engine_flags, tier,
+                                 contextual_flags, visual_flags, blood_present, stool_blood_present, foreign_material_present)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(event_id) DO UPDATE SET
     status = excluded.status,
     recommendation = excluded.recommendation,
@@ -272,7 +394,12 @@ const UPSERT_SQL = `
     photo_set_key = excluded.photo_set_key,
     rule_version = excluded.rule_version,
     engine_flags = excluded.engine_flags,
-    tier = excluded.tier
+    tier = excluded.tier,
+    contextual_flags = excluded.contextual_flags,
+    visual_flags = excluded.visual_flags,
+    blood_present = excluded.blood_present,
+    stool_blood_present = excluded.stool_blood_present,
+    foreign_material_present = excluded.foreign_material_present
   WHERE julianday(excluded.updated_at) IS NOT NULL
     AND (julianday(event_ai_verdicts.updated_at) IS NULL
          OR julianday(excluded.updated_at) > julianday(event_ai_verdicts.updated_at)
@@ -282,7 +409,9 @@ const UPSERT_SQL = `
                       AND ((event_ai_verdicts.engine_flags IS NULL
                             AND excluded.engine_flags IS NOT NULL)
                            OR (event_ai_verdicts.tier IS NULL
-                               AND excluded.tier IS NOT NULL))))))`;
+                               AND excluded.tier IS NOT NULL)
+                           OR (event_ai_verdicts.contextual_flags IS NULL
+                               AND excluded.contextual_flags IS NOT NULL))))))`;
 
 /** A server row as PostgREST hands it over: `engine_flags` is the `text[]` as an array. */
 export interface ServerVerdictRow {
@@ -294,6 +423,11 @@ export interface ServerVerdictRow {
   rule_version?: unknown;
   engine_flags?: unknown;
   tier?: unknown;
+  contextual_flags?: unknown;
+  visual_flags?: unknown;
+  blood_present?: unknown;
+  stool_blood_present?: unknown;
+  foreign_material_present?: unknown;
 }
 
 // The shapes 075's CHECKs enforce on the server, checked again here because a stamp this
@@ -304,6 +438,27 @@ const ENGINE_KEY_SHAPE = /^[a-z0-9_]{1,64}$/;
 // Any tier-shaped text is kept, known or not: a tier this build does not know must reach
 // the word map, which speaks it as a call (CUL-1277), never be dropped to NULL here.
 const TIER_SHAPE = /^[a-z0-9_]{1,64}$/;
+
+// A reason's shape (CUL-2678): any flag- or enum-shaped text is kept, known or not, because
+// a reason this build does not know must reach the ask words, which speak it as the floor.
+const REASON_SHAPE = /^[a-z0-9_]{1,64}$/;
+
+/** A flag array as the copy stores it: the server's members as a JSON array; NULL only when
+ *  the server sent none (absent or null: "not supplied", the floor for a call today). A value
+ *  that is THERE and cannot be read (not an array, too long) is stored as `["?"]`, a flag no
+ *  build knows, which the ask words read as the floor on every tier, as the record reads the
+ *  raw value (adversarial pass 1, F8): NULL would let an earlier-rule chip say less. A
+ *  malformed MEMBER is kept as `?` the same way. */
+function reasonFlagsText(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value) || value.length > 32) return JSON.stringify(['?']);
+  return JSON.stringify(value.map((f) => (typeof f === 'string' && REASON_SHAPE.test(f) ? f : '?')));
+}
+
+/** A structured sign column: its enum text, or NULL (a vomit read has no stool column). */
+function reasonText(value: unknown): string | null {
+  return typeof value === 'string' && REASON_SHAPE.test(value) ? value : null;
+}
 
 /** `engine_flags` as the copy stores it: the sorted keys as a JSON array, or NULL. */
 function engineFlagsText(value: unknown): string | null {
@@ -339,6 +494,11 @@ function toCopyRow(row: Partial<ServerVerdictRow> | null | undefined): ReadCopyR
       typeof row.rule_version === 'string' && RULE_VERSION_SHAPE.test(row.rule_version) ? row.rule_version : null,
     engine_flags: engineFlagsText(row.engine_flags),
     tier: typeof row.tier === 'string' && TIER_SHAPE.test(row.tier) ? row.tier : null,
+    contextual_flags: reasonFlagsText(row.contextual_flags),
+    visual_flags: reasonFlagsText(row.visual_flags),
+    blood_present: reasonText(row.blood_present),
+    stool_blood_present: reasonText(row.stool_blood_present),
+    foreign_material_present: reasonText(row.foreign_material_present),
   };
 }
 
@@ -372,6 +532,11 @@ export async function writeCopies(
       row.rule_version,
       row.engine_flags,
       row.tier ?? null,
+      row.contextual_flags ?? null,
+      row.visual_flags ?? null,
+      row.blood_present ?? null,
+      row.stool_blood_present ?? null,
+      row.foreign_material_present ?? null,
     ]);
     changed += result.changes;
   }

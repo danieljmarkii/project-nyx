@@ -658,10 +658,14 @@ describe('trialDeclineVetLine: the decline line splits by the cat floor (CUL-266
     expect(trialDeclineVetLine('dog', null, 'Rex')).toBe(DEFER);
   });
 
-  it('any species but a dog takes the floor on a refusal, and is deferential on a partial decline', () => {
+  it('any species but a dog takes the floor on a refusal, and on a partial decline unless D3 is checked and unmet (CUL-2680)', () => {
+    const FLOOR = 'A pet that stops eating needs a call today, whatever the trial is doing.';
     for (const sp of ['other', null] as const) {
-      expect(trialDeclineVetLine(sp, { trigger: 'sustained_refusal' }, 'Rex')).toBe('A pet that stops eating needs a call today, whatever the trial is doing.');
-      expect(trialDeclineVetLine(sp, { trigger: 'consecutive_low' }, 'Rex')).toBe(DEFER);
+      expect(trialDeclineVetLine(sp, { trigger: 'sustained_refusal' }, 'Rex')).toBe(FLOOR);
+      // The Signal floors any species but a dog meeting D3; the trial line follows it.
+      expect(trialDeclineVetLine(sp, { trigger: 'consecutive_low' }, 'Rex', true)).toBe(FLOOR);
+      expect(trialDeclineVetLine(sp, { trigger: 'consecutive_low' }, 'Rex')).toBe(FLOOR);
+      expect(trialDeclineVetLine(sp, { trigger: 'consecutive_low' }, 'Rex', false)).toBe(DEFER);
     }
   });
 });

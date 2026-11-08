@@ -210,7 +210,8 @@ Deno.test('I5 — template-only: no model sentence is accepted while a card carr
     assert.equal(validatePhrasing(t, f), false, t)
   }
   // And ②'s card riding the facts is held the same way; without them it is ②'s card as before.
-  const plain = { ...f, trigger: 'consecutive_low' as const, refusedThenVomited: undefined }
+  // (With a good meal in the last day: CUL-2680 holds a card meeting D3 template-only too.)
+  const plain = { ...f, trigger: 'consecutive_low' as const, refusedThenVomited: undefined, noGoodMeal24h: false }
   assert.equal(validatePhrasing('Pixel has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.', plain), true)
 })
 

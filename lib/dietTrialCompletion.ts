@@ -575,7 +575,7 @@ export function densityLine(facts: TrialOutcomeFacts, petName: string): string {
  * an all-refused day, a sustained refusal, or a decline this build cannot name meets it and keeps
  * the direct line. A cat's partial decline may or may not (it can run 37 h with no good meal), so
  * it is deferential, with the floor kept as a condition on the data, only once the live check
- * says the predicate is unmet; no caller has that check yet, so every cat keeps the floor (filed). A dog is deferential
+ * says the predicate is unmet; no caller passes it yet, so every cat keeps the floor until the line can re-check the clock (CUL-2694). A dog is deferential
  * (Pattern 11); any other species follows the Signal's "every species but a dog" refusal rule.
  */
 export function trialDeclineVetLine(
@@ -596,7 +596,9 @@ export function trialDeclineVetLine(
       fact.trigger === 'refused_then_vomited');
   // Any species but a dog takes the floor on a refusal (the all-refused rule, CUL-2675); only a
   // cat has the conditional pointer, because only a cat's floor is defined by its meals.
-  if (species !== 'cat') return partial ? deferential : 'A pet that stops eating needs a call today, whatever the trial is doing.';
+  // CUL-2680 (adversarial pass 1, F1): the Signal floors any species but a dog that meets D3, so a
+  // partial decline here does too unless the check says unmet (false); unchecked keeps the floor.
+  if (species !== 'cat') return partial && catNoGoodMeal24h === false ? deferential : 'A pet that stops eating needs a call today, whatever the trial is doing.';
   if (!partial || catNoGoodMeal24h !== false) return 'A cat that stops eating needs a call today, whatever the trial is doing.';
   const name = petName.trim() || 'your cat';
   return `Worth keeping an eye on, and a word with your vet if it carries on. If ${name} goes a day without a full meal, ${FLOOR_ASK.inline}, whatever the trial is doing.`;

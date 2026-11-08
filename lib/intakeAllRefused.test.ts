@@ -36,6 +36,9 @@ import {
 } from './reportComposer';
 import type { IntakeDeclineFinding } from './signal';
 
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 function card(extra: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
   return {
     type: 'intake_decline',
@@ -45,6 +48,8 @@ function card(extra: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
     daysBelowBaseline: 1,
     refusedFoodLabel: null,
     ratedMealsConsidered: 6,
+    // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
+    lastGoodMealIso: ATE_WELL_2H_AGO,
     ...extra,
   };
 }

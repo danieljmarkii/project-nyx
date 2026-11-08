@@ -280,6 +280,20 @@ describe('readMonthFacts against the production DDL', () => {
     ]);
   });
 
+  it('CUL-2678: an earlier-rule read over blood reaches the month in the floor\'s words, through the copy', async () => {
+    const blood = ev('vomit', at('2026-09-03', 8));
+    const plain = ev('vomit', at('2026-09-07', 8));
+    verdict(blood, 'worth_a_call');
+    verdict(plain, 'worth_a_call');
+    mockDb.prepare(`UPDATE event_ai_verdicts SET contextual_flags = '[]', visual_flags = '["blood"]', blood_present = 'fresh_red' WHERE event_id = ?`).run(blood);
+    mockDb.prepare(`UPDATE event_ai_verdicts SET contextual_flags = '["repeated_vomiting"]', visual_flags = '[]' WHERE event_id = ?`).run(plain);
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.callReads).toEqual([
+      { eventId: blood, day: '2026-09-03', verdict: 'worth_a_call', readAs: 'call today' },
+      { eventId: plain, day: '2026-09-07', verdict: 'worth_a_call', readAs: 'worth a call' },
+    ]);
+  });
+
   it('CUL-1200 (b): a call with NO photo reaches the month, through the same copy and predicate', async () => {
     // The issue's two reproductions: an unphotographed cat vomit read as reduced intake, and
     // a photoless loose stool read as repeated; plus a calm photoless read and a look.
@@ -293,8 +307,8 @@ describe('readMonthFacts against the production DDL', () => {
     verdict(look, 'worth_a_call');
     const facts = await readMonthFacts(PET, RANGE);
     expect(facts.callReads).toEqual([
-      { eventId: cat, day: '2026-09-03', verdict: 'worth_a_call' },
-      { eventId: stool, day: '2026-09-07', verdict: 'worth_a_call' },
+      { eventId: cat, day: '2026-09-03', verdict: 'worth_a_call', readAs: 'worth a call' },
+      { eventId: stool, day: '2026-09-07', verdict: 'worth_a_call', readAs: 'worth a call' },
     ]);
     // No photo layer fact is invented for them: the gallery and the Photos layer stay photos.
     expect(facts.photoDays).toEqual([]);
@@ -307,7 +321,7 @@ describe('readMonthFacts against the production DDL', () => {
     photo(a);
     verdict(a, 'worth_a_call');
     const facts = await readMonthFacts(PET, RANGE);
-    expect(facts.callReads).toEqual([{ eventId: a, day: '2026-09-02', verdict: 'worth_a_call' }]);
+    expect(facts.callReads).toEqual([{ eventId: a, day: '2026-09-02', verdict: 'worth_a_call', readAs: 'worth a call' }]);
     expect(facts.photoDays).toEqual([{ day: '2026-09-02', verdict: 'worth_a_call' }]);
     expect(mockSqlLog.filter((q) => /FROM event_ai_verdicts/.test(q))).toHaveLength(1);
   });

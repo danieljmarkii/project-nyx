@@ -2504,6 +2504,8 @@ function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
   lines.push({
     role: 'flag',
     text:
+      // No live check passed (CUL-2694): the trial line holds the floor for every cat, as it did,
+      // until it can re-read the 24 h by the clock the way the Signal does.
       trialDeclineVetLine(input.species, input.intakeDeclineFacts?.[0] ?? null, input.petName) +
       // "isn't showing the trial numbers" was true only while this branch
       // rendered none. Adding the off-diet floor to it — correct, and this PR's

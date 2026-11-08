@@ -27,7 +27,7 @@ import { DEFERENTIAL_ASK, FLOOR_ASK } from './incidentAskWords';
 import { bookedVisitCallBeforeAsk, bookedVisitOf, careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, intakeAllRefusedCallsToday, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, sustainedRefusalOf, symptomWord, UNKNOWN_INTAKE_COPY } from './signalCopy';
+import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, intakeMeetsCatFloor, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, sustainedRefusalOf, symptomWord, UNKNOWN_INTAKE_COPY } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import { localCallDay } from './callNowDated';
 import type { SignalScreenModel } from './signalScreen';
@@ -85,14 +85,15 @@ export function signalHomeAsk(finding: SignalFinding, nowMs?: number): string | 
           ? 'worth keeping an eye on, and a word with your vet if it carries on'
           : 'worth a word with your vet';
     case 'intake_decline':
+      // CUL-2680 (D3: the predicate wins over the card type): a pet (not a dog) with no meal
+      // eaten well in 24 h, or an all-refused card (CUL-2593), says the floor on any trigger.
+      if (intakeMeetsCatFloor(finding, nowMs)) return FLOOR_ASK.inline;
       // I5 (PR-30s): its sentence ends on I4's tail, so its ask is that tail's words.
       if (finding.trigger === 'refused_then_vomited') return 'worth mentioning to your vet';
       // The sustained-refusal floor's sentence ends on a call today. CUL-2667 (D3, D4): for every
       // species but a dog it meets the cat floor and says the floor's words; a dog's stays the
       // deferential call today.
       if (finding.trigger === 'sustained_refusal') return finding.species === 'dog' ? DEFERENTIAL_ASK.inline : FLOOR_ASK.inline;
-      // CUL-2593: an all-refused card asks for a call today, every species but a dog: the floor.
-      if (intakeAllRefusedCallsToday(finding)) return FLOOR_ASK.inline;
       if (finding.trigger === 'consecutive_low' || finding.trigger === 'refused_normal_food') return 'worth keeping an eye on, and a word with your vet if it carries on';
       // CUL-2405: a trigger this build does not know asks at its most cautious.
       return UNKNOWN_INTAKE_COPY.ask;

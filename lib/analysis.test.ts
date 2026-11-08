@@ -59,6 +59,8 @@ import {
   deriveEditedStoolFields,
   buildVomitEditWrite,
   buildStoolEditWrite,
+  saveVomitFieldEdits,
+  saveStoolFieldEdits,
   triggerStoolAnalysis,
   triggerVomitAnalysis,
   claimAnalysisChain,
@@ -1115,5 +1117,28 @@ describe('a landed read that failed to copy is watched until it lands (CUL-1198 
     // The cleared id is free for the next landing.
     await triggerVomitAnalysis('ev-copy-twice');
     expect(watchesFor('ev-copy-twice')).toBe(2);
+  });
+});
+
+// CUL-2678: the copy now mirrors the read's sign columns, so an owner's edit to one refreshes
+// it at once; a list chip never waits a sync cycle to say the floor over blood the owner added.
+describe('an owner edit refreshes the read copy (CUL-2678)', () => {
+  const update = (error: { message: string } | null) => {
+    const eq = jest.fn().mockResolvedValue({ error });
+    (supabase.from as jest.Mock).mockReturnValue({ update: jest.fn(() => ({ eq })) });
+  };
+  beforeEach(() => (refreshReadCopyOutcome as jest.Mock).mockClear());
+
+  it.each([
+    ['vomit', () => saveVomitFieldEdits('ev-1', { blood_present: 'fresh_red' } as VomitEditableFields)],
+    ['stool', () => saveStoolFieldEdits('ev-1', { stool_blood_present: 'yes' } as StoolEditableFields)],
+  ])('a saved %s edit re-pulls that event, and a refused one does not', async (_kind, save) => {
+    update(null);
+    expect(await save()).toEqual({ error: null });
+    expect(refreshReadCopyOutcome).toHaveBeenCalledWith('ev-1');
+    (refreshReadCopyOutcome as jest.Mock).mockClear();
+    update({ message: 'denied' });
+    expect(await save()).toEqual({ error: 'denied' });
+    expect(refreshReadCopyOutcome).not.toHaveBeenCalled();
   });
 });

@@ -93,7 +93,11 @@ Deno.test('CUL-2593: only the all-refused card moves; a cat\'s plain dip keeps i
   const dip = lowFor('cat', ['picked', 'picked'])
   assert.equal(dip.allRefused, false)
   assert.equal(allRefusedCallsToday(dip), false)
-  assert.match(templateIntakeDecline(dip, 'Miso'), /eaten less than usual today — worth keeping an eye on/)
+  // CUL-2680: these picked-at meals leave her with no good meal in 24 h, which is the floor.
+  assert.equal(dip.noGoodMeal24h, true)
+  assert.match(templateIntakeDecline(dip, 'Miso'), /eaten less than usual today, and hasn't eaten most of any meal you rated in the last 24 hours — call your vet today\./)
+  // With a good meal inside the day, the plain dip keeps its own ask.
+  assert.match(templateIntakeDecline({ ...dip, noGoodMeal24h: false }, 'Miso'), /eaten less than usual today — worth keeping an eye on/)
   // A cache written before the fact existed is not inferred from the score.
   const { allRefused: _drop, ...legacy } = lowFor('cat', ['refused', 'refused'])
   assert.equal(allRefusedCallsToday(legacy as IntakeDeclineFinding), false)

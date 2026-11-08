@@ -33,7 +33,7 @@ import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
 import { readSignalCache } from '../lib/signal';
 import { loadMaskingRecord, maskedTrialSentence, maskingFor, maskSignalRows } from '../lib/screenMasking';
 import { signalSymptomOf } from '../lib/signalWindows';
-import { symptomWord } from '../lib/signalCopy';
+import { symptomWord, withIntakeSentencesAt } from '../lib/signalCopy';
 import { signalTrialWindowOf } from '../lib/signalScreen';
 import { syncPendingVetAppointments } from '../lib/sync';
 import {
@@ -650,7 +650,7 @@ async function buildForAppointment(
   const generatedOn = signalRow?.generatedAt ? toLocalDayKey(new Date(signalRow.generatedAt)) : null;
   // A trial pair that ROSE over a masked baseline zero keeps its row in the Signal screen's own
   // words, never dropped (D2: a rise always shows; the third adversarial pass).
-  const findings = signalRow
+  const masked = signalRow
     ? maskSignalRows(
         signalRow.findings,
         maskRecord,
@@ -659,6 +659,11 @@ async function buildForAppointment(
         today,
         generatedOn,
       )
+    : null;
+  // CUL-2680 (pass 2, B3): an intake row past D3 since the engine's run quotes the floor's
+  // sentence, as Home and the Signal screen say it, never the stored conditional one.
+  const findings = masked
+    ? withIntakeSentencesAt(masked, resolveRecordPetName(usePetStore.getState().pets, subjectId), nowMs)
     : null;
   // The screen's own sentence for each counted finding, for the rows that survived the masking
   // above (CUL-1570).

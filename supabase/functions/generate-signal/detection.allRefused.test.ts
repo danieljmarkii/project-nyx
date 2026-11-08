@@ -102,6 +102,8 @@ Deno.test('CUL-2424: the carried line says refusing, never "eating less"', () =>
 
 Deno.test('CUL-2424: no model sentence is accepted on an all-refused card', () => {
   const calm = 'Miso has been off her food today — worth keeping an eye on, and a word with your vet if it carries on.'
-  assert.equal(validatePhrasing(calm, { ...base, allRefused: false }), true, 'the dip still takes a model sentence')
+  // A dip with a good meal in the last day (CUL-2680: one without meets the floor, template-only).
+  assert.equal(validatePhrasing(calm, { ...base, allRefused: false, noGoodMeal24h: false }), true, 'the dip still takes a model sentence')
+  assert.equal(validatePhrasing(calm, { ...base, allRefused: false, noGoodMeal24h: true }), false, 'a dip meeting D3 takes none')
   assert.equal(validatePhrasing(calm, base), false)
 })

@@ -1263,6 +1263,21 @@ export interface IntakeDeclineFinding extends FindingBase {
    * triggers and on a finding cached before the field existed.
    */
   allRefused?: boolean
+  /**
+   * CUL-2680: the latest rated meal eaten Most or All (ISO), CERTAINLY watched (the same
+   * predicate that lets a meal clear the sustained-refusal floor), or null when there is none.
+   * `lastFullMealIso` counts only All, so it cannot answer D3: a cat eating Most is eating. The
+   * phone re-checks D3 by the clock from this fact, so the floor holds as the hours pass.
+   * Set on every intake finding this engine emits; absent on one cached before the field.
+   */
+  lastGoodMealIso?: string | null
+  /**
+   * CUL-2680: D3 at the moment of detection: an owner who rates meals has rated none Most or
+   * All in the 24 hours to now. For any species but a dog it is the floor, whatever the trigger
+   * (clinical-guardrails line 85: the predicate wins over the card type). Set on every intake
+   * finding this engine emits; absent on one cached before the field.
+   */
+  noGoodMeal24h?: boolean
 }
 
 /** A reflection only ever describes a FLAT ("same as last week") or IMPROVING (falling) trend. */
@@ -4342,6 +4357,36 @@ export function detectIntakeDecline(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
 ): IntakeDeclineFinding[] {
+  return withGoodMealFacts(detectIntakeDeclineUnstamped(input, config), input)
+}
+
+/** D3's window: no meal rated Most or All in this many hours (clinical-guardrails line 85). */
+export const NO_GOOD_MEAL_HOURS = 24
+/** "An owner who rates meals": a rated meal in this many hours (the phone's
+ *  `MAY_WAIT_INTAKE_BASELINE_HOURS`, the record's own check). */
+const RATES_MEALS_HOURS = 7 * 24
+
+/**
+ * CUL-2680: stamp every intake finding with D3's facts (`lastGoodMealIso`, `noGoodMeal24h`), so
+ * the server sentence and every surface can take the floor for a cat that meets it under ANY
+ * trigger. One pass over the rated meals, after the triggers have run, so no trigger's own
+ * logic moves. A now that does not parse counts as met: the fact can only add the floor.
+ */
+function withGoodMealFacts(findings: IntakeDeclineFinding[], input: DetectionInput): IntakeDeclineFinding[] {
+  if (findings.length === 0) return findings
+  const nowMs = Date.parse(input.now)
+  const spans = intakeFreeFedSpans(input)
+  const rated = classifyRatedMeals(intakeMealEventsOf(input), spans).filter((m) => !Number.isFinite(nowMs) || m.ms <= nowMs)
+  const ateWell = intakeScore('most')
+  const good = rated.filter((m) => m.score >= ateWell && certainlyWatchedMeal(m, spans))
+  const last = good.length > 0 ? good[good.length - 1] : null
+  const ratesMeals = Number.isFinite(nowMs) ? rated.some((m) => m.ms >= nowMs - RATES_MEALS_HOURS * MS_PER_HOUR) : true
+  const noGoodMeal24h =
+    !Number.isFinite(nowMs) || (ratesMeals && !(last !== null && last.ms >= nowMs - NO_GOOD_MEAL_HOURS * MS_PER_HOUR))
+  return findings.map((f) => ({ ...f, lastGoodMealIso: last?.occurredAt ?? null, noGoodMeal24h }))
+}
+
+function detectIntakeDeclineUnstamped(input: DetectionInput, config: DetectionConfig): IntakeDeclineFinding[] {
   const findings = detectIntakeDeclineCore(input, config)
   if (!config.en5) return findings
   const facts = refusedThenVomitedFacts(input, config, config.en5.refusedThenVomited)
@@ -4391,6 +4436,19 @@ export const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>>
  */
 export function allRefusedCallsToday(f: IntakeDeclineFinding): boolean {
   return f.trigger === 'consecutive_low' && f.allRefused === true && f.species !== 'dog'
+}
+
+/**
+ * CUL-2680 (clinical-guardrails line 85, D3): the intake card meets the floor, whatever its
+ * trigger: an all-refused card for any species but a dog, or any species but a dog whose owner
+ * rated no meal Most or All in the 24 hours to the run (`noGoodMeal24h`). A cat can be 37 hours
+ * without a good meal while the engine files her card as "eating less", and the predicate wins
+ * over the card type. Mirrored on the client (`intakeMeetsCatFloor`, lib/signalCopy.ts), which
+ * also re-checks the 24 hours by the clock; keep the two in sync.
+ */
+export function intakeMeetsCatFloor(f: IntakeDeclineFinding): boolean {
+  if (f.species === 'dog') return false
+  return allRefusedCallsToday(f) || f.noGoodMeal24h === true
 }
 
 /**
@@ -4493,6 +4551,17 @@ function detectIntakeDeclineCore(
   return [floor, ...relative.filter((f) => f.trigger !== 'consecutive_low')]
 }
 
+/** A meal whose rating may clear a floor: CERTAINLY watched (the sustained-refusal floor's rule,
+ *  below). Shared with D3's good-meal fact (CUL-2680), so the two never disagree on a bowl. */
+function certainlyWatchedMeal(m: RatedMeal, spans: readonly FreeFedIntakeSpan[]): boolean {
+  if (mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans)) return false
+  if (!m.bowl) return true
+  return (
+    m.bowl.status === 'mix' &&
+    m.bowl.components.every((c) => c.foodItemId !== null && !mayBeFreeFedIntakeMeal(c.foodItemId, m.ms, spans))
+  )
+}
+
 /**
  * The sustained-refusal floor, as ruled (PM, 2026-11-02, option (a)): no watched rated meal eaten
  * well in the 72 hours to the anchor. Qualifying meals are refused, picked at or ate some (`some`
@@ -4523,14 +4592,7 @@ function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig)
   // bowl (pass 2), and, for a mixed bowl, every component known and none possibly free-fed. A mix's
   // own food id is null by spec, so the plain check never saw its kibble (CUL-2406, instance 2);
   // an incomplete bowl's unknown part could be that kibble too.
-  const certainlyWatched = (m: RatedMeal): boolean => {
-    if (mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans)) return false
-    if (!m.bowl) return true
-    return (
-      m.bowl.status === 'mix' &&
-      m.bowl.components.every((c) => c.foodItemId !== null && !mayBeFreeFedIntakeMeal(c.foodItemId, m.ms, spans))
-    )
-  }
+  const certainlyWatched = (m: RatedMeal): boolean => certainlyWatchedMeal(m, spans)
   // The qualifying meals of the window ending at `endMs`, or null when it does not qualify.
   const qualifying = (endMs: number): RatedMeal[] | null => {
     const inWindow = ratedMeals.filter((m) => m.ms >= endMs - windowMs && m.ms <= endMs)

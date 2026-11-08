@@ -555,6 +555,7 @@ function GridDay({
       // The call is on the default layers, photo or not (CUL-1200): presence escalates,
       // so no toggle hides it.
       call={day.call}
+      callReadAs={day.callReadAs ?? null}
       today={day.today}
       selected={selected}
       dim={day.outsideMonth}

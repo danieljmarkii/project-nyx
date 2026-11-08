@@ -81,7 +81,7 @@ import {
   type IncidentRecommendation,
 } from './incidentReadState';
 import { isQuietVerdict, type QuietVerdict } from './incidentVerdict';
-import { tierDisplayOf, type TierDisplay } from './incidentTierWords';
+import { tierChipOf, tierDisplayOf, type ChipWords, type TierDisplay } from './incidentTierWords';
 
 /**
  * What the phone's copy holds for one event's read that can decide a state: two of
@@ -109,6 +109,17 @@ export interface ReadCopy {
   /** The Engines keys the read was written under, the copy's JSON text. Decides whether a
    *  row speaks its tier's words or the shipped ones (`isTieredRow`). */
   engine_flags?: string | null;
+  /** The read's reasons (CUL-2678), the copy's text: the two flag arrays as JSON, and the
+   *  three structured signs. NULL / absent on a row pulled before this build, which the chip
+   *  resolver reads as not supplied (`tierChipOf`), never as "no reason". */
+  contextual_flags?: string | null;
+  visual_flags?: string | null;
+  blood_present?: string | null;
+  stool_blood_present?: string | null;
+  foreign_material_present?: string | null;
+  /** The record's live cat check at the moment of reading (`readCopies`), on a call today
+   *  only; absent everywhere else. Computed, never stored. Only ever adds the floor. */
+  catNoGoodMeal24h?: boolean;
 }
 
 /** One row of the copy (`event_ai_verdicts`): the deciding pair, its key, the server's
@@ -201,11 +212,25 @@ export interface ReadVerdict {
    * is null, so a surface that switches to it inherits every demotion above.
    */
   display: TierDisplay | null;
+  /**
+   * The words a list chip draws for `display`, keyed by the read's reasons exactly as the
+   * record keys them (`tierChipOf`, CUL-2678). Every
+   * list surface draws these, never `TIER_WORDS[display]`, so a deferential call today reads
+   * "Worth a call today" and an earlier-rule read over blood reads the floor, as on the record.
+   * Set on the rose only (the quiet words do not depend on a reason); absent everywhere else.
+   */
+  chip?: ChipWords;
 }
 
 /** The state, with the verdict a word-speaking surface may name (the Signal gallery).
  *  The shared day row speaks no verdict words since HV-6: it draws the state. */
 export function readVerdictOf(input: ReadStateInput): ReadVerdict {
+  const v = readVerdictCore(input);
+  if (v.state !== 'worth_a_call' || v.display === null) return v;
+  return { ...v, chip: tierChipOf(v.display, input.copy) };
+}
+
+function readVerdictCore(input: ReadStateInput): Omit<ReadVerdict, 'chip'> {
   if (isWorthACall(input.copy)) {
     return { state: 'worth_a_call', verdict: 'worth_a_call', display: tierDisplayOf(input.copy) ?? 'worth_a_call' };
   }

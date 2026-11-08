@@ -1073,6 +1073,9 @@ export interface IntakeDeclineFlag {
   ratedMealsConsidered: number;
   /** CUL-2424: every recent rated meal was refused (`consecutive_low` only; detection.ts's mirror). */
   allRefused?: boolean;
+  /** CUL-2680: D3 at `nowMs`: an owner who rates meals rated none Most or All, certainly watched,
+   *  in the 24 hours to now (detection.ts `withGoodMealFacts`'s mirror). Set on every flag. */
+  noGoodMeal24h?: boolean;
   /** The sustained-refusal floor's counts; present on that trigger only (detection.ts's mirror). */
   sustainedRefusal?: {
     meals: number;
@@ -1149,6 +1152,41 @@ function classifyRatedMeals(meals: AnalyticsMeal[], freeFedSpans: readonly FreeF
  * truer card; adversarial pass 1, B1) and sits beside a refusal.
  */
 export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineResult {
+  const result = detectIntakeDeclineUnstamped(input);
+  if (result.status !== 'watch') return result;
+  const noGoodMeal24h = noGoodMeal24hAt(input);
+  return { status: 'watch', flags: result.flags.map((f) => ({ ...f, noGoodMeal24h })) };
+}
+
+/** D3's window and "an owner who rates meals" (detection.ts `NO_GOOD_MEAL_HOURS`,
+ *  `RATES_MEALS_HOURS`; same question, mirrored, C-34). */
+const NO_GOOD_MEAL_HOURS = 24;
+const RATES_MEALS_HOURS = 7 * 24;
+
+/** CUL-2680: D3 at `nowMs`, the mirror of detection.ts `withGoodMealFacts`. A clock that does not
+ *  parse counts as met: the fact can only add the floor. */
+function noGoodMeal24hAt(input: IntakeDeclineInput): boolean {
+  const nowMs = input.nowMs;
+  if (!Number.isFinite(nowMs)) return true;
+  const rated = classifyRatedMeals(input.meals, input.freeFedSpans).filter((m) => m.ms <= nowMs);
+  const ratesMeals = rated.some((m) => m.ms >= nowMs - RATES_MEALS_HOURS * MS_PER_HOUR);
+  const ateWell = rated.some(
+    (m) => m.score >= INTAKE_SCORE.most && certainlyWatchedMeal(m, input.freeFedSpans) && m.ms >= nowMs - NO_GOOD_MEAL_HOURS * MS_PER_HOUR,
+  );
+  return ratesMeals && !ateWell;
+}
+
+/** A rating that may clear a floor: certainly watched (detection.ts `certainlyWatchedMeal`). */
+function certainlyWatchedMeal(m: RatedMeal, spans: readonly FreeFedIntakeSpan[]): boolean {
+  if (mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans)) return false;
+  if (!m.bowl) return true;
+  return (
+    m.bowl.status === 'mix' &&
+    m.bowl.components.every((c) => c.foodItemId !== null && !mayBeFreeFedIntakeMeal(c.foodItemId, m.ms, spans))
+  );
+}
+
+function detectIntakeDeclineUnstamped(input: IntakeDeclineInput): IntakeDeclineResult {
   const relative = detectIntakeDeclineRelative(input);
   const flags = relative.status === 'watch' ? relative.flags : [];
   const floor = sustainedRefusalFlag(input);

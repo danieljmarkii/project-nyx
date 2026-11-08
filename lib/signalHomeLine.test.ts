@@ -32,6 +32,9 @@ import { hasTitleVerdictWord } from './signalTitle';
 import { askStandalone, signalHomeAsk, signalHomeLabel, signalHomeLine, timingRowDenominatorLine, type SignalHomeLine } from './signalHomeLine';
 import { isTimingFinding, timingCompareRows } from './signalCopy';
 
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 const PET = 'Nyx';
 const SYMPTOMS: SignalSymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze'];
 
@@ -233,6 +236,8 @@ function intakes(): IntakeDeclineFinding[] {
     daysBelowBaseline: 3,
     refusedFoodLabel: null,
     ratedMealsConsidered: 9,
+    // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
+    lastGoodMealIso: ATE_WELL_2H_AGO,
   };
   return [
     low,
