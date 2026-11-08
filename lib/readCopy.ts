@@ -114,6 +114,7 @@ import type { SeamRead } from './ruleSeam';
 import { supabase } from './supabase';
 import { tierDisplayOf } from './incidentTierWords';
 import { intakeFlagAt, MAY_WAIT_INTAKE_BASELINE_HOURS } from './mayWaitLine';
+import { mayBeFreeFedIntakeMeal, parseFreeFedIntakeSpans } from './freeFedIntake';
 import { usePetStore } from '../store/petStore';
 
 const HOUR_MS = 3_600_000;
@@ -219,6 +220,13 @@ export async function readCopies(eventIds: readonly string[]): Promise<Map<strin
  * Every other row gets no check (`undefined`): only a call today's words depend on it. A local
  * read that fails, an event this phone does not hold, or a pet the store does not know all
  * count as met, so the chip keeps the floor, which is what it said before this build.
+ *
+ * STRICTER THAN THE RECORD, ON PURPOSE (adversarial pass 2 on CUL-2678): a Most or All rating
+ * counts as the cat eating only when it was CERTAINLY watched: a single food that may not have
+ * been a free-fed bowl (`mayBeFreeFedIntakeMeal`, the Signal's own rule since CUL-2680). A mixed
+ * bowl (no food id) is not credited. The record's `intakeFlagAt` still credits any rating
+ * (CUL-2681), so on a shared bowl the chip can read the floor where the record does not: louder,
+ * never quieter than this chip said before this build, and never quieter than Home.
  */
 async function addCatChecks(db: ReadCopyDb, copies: Map<string, ReadCopyRow>, nowMs: number): Promise<void> {
   const callToday = [...copies.values()].filter((c) => tierDisplayOf(c) === 'call_today').map((c) => c.event_id);
@@ -250,14 +258,36 @@ async function addCatChecks(db: ReadCopyDb, copies: Map<string, ReadCopyRow>, no
       if (s !== null && s !== 'cat') continue;
       try {
         const from = new Date(nowMs - MAY_WAIT_INTAKE_BASELINE_HOURS * HOUR_MS - DAY_PAD_MS).toISOString();
-        const meals = await db.getAllAsync<{ occurred_at: string; intake_rating: string | null }>(
-          `SELECT e.occurred_at, m.intake_rating
+        const meals = await db.getAllAsync<{ occurred_at: string; intake_rating: string | null; food_item_id: string | null }>(
+          `SELECT e.occurred_at, m.intake_rating, m.food_item_id
              FROM events e
              JOIN meals m ON m.event_id = e.id
             WHERE e.pet_id = ? AND e.event_type = 'meal' AND e.deleted_at IS NULL AND e.occurred_at >= ?`,
           [petId, from],
         );
-        setAll(eventIds, intakeFlagAt(meals.map((m) => ({ at: m.occurred_at, rating: m.intake_rating })), nowMs));
+        const spans = parseFreeFedIntakeSpans(
+          (
+            await db.getAllAsync<{ food_item_id: string | null; created_at: string | null; active_from: string | null; active_until: string | null; ended_at: string | null }>(
+              `SELECT food_item_id, created_at, active_from, active_until, ended_at FROM feeding_arrangements
+                WHERE pet_id = ? AND method = 'free_choice' AND deleted_at IS NULL`,
+              [petId],
+            )
+          ).map((r) => ({ foodItemId: r.food_item_id, createdAt: r.created_at, activeFrom: r.active_from, activeUntil: r.active_until, endedAt: r.ended_at })),
+        );
+        // A good rating that was not certainly watched still says the owner rates meals, so it
+        // stays in the read, rated below "most": it can show tracking, never eating.
+        const watched = (m: { occurred_at: string; intake_rating: string | null; food_item_id: string | null }) =>
+          m.food_item_id !== null && !mayBeFreeFedIntakeMeal(m.food_item_id, Date.parse(m.occurred_at), spans);
+        setAll(
+          eventIds,
+          intakeFlagAt(
+            meals.map((m) => ({
+              at: m.occurred_at,
+              rating: (m.intake_rating === 'most' || m.intake_rating === 'all') && !watched(m) ? 'some' : m.intake_rating,
+            })),
+            nowMs,
+          ),
+        );
       } catch (e) {
         console.warn('[read-copy] cat meal check failed, keeping the floor:', e);
         setAll(eventIds, true);

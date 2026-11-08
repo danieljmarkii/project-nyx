@@ -1062,10 +1062,10 @@ describe('the reasons (CUL-2678): the copy keeps what a chip needs to pick the r
     let mealN = 0;
     const event = (id: string, petId: string) =>
       mockDb.prepare("INSERT INTO events (id, pet_id, event_type, occurred_at) VALUES (?, ?, 'vomit', ?)").run(id, petId, iso(1));
-    const meal = (petId: string, hoursAgo: number, rating: string) => {
+    const meal = (petId: string, hoursAgo: number, rating: string, foodItemId: string | null = 'kibble') => {
       const id = `meal-${(mealN += 1)}`;
       mockDb.prepare("INSERT INTO events (id, pet_id, event_type, occurred_at) VALUES (?, ?, 'meal', ?)").run(id, petId, iso(hoursAgo));
-      mockDb.prepare('INSERT INTO meals (id, event_id, pet_id, intake_rating) VALUES (?, ?, ?, ?)').run(`m-${id}`, id, petId, rating);
+      mockDb.prepare('INSERT INTO meals (id, event_id, pet_id, food_item_id, intake_rating) VALUES (?, ?, ?, ?, ?)').run(`m-${id}`, id, petId, foodItemId, rating);
     };
     const pets = (list: { id: string; species: 'cat' | 'dog' | 'other' }[]) =>
       usePetStore.setState({ pets: list.map((p) => ({ ...p, name: p.id })) } as never);
@@ -1105,6 +1105,23 @@ describe('the reasons (CUL-2678): the copy keeps what a chip needs to pick the r
       expect(got.get('u')?.catNoGoodMeal24h).toBe(false);
       expect(got.get('u2')?.catNoGoodMeal24h).toBe(true);
       expect(got.get('gone')?.catNoGoodMeal24h).toBe(true);
+    });
+
+    it('a shared free-fed bowl or a mixed bowl rated All is not her eating (stricter than the record: louder, never quieter)', async () => {
+      pets([{ id: 'kiki', species: 'cat' }, { id: 'momo', species: 'cat' }]);
+      event('k', 'kiki');
+      event('m', 'momo');
+      mockDb
+        .prepare("INSERT INTO feeding_arrangements (id, pet_id, food_item_id, method, active_from, created_at) VALUES ('fa1', 'kiki', 'bowl-food', 'free_choice', '2026-08-01', ?)")
+        .run(iso(24 * 60));
+      meal('kiki', 37, 'all');
+      meal('kiki', 3, 'all', 'bowl-food');
+      meal('momo', 37, 'all');
+      meal('momo', 3, 'all', null);
+      await writeCopies(mockAdapter, [callToday('k'), callToday('m')], never);
+      const got = await readCopies(['k', 'm']);
+      expect(got.get('k')?.catNoGoodMeal24h).toBe(true);
+      expect(got.get('m')?.catNoGoodMeal24h).toBe(true);
     });
 
     it('only a call today is checked', async () => {
