@@ -46,7 +46,7 @@ import {
 } from './report.ts'
 import { cooperInput, COOPER_NOW } from './cooperDemo.testutil.ts'
 import { chronicityFloorsFor, DEFAULT_CONFIG, detectWeightLoss } from '../generate-signal/detection.ts'
-import { templateWeightLoss } from '../generate-signal/phrasing.ts'
+import { templateBurden, templateWeightLoss } from '../generate-signal/phrasing.ts'
 // The CUL-976 cross-surface guards drive the REAL renderer and assert over its output, not over
 // the intermediate snapshot: "one adherence claim per drug per document" is a property of the
 // document, and a snapshot-level assertion cannot see a second claim a renderer prints.
@@ -5967,6 +5967,23 @@ Deno.test('CUL-2003 adv2 Q1 — a burden card fired leads the band, and the page
   assert.ok(/Safety — flags for review/.test(p), 'the band renders')
   assert.ok(new RegExp(`Burden ${b.count} vomiting entries in the last ${b.windowDays} days, on ${b.runDays} days in a row\\.`).test(p), p.slice(p.indexOf('Safety'), p.indexOf('Safety') + 400))
   assert.ok(!/No safety flag/.test(p))
+})
+
+Deno.test('CUL-2664 — the burden row quotes the ask the owner read, at each tier', () => {
+  // The weight row's pattern: the report states the card's own ask, "your vet" made "the vet".
+  const finding = (tier: 'today' | 'soon', countArm: boolean) =>
+    ({ type: 'symptom_burden', symptomType: 'vomit', count: 6, days: 4, runDays: 3, windowDays: 7, tier, countArm, persistenceArm: tier === 'today', countIsFloor: false }) as never
+  for (const [tier, countArm] of [['today', true], ['soon', true], ['soon', false]] as const) {
+    const card = templateBurden(finding(tier, countArm), 'Nyx')
+    const ask = card.slice(card.indexOf(' — ') + 3, -1).replace('your vet', 'the vet')
+    idSeq = 0
+    const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')) }))
+    const flag: (typeof snap.safetyFlags)[number] = { kind: 'symptom_burden', symptomType: 'vomit', count: 6, days: 4, runDays: 3, windowDays: 7, tier }
+    const p = readAs(renderReport({ ...snap, safetyFlags: [flag] }))
+    const row = p.slice(p.indexOf('Burden 6'), p.indexOf('Burden 6') + 300)
+    assert.ok(row.includes(`The owner was told it is ${ask}.`), `${tier}: "${ask}" missing from: ${row}`)
+    assert.ok(!/to call the vet/.test(row), row)
+  }
 })
 
 Deno.test('CUL-2003 adv2 Q1 — a safety finding the report does not detail is still named, and opens the band', () => {
