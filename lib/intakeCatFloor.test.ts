@@ -8,7 +8,7 @@ import { detectIntakeDecline, type AnalyticsMeal } from './analytics';
 import { trialDeclineVetLine } from './dietTrialCompletion';
 import { intakeDeclineFacts } from './dietTrialFacts';
 import type { IntakeDeclineFinding } from './signal';
-import { bannerCopy, evidenceText, intakeMeetsCatFloor, intakeSentenceAt, NO_GOOD_MEAL_CLAUSE, safetyAskLevel, STRIP_ASKS, stripAskLine } from './signalCopy';
+import { bannerCopy, evidenceText, intakeMeetsCatFloor, intakeSentenceAt, withIntakeSentencesAt, NO_GOOD_MEAL_CLAUSE, safetyAskLevel, STRIP_ASKS, stripAskLine } from './signalCopy';
 import { signalHomeAsk } from './signalHomeLine';
 import { safetyArrivalSpoken } from './signalSafetySpeech';
 import type { CachedFinding } from './signal';
@@ -150,9 +150,23 @@ describe('the card’s own sentence firms up with the clock (intakeSentenceAt, a
     expect(intakeSentenceAt({ ...stale, species: 'dog' }, 'Rex', STALE, NOW)).toBe(STALE);
   });
 
-  it('Home’s arrival speech says the same floor sentence', () => {
+  it('Home’s arrival speech says the same floor sentence, a pet with no name included (pass 2, B4)', () => {
     const cached = { rank: 0, text: STALE, finding: stale } as CachedFinding;
     expect(safetyArrivalSpoken('Kiki', [cached], NOW)).toContain(FLOOR_ASK.inline);
+    expect(safetyArrivalSpoken(null, [cached], NOW)).toContain(FLOOR_ASK.inline);
+    expect(intakeSentenceAt(stale, '  ', STALE, NOW)).toMatch(/^Your pet has eaten less than usual today/);
+  });
+
+  it('Get ready’s rows quote the floor sentence, and keep every other row as it was (pass 2, B3)', () => {
+    const fed = card({ lastGoodMealIso: new Date(NOW - HOUR).toISOString(), noGoodMeal24h: false });
+    const rows = [
+      { rank: 0, text: STALE, finding: stale },
+      { rank: 1, text: STALE, finding: fed },
+    ] as CachedFinding[];
+    const out = withIntakeSentencesAt(rows, 'Kiki', NOW);
+    expect(out[0].text).toContain(`— ${FLOOR_ASK.inline}.`);
+    expect(out[0].finding).toBe(rows[0].finding);
+    expect(out[1]).toBe(rows[1]);
   });
 });
 

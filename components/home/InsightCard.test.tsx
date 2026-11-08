@@ -825,6 +825,10 @@ describe('InsightCard — the face says the floor once a cat passes 24 h without
     const view = render(<InsightCard cached={anyCached(finding, stale)} petName="Kiki" />);
     expect(view.queryByText(stale)).toBeNull();
     expect(view.queryByText(/hasn't eaten most of any meal you rated in the last 24 hours — call your vet today\./)).toBeTruthy();
+    // Pass 2, B2: VoiceOver hears the label, never the face, and the label says the same.
+    const label = a11yLabelOf(<InsightCard cached={anyCached(finding, stale)} petName="Kiki" />);
+    expect(label).not.toContain('if it carries on');
+    expect(label).toContain('— call your vet today.');
   });
 });
 

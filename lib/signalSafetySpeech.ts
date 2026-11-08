@@ -114,7 +114,8 @@ export function safetyArrivalSpoken(
   const sentences = [...arriving]
     .sort((a, b) => a.rank - b.rank)
     // CUL-2680: an intake card past D3 since its run is said in the floor's form, as the card shows it.
-    .map((f) => (named ? intakeSentenceAt(f.finding, named, incidentRedFlagSentenceAt(f.finding, named, f.text, nowMs), nowMs) : f.text).trim())
+    // (pass 2, B4: a pet with no name is still re-phrased, as "Your pet".)
+    .map((f) => intakeSentenceAt(f.finding, named, named ? incidentRedFlagSentenceAt(f.finding, named, f.text, nowMs) : f.text, nowMs).trim())
     .filter((t) => t.length > 0);
   if (sentences.length === 0) return null;
   const name = petName?.trim() ?? '';

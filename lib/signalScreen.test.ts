@@ -522,6 +522,23 @@ describe('other findings', () => {
     expect(model.why.join(' ')).not.toMatch(/Two windows/);
   });
 
+  it('CUL-2680 (pass 2, B1): an intake card past D3 since its run says the floor’s sentence, a fed cat its own', () => {
+    const NOW = Date.parse('2026-11-08T20:00:00Z');
+    const stale = 'Nyx has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.';
+    const intake: IntakeDeclineFinding = {
+      type: 'intake_decline', priorityClass: 'safety', trigger: 'consecutive_low', species: 'cat',
+      daysBelowBaseline: 1, refusedFoodLabel: null, ratedMealsConsidered: 9,
+      allRefused: false, noGoodMeal24h: false, lastGoodMealIso: '2026-11-07T07:00:00.000Z',
+    };
+    const model = buildSignalScreenModel(mockInput({ cached: cachedOf(intake, stale), petName: 'Nyx', nowMs: NOW }));
+    expect(model.sentence).not.toBe(stale);
+    expect(model.sentence).toMatch(/hasn't eaten most of any meal you rated in the last 24 hours — call your vet today\.$/);
+    const fed = buildSignalScreenModel(
+      mockInput({ cached: cachedOf({ ...intake, lastGoodMealIso: '2026-11-08T18:00:00.000Z' }, stale), petName: 'Nyx', nowMs: NOW }),
+    );
+    expect(fed.sentence).toBe(stale);
+  });
+
   it('the trial card counts vomiting and names the trial', () => {
     const t: TrialResponseFinding = {
       type: 'trial_response',

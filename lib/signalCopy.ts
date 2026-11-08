@@ -2004,24 +2004,40 @@ export const NO_GOOD_MEAL_CLAUSE = "hasn't eaten most of any meal you rated in t
  * whose sentence already says the floor, returns the server's sentence verbatim. Read by the
  * card's face, the Signal screen and Home's arrival speech, the places the sentence is said.
  */
-export function intakeSentenceAt(finding: SignalFinding, petName: string, serverText: string, nowMs?: number): string {
+export function intakeSentenceAt(finding: SignalFinding, petName: string | null | undefined, serverText: string, nowMs?: number): string {
   if (finding.type !== 'intake_decline' || !intakeMeetsCatFloor(finding, nowMs)) return serverText;
+  // Every use opens a sentence, so a pet with no name on file is "Your pet" (pass 2, B4).
+  const name = petName?.trim() || 'Your pet';
   // The all-refused card and the sustained-refusal floor are floored by their own trigger, which
   // the server's template already words; only a card raised by the clock is re-phrased here.
   if (intakeAllRefusedCallsToday(finding) || finding.trigger === 'sustained_refusal') return serverText;
   if (serverText.toLowerCase().includes(FLOOR_ASK.inline)) return serverText;
   if (finding.trigger === 'refused_normal_food') {
     const food = finding.refusedFoodLabel ?? 'a food they usually finish';
-    return `${petName} just turned down ${food}, which ${petName} normally eats, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`;
+    return `${name} just turned down ${food}, which ${name} normally eats, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`;
   }
   if (finding.trigger === 'consecutive_low' && !intakeAllRefused(finding)) {
     const span = finding.daysBelowBaseline <= 1 ? 'today' : `for ${count(finding.daysBelowBaseline, 'day', 'days')}`;
-    return `${petName} has eaten less than usual ${span}, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`;
+    return `${name} has eaten less than usual ${span}, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`;
   }
   // Any other shape (the refused-then-vomited sentence, a model sentence, a trigger this build
   // does not know): the server's words stand, and the floor follows them, as phrasing.ts does
   // for the refused-then-vomited card.
-  return `${serverText.trim()} ${petName} ${NO_GOOD_MEAL_CLAUSE}, so ${FLOOR_ASK.inline}.`;
+  return `${serverText.trim()} ${name} ${NO_GOOD_MEAL_CLAUSE}, so ${FLOOR_ASK.inline}.`;
+}
+
+/** `intakeSentenceAt` over a list of cached rows, for a page that quotes the cached sentences
+ *  (Get ready's "Worth raising", pass 2 B3). Each finding stays the same object, so a key built
+ *  from it (`screenSentenceKey`) still finds it. */
+export function withIntakeSentencesAt<T extends { finding: SignalFinding; text: string }>(
+  rows: readonly T[],
+  petName: string | null | undefined,
+  nowMs?: number,
+): T[] {
+  return rows.map((r) => {
+    const text = intakeSentenceAt(r.finding, petName, r.text, nowMs);
+    return text === r.text ? r : { ...r, text };
+  });
 }
 
 /**

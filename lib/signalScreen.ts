@@ -803,7 +803,8 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       title,
       // A red-flag call now past its first day is dated at the clock (PR-30c); every other
       // card keeps the server's sentence verbatim.
-      sentence: incidentRedFlagSentenceAt(finding, input.petName, input.cached.text, input.nowMs),
+      // CUL-2680 (pass 2, B1): an intake card past D3 since its run says the floor's sentence.
+      sentence: intakeSentenceAt(finding, input.petName, incidentRedFlagSentenceAt(finding, input.petName, input.cached.text, input.nowMs), input.nowMs),
       countedAt: null,
       scriptFinding: finding,
       scriptCounting: null,

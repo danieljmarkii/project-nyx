@@ -694,7 +694,10 @@ export function InsightCard({
     const i5Line = intakeRefusedThenVomitedFaceLine(cached.finding, petName);
     if (i5Line) receiptA11y = receiptA11y ? `${receiptA11y} ${i5Line}` : i5Line;
   }
-  let accessibilityLabel = receiptA11y ? `${cached.text}. ${receiptA11y}` : cached.text;
+  // CUL-2680 (pass 2, B2): the card is one button, so VoiceOver hears the label, never the face's
+  // text: the label says the same re-phrased sentence the face draws.
+  const spokenSentence = intakeSentenceAt(cached.finding, petName, cached.text);
+  let accessibilityLabel = receiptA11y ? `${spokenSentence}. ${receiptA11y}` : spokenSentence;
   if (faceMedLine) accessibilityLabel = `${accessibilityLabel}. ${faceMedLine}`;
   // B-727 (CUL-239 client half): the `New` chip is visual-only, and this card is ONE
   // accessible button — children never reach VoiceOver — so the chip's fact must ride the
