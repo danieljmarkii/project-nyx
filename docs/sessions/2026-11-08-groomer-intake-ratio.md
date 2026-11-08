@@ -3,7 +3,7 @@
 **Date:** 2026-11-08
 **One thing:** none (the concept, a guard proven by mutation, was today's row 1 teach)
 
-Shipped via #PR, finishing CUL-2660 (row 5 of the W-F throughput parent, CUL-2655).
+Shipped via #1487, finishing CUL-2660 (row 5 of the W-F throughput parent, CUL-2655).
 
 ## What happened
 
@@ -21,7 +21,7 @@ The total had 480 B of headroom. The additions were paid for by deleting history
 
 ## The guard
 
-`guards/groomIntakeRatio.test.ts`: 12 phrase mutants plus an ordering mutant in memory against the real file; red (11 of 14) against `origin/main`'s skill; three on-disk mutations (the two-pass rule, the dry run, the Board count lead) each went red and were restored. Blind spot, stated: it guards the text, not whether a pass computes the ratio.
+`guards/groomIntakeRatio.test.ts`: 13 phrase mutants plus an ordering mutant in memory against the real file; red (11 of 14) against `origin/main`'s skill; three on-disk mutations (the two-pass rule, the dry run, the Board count lead) each went red and were restored. Blind spot, stated: it guards the text, not whether a pass computes the ratio.
 
 ## Along the way
 
