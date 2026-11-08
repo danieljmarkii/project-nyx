@@ -1465,7 +1465,7 @@ describe('StoolAnalysisSection — call today\'s wait line (CUL-1629)', () => {
   const iso = (d: Date) => d.toISOString();
   let nowSpy: jest.SpyInstance;
   const waitRow = (over: Record<string, unknown> = {}) => row({
-    recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_loose_stool'],
+    recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_loose_stool'], visual_flags: [],
     may_wait: true, photo_set_key: PHOTO, updated_at: iso(new Date(2026, 6, 15, 21, 30)),
     ai_raw_payload: { appears_to_show_stool: true, recommendation: 'monitor', read_photo_set_key: PHOTO }, ...over,
   });
@@ -1492,17 +1492,17 @@ describe('StoolAnalysisSection — call today\'s wait line (CUL-1629)', () => {
   it('a stored TRUE at 10 PM: first thing tomorrow, the call-now signs named as the exception', async () => {
     mockRow = waitRow();
     const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText('Call your vet today');
+    await view.findByText('Worth a call today');
     // Wait for the line: it lands after the fresh re-read answers (an async gate).
-    expect(await view.findByText(/^Call your vet first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
-    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeNull();
+    expect(await view.findByText(/^Worth a call first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
+    expect(view.queryByText('This is the kind of thing vets like to hear about the same day. If yours is closed, an emergency clinic can talk it through.')).toBeNull();
   });
 
   it.each([false, null, undefined])('may_wait = %p keeps the louder line', async (value) => {
     mockRow = waitRow({ may_wait: value });
     const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText('Call your vet today');
-    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+    await view.findByText('Worth a call today');
+    expect(view.queryByText('This is the kind of thing vets like to hear about the same day. If yours is closed, an emergency clinic can talk it through.')).toBeTruthy();
     expect(view.queryByText(/first thing/)).toBeNull();
   });
 
@@ -1510,13 +1510,13 @@ describe('StoolAnalysisSection — call today\'s wait line (CUL-1629)', () => {
     mockRow = waitRow();
     mockMayWaitFacts = null;
     const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText('Call your vet today');
+    await view.findByText('Worth a call today');
     expect(view.queryByText(/first thing/)).toBeNull();
   });
 
   // ── The wiring the third adversarial pass found unpinned (T1) ──────────────────────────
-  const LOUD = "Call your vet today. If they're closed, call an emergency clinic.";
-  const WAIT = /^Call your vet first thing tomorrow/;
+  const LOUD = 'This is the kind of thing vets like to hear about the same day. If yours is closed, an emergency clinic can talk it through.';
+  const WAIT = /^Worth a call first thing tomorrow/;
   const at = (min: number) => new Date(2026, 6, 15, 22, min).getTime();
   const freshFacts = (readAt: number) => { mockMayWaitFacts = { ...mockMayWaitFacts!, readAt }; };
 
@@ -1596,7 +1596,7 @@ describe('StoolAnalysisSection — call today\'s wait line (CUL-1629)', () => {
   it('a TRUE over an owner edit keeps the louder line', async () => {
     mockRow = waitRow({ edited_at: iso(new Date(2026, 6, 15, 21, 45)) });
     const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText('Call your vet today');
+    await view.findByText('Worth a call today');
     expect(view.queryByText(/first thing/)).toBeNull();
   });
 });

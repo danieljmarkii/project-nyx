@@ -9,6 +9,7 @@
 
 import { isQuietVerdict } from './incidentVerdict';
 import { effectiveTierRank, TIER_RANK } from './incidentTier';
+import { askLevelOf, askWordsFor, FLOOR_ASK, hasFloorSign, type AskOptions, type AskReasonRow } from './incidentAskWords';
 import { INCIDENT_REC_LABEL, TIER_FINISHED_STATUSES, tierDisplayOf, TIER_WORDS } from './incidentTierWords';
 
 // Both incident sections render `status === 'failed'` ahead of the read card, so a
@@ -135,13 +136,30 @@ export function incidentVerdictLabel(value: string): string {
  * its tier, an earlier-rule row the shipped enum words. Falls back to the verdict's words
  * where the map has none to stand (the section has already decided the row renders a card).
  */
-export function incidentReadLabel(row: {
-  status?: string | null;
-  recommendation?: string | null;
-  tier?: string | null;
-  engine_flags?: unknown;
-}): string {
+export function incidentReadLabel(
+  row: {
+    status?: string | null;
+    recommendation?: string | null;
+    tier?: string | null;
+    engine_flags?: unknown;
+  } & AskReasonRow,
+  opts: AskOptions = {},
+): string {
   const display = tierDisplayOf(row);
+  // CUL-2667: call today's words are picked by the row's reason; a reason this surface cannot
+  // see is the floor's (`lib/incidentAskWords.ts`).
+  if (display === 'call_today') return askWordsFor(askLevelOf(row, opts)).label;
+  // CUL-2675 (a): an earlier-rule or unknown-tier call carrying a floor sign says the floor.
+  if (display === 'worth_a_call' && hasFloorSign(row, opts)) return FLOOR_ASK.label;
   if (display) return TIER_WORDS[display].label;
   return incidentVerdictLabel(row.recommendation ?? 'worth_a_call');
+}
+
+/**
+ * The record's action line for a call that has no tier line of its own: an earlier-rule or
+ * unknown-tier "Worth a call" raised to the floor by a floor sign (CUL-2675 (a)) carries the
+ * floor's service line; any other gets none, as today.
+ */
+export function raisedCallActionOf(row: AskReasonRow & { status?: string | null; recommendation?: string | null; tier?: string | null; engine_flags?: unknown }, opts: AskOptions = {}): string | null {
+  return tierDisplayOf(row) === 'worth_a_call' && hasFloorSign(row, opts) ? FLOOR_ASK.action : null;
 }
