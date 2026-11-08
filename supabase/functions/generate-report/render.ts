@@ -3249,9 +3249,13 @@ export function safetyFlagRow(
     case 'symptom_burden': {
       // CUL-1410's card, now on the report (adversarial pass 2 of CUL-1995's row). Counts only:
       // no cause, no severity word. The tier is what the owner was told, stated as such.
+      // The ask is QUOTED from the card the owner read (templateBurden, phrasing.ts), the weight
+      // row's pattern below: "your vet" becomes "the vet", nothing else moves. It printed "to call
+      // the vet soon" while the owner's soon card says "worth booking a vet visit soon", so the
+      // vet got a wrong record of the advice (CUL-2664). report.test.ts pins both tiers to the card.
       const label = h(symptomLabel(f.symptomType).toLowerCase())
       const run = f.runDays >= 2 ? `, on ${num(f.runDays)} days in a row` : ''
-      const told = f.tier === 'today' ? 'to call the vet today' : 'to call the vet soon'
+      const told = f.tier === 'today' ? 'it is worth a call to the vet today' : 'it is worth booking a vet visit soon'
       return row(
         'Burden',
         `<b>${num(f.count)} ${label} ${f.count === 1 ? 'entry' : 'entries'} in the last ${num(f.windowDays)} days${run}.</b> A high count on its own, with no earlier week needed to compare. The owner was told ${told}.`,
