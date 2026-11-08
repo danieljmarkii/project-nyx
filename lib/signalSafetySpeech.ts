@@ -1,7 +1,7 @@
 import type { CachedFinding } from './signal';
 import { careStateQuietsAsk } from './careState';
 import { foldIdentity } from './signalFold';
-import { incidentAskLevel, incidentRedFlagSentenceAt, safetyAskLevel } from './signalCopy';
+import { incidentAskLevel, incidentRedFlagSentenceAt, intakeSentenceAt, safetyAskLevel } from './signalCopy';
 
 // GAP-13 (CUL-1566; PMD-21 ruled (a), PM 2026-10-04): an escalation that reaches a focused
 // Home is SPOKEN once. "Safety is silent" means no sound and no haptic, never no speech: the
@@ -113,7 +113,8 @@ export function safetyArrivalSpoken(
   const named = petName?.trim() ? petName.trim() : null;
   const sentences = [...arriving]
     .sort((a, b) => a.rank - b.rank)
-    .map((f) => (named ? incidentRedFlagSentenceAt(f.finding, named, f.text, nowMs) : f.text).trim())
+    // CUL-2680: an intake card past D3 since its run is said in the floor's form, as the card shows it.
+    .map((f) => (named ? intakeSentenceAt(f.finding, named, incidentRedFlagSentenceAt(f.finding, named, f.text, nowMs), nowMs) : f.text).trim())
     .filter((t) => t.length > 0);
   if (sentences.length === 0) return null;
   const name = petName?.trim() ?? '';

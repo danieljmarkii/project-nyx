@@ -71,6 +71,7 @@ describe('the list chip is the record’s words (CUL-2678)', () => {
     ['an earlier-rule read over blood (the QUIET instance)', copy({ tier: null, engine_flags: null, visual_flags: '["blood"]', blood_present: 'fresh_red' }), FLOOR_ASK.short, FLOOR_ASK.label],
     ['an earlier-rule read over foreign material', copy({ tier: null, engine_flags: null, visual_flags: '["suspected_foreign_material"]' }), FLOOR_ASK.short, FLOOR_ASK.label],
     ['an earlier-rule read with a stool blood column and no flag', copy({ tier: null, engine_flags: null, stool_blood_present: 'yes' }), FLOOR_ASK.short, FLOOR_ASK.label],
+    ['an earlier-rule read whose flag array could not be read (stored as an unknown flag)', copy({ tier: null, engine_flags: null, visual_flags: '["?"]' }), FLOOR_ASK.short, FLOOR_ASK.label],
     ['an earlier-rule read with no floor sign', copy({ tier: null, engine_flags: null, contextual_flags: '["repeated_vomiting"]' }), TIER_WORDS.worth_a_call.short, TIER_WORDS.worth_a_call.label],
     ['a call now', copy({ tier: 'call_now' }), TIER_WORDS.call_now.short, TIER_WORDS.call_now.label],
   ];

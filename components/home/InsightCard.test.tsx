@@ -774,6 +774,8 @@ describe('InsightCard — I5 (Engines v3 PR-30s): the refused-then-vomited line 
     priorityClass: 'safety' as const,
     species: 'cat' as const,
     refusedFoodLabel: null,
+    // CUL-2680: she ate well an hour ago, so the card's own sentence stands (no floor from D3).
+    lastGoodMealIso: new Date(Date.now() - 3_600_000).toISOString(),
   };
   const line = "Nyx vomited within 30 minutes of turning down a meal on 2 days since September 6. That's worth mentioning to your vet.";
 
@@ -804,3 +806,25 @@ describe('InsightCard — I5 (Engines v3 PR-30s): the refused-then-vomited line 
     expect(a11yLabelOf(without)).not.toMatch(/turning down a meal/);
   });
 });
+
+describe('InsightCard — the face says the floor once a cat passes 24 h without a good meal (CUL-2680)', () => {
+  it('a stale "eating less" sentence is drawn in the floor’s form', () => {
+    const finding = {
+      type: 'intake_decline' as const,
+      priorityClass: 'safety' as const,
+      trigger: 'consecutive_low' as const,
+      species: 'cat' as const,
+      daysBelowBaseline: 1,
+      refusedFoodLabel: null,
+      ratedMealsConsidered: 18,
+      allRefused: false,
+      noGoodMeal24h: false,
+      lastGoodMealIso: new Date(Date.now() - 37 * 3_600_000).toISOString(),
+    };
+    const stale = 'Kiki has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.';
+    const view = render(<InsightCard cached={anyCached(finding, stale)} petName="Kiki" />);
+    expect(view.queryByText(stale)).toBeNull();
+    expect(view.queryByText(/hasn't eaten most of any meal you rated in the last 24 hours — call your vet today\./)).toBeTruthy();
+  });
+});
+

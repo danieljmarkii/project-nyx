@@ -8,8 +8,10 @@ import { detectIntakeDecline, type AnalyticsMeal } from './analytics';
 import { trialDeclineVetLine } from './dietTrialCompletion';
 import { intakeDeclineFacts } from './dietTrialFacts';
 import type { IntakeDeclineFinding } from './signal';
-import { bannerCopy, evidenceText, intakeMeetsCatFloor, NO_GOOD_MEAL_CLAUSE, safetyAskLevel, STRIP_ASKS, stripAskLine } from './signalCopy';
+import { bannerCopy, evidenceText, intakeMeetsCatFloor, intakeSentenceAt, NO_GOOD_MEAL_CLAUSE, safetyAskLevel, STRIP_ASKS, stripAskLine } from './signalCopy';
 import { signalHomeAsk } from './signalHomeLine';
+import { safetyArrivalSpoken } from './signalSafetySpeech';
+import type { CachedFinding } from './signal';
 
 const HOUR = 3_600_000;
 const NOW = Date.parse('2026-11-08T20:00:00Z');
@@ -25,7 +27,6 @@ function card(over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
     refusedFoodLabel: null,
     ratedMealsConsidered: 18,
     allRefused: false,
-    lastFullMealIso: LAST_ALL,
     lastGoodMealIso: LAST_ALL,
     noGoodMeal24h: true,
     ...over,
@@ -83,12 +84,12 @@ describe('intakeMeetsCatFloor: the engine’s fact, then the clock, failing towa
     expect(stripAskLine(f, { nowMs: NOW + 5 * HOUR })).toBe(STRIP_ASKS.call);
   });
 
-  it('a cache from before the field reads the stricter All-only anchor; neither fact counts as met', () => {
+  it('a cache from before the field counts as met; its All-only anchor is no stand-in (it counts a free-fed bowl)', () => {
     const legacy = card({ lastGoodMealIso: undefined, noGoodMeal24h: undefined });
-    expect(intakeMeetsCatFloor({ ...legacy, lastFullMealIso: new Date(NOW - 3 * HOUR).toISOString() }, NOW)).toBe(false);
-    expect(intakeMeetsCatFloor({ ...legacy, lastFullMealIso: LAST_ALL }, NOW)).toBe(true);
-    expect(intakeMeetsCatFloor({ ...legacy, lastFullMealIso: null }, NOW)).toBe(true);
-    expect(intakeMeetsCatFloor({ ...legacy, lastFullMealIso: undefined }, NOW)).toBe(true);
+    for (const lastFullMealIso of [new Date(NOW - 3 * HOUR).toISOString(), LAST_ALL, null, undefined]) {
+      expect(intakeMeetsCatFloor({ ...legacy, lastFullMealIso } as IntakeDeclineFinding, NOW)).toBe(true);
+    }
+    expect(intakeMeetsCatFloor({ ...legacy, lastGoodMealIso: null }, NOW)).toBe(true);
   });
 
   it('a caller’s own live check can only add the floor', () => {
@@ -129,3 +130,36 @@ describe('the diet trial card and closing sheet take the phone detector’s D3 f
     expect(trialDeclineVetLine('cat', fact, 'Kiki', fact.noGoodMeal24h)).toContain(`If Kiki goes a day without a full meal, ${FLOOR_ASK.inline}`);
   });
 });
+
+describe('the card’s own sentence firms up with the clock (intakeSentenceAt, adversarial pass 1 F4)', () => {
+  // The last run was at 18:00 yesterday, 11 h after the 07:00 All: the engine said "not yet".
+  const STALE = 'Kiki has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.';
+  const stale = card({ noGoodMeal24h: false });
+
+  it('a stale "eating less" sentence is said in the floor’s form once the 24 h have passed', () => {
+    expect(intakeSentenceAt(stale, 'Kiki', STALE, NOW)).toBe(`Kiki has eaten less than usual today, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`);
+    expect(intakeSentenceAt({ ...stale, daysBelowBaseline: 2 }, 'Kiki', STALE, NOW)).toContain('less than usual for 2 days, and');
+    expect(intakeSentenceAt({ ...stale, trigger: 'refused_normal_food', refusedFoodLabel: 'tuna pâté' }, 'Kiki', STALE, NOW)).toBe(
+      `Kiki just turned down tuna pâté, which Kiki normally eats, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`,
+    );
+  });
+
+  it('any other sentence keeps its words and the floor follows; one already at the floor is verbatim', () => {
+    const i5 = 'Kiki vomited within 30 minutes of turning down a meal on 2 days since Nov 6. That’s worth mentioning to your vet.';
+    expect(intakeSentenceAt({ ...stale, trigger: 'refused_then_vomited' }, 'Kiki', i5, NOW)).toBe(`${i5} Kiki ${NO_GOOD_MEAL_CLAUSE}, so ${FLOOR_ASK.inline}.`);
+    const floor = `Kiki has eaten less than usual today, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`;
+    expect(intakeSentenceAt(card(), 'Kiki', floor, NOW)).toBe(floor);
+  });
+
+  it('a cat who ate well, a dog, and every other card keep the server’s sentence', () => {
+    const fed = card({ lastGoodMealIso: new Date(NOW - HOUR).toISOString(), noGoodMeal24h: false });
+    expect(intakeSentenceAt(fed, 'Kiki', STALE, NOW)).toBe(STALE);
+    expect(intakeSentenceAt({ ...stale, species: 'dog' }, 'Rex', STALE, NOW)).toBe(STALE);
+  });
+
+  it('Home’s arrival speech says the same floor sentence', () => {
+    const cached = { rank: 0, text: STALE, finding: stale } as CachedFinding;
+    expect(safetyArrivalSpoken('Kiki', [cached], NOW)).toContain(FLOOR_ASK.inline);
+  });
+});
+

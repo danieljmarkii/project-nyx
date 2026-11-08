@@ -1995,6 +1995,36 @@ export const NO_GOOD_MEAL_HOURS = 24;
 export const NO_GOOD_MEAL_CLAUSE = "hasn't eaten most of any meal you rated in the last 24 hours";
 
 /**
+ * CUL-2680 (adversarial pass 1, F4): an intake card's SENTENCE at the moment of showing. The
+ * server wrote it at its last run; a cat who crossed 24 h without a good meal since then has a
+ * stored sentence that still says "a word with your vet if it carries on" while Home's own ask,
+ * the banner and the strip (all on the clock, `intakeMeetsCatFloor`) say the floor. So when the
+ * clock says the floor and the stored sentence does not, the sentence is re-phrased here in the
+ * server's floor form (phrasing.ts templateIntakeDecline). Every other card, and an intake card
+ * whose sentence already says the floor, returns the server's sentence verbatim. Read by the
+ * card's face, the Signal screen and Home's arrival speech, the places the sentence is said.
+ */
+export function intakeSentenceAt(finding: SignalFinding, petName: string, serverText: string, nowMs?: number): string {
+  if (finding.type !== 'intake_decline' || !intakeMeetsCatFloor(finding, nowMs)) return serverText;
+  // The all-refused card and the sustained-refusal floor are floored by their own trigger, which
+  // the server's template already words; only a card raised by the clock is re-phrased here.
+  if (intakeAllRefusedCallsToday(finding) || finding.trigger === 'sustained_refusal') return serverText;
+  if (serverText.toLowerCase().includes(FLOOR_ASK.inline)) return serverText;
+  if (finding.trigger === 'refused_normal_food') {
+    const food = finding.refusedFoodLabel ?? 'a food they usually finish';
+    return `${petName} just turned down ${food}, which ${petName} normally eats, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`;
+  }
+  if (finding.trigger === 'consecutive_low' && !intakeAllRefused(finding)) {
+    const span = finding.daysBelowBaseline <= 1 ? 'today' : `for ${count(finding.daysBelowBaseline, 'day', 'days')}`;
+    return `${petName} has eaten less than usual ${span}, and ${NO_GOOD_MEAL_CLAUSE} — ${FLOOR_ASK.inline}.`;
+  }
+  // Any other shape (the refused-then-vomited sentence, a model sentence, a trigger this build
+  // does not know): the server's words stand, and the floor follows them, as phrasing.ts does
+  // for the refused-then-vomited card.
+  return `${serverText.trim()} ${petName} ${NO_GOOD_MEAL_CLAUSE}, so ${FLOOR_ASK.inline}.`;
+}
+
+/**
  * CUL-2680 (D3, clinical-guardrails line 85: the predicate wins over the card type): whether an
  * intake card meets the floor, for any species but a dog. An all-refused card does; so does a
  * card whose pet has had no meal rated Most or All for 24 hours, by the engine's fact OR by the
@@ -2002,14 +2032,15 @@ export const NO_GOOD_MEAL_CLAUSE = "hasn't eaten most of any meal you rated in t
  * run firms up without waiting for one. The mirror of detection.ts `intakeMeetsCatFloor`, plus
  * the clock.
  *
- * Fails toward the floor: a cache written before `lastGoodMealIso` reads the stricter All-only
- * anchor (`lastFullMealIso`), and one with neither fact counts as met. `liveCheck` is a caller's
- * own meal check (the strip's `catNoGoodMeal24h`); it can only add the floor.
+ * Fails toward the floor: a cache written before `lastGoodMealIso` counts as met until the engine
+ * runs again. Its `lastFullMealIso` is no stand-in: it counts a free-fed bowl rated All, which D3
+ * does not (adversarial pass 1, F5). `liveCheck` is a caller's own meal check (the strip's
+ * `catNoGoodMeal24h`); it can only add the floor.
  */
 export function intakeMeetsCatFloor(finding: SignalFinding, nowMs: number = Date.now(), liveCheck?: boolean): boolean {
   if (finding.type !== 'intake_decline' || finding.species === 'dog') return false;
   if (intakeAllRefusedCallsToday(finding) || finding.noGoodMeal24h === true || liveCheck === true) return true;
-  const anchor = finding.lastGoodMealIso !== undefined ? finding.lastGoodMealIso : finding.lastFullMealIso;
+  const anchor = finding.lastGoodMealIso;
   if (anchor === undefined || anchor === null) return true;
   const t = Date.parse(anchor);
   return !Number.isFinite(t) || !Number.isFinite(nowMs) || nowMs - t >= NO_GOOD_MEAL_HOURS * 3_600_000;

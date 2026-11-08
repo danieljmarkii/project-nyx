@@ -413,12 +413,15 @@ const TIER_SHAPE = /^[a-z0-9_]{1,64}$/;
 // a reason this build does not know must reach the ask words, which speak it as the floor.
 const REASON_SHAPE = /^[a-z0-9_]{1,64}$/;
 
-/** A flag array as the copy stores it: the server's members as a JSON array, or NULL when
- *  it cannot be read. NULL reads as "not supplied", the floor for a call today, so a
- *  malformed array can never make a chip quieter. A malformed MEMBER is kept as `?`, a flag
- *  no build knows, which the ask words read as the floor. */
+/** A flag array as the copy stores it: the server's members as a JSON array; NULL only when
+ *  the server sent none (absent or null: "not supplied", the floor for a call today). A value
+ *  that is THERE and cannot be read (not an array, too long) is stored as `["?"]`, a flag no
+ *  build knows, which the ask words read as the floor on every tier, as the record reads the
+ *  raw value (adversarial pass 1, F8): NULL would let an earlier-rule chip say less. A
+ *  malformed MEMBER is kept as `?` the same way. */
 function reasonFlagsText(value: unknown): string | null {
-  if (!Array.isArray(value) || value.length > 32) return null;
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value) || value.length > 32) return JSON.stringify(['?']);
   return JSON.stringify(value.map((f) => (typeof f === 'string' && REASON_SHAPE.test(f) ? f : '?')));
 }
 

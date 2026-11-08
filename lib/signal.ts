@@ -275,9 +275,6 @@ export interface IntakeDeclineFinding {
    *  rated meal was refused, so the card says "refused", never "eating less". Absent on a cache
    *  written before the engine set it, and on every other trigger. Read through `intakeAllRefused`. */
   allRefused?: boolean;
-  /** B-213: the latest meal rated All (ISO), or null. The stricter anchor, read only when a cache
-   *  predates `lastGoodMealIso`. */
-  lastFullMealIso?: string | null;
   /** CUL-2680: the latest certainly-watched meal rated Most or All (ISO), or null: D3's anchor,
    *  which `intakeMeetsCatFloor` re-checks by the clock. Absent on a cache from before the field. */
   lastGoodMealIso?: string | null;

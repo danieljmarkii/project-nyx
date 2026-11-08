@@ -502,8 +502,10 @@ export function buildVomitEditWrite(edits: VomitEditableFields, nowIso: string):
 // scopes it to the owner via pet_id), mirroring the dismiss toggle — NOT the
 // local-first sync queue, since event_ai_analysis is server-owned and its structured
 // fields are read straight from Supabase. The one part mirrored into SQLite is the
-// four-column verdict copy (HV-5, `lib/readCopy.ts`), which an owner edit never
-// changes: it touches none of the read's columns (see buildVomitEditWrite).
+// verdict copy (HV-5, `lib/readCopy.ts`). Since CUL-2678 it holds the read's three sign
+// columns, which an owner edit DOES change (blood corrected to fresh red raises every list
+// chip to the floor), so a saved edit re-pulls this event's copy at once rather than at the
+// next sync. Fire-and-forget: the refresh never throws, and the edit has already landed.
 export async function saveVomitFieldEdits(
   eventId: string,
   edits: VomitEditableFields,
@@ -513,6 +515,7 @@ export async function saveVomitFieldEdits(
       .from('event_ai_analysis')
       .update(buildVomitEditWrite(edits, new Date().toISOString()))
       .eq('event_id', eventId);
+    if (!error) void refreshReadCopyOutcome(eventId);
     return { error: error ? error.message : null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
@@ -630,6 +633,8 @@ export async function saveStoolFieldEdits(
       .from('event_ai_analysis')
       .update(buildStoolEditWrite(edits, new Date().toISOString()))
       .eq('event_id', eventId);
+    // CUL-2678: the copy mirrors the stool blood sign, so a saved edit refreshes it (above).
+    if (!error) void refreshReadCopyOutcome(eventId);
     return { error: error ? error.message : null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };

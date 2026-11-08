@@ -1033,9 +1033,11 @@ describe('the reasons (CUL-2678): the copy keeps what a chip needs to pick the r
     });
   });
 
-  it('an unreadable array is NULL (not supplied, so the floor), and an unreadable member is a flag no build knows', async () => {
+  it('an unreadable array or member is a flag no build knows (the floor on every tier); only an absent one is NULL', async () => {
     await writeCopies(mockAdapter, [callToday('a', { contextual_flags: 'repeated_vomiting', visual_flags: ['Blood!', 'blood'] })], never);
-    expect(reasonsOf('a')).toMatchObject({ contextual_flags: null, visual_flags: '["?","blood"]' });
+    expect(reasonsOf('a')).toMatchObject({ contextual_flags: '["?"]', visual_flags: '["?","blood"]' });
+    await writeCopies(mockAdapter, [callToday('b', { contextual_flags: null, visual_flags: Array.from({ length: 33 }, () => 'blood') })], never);
+    expect(reasonsOf('b')).toMatchObject({ contextual_flags: null, visual_flags: '["?"]' });
   });
 
   it('the same version fills reasons a row pulled before this build lacks, once', async () => {

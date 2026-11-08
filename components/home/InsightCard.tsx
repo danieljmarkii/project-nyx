@@ -62,6 +62,7 @@ import {
   timingStoryMealLaneModel,
   timingStoryRefusalLine,
   intakeRefusedThenVomitedFaceLine,
+  intakeSentenceAt,
   timingStorySampleLine,
   timingStoryVetLine,
   trialResponseCompareRows,
@@ -152,7 +153,8 @@ function SentenceBody({ cached, isLead, petName }: InsightBodyProps) {
   const i5Line = intakeRefusedThenVomitedFaceLine(finding, petName);
   return (
     <View style={styles.body}>
-      <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</ThemedText>
+      {/* CUL-2680: an intake card past D3 since its run says the floor's sentence. */}
+      <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{intakeSentenceAt(finding, petName, cached.text)}</ThemedText>
       {finding.type === 'food_symptom_correlation' && isJointCandidate(finding) && (
         <LinkedPair proteins={proteinCluster(finding)} />
       )}

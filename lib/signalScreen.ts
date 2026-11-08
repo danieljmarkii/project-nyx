@@ -68,7 +68,7 @@ import {
   type PhoneScriptMasking,
   type ScreenMasking,
 } from './screenMasking';
-import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, incidentRedFlagSentenceAt, reflectionExpandedExtras, symptomWord, type PhoneScriptCounting } from './signalCopy';
+import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, incidentRedFlagSentenceAt, intakeSentenceAt, reflectionExpandedExtras, symptomWord, type PhoneScriptCounting } from './signalCopy';
 import { isFallingVomitPair, signalSaysNotEating, visibleFindings } from './signalVisible';
 import {
   compareGateCounts,
@@ -915,7 +915,8 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     identity,
     finding,
     title: composed ? countedTitle(composed.finding, composed.counts) : title,
-    sentence: composed ? countedSentence(composed.finding, composed.counts, input.petName, lineWithheld != null) : input.cached.text,
+    // CUL-2680: an intake card past D3 since its run says the floor's sentence (`intakeSentenceAt`).
+    sentence: composed ? countedSentence(composed.finding, composed.counts, input.petName, lineWithheld != null) : intakeSentenceAt(finding, input.petName, input.cached.text, input.nowMs),
     countedAt: composed
       ? countedAtLine(input.countedAtMs)
       : counted
