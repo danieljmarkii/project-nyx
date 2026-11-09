@@ -1257,6 +1257,94 @@ function sustainedRefusalFlag(input: IntakeDeclineInput): IntakeDeclineFlag | nu
   };
 }
 
+/**
+ * CUL-1797 — the normals the day-count arm reads: the buffer day's prefixes first (CUL-94), then
+ * each split back through the decline to the day it may have begun, each with every buffer prefix.
+ * A byte mirror of detection.ts `intakeBaselineReadings` (see the comment there); the parity suite
+ * pins it.
+ */
+function intakeBaselineReadings<T extends { score: number }>(
+  meals: readonly T[],
+  dayOf: (m: T) => number,
+  bufferDay: number,
+  minMeals: number,
+  minDelta: number,
+): T[][] {
+  const firstAtOrAfter = (day: number): number => {
+    const i = meals.findIndex((m) => dayOf(m) >= day);
+    return i < 0 ? meals.length : i;
+  };
+  const bufferStart = firstAtOrAfter(bufferDay);
+  const bufferEnd = firstAtOrAfter(bufferDay + 1);
+  const meanOf = (from: number, to: number): number => {
+    let sum = 0;
+    for (let i = from; i < to; i++) sum += meals[i].score;
+    return sum / (to - from);
+  };
+  // Each day before the buffer, oldest first, against the normal of the days before it that were
+  // not low themselves, so a refusal day never lowers the bar a later low day is judged by
+  // (adversarial pass 1: a seventh refusal stopped a backward walk one day short).
+  const days: { start: number; low: boolean }[] = [];
+  let normalSum = 0;
+  let normalCount = 0;
+  for (let start = 0; start < bufferStart; ) {
+    let end = start + 1;
+    while (end < bufferStart && dayOf(meals[end]) === dayOf(meals[start])) end++;
+    const low = normalCount >= minMeals && meanOf(start, end) <= normalSum / normalCount - minDelta;
+    if (!low) {
+      for (let i = start; i < end; i++) normalSum += meals[i].score;
+      normalCount += end - start;
+    }
+    days.push({ start, low });
+    start = end;
+  }
+  // The decline is the unbroken run of low days just before the buffer; the day before it is
+  // where it may have begun (with no run, the day before the buffer).
+  let k = days.length - 1;
+  while (k >= 0 && days[k].low) k--;
+  const onset = k >= 0 ? days[k].start : days.length > 0 ? days[0].start : bufferStart;
+  const readings: T[][] = [];
+  for (let split = bufferStart; split >= onset; split--) {
+    for (let cut = bufferStart; cut <= bufferEnd; cut++) {
+      readings.push([...meals.slice(0, split), ...meals.slice(bufferStart, cut)]);
+    }
+  }
+  return readings;
+}
+
+/**
+ * CUL-1797 — the refusal arm's second reading of a food's normal: the mean of its daily means,
+ * trailing low days (the decline) left out. A byte mirror of detection.ts `normallyEatenDayMean`.
+ */
+function normallyEatenDayMean<T extends { score: number }>(
+  prior: readonly T[],
+  dayOf: (m: T) => number,
+  floor: number,
+  minSamples: number,
+  collapseRefusals: boolean,
+): number | null {
+  const days: { day: number; sum: number; n: number; refused: boolean }[] = [];
+  // A day's refusals of the food count once: a refused re-offer is the same refusal again, so
+  // refusing harder on a day never lowers its mean (adversarial pass 1). Ratings above refused
+  // count each, as offered.
+  for (const m of prior) {
+    const refused = m.score === 0;
+    const last = days[days.length - 1];
+    if (last && last.day === dayOf(m)) {
+      if (collapseRefusals && refused && last.refused) continue;
+      last.sum += m.score;
+      last.n++;
+      last.refused = last.refused || refused;
+    } else {
+      days.push({ day: dayOf(m), sum: m.score, n: 1, refused });
+    }
+  }
+  while (days.length > 0 && days[days.length - 1].sum / days[days.length - 1].n < floor) days.pop();
+  if (days.reduce((n, d) => n + d.n, 0) < minSamples) return null;
+  const mean = days.reduce((sum, d) => sum + d.sum / d.n, 0) / days.length;
+  return mean >= floor ? mean : null;
+}
+
 function detectIntakeDeclineRelative(input: IntakeDeclineInput): IntakeDeclineResult {
   const nowMs = input.nowMs;
   if (!Number.isFinite(nowMs)) return notEnoughData(0, DECLINE.minRatedMealsForBaseline);
@@ -1301,13 +1389,19 @@ function detectIntakeDeclineRelative(input: IntakeDeclineInput): IntakeDeclineRe
     if (dayMeals.length === 0) continue;
     recentDays.push({ mean: dayMeals.reduce((s, m) => s + m.score, 0) / dayMeals.length });
   }
-  // The buffer day read at every cut, the accusing reading standing (see detection.ts).
+  // The buffer day read at every cut, then every split back to where the decline may have begun
+  // (CUL-1797: the decline never counts as the normal), the accusing reading standing (see
+  // detection.ts and `intakeBaselineReadings`).
   if (recentDays.length >= consecutiveDays) {
     const recentMean = recentDays.reduce((s, d) => s + d.mean, 0) / recentDays.length;
-    const beforeBuffer = windowMeals.filter((m) => (dayOfMeal.get(m) as number) < bufferDay);
-    const bufferMeals = windowMeals.filter((m) => dayOfMeal.get(m) === bufferDay); // ascending
-    for (let cut = 0; cut <= bufferMeals.length; cut++) {
-      const baselineMeals = cut === 0 ? beforeBuffer : [...beforeBuffer, ...bufferMeals.slice(0, cut)];
+    const readings = intakeBaselineReadings(
+      windowMeals,
+      (m) => dayOfMeal.get(m) as number,
+      bufferDay,
+      DECLINE.minRatedMealsForBaseline,
+      DECLINE.minDeclineDelta,
+    );
+    for (const baselineMeals of readings) {
       if (baselineMeals.length < DECLINE.minRatedMealsForBaseline) continue;
       const baselineScore = baselineMeals.reduce((s, m) => s + m.score, 0) / baselineMeals.length;
       const allBelow = recentDays.every((d) => d.mean < baselineScore);
@@ -1396,6 +1490,8 @@ function detectIntakeDeclineRelative(input: IntakeDeclineInput): IntakeDeclineRe
     tested.push({ meals: [...sorted, ...earlierMixes].sort((x, y) => x.ms - y.ms), latest });
   }
   let refusalFlag: IntakeDeclineFlag | null = null;
+  // The meal-weighted reading outranks the CUL-1797 by-day one (see detection.ts).
+  let refusalFromMealReading = false;
   for (const { meals, latest } of tested) {
     const sorted = meals;
     if (latest.ms < refusalRecencyStart) continue;
@@ -1412,24 +1508,38 @@ function detectIntakeDeclineRelative(input: IntakeDeclineInput): IntakeDeclineRe
     // can no longer disagree on a same-day re-logged refusal. The DECLINE constants
     // stay a byte-exact mirror of detection.ts DEFAULT_CONFIG.intakeDecline; keep the
     // refusal-arm logic in lock-step too: change one surface, change both.
-    // The owner's local day (CUL-94); a bout across LOCAL midnight still splits (CUL-1790).
+    // The owner's local day (CUL-94). A bout across LOCAL midnight (CUL-1790) and refusals of the
+    // food on an older day (CUL-2696) are read by the second reading (CUL-1797, see detection.ts).
     const latestDay = dayOfMeal.get(latest);
     const prior = sorted.filter((m) => dayOfMeal.get(m) !== latestDay);
     if (prior.length < DECLINE.normallyEatenMinSamples) continue;
     const priorMean = prior.reduce((s, m) => s + m.score, 0) / prior.length;
-    if (priorMean < DECLINE.normallyEatenScoreFloor) continue;
+    const normal =
+      priorMean >= DECLINE.normallyEatenScoreFloor
+        ? priorMean
+        : (normallyEatenDayMean(prior, (m) => dayOfMeal.get(m) as number, DECLINE.normallyEatenScoreFloor, DECLINE.normallyEatenMinSamples, true) ??
+          normallyEatenDayMean(prior, (m) => dayOfMeal.get(m) as number, DECLINE.normallyEatenScoreFloor, DECLINE.normallyEatenMinSamples, false));
+    if (normal === null) continue;
     const candidate: IntakeDeclineFlag = {
       trigger: 'refused_normal_food',
       class: 'health_watch',
       species: input.species,
-      baselineScore: priorMean,
+      baselineScore: normal,
       recentScore: latest.score,
       daysBelowBaseline: 0,
       refusedFoodLabel: latest.foodLabel,
       ratedMealsConsidered: meals.length,
     };
     // Surface the most-eaten-then-refused food (largest baseline) if several qualify.
-    if (!refusalFlag || candidate.baselineScore > refusalFlag.baselineScore) refusalFlag = candidate;
+    const fromMealReading = priorMean >= DECLINE.normallyEatenScoreFloor;
+    if (
+      !refusalFlag ||
+      (fromMealReading && !refusalFromMealReading) ||
+      (fromMealReading === refusalFromMealReading && candidate.baselineScore > refusalFlag.baselineScore)
+    ) {
+      refusalFlag = candidate;
+      refusalFromMealReading = fromMealReading;
+    }
   }
   if (refusalFlag) flags.push(refusalFlag);
 

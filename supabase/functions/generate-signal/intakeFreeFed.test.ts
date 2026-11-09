@@ -170,7 +170,9 @@ Deno.test('CUL-1086 by instant — refusals after the bowl comes up count, the b
   const noBowl = detectIntakeDecline(input('cat', r3))
   assert.ok(noBowl[0].baselineScore < 4, `the picks reach the baseline (${noBowl[0].baselineScore})`)
   // Probe B (a dog): the bowl's picks must not spoil the food's normally-eaten history either.
-  const b: MealEvent[] = [meal(7, 12, KIBBLE, 'picked'), meal(7, 20, KIBBLE, 'picked')]
+  // Two bowl-era days of picks: since CUL-1797 the history is also read by day, and one picked day
+  // against two good ones sits exactly on the floor, so one day no longer reaches the exclusion.
+  const b: MealEvent[] = [meal(6, 12, KIBBLE, 'picked'), meal(7, 12, KIBBLE, 'picked'), meal(7, 20, KIBBLE, 'picked')]
   b.push(meal(8, 8, KIBBLE, 'all'), meal(9, 8, KIBBLE, 'all'), meal(9, 18, KIBBLE, 'all'), meal(10, 8, KIBBLE, 'refused'))
   const upJul8 = bowl('2026-07-01T00:00:00.000Z', '2026-07-08T06:00:00.000Z')
   assert.deepEqual(detectIntakeDecline(input('dog', b, [upJul8])).map((f) => f.trigger), ['refused_normal_food'])

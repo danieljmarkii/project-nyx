@@ -1165,7 +1165,11 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(4), foodItemId: 'f1', intakeRating: 'picked' }),
       meal({ ms: at(3), foodItemId: 'f1', intakeRating: 'picked' }),
     ], freeFedSpans: [] });
-    expect(byNothing.status).not.toBe('watch');
+    // Until CUL-1797 this was silent: with no span, the two "picked" ratings dragged the prior mean
+    // under the floor. They are the trailing low days before the refusal, the decline, and the
+    // decline never counts as the food's normal, so the refusal is heard either way. The span is
+    // still what keeps bowl ratings out of the history (`kept`, above).
+    expect(byNothing.status === 'watch' && byNothing.flags.map((f) => f.trigger)).toEqual(['refused_normal_food']);
   });
 
   it('below the coverage floor → notEnoughData (silence is not an all-clear)', () => {
