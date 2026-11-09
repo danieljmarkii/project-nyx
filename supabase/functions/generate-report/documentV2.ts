@@ -1527,6 +1527,17 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
         r.lastDoseDay,
       )}, a span that crosses the trial (which doses fell in it is not counted)`,
   )
+  // CUL-1919 (QUIET): a course that ended before the trial but inside the masking tail the Signal
+  // uses. It overlaps nothing on the calendar, so this line read "No medication … overlapping".
+  const tails = (t.maskingTailOverlap ?? []).map(
+    (m) =>
+      `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''}, ended ${plainDay(m.endedOn)}, ${m.daysBeforeTrial} day${
+        m.daysBeforeTrial === 1 ? '' : 's'
+      } before the trial (a drug that can hide signs for weeks after the last dose${m.unresolved ? ', taken as one since the name is not recognised' : ''})`,
+  )
+  if (t.medicationOverlap.length === 0 && recordOnly.length === 0 && tails.length > 0) {
+    return { text: `Not a test of the diet alone. Ended before the trial: ${tails.join('; ')}.${bowl}`, lead: 'Not a test of the diet alone.' }
+  }
   if (t.medicationOverlap.length === 0 && recordOnly.length === 0) {
     const none = 'No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.'
     // With no medication overlapping, a bowl left down is the line's warning, so it leads wherever
@@ -1554,11 +1565,12 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
     return `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''}, overlapping it ${from} to ${to}${tail}`
   })
   const items = [...overlapItems, ...recordOnly]
+  const tailBit = tails.length > 0 ? ` Ended before it: ${tails.join('; ')}.` : ''
   const abx = t.medicationOverlap.some((m) => m.antibacterialInGiTrial) || (t.recordOnlyOverlap ?? []).some((r) => r.antibacterialInGiTrial)
     ? ' An antibacterial course overlaps a GI trial: a steroid’s effect withdraws when it stops, a course’s effect on the microbiome does not.'
     : ''
   return {
-    text: `Not a test of the diet alone. Overlapping the trial: ${items.join('; ')}. Spans are the courses as recorded, not evidence of administration.${abx}${bowl}`,
+    text: `Not a test of the diet alone. Overlapping the trial: ${items.join('; ')}. Spans are the courses as recorded, not evidence of administration.${tailBit}${abx}${bowl}`,
     lead: 'Not a test of the diet alone.',
   }
 }

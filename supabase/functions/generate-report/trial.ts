@@ -78,6 +78,7 @@ import {
 } from '../../../lib/dietTrial.ts'
 export type { ContaminationFact } from '../../../lib/dietTrial.ts'
 import { localDayIndexOf, trialDayCounter } from '../../../lib/utils.ts'
+import { ALL_SIGNS, courseEffectOn, MASK_TAIL_DAYS, resolveDrugClasses } from '../../../lib/maskingSpans.ts'
 import { mayClaimCompleteProteinSet } from '../generate-signal/protein.ts'
 
 const MS_PER_DAY = 86_400_000
@@ -219,6 +220,26 @@ export interface TrialArrangementSource {
  *  steroids as a compliance violation would be scolding an owner for following
  *  their vet. Without this block a derm trial is unreadable: a steroid course and
  *  a successful elimination produce the identical improving curve. */
+/** CUL-1919 — a course that ENDED BEFORE THE TRIAL BEGAN, but inside its masking tail of it.
+ *
+ *  A steroid stopped two days before Day 1 is still the confound a derm or GI trial most
+ *  needs named, and `medicationOverlap` (a calendar overlap) cannot hold it. The rule is the
+ *  Signal's (`lib/maskingSpans.ts`): a course that can mask a sign (or whose name the table
+ *  cannot read) masks from its start to its end plus MASK_TAIL_DAYS. Not judged, like the
+ *  overlap rows: it states the dates and lets the vet weigh them. */
+export interface TrialMaskingTail {
+  drugName: string
+  isSupplement: boolean
+  /** As recorded; null when the start could not be read. */
+  startedAt: string | null
+  /** The last day of the course (day key). */
+  endedOn: string
+  /** Whole days between the course's last day and the trial's first (≥ 1). */
+  daysBeforeTrial: number
+  /** True when the drug table could not read the name: it is taken as masking, the louder side. */
+  unresolved: boolean
+}
+
 export interface TrialMedicationOverlap {
   drugName: string
   isSupplement: boolean
@@ -935,6 +956,9 @@ export interface TrialBlock {
   outcomeNotes: string | null
 
   medicationOverlap: TrialMedicationOverlap[]
+  /** CUL-1919: courses that ended before the trial whose masking tail reaches into it. Optional:
+   *  a stored copy built before it existed reads as unknown, never as "none". */
+  maskingTailOverlap?: TrialMaskingTail[]
   /** CUL-2480 instance 4: render-layer only, never written by the builder (`withRecordOverlaps`). */
   recordOnlyOverlap?: TrialRecordOnlyOverlap[]
   loggingDensity: TrialLoggingDensity | null
@@ -1718,6 +1742,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       args.scope.endDayNum,
       timeZone,
     ),
+    maskingTailOverlap: maskingTailOverlap(args.medications, ctx.startDayIndex as number, timeZone, args.medicationItems),
     // EVIDENCE — round 4 falsified round 3's argument for keeping this on the
     // coverage window. Round 3 was right that the 0/42 artefact was the old
     // `lastMealDay` anchor, but the window CHOICE had its own cost, and it is the
@@ -1960,6 +1985,47 @@ function medicationOverlap(
   return out.sort(
     (a, b) => a.fromDate.localeCompare(b.fromDate) || a.drugName.localeCompare(b.drugName),
   )
+}
+
+/**
+ * CUL-1919 — the courses `medicationOverlap` cannot hold: ended before the trial's first day,
+ * with the trial's first day inside their masking tail. ONE RULE WITH THE SIGNAL: the tail is
+ * `MASK_TAIL_DAYS` from `lib/maskingSpans.ts`, and a course carries one only when the drug
+ * table says it can mask some sign (`courseEffectOn`), an unreadable name counting as masking.
+ * A course with no readable end is not here: `medicationOverlap` already runs it to the scope end.
+ */
+export function maskingTailOverlap(
+  medications: readonly TrialMedicationSource[],
+  trialStartDayIndex: number,
+  timeZone: string | null,
+  items: readonly TrialMedItemSource[],
+): TrialMaskingTail[] {
+  const byId = new Map(items.map((i) => [i.id, i]))
+  const out: TrialMaskingTail[] = []
+  for (const m of medications) {
+    const endDn = m.endedAt ? dayIndexOfValue(m.endedAt, timeZone) : null
+    if (endDn === null || endDn >= trialStartDayIndex) continue
+    if (endDn + MASK_TAIL_DAYS < trialStartDayIndex) continue
+    // The Signal's names: the owner's label plus the library item's generic and brand.
+    const item = m.itemId ? byId.get(m.itemId) ?? null : null
+    const classes = resolveDrugClasses(
+      [m.drugName, item?.genericName ?? null, item?.brandName ?? null].filter((n): n is string => !!n),
+    )
+    if (!ALL_SIGNS.some((sign) => courseEffectOn(classes, sign).masks)) continue
+    const startDn = dayIndexOfValue(m.startedAt, timeZone)
+    // A course recorded as ending before it began is a data error, not a span to reason over.
+    if (startDn !== null && startDn > endDn) continue
+    out.push({
+      drugName: m.drugName,
+      isSupplement: m.isSupplement,
+      startedAt: startDn === null ? null : dayKeyFromIndex(startDn),
+      endedOn: dayKeyFromIndex(endDn),
+      daysBeforeTrial: trialStartDayIndex - endDn,
+      unresolved: classes === null,
+    })
+  }
+  // Nearest the trial first: the course most likely still acting leads.
+  return out.sort((a, b) => a.daysBeforeTrial - b.daysBeforeTrial || a.drugName.localeCompare(b.drugName))
 }
 
 /**

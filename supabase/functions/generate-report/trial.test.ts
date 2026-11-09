@@ -15,7 +15,9 @@ import {
   type ReportInput, type ReportEventInput,
 } from './report.ts'
 import { renderReport } from './render.ts'
+import { buildDocumentV2 } from './documentV2.ts'
 import { expectedFailure } from './expectedFailure.testutil.ts'
+import { MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
 import {
   buildTrialBlock, halfPartition, looksAntibacterial, selectReportTrial, trialAllowedListMissing,
 } from './trial.ts'
@@ -5852,4 +5854,117 @@ Deno.test('CUL-2509 pass 2 — a count that could not be taken is said, never le
   const text = plain(renderReport(snap))
   assert.match(text, /its dosing in the 42 earlier trial days this report leaves out could not be counted/)
   assert.doesNotMatch(text, /at least 0 of the/)
+})
+
+// ── CUL-1919 — a course that ended before Day 1, inside its masking tail ──────
+//
+// QA fixture from the build note: oral prednisolone Jul 10–24 and a trial from Jul 26. The
+// course overlaps nothing on the calendar, so the trial block said no medication overlapped
+// and §7.2 printed "supports interpreting it" two days after a steroid stopped. The tail is
+// the Signal's (`lib/maskingSpans.ts` MASK_TAIL_DAYS), so the boundary is derived from it.
+
+const TAIL_NOW = '2026-08-21T12:00:00Z'
+
+function tailCourse(drugName: string, startedAt: string, endedAt: string) {
+  return {
+    id: `med-${drugName}-${endedAt}`,
+    medicationItemId: null,
+    drugName,
+    doseAmount: '5 mg',
+    route: 'oral',
+    dosesPerDay: 1,
+    scheduleNotes: null,
+    indication: 'itch',
+    prescribedBy: 'Dr. Chen',
+    startedAt,
+    targetDurationDays: null,
+    status: 'completed',
+    endedAt,
+    isPrescription: true,
+  }
+}
+
+function lateTrialInput(medications: ReturnType<typeof tailCourse>[] = []): ReportInput {
+  const input = wellLoggedTrialInput({
+    now: TAIL_NOW,
+    events: days('2026-07-26', '2026-08-21').map((d) =>
+      meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
+    ),
+    medications,
+  })
+  input.dietTrials[0].startedAt = '2026-07-26'
+  return input
+}
+
+Deno.test('CUL-1919 — prednisolone ended 2 days before the trial is named with its real dates and withholds §7.2', () => {
+  const clean = plain(renderReport(assembleReport(lateTrialInput())))
+  assert.ok(/supports interpreting it/.test(clean), 'the affirmative was there to be suppressed')
+
+  const snap = assembleReport(lateTrialInput([tailCourse('Prednisolone', '2026-07-10', '2026-07-24')]))
+  assert.deepEqual(snap.trial?.medicationOverlap, [], 'it does not overlap the trial on the calendar')
+  assert.deepEqual(snap.trial?.maskingTailOverlap, [
+    {
+      drugName: 'Prednisolone',
+      isSupplement: false,
+      startedAt: '2026-07-10',
+      endedOn: '2026-07-24',
+      daysBeforeTrial: 2,
+      unresolved: false,
+    },
+  ])
+
+  const text = plain(renderReport(snap))
+  const blockStart = text.indexOf('Diet trial the record, not a result')
+  const block = text.slice(blockStart, text.indexOf('Symptom frequency', blockStart))
+  assert.ok(/Medication during the trial ?Prednisolone · Jul 10–Jul 24 · ended Jul 24, 2 days before the trial;/.test(block), block)
+  assert.ok(!/No medication or supplement is recorded as overlapping/.test(block), 'the row no longer reads clean')
+  assert.ok(!/supports interpreting it/.test(text), 'the affirmative is withheld beside the steroid')
+  assert.ok(
+    /Prednisolone ended Jul 24, 2 days before the trial, and it is a drug that can hide signs for weeks after the last dose, so a change in the signs the trial is measuring cannot be attributed to the diet alone\./.test(
+      block,
+    ),
+    block,
+  )
+  assert.ok(
+    /Medication ended before the trial but may still have been acting: Prednisolone \(ended Jul 24, 2 days before the trial\)/.test(text),
+    'sheet 1 names it too',
+  )
+})
+
+Deno.test('CUL-1919 — the tail boundary is MASK_TAIL_DAYS, the Signal’s own constant', () => {
+  const inside = dayKeyPlus('2026-07-26', -MASK_TAIL_DAYS)
+  const outside = dayKeyPlus('2026-07-26', -(MASK_TAIL_DAYS + 1))
+  const a = assembleReport(lateTrialInput([tailCourse('Prednisolone', '2026-05-01', inside)]))
+  assert.equal(a.trial?.maskingTailOverlap?.[0]?.daysBeforeTrial, MASK_TAIL_DAYS)
+  const b = assembleReport(lateTrialInput([tailCourse('Prednisolone', '2026-05-01', outside)]))
+  assert.deepEqual(b.trial?.maskingTailOverlap, [], 'a course whose tail ends the day before Day 1 is not in it')
+})
+
+Deno.test('CUL-1919 — only a drug that can mask carries a tail; an unreadable name counts as one', () => {
+  const snap = assembleReport(
+    lateTrialInput([
+      // Carprofen is in the Signal's table and masks nothing (an NSAID can CAUSE GI signs; it is
+      // not a tail). An antibiotic the table does not list reads as unresolved, as on the Signal.
+      tailCourse('Carprofen', '2026-07-10', '2026-07-24'),
+      tailCourse("Buddy's pills", '2026-07-10', '2026-07-20'),
+    ]),
+  )
+  const tails = snap.trial?.maskingTailOverlap ?? []
+  assert.deepEqual(tails.map((t) => [t.drugName, t.unresolved]), [["Buddy's pills", true]])
+  const text = plain(renderReport(snap))
+  assert.ok(/this report cannot tell what it is, so it is treated as a drug that can hide signs/.test(text), text)
+  assert.ok(!/supports interpreting it/.test(text))
+})
+
+Deno.test('CUL-1919 — a stored trial block without the field still renders (unknown, never "none")', () => {
+  const snap = assembleReport(lateTrialInput())
+  delete (snap.trial as { maskingTailOverlap?: unknown }).maskingTailOverlap
+  assert.doesNotThrow(() => renderReport(snap))
+})
+
+Deno.test('CUL-1919 — the v2 layout’s medication line names the course too', () => {
+  const snap = assembleReport(lateTrialInput([tailCourse('Prednisolone', '2026-07-10', '2026-07-24')]))
+  const doc = JSON.stringify(buildDocumentV2(snap, { owner: null, shortId: null, questions: [] }))
+  assert.ok(/Not a test of the diet alone\. Ended before the trial: Prednisolone, ended Jul 24, 2 days before the trial/.test(doc), doc.slice(0, 400))
+  assert.ok(!/No medication or supplement is recorded as overlapping the trial/.test(doc))
 })
