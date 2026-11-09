@@ -4740,6 +4740,13 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       `${tailName(m)} ${tailEndedBit(m)}, and ${tailRuleBit(m)}, so a change in the signs the trial is measuring cannot be attributed to the diet alone.`,
     )
   }
+  // CUL-1919 adversarial pass 2 (QUIET): the drug a short pull dropped cannot be named, so the
+  // gap is, and the affirmative is withheld beside it.
+  if (medicationPullShort(snap)) {
+    caveats.push(
+      'The medication record could not be read in full, so a drug given before or during the trial may be missing here, and a change in the signs the trial is measuring cannot be attributed to the diet alone.',
+    )
+  }
   // CUL-2480 instance 4: a drug whose doses on record cross the trial but which no overlap row holds.
   for (const r of t.recordOnlyOverlap ?? []) {
     caveats.push(
@@ -6207,6 +6214,13 @@ function tailRuleBit(m: TrialMaskingTail): string {
     : `this report counts a drug that can hide signs as possibly acting for up to ${weeks} after the last dose`
 }
 
+/** CUL-1919 adversarial pass 2 (QUIET): a short medication pull keeps the NEWEST rows (CUL-975), so
+ *  the course that ended before the trial is the first one lost, and the row read clean. */
+function medicationPullShort(snap: ReportSnapshot): boolean {
+  const short = snap.incompletePulls ?? []
+  return short.includes('medication_administrations') || short.includes('medications')
+}
+
 /** One drug name, as the overlap lines print it. */
 function tailName(m: TrialMaskingTail): string {
   return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}`
@@ -6257,6 +6271,9 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
     // with a prednisolone course in the excluded tail, the document was byte-identical
     // to one with no medication, and §7.2 kept its affirmative because the drug caveat
     // never fired.
+    if (medicationPullShort(snap)) {
+      return 'The medication record could not be read in full, so a course before or during the trial may be missing from this row &mdash; not checked with the owner.'
+    }
     const scope = trialCountScope(t)
     return `No medication or supplement is recorded as overlapping ${
       scope === 'during the trial' ? 'the trial window' : scope.replace(/^in /, '')

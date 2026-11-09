@@ -1539,6 +1539,12 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
   if (t.medicationOverlap.length === 0 && recordOnly.length === 0 && tails.length > 0) {
     return { text: `Not a test of the diet alone. Ended before the trial: ${tails.join('; ')}.${bowl}`, lead: 'Not a test of the diet alone.' }
   }
+  const pullShort = (snap.incompletePulls ?? []).some((x) => x === 'medication_administrations' || x === 'medications')
+  if (t.medicationOverlap.length === 0 && recordOnly.length === 0 && pullShort) {
+    // CUL-1919 adversarial pass 2 (QUIET): a short pull loses the oldest course first.
+    const gap = 'The medication record could not be read in full; a course before or during the trial may be missing.'
+    return { text: `${gap}${bowl}`, lead: gap }
+  }
   if (t.medicationOverlap.length === 0 && recordOnly.length === 0) {
     const none = 'No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.'
     // With no medication overlapping, a bowl left down is the line's warning, so it leads wherever

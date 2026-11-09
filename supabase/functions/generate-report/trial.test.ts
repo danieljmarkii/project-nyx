@@ -6001,3 +6001,18 @@ Deno.test('CUL-1919 adv pass 1 — an AD-HOC prednisolone course before the tria
   const doc = JSON.stringify(buildDocumentV2(snap, { owner: null, shortId: null, questions: [] }))
   assert.ok(/Ended before the trial: Prednisolone, ended Jul 24, 2 days before the trial/.test(doc))
 })
+
+Deno.test('CUL-1919 adv pass 2 — a short medication pull never reads clean beside the trial', () => {
+  const input = lateTrialInput()
+  input.incompletePulls = ['medication_administrations']
+  const snap = assembleReport(input)
+  const text = plain(renderReport(snap))
+  const blockStart = text.indexOf('Diet trial the record, not a result')
+  const block = text.slice(blockStart, text.indexOf('Symptom frequency', blockStart))
+  assert.ok(/Medication during the trial ?The medication record could not be read in full/.test(block), block)
+  assert.ok(!/No medication or supplement is recorded as overlapping/.test(block))
+  assert.ok(!/supports interpreting it/.test(text), 'the affirmative is withheld beside the gap')
+  const doc = JSON.stringify(buildDocumentV2(snap, { owner: null, shortId: null, questions: [] }))
+  assert.ok(/The medication record could not be read in full; a course before or during the trial may be missing/.test(doc))
+  assert.ok(!/No medication or supplement is recorded as overlapping the trial/.test(doc))
+})
