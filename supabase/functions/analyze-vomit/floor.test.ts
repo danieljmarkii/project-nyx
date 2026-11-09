@@ -430,7 +430,7 @@ Deno.test('floor · CUL-2223: twice one morning and once the next is call today,
     await call(w, { event_id: 'n3', mode: 'floor' })
     const row = w.rows.get('n3')!
     assertStrictEquals(row.tier, 'call_today')
-    assertStrictEquals(row.read_text, 'Nyx has thrown up 3 times, on 2 separate days. Vomiting that keeps coming back day after day needs a call to your vet.')
+    assertStrictEquals(row.read_text, 'Nyx has thrown up 3 times, on 2 separate days. Vomiting that keeps coming back day after day is the kind of thing vets like to hear about the same day.')
   }
 })
 
@@ -443,7 +443,7 @@ Deno.test('floor · CUL-2223: a vomit on each of three of the owner\'s days is s
   const chicago = world({ events, timeZone: 'America/Chicago' })
   await call(chicago, { event_id: 'd3', mode: 'floor' })
   assertStrictEquals(chicago.rows.get('d3')!.tier, 'call_today')
-  assertStrictEquals(chicago.rows.get('d3')!.read_text, 'Nyx has vomited on three days in a row. Vomiting that keeps up day after day needs a call to your vet.')
+  assertStrictEquals(chicago.rows.get('d3')!.read_text, 'Nyx has vomited on three days in a row. Vomiting that keeps up day after day is the kind of thing vets like to hear about the same day.')
   // The same logs are two Tokyo days: the same call, never "in a row".
   const tokyo = world({ events, timeZone: 'Asia/Tokyo' })
   await call(tokyo, { event_id: 'd3', mode: 'floor' })

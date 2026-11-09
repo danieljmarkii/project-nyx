@@ -83,7 +83,7 @@ const base = lowOf(detectIntakeDecline(input('cat', record('cat', ['refused', 'r
 Deno.test('CUL-2424: the template words a day of refusals as refusal, never "less"', () => {
   const t = templateIntakeDecline(base, 'Miso')
   // CUL-2593: a cat's day of refusals asks for a call today (detection.allRefusedAsk.test.ts).
-  assert.equal(t, 'Miso refused every meal you rated today — worth a call to your vet today.')
+  assert.equal(t, 'Miso refused every meal you rated today — call your vet today.')
   assert.ok(!/less/i.test(t))
   const two = templateIntakeDecline({ ...base, daysBelowBaseline: 2, species: 'dog' }, 'Rex')
   assert.equal(two, 'Rex refused every meal you rated over the last two days — worth keeping an eye on, and a word with your vet if it carries on.')
@@ -102,6 +102,8 @@ Deno.test('CUL-2424: the carried line says refusing, never "eating less"', () =>
 
 Deno.test('CUL-2424: no model sentence is accepted on an all-refused card', () => {
   const calm = 'Miso has been off her food today — worth keeping an eye on, and a word with your vet if it carries on.'
-  assert.equal(validatePhrasing(calm, { ...base, allRefused: false }), true, 'the dip still takes a model sentence')
+  // A dip with a good meal in the last day (CUL-2680: one without meets the floor, template-only).
+  assert.equal(validatePhrasing(calm, { ...base, allRefused: false, noGoodMeal24h: false }), true, 'the dip still takes a model sentence')
+  assert.equal(validatePhrasing(calm, { ...base, allRefused: false, noGoodMeal24h: true }), false, 'a dip meeting D3 takes none')
   assert.equal(validatePhrasing(calm, base), false)
 })

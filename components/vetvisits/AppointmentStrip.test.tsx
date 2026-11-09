@@ -98,6 +98,7 @@ function homeAppointment(phase: 'upcoming' | 'after'): HomeAppointment {
       // VV-4's gate on the visit's own doors; the strip has its own five-day window
       // (`resolveStripPhase`) and never reads this.
       isToday: true,
+      hasNotes: false,
       where: 'Riverside Animal Hospital · recheck',
     },
   };

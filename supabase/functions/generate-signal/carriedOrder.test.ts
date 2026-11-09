@@ -91,12 +91,12 @@ Deno.test('CUL-2605: a carried call today leads a fresh "just turned down", on H
   assertEquals(today.findings.map((f) => f.rank), [0, 1])
   // Home's headline and Ask's safety line are the louder card's.
   assertStrictEquals(today.signalText, today.findings[0].text)
-  assertStrictEquals(/a call to your vet/.test(today.signalText), true)
+  assertStrictEquals(/call your vet today/.test(today.signalText), true)
   const ask = leadingSafetyText(
     today.findings.map((f) => ({ type: f.finding.type, priorityClass: (f.finding as { priorityClass?: unknown }).priorityClass, payload: { text: f.text, finding: f.finding } })),
     'Miso',
   )
-  assertStrictEquals(ask !== null && /a call to your vet/.test(ask), true, `Ask led with: ${ask}`)
+  assertStrictEquals(ask !== null && /call your vet today/.test(ask), true, `Ask led with: ${ask}`)
 })
 
 // The merge on its own: it only inserts, the carried go in band order, and a tie leaves the fresh card first.

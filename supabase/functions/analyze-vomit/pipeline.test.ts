@@ -191,7 +191,7 @@ Deno.test('pipeline diff A · 8/19: a late read over unrated meals — same verd
   assertStrictEquals(off.read_text, buildContextualReadText('Nyx', ['feline_reduced_intake']))
   assertStrictEquals(
     on.read_text,
-    "When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, call your vet today.",
   )
   assertEquals([off.recommendation, on.recommendation], ['worth_a_call', 'worth_a_call'])
   assertEquals(off.engine_flags, [])
@@ -211,10 +211,11 @@ Deno.test('pipeline diff B · 9/22: foreign material and the intake flag — the
     }
   })
   assertNoWarningLost(off, on)
-  assertStrictEquals(off.read_text, buildContextualReadText('Nyx', ['feline_reduced_intake']))
+  // CUL-2682: flag-off, the floor photo sign leads too.
+  assertStrictEquals(off.read_text, `I can see something that doesn't look like food in this photo. ${buildContextualReadText('Nyx', ['feline_reduced_intake'])}`)
   assertStrictEquals(
     on.read_text,
-    "I can see something that doesn't look like food in this photo. When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "I can see something that doesn't look like food in this photo. When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, call your vet today.",
   )
   // Pattern 10 unchanged: a contextual read carries neither of the model's texts.
   for (const r of [off, on]) {
@@ -258,7 +259,7 @@ Deno.test('pipeline diff D · ate, vomited, then refused, read late: the warning
   assertEquals(on.contextual_flags, ['feline_reduced_intake'])
   assertStrictEquals(
     on.read_text,
-    "When I read this, 2 meals had been logged for Nyx in the 24 hours before then, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 2 meals had been logged for Nyx in the 24 hours before then, and none was marked Most or All. In a cat that's vomiting, call your vet today.",
   )
 })
 
@@ -291,7 +292,7 @@ Deno.test('pipeline · a photo the model says is not vomit is never read as hold
   assertStrictEquals(row.recommendation, 'worth_a_call')
   assertStrictEquals(
     row.read_text,
-    "When I read this, no meals had been logged for Nyx in the 24 hours before then. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, no meals had been logged for Nyx in the 24 hours before then. In a cat that's vomiting, call your vet today.",
   )
 })
 
@@ -366,7 +367,7 @@ Deno.test('pipeline EN-5 · 7/27-shaped refusals stay a call, stated over rated 
   assertStrictEquals(on.recommendation, 'worth_a_call')
   assertStrictEquals(
     on.read_text,
-    "When I read this, 3 rated meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 3 rated meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, call your vet today.",
   )
 })
 
@@ -409,7 +410,7 @@ Deno.test('pipeline EN-5 · 9/4\'s shape, then the owner answers No: a call toda
   assertStrictEquals(no.recommendation, 'worth_a_call')
   assertStrictEquals(
     no.read_text,
-    "When I read this, you'd said Nyx hadn't eaten a meal since the day before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, you'd said Nyx hadn't eaten a meal since the day before this vomit. In a cat that's vomiting, call your vet today.",
   )
   // "A little" stores as Picked (I3) and fires on its own, as one Picked meal does (threshold A).
   const little = await read(world([{ id: 'a1', form: 'meal_fed', answer: 'a_little', answered_at: iso(Date.now() - H) }]))

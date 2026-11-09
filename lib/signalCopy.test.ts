@@ -102,6 +102,9 @@ import type {
   DietChurnDiagnostic,
 } from './signal';
 
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 const correlation = (over: Partial<CorrelationFinding> = {}): CorrelationFinding => ({
   type: 'food_symptom_correlation',
   priorityClass: 'insight',
@@ -122,6 +125,8 @@ const intakeDecline = (over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineF
   daysBelowBaseline: 2,
   refusedFoodLabel: null,
   ratedMealsConsidered: 9,
+  // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
+  lastGoodMealIso: ATE_WELL_2H_AGO,
   ...over,
 });
 
@@ -1979,13 +1984,13 @@ describe('bannerCopy', () => {
 
   it('incident_red_flag — names what the photo showed, starts with the pet name, singular/plural', () => {
     const one = bannerCopy(incidentRedFlag({ flags: ['blood'], flaggedIncidentCount: 1 }), 'Pixel');
-    expect(one.text).toBe('Pixel has a logged photo showing possible blood — worth a look.');
+    expect(one.text).toBe('Pixel has a logged photo showing possible blood — call your vet today.'); // D4
     const many = bannerCopy(
       incidentRedFlag({ flags: ['blood', 'foreign_material'], flaggedIncidentCount: 2 }),
       'Pixel',
     );
     expect(many.text).toBe(
-      'Pixel has logged photos showing possible blood and possible foreign material — worth a look.',
+      'Pixel has logged photos showing possible blood and possible foreign material — call your vet today.',
     );
     expect(validateBannerPhrasing(one.text)).toBe(true);
     expect(validateBannerPhrasing(many.text)).toBe(true);

@@ -1,4 +1,5 @@
 import type { SignalFinding } from './signal';
+import { symptomWord } from './signalCopy';
 
 // EN-9's care state, as the client reads it (Engines v3 PR-23, CUL-1417;
 // docs/nyx-care-state-requirements.md §3.3).
@@ -12,9 +13,9 @@ import type { SignalFinding } from './signal';
 // value reads as no state, which keeps the lane's own ask. Only the two exact watched values
 // take the ask away. The row's rendering (the tag, the sentence) is PR-35's.
 
-export type CareStateValue = 'raised' | 'with_vet' | 'recheck_booked' | 'raised_again';
+export type CareStateValue = 'raised' | 'with_vet' | 'recheck_booked' | 'visit_booked' | 'raised_again';
 
-const VALUES: ReadonlySet<string> = new Set<CareStateValue>(['raised', 'with_vet', 'recheck_booked', 'raised_again']);
+const VALUES: ReadonlySet<string> = new Set<CareStateValue>(['raised', 'with_vet', 'recheck_booked', 'visit_booked', 'raised_again']);
 
 /** The finding's care state as the server set it, or null (flag off, an old cache, malformed). */
 export function careStateValueOf(finding: SignalFinding): CareStateValue | null {
@@ -24,14 +25,79 @@ export function careStateValueOf(finding: SignalFinding): CareStateValue | null 
   return typeof state === 'string' && VALUES.has(state) ? (state as CareStateValue) : null;
 }
 
-/** "With your vet" or "Recheck booked": the concern stays on Home and asks nothing. Only a
- *  CONCERN (chronicity or worsening) can be quieted: a care state found on an escalation (an
- *  intake decline, a red flag, the burden card) is a malformed or tampered cache and is ignored,
- *  so the escalation keeps its ask (AC 3). */
+/** "With your vet", "Recheck booked" or (CUL-2652) a booked visit: the concern stays on Home and
+ *  asks nothing. Only a CONCERN can be quieted: a care state found on an escalation (an intake
+ *  decline, a red flag, the burden card) is a malformed or tampered cache and is ignored, so the
+ *  escalation keeps its ask (AC 3). `visit_booked` quiets only a chronicity card. The server
+ *  writes it on the weight card too, which this build draws no Home row for; on a worsening card it
+ *  is a tampered cache, and the ask stays (ruling A, 2026-11-07: a booking never quiets "coming
+ *  more often"). */
 export function careStateQuietsAsk(finding: SignalFinding): boolean {
   if (finding.type !== 'symptom_chronicity' && finding.type !== 'symptom_worsening') return false;
   const s = careStateValueOf(finding);
+  // A visit_booked state with no well-formed booking beside it is malformed: the ask stays,
+  // rather than a silent row with neither an ask nor the line that replaces it.
+  if (s === 'visit_booked') return finding.type === 'symptom_chronicity' && bookedVisitOf(finding) !== null;
   return s === 'with_vet' || s === 'recheck_booked';
+}
+
+// ── CUL-2652: the booked visit the server wrote beside a finding ──────────────────
+
+/** A booked visit, as the server wrote it: its LOCAL day, the appointment, and whether the day
+ *  has passed (the week "How did it go?" is open). */
+export interface BookedVisitView {
+  on: string;
+  appointmentId: string;
+  passed: boolean;
+}
+
+const DAY_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A real calendar day: "2026-02-30" is refused, never rolled into March. */
+function isDayKey(v: unknown): v is string {
+  if (typeof v !== 'string') return false;
+  const m = DAY_KEY.exec(v);
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+}
+
+function bookedVisitFrom(raw: unknown): BookedVisitView | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const v = raw as { on?: unknown; appointmentId?: unknown; passed?: unknown };
+  if (!isDayKey(v.on) || typeof v.appointmentId !== 'string' || v.appointmentId.length === 0 || typeof v.passed !== 'boolean') return null;
+  return { on: v.on, appointmentId: v.appointmentId, passed: v.passed };
+}
+
+/**
+ * The booked visit on a finding, or null. A concern and the weight card carry it inside their care
+ * state; an escalation carries it beside its finding (never a care state, AC 3). Malformed reads as
+ * none, which only ever drops a line: the ask is decided elsewhere and never reads this.
+ */
+export function bookedVisitOf(finding: SignalFinding): BookedVisitView | null {
+  if (finding.priorityClass !== 'safety') return null;
+  const care = (finding as { careState?: { bookedVisit?: unknown } }).careState;
+  if (typeof care === 'object' && care !== null && 'bookedVisit' in care) return bookedVisitFrom(care.bookedVisit);
+  return bookedVisitFrom((finding as { bookedVisit?: unknown }).bookedVisit);
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "Nov 14": a local day key, printed without a year (the horizon is 30 days, so the year is
+ *  never in doubt; the server's sentence adds one only across a new year). */
+export function bookedVisitDay(v: BookedVisitView): string {
+  const [, , m, d] = DAY_KEY.exec(v.on) as RegExpExecArray;
+  return `${MONTHS[Number(m) - 1]} ${Number(d)}`;
+}
+
+/** Ruling 3 (2026-11-07, softened B): the call card keeps its ask word for word and gains this. */
+export function bookedVisitCallLine(v: BookedVisitView): string {
+  return `Visit booked for ${bookedVisitDay(v)}. A call today may still be worth it.`;
+}
+
+/** Frame 3 B: on a card that still asks while a visit is booked, the booking ask becomes a call. */
+export function bookedVisitCallBeforeAsk(v: BookedVisitView): string {
+  return `worth calling before ${bookedVisitDay(v)}`;
 }
 
 // ── PR-35: what the client draws from the server's state ─────────────────────────
@@ -68,9 +134,10 @@ export function careStateViewOf(finding: SignalFinding): CareStateView | null {
   return { state, sign, text: state === 'raised' ? null : text, backLine: state === 'raised_again' ? back : null };
 }
 
-/** A raised or raised-again concern: the ask stands, and the owner may answer it. */
+/** A raised or raised-again concern: the ask stands, and the owner may answer it. A booked visit
+ *  (CUL-2652) is not an answer, so the owner may still say the vet knows. */
 export function careStateTakesAnswers(view: CareStateView | null): boolean {
-  return view !== null && (view.state === 'raised' || view.state === 'raised_again');
+  return view !== null && (view.state === 'raised' || view.state === 'raised_again' || view.state === 'visit_booked');
 }
 
 /** "Your vet knows" (D6, CUL-1440, ruled 2026-10-01): the tag on a watched concern, in the
@@ -102,4 +169,44 @@ export function careStateBody(view: CareStateView): string | null {
 export function careBackLine(view: CareStateView): string | null {
   if (view.state !== 'raised_again') return null;
   return view.backLine;
+}
+
+/** The booked-visit line a Home row draws, and what kind it is. */
+export interface BookedVisitRowLine {
+  /** `quiet`: the row's ask is gone and this line stands in its place (frame 2, frame 3 C/D).
+   *  `call`: ruling 3's line under a call-today ask. `fact`: the date under a concern that still
+   *  asks (frame 3 B). */
+  kind: 'quiet' | 'call' | 'fact';
+  text: string;
+  /** Set while the visit's week is open: the row opens "How did it go?" for this appointment. */
+  howDidItGoFor: string | null;
+}
+
+// A call TODAY, never a call NOW: "A call today may still be worth it" under "Call your vet now"
+// would read as a softer ask than the one above it (Dr. Chen lens, CUL-2652 build).
+const CALL_TODAY_RE = /\bcall\b.*\btoday\b/i;
+
+/**
+ * CUL-2652: what a Home row says about a booked visit, from the server's facts and the row's own
+ * ask (already decided upstream; this never changes it). Null when the row says nothing about one.
+ */
+export function bookedVisitRowLine(finding: SignalFinding, ask: string | null): BookedVisitRowLine | null {
+  const v = bookedVisitOf(finding);
+  if (v === null) return null;
+  // The quiet row's words are the mock's (frame 2, frame 3 D), composed here from the date and the
+  // sign: the server's cached sentence is the standalone one Get ready and Ask relay.
+  if (finding.type === 'symptom_chronicity' && careStateQuietsAsk(finding) && careStateValueOf(finding) === 'visit_booked') {
+    return {
+      kind: 'quiet',
+      text: v.passed
+        ? `${bookedVisitDay(v)}'s visit. How did it go?`
+        : `Visit booked for ${bookedVisitDay(v)}. Worth mentioning the ${symptomWord(finding.symptomType)}.`,
+      howDidItGoFor: v.passed ? v.appointmentId : null,
+    };
+  }
+  if (v.passed || ask === null) return null;
+  if (finding.type === 'symptom_chronicity' || finding.type === 'symptom_worsening') {
+    return { kind: 'fact', text: `Visit booked for ${bookedVisitDay(v)}.`, howDidItGoFor: null };
+  }
+  return CALL_TODAY_RE.test(ask) ? { kind: 'call', text: bookedVisitCallLine(v), howDidItGoFor: null } : null;
 }

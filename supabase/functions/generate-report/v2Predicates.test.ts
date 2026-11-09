@@ -153,7 +153,7 @@ Deno.test('R-11 condition 5 — any other flag on the sign keeps the flag in the
   const s = steady()
   const f = itchFlag(s)
   const others: SafetyFlag[] = [
-    { kind: 'symptom_burden', symptomType: 'itch', count: 9, days: 5, runDays: 3, windowDays: 7, tier: 'standard' as never },
+    { kind: 'symptom_burden', symptomType: 'itch', count: 9, days: 5, runDays: 3, windowDays: 7, tier: 'standard' as never, tierSource: 'computed', cardReadDay: null },
     { kind: 'symptom_worsening', symptomType: 'itch', currentCount: 5, priorCount: 1, currentDays: 5, priorDays: 1, trigger: 'delta' as never, tier: 'standard' as never, windowDays: 7 },
   ]
   for (const o of others) {

@@ -47,6 +47,9 @@ import type {
   TrialResponseFinding,
 } from './signal';
 
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 // The §4 veto list — never on any fold surface.
 const VETOED = /\b(resolved|cleared|all clear|settled|better|improving|quieter|down|dismissed|hidden|snoozed|reminder|seen|nothing new)\b|↓|%|days? (clear|free)|streak/i;
 
@@ -202,6 +205,8 @@ const intake = (over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding 
   daysBelowBaseline: 1,
   refusedFoodLabel: null,
   ratedMealsConsidered: 9,
+  // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
+  lastGoodMealIso: ATE_WELL_2H_AGO,
   ...over,
 });
 const redFlag = (over: Partial<IncidentRedFlagFinding> = {}): IncidentRedFlagFinding => ({
@@ -289,7 +294,7 @@ describe('the safety strips — verbatim per type, the ask is the card’s own v
   it('chronicity, firm: `Worth a vet visit`; standard: `Tell your vet` — the tier the card phrases on', () => {
     expect(stripNameLine(chronicity())).toBe('Recurring vomiting');
     expect(stripAskLine(chronicity({ tier: 'firm' }))).toBe('Worth a vet visit');
-    expect(stripAskLine(chronicity({ tier: 'standard' }))).toBe('Tell your vet');
+    expect(stripAskLine(chronicity({ tier: 'standard' }))).toBe('Worth telling a vet');
     expect(stripCountLine(chronicity(), LAST)).toBe('14 episodes, 5 of 8 weeks · last Aug 26');
     expect(stripCountLine(chronicity({ episodeCount: 1, activeWeeks: 1 }), LAST)).toBe('1 episode, 1 of 8 weeks · last Aug 26');
   });
@@ -307,9 +312,9 @@ describe('the safety strips — verbatim per type, the ask is the card’s own v
       '5 days this week, 3 last week · last Aug 26',
     );
     expect(stripAskLine(worsening({ tier: 'firm' }))).toBe('Worth a vet visit');
-    expect(stripAskLine(worsening({ tier: 'standard' }))).toBe('Tell your vet');
+    expect(stripAskLine(worsening({ tier: 'standard' }))).toBe('Worth telling a vet');
     // soft says "a word with your vet if it carries on" — the conditional register, intake's verb.
-    expect(stripAskLine(worsening({ tier: 'soft' }))).toBe('Check with your vet');
+    expect(stripAskLine(worsening({ tier: 'soft' }))).toBe('Worth asking a vet');
   });
 
   it('a `New` worsening (zero prior) drops the "0 last week" pair, exactly as the face does (S10)', () => {
@@ -321,12 +326,12 @@ describe('the safety strips — verbatim per type, the ask is the card’s own v
     expect(stripNameLine(intake())).toBe('Eating less than usual');
     expect(stripCountLine(intake({ daysBelowBaseline: 2, ratedMealsConsidered: 12 }))).toBe('2 days below the usual, 12 recent meals');
     expect(stripCountLine(intake())).toBe('1 day below the usual, 9 recent meals');
-    expect(stripAskLine(intake())).toBe('Check with your vet');
+    expect(stripAskLine(intake())).toBe('Worth asking a vet');
     const refused = intake({ trigger: 'refused_normal_food', refusedFoodLabel: 'Royal Canin Renal', daysBelowBaseline: 0, ratedMealsConsidered: 7 });
     expect(stripNameLine(refused)).toBe('Refused the usual food');
     expect(stripCountLine(refused)).toBe('Compared with 7 recent meals');
     expect(stripCountLine(intake({ ...refused, ratedMealsConsidered: 0 }))).toBe('Compared with what you usually log');
-    expect(stripAskLine(refused)).toBe('Check with your vet');
+    expect(stripAskLine(refused)).toBe('Worth asking a vet');
     // No food name on a strip (§4: no pet name, no free text) — the label lives on the card.
     expect(stripNameLine(refused)).not.toMatch(/Royal/);
     expect(stripCountLine(refused)).not.toMatch(/Royal/);
@@ -348,8 +353,8 @@ describe('the safety strips — verbatim per type, the ask is the card’s own v
 
   it('the spoken sentence says the ask and expands the month (§7)', () => {
     expect(stripA11yLabel(chronicity(), LAST)).toBe('Recurring vomiting. Worth a vet visit. 14 episodes, 5 of 8 weeks, last August 26.');
-    expect(stripA11yLabel(worsening({ tier: 'standard' }), LAST)).toBe('Vomiting up this week. Tell your vet. 5 this week, 2 last week, last August 26.');
-    expect(stripA11yLabel(intake())).toBe('Eating less than usual. Check with your vet. 1 day below the usual, 9 recent meals.');
+    expect(stripA11yLabel(worsening({ tier: 'standard' }), LAST)).toBe('Vomiting up this week. Worth telling a vet. 5 this week, 2 last week, last August 26.');
+    expect(stripA11yLabel(intake())).toBe('Eating less than usual. Worth asking a vet. 1 day below the usual, 9 recent meals.');
     expect(stripA11yLabel(redFlag())).toBe('Blood in a vomit photo. Call your vet. AI read of 2 logged photos, last September 1.');
     expect(stripA11yLabel(chronicity())).toBe('Recurring vomiting. Worth a vet visit. 14 episodes, 5 of 8 weeks.');
   });
@@ -453,7 +458,8 @@ describe('FS-3 build guard — every safety strip says its ask, and only a ratif
   });
 
   it('the ratified set is exactly the four strings Dr. Chen signed, each under the ask cap', () => {
-    expect(Object.values(STRIP_ASKS)).toEqual(['Worth a vet visit', 'Tell your vet', 'Check with your vet', 'Call your vet']);
+    // CUL-2667 (signal-home spec strip row, Dr. Chen signed via CUL-2666): five verbs.
+    expect(Object.values(STRIP_ASKS)).toEqual(['Worth a vet visit', 'Worth telling a vet', 'Worth asking a vet', 'Call your vet', 'Worth a call today']);
     for (const a of Object.values(STRIP_ASKS)) {
       expect(a.length).toBeLessThanOrEqual(STRIP_ASK_LINE_MAX);
       expect(a).not.toMatch(/\n/);

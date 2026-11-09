@@ -24,7 +24,7 @@ A research agent surveyed practice (Anthropic's harness notes, METR's task-lengt
   - a typed `/sweep` is the Loose ends take-over;
   - a bundle claims every issue;
   - every child files at most three new non-harm issues.
-- The doc budget held at its ceiling. The additions were paid for by cutting text git, CLAUDE.md or the scripts already hold, and the groomer's label-strip account moved to lessons P-19.
+- The doc budget held at its ceiling. The additions were paid for by cutting text git, CLAUDE.md or the scripts already hold, and the groomer's label-strip account moved to lessons P-20 (main took P-19 for the filing rule while this branch was open).
 - Linear: the Loose ends project and its *Found along the way* milestone.
 
 ## What broke, and how it was caught

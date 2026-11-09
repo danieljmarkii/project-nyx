@@ -41,6 +41,7 @@ import {
   escalationSurvivesFailure,
   escalationSurvivesReRead,
   incidentReadLabel,
+  raisedCallActionOf,
   quietVerdictUnfinished,
 } from '../../lib/incidentReadState';
 import { isQuietVerdict } from '../../lib/incidentVerdict';
@@ -64,7 +65,8 @@ import {
 import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
 import { useMayWaitFacts } from '../../hooks/useMayWaitFacts';
 import { useMomentStore } from '../../store/momentStore';
-import { callTodayActionOf } from '../../lib/mayWaitLine';
+import { callTodayActionOf, catNoGoodMeal24hOf } from '../../lib/mayWaitLine';
+import { askLevelOf } from '../../lib/incidentAskWords';
 import { usePetStore } from '../../store/petStore';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
@@ -164,6 +166,9 @@ interface AnalysisRow extends IntakeCorrectionColumns {
   photo_set_key?: string | null;
   /** The Engines keys the read was written under: a new-rule read speaks its tier. */
   engine_flags?: string[] | null;
+  /** CUL-2667: the read's reasons, which pick floor or deferential words (`lib/incidentAskWords.ts`). */
+  contextual_flags?: string[] | null;
+  visual_flags?: string[] | null;
 }
 
 /** Two copies of the row hold the same READ: the same state, verdict and words. The
@@ -192,6 +197,8 @@ const SELECT_COLS =
   'status, recommendation, read_text, description, colour, contents, consistency, ' +
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
   'ai_raw_payload, edited_at, dismissed_at, updated_at, call_said_at, error, tier, engine_flags, ' +
+  // CUL-2667: the reasons behind a call, so the words follow the reason, not the tier.
+  'contextual_flags, visual_flags, ' +
   // CUL-1406: the facts behind a dated correction beside stored words (migration 085).
   'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all, ' +
   // CUL-1629: the server's leave to wait, and the photo set the row was stamped over (087, 075).
@@ -244,7 +251,13 @@ export function VomitAnalysisSection(
   // Back from the background re-reads and re-renders at once, never on the next interval.
   const waitActive = useAppActive();
   const waitTick = `${Math.floor(clockNow / 60_000)}|${waitActive}`;
-  const mayWaitFacts = useMayWaitFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}`, waitTick, lastLogged, waitCandidate);
+  // CUL-2667: a cat's call today re-checks the live 24 h intake predicate (D3), which can only
+  // add the floor, so the same read of the record also runs for a cat's call today.
+  // A pet the store does not hold (archived, or before the list answers) has an unknown species,
+  // and an unknown fails toward the floor: it runs the cat check rather than skipping it.
+  const recordSpecies = usePetStore((s) => s.pets.find((p) => p.id === petId)?.species ?? null);
+  const catCallToday = !!row && (recordSpecies === 'cat' || recordSpecies === null) && tierDisplayOf(row) === 'call_today';
+  const mayWaitFacts = useMayWaitFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}`, waitTick, lastLogged, waitCandidate || catCallToday);
   // CUL-1513 (tiers spec §5): the go-live day's lines. Both null until the key's own
   // `app_config` value carries a day for this owner, so the card is today's to the byte.
   const liveSince = useEn3LiveSince();
@@ -959,7 +972,16 @@ export function VomitAnalysisSection(
   // (`call_said_at`, migration 099, CUL-1759), else its last write. A call raised late keeps "now"
   // for its own day, and a Hide or an edit never restarts it. An unanswered read keeps "now" (loud).
   const datedCall = display === 'call_now' ? recordDatedCallNow(floorFacts?.anchor?.at ?? null, row.call_said_at ?? row.updated_at ?? null, clockNow) : null;
-  const callLabel = datedCall?.label ?? incidentReadLabel(row);
+  // CUL-2667: the call's words follow its reason. A cat's facts not yet read count as the cat
+  // floor (it can only add the floor, so the loud words stand until the record answers).
+  // The owner's own edits (the diff against the model's payload) are the only thing that can
+  // silence the photo's flag, and only on the sign they changed.
+  const askOpts = {
+    catNoGoodMeal24h: catNoGoodMeal24hOf(catCallToday, mayWaitFacts, clockNow),
+    ownerEdited: deriveEditedFields(currentEditable(row), extractEditableFromPayload(row.ai_raw_payload)),
+  };
+  const askLevel = askLevelOf(row, askOpts);
+  const callLabel = datedCall?.label ?? incidentReadLabel(row, askOpts);
   const readLabel = pattern ? PATTERN_WORDS.label : callLabel;
 
   const besideCall = isCallRow(row) && photoUnreadUnderCall(row, hasPhoto) ? besideCallOf(consent) : null;
@@ -1025,12 +1047,12 @@ export function VomitAnalysisSection(
                   // The live clock, not the minute tick: a phone back from the background
                   // must not judge the night's end on the minute it was put away.
                   nowMs: Date.now(),
-                })
+                }, askLevel)
               : datedCall
                 ? datedCall.action
                 : display
                   ? TIER_WORDS[display].action
-                  : null
+                  : raisedCallActionOf(row, askOpts)
           }
           disclosure={heldDisclosure}
           pattern={pattern}

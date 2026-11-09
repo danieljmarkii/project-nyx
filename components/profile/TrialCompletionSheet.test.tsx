@@ -189,7 +189,7 @@ describe('the outcome sheet', () => {
     });
     await waitFor(() => tree.getByTestId('trial-outcome-decline-note'));
     const note = String(tree.getByTestId('trial-outcome-decline-note').props.children);
-    expect(note).toContain('needs a call');
+    expect(note).toContain('worth a call to your vet'); // CUL-2667: deferential for a dog
     expect(note).not.toContain('today');
   });
 

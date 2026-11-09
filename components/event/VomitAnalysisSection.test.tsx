@@ -200,7 +200,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     // The §7.3 cap copy, personalized + the vet escalation.
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
     expect(await findByText(/If Rex keeps vomiting/)).toBeTruthy();
-    expect(await findByText(/check in with your vet/i)).toBeTruthy();
+    expect(await findByText(/you don't need the read to call your vet/i)).toBeTruthy();
 
     // No retry affordance on a cap state.
     expect(queryByText(/Try again/i)).toBeNull();
@@ -233,7 +233,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     fireEvent.press(await findByTestId('record-consent-not-now'));
     expect(queryByTestId('record-consent-ask')).toBeNull();
     expect(await findByText("The photo wasn't read")).toBeTruthy();
-    expect(await findByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    expect(await findByText("If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.")).toBeTruthy();
     expect(mockSaveAiConsent).not.toHaveBeenCalled();
   });
 
@@ -258,7 +258,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     const { findByText, queryByTestId, getByTestId } = render(<VomitAnalysisSection eventId="e2d" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('AI reading is off')).toBeTruthy();
     expect(await findByText(/^Rex's photo is saved but wasn't read\./)).toBeTruthy();
-    expect(await findByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    expect(await findByText("If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.")).toBeTruthy();
     fireEvent.press(getByTestId('record-consent-turn-on'));
     expect(mockRouterPush).toHaveBeenCalledWith('/settings/ai-reading');
     expect(queryByTestId('record-consent-ask')).toBeNull();
@@ -270,7 +270,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     const trigger = triggerVomitAnalysis as jest.Mock;
     const { findByText, findByTestId } = render(<VomitAnalysisSection eventId="e2e" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Not read yet')).toBeTruthy();
-    expect(await findByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    expect(await findByText("If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.")).toBeTruthy();
     // Opening the record sent nothing: a resolved row is never re-invoked on mount.
     expect(trigger).not.toHaveBeenCalledWith('e2e');
     fireEvent.press(await findByTestId('record-consent-read-this'));
@@ -323,7 +323,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     const { findByText, getByTestId, queryByTestId, toJSON } = render(<VomitAnalysisSection eventId="e2i" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(getByTestId('record-consent-beside-call')).toBeTruthy();
-    expect(await findByText("AI reading is off. Rex's log alone is reason to call your vet.")).toBeTruthy();
+    expect(await findByText("AI reading is off. Rex's log alone is worth telling your vet about.")).toBeTruthy();
     expect(queryByTestId('record-consent-turn-on')).toBeNull();
     const text = JSON.stringify(toJSON());
     expect(text.indexOf('Worth a call')).toBeLessThan(text.indexOf("The photo wasn't read"));
@@ -336,7 +336,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(getByTestId('record-consent-ask')).toBeTruthy();
     // Under an unconditional call the card's vet line backs the log, never "if it goes on".
-    expect(await findByText("Whatever you choose, Rex's log alone is reason to call your vet.")).toBeTruthy();
+    expect(await findByText("Whatever you choose, Rex's log alone is worth telling your vet about.")).toBeTruthy();
   });
 
   it('a read that ran before a later no shows as a read, with nothing added', async () => {
@@ -1075,7 +1075,8 @@ describe('VomitAnalysisSection — an escalation’s facts never fold (§5.3)', 
     const { findByText, getByText, queryByText } = render(
       <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
     );
-    await findByText('Worth a call');
+    // CUL-2675 (a): blood on an earlier-rule read says the floor's words.
+    await findByText('Call your vet today');
     expect(queryByText('Keep it compact')).toBeNull();
     expect(getByText('Fresh red')).toBeTruthy();
     expect(getByText('a piece of green plastic')).toBeTruthy();
@@ -1092,7 +1093,8 @@ describe('VomitAnalysisSection — an escalation’s facts never fold (§5.3)', 
     const { findByText, getByText, queryByText } = render(
       <VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />,
     );
-    await findByText('Worth a call');
+    // CUL-2675 (a): blood on an earlier-rule read says the floor's words.
+    await findByText('Call your vet today');
     expect(getByText('Fresh red')).toBeTruthy();
     expect(queryByText(/findings/)).toBeNull();
   });
@@ -2018,8 +2020,9 @@ describe('VomitAnalysisSection — the floor\'s words (CUL-1510)', () => {
   it('a call today: no leave to wait at any hour, and what to tell them', async () => {
     mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'], visual_flags: [] });
     const view = render(<VomitAnalysisSection eventId="f1" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText('Call your vet today');
-    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+    // CUL-2667: repeat vomiting is not a floor reason, so the ask is the deferential one.
+    await view.findByText('Worth a call today');
+    expect(view.queryByText('This is the kind of thing vets like to hear about the same day. If yours is closed, an emergency clinic can talk it through.')).toBeTruthy();
     expect(view.queryByText(/first thing/)).toBeNull();
     expect(view.queryByText('What to tell them:')).toBeTruthy();
     expect(view.queryByText('Rex vomited at 1 PM; on prednisone.')).toBeTruthy();
@@ -2046,7 +2049,7 @@ describe('VomitAnalysisSection — the floor\'s words (CUL-1510)', () => {
     expect(view.getByTestId('incident-read-watch-for')).toBeTruthy();
     expect(view.queryByText(/^Go to your vet or an emergency clinic now if Rex retches/)).toBeTruthy();
     expect(view.queryByText(/^Call your vet now if you see Rex vomit twice more by 5 PM/)).toBeTruthy();
-    expect(view.queryByText(/^Call your vet today if Rex vomits again by 1 PM tomorrow/)).toBeTruthy();
+    expect(view.queryByText(/^Worth a call today if Rex vomits again by 1 PM tomorrow/)).toBeTruthy();
     expect(view.queryByText('What to tell them:')).toBeNull();
   });
 
@@ -2198,7 +2201,7 @@ describe('VomitAnalysisSection — call today\'s wait line (CUL-1629)', () => {
   const iso = (d: Date) => d.toISOString();
   let nowSpy: jest.SpyInstance;
   const waitRow = (over: Record<string, unknown> = {}) => row({
-    recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'],
+    recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'], visual_flags: [],
     may_wait: true, photo_set_key: PHOTO, updated_at: iso(new Date(2026, 6, 15, 21, 30)),
     ai_raw_payload: { appears_to_show_vomit: true, recommendation: 'monitor', read_photo_set_key: PHOTO }, ...over,
   });
@@ -2225,18 +2228,18 @@ describe('VomitAnalysisSection — call today\'s wait line (CUL-1629)', () => {
   it('a stored TRUE at 10 PM: first thing tomorrow, the call-now signs named as the exception', async () => {
     mockRow = waitRow();
     const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText('Call your vet today');
+    await view.findByText('Worth a call today');
     // The wait line lands after the fresh re-read answers (an async gate), so wait for it rather
     // than racing it: under a loaded run the assertion could land a tick before the answer.
-    expect(await view.findByText(/^Call your vet first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
-    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeNull();
+    expect(await view.findByText(/^Worth a call first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
+    expect(view.queryByText('This is the kind of thing vets like to hear about the same day. If yours is closed, an emergency clinic can talk it through.')).toBeNull();
   });
 
   it.each([false, null, undefined])('may_wait = %p keeps the louder line', async (value) => {
     mockRow = waitRow({ may_wait: value });
     const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText('Call your vet today');
-    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+    await view.findByText('Worth a call today');
+    expect(view.queryByText('This is the kind of thing vets like to hear about the same day. If yours is closed, an emergency clinic can talk it through.')).toBeTruthy();
     expect(view.queryByText(/first thing/)).toBeNull();
   });
 
@@ -2244,26 +2247,26 @@ describe('VomitAnalysisSection — call today\'s wait line (CUL-1629)', () => {
     mockRow = waitRow();
     mockMayWaitFacts = null;
     const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText('Call your vet today');
+    await view.findByText('Worth a call today');
     expect(view.queryByText(/first thing/)).toBeNull();
   });
 
   it('a take-back the server writes while the record is open reaches it (adversarial finding 2)', async () => {
     mockRow = waitRow();
     const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText(/^Call your vet first thing tomorrow/);
+    await view.findByText(/^Worth a call first thing tomorrow/);
     // A neighbour's blood photo is read; the server lowers this row's leave (090, revalidate).
     mockRow = waitRow({ may_wait: null, updated_at: new Date(2026, 6, 15, 21, 50).toISOString() });
     // The owner logged that neighbour over this record: the completion card's payload moves.
     act(() => { useMomentStore.setState({ payload: { kind: 'named' } as never }); });
-    await view.findByText("Call your vet today. If they're closed, call an emergency clinic.");
+    await view.findByText('This is the kind of thing vets like to hear about the same day. If yours is closed, an emergency clinic can talk it through.');
     expect(view.queryByText(/first thing/)).toBeNull();
     act(() => { useMomentStore.setState({ payload: null }); });
   });
 
   // ── The wiring the third adversarial pass found unpinned (T1) ──────────────────────────
-  const LOUD = "Call your vet today. If they're closed, call an emergency clinic.";
-  const WAIT = /^Call your vet first thing tomorrow/;
+  const LOUD = 'This is the kind of thing vets like to hear about the same day. If yours is closed, an emergency clinic can talk it through.';
+  const WAIT = /^Worth a call first thing tomorrow/;
   const at = (min: number) => new Date(2026, 6, 15, 22, min).getTime();
   const freshFacts = (readAt: number) => { mockMayWaitFacts = { ...mockMayWaitFacts!, readAt }; };
 
@@ -2343,7 +2346,7 @@ describe('VomitAnalysisSection — call today\'s wait line (CUL-1629)', () => {
   it('a TRUE over an owner edit keeps the louder line', async () => {
     mockRow = waitRow({ edited_at: iso(new Date(2026, 6, 15, 21, 45)) });
     const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText('Call your vet today');
+    await view.findByText('Worth a call today');
     expect(view.queryByText(/first thing/)).toBeNull();
   });
 });
@@ -2466,7 +2469,7 @@ describe('VomitAnalysisSection — the ruled states (CUL-1912)', () => {
     const view = render(<VomitAnalysisSection eventId="d820" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await view.findByText("The photo wasn't read")).toBeTruthy();
     const body = view.getByText("This photo hasn't been read yet. It's saved on Rex's record, and Try again sends it now.");
-    const vet = view.getByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.');
+    const vet = view.getByText("If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.");
     // Never heard as a verdict on a photo nobody read: no calm words, no "Not enough".
     for (const t of ["The photo wasn't read", body.props.children, vet.props.children]) {
       expect(REASSURE.test(String(t))).toBe(false);
@@ -2482,7 +2485,7 @@ describe('VomitAnalysisSection — the ruled states (CUL-1912)', () => {
     mockRow = row({ status: 'failed', recommendation: null, error: 'x' });
     const view = render(<VomitAnalysisSection eventId="d820f" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
-    expect(view.getByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    expect(view.getByText("If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.")).toBeTruthy();
     expect(view.getByTestId('incident-read-failed')).toBeTruthy();
   });
 
@@ -2538,5 +2541,90 @@ describe('VomitAnalysisSection — the ruled states (CUL-1912)', () => {
     const view = render(<VomitAnalysisSection eventId="d828" petId="pet-1" petName="Rex" hasPhoto />);
     fireEvent.press(await view.findByText('Keep it compact'));
     expect(await view.findByText(' · Yellow, blood: none visible')).toBeTruthy();
+  });
+});
+
+// ── CUL-2667: the call's words follow its reason, and a cat re-checks the 24 h predicate ──────
+describe('VomitAnalysisSection — the reason picks the words (CUL-2667)', () => {
+  const STAMP = ['engines_v3_en3', 'engines_v3_en4'];
+  const NOW = new Date(2026, 10, 8, 20, 0).getTime();
+  let nowSpy: jest.SpyInstance;
+  const callRow = (over: Record<string, unknown> = {}) =>
+    row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'], visual_flags: [], ...over });
+  const facts = (meals: { at: string; rating: string | null }[]) => ({
+    readAt: NOW, anchorAt: new Date(NOW - 3_600_000).toISOString(), serverAttachmentIds: [], localAttachmentIds: [],
+    unsynced: false, vomits: [], stoolAt: [], lethargyAt: [], meals,
+  });
+  const hoursAgo = (h: number) => new Date(NOW - h * 3_600_000).toISOString();
+  const setSpecies = (species: string | null) =>
+    usePetStore.setState({
+      pets: species === null ? [] : [{ id: 'pet-1', name: 'Pixel', species, breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'female', weight_kg: null, photo_path: null } as never],
+    });
+  beforeEach(() => { nowSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW); });
+  afterEach(() => { nowSpy.mockRestore(); mockRow = null; mockMayWaitFacts = null; });
+
+  it('a dog\'s repeat vomiting is deferential; blood beside it is the floor', async () => {
+    setSpecies('dog');
+    mockRow = callRow();
+    const soft = render(<VomitAnalysisSection eventId="r1" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await soft.findByText('Worth a call today')).toBeTruthy();
+    soft.unmount();
+    mockRow = callRow({ blood_present: 'fresh_red', visual_flags: ['blood'] });
+    const loud = render(<VomitAnalysisSection eventId="r2" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await loud.findByText('Call your vet today')).toBeTruthy();
+  });
+
+  it('a cat 25 h past its last Most/All meal is the floor; 23 h is deferential', async () => {
+    setSpecies('cat');
+    mockRow = callRow();
+    mockMayWaitFacts = facts([{ at: hoursAgo(25), rating: 'all' }, { at: hoursAgo(10), rating: 'some' }]);
+    const late = render(<VomitAnalysisSection eventId="c1" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await late.findByText('Call your vet today')).toBeTruthy();
+    late.unmount();
+    mockMayWaitFacts = facts([{ at: hoursAgo(23), rating: 'all' }]);
+    const fed = render(<VomitAnalysisSection eventId="c2" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await fed.findByText('Worth a call today')).toBeTruthy();
+  });
+
+  it('a cat whose facts have not answered, and a pet the store does not hold, keep the floor', async () => {
+    setSpecies('cat');
+    mockRow = callRow();
+    mockMayWaitFacts = null;
+    const loading = render(<VomitAnalysisSection eventId="c3" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await loading.findByText('Call your vet today')).toBeTruthy();
+    loading.unmount();
+    setSpecies(null);
+    const unknown = render(<VomitAnalysisSection eventId="c4" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await unknown.findByText('Call your vet today')).toBeTruthy();
+  });
+
+  it('the model\'s own "none" beside its blood flag is not the owner\'s word; the owner\'s change of that sign is', async () => {
+    setSpecies('dog');
+    // The suite stubs the diff; this case needs the real one (C-34: drive the real function).
+    const mocked = jest.requireMock('../../lib/analysis') as { deriveEditedFields: jest.Mock; extractEditableFromPayload: jest.Mock };
+    const real = jest.requireActual('../../lib/analysis') as typeof import('../../lib/analysis');
+    const diff = mocked.deriveEditedFields;
+    diff.mockImplementation(real.deriveEditedFields);
+    mocked.extractEditableFromPayload.mockImplementation(real.extractEditableFromPayload);
+    const model = { colour: 'yellow', consistency: 'foamy', contents: ['foam'], blood_present: 'none_visible', foreign_material_present: 'no', foreign_material_note: null, description: null };
+    // The owner changed only the colour: the photo's blood flag still stands (adversarial pass 2).
+    mockRow = callRow({ ...model, colour: 'brown', visual_flags: ['blood'], edited_at: '2026-11-08T10:00:00.000Z', ai_raw_payload: model });
+    const colourOnly = render(<VomitAnalysisSection eventId="o1" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await colourOnly.findByText('Call your vet today')).toBeTruthy();
+    colourOnly.unmount();
+    // The owner changed blood itself from unsure to none: their account of that sign stands.
+    mockRow = callRow({ ...model, visual_flags: ['blood'], edited_at: '2026-11-08T10:00:00.000Z', ai_raw_payload: { ...model, blood_present: 'unsure' } });
+    const ownerSaid = render(<VomitAnalysisSection eventId="o2" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await ownerSaid.findByText('Worth a call today')).toBeTruthy();
+    diff.mockImplementation(() => []);
+    mocked.extractEditableFromPayload.mockImplementation(() => null);
+  });
+
+  it('an earlier-rule blood photo says the floor\'s words and service line (CUL-2675 (a))', async () => {
+    setSpecies('dog');
+    mockRow = row({ recommendation: 'worth_a_call', blood_present: 'fresh_red' });
+    const view = render(<VomitAnalysisSection eventId="e1" petId="pet-1" petName="Pixel" hasPhoto />);
+    expect(await view.findByText('Call your vet today')).toBeTruthy();
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
   });
 });

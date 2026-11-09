@@ -36,6 +36,9 @@ import {
 } from './reportComposer';
 import type { IntakeDeclineFinding } from './signal';
 
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 function card(extra: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
   return {
     type: 'intake_decline',
@@ -45,6 +48,8 @@ function card(extra: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
     daysBelowBaseline: 1,
     refusedFoodLabel: null,
     ratedMealsConsidered: 6,
+    // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
+    lastGoodMealIso: ATE_WELL_2H_AGO,
     ...extra,
   };
 }
@@ -74,7 +79,7 @@ describe('a day of nothing but refusals reads as refusal (CUL-2424)', () => {
     expect(s.evidence).toMatch(/^Miso refused every meal you rated today, compared with 6 recent meals\. Refusing food can be an early sign/);
     expect(s.sample).toBe('1 day of refused meals, against 6 recent meals');
     expect(s.script).toBe('Concern: refused every meal you rated | How long: 1 day | Compared with: 6 recent meals');
-    expect(s.banner).toBe('Miso refused every meal you rated today — worth a look.');
+    expect(s.banner).toBe('Miso refused every meal you rated today — call your vet today.'); // D4: a cat's floor
     expect(s.stripName).toBe('Refused every meal you rated');
     expect(s.homeHeadline).toBe('Refused every meal you rated');
     expect(s.stripCount).toBe('1 day of refused meals, against 6 recent meals');

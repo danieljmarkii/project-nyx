@@ -62,6 +62,7 @@ import {
   timingStoryMealLaneModel,
   timingStoryRefusalLine,
   intakeRefusedThenVomitedFaceLine,
+  intakeSentenceAt,
   timingStorySampleLine,
   timingStoryVetLine,
   trialResponseCompareRows,
@@ -152,7 +153,8 @@ function SentenceBody({ cached, isLead, petName }: InsightBodyProps) {
   const i5Line = intakeRefusedThenVomitedFaceLine(finding, petName);
   return (
     <View style={styles.body}>
-      <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</ThemedText>
+      {/* CUL-2680: an intake card past D3 since its run says the floor's sentence. */}
+      <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{intakeSentenceAt(finding, petName, cached.text)}</ThemedText>
       {finding.type === 'food_symptom_correlation' && isJointCandidate(finding) && (
         <LinkedPair proteins={proteinCluster(finding)} />
       )}
@@ -692,7 +694,10 @@ export function InsightCard({
     const i5Line = intakeRefusedThenVomitedFaceLine(cached.finding, petName);
     if (i5Line) receiptA11y = receiptA11y ? `${receiptA11y} ${i5Line}` : i5Line;
   }
-  let accessibilityLabel = receiptA11y ? `${cached.text}. ${receiptA11y}` : cached.text;
+  // CUL-2680 (pass 2, B2): the card is one button, so VoiceOver hears the label, never the face's
+  // text: the label says the same re-phrased sentence the face draws.
+  const spokenSentence = intakeSentenceAt(cached.finding, petName, cached.text);
+  let accessibilityLabel = receiptA11y ? `${spokenSentence}. ${receiptA11y}` : spokenSentence;
   if (faceMedLine) accessibilityLabel = `${accessibilityLabel}. ${faceMedLine}`;
   // B-727 (CUL-239 client half): the `New` chip is visual-only, and this card is ONE
   // accessible button — children never reach VoiceOver — so the chip's fact must ride the

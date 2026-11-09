@@ -300,7 +300,7 @@ export function nodeReadOf(
   expect?: NodeReadExpectation,
   readingOff: boolean = false,
 ): NodeRead {
-  const { state, verdict, display } = readVerdictOf({
+  const { state, verdict, chip } = readVerdictOf({
     eventType: expect?.eventType ?? null,
     hasPhoto: expect?.hasPhoto ?? false,
     copy: row,
@@ -309,7 +309,8 @@ export function nodeReadOf(
   });
   switch (state) {
     case 'worth_a_call': {
-      const words = TIER_WORDS[display ?? 'worth_a_call'];
+      // CUL-2678: the record's reason-keyed words, never the tier's alone.
+      const words = chip ?? TIER_WORDS.worth_a_call;
       return { state: 'worth_a_call', label: words.short, spoken: words.label };
     }
     case 'calm':

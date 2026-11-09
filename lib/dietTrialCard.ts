@@ -108,7 +108,7 @@ import {
   type TrialRefusalRun,
   type TrialSpecies,
 } from './dietTrial';
-import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
+import { milestoneNote, trialDecisionChoices, trialDeclineVetLine, type TrialOutcome } from './dietTrialCompletion';
 import { type TrialProteinSource } from './trialProtein';
 import { proteinTrialLabel } from './trialProteinPicker';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
@@ -2504,9 +2504,9 @@ function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
   lines.push({
     role: 'flag',
     text:
-      (input.species === 'cat'
-        ? 'A cat that stops eating needs a call today, whatever the trial is doing.'
-        : `A pet that goes off their food needs a call, whatever the trial is doing.`) +
+      // No live check passed (CUL-2694): the trial line holds the floor for every cat, as it did,
+      // until it can re-read the 24 h by the clock the way the Signal does.
+      trialDeclineVetLine(input.species, input.intakeDeclineFacts?.[0] ?? null, input.petName) +
       // "isn't showing the trial numbers" was true only while this branch
       // rendered none. Adding the off-diet floor to it — correct, and this PR's
       // own change — made it a flat false statement rendered directly above a

@@ -220,6 +220,10 @@ const NOT_ON_SCREEN: Record<string, string> = {
   intake_correction_meals: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
   intake_correction_most_or_all: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
   intake_correction_unrated: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
+  // CUL-2667: the shared ask module reads both families' blood columns; on the other family's
+  // row the column does not exist, so it draws nothing.
+  stool_blood_present: "the stool family's blood column, absent on a vomit row (read by the shared ask module)",
+  blood_present: "the vomit family's blood column, absent on a stool row (read by the shared ask module)",
 };
 
 const RECORDED = [

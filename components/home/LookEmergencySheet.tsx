@@ -79,7 +79,7 @@ export function LookEmergencySheet({ visible, species, petName, read, onClose }:
           ))}
 
           <ThemedText style={[styles.blockHeader, styles.blockHeaderSpaced]}>
-            {CALL_TODAY_HEADER}
+            {door.todayHeader}
           </ThemedText>
           {/* The collapse. A met threshold does not appear beside the imperative — it
               HAS BECOME the imperative, which is the whole rule (§4.6, the adversarial

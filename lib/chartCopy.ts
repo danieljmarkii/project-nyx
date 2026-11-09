@@ -189,6 +189,8 @@ export interface DayMarkFacts {
    *  spoken whatever the layers say, because presence escalates. Absent or null: none the
    *  phone holds, which is never spoken as an all-clear. */
   call?: CallDisplay | null;
+  /** The day's call in the record's reason-keyed words (CUL-2678); absent: the map's words. */
+  callReadAs?: string | null;
   /** The day a bout began, when this day holds its rows and no bout of its own
    *  (CUL-1226). Then a zero is not "no <noun>": the record holds some. */
   continuesFrom?: string | null;
@@ -251,7 +253,7 @@ export function dayMarkA11yLabel(f: DayMarkFacts, noun: string): string {
   // claims a photo, and "photographed" is said only where the Photos layer draws one.
   const call = f.call ?? (isCallDisplay(f.photo) ? f.photo : null);
   if (f.photo !== 'none') parts.push('photographed');
-  if (call) parts.push(`read as ${TIER_WORDS[call].readAs}`);
+  if (call) parts.push(`read as ${(f.call ? f.callReadAs : null) ?? TIER_WORDS[call].readAs}`);
   if (f.selected) parts.push('selected');
   return parts.join(', ');
 }

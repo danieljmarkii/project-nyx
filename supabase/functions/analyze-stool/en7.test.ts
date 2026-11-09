@@ -213,10 +213,21 @@ Deno.test('EN-7 copy — every sentence routes to the vet, never reassures, neve
       const t = buildEn7VomitReadText(pet, reason)
       assertStrictEquals(REASSURE_VOCAB.test(t), false, `reassured: "${t}"`)
       assertStrictEquals(t.includes('!'), false)
-      assertStrictEquals(/call your vet/.test(t), true, t)
-      assertStrictEquals(/worth a call/i.test(t), false, t)
-      // Stored words must stay true when read later (GAP-1).
-      assertStrictEquals(/\b(today|tonight|yesterday|last day|recently)\b/i.test(t), false, t)
+      assertStrictEquals(/your vet/.test(t), true, t)
+      // CUL-2668 (CUL-2654 R-1, D3): the cat's intake reason is the floor and says its words; every
+      // other reason is deferential (Pattern 11: soften the verb, keep the clock), and its clock is
+      // "the same day", true however late it is read.
+      if (reason === 'intake') {
+        assertStrictEquals(t.endsWith("In a cat that's vomiting, call your vet today."), true, t)
+      } else {
+        assertStrictEquals(/\bthe same day\b/.test(t), true, `no clock: "${t}"`)
+        assertStrictEquals(/\b(call your vet|needs a call|reason to call)\b/i.test(t), false, `not deferential: "${t}"`)
+        // The Never column: no stand-down, no vaguer clock.
+        assertStrictEquals(/\b(can wait|no rush|when convenient|soon)\b/i.test(t), false, t)
+      }
+      // Stored words must stay true when read later (GAP-1): the floor's ask is the one "today".
+      const undated = t.replace(/ call your vet today\.$/, ' call your vet.')
+      assertStrictEquals(/\b(today|tonight|yesterday|last day|recently)\b/i.test(undated), false, t)
     }
   }
 })

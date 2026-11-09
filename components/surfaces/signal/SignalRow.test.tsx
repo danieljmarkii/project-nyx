@@ -5,6 +5,8 @@
 
 const mockLoadSignalRowTrial = jest.fn(async (..._a: unknown[]) => null as unknown);
 const mockLoadSignalRowScreen = jest.fn(async (..._a: unknown[]) => ({ kind: 'unanswered' }) as unknown);
+const mockPushRoute = jest.fn();
+jest.mock('expo-router', () => ({ router: { push: (a: unknown) => mockPushRoute(a) } }));
 jest.mock('../../../lib/signalLead', () => ({
   loadSignalRowTrial: (...a: unknown[]) => mockLoadSignalRowTrial(...a),
   loadSignalRowScreen: (...a: unknown[]) => mockLoadSignalRowScreen(...a),
@@ -82,7 +84,7 @@ describe('S1 — a safety row is words: the headline and the ask, never a chart'
   it('the ask is the symptom INK, never the bright rose on white (C-1)', () => {
     const view = render(<SignalRow cached={cached(SAFETY[4])} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     expect(StyleSheet.flatten(view.getByTestId('signal-row-ask').props.style).color).toBe(theme.colorEventSymptomInk);
-    expect(view.getByTestId('signal-row-ask').props.children).toBe('Worth a call to your vet');
+    expect(view.getByTestId('signal-row-ask').props.children).toBe('Call your vet today') // CUL-2675 (a): a photo flag is the floor;
     expect(view.getByTestId('signal-row-eyebrow').props.children).toBe('Photo read · Sep 22');
   });
 });
@@ -447,5 +449,69 @@ describe('a concern with a care state', () => {
     const r = render(<SignalRow cached={withState('with_vet', "Biscuit's vomiting, your vet knows. You said on Sep 30 Biscuit's vet knows.")} petId="p1" onOpen={onOpen} generatedAt={null} />);
     fireEvent.press(r.getByTestId('signal-row'));
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ type: 'symptom_chronicity' }));
+  });
+});
+
+// ── CUL-2652: a booked visit on Home (mock U29JENLeZ3VeUqRBSmo3CL, frames 2 and 3) ─────────
+describe('a booked visit', () => {
+  const chronic = SAFETY[0] as Extract<SignalFinding, { type: 'symptom_chronicity' }>;
+  const upcoming = { on: '2026-11-14', appointmentId: 'appt-1', passed: false };
+  const quiet = (bookedVisit: object): CachedFinding =>
+    cached({ ...chronic, careState: { state: 'visit_booked', text: "A vet visit is booked for Nov 14. Worth mentioning Biscuit's vomiting.", bookedVisit } } as unknown as SignalFinding);
+
+  it('frame 2: the ask goes, the line names the visit and the sign, and no "Your vet knows" tag', () => {
+    const r = render(<SignalRow cached={quiet(upcoming)} petId="p1" onOpen={() => {}} generatedAt={null} />);
+    expect(r.queryByTestId('signal-row-ask')).toBeNull();
+    expect(r.queryByTestId('signal-row-care-tag')).toBeNull();
+    expect(r.getByTestId('signal-row-booked-text').props.children).toBe('Visit booked for Nov 14. Worth mentioning the vomiting.');
+    expect(r.getByTestId('signal-row-booked-quiet')).toBeTruthy();
+    expect(r.getByTestId('signal-row-headline')).toBeTruthy();
+    const label = r.getByTestId('signal-row').props.accessibilityLabel as string;
+    expect(label).toContain('Visit booked for Nov 14. Worth mentioning the vomiting.');
+    expect(label).not.toMatch(/worth booking/);
+  });
+
+  it('frame 3 D: in the week after, the row asks how it went and opens that visit', () => {
+    const onOpen = jest.fn();
+    const r = render(<SignalRow cached={quiet({ ...upcoming, passed: true })} petId="p1" onOpen={onOpen} generatedAt={null} />);
+    expect(r.getByTestId('signal-row-booked-text').props.children).toBe("Nov 14's visit. How did it go?");
+    fireEvent.press(r.getByTestId('signal-row'));
+    expect(mockPushRoute).toHaveBeenCalledWith('/vet-visits/after?appointment=appt-1');
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('a malformed booking keeps nothing quiet: the shipped ask stands', () => {
+    const r = render(<SignalRow cached={quiet({ on: '2026-02-30', appointmentId: 'a', passed: false })} petId="p1" onOpen={() => {}} generatedAt={null} />);
+    // The state still quiets the ask (the server said so); with no valid date the row draws no line.
+    expect(r.queryByTestId('signal-row-booked-text')).toBeNull();
+  });
+
+  it('frame 3 B / ruling A: a worsening card keeps its rail and asks for a call before the visit', () => {
+    const w = { ...SAFETY[1], careState: { state: 'raised', text: null, bookedVisit: upcoming } } as unknown as SignalFinding;
+    const r = render(<SignalRow cached={cached(w)} petId="p1" onOpen={() => {}} generatedAt={null} />);
+    expect(r.getByTestId('signal-row-ask').props.children).toContain('worth calling before Nov 14');
+    expect(r.getByTestId('signal-row-booked-text').props.children).toBe('Visit booked for Nov 14.');
+    expect(JSON.stringify(r.toJSON())).not.toContain('worth booking');
+  });
+
+  it('ruling 3: the call-today card keeps its ask word for word and gains the line', () => {
+    const red = { ...SAFETY[4], tier: 'call_today', bookedVisit: upcoming } as unknown as SignalFinding;
+    const plain = render(<SignalRow cached={cached({ ...SAFETY[4], tier: 'call_today' } as unknown as SignalFinding)} petId="p1" onOpen={() => {}} generatedAt={null} />);
+    const r = render(<SignalRow cached={cached(red)} petId="p1" onOpen={() => {}} generatedAt={null} />);
+    expect(r.getByTestId('signal-row-ask').props.children).toEqual(plain.getByTestId('signal-row-ask').props.children);
+    expect(r.getByTestId('signal-row-booked-text').props.children).toBe('Visit booked for Nov 14. A call today may still be worth it.');
+    expect(r.getByTestId('signal-row-rail').props.style).toEqual(plain.getByTestId('signal-row-rail').props.style);
+  });
+
+  it('a call-NOW card gains no line: "may still be worth it" would read softer than "now"', () => {
+    const red = { ...SAFETY[4], tier: 'call_now', bookedVisit: upcoming } as unknown as SignalFinding;
+    const r = render(<SignalRow cached={cached(red)} petId="p1" onOpen={() => {}} generatedAt={null} />);
+    expect(r.queryByTestId('signal-row-booked-text')).toBeNull();
+  });
+
+  it('a care state of visit_booked on an escalation is a tampered cache: the ask stays', () => {
+    const red = { ...SAFETY[2], careState: { state: 'visit_booked', bookedVisit: upcoming } } as unknown as SignalFinding;
+    const r = render(<SignalRow cached={cached(red)} petId="p1" onOpen={() => {}} generatedAt={null} />);
+    expect(r.getByTestId('signal-row-ask')).toBeTruthy();
   });
 });

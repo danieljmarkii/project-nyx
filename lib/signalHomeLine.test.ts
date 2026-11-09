@@ -32,6 +32,9 @@ import { hasTitleVerdictWord } from './signalTitle';
 import { askStandalone, signalHomeAsk, signalHomeLabel, signalHomeLine, timingRowDenominatorLine, type SignalHomeLine } from './signalHomeLine';
 import { isTimingFinding, timingCompareRows } from './signalCopy';
 
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
 const PET = 'Nyx';
 const SYMPTOMS: SignalSymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze'];
 
@@ -233,6 +236,8 @@ function intakes(): IntakeDeclineFinding[] {
     daysBelowBaseline: 3,
     refusedFoodLabel: null,
     ratedMealsConsidered: 9,
+    // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
+    lastGoodMealIso: ATE_WELL_2H_AGO,
   };
   return [
     low,
@@ -317,11 +322,14 @@ describe('PARITY: the Home row counts from the sentence’s own fields (the scre
     expect(checked).toBeGreaterThan(400);
   });
 
+  // CUL-2668 (row 3) moved the server's sentences onto the floor's words, so the row-2 exception
+  // (a floor ask on the row over the server's earlier ask) is gone: every safety ask is the
+  // sentence's own words, with no pair excepted.
   it('the ask is the sentence’s own words, verbatim, on every safety finding', () => {
     for (const f of everyFinding().filter((x) => x.priorityClass === 'safety')) {
       const ask = line(f).ask;
       expect(ask).not.toBeNull();
-      expect(sentence(f)).toContain(ask as string);
+      expect([f.type, ask, sentence(f).includes(ask as string)]).toEqual([f.type, ask, true]);
     }
   });
 
@@ -399,7 +407,7 @@ describe('the row’s words', () => {
       eyebrow: 'Photo read · Sep 22',
       headline: 'Possible foreign material in a vomit photo',
       count: null,
-      ask: 'worth a call to your vet',
+      ask: 'call your vet today', // CUL-2675 (a): a photo flag is the floor
     });
     const vomiting = chronicities('vomit').find((c) => c.episodeCount === 14 && c.tier === 'firm' && c.firstOnsetIso.startsWith('2026-08-01')) as SymptomChronicityFinding;
     expect(line(vomiting)).toEqual({
@@ -527,7 +535,7 @@ describe('the row’s words', () => {
 describe('the spoken label', () => {
   it('says every line, the eyebrow’s dot as a comma, and the ask with a capital', () => {
     const [redFlag] = redFlags();
-    expect(signalHomeLabel(line(redFlag))).toBe('Photo read, Sep 22. Possible blood in a vomit photo. Worth a call to your vet.');
+    expect(signalHomeLabel(line(redFlag))).toBe('Photo read, Sep 22. Possible blood in a vomit photo. Call your vet today.');
   });
 
   it('every safety row speaks its ask — never behind a tap, for any reader', () => {

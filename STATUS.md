@@ -58,6 +58,7 @@ The original **build sequence** is done end to end — steps 1–10, finished Au
 | **Ask v2: answers in the pet's calendar** | New as a project (2026-10-23, grooming D6). **The project description carries the run order**, moved from CUL-1802 into the /dispatch layout. |
 | **Reintroduction: after the diet trial** | New as a project (2026-10-23, grooming D6). No rows yet: they wait on the CUL-1821 decision round. |
 | **Vet report v2: the Front Page, the AI lead and the send flow** | New (2026-10-31, CUL-2275). The v2 report beside v1 behind two beta flags; spec `docs/nyx-vet-report-v2-requirements.md` v1.0. **The project description carries the run order** (26 rows; three safety fixes to today's report lead). |
+| **Clinical voice: the owner decides** | New (2026-11-07, CUL-2654). Warnings show the data and a nudge and the owner decides; a short floor keeps direct words (blood, a swallowed object, a cat off food 24 h, collapse or breathing, any call-now read). Discovery and rulings done (`docs/clinical-voice-inventory-2026-11.md` §R); **the project description carries the run order** (four rows, after the 1.2.0 cut). |
 | **Legacy Backlog** | The migrated `B-NNN` rows only. Not a track, and **closed to new issues** (CUL-1284): a new issue joins a live project or takes none. |
 
 ### Standing holds

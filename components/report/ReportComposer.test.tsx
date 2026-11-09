@@ -287,7 +287,7 @@ describe('the composer state table', () => {
     fireEvent.press(r.getByTestId('composer-window-last_30'));
     await act(async () => {});
     expect(r.getByTestId('composer-dropped-flags')).toHaveTextContent(
-      'The report for these dates won’t show the flag for a lot of vomiting this week. Tell your vet, or choose dates that cover more of the last 56 days.',
+      'The report for these dates won’t show the flag for a lot of vomiting this week. Worth telling your vet, or choose dates that cover more of the last 56 days.',
     );
     expect(r.getByTestId('composer-live-card')).toBeTruthy();
   });

@@ -21,6 +21,7 @@ import {
   validatePhrasing,
 } from './phrasing.ts'
 import { TIER_WORDS } from '../../../lib/incidentTierWords.ts'
+import { FLOOR_ASK } from '../../../lib/incidentAskWords.ts'
 
 const at = (day: number, hour = 8): string => `2026-05-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:00:00.000Z`
 const NOW = at(30, 12)
@@ -177,18 +178,19 @@ const card = (over: Partial<IncidentRedFlagFinding> = {}): IncidentRedFlagFindin
   ...over,
 })
 
-Deno.test('ask — the map\'s words, lower-cased; the shipped ask when there is no new-rule call', () => {
-  assert.equal(incidentRedFlagAsk(card()), 'worth a call to your vet')
+Deno.test('ask — call now in the map\'s words; every other card the floor\'s (CUL-2668, CUL-2675 (a))', () => {
+  // An earlier-rule card is a photo flag (blood or foreign material): the floor, as on the phone.
+  assert.equal(incidentRedFlagAsk(card()), FLOOR_ASK.inline)
   assert.equal(incidentRedFlagAsk(card({ tier: 'call_now' })), TIER_WORDS.call_now.label.toLowerCase())
   assert.equal(incidentRedFlagAsk(card({ tier: 'call_today' })), TIER_WORDS.call_today.label.toLowerCase())
-  // A cached value this build does not know keeps the shipped words, never a guess.
-  assert.equal(incidentRedFlagAsk(card({ tier: 'call_soon' as unknown as 'call_now' })), 'worth a call to your vet')
+  // A cached value this build does not know is the floor (CUL-2667: an unknown reason fails loud).
+  assert.equal(incidentRedFlagAsk(card({ tier: 'call_soon' as unknown as 'call_now' })), FLOOR_ASK.inline)
 })
 
-Deno.test('sentence — an earlier-rule card is the shipped sentence, unchanged', () => {
+Deno.test('sentence — an earlier-rule card is the shipped sentence with the floor\'s ask (CUL-2668)', () => {
   assert.equal(
     templateIncidentRedFlag(card(), 'Nyx'),
-    "A photo you logged of Nyx's vomiting showed possible blood, on May 28 — worth a call to your vet. This is a read of your logs, not a diagnosis.",
+    "A photo you logged of Nyx's vomiting showed possible blood, on May 28 — call your vet today. This is a read of your logs, not a diagnosis.",
   )
 })
 
@@ -227,7 +229,7 @@ Deno.test('carried — a record call carries with its tier; a flagless card with
   assert.equal(canRenderCarried(card({ flags: [] })), false, 'the shipped refusal stands')
   assert.equal(canRenderCarried(card({ tier: 'call_soon' as unknown as 'call_now' })), false)
   assert.equal(canRenderCarried(card()), true)
-  assert.ok(templateCarried(card(), 'Nyx', at(28, 9)).includes('worth a call to your vet'))
+  assert.ok(templateCarried(card(), 'Nyx', at(28, 9)).includes(FLOOR_ASK.inline))
 })
 
 Deno.test('a fresh call today under an older call now joins the band (adversarial pass 2, #4)', () => {

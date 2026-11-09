@@ -58,7 +58,9 @@ export const FLAG_OFF: EngineFlags = { on: [], readOk: true }
  * runner asserts every string `signalHomeAsk` can return is here.
  */
 export const ASK_REGISTER: Readonly<Record<string, AskRegister>> = {
-  'worth a call to your vet': 'call',
+  // CUL-2667: the floor's words, on Home for a photo flag and an intake trigger the build does
+  // not know; the deferential call today stays its own key.
+  'call your vet today': 'call',
   'worth a call to your vet today': 'call',
   'worth booking a vet visit': 'book_visit',
   'worth booking a vet visit soon': 'book_visit',
@@ -68,6 +70,8 @@ export const ASK_REGISTER: Readonly<Record<string, AskRegister>> = {
 
 export function registerOfAsk(ask: string | null): AskRegister {
   if (ask === null) return 'none'
+  // CUL-2652 frame 3 B: a booking ask over a booked visit asks for a call before it, dated.
+  if (/^worth calling before [A-Z][a-z]{2} \d{1,2}$/.test(ask)) return 'call'
   const r = ASK_REGISTER[ask]
   if (!r) throw new Error(`registerOfAsk: an ask the scorecard has no register for: "${ask}"`)
   return r

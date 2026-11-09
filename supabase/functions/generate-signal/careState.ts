@@ -31,9 +31,13 @@
 //
 // KNOWN GAPS, stated (C-38). A pet that never improves never re-raises in v1 (§4.1). CUL-1290's
 // question (`recheckQuestionFor`, §4.8) is built for it and ships OFF: `recheckQuestionDays` is null.
-// `recheck_booked` needs to know an appointment is ABOUT the sign, which the shell may not read
-// under AC 10 (CUL-1531): the pure rule is here, and the shell passes no appointments. The
-// weight fact line (§4.1) is EN-8's gate and is not built here. Source 3 of C1a (the intake
+// A BOOKED VISIT (CUL-2652, ruled 2026-11-07). Any appointment within BOOKED_VISIT_HORIZON_DAYS
+// is the owner's answer to "worth booking a vet visit": no topic test (the shell reads dates only,
+// AC 10 as amended), so the guard is time, and the row names the sign so the owner brings it up.
+// It quiets a raised chronicity concern (`visit_booked`) and the weight card; a worsening card
+// keeps its ask, re-worded by the client to "worth calling before {date}" (PM ruling A); a
+// raised_again concern and every escalation keep theirs and only gain the date. The weight fact
+// line (§4.1) is EN-8's gate and is not built here. Source 3 of C1a (the intake
 // predicate) waits on GAP-28's shared module. The latch is rebuilt from the record on every run
 // (CUL-1600, ruling B: `rebuiltMarker`) and a run that skips the step stamps the prior marker on
 // its concern cards, but the replay cannot see the cough/vomit pair (it reads the lane as it
@@ -41,7 +45,9 @@
 // carries them. A re-raise from before the concern left the set and came back within one course
 // is rebuilt too (louder). The D4 lapse list lives in the cache row; a prior row the shell could
 // not read lapses every answer written before the run (CUL-1663, ruled expire: the owner answers
-// once more), and so does a missing row, or one whose findings say nothing (CUL-1667, ruled A). The replay reads a trial's or course's end date, status and newest dose as they
+// once more), and so does a missing row, or one whose findings say nothing (CUL-1667, ruled A). A run that
+// skips the step carries each detected concern's lapse list forward (`careCarry`, CUL-2662) when its own prior
+// vouched, so an incomplete read no longer voids every answer. The replay reads a trial's or course's end date, status and newest dose as they
 // stand TODAY, not as they stood on each past evening: a newer course that
 // lapsed over a dosing gap of more than 14 days and was dosed again reads as covering the gap, and
 // an end that synced late reads as on time. Both are quieter only with no prior row (the cache's
@@ -154,15 +160,12 @@ export interface AckFact {
   course: AckCourseScope | null
 }
 
-/** An upcoming appointment, reduced to dates and the signs it is about (§4.7). */
+/** An appointment, reduced to its dates (§4.7; AC 10 as amended allows exactly these columns). */
 export interface AppointmentFact {
   id: string
   scheduledAt: string
   cancelledAt: string | null
   deletedAt: string | null
-  /** The signs the appointment is about. The shell cannot read this under AC 10 (CUL-1531),
-   *  so production passes no appointments; the rule is built so the read can land alone. */
-  aboutSigns: readonly SymptomType[]
 }
 
 /** The record BEHIND the Signal's lookback, back to the earliest answer's anchor less the
@@ -224,7 +227,15 @@ export interface CareStateArgs {
 
 // ── The output ────────────────────────────────────────────────────────────────
 
-export type CareStateValue = 'raised' | 'with_vet' | 'recheck_booked' | 'raised_again'
+export type CareStateValue = 'raised' | 'with_vet' | 'recheck_booked' | 'visit_booked' | 'raised_again'
+
+/** CUL-2652: the booked visit a finding carries. `on` is the appointment's LOCAL day (YYYY-MM-DD);
+ *  `passed` is set in the week after it, while "How did it go?" is unanswered. */
+export interface BookedVisit {
+  on: string
+  appointmentId: string
+  passed: boolean
+}
 export type ReRaiseReason = 'rate' | 'dense' | 'co_sign' | 'pair'
 
 /** The frozen reference (§4.2): its window, as epoch-day indexes, and what it counted. */
@@ -249,6 +260,10 @@ export interface CareStateFact {
   reason: ReRaiseReason | null
   /** Set on `recheck_booked`: the appointment's day. */
   recheckOn: string | null
+  /** CUL-2652: the booked visit, on `visit_booked` (upcoming or just passed) and, upcoming only,
+   *  on a `raised` worsening card or a `raised_again` concern. Absent when none: the key is never
+   *  written without one, so a pet with no booking keeps the shipped row byte for byte. */
+  bookedVisit?: BookedVisit
   /** CUL-1545: when a run first said this concern was back (an ISO instant). Kept on every later
    *  state while the concern stays in the set, so the latch (§4.5) holds until a live answer
    *  written after it, about a day on or after it, exists, and comes back if that answer is
@@ -288,9 +303,9 @@ export function concernSignOf(f: Finding): SymptomType | null {
   return typeof s === 'string' ? (s as SymptomType) : null
 }
 
-/** `with_vet` and `recheck_booked`: the two states that carry no ask. */
+/** `with_vet`, `recheck_booked` and `visit_booked`: the states that carry no ask. */
 export function isWatched(state: CareStateValue | null | undefined): boolean {
-  return state === 'with_vet' || state === 'recheck_booked'
+  return state === 'with_vet' || state === 'recheck_booked' || state === 'visit_booked'
 }
 
 export function careStateOf(f: Finding): CareStateFact | null {
@@ -794,14 +809,31 @@ function reasonOf(r: unknown): ReRaiseReason | null {
 export function readPriorCare(raw: unknown): Map<string, PriorCare> {
   const out = new Map<string, PriorCare>()
   if (!Array.isArray(raw)) return out
-  const loud: Record<CareStateValue, number> = { with_vet: 0, recheck_booked: 0, raised: 1, raised_again: 2 }
+  const loud: Record<CareStateValue, number> = { with_vet: 0, recheck_booked: 0, visit_booked: 0, raised: 1, raised_again: 2 }
   for (const e of raw) {
     const f = (e as { finding?: unknown } | null)?.finding as Record<string, unknown> | undefined
     if (!f || typeof f !== 'object' || !CONCERN_TYPES.has(f.type as Finding['type']) || typeof f.symptomType !== 'string') continue
+    // CUL-2662 adversarial X4: only a SAFETY concern speaks for a sign, as in `priorConcernSigns`;
+    // a care fact or carry on any other card (none the engine writes) could vouch for one with none.
+    if (f.priorityClass !== 'safety') continue
     const c = f.careState as Record<string, unknown> | undefined
-    if (!c || typeof c !== 'object') continue
+    if (!c || typeof c !== 'object') {
+      // CUL-2662: a run that skipped the step left a bare carry instead of a care fact. It vouches
+      // that the concern stayed in the set through that run, and it holds the lapses from before
+      // it. It reads as `raised` (no answer of its own, never quieter); this run rebuilds the state.
+      const carry = readCareCarry(f.careCarry)
+      if (!carry) continue
+      const prev = out.get(f.symptomType)
+      out.set(f.symptomType, {
+        state: prev && loud[prev.state] >= loud.raised ? prev.state : 'raised',
+        ackId: prev?.ackId ?? null,
+        reason: prev?.reason ?? carry.reason,
+        lapsed: [...new Set([...(prev?.lapsed ?? []), ...carry.lapsed])],
+      })
+      continue
+    }
     const state = c.state
-    if (state !== 'raised' && state !== 'with_vet' && state !== 'recheck_booked' && state !== 'raised_again') continue
+    if (state !== 'raised' && state !== 'with_vet' && state !== 'recheck_booked' && state !== 'visit_booked' && state !== 'raised_again') continue
     const lapsed = Array.isArray(c.lapsed) ? (c.lapsed as unknown[]).filter((x): x is string => typeof x === 'string') : []
     const prev = out.get(f.symptomType)
     // Loudest wins when two lanes of one sign disagree; the lapsed lists are pooled (louder too).
@@ -844,6 +876,43 @@ export function readPriorMarkers(raw: unknown, legacyMs: number | null, tz: stri
     if (lane === null) continue
     const pooled = laterMarker(out.get(f.symptomType) ?? null, lane)
     if (pooled) out.set(f.symptomType, pooled)
+  }
+  return out
+}
+
+/**
+ * The answer state a run that SKIPPED the step stamps on a concern card it detected (CUL-2662,
+ * ruled A 2026-11-07): the prior row's lapse list for the sign, and its re-raise reason. Without
+ * it the next full run reads "held the concern without a care fact" as continuity unknown and
+ * lapses every answer (D4's re-check), and an incomplete read is routine (unsent phone entries,
+ * CUL-1984), so one open with unsynced entries voided every answer for good.
+ */
+export interface CareCarry {
+  lapsed: string[]
+  reason: ReRaiseReason | null
+}
+
+function readCareCarry(raw: unknown): CareCarry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (!Array.isArray(r.lapsed)) return null
+  return { lapsed: r.lapsed.filter((x): x is string => typeof x === 'string'), reason: reasonOf(r.reason) }
+}
+
+/**
+ * Per sign, the carry a skipping run stamps, or nothing. It may vouch only for what ITS prior row
+ * vouched for: the read succeeded, the row has a generation time, and it holds the concern WITH a
+ * care fact or a carry. Any other prior (unreadable, missing, unbounded, the concern absent, or
+ * present with no care fact) gets no carry, so the next full run lapses exactly as it would have.
+ * Louder than the record by construction: the carry only ever adds the lapses it was handed.
+ */
+export function priorCareCarry(priorFindings: unknown, priorGeneratedAtMs: number | null, priorReadFailed: boolean): Map<string, CareCarry> {
+  const out = new Map<string, CareCarry>()
+  if (priorReadFailed || priorGeneratedAtMs === null || !Number.isFinite(priorGeneratedAtMs)) return out
+  const signs = priorConcernSigns(priorFindings)
+  if (signs === null) return out
+  for (const [sign, p] of readPriorCare(priorFindings)) {
+    if (signs.has(sign)) out.set(sign, { lapsed: [...p.lapsed].sort(), reason: p.reason })
   }
   return out
 }
@@ -1070,6 +1139,9 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
   // A row from before the marker existed that said raised_again stands on its own generation time,
   // which is no earlier than the true re-raise (the louder reading); with no generation time, on now.
   const priorMarkers = readPriorMarkers(args.priorFindings, priorGen ?? args.nowMs, tz)
+  // CUL-2652: one booked visit per pet, read once (dates only, no topic test).
+  const booked = bookedVisitFor(args)
+  const upcoming = booked && !booked.fact.passed ? booked : null
   const chronicOnset = new Map<SymptomType, string>()
   for (const r of findings) {
     if (r.finding.type === 'symptom_chronicity') chronicOnset.set(r.finding.symptomType, r.finding.firstOnsetIso)
@@ -1087,7 +1159,9 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     // A previous row that held the concern WITHOUT a care fact did not run this step (an
     // incomplete read, a failed flag or logging read, the flag-off engine), so it carried no lapse
     // list and cannot vouch that the concern never left (adversarial re-check of D4). Continuity
-    // unknown is treated as broken: the louder reading, and the owner answers once more.
+    // unknown is treated as broken: the louder reading, and the owner answers once more. A row
+    // that skipped the step with the key on stamps a `careCarry` instead (CUL-2662), which
+    // `readPriorCare` reads as the care fact it stands in for, so this does not fire on it.
     if (priorSigns !== null && priorGen !== null && (!priorSigns.has(sign) || !prior.has(sign))) {
       for (const a of args.record.acknowledgements) {
         if (a.sign === sign && Date.parse(a.createdAt) < priorGen) lapsed.add(a.id)
@@ -1117,6 +1191,28 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     const carried = laterMarker(priorMarkers.get(sign) ?? null, rebuiltMarker(sign, args, ix, cfg, ack?.id ?? null))
     const keep = carried === null ? {} : { raisedAgainAt: new Date(carried.ms).toISOString(), raisedAgainOn: dayKeyFromIndex(carried.day) }
     if (!ack) {
+      // CUL-2652 (ruling 1 = A): a booked visit is the answer to "worth booking a vet visit", so a
+      // raised concern with one inside the horizon goes quiet and names the visit. The worsening
+      // card for the sign keeps its ask (ruling A on the worsening brief), below.
+      // A PASSED visit quiets only a concern it could have been about: its day on or after the
+      // concern's first onset (§3.2's rule for a visit answer). A vaccine visit six days before a
+      // new course never quiets it (CUL-2652's adversarial pass). Unknown onset: louder.
+      const onsetIso = chronicOnset.get(sign) ?? null
+      const onsetMs = onsetIso === null ? NaN : Date.parse(onsetIso)
+      const onsetDay = Number.isFinite(onsetMs) ? localDayIndex(onsetMs, tz) : null
+      const covers = booked !== null && (!booked.fact.passed || (onsetDay !== null && booked.day >= onsetDay))
+      // PM ruling A (2026-11-07, adversarial pass 1 #3): ONE quiet window per course. Once a visit
+      // in this course has passed its week with no answer, a later booking never quiets it again:
+      // the ask stands until the owner says how it went. Unknown onset: any spent window counts.
+      if (booked && covers && !quietWindowSpent(args, onsetDay, ix.today)) {
+        const quiet: CareStateFact = {
+          state: 'visit_booked', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null,
+          text: bookedVisitSentence(booked.fact, booked.day, ix.today, `${possessive(args.petName)} ${SYMPTOM_LABEL[sign]}`),
+          lapsed: lapsedList, bookedVisit: booked.fact, ...keep,
+        }
+        bySign.set(sign, quiet)
+        return quiet
+      }
       const raised: CareStateFact = { state: 'raised', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null, text: null, lapsed: lapsedList, ...keep }
       bySign.set(sign, raised)
       return raised
@@ -1160,6 +1256,8 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
         // one answered) starts a new one at this run.
         raisedAgainAt: new Date(latched ? (carried as ReRaiseMarker).ms : args.nowMs).toISOString(),
         raisedAgainOn: dayKeyFromIndex(latched ? (carried as ReRaiseMarker).day : ix.today),
+        // CUL-2652: the ask stands; the client re-words it to "worth calling before {date}".
+        ...(upcoming ? { bookedVisit: upcoming.fact } : {}),
       }
       bySign.set(sign, fact)
       return fact
@@ -1187,8 +1285,16 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
   }
   const decorated = findings.map((r) => {
     const sign = concernSignOf(r.finding)
-    if (sign === null) return r
+    if (sign === null) return booked ? withBookedVisit(r, booked, upcoming, ix.today, args) : r
     const fact = stateFor(sign)
+    // Ruling A (worsening brief, 2026-11-07): a firing worsening lane IS "coming more often", and a
+    // never-answered concern has no reference to re-raise from, so a booking never quiets it. The
+    // card stays raised, ask intact, and carries the upcoming date only (none once it has passed).
+    if (fact.state === 'visit_booked' && r.finding.type === 'symptom_worsening') {
+      const { bookedVisit: _drop, ...rest } = fact
+      const loud: CareStateFact = { ...rest, state: 'raised', text: null, ...(upcoming ? { bookedVisit: upcoming.fact } : {}) }
+      return { ...r, finding: { ...r.finding, careState: loud } as unknown as Finding }
+    }
     const text = fact.state === 'raised_again' && fact.text
       ? fact.text.replace(LANE_TOKEN, templateForFinding(r.finding, args.petName))
       : fact.text
@@ -1221,21 +1327,109 @@ function courseLabelFor(ack: AckFact): string | null {
   return label && careClaimReason(label) === null ? label : null
 }
 
-/** §4.7: a booked appointment about this sign, after the anchor, not cancelled, deleted or past. */
-export function recheckFor(sign: SymptomType, ack: AckFact, args: CareStateArgs): { day: number; on: string } | null {
+/** How far ahead a booked visit quiets an ask (CUL-2652, guard = A): §4.7's "a dental four months
+ *  out never quiets vomiting" now comes from time, since ruling 2 dropped the topic test. */
+export const BOOKED_VISIT_HORIZON_DAYS = 30
+/** How long after the visit's day the row stays quiet, pointing at "How did it go?" (frame 3 D).
+ *  Unanswered past it, the ask returns. "It didn't" cancels the appointment and returns it at once. */
+export const BOOKED_VISIT_AFTER_DAYS = 7
+
+/** The appointments that stand: not cancelled, not deleted, with a date that parses. */
+function standingAppointments(args: CareStateArgs): { id: string; day: number; on: string }[] {
+  const tz = args.timezone
+  return args.record.appointments
+    .filter((a) => !a.cancelledAt && !a.deletedAt)
+    .map((a) => ({ a, ms: Date.parse(a.scheduledAt) }))
+    .filter((x) => Number.isFinite(x.ms))
+    .map((x) => ({ id: x.a.id, on: x.a.scheduledAt, day: localDayIndex(x.ms, tz) }))
+}
+
+/**
+ * CUL-2652: the pet's booked visit, by date alone. The soonest one from today to today +
+ * BOOKED_VISIT_HORIZON_DAYS; failing that, the latest in the BOOKED_VISIT_AFTER_DAYS before today
+ * (`passed`). Null otherwise: a visit further out leaves every ask standing until it comes within
+ * the horizon, and one more than a week past leaves it to the ask again.
+ */
+export function bookedVisitFor(args: CareStateArgs): { day: number; fact: BookedVisit } | null {
+  const today = localDayIndex(args.nowMs, args.timezone)
+  const standing = standingAppointments(args)
+  const next = standing.filter((x) => x.day >= today && x.day <= today + BOOKED_VISIT_HORIZON_DAYS).sort((a, b) => a.day - b.day || a.id.localeCompare(b.id))[0]
+  if (next) return { day: next.day, fact: { on: dayKeyFromIndex(next.day), appointmentId: next.id, passed: false } }
+  const last = standing.filter((x) => x.day < today && x.day >= today - BOOKED_VISIT_AFTER_DAYS).sort((a, b) => b.day - a.day || a.id.localeCompare(b.id))[0]
+  return last ? { day: last.day, fact: { on: dayKeyFromIndex(last.day), appointmentId: last.id, passed: true } } : null
+}
+
+/**
+ * PM ruling A (2026-11-07): a booking quiets a never-answered concern ONCE per course. The window
+ * is spent when a standing visit on or after the course's first day (`fromDay`; null reads the
+ * whole read) is more than BOOKED_VISIT_AFTER_DAYS behind today. An answered visit is not spent:
+ * "Talked about it" writes an answer, and the concern leaves this path for `with_vet`. "Not this
+ * time" writes nothing, so the window is spent and the ask returns, and stays. A cancelled visit
+ * ("It didn't") never spends one. Without it, a cat on a monthly injection always has a visit
+ * inside the horizon and its ask never comes back.
+ */
+export function quietWindowSpent(args: CareStateArgs, fromDay: number | null, today: number): boolean {
+  return standingAppointments(args).some((x) => (fromDay === null || x.day >= fromDay) && x.day < today - BOOKED_VISIT_AFTER_DAYS)
+}
+
+/** The quiet state's cached sentence (template-only, AC 8; nyx-voice). It stands alone, since Get
+ *  ready, Ask and the summary relay it verbatim (GAP-17): it names the pet and the sign. Home's row
+ *  draws the mock's shorter line from `bookedVisit` itself. `what` is "Nyx's vomiting" or "Nyx's
+ *  weight". Upcoming: "A vet visit is booked for Nov 14. Worth mentioning Nyx's vomiting." Passed:
+ *  "Nyx's vomiting: the Nov 14 visit has passed, and how it went isn't recorded yet." No ask, and
+ *  never a word that the visit settled anything. */
+export function bookedVisitSentence(v: BookedVisit, day: number, today: number, what: string): string {
+  const d = formatDay(day, today)
+  return v.passed
+    ? `${what}: the ${d} visit has passed, and how it went isn't recorded yet.`
+    : `A vet visit is booked for ${d}. Worth mentioning ${what}.`
+}
+
+/**
+ * CUL-2652 for a finding that is not a care-state concern. The weight card (ruling 4 = A) is a
+ * booking-only concern: `visit_booked` while a visit stands, nothing at all otherwise. Every other
+ * SAFETY finding is an escalation: its sentence, ask and rank are untouched (§3.1, AC-3) and it gains
+ * only the upcoming date, beside its finding (never a care state), for ruling 3's context line.
+ * Insights are untouched.
+ */
+function withBookedVisit<T extends { rank: number; finding: Finding }>(
+  r: T,
+  booked: { day: number; fact: BookedVisit },
+  upcoming: { day: number; fact: BookedVisit } | null,
+  today: number,
+  args: CareStateArgs,
+): T {
+  const petName = args.petName
+  if (r.finding.priorityClass !== 'safety') return r
+  if (r.finding.type === 'weight_loss') {
+    // A passed visit quiets the weight card only if it fell on or after the latest reading's day:
+    // a visit before the drop was recorded was not about it.
+    const latest = (r.finding as { latestDay?: unknown }).latestDay
+    const latestDay = typeof latest === 'string' ? localDayIndexOf(latest, undefined) : null
+    if (booked.fact.passed && (latestDay === null || booked.day < latestDay)) return r
+    // Ruling A: one quiet window per drop, counted from the latest reading's day.
+    if (quietWindowSpent(args, latestDay, today)) return r
+    const quiet: CareStateFact = {
+      state: 'visit_booked', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null,
+      text: bookedVisitSentence(booked.fact, booked.day, today, `${possessive(petName)} weight`),
+      lapsed: [], bookedVisit: booked.fact,
+    }
+    return { ...r, finding: { ...r.finding, careState: quiet } as unknown as Finding }
+  }
+  return upcoming ? { ...r, finding: { ...r.finding, bookedVisit: upcoming.fact } as unknown as Finding } : r
+}
+
+/** §4.7, as CUL-2652 re-rules it: a `with_vet` concern moves to `recheck_booked` on any standing
+ *  appointment after the answer's anchor, from today to the horizon. No topic test (ruling 2). */
+export function recheckFor(_sign: SymptomType, ack: AckFact, args: CareStateArgs): { day: number; on: string } | null {
   const tz = args.timezone
   const today = localDayIndex(args.nowMs, tz)
   const anchor = localDayIndexOf(ack.anchorOn, tz)
   if (anchor === null) return null
-  const ok = args.record.appointments
-    .filter((a) => !a.cancelledAt && !a.deletedAt && a.aboutSigns.includes(sign))
-    .map((a) => ({ a, ms: Date.parse(a.scheduledAt) }))
-    .filter((x) => Number.isFinite(x.ms))
-    .map((x) => ({ ...x, day: localDayIndex(x.ms, tz) }))
-    .filter((x) => x.day > anchor && x.day >= today)
-    .sort((a, b) => a.day - b.day)
-  const first = ok[0]
-  return first ? { day: first.day, on: first.a.scheduledAt } : null
+  const first = standingAppointments(args)
+    .filter((x) => x.day > anchor && x.day >= today && x.day <= today + BOOKED_VISIT_HORIZON_DAYS)
+    .sort((a, b) => a.day - b.day)[0]
+  return first ? { day: first.day, on: first.on } : null
 }
 
 /** The knob reads as on only for a real number of days: an `undefined` from a partial config

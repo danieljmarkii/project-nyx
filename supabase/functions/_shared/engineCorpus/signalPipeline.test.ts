@@ -51,7 +51,7 @@ import {
   type SignalPayload,
 } from '../../generate-signal/pipeline.ts'
 import { ENGINE_KEYS, SIGNAL_DECORATING_KEYS, SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
-import { EN11_CONFIG, type DetectionConfig, type WeightLaneInput } from '../../generate-signal/detection.ts'
+import { EN11_CONFIG, type DetectionConfig, type Finding, type WeightLaneInput } from '../../generate-signal/detection.ts'
 import { hasBannedSignalVocabulary, templateForFinding, validatePhrasing } from '../../generate-signal/phrasing.ts'
 import { EN10_CONTEXT_STEP, type CareContextFacts, type CareContextStep } from '../../generate-signal/careContext.ts'
 import { careStateOf, concernSignOf, EN9_CARE_STATE_STEP, type CareStateStep } from '../../generate-signal/careState.ts'
@@ -634,6 +634,112 @@ Deno.test('(c-en9) CUL-1600: a run that skips the step keeps the prior marker on
   assertStrictEquals(stamped >= 4 && reproduced >= 2, true, `only ${stamped} stamped (${reproduced} reproduced): the test checks too little`)
 })
 
+Deno.test('(c-en9) CUL-2662: an answer survives a run that skipped the step (A → incomplete B → full C)', () => {
+  // Nyx, 2026-10-28: answers live at A; B's read was incomplete (unsent phone entries), so the step
+  // skipped and B held the concerns with no care fact; C, the next full read, lapsed every answer.
+  // Ruled A (2026-11-07): B stamps a carry and C keeps the answers. Controls: without the carry C
+  // lapses (the test bites), a lapse from before B stays lapsed, B's own unreadable prior stamps
+  // nothing, a carried card never carries one, and flag off writes no field.
+  const ON: EngineFlags = { on: [EN9], readOk: true }
+  let kept = 0
+  let carriedSeen = 0
+  let mixed = 0
+  for (const c0 of SIGNAL_PIPELINE_CORPUS) {
+    const c = { ...c0, prior: null }
+    const signs = [...new Set(run(c, OFF).findings.map((r) => concernSignOf(r.finding)).filter((s): s is NonNullable<typeof s> => s !== null))]
+    if (signs.length === 0) continue
+    const nowMs = Date.parse(c.nowIso)
+    const record: CareRecord = {
+      ...EMPTY_CARE_RECORD,
+      acknowledgements: signs.map((sign, i) => ({
+        id: `ack-${i}`, sign, source: 'my_vet_knows' as const, anchorOn: new Date(nowMs - 86_400_000).toISOString().slice(0, 10),
+        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null,
+      })),
+    }
+    const go = (prior: PriorSignal | null, incomplete: string[], flags: EngineFlags = ON, priorReadFailed = false) =>
+      runSignalPipeline({ rows: c.rows, incompletePulls: incomplete, prior, priorReadFailed, nowMs, engineFlags: flags, careRecord: record, careContextFacts: POPULATED_CARE_CONTEXT_FACTS, weightFacts: null })
+    const rowOf = (r: ReturnType<typeof go>, hoursAgo: number, mutate: (f: Finding) => Finding = (f) => f): PriorSignal => ({
+      findings: [...r.findings, ...r.carried].map((x, i) => ({ rank: i, text: 'x', finding: mutate(x.finding) })),
+      generatedAt: new Date(nowMs - hoursAgo * 3_600_000).toISOString(),
+      engineFlags: [EN9],
+    })
+    const a = go(withHeldPrior(c).prior, [])
+    const watched = new Set(a.findings.filter((r) => careStateOf(r.finding)?.state === 'with_vet').map((r) => concernSignOf(r.finding)))
+    if (watched.size === 0) continue
+    const b = go(rowOf(a, 2), ['meals'])
+    for (const f of b.findings.map((x) => x.finding)) {
+      if (!watched.has(concernSignOf(f))) continue
+      assertStrictEquals(careStateOf(f), null, `${c.name}: the skipped run wrote a care state`)
+      assertEquals((f as { careCarry?: unknown }).careCarry, { lapsed: [], reason: null }, `${c.name}: ${f.type} has no carry`)
+    }
+    for (const f of b.carried.map((x) => x.finding)) {
+      assertStrictEquals('careCarry' in (f as object), false, `${c.name}: a carried ${f.type} vouched for a concern this read did not see`)
+    }
+    const after = go(rowOf(b, 1), [])
+    const bare = go(rowOf(b, 1, (f) => { const { careCarry: _c, ...rest } = f as Finding & { careCarry?: unknown }; return rest as Finding }), [])
+    after.findings.forEach((r, i) => {
+      const sign = concernSignOf(r.finding)
+      if (!watched.has(sign) || !b.findings.some((x) => concernSignOf(x.finding) === sign)) return
+      kept++
+      assertStrictEquals(careStateOf(r.finding)?.state, 'with_vet', `${c.name}: ${r.finding.type} lost its answer after one skipped run`)
+      assertStrictEquals(careStateOf(bare.findings[i].finding)?.state, 'raised', `${c.name}: the control did not lapse, so the test proves nothing`)
+    })
+    // A lapse from before B stays lapsed through it: A's lapse lists hop to C.
+    const lapsedAtA = rowOf(a, 2, (f) => {
+      const cs = careStateOf(f)
+      return cs ? ({ ...f, careState: { ...cs, state: 'raised', ackId: null, text: null, lapsed: record.acknowledgements.filter((k) => k.sign === concernSignOf(f)).map((k) => k.id) } } as unknown as Finding) : f
+    })
+    for (const r of go(rowOf(go(lapsedAtA, ['meals']), 1), []).findings) {
+      if (!watched.has(concernSignOf(r.finding))) continue
+      assertStrictEquals(careStateOf(r.finding)?.state, 'raised', `${c.name}: an answer lapsed before the skipped run came back`)
+    }
+    // Two skipped runs in a row carry hop by hop; one that re-detects nothing writes only carried
+    // cards, and a carried card drops the carry its source held (it saw no concern of its own).
+    const b2 = go(rowOf(b, 1), ['meals'])
+    for (const f of b2.findings.map((x) => x.finding)) {
+      if (watched.has(concernSignOf(f))) assertEquals((f as { careCarry?: unknown }).careCarry, { lapsed: [], reason: null }, `${c.name}: the second skip dropped the carry`)
+    }
+    const emptied = runSignalPipeline({ rows: { ...c.rows, symptoms: [] }, incompletePulls: ['symptoms'], prior: rowOf(b, 1), priorReadFailed: false, nowMs, engineFlags: ON, careRecord: record, careContextFacts: POPULATED_CARE_CONTEXT_FACTS, weightFacts: null })
+    for (const f of emptied.carried.map((x) => x.finding)) {
+      carriedSeen++
+      assertStrictEquals('careCarry' in (f as object), false, `${c.name}: a carried ${f.type} kept its source's carry`)
+    }
+    // A prior with the concern but no care fact (the flag-off engine wrote it): B vouches for nothing.
+    for (const f of go(rowOf(go(withHeldPrior(c).prior, [], OFF), 2), ['meals']).findings.map((x) => x.finding)) {
+      assertStrictEquals('careCarry' in (f as object), false, `${c.name}: a prior with no care fact was vouched for`)
+    }
+    // Vouching is per sign: a row that vouches for ANOTHER sign (planted, one this read does not
+    // detect) but holds no care fact for this one stamps nothing on this one.
+    const other = (['diarrhea', 'cough', 'vomit'] as const).find((x) => !(signs as readonly string[]).includes(x))
+    if (other) {
+      const stripped = rowOf(a, 2, (f) => {
+        if (concernSignOf(f) === null) return f
+        const { careState: _s, ...rest } = f as Finding & { careState?: unknown }
+        return rest as Finding
+      })
+      const plantedOther = { rank: 99, text: 'x', finding: { type: 'symptom_chronicity', symptomType: other, priorityClass: 'safety', careState: { state: 'with_vet', ackId: 'o', lapsed: [] } } as unknown as Finding }
+      const half = go({ ...stripped, findings: [...(stripped.findings as unknown[]), plantedOther] }, ['meals'])
+      for (const f of half.findings.map((x) => x.finding)) {
+        if (!watched.has(concernSignOf(f))) continue
+        mixed++
+        assertStrictEquals('careCarry' in (f as object), false, `${c.name}: ${concernSignOf(f)} borrowed another sign's vouch`)
+      }
+    }
+    // B's own prior unreadable: B vouches for nothing, and C lapses as before (CUL-1663 stands).
+    const blind = go(null, ['meals'], ON, true)
+    for (const f of [...blind.findings, ...blind.carried].map((x) => x.finding)) {
+      assertStrictEquals('careCarry' in (f as object), false, `${c.name}: an unreadable prior stamped a carry`)
+    }
+    // Flag off, or the step running: no card gains the field.
+    for (const r of [go(rowOf(a, 2), ['meals'], OFF), go(rowOf(a, 2), [])]) {
+      for (const f of [...r.findings, ...r.carried].map((x) => x.finding)) {
+        assertStrictEquals('careCarry' in (f as object), false, `${c.name}: ${f.type} stamped with the flag off or the step running`)
+      }
+    }
+  }
+  assertStrictEquals(kept >= 3 && carriedSeen >= 3 && mixed >= 2, true, `only ${kept} answers carried, ${carriedSeen} carried cards, ${mixed} mixed-row cards: the test checks too little`)
+})
+
 // ── (c-en8) EN-8, the weight lane (PR-19, CUL-1413) ──
 // Weigh-ins that raise the firm row on ANY case: an absence proves the gate only when the thing
 // gated was available to leak (C-41). Dated relative to each case's clock.
@@ -1003,8 +1109,9 @@ Deno.test('(k3) a carried card is dated, never its old sentence, and ages out; t
         assertStrictEquals(/\bjust\b|up from|this week|since|\d+ (episode|of the last)/.test(e.text), false, e.text)
         // CUL-2424: validatePhrasing refuses EVERY model sentence on an all-refused card (it only
         // screens model sentences in production; this line is a template). Screen the carried line
-        // with that backstop off, so the reassurance and dismissive screens still read it.
-        const screened = e.finding.type === 'intake_decline' ? { ...e.finding, allRefused: false } : e.finding
+        // with that backstop off, so the reassurance and dismissive screens still read it. CUL-2680's
+        // backstop (a card meeting D3) is the same kind, and is turned off the same way.
+        const screened = e.finding.type === 'intake_decline' ? { ...e.finding, allRefused: false, noGoodMeal24h: false } : e.finding
         assertStrictEquals(validatePhrasing(e.text, screened as never), true, e.text)
         carriedSeen++
       }

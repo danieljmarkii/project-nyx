@@ -456,7 +456,7 @@ describe('an intake decline (§3.2)', () => {
     expect(m.state).toBe('intake_decline');
     expect(m.safety).toEqual([
       'Mochi has eaten less than usual for 2 days.',
-      'A pet that goes off their food needs a call, whatever the trial is doing. Culprit isn’t reading these days as a clean run while this is going on.',
+      'A pet going off their food is worth a call to your vet, whatever the trial is doing. Culprit isn’t reading these days as a clean run while this is going on.',
     ]);
     expect(m.title).toBe('Rabbit trial · day 23 of 56');
     expect(m.ledger).toBeNull();
@@ -1036,7 +1036,7 @@ describe('Manage on the intake-decline face never drops the call-today (CUL-1339
         expect(f.safety).toEqual(faces[0].safety);
         expect(f.manage).toBe('Manage the trial');
       }
-      expect(faces[0].safety?.[1]).toMatch(/needs a call/);
+      expect(faces[0].safety?.[1]).toMatch(/worth a call to your vet/) // CUL-2667: deferential off the cat floor;
     } finally {
       getIntakeDecline.mockResolvedValue({ status: 'none', flags: [] });
     }

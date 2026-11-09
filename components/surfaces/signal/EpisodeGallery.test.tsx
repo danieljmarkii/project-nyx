@@ -146,6 +146,17 @@ describe('EN-3: the tile speaks the tier-word map', () => {
     const tile = { eventId: 'e', dateWord: 'Oct 22', timeWord: '1:30 AM', verdict: 'call_now' } as unknown as GalleryTile;
     expect(tileA11yLabel(tile, false)).toBe('Oct 22, 1:30 AM, photographed, read as Call your vet now');
   });
+
+  it('CUL-2678: a call tile says its reasons’ words, as the record does', () => {
+    const { verdictWord, tileA11yLabel } = jest.requireActual('./EpisodeGallery') as typeof import('./EpisodeGallery');
+    const deferential = { short: 'Worth a call today', label: 'Worth a call today', readAs: 'worth a call today' };
+    const floor = { short: 'Call today', label: 'Call your vet today', readAs: 'call today' };
+    expect(verdictWord('call_today', false, deferential)).toBe('Worth a call today');
+    // An earlier-rule read over blood: the floor, never a bare "Worth a call".
+    expect(verdictWord('worth_a_call', false, floor)).toBe('Call today');
+    const tile = { eventId: 'e', dateWord: 'Oct 22', timeWord: '1:30 AM', verdict: 'worth_a_call', chip: floor } as unknown as GalleryTile;
+    expect(tileA11yLabel(tile, false)).toBe('Oct 22, 1:30 AM, photographed, read as Call your vet today');
+  });
 });
 
 describe('the read words: a calm read draws none (CUL-1233), an unclear one says its record\'s (CUL-1234)', () => {

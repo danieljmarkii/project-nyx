@@ -117,7 +117,7 @@ describe('the words (round 5 frames b1 to b4)', () => {
     const line = (c: ReturnType<typeof counts>) => droppedFlagsLine(missingFlagsOf(l, c, TODAY));
     expect(line(counts({ flags: l.flags }))).toBeNull();
     expect(line(counts({ flags: [l.flags[0]] }))).toBe(
-      `The report for these dates won’t show the flag for a lot of vomiting this week. Tell your vet, or choose dates that cover more of the last ${LIVE_FLAG_DAYS} days.`,
+      `The report for these dates won’t show the flag for a lot of vomiting this week. Worth telling your vet, or choose dates that cover more of the last ${LIVE_FLAG_DAYS} days.`,
     );
     expect(missingFlagsOf(l, counts({ flags: [] }), TODAY).missing).toHaveLength(2);
     // The server did not say: every live flag is unconfirmed, never assumed printed.
@@ -136,7 +136,7 @@ describe('the words (round 5 frames b1 to b4)', () => {
     expect(m.reason).toBe('ended');
     expect(m.missing).toEqual(l.flags);
     expect(droppedFlagsLine(m)).toBe(
-      'These dates end before today, so the report may not show possible foreign material in vomit and a lot of vomiting this week as it stands now. Tell your vet, or choose dates that run to today.',
+      'These dates end before today, so the report may not show possible foreign material in vomit and a lot of vomiting this week as it stands now. Worth telling your vet, or choose dates that run to today.',
     );
     // The weight flag runs as of today whatever the window, so a past window's copy of it is today's.
     const weight = { kind: 'weight_loss', sign: null, trigger: null };
@@ -179,8 +179,9 @@ describe('the live-flag card', () => {
   });
 
   it('one flag reads singular', () => {
+    // CUL-2663: weight's own ask is a word with the vet, so the title asks no louder.
     expect(liveCardCopy(live({ flags: [{ kind: 'weight_loss', sign: null, trigger: null }] }), 'Nyx')?.title).toBe(
-      'Nyx’s record has a flag worth a call to your vet',
+      'Nyx’s record has a flag worth telling your vet about',
     );
   });
 

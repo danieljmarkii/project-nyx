@@ -5,7 +5,7 @@
 // Local-day fixtures are built from LOCAL components (C-29): the bands and the 6 AM end are the
 // device's clock, so a UTC literal would land in a different band under the non-UTC CI job.
 import {
-  callTodayActionOf,
+  callTodayActionOf as actionAtLevel,
   clockBandOf,
   intakeFlagAt,
   leaveDecidedAt,
@@ -23,10 +23,13 @@ import {
   type MayWaitInput,
   type MayWaitRow,
 } from './mayWaitLine';
-import { TIER_WORDS } from './incidentTierWords';
+import { DEFERENTIAL_ASK, FLOOR_ASK } from './incidentAskWords';
 import * as server from '../supabase/functions/_shared/incidentMayWait';
 
-const LOUDER = TIER_WORDS.call_today.action;
+// Every row in this file is a repeat-vomiting or loose-stool read: a DEFERENTIAL call today
+// (CUL-2667). The floor's own half is pinned in its own block below.
+const callTodayActionOf = (i: Parameters<typeof actionAtLevel>[0]) => actionAtLevel(i, 'deferential');
+const LOUDER = DEFERENTIAL_ASK.action;
 const HOUR = 3_600_000;
 const local = (d: number, h: number, m = 0) => new Date(2026, 6, d, h, m).getTime();
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -98,7 +101,7 @@ describe('both halves (the issue\'s pinned test)', () => {
   it('a TRUE at 10 PM gets the wait line, naming the call-now signs', () => {
     const line = callTodayActionOf(input());
     expect(mayWaitRefusalOf(input())).toBeNull();
-    expect(line).toBe('Call your vet first thing tomorrow, or an emergency clinic tonight if Nyx vomits again or is low on energy.');
+    expect(line).toBe('Worth a call first thing tomorrow, or an emergency clinic tonight if Nyx vomits again or is low on energy.');
     expect(line).not.toBe(LOUDER);
   });
 
@@ -135,12 +138,12 @@ describe('the clock (D1: 6 AM / 6 PM / midnight)', () => {
   it('day: today, first thing tomorrow if closed', () => {
     const decided = local(15, 14);
     const line = callTodayActionOf(input({ row: row({ updated_at: iso(decided) }), facts: facts({ anchorAt: iso(local(15, 13)), vomits: [{ at: iso(local(15, 8)), confidence: 'witnessed' }, { at: iso(local(15, 13)), confidence: 'witnessed' }] }), nowMs: local(15, 14, 30) }));
-    expect(line).toBe("Call your vet today. If they're closed, first thing tomorrow, or an emergency clinic tonight if Nyx vomits again or is low on energy.");
+    expect(line).toBe("Worth a call today. If they're closed, first thing tomorrow, or an emergency clinic tonight if Nyx vomits again or is low on energy.");
   });
 
   it('small hours: first thing this morning, an emergency clinic now if', () => {
     const line = callTodayActionOf(input({ nowMs: local(16, 2) }));
-    expect(line).toBe('Call your vet first thing this morning, or an emergency clinic now if Nyx vomits again or is low on energy.');
+    expect(line).toBe('Worth a call first thing this morning, or an emergency clinic now if Nyx vomits again or is low on energy.');
   });
 
   it('the leave ends at the first 6 AM after the decision', () => {
@@ -360,7 +363,7 @@ describe('D2 = a: a stool names its own signs', () => {
       row: row({ ai_raw_payload: { appears_to_show_stool: true, read_photo_set_key: PHOTO } }),
       facts: facts({ vomits: [], stoolAt: [iso(local(15, 15))] }),
     }));
-    expect(line).toBe('Call your vet first thing tomorrow, or an emergency clinic tonight if Nyx is low on energy or vomits.');
+    expect(line).toBe('Worth a call first thing tomorrow, or an emergency clinic tonight if Nyx is low on energy or vomits.');
   });
   it('an unnamed pet reads as "your pet"', () => {
     const line = callTodayActionOf(input({ kind: 'stool', petName: '  ', facts: facts({ vomits: [] }) }));
@@ -424,5 +427,17 @@ describe('the mirrors equal the server (C-34)', () => {
     // Where the server hashes, the phone answers undefined (cannot compare): never a match.
     expect(photoSetListKey(['NOT_AN_ID'])).toBeUndefined();
     expect(photoSetListKey(Array.from({ length: 120 }, (_, i) => `${PHOTO.slice(0, -3)}${String(i).padStart(3, '0')}`))).toBeUndefined();
+  });
+});
+
+describe('the floor never waits (CUL-2667; tiers spec §2 rule 1)', () => {
+  it('a floor row gets the floor line even with every wait gate holding', () => {
+    const open = input();
+    expect(callTodayActionOf(open)).not.toBe(LOUDER); // the fixture does grant the wait
+    expect(actionAtLevel(open, 'floor')).toBe(FLOOR_ASK.action);
+  });
+
+  it('a caller that names no level gets the floor', () => {
+    expect(actionAtLevel(input())).toBe(FLOOR_ASK.action);
   });
 });

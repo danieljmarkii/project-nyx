@@ -5,7 +5,8 @@
 // This file holds the WORDS. One Edge Function imports it, `ask`, because Ask quotes the
 // words the record shows (spec §4, CUL-1512), so a label edit redeploys Ask and nothing
 // else: analyze-* never import it, and a label edit never redeploys them (C-26). It imports
-// only the two import-free rule modules, with explicit `.ts` paths so Deno can load it.
+// only the three import-free modules (the two rule modules and the ask words, CUL-2668), with
+// explicit `.ts` paths so Deno can load it.
 // Every surface that names a read (the
 // record's card, the gallery tiles, the History and Home row, the month and its chart text)
 // asks `tierDisplayOf` which words stand and reads them from `TIER_WORDS`. A build guard
@@ -47,6 +48,7 @@
 
 import { effectiveTierRank, isIncidentTier, TIER_RANK } from './incidentTier.ts';
 import { isQuietVerdict } from './incidentVerdict.ts';
+import { askLevelOf, askWordsFor, FLOOR_ASK, hasFloorSign, type AskOptions, type AskReasonRow } from './incidentAskWords.ts';
 
 /** The key a new-rule read is stamped with (`engine_flags`). One key covers EN-3's server
  *  half and EN-7, which ship together (PR-26); `lib/stoolForm.ts` names the same string for
@@ -104,16 +106,19 @@ export const TIER_WORDS: Readonly<Record<TierDisplay, TierWords>> = {
     call: true,
     rule: 'tiered',
   },
+  // CUL-2668: the floor's words, read from the ask module, so no file but that one spells the
+  // floor (guards/incidentAskWords.test.ts). Which of the two call-today registers a row gets is
+  // `tierLabelOf`'s to say, by reason; this row is the floor, what an unknown reason gets.
   call_today: {
-    label: 'Call your vet today',
-    short: 'Call today',
+    label: FLOOR_ASK.label,
+    short: FLOOR_ASK.short,
     readAs: 'call today',
     // The louder line, and what every surface but the record says (CUL-1510): "first thing
     // tomorrow" is safe only over a call the record alone raised, with no call-now sign met
     // around it, and only the server can see that. The record's card resolves the late-day
     // line through `lib/mayWaitLine.ts`, on the server's stored `may_wait` fact alone
     // (CUL-1629), and falls back to these words whenever any gate there refuses.
-    action: "Call your vet today. If they're closed, call an emergency clinic.",
+    action: FLOOR_ASK.action,
     tone: 'call_outline',
     call: true,
     rule: 'tiered',
@@ -281,6 +286,83 @@ export function tierDisplayOf(row: TierRow | null | undefined): TierDisplay | nu
   // a call), so a quiet verdict here is a read that looked.
   if (rec !== null && !isQuietVerdict(rec)) return null;
   return isTieredRow(row) ? 'logged' : 'monitor';
+}
+
+/**
+ * The record's label for a row: the ONE resolver of a read's words, read by the record
+ * (`incidentReadLabel`) and by Ask (`tierWordsOf`), so Ask can never name a read differently
+ * from the screen it links to (CUL-2668; C-34). Null where no words stand (`tierDisplayOf`).
+ *   - call today: the reason picks the register (`lib/incidentAskWords.ts`, CUL-2667); a reason
+ *     the caller cannot see is the floor.
+ *   - an earlier-rule or unknown-tier call carrying a floor sign says the floor (CUL-2675 (a)).
+ *   - everything else: the map's words.
+ */
+export function tierLabelOf(row: (TierRow & AskReasonRow) | null | undefined, opts: AskOptions = {}): string | null {
+  const display = tierDisplayOf(row);
+  if (display === null || !row) return null;
+  if (display === 'call_today') return askWordsFor(askLevelOf(row, opts)).label;
+  if (display === 'worth_a_call' && hasFloorSign(row, opts)) return FLOOR_ASK.label;
+  return TIER_WORDS[display].label;
+}
+
+/** A list chip's words for a call: the narrow form, the full phrase (its accessible label),
+ *  and the "read as" form the month and the gallery speak. */
+export interface ChipWords {
+  short: string;
+  label: string;
+  readAs: string;
+}
+
+/** The phone's copy of a read, as the chip resolver reads it (`lib/readState.ts` `ReadCopy`):
+ *  the flag arrays are JSON text, NULL before the copy carried them. */
+export type ChipRow = TierRow & {
+  contextual_flags?: string | null;
+  visual_flags?: string | null;
+  blood_present?: string | null;
+  stool_blood_present?: string | null;
+  foreign_material_present?: string | null;
+  catNoGoodMeal24h?: boolean;
+};
+
+/**
+ * A list chip's words for a read whose `display` is already decided (`readVerdictOf`): the SAME
+ * rules as `tierLabelOf`, so History, the month, the gallery and the Home spine say what the
+ * record says (CUL-2678). A call today takes its register from its reasons; an earlier-rule or
+ * unknown-tier "Worth a call" with a floor sign is the floor (CUL-2675 (a)); everything else is
+ * the map's words.
+ *
+ * A reason the copy does not hold yet (a row pulled before this build, NULL) is NOT SUPPLIED,
+ * never "none": a call today stays at the floor and an earlier-rule call keeps today's words.
+ * The owner's edits are not on the copy, so every photo flag stands: loud, never quiet.
+ */
+export function tierChipOf(display: TierDisplay, row: ChipRow | null | undefined): ChipWords {
+  const words = TIER_WORDS[display];
+  const reasons: AskReasonRow = {
+    tier: row?.tier ?? null,
+    contextual_flags: row?.contextual_flags ?? undefined,
+    visual_flags: row?.visual_flags ?? undefined,
+    blood_present: row?.blood_present ?? null,
+    stool_blood_present: row?.stool_blood_present ?? null,
+    foreign_material_present: row?.foreign_material_present ?? null,
+  };
+  const opts: AskOptions = { catNoGoodMeal24h: row?.catNoGoodMeal24h };
+  if (display === 'call_today') {
+    const ask = askWordsFor(askLevelOf(reasons, opts));
+    return { short: ask.short, label: ask.label, readAs: ask === FLOOR_ASK ? words.readAs : ask.label.toLowerCase() };
+  }
+  if (display === 'worth_a_call' && hasFloorSign(reasons, opts)) {
+    return { short: FLOOR_ASK.short, label: FLOOR_ASK.label, readAs: TIER_WORDS.call_today.readAs };
+  }
+  return { short: words.short, label: words.label, readAs: words.readAs };
+}
+
+/** The louder of two calls' "read as" words (CUL-2678), by the words a reader hears: call now,
+ *  then the floor's call today, then a deferential call today, then an earlier-rule call. A
+ *  day or a bout holding two reads says the louder, as the record of that read would. */
+export function louderReadAs(a: string | null | undefined, b: string | null | undefined): string | null {
+  const rank = (r: string | null | undefined) =>
+    r == null ? 0 : r === TIER_WORDS.call_now.readAs ? 4 : r === TIER_WORDS.call_today.readAs ? 3 : r === TIER_WORDS.worth_a_call.readAs ? 1 : 2;
+  return rank(b) > rank(a) ? (b ?? null) : (a ?? null);
 }
 
 /** Whether the row stands as a call (either rule), decided on the same max as every

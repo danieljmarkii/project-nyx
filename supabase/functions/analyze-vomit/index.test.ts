@@ -898,8 +898,15 @@ Deno.test('EN-0 copy — every string it can build never reassures, never shouts
   for (const t of all) {
     assertEquals(REASSURE_VOCAB.test(t), false, `reassured: "${t}"`)
     assertEquals(t.includes('!'), false, t)
-    // The shipped conclusion, and any clause relative to the day the owner reads it (GAP-1).
-    assertEquals(/hasn't eaten|\brecently\b|\byesterday\b|\btoday\b|\blast night\b/i.test(t), false, `concluded or dated: "${t}"`)
+    // The shipped conclusion, and any clause relative to the day the owner reads it (GAP-1). ONE
+    // named exception, the floor's own ask (CUL-2654 D4, CUL-2668): a cat's intake sentence says
+    // "call your vet today" as ruled; it errs loud when read late, and nothing else may date.
+    // CUL-2682 adds the second: over a floor photo sign the context line says the floor's words.
+    const floorPhoto = /^I can see (what looks like blood|something that doesn't look like food)/.test(t)
+    const undated = (floorPhoto ? t.replace(/ call to your vet today\.$/, ' call to your vet.') : t).replace(/ call your vet today\.$/, ' call your vet.')
+    assertEquals(/hasn't eaten|\brecently\b|\byesterday\b|\btoday\b|\blast night\b/i.test(undated), false, `concluded or dated: "${t}"`)
+    // Every intake sentence is the floor's words, never a softer ask.
+    if (t.includes('Most or All') || t.includes('Refused')) assertEquals(t.endsWith('call your vet today.'), true, `not the floor: "${t}"`)
     assertEquals(/vet/.test(t), true, `no route to the vet: "${t}"`)
   }
 })
@@ -907,25 +914,25 @@ Deno.test('EN-0 copy — every string it can build never reassures, never shouts
 Deno.test('EN-0 copy — the 8/19 read states the six unrated meals before the vomit', () => {
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_vomit', mealsLogged: 6 }),
-    "When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, call your vet today.",
   )
 })
 
 Deno.test('EN-0 copy — ate, vomited, then refused, read late: the record before the READ, said so', () => {
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_read', mealsLogged: 2 }),
-    "When I read this, 2 meals had been logged for Nyx in the 24 hours before then, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 2 meals had been logged for Nyx in the 24 hours before then, and none was marked Most or All. In a cat that's vomiting, call your vet today.",
   )
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'before_vomit', mealsLogged: 0 }),
-    "When I read this, no meals were logged for Nyx in the 24 hours before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, no meals were logged for Nyx in the 24 hours before this vomit. In a cat that's vomiting, call your vet today.",
   )
 })
 
 Deno.test('EN-0 copy — the 9/22 read names the possible foreign material first, then the meals', () => {
   assertStrictEquals(
     buildEn0PhotoFirstReadText('Nyx', ['feline_reduced_intake'], ['suspected_foreign_material'], { window: 'before_vomit', mealsLogged: 6 }),
-    "I can see something that doesn't look like food in this photo. When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "I can see something that doesn't look like food in this photo. When I read this, 6 meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, call your vet today.",
   )
 })
 
@@ -989,10 +996,13 @@ Deno.test('EN-0 gate — flag-off hands the pipeline the flags alone (VOMIT_COPY
   assertStrictEquals(on.copy.contextual('Nyx', on.flags), buildEn0ContextualReadText('Nyx', on.flags, en0Ctx.intakeRecord))
 })
 
-Deno.test('flag-off selection — a contextual read over a visual finding keeps the shipped contextual words', () => {
-  // VOMIT_COPY has no photo-first template, so step 1 is unchanged for flag-off vomit.
+Deno.test('flag-off selection — a contextual read over a floor photo names the photo first (CUL-2682)', () => {
+  // VOMIT_COPY's photo-first template fires only on a floor sign; the model's words stay out.
   const out = selectReadText({ ...en0Base, visualFlags: ['blood'], modelReadText: MODEL_WORDS })
-  assertStrictEquals(out, buildContextualReadText('Mochi', ['feline_reduced_intake']))
+  assertStrictEquals(out, `I can see what looks like blood in this photo. ${buildContextualReadText('Mochi', ['feline_reduced_intake'])}`)
+  // No floor sign (the model's own call alone): the shipped contextual words, unchanged.
+  const plain = selectReadText({ ...en0Base, visualFlags: [], modelReadText: MODEL_WORDS })
+  assertStrictEquals(plain, buildContextualReadText('Mochi', ['feline_reduced_intake']))
 })
 
 // ── buildAnalysisWriteBack — the never-clobber guard (B-028) ───────────────────

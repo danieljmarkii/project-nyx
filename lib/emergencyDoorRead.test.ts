@@ -13,7 +13,8 @@ jest.mock('./lookWithheld', () => ({
 import { composeEmergencyRead, loadEmergencyRead } from './emergencyDoorRead';
 import { loadEmergencyFacts } from './lookEmergencyFacts';
 import { loadLookWithheldFacts, type LookWithheldFacts } from './lookWithheld';
-import { SIGNAL_DOOR_CALL_NOW, SIGNAL_DOOR_CALL_TODAY, SIGNAL_DOOR_LABEL, signalDoorLabel } from './lookEmergency';
+import { SIGNAL_DOOR_CALL_NOW, SIGNAL_DOOR_CALL_TODAY,
+  SIGNAL_DOOR_WORTH_TODAY, SIGNAL_DOOR_LABEL, signalDoorLabel } from './lookEmergency';
 
 const QUIET = { refusedRecently: false, vomitCount24h: 0, lethargyRecently: false };
 const declining: LookWithheldFacts = {
@@ -67,7 +68,8 @@ describe('signalDoorLabel — the Signal door says what the sheet would collapse
   });
   it('a met call-today sign: "Call your vet today ›"', () => {
     expect(signalDoorLabel('cat', { status: 'ready', facts: { ...QUIET, refusedRecently: true } })).toBe(SIGNAL_DOOR_CALL_TODAY);
-    expect(signalDoorLabel('dog', { status: 'ready', facts: { ...QUIET, vomitCount24h: 2 } })).toBe(SIGNAL_DOOR_CALL_TODAY);
+    // CUL-2667: a dog's met row is off the floor, so the door says the deferential words.
+    expect(signalDoorLabel('dog', { status: 'ready', facts: { ...QUIET, vomitCount24h: 2 } })).toBe(SIGNAL_DOOR_WORTH_TODAY);
   });
   it('a met call-now sign under the floor: "Call your vet now ›"', () => {
     const facts = { ...QUIET, lethargyRecently: true, vomitCount24h: 1 };

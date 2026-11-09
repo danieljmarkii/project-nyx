@@ -392,6 +392,7 @@ export default function VetVisitsScreen() {
               <AppointmentActions
                 petName={petName}
                 when={home.next.when}
+                hasNotes={home.next.hasNotes}
                 onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${home.next?.id}`)}
                 onHowDidItGo={
                   home.next.isToday
@@ -423,6 +424,7 @@ export default function VetVisitsScreen() {
                   <AppointmentActions
                     petName={petName}
                     when={appt.when}
+                    hasNotes={appt.hasNotes}
                     onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${appt.id}`)}
                     onHowDidItGo={
                       appt.isToday
@@ -464,6 +466,7 @@ export default function VetVisitsScreen() {
                   <AppointmentActions
                     petName={petName}
                     when={appt.when}
+                    hasNotes={appt.hasNotes}
                     onAtTheVet={() => router.push(`/vet-visits/at-the-vet?appointment=${appt.id}`)}
                     onHowDidItGo={() => router.push(`/vet-visits/after?appointment=${appt.id}`)}
                     onDidntHappen={() => void confirmDidntHappen(appt)}

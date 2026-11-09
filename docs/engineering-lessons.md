@@ -724,6 +724,16 @@ The rule is now **the row must have moved**: the edge compares `updated_at` (tri
 
 **Its blind spot.** Nothing machine-checks a page's tags or its state set yet: the `contract` lens in `/design-critique` reads them. Existing pages were left untagged on purpose; the contract starts with the next build ready round.
 
-### P-19 · The groomer's label strip is board accuracy, not a drain (2026-10-02, CUL-1448; moved out of the groomer skill 2026-11-07, CUL-2651)
+### P-19 · The filing rule: why a small find is fixed, not filed (2026-11-07, CUL-2656)
+
+**The evidence.** The 2026-11-07 grooming pass (CUL-1962) measured intake against closes: in the 13 days to that date about 445 issues were opened and 249 closed. Status drift had been zero for several passes, so the board was honest; it was simply growing, and the largest source was sessions filing every find along the way as its own issue, one per instance, under the 2026-08-16 clause "out-of-scope work you discover → file a new `CUL` issue, never folded in."
+
+**The shape.** The PM ruled it on 2026-11-07 ("Adopt row 1") as a better-than-the-rule call: leave it better than you found it. A find is fixed in the session's own PR when it is small (in a file the PR touches, or about 20 lines), off the never-list (uncertain counts as on it), covered by a test, and listed under `## Along the way` in the PR body. Anything else goes to an open issue of the same class, else one class issue listing the instances.
+
+**What the old clause protected, and why it still holds.** Reviewability: the size bound and the PR heading keep a reviewer from meeting an unannounced change. Safety surfaces: never-list finds still file and gate exactly as before. Honest closes: a fixed find was never filed, so nothing closes silently, and the `CUL-NNN` closing rule is untouched. It also narrows "keep each fix to what the failure or comment needs" for these finds only; a CI or review fix stays scoped.
+
+**Enforcement.** `guards/filingRule.test.ts` reds when the rule's conditions, its pointer from step 3, or the PR-description heading leave `CLAUDE.md`, and when the old "never folded in" clause returns to step 3. It guards the text, not the behaviour: whether a session actually lists its finds under the heading is read at review.
+
+### P-20 · The groomer's label strip is board accuracy, not a drain (2026-10-02, CUL-1448; moved out of the groomer skill 2026-11-07, CUL-2651)
 
 Stripping a needs-attention label from closed and cancelled issues is the highest-yield safe write on the board — ~70 dead `Quick Win` and ~5 dead `Waiting on PM` on pass one — and it fixes exactly one thing: *the board does not match reality*. **It does essentially nothing for queue length.** A first pass reports an impressive write count; that count is not a drain and must never be reported as one. (CUL-923 proposed a `Needs PM` state to make the `Waiting on PM` half unrepresentable; CUL-1448 declined it on 2026-10-02, so the label stays the wait, and this strip is standing hygiene rather than a stopgap. It is still not the win.)

@@ -14,7 +14,10 @@ import { templateIntakeDecline } from '../supabase/functions/generate-signal/phr
 import type { IntakeDeclineFinding as ServerIntakeDeclineFinding } from '../supabase/functions/generate-signal/detection';
 import type { IntakeDeclineFinding } from './signal';
 
-const CALL = 'worth a call to your vet today';
+// CUL-2680: one instant per file, so two fixtures built a millisecond apart stay equal.
+const ATE_WELL_2H_AGO = new Date(Date.now() - 2 * 3_600_000).toISOString();
+
+const FLOOR = 'call your vet today';
 const SOFT = 'worth keeping an eye on, and a word with your vet if it carries on';
 
 function card(extra: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
@@ -26,6 +29,8 @@ function card(extra: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
     daysBelowBaseline: 1,
     refusedFoodLabel: null,
     ratedMealsConsidered: 6,
+    // CUL-2680: ate well 2 h ago, so only a card's own trigger can raise the floor.
+    lastGoodMealIso: ATE_WELL_2H_AGO,
     allRefused: true,
     ...extra,
   };
@@ -50,13 +55,16 @@ const LOUD: [string, IntakeDeclineFinding][] = [
 describe("a full day of refusal asks for a call today, except for a dog (CUL-2593)", () => {
   it.each(LOUD)('%s: every surface asks for the call', (_name, f) => {
     expect(intakeAllRefusedCallsToday(f)).toBe(true);
-    expect(signalHomeAsk(f)).toBe(CALL);
+    // CUL-2667 (D3, D4): a non-dog all-refused card is the floor, so Home says the floor's words.
+    expect(signalHomeAsk(f)).toBe('call your vet today');
     expect(stripAskLine(f)).toBe(STRIP_ASKS.call);
     const evidence = evidenceText(f, 'Miso');
-    expect(evidence).toMatch(/^Miso refused every meal you rated .*, so it's worth a call to your vet today\.$/);
-    expect(evidence).not.toMatch(/carries on/);
-    // Home's ask is the server sentence's own vet clause.
-    expect(templateIntakeDecline(serverOf(f), 'Miso')).toContain(signalHomeAsk(f) ?? '<none>');
+    expect(evidence).toMatch(/^Miso refused every meal you rated .*, so call your vet today\.$/);
+    expect(evidence).not.toMatch(/carries on|worth a call/);
+    // CUL-2668: the server's sentence says the floor's words too, and no softer call.
+    const said = templateIntakeDecline(serverOf(f), 'Miso');
+    expect(said).toMatch(new RegExp(` — ${FLOOR}\\.$`));
+    expect(said).not.toMatch(/worth a call/);
   });
 
   it('a dog keeps "if it carries on" on every surface', () => {
@@ -76,7 +84,8 @@ describe("a full day of refusal asks for a call today, except for a dog (CUL-259
     }
   });
 
-  it('the banner keeps its own calm ask on every species, like every banner', () => {
-    expect(bannerCopy(card() as BannerSafetyFinding, 'Miso').text).toBe('Miso refused every meal you rated today — worth a look.');
+  it('the banner firms up to the floor for every species but a dog (CUL-2667, D4)', () => {
+    expect(bannerCopy(card() as BannerSafetyFinding, 'Miso').text).toBe('Miso refused every meal you rated today — call your vet today.');
+    expect(bannerCopy(card({ species: 'dog' }) as BannerSafetyFinding, 'Miso').text).toBe('Miso refused every meal you rated today — worth a look.');
   });
 });
