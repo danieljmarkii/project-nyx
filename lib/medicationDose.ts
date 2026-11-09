@@ -16,7 +16,7 @@
 // unchanged write would spend a unit of the daily cap on an identical read (CUL-1087).
 // The pet is always the dose row's own, never the active pet (C-9).
 
-import { getDb, getDoubleDoseFlag, updateDoseAdherence, updateDoseHowGiven } from './db';
+import { getDb, getDoubleDoseFlag, getEventPetId, updateDoseAdherence, updateDoseHowGiven } from './db';
 import { syncPendingEvents, syncPendingMedicationAdministrations } from './sync';
 import { triggerSignalRegenDebounced } from './signal';
 import { uuid } from './utils';
@@ -222,8 +222,8 @@ function notifyDoseChanged(): void {
 }
 
 /** The dose row's own pet and the two fields a re-rate can move, read BEFORE the write so
- *  the regen can tell a change from a re-tap. A failed read returns null: the write still
- *  goes ahead, and only the regen is skipped (warned), the `rateMealIntake` precedent. */
+ *  the regen can tell a change from a re-tap. A failed read returns null and never fails
+ *  the write; the regen then treats the change as unknown (below). */
 async function readDoseRow(
   eventId: string,
 ): Promise<{ pet_id: string; adherence: string | null; how_given: string | null } | null> {
@@ -233,15 +233,30 @@ async function readDoseRow(
       [eventId],
     );
   } catch (e) {
-    console.warn('[medication-dose] dose row read failed; Signal not refreshed:', e);
+    console.warn('[medication-dose] dose row read failed; regenerating without the change check:', e);
     return null;
   }
 }
 
-/** Ask for a Signal regen after a landed re-rate, only when it moved the field. */
-function regenIfChanged(before: { pet_id: string } | null, prior: string | null | undefined, next: string | null): void {
-  if (!before || prior === next) return;
-  triggerSignalRegenDebounced(before.pet_id);
+/** Ask for a Signal regen after a landed re-rate when it moved the field. When the read
+ *  before the write failed, whether it moved is unknown, so it regenerates anyway for the
+ *  pet on the dose's event (an extra regen errs loud; a skipped one would leave a stale
+ *  read up for a day). Fire-and-forget: a failure here never fails the saved rating. */
+function regenIfChanged(
+  eventId: string,
+  before: { pet_id: string } | null,
+  prior: string | null | undefined,
+  next: string | null,
+): void {
+  if (before) {
+    if (prior !== next) triggerSignalRegenDebounced(before.pet_id);
+    return;
+  }
+  getEventPetId(eventId)
+    .then((petId) => {
+      if (petId) triggerSignalRegenDebounced(petId);
+    })
+    .catch((e) => console.warn('[medication-dose] pet lookup failed; Signal not refreshed:', e));
 }
 
 /** Set a logged dose's adherence: the write, then Home's refresh, then the push, then the
@@ -255,7 +270,7 @@ export async function rateDoseAdherence(
   await updateDoseAdherence(eventId, adherence);
   notifyDoseChanged();
   syncPendingMedicationAdministrations().catch((e) => console.error('[rateDoseAdherence] sync push failed:', e));
-  regenIfChanged(before, before?.adherence, adherence);
+  regenIfChanged(eventId, before, before?.adherence, adherence);
 }
 
 /** Set or clear a logged dose's vehicle (`how_given`), the same way: the row says it in
@@ -271,7 +286,7 @@ export async function recordDoseHowGiven(
   await updateDoseHowGiven(eventId, howGiven);
   notifyDoseChanged();
   syncPendingMedicationAdministrations().catch((e) => console.error('[recordDoseHowGiven] sync push failed:', e));
-  regenIfChanged(before, before?.how_given, howGiven);
+  regenIfChanged(eventId, before, before?.how_given, howGiven);
 }
 
 // ── B-157 (CUL-284): the log-time double-dose note ──────────────────────────────

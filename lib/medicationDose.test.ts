@@ -18,9 +18,11 @@ const mockUpdateDoseAdherence = jest.fn().mockResolvedValue(undefined);
 const mockUpdateDoseHowGiven = jest.fn().mockResolvedValue(undefined);
 // The dose row a re-rate reads before it writes (CUL-1916): its own pet and its fields.
 const mockGetFirstAsync = jest.fn();
+const mockGetEventPetId = jest.fn();
 jest.mock('./db', () => ({
   getDb: () => ({ runAsync: mockRunAsync, withTransactionAsync: mockWithTransactionAsync, getFirstAsync: mockGetFirstAsync }),
   getDoubleDoseFlag: jest.fn(),
+  getEventPetId: (...a: unknown[]) => mockGetEventPetId(...a),
   updateDoseAdherence: (...a: unknown[]) => mockUpdateDoseAdherence(...a),
   updateDoseHowGiven: (...a: unknown[]) => mockUpdateDoseHowGiven(...a),
 }));
@@ -234,12 +236,15 @@ describe('every dose write that lands and changes the record regenerates the Sig
     expect(mockRegen).not.toHaveBeenCalled();
   });
 
-  it('a failed dose-row read never fails the rating: the write lands, only the regen is skipped', async () => {
+  it('a failed dose-row read never fails the rating, and regenerates anyway for the event’s pet (errs loud)', async () => {
     mockGetFirstAsync.mockRejectedValueOnce(new Error('db busy'));
+    mockGetEventPetId.mockResolvedValueOnce('pet-on-event');
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await rateDoseAdherence('d1', 'refused');
+    await new Promise((r) => setImmediate(r));
     expect(mockUpdateDoseAdherence).toHaveBeenCalledWith('d1', 'refused');
-    expect(mockRegen).not.toHaveBeenCalled();
+    expect(mockGetEventPetId).toHaveBeenCalledWith('d1');
+    expect(mockRegen).toHaveBeenCalledWith('pet-on-event');
     warn.mockRestore();
   });
 });

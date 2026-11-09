@@ -10,6 +10,7 @@ const mockGetDoubleDoseFlag = jest.fn();
 jest.mock('./db', () => ({
   getDb: jest.fn(),
   getDoubleDoseFlag: (...a: unknown[]) => mockGetDoubleDoseFlag(...a),
+  getEventPetId: jest.fn(),
   updateDoseAdherence: jest.fn(),
   updateDoseHowGiven: jest.fn(),
 }));
