@@ -362,3 +362,40 @@ describe('CUL-1797 — the decline never counts as the normal (PM ruling, option
     });
   });
 });
+
+describe('CUL-1797 adversarial pass 1 — refusing harder never quiets the new readings', () => {
+  it.each([1, 2, 3, 4, 5, 6, 7, 8])('a refusal day two days before the buffer, k = %i (A)', (k) => {
+    // Oct 1–9 good; k refusals on Oct 10; "most" then "picked" on Oct 11; "some" twice on Oct 12
+    // and 13. A walk back from the buffer judged Oct 11 against a normal that held Oct 10's
+    // refusals, so the seventh refusal stopped it one day short and the cat went silent.
+    const meals: M[] = [];
+    for (let d = 1; d <= 9; d++) {
+      meals.push({ iso: `${day(d)}T08:00:00-04:00`, rating: 'all' }, { iso: `${day(d)}T18:00:00-04:00`, rating: 'all' });
+    }
+    for (let i = 0; i < k; i++) meals.push({ iso: `${day(10)}T${String(7 + i).padStart(2, '0')}:00:00-04:00`, rating: 'refused' });
+    meals.push({ iso: `${day(11)}T08:00:00-04:00`, rating: 'most' }, { iso: `${day(11)}T18:00:00-04:00`, rating: 'picked' });
+    for (const d of [12, 13]) {
+      meals.push({ iso: `${day(d)}T08:00:00-04:00`, rating: 'some' }, { iso: `${day(d)}T18:00:00-04:00`, rating: 'some' });
+    }
+    expect(verdict('cat', meals, `${day(13)}T19:00:00-04:00`, NY)).toContain('consecutive_low');
+  });
+
+  it.each([1, 2, 3, 4])('a refused re-offer on an older mixed day, k = %i (B)', (k) => {
+    // Food B eaten well throughout keeps the day-count arm quiet. Food A: Oct 9 all, Oct 10–11
+    // most, Oct 12 "all" then k refusals, Oct 13 most, refused Oct 14. One refusal on Oct 12 read
+    // the food at 3.0 and fired; a second dragged that day's mean and silenced it.
+    const meals: M[] = [];
+    for (let d = 1; d <= 14; d++) {
+      meals.push({ iso: `${day(d)}T07:00:00-04:00`, rating: 'all', food: 'b' }, { iso: `${day(d)}T19:00:00-04:00`, rating: 'all', food: 'b' });
+    }
+    meals.push(
+      { iso: `${day(9)}T12:00:00-04:00`, rating: 'all', food: 'a' },
+      { iso: `${day(10)}T12:00:00-04:00`, rating: 'most', food: 'a' },
+      { iso: `${day(11)}T12:00:00-04:00`, rating: 'most', food: 'a' },
+      { iso: `${day(12)}T12:00:00-04:00`, rating: 'all', food: 'a' },
+    );
+    for (let i = 0; i < k; i++) meals.push({ iso: `${day(12)}T${13 + i}:00:00-04:00`, rating: 'refused', food: 'a' });
+    meals.push({ iso: `${day(13)}T12:00:00-04:00`, rating: 'most', food: 'a' }, { iso: `${day(14)}T12:00:00-04:00`, rating: 'refused', food: 'a' });
+    expect(verdict('cat', meals, `${day(14)}T20:00:00-04:00`, NY)).toContain('refused_normal_food');
+  });
+});

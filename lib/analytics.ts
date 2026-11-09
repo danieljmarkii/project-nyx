@@ -1281,16 +1281,28 @@ function intakeBaselineReadings<T extends { score: number }>(
     for (let i = from; i < to; i++) sum += meals[i].score;
     return sum / (to - from);
   };
-  let end = bufferStart;
-  let onset = bufferStart;
-  while (end > 0) {
-    let start = end - 1;
-    while (start > 0 && dayOf(meals[start - 1]) === dayOf(meals[end - 1])) start--;
-    onset = start;
-    if (start < minMeals) break;
-    if (meanOf(start, end) > meanOf(0, start) - minDelta) break;
-    end = start;
+  // Each day before the buffer, oldest first, against the normal of the days before it that were
+  // not low themselves, so a refusal day never lowers the bar a later low day is judged by
+  // (adversarial pass 1: a seventh refusal stopped a backward walk one day short).
+  const days: { start: number; low: boolean }[] = [];
+  let normalSum = 0;
+  let normalCount = 0;
+  for (let start = 0; start < bufferStart; ) {
+    let end = start + 1;
+    while (end < bufferStart && dayOf(meals[end]) === dayOf(meals[start])) end++;
+    const low = normalCount >= minMeals && meanOf(start, end) <= normalSum / normalCount - minDelta;
+    if (!low) {
+      for (let i = start; i < end; i++) normalSum += meals[i].score;
+      normalCount += end - start;
+    }
+    days.push({ start, low });
+    start = end;
   }
+  // The decline is the unbroken run of low days just before the buffer; the day before it is
+  // where it may have begun (with no run, the day before the buffer).
+  let k = days.length - 1;
+  while (k >= 0 && days[k].low) k--;
+  const onset = k >= 0 ? days[k].start : days.length > 0 ? days[0].start : bufferStart;
   const readings: T[][] = [];
   for (let split = bufferStart; split >= onset; split--) {
     for (let cut = bufferStart; cut <= bufferEnd; cut++) {
@@ -1310,14 +1322,20 @@ function normallyEatenDayMean<T extends { score: number }>(
   floor: number,
   minSamples: number,
 ): number | null {
-  const days: { day: number; sum: number; n: number }[] = [];
+  const days: { day: number; sum: number; n: number; refused: boolean }[] = [];
+  // A day's refusals of the food count once: a refused re-offer is the same refusal again, so
+  // refusing harder on a day never lowers its mean (adversarial pass 1). Ratings above refused
+  // count each, as offered.
   for (const m of prior) {
+    const refused = m.score === 0;
     const last = days[days.length - 1];
     if (last && last.day === dayOf(m)) {
+      if (refused && last.refused) continue;
       last.sum += m.score;
       last.n++;
+      last.refused = last.refused || refused;
     } else {
-      days.push({ day: dayOf(m), sum: m.score, n: 1 });
+      days.push({ day: dayOf(m), sum: m.score, n: 1, refused });
     }
   }
   while (days.length > 0 && days[days.length - 1].sum / days[days.length - 1].n < floor) days.pop();

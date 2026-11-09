@@ -4275,10 +4275,10 @@ function intakeDaysOf(meals: readonly RatedMeal[], timeZone: string | undefined)
  * CUL-1797 — the normals detector ②'s day-count arm reads, the accusing one standing. CUL-94 read
  * every prefix of the buffer day (the window's meals before it, then its first meal, its first two,
  * … all); those come first, in that order, so a record that fired before reports the same reading.
- * Then the decline: walking back from the day before the buffer, a day whose mean sits a full point
- * (`minDelta`) or more under the mean of the window meals older than it is part of the decline and
- * never the normal; the first day that is not (or whose older meals are under the coverage floor)
- * is where it may have begun. Each split from the buffer's start back to that day's start is read,
+ * Then the decline: each day before the buffer, oldest first, is low when its mean sits a full
+ * point (`minDelta`) or more under the normal of the earlier days that were not low; the unbroken
+ * run of low days just before the buffer is the decline and never the normal, and the day before
+ * that run is where it may have begun. Each split from the buffer's start back to that day's start is read,
  * each with every prefix of the buffer day, so a refusal appended to the day before the buffer
  * only ever adds readings (the CUL-1797 property in lib/intakeDeclineParity.test.ts). Uncapped
  * inside the window (PM ruling, option 1): a cat refusing for weeks is the one this exists for.
@@ -4302,16 +4302,28 @@ function intakeBaselineReadings<T extends { score: number }>(
     for (let i = from; i < to; i++) sum += meals[i].score
     return sum / (to - from)
   }
-  let end = bufferStart
-  let onset = bufferStart
-  while (end > 0) {
-    let start = end - 1
-    while (start > 0 && dayOf(meals[start - 1]) === dayOf(meals[end - 1])) start--
-    onset = start
-    if (start < minMeals) break
-    if (meanOf(start, end) > meanOf(0, start) - minDelta) break
-    end = start
+  // Each day before the buffer, oldest first, against the normal of the days before it that were
+  // not low themselves, so a refusal day never lowers the bar a later low day is judged by
+  // (adversarial pass 1: a seventh refusal stopped a backward walk one day short).
+  const days: { start: number; low: boolean }[] = []
+  let normalSum = 0
+  let normalCount = 0
+  for (let start = 0; start < bufferStart; ) {
+    let end = start + 1
+    while (end < bufferStart && dayOf(meals[end]) === dayOf(meals[start])) end++
+    const low = normalCount >= minMeals && meanOf(start, end) <= normalSum / normalCount - minDelta
+    if (!low) {
+      for (let i = start; i < end; i++) normalSum += meals[i].score
+      normalCount += end - start
+    }
+    days.push({ start, low })
+    start = end
   }
+  // The decline is the unbroken run of low days just before the buffer; the day before it is
+  // where it may have begun (with no run, the day before the buffer).
+  let k = days.length - 1
+  while (k >= 0 && days[k].low) k--
+  const onset = k >= 0 ? days[k].start : days.length > 0 ? days[0].start : bufferStart
   const readings: T[][] = []
   for (let split = bufferStart; split >= onset; split--) {
     for (let cut = bufferStart; cut <= bufferEnd; cut++) {
@@ -4326,7 +4338,8 @@ function intakeBaselineReadings<T extends { score: number }>(
  * over `prior` (ascending), once the trailing days it was not normally eaten (a day mean under
  * `floor`) are left out. By day, so a food re-offered and refused four times on one bad day counts
  * as one bad day (CUL-2696), as CUL-94 already reads the latest day; the trailing low days are the
- * decline, including the evening half of a bout across local midnight (CUL-1790). Null when what
+ * decline, including the evening half of a bout across local midnight (CUL-1790). A day's refusals
+ * count once, so a refused re-offer never lowers the day (adversarial pass 1). Null when what
  * is left is under `minSamples` meals or under the floor. Mirrored in lib/analytics.ts.
  */
 function normallyEatenDayMean<T extends { score: number }>(
@@ -4335,14 +4348,20 @@ function normallyEatenDayMean<T extends { score: number }>(
   floor: number,
   minSamples: number,
 ): number | null {
-  const days: { day: number; sum: number; n: number }[] = []
+  const days: { day: number; sum: number; n: number; refused: boolean }[] = []
+  // A day's refusals of the food count once: a refused re-offer is the same refusal again, so
+  // refusing harder on a day never lowers its mean (adversarial pass 1). Ratings above refused
+  // count each, as offered.
   for (const m of prior) {
+    const refused = m.score === 0
     const last = days[days.length - 1]
     if (last && last.day === dayOf(m)) {
+      if (refused && last.refused) continue
       last.sum += m.score
       last.n++
+      last.refused = last.refused || refused
     } else {
-      days.push({ day: dayOf(m), sum: m.score, n: 1 })
+      days.push({ day: dayOf(m), sum: m.score, n: 1, refused })
     }
   }
   while (days.length > 0 && days[days.length - 1].sum / days[days.length - 1].n < floor) days.pop()
