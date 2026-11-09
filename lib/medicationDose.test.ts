@@ -16,9 +16,13 @@ const mockWithTransactionAsync = jest.fn(async (cb: () => Promise<void>) => {
 });
 const mockUpdateDoseAdherence = jest.fn().mockResolvedValue(undefined);
 const mockUpdateDoseHowGiven = jest.fn().mockResolvedValue(undefined);
+// The dose row a re-rate reads before it writes (CUL-1916): its own pet and its fields.
+const mockGetFirstAsync = jest.fn();
+const mockGetEventPetId = jest.fn();
 jest.mock('./db', () => ({
-  getDb: () => ({ runAsync: mockRunAsync, withTransactionAsync: mockWithTransactionAsync }),
+  getDb: () => ({ runAsync: mockRunAsync, withTransactionAsync: mockWithTransactionAsync, getFirstAsync: mockGetFirstAsync }),
   getDoubleDoseFlag: jest.fn(),
+  getEventPetId: (...a: unknown[]) => mockGetEventPetId(...a),
   updateDoseAdherence: (...a: unknown[]) => mockUpdateDoseAdherence(...a),
   updateDoseHowGiven: (...a: unknown[]) => mockUpdateDoseHowGiven(...a),
 }));
@@ -29,6 +33,9 @@ jest.mock('./sync', () => ({
   syncPendingEvents: (...a: unknown[]) => mockSyncPendingEvents(...a),
   syncPendingMedicationAdministrations: (...a: unknown[]) => mockSyncPendingAdministrations(...a),
 }));
+
+const mockRegen = jest.fn();
+jest.mock('./signal', () => ({ triggerSignalRegenDebounced: (...a: unknown[]) => mockRegen(...a) }));
 
 jest.mock('../store/momentStore', () => ({
   useMomentStore: { getState: () => ({ patchDoubleDose: jest.fn() }) },
@@ -49,6 +56,7 @@ import { useSyncStore } from '../store/syncStore';
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGetFirstAsync.mockResolvedValue({ pet_id: 'pet-on-row', adherence: 'given', how_given: null });
 });
 
 /** The column → value map one captured INSERT wrote: its column list against its VALUES
@@ -169,6 +177,89 @@ describe('re-rating a dose re-reads Home (HV-6, B2)', () => {
     await expect(run()).rejects.toThrow('No medication_administration row');
     expect(useSyncStore.getState().hydrationTick).toBe(before);
     expect(mockSyncPendingAdministrations).not.toHaveBeenCalled();
+  });
+});
+
+describe('every dose write that lands and changes the record regenerates the Signal (CUL-1916)', () => {
+  it('a logged dose asks for a regen for the pet_id written on its own row', async () => {
+    await insertMedicationDose({
+      petId: 'pet-7',
+      medicationItemId: DRUG.id,
+      adherence: 'given',
+      occurredAt: new Date('2026-09-25T08:00:00.000Z'),
+    });
+    const dose = inserted('medication_administrations');
+    expect(dose.pet_id).toBe('pet-7');
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith(dose.pet_id);
+  });
+
+  it('a dose whose local write fails asks for nothing', async () => {
+    mockWithTransactionAsync.mockRejectedValueOnce(new Error('disk full'));
+    await expect(
+      insertMedicationDose({ petId: 'pet-7', medicationItemId: DRUG.id, adherence: 'given', occurredAt: new Date() }),
+    ).rejects.toThrow('disk full');
+    expect(mockRegen).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    // The issue's counterexample: None of it by mistake, corrected to All of it.
+    ['rateDoseAdherence', () => rateDoseAdherence('d1', 'given'), { adherence: 'refused', how_given: null }],
+    ['recordDoseHowGiven', () => recordDoseHowGiven('d1', 'in_food'), { adherence: 'given', how_given: 'direct' }],
+  ] as const)('%s: a change regenerates for the pet read from the dose row, not a caller-supplied one', async (_n, run, fields) => {
+    mockGetFirstAsync.mockResolvedValueOnce({ pet_id: 'pet-on-row', ...fields });
+    await run();
+    const [sql, args] = mockGetFirstAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/SELECT pet_id\b.*FROM medication_administrations WHERE event_id = \?/);
+    expect(args).toEqual(['d1']);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('pet-on-row');
+  });
+
+  it.each([
+    ['rateDoseAdherence', () => rateDoseAdherence('d1', 'given'), { adherence: 'given', how_given: null }],
+    ['recordDoseHowGiven', () => recordDoseHowGiven('d1', null), { adherence: 'given', how_given: null }],
+  ] as const)('%s: an unchanged value spends no cap unit (CUL-1087), though Home still re-reads', async (_n, run, fields) => {
+    mockGetFirstAsync.mockResolvedValueOnce({ pet_id: 'pet-on-row', ...fields });
+    const before = useSyncStore.getState().hydrationTick;
+    await run();
+    expect(mockRegen).not.toHaveBeenCalled();
+    expect(useSyncStore.getState().hydrationTick).toBe(before + 1);
+  });
+
+  it.each([
+    ['rateDoseAdherence', () => rateDoseAdherence('d1', 'missed'), mockUpdateDoseAdherence],
+    ['recordDoseHowGiven', () => recordDoseHowGiven('d1', 'direct'), mockUpdateDoseHowGiven],
+  ] as const)('%s: a write that never landed asks for nothing', async (_n, run, write) => {
+    write.mockRejectedValueOnce(new Error('No medication_administration row for event d1'));
+    await expect(run()).rejects.toThrow();
+    expect(mockRegen).not.toHaveBeenCalled();
+  });
+
+  it('a failed dose-row read never fails the rating, and regenerates anyway for the event’s pet (errs loud)', async () => {
+    mockGetFirstAsync.mockRejectedValueOnce(new Error('db busy'));
+    mockGetEventPetId.mockResolvedValueOnce('pet-on-event');
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await rateDoseAdherence('d1', 'refused');
+    await new Promise((r) => setImmediate(r));
+    expect(mockUpdateDoseAdherence).toHaveBeenCalledWith('d1', 'refused');
+    expect(mockGetEventPetId).toHaveBeenCalledWith('d1');
+    expect(mockRegen).toHaveBeenCalledWith('pet-on-event');
+    warn.mockRestore();
+  });
+});
+
+describe('the regen path never fails a saved rating (CUL-1916)', () => {
+  it('a pet lookup that throws synchronously is swallowed: the rating resolves', async () => {
+    mockGetFirstAsync.mockRejectedValueOnce(new Error('db busy'));
+    mockGetEventPetId.mockImplementationOnce(() => {
+      throw new TypeError('not a function');
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(recordDoseHowGiven('d1', 'direct')).resolves.toBeUndefined();
+    await new Promise((r) => setImmediate(r));
+    expect(mockRegen).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

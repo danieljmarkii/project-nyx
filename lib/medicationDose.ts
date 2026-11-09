@@ -9,14 +9,16 @@
 // point physically cannot write one without the other (the drift insertMeal was
 // created to prevent).
 //
-// NOT fired here (deliberately): the AI-Signal regen. Unlike a meal or symptom, a
-// medication dose has no Signal consumer yet — the detection engine gains its
-// `medicationWindows` confounder pass in PR 9 (spec §8). Firing a regen now would
-// recompute an identical signal and falsely imply med→signal wiring already exists.
-// When PR 9 lands, add triggerSignalRegenDebounced(petId) here.
+// The AI-Signal regen IS fired here (CUL-1916): the engine reads doses (its
+// `medicationWindows` pass, CUL-1099), so a dose logged, re-rated or re-vehicled moves
+// what generate-signal counts, and Home's Signal must not wait a day for it. Every write
+// below asks for one only once it has landed and only when it changed the row, since an
+// unchanged write would spend a unit of the daily cap on an identical read (CUL-1087).
+// The pet is always the dose row's own, never the active pet (C-9).
 
-import { getDb, getDoubleDoseFlag, updateDoseAdherence, updateDoseHowGiven } from './db';
+import { getDb, getDoubleDoseFlag, getEventPetId, updateDoseAdherence, updateDoseHowGiven } from './db';
 import { syncPendingEvents, syncPendingMedicationAdministrations } from './sync';
+import { triggerSignalRegenDebounced } from './signal';
 import { uuid } from './utils';
 import type { DoseVehicle } from './medications';
 import { useMomentStore, whenMedicationCardVisible } from '../store/momentStore';
@@ -192,6 +194,11 @@ export async function insertMedicationDose(
     .then(() => syncPendingMedicationAdministrations())
     .catch((e) => console.error('[insertMedicationDose] sync push failed:', e));
 
+  // Freshness: a new dose is a new engine input. `petId` is the pet_id the transaction
+  // above just wrote to both rows, so this is the dose row's own pet. Debounced, so a
+  // meal and its dose logged together collapse into one regen.
+  triggerSignalRegenDebounced(petId);
+
   return { eventId, administrationId, occurredAtIso, now };
 }
 
@@ -214,27 +221,75 @@ function notifyDoseChanged(): void {
   }
 }
 
-/** Set a logged dose's adherence: the write, then Home's refresh, then the push. Throws
- *  only when the WRITE fails, so a caller's revert still means "not saved"; the push is
- *  fire-and-forget after it. */
+/** The dose row's own pet and the two fields a re-rate can move, read BEFORE the write so
+ *  the regen can tell a change from a re-tap. A failed read returns null and never fails
+ *  the write; the regen then treats the change as unknown (below). */
+async function readDoseRow(
+  eventId: string,
+): Promise<{ pet_id: string; adherence: string | null; how_given: string | null } | null> {
+  try {
+    return await getDb().getFirstAsync<{ pet_id: string; adherence: string | null; how_given: string | null }>(
+      'SELECT pet_id, adherence, how_given FROM medication_administrations WHERE event_id = ?',
+      [eventId],
+    );
+  } catch (e) {
+    console.warn('[medication-dose] dose row read failed; regenerating without the change check:', e);
+    return null;
+  }
+}
+
+/** Ask for a Signal regen after a landed re-rate when it moved the field. When the read
+ *  before the write failed, whether it moved is unknown, so it regenerates anyway for the
+ *  pet on the dose's event (an extra regen errs loud; a skipped one would leave a stale
+ *  read up for a day). Fire-and-forget: a failure here never fails the saved rating. */
+function regenIfChanged(
+  eventId: string,
+  before: { pet_id: string } | null,
+  prior: string | null | undefined,
+  next: string | null,
+): void {
+  if (before) {
+    if (prior !== next) triggerSignalRegenDebounced(before.pet_id);
+    return;
+  }
+  // Started inside a .then so even a synchronous throw lands in the catch, never in the
+  // caller: the rating is already saved.
+  Promise.resolve()
+    .then(() => getEventPetId(eventId))
+    .then((petId) => {
+      if (petId) triggerSignalRegenDebounced(petId);
+    })
+    .catch((e) => console.warn('[medication-dose] pet lookup failed; Signal not refreshed:', e));
+}
+
+/** Set a logged dose's adherence: the write, then Home's refresh, then the push, then the
+ *  Signal regen when the rating changed. Throws only when the WRITE fails, so a caller's
+ *  revert still means "not saved"; the push and the regen are fire-and-forget after it. */
 export async function rateDoseAdherence(
   eventId: string,
   adherence: Parameters<typeof updateDoseAdherence>[1],
 ): Promise<void> {
+  const before = await readDoseRow(eventId);
   await updateDoseAdherence(eventId, adherence);
   notifyDoseChanged();
   syncPendingMedicationAdministrations().catch((e) => console.error('[rateDoseAdherence] sync push failed:', e));
+  regenIfChanged(eventId, before, before?.adherence, adherence);
 }
 
 /** Set or clear a logged dose's vehicle (`how_given`), the same way: the row says it in
- *  words ("directly", "in a pill pocket"), so a stale one contradicts the record. */
+ *  words ("directly", "in a pill pocket"), so a stale one contradicts the record. The Signal
+ *  rebuilds when it moves, as on every dose write (CUL-1916): today's engine reads the
+ *  dose's adherence and pairing rather than its vehicle, so this regen buys the vehicle
+ *  coupling the medication revamp adds, at one cap unit per real change. */
 export async function recordDoseHowGiven(
   eventId: string,
   howGiven: Parameters<typeof updateDoseHowGiven>[1],
 ): Promise<void> {
+  const before = await readDoseRow(eventId);
   await updateDoseHowGiven(eventId, howGiven);
   notifyDoseChanged();
   syncPendingMedicationAdministrations().catch((e) => console.error('[recordDoseHowGiven] sync push failed:', e));
+  regenIfChanged(eventId, before, before?.how_given, howGiven);
 }
 
 // ── B-157 (CUL-284): the log-time double-dose note ──────────────────────────────
