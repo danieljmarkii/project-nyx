@@ -21,9 +21,9 @@ let mockOnline = true;
 jest.mock('../../hooks/useIsOnline', () => ({ useIsOnline: () => mockOnline }));
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { EditPetModal } from './EditPetModal';
+import { EditPetModal, WEIGHT_INVALID_LINE, isEditedWeightInvalid } from './EditPetModal';
 import { usePetStore, type Pet } from '../../store/petStore';
-import { lbsToKg } from '../../lib/weightUnits';
+import { kgToLbs, lbsToKg } from '../../lib/weightUnits';
 
 const NYX: Pet = {
   id: 'pet-nyx',
@@ -119,6 +119,71 @@ describe('EditPetModal weight on save', () => {
 
     expect(sentUpdate()).toHaveProperty('weight_kg', null);
     expect(usePetStore.getState().activePet?.weight_kg).toBeNull();
+  });
+});
+
+// CUL-1286 — an edited weight that cannot be stored never clears the weight. A lone
+// "." used to write weight_kg: null; 900 lb used to reach the NUMERIC(5,2) column.
+// PROVEN BY MUTATION: making isEditedWeightInvalid return false reds 7 tests: the "."
+// and 900 lb component tests and the five invalid rows of the table below.
+describe('EditPetModal weight validation', () => {
+  it('"." typed over 8.2 disables Save, shows the hint, and never writes', () => {
+    render(<EditPetModal visible onClose={jest.fn()} />);
+    fireEvent.changeText(screen.getByDisplayValue('8.2'), '.');
+    expect(screen.getByText(WEIGHT_INVALID_LINE)).toBeTruthy();
+    const save = screen.getByLabelText('Save, check the weight');
+    expect(save.props.accessibilityState).toMatchObject({ disabled: true });
+    fireEvent.press(save);
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(usePetStore.getState().activePet?.weight_kg).toBe(3.73);
+  });
+
+  it('900 lb disables Save, shows the hint, and never writes', () => {
+    render(<EditPetModal visible onClose={jest.fn()} />);
+    fireEvent.changeText(screen.getByDisplayValue('8.2'), '900');
+    expect(screen.getByText(WEIGHT_INVALID_LINE)).toBeTruthy();
+    const save = screen.getByLabelText('Save, check the weight');
+    expect(save.props.accessibilityState).toMatchObject({ disabled: true });
+    fireEvent.press(save);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('an emptied field shows no hint and still clears on Save', async () => {
+    const onClose = jest.fn();
+    render(<EditPetModal visible onClose={onClose} />);
+    fireEvent.changeText(screen.getByDisplayValue('8.2'), '   ');
+    expect(screen.queryByTestId('edit-pet-weight-invalid')).toBeNull();
+    fireEvent.press(screen.getByText('Save'));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(sentUpdate()).toHaveProperty('weight_kg', null);
+  });
+
+  it('500 lb is accepted at the bound', async () => {
+    const onClose = jest.fn();
+    render(<EditPetModal visible onClose={onClose} />);
+    fireEvent.changeText(screen.getByDisplayValue('8.2'), '500');
+    expect(screen.queryByTestId('edit-pet-weight-invalid')).toBeNull();
+    fireEvent.press(screen.getByText('Save'));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(sentUpdate().weight_kg).toBe(lbsToKg(500));
+  });
+});
+
+describe('isEditedWeightInvalid', () => {
+  it.each([
+    ['.', 3.73, true],
+    ['900', 3.73, true],
+    ['0', 3.73, true],
+    ['-4', 3.73, true],
+    ['500.1', null, true],
+    ['', 3.73, false],
+    ['  ', null, false],
+    ['9', 3.73, false],
+    ['500', 3.73, false],
+    // Untouched legacy value above the bound: writes nothing, so it blocks nothing.
+    [kgToLbs(300), 300, false],
+  ])('%p over seeded %p → %p', (str, seeded, expected) => {
+    expect(isEditedWeightInvalid(str as string, seeded as number | null)).toBe(expected);
   });
 });
 
