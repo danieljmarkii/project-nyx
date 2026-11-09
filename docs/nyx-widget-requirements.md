@@ -1,6 +1,6 @@
 # Culprit Home Screen Widget — Requirements
 
-**Version:** 2.0 (build-ready) | **Date:** 2026-08-02 · **Last Updated:** 2026-10-04 (CUL-1475: the look-only empty-day line, §2.6 / §2.7) | **Status:** PM-ratified 2026-08-02 (ideation rounds 4–7 on the round-3 shipped widget; R7-1 "confirm for build" given)
+**Version:** 2.0 (build-ready) | **Date:** 2026-08-02 · **Last Updated:** 2026-11-09 (CUL-1580: the trial ratio follows Home's withholding list, §2.5) | **Status:** PM-ratified 2026-08-02 (ideation rounds 4–7 on the round-3 shipped widget; R7-1 "confirm for build" given)
 **Supersedes:** v1.0, preserved verbatim at **`docs/nyx-widget-requirements-v1-frozen.md`** 🧊 (the as-built record of the build-35 capture widget). This file is the living spec; header-versioned per the 2026-07-19 doc-versioning rule.
 **Pairs with:** `docs/culprit-widget-mockups.html` (the design-locked **round-7** mock — the geometry the build copies, screenshot-verified) · `docs/sessions/2026-08-02-widget-redesign-ideation.md` (the full round 4→7 reaction record) · backlog **B-664** (the rebuild track) · B-481 (the on-device pass it absorbs)
 
@@ -64,6 +64,7 @@ In the mock's 364×172 px frame (content = 149 px after 12/11 padding): **header
 ### 2.5 The ground band
 Full-width footer under a hairline, present in **every** state:
 - **During a trial:** the trial-day strip — one dot per trial day (filled = a day with logged events, hollow = a gap, today accented; **when the trial exceeds ~14 days, show the most recent 14 dots**; the caption always totals the whole trial: `11 of 12 trial days logged`). **All trial numbers come from the shared `lib/dietTrial` day math** — the widget introduces no third definition (the §5.3 one-predicate lesson), and its device-zone day boundary is the sanctioned widget/publisher path (B-514). Coverage language only — the strip describes the *record*, never the trial's outcome.
+- **When Home withholds the trial ratio** (any reason in `withholdingReasons`, `lib/dietTrialCard.ts`: a refusal, an intake decline or an unanswered eating check, a bowl, a dark comparator, an untracked head, a thin record), the widget withholds it too: the strip, its caption and the §2.3 ⑥ trial-record tile all leave, and the band falls back to the 7-day pips. The header keeps `Day N of M`, which reads the trial row and never the ratio. The dots never stay without the caption, since filled vs hollow days are the ratio drawn. _(CUL-1580, PM 2026-11-09, option A: no layout change.)_
 - **Otherwise:** the 7-day pips — per local day: a tick (≥1 event logged) + a rose pip (≥1 symptom logged), today outlined. Label `last 7 days`. Coverage ≠ wellness; a bare day is "nothing logged," never "nothing happened."
 - **Always:** the dashed **Log ›** chip, right-aligned → quick-log.
 

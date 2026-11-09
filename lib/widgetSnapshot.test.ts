@@ -38,6 +38,10 @@ import {
   widgetTrialCoverage,
 } from './widgetSnapshot';
 import { getDb } from './db';
+import * as dietTrialFacts from './dietTrialFacts';
+import type { TrialFacts } from './dietTrial';
+import { withholdingReasons, type TrialCardInput, type TrialCardWithholding } from './dietTrialCard';
+import { buildPetPanel } from './widgetProps';
 import { getSnapshotDirectory } from './appGroup';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
@@ -449,35 +453,167 @@ describe('publishWidgetSnapshots — the 7-day pips over the real coverage read'
   });
 });
 
-// ── CUL-1572 — no ratio over a bowl's days ───────────────────────────────────
+// ── CUL-1580 — the widget withholds its ratio whenever Home does ─────────────
+//
+// Driven through the REAL `withholdingReasons`: the gate is one list, so the test
+// proves each reason reaches the widget rather than re-deriving the list.
 
-describe('widgetTrialCoverage (CUL-1572)', () => {
-  const base = {
-    coverage: { daysLogged: 56, daysElapsed: 56, fraction: 1 },
-    coveredDayIndices: [1, 2, 3],
-    intakeNotDirectlyObserved: false,
-    intakeNotDirectlyObservedNow: false,
-    intakeNotDirectlyObservedThroughout: false,
+/** A plain running-trial card input, the shape `loadDietTrialFacts` returns. */
+function cardInput(over: Partial<TrialCardInput> = {}): TrialCardInput {
+  return {
+    trial: { status: 'active', startedAt: START, targetDurationDays: 56, foodLabel: "Hill's z/d" },
+    nowMs: NOW_LOCAL.getTime(),
+    petName: 'Pixel',
+    species: 'cat',
+    coverage: { daysLogged: 22, daysElapsed: 22 },
+    exposures: { mayStateRecordClean: true, mayImplyRecordClean: true, totalFeedings: 66, offDiet: 0 },
+    ...over,
   };
+}
 
-  it('passes the coverage through on an ordinary record', () => {
-    expect(widgetTrialCoverage(base)).toEqual({
-      coverage: { daysLogged: 56, daysElapsed: 56 },
+const START = '2026-07-03';
+
+const REFUSING = { days: 11, ratedFeedings: 22, refusedFeedings: 19, population: 'trial_diet' as const };
+
+/**
+ * One trigger per withholding reason. A `Record` over the union, so a reason added to
+ * `TrialCardWithholding` fails typecheck here until it gets its own case.
+ */
+const TRIGGER: Record<TrialCardWithholding, Partial<TrialCardInput>> = {
+  intake_decline: { intakeDeclineHeadline: 'Pixel has left most of her food for 3 days.' },
+  trial_diet_refusal: { trialDietRefusal: REFUSING },
+  range_refusal: { rangeRefusal: REFUSING },
+  free_fed: { freeFed: { loggedFeedings: 4 } },
+  bowl_throughout: { freeFedOverlap: true, freeFedThroughout: { startDayIndex: 0, endDayIndex: 21 } },
+  bowl_part: { freeFedOverlap: true },
+  allowed_set_unavailable: { allowedSetUnavailable: true },
+  antigen_arm_dark: { antigenArmDark: true },
+  untracked_head: { untrackedDaysBeforeFirstLog: 12 },
+  below_floor: { belowCoverageFloor: true },
+  intake_unknown: { intakeDeclineUnknown: true },
+};
+
+describe('widgetTrialCoverage (CUL-1580: Home\'s withholding list)', () => {
+  it('passes the coverage through on a plain record', () => {
+    expect(withholdingReasons(cardInput())).toEqual([]);
+    expect(widgetTrialCoverage(cardInput(), [1, 2, 3], START)).toEqual({
+      coverage: { daysLogged: 22, daysElapsed: 22 },
       coveredDayIndices: [1, 2, 3],
     });
   });
 
-  it('states nothing over a bowl that held every counted day, or a bowl down now', () => {
-    expect(widgetTrialCoverage({ ...base, intakeNotDirectlyObservedThroughout: true })).toBeNull();
-    expect(widgetTrialCoverage({ ...base, intakeNotDirectlyObservedNow: true })).toBeNull();
+  it.each(Object.entries(TRIGGER) as [TrialCardWithholding, Partial<TrialCardInput>][])(
+    'states no ratio under %s',
+    (reason, over) => {
+      const input = cardInput(over);
+      // The fixture trips exactly this reason, so the null below is that reason's.
+      expect(withholdingReasons(input)).toEqual([reason]);
+      expect(widgetTrialCoverage(input, [1, 2, 3], START)).toBeNull();
+    },
+  );
+
+  it('states nothing with no input, no trial, no coverage or no covered days', () => {
+    expect(widgetTrialCoverage(null, [1], START)).toBeNull();
+    expect(widgetTrialCoverage(cardInput({ trial: null }), [1], START)).toBeNull();
+    expect(widgetTrialCoverage(cardInput({ coverage: null }), [1], START)).toBeNull();
+    expect(widgetTrialCoverage(cardInput(), null, START)).toBeNull();
   });
 
-  it('states nothing after a bowl that held only part of the counted range (CUL-1578)', () => {
-    expect(widgetTrialCoverage({ ...base, intakeNotDirectlyObserved: true })).toBeNull();
+  // adversarial-reviewer: Home's ratio also needs an ACTIVE trial, outside the list.
+  it('states nothing for a trial ended (e.g. stopped for refusal) inside the publish', () => {
+    const ended = cardInput();
+    const trial = { ...ended.trial!, status: 'completed' as const };
+    expect(withholdingReasons({ ...ended, trial })).toEqual([]);
+    expect(widgetTrialCoverage({ ...ended, trial }, [1, 2, 3], START)).toBeNull();
   });
 
-  it('states nothing with no facts or no coverage', () => {
-    expect(widgetTrialCoverage(null)).toBeNull();
-    expect(widgetTrialCoverage({ ...base, coverage: null })).toBeNull();
+  it('states nothing when the card describes a different trial than the header counts', () => {
+    expect(widgetTrialCoverage(cardInput(), [1, 2, 3], '2026-06-01')).toBeNull();
+  });
+});
+
+// The publisher's wiring: the card input it reads is the one the gate judges, and a
+// withheld ratio leaves the header's day line standing (option A, PM 2026-11-09).
+describe('publishWidgetSnapshots — the trial ratio follows Home (CUL-1580)', () => {
+  let raw: InstanceType<typeof DatabaseSync>;
+  const startKey = (() => {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() - 9);
+    return toLocalDayKey(d);
+  })();
+
+  beforeEach(async () => {
+    raw = new DatabaseSync(':memory:');
+    raw.exec(BASE_SCHEMA_SQL);
+    raw.exec(MEDICATION_SCHEMA_SQL);
+    raw.exec(DIET_TRIAL_SCHEMA_SQL);
+    await applyColumnUpgrades(async (sql: string) => {
+      try {
+        raw.exec(sql);
+      } catch {
+        /* a column one of the constants above already declares */
+      }
+    });
+    raw
+      .prepare(
+        `INSERT INTO diet_trials
+           (id, pet_id, food_item_id, started_at, target_duration_days, status,
+            ended_at, completed_at, stopped_reason, outcome, indication, food_label, synced)
+         VALUES ('t1', ?, NULL, ?, 56, 'active', NULL, NULL, NULL, NULL, NULL, 'Trial food', 1)`,
+      )
+      .run(PET.id, startKey);
+    (getDb as jest.Mock).mockReturnValue({
+      getAllAsync: async (sql: string, params: unknown[] = []) => raw.prepare(sql).all(...(params as never[])),
+      getFirstAsync: async (sql: string, params: unknown[] = []) =>
+        raw.prepare(sql).get(...(params as never[])) ?? null,
+    });
+    (getSnapshotDirectory as jest.Mock).mockReturnValue({ list: () => [] });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    (getSnapshotDirectory as jest.Mock).mockReturnValue(null);
+    raw.close();
+  });
+
+  /** Stubs the two READS only; the gate and the band are the real code. */
+  function stubReads(over: TrialCardInput) {
+    const input = { ...over, trial: { ...over.trial!, startedAt: startKey } };
+    jest.spyOn(dietTrialFacts, 'loadDietTrialFacts').mockResolvedValue(input);
+    jest.spyOn(dietTrialFacts, 'loadTrialPredicateFacts').mockResolvedValue({
+      trial: input.trial!,
+      stoppedForRefusal: false,
+      facts: { coveredDayIndices: [] } as unknown as TrialFacts,
+    });
+  }
+
+  it('states the ratio on a plain record', async () => {
+    stubReads(cardInput({ coverage: { daysLogged: 9, daysElapsed: 10 } }));
+    const { snapshots } = await publishWidgetSnapshots([PET]);
+    expect(snapshots[0].trial).toMatchObject({ daysLogged: 9, daysElapsed: 10 });
+    const panel = buildPetPanel(0, true, PET.name, snapshots[0]);
+    expect(panel.band).toMatchObject({ type: 'trial', caption: '9 of 10 trial days logged' });
+    expect(panel.trialRecord).not.toBeNull();
+  });
+
+  it('withholds caption, dots and record tile for a cat refusing the diet, and keeps the day', async () => {
+    stubReads(cardInput({ coverage: { daysLogged: 10, daysElapsed: 10 }, trialDietRefusal: REFUSING }));
+    const { snapshots } = await publishWidgetSnapshots([PET]);
+    expect(snapshots[0].trial).toBeNull();
+    const panel = buildPetPanel(0, true, PET.name, snapshots[0]);
+    expect(panel.contextLine).toBe('Day 10 of 56');
+    expect(panel.band?.type).not.toBe('trial');
+    expect(panel.trialRecord).toBeNull();
+    expect(JSON.stringify(panel)).not.toMatch(/trial days logged|every day logged/);
+  });
+
+  it('withholds when the card read fails', async () => {
+    stubReads(cardInput());
+    jest.spyOn(dietTrialFacts, 'loadDietTrialFacts').mockRejectedValue(new Error('read failed'));
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { snapshots } = await publishWidgetSnapshots([PET]);
+    expect(snapshots[0].trial).toBeNull();
+    expect(buildPetPanel(0, true, PET.name, snapshots[0]).contextLine).toBe('Day 10 of 56');
   });
 });
