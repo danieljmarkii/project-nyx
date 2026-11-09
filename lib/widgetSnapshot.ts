@@ -578,7 +578,13 @@ async function readSnapshotInputs(pet: SnapshotPet, now: Date) {
         loadDietTrialFacts({ pet: factsPet, nowMs: now.getTime(), rethrowUnreadable: true }),
         loadTrialPredicateFacts(factsPet, now.getTime()),
       ]);
-      const widgetCoverage = widgetTrialCoverage(cardInput, predicate?.facts?.coveredDayIndices ?? null);
+      const widgetCoverage = widgetTrialCoverage(
+        cardInput,
+        // Same `TRIAL_FOR_CARD_SQL` as the card read, so the card's identity check below
+        // covers these too; the publisher reads only `predicate.facts` (provenance guard).
+        predicate?.facts?.coveredDayIndices ?? null,
+        trial.startedAt,
+      );
       if (widgetCoverage) {
         trialCoverage = widgetCoverage.coverage;
         trialCoveredDayIndices = widgetCoverage.coveredDayIndices;
@@ -662,8 +668,16 @@ function readPreviousSlotIndex(dir: { list(): { name: string; textSync?(): strin
 export function widgetTrialCoverage(
   input: TrialCardInput | null,
   coveredDayIndices: number[] | null,
+  rowStartedAt: string,
 ): { coverage: { daysLogged: number; daysElapsed: number }; coveredDayIndices: number[] } | null {
   if (!input?.trial || !input.coverage || !coveredDayIndices) return null;
+  // Home's strip states its ratio only for an ACTIVE trial (`resolveTrialStrip`), a
+  // condition outside `withholdingReasons`; the card read also returns a trial ended
+  // inside its grace window. So a trial ended "won't eat it" between this publish's
+  // active-row read and its card read would otherwise keep "every day logged so far"
+  // up. And the card must describe the SAME trial the header counts: two local active
+  // rows order differently in the two queries (adversarial-reviewer, CUL-1580).
+  if (input.trial.status !== 'active' || input.trial.startedAt !== rowStartedAt) return null;
   if (withholdingReasons(input).length > 0) return null;
   return {
     coverage: { daysLogged: input.coverage.daysLogged, daysElapsed: input.coverage.daysElapsed },

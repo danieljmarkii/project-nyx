@@ -461,7 +461,7 @@ describe('publishWidgetSnapshots — the 7-day pips over the real coverage read'
 /** A plain running-trial card input, the shape `loadDietTrialFacts` returns. */
 function cardInput(over: Partial<TrialCardInput> = {}): TrialCardInput {
   return {
-    trial: { status: 'active', startedAt: '2026-07-03', targetDurationDays: 56, foodLabel: "Hill's z/d" },
+    trial: { status: 'active', startedAt: START, targetDurationDays: 56, foodLabel: "Hill's z/d" },
     nowMs: NOW_LOCAL.getTime(),
     petName: 'Pixel',
     species: 'cat',
@@ -470,6 +470,8 @@ function cardInput(over: Partial<TrialCardInput> = {}): TrialCardInput {
     ...over,
   };
 }
+
+const START = '2026-07-03';
 
 const REFUSING = { days: 11, ratedFeedings: 22, refusedFeedings: 19, population: 'trial_diet' as const };
 
@@ -494,7 +496,7 @@ const TRIGGER: Record<TrialCardWithholding, Partial<TrialCardInput>> = {
 describe('widgetTrialCoverage (CUL-1580: Home\'s withholding list)', () => {
   it('passes the coverage through on a plain record', () => {
     expect(withholdingReasons(cardInput())).toEqual([]);
-    expect(widgetTrialCoverage(cardInput(), [1, 2, 3])).toEqual({
+    expect(widgetTrialCoverage(cardInput(), [1, 2, 3], START)).toEqual({
       coverage: { daysLogged: 22, daysElapsed: 22 },
       coveredDayIndices: [1, 2, 3],
     });
@@ -506,15 +508,27 @@ describe('widgetTrialCoverage (CUL-1580: Home\'s withholding list)', () => {
       const input = cardInput(over);
       // The fixture trips exactly this reason, so the null below is that reason's.
       expect(withholdingReasons(input)).toEqual([reason]);
-      expect(widgetTrialCoverage(input, [1, 2, 3])).toBeNull();
+      expect(widgetTrialCoverage(input, [1, 2, 3], START)).toBeNull();
     },
   );
 
   it('states nothing with no input, no trial, no coverage or no covered days', () => {
-    expect(widgetTrialCoverage(null, [1])).toBeNull();
-    expect(widgetTrialCoverage(cardInput({ trial: null }), [1])).toBeNull();
-    expect(widgetTrialCoverage(cardInput({ coverage: null }), [1])).toBeNull();
-    expect(widgetTrialCoverage(cardInput(), null)).toBeNull();
+    expect(widgetTrialCoverage(null, [1], START)).toBeNull();
+    expect(widgetTrialCoverage(cardInput({ trial: null }), [1], START)).toBeNull();
+    expect(widgetTrialCoverage(cardInput({ coverage: null }), [1], START)).toBeNull();
+    expect(widgetTrialCoverage(cardInput(), null, START)).toBeNull();
+  });
+
+  // adversarial-reviewer: Home's ratio also needs an ACTIVE trial, outside the list.
+  it('states nothing for a trial ended (e.g. stopped for refusal) inside the publish', () => {
+    const ended = cardInput();
+    const trial = { ...ended.trial!, status: 'completed' as const };
+    expect(withholdingReasons({ ...ended, trial })).toEqual([]);
+    expect(widgetTrialCoverage({ ...ended, trial }, [1, 2, 3], START)).toBeNull();
+  });
+
+  it('states nothing when the card describes a different trial than the header counts', () => {
+    expect(widgetTrialCoverage(cardInput(), [1, 2, 3], '2026-06-01')).toBeNull();
   });
 });
 
@@ -564,7 +578,8 @@ describe('publishWidgetSnapshots — the trial ratio follows Home (CUL-1580)', (
   });
 
   /** Stubs the two READS only; the gate and the band are the real code. */
-  function stubReads(input: TrialCardInput) {
+  function stubReads(over: TrialCardInput) {
+    const input = { ...over, trial: { ...over.trial!, startedAt: startKey } };
     jest.spyOn(dietTrialFacts, 'loadDietTrialFacts').mockResolvedValue(input);
     jest.spyOn(dietTrialFacts, 'loadTrialPredicateFacts').mockResolvedValue({
       trial: input.trial!,
