@@ -18,6 +18,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { BreedPicker } from '../pet/BreedPicker';
 import { supabase } from '../../lib/supabase';
 import { kgToLbs, resolveWeightFieldSave } from '../../lib/weightUnits';
+import { MAX_WEIGHT_LBS, parseWeightLbsToKg } from '../../lib/weight';
 import { dateToYmd, formatBirthdayField, resolveDobPrecisionOnSave, DobPrecision } from '../../lib/age';
 import { usePetStore, Pet } from '../../store/petStore';
 import { useIsOnline } from '../../hooks/useIsOnline';
@@ -63,6 +64,24 @@ export function profileOfflineLine(petName: string): string {
 }
 /** Round P8: a failed save keeps every typed value, and says so in place of an alert. */
 export const SAVE_FAILED_LINE = 'Couldn’t save. Your changes are still here.';
+
+/** CUL-1286: shown under the weight field while Save waits on an unusable number. */
+export const WEIGHT_INVALID_LINE = `Enter a weight above 0 and up to ${MAX_WEIGHT_LBS} lbs, or clear the field.`;
+
+/**
+ * CUL-1286: an edited weight that would write must be a usable number. An unparseable
+ * entry (a lone "." on the decimal pad) used to write weight_kg: null and erase the
+ * stored weight; above MAX_WEIGHT_LBS it failed the NUMERIC(5,2) column with a bare
+ * "Couldn't save". Same rule as the weigh-in step (parseWeightLbsToKg). An emptied
+ * field is still the explicit clear, and an untouched field writes nothing, so a
+ * legacy out-of-range stored value never blocks an unrelated edit.
+ */
+export function isEditedWeightInvalid(weightStr: string, seededKg: number | null): boolean {
+  const trimmed = weightStr.trim();
+  if (trimmed === '') return false;
+  if (!resolveWeightFieldSave(weightStr, seededKg).write) return false;
+  return parseWeightLbsToKg(trimmed) == null;
+}
 
 /** Round P9: the profile weight is not a weigh-in. */
 export function profileWeightNote(petName: string): string {
@@ -155,6 +174,8 @@ export function EditPetModal({ visible, onClose }: Props) {
 
   async function handleSave() {
     if (!activePet || !name.trim()) return;
+    // The button is disabled too; this keeps a stray press from ever clearing the weight.
+    if (isEditedWeightInvalid(weightStr, seededWeightKg)) return;
     if (activePet.id !== editingPetId) {
       // Active pet changed under an open form — never save across the flip
       // (updatePet patches the ACTIVE pet, and the row update would target it
@@ -205,7 +226,8 @@ export function EditPetModal({ visible, onClose }: Props) {
   const breeds = breedsForSpecies(species);
   const hasBreedList = breeds.length > 0;
   const breedDisplayValue = breed.trim() || null;
-  const canSave = name.trim().length > 0;
+  const weightInvalid = isEditedWeightInvalid(weightStr, seededWeightKg);
+  const canSave = name.trim().length > 0 && !weightInvalid;
   // The precision this save would persist (pure, unit-tested): a witnessed pick →
   // 'exact', else the loaded precision preserved. The field label reflects it too:
   // 'exact' → the full date, 'approximate' → "About {Month YYYY}" (no fabricated
@@ -225,7 +247,11 @@ export function EditPetModal({ visible, onClose }: Props) {
               label="Save"
               onPress={handleSave}
               disabled={!canSave || !online}
-              disabledReason={!online ? 'you’re offline' : 'add a name first'}
+              disabledReason={
+                !online ? 'you’re offline'
+                  : !name.trim() ? 'add a name first'
+                    : 'check the weight'
+              }
               working={saving}
               testID="edit-pet-save"
             />
@@ -360,6 +386,11 @@ export function EditPetModal({ visible, onClose }: Props) {
                 keyboardType="decimal-pad"
                 returnKeyType="done"
               />
+              {weightInvalid && (
+                <ThemedText variant="caption" style={styles.hint} testID="edit-pet-weight-invalid">
+                  {WEIGHT_INVALID_LINE}
+                </ThemedText>
+              )}
               {/* Round P9 — editing this number writes no weigh-in, so the Weight card's
                   trend never sees it; an owner correcting it here should not believe
                   they logged one. Named for the pet the form was seeded for. */}
@@ -388,6 +419,10 @@ const styles = StyleSheet.create({
   },
   note: {
     color: theme.colorTextSecondary,
+    marginTop: theme.space1,
+  },
+  hint: {
+    color: theme.colorTextPrimary,
     marginTop: theme.space1,
   },
   bandText: {
