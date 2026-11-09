@@ -28,8 +28,9 @@
 import { File } from 'expo-file-system';
 import { SYMPTOM_EVENT_TYPES } from './analytics';
 import { getDb } from './db';
-import { isTrialRunning, type TrialFacts } from './dietTrial';
-import { loadTrialPredicateFacts } from './dietTrialFacts';
+import { isTrialRunning } from './dietTrial';
+import { withholdingReasons, type TrialCardInput } from './dietTrialCard';
+import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
 import { ACTIVE_DIET_TRIAL_QUERY } from './dietTrialMirror';
 import { drugDisplayName } from './medications';
 // `isLookRow`, not monthReads' LOOK_EVENT_TYPE: monthReads reaches lib/supabase at
@@ -565,11 +566,19 @@ async function readSnapshotInputs(pet: SnapshotPet, now: Date) {
   let trialCoveredDayIndices: number[] = [];
   if (trial && isTrialRunning(trial, now.getTime())) {
     try {
-      const predicate = await loadTrialPredicateFacts(
-        { id: pet.id, name: pet.name, species: pet.species },
-        now.getTime(),
-      );
-      const widgetCoverage = widgetTrialCoverage(predicate?.facts ?? null);
+      // CUL-1580 — TWO reads, one rule. `loadDietTrialFacts` builds the SAME card input
+      // Home's strip reads (intake-decline lane included), so the widget withholds on
+      // Home's own `withholdingReasons` rather than a second hand-kept list. The
+      // predicate read supplies only the covered-day indices the dots paint, which the
+      // card input does not carry. Folding the two into one read waits on
+      // `lib/dietTrialFacts.ts` accepting a precomputed core. Either read throwing lands
+      // in the catch: no ratio.
+      const factsPet = { id: pet.id, name: pet.name, species: pet.species };
+      const [cardInput, predicate] = await Promise.all([
+        loadDietTrialFacts({ pet: factsPet, nowMs: now.getTime(), rethrowUnreadable: true }),
+        loadTrialPredicateFacts(factsPet, now.getTime()),
+      ]);
+      const widgetCoverage = widgetTrialCoverage(cardInput, predicate?.facts?.coveredDayIndices ?? null);
       if (widgetCoverage) {
         trialCoverage = widgetCoverage.coverage;
         trialCoveredDayIndices = widgetCoverage.coveredDayIndices;
@@ -632,39 +641,33 @@ function readPreviousSlotIndex(dir: { list(): { name: string; textSync?(): strin
 /**
  * The trial strip's coverage, or null when the widget must not state one.
  *
- * CUL-1572 — A BOWL'S DAYS HAVE NO RATIO. The widget prints "N of M trial days
- * logged" off `coverage`, and read it with no bowl check at all, so a topped-up bowl
- * that held every counted day still got a ratio (or "0 of 23" over a bowl-only
- * record). The Home strip withholds on the same two facts (`free_fed`,
- * `bowl_throughout` in `withholdingReasons`), so the widget follows it: a bowl down
- * now, or one that held every counted day, leaves the strip out and the band falls
- * back to the pips. Silence, never a ratio over days no meal could be logged on.
+ * CUL-1580 — THE WIDGET WITHHOLDS WHENEVER HOME DOES. The ratio reaches two places
+ * on the widget: the band caption ("11 of 12 trial days logged") and the trial
+ * record tile, whose sub reads "every day logged so far". Home's strip states its
+ * ratio only when `withholdingReasons` is empty; this gate used to re-list three of
+ * those reasons by hand (the bowl facts, CUL-1572 / CUL-1578), so a cat refusing the
+ * trial diet, a live intake decline, a dark antigen arm, an untracked head, a thin
+ * record or an eating check that did not answer all still got a tidy ratio on the
+ * Home Screen. It reads the one list now, so a reason added there reaches the
+ * widget without anyone remembering to.
  *
- * CUL-1578 — and a bowl that held only PART of the counted range, gone now. The strip
- * withholds on that too (`bowl_part`), because the bowl days still sit in the
- * denominator; `intakeNotDirectlyObserved` is the any-overlap fact all three ride on.
+ * Withheld, the strip and the record tile leave together and the band falls back
+ * to the 7-day pips; the header keeps "Day N of M", which reads the trial row and
+ * never this gate (`contextLineFor`). The dots cannot stay on their own: filled and
+ * hollow days ARE the ratio, drawn.
+ *
+ * No covered-day indices (the predicate read had no facts) is silence too: a strip
+ * whose dots disagree with its own caption is a third definition.
  */
 export function widgetTrialCoverage(
-  facts: Pick<
-    TrialFacts,
-    | 'coverage'
-    | 'coveredDayIndices'
-    | 'intakeNotDirectlyObserved'
-    | 'intakeNotDirectlyObservedNow'
-    | 'intakeNotDirectlyObservedThroughout'
-  > | null,
+  input: TrialCardInput | null,
+  coveredDayIndices: number[] | null,
 ): { coverage: { daysLogged: number; daysElapsed: number }; coveredDayIndices: number[] } | null {
-  if (!facts?.coverage) return null;
-  if (
-    facts.intakeNotDirectlyObserved ||
-    facts.intakeNotDirectlyObservedNow ||
-    facts.intakeNotDirectlyObservedThroughout
-  ) {
-    return null;
-  }
+  if (!input?.trial || !input.coverage || !coveredDayIndices) return null;
+  if (withholdingReasons(input).length > 0) return null;
   return {
-    coverage: { daysLogged: facts.coverage.daysLogged, daysElapsed: facts.coverage.daysElapsed },
-    coveredDayIndices: facts.coveredDayIndices,
+    coverage: { daysLogged: input.coverage.daysLogged, daysElapsed: input.coverage.daysElapsed },
+    coveredDayIndices,
   };
 }
 
