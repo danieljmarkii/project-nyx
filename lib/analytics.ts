@@ -1471,6 +1471,8 @@ function detectIntakeDeclineRelative(input: IntakeDeclineInput): IntakeDeclineRe
     tested.push({ meals: [...sorted, ...earlierMixes].sort((x, y) => x.ms - y.ms), latest });
   }
   let refusalFlag: IntakeDeclineFlag | null = null;
+  // The meal-weighted reading outranks the CUL-1797 by-day one (see detection.ts).
+  let refusalFromMealReading = false;
   for (const { meals, latest } of tested) {
     const sorted = meals;
     if (latest.ms < refusalRecencyStart) continue;
@@ -1509,7 +1511,15 @@ function detectIntakeDeclineRelative(input: IntakeDeclineInput): IntakeDeclineRe
       ratedMealsConsidered: meals.length,
     };
     // Surface the most-eaten-then-refused food (largest baseline) if several qualify.
-    if (!refusalFlag || candidate.baselineScore > refusalFlag.baselineScore) refusalFlag = candidate;
+    const fromMealReading = priorMean >= DECLINE.normallyEatenScoreFloor;
+    if (
+      !refusalFlag ||
+      (fromMealReading && !refusalFromMealReading) ||
+      (fromMealReading === refusalFromMealReading && candidate.baselineScore > refusalFlag.baselineScore)
+    ) {
+      refusalFlag = candidate;
+      refusalFromMealReading = fromMealReading;
+    }
   }
   if (refusalFlag) flags.push(refusalFlag);
 

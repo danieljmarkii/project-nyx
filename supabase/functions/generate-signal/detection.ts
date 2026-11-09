@@ -4960,6 +4960,9 @@ function detectIntakeDeclineRelative(
   }
 
   let refusalFinding: IntakeDeclineFinding | null = null
+  // Whether the chosen finding came from the meal-weighted reading. That reading outranks the
+  // CUL-1797 by-day one, so a record that fired before names the same food at the same normal.
+  let refusalFromMealReading = false
   for (const { meals, latest } of tested) {
     const sorted = meals
     if (latest.ms < refusalRecencyStart) continue
@@ -5004,8 +5007,14 @@ function detectIntakeDeclineRelative(
       lastFullMealIso,
     }
     // Surface the most-eaten-then-refused food (largest drop) if several qualify.
-    if (!refusalFinding || candidate.baselineScore > refusalFinding.baselineScore) {
+    const fromMealReading = priorMean >= cfg.normallyEatenScoreFloor
+    if (
+      !refusalFinding ||
+      (fromMealReading && !refusalFromMealReading) ||
+      (fromMealReading === refusalFromMealReading && candidate.baselineScore > refusalFinding.baselineScore)
+    ) {
       refusalFinding = candidate
+      refusalFromMealReading = fromMealReading
     }
   }
   if (refusalFinding) findings.push(refusalFinding)
