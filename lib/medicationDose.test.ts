@@ -249,6 +249,20 @@ describe('every dose write that lands and changes the record regenerates the Sig
   });
 });
 
+describe('the regen path never fails a saved rating (CUL-1916)', () => {
+  it('a pet lookup that throws synchronously is swallowed: the rating resolves', async () => {
+    mockGetFirstAsync.mockRejectedValueOnce(new Error('db busy'));
+    mockGetEventPetId.mockImplementationOnce(() => {
+      throw new TypeError('not a function');
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(recordDoseHowGiven('d1', 'direct')).resolves.toBeUndefined();
+    await new Promise((r) => setImmediate(r));
+    expect(mockRegen).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
 describe('one write path for re-rating a dose (HV-6, B2)', () => {
   // The drift CUL-1087 closed for meal ratings, closed for doses: a screen that writes
   // either field itself skips Home's re-read, which is how all four did. Comments are

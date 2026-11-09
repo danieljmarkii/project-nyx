@@ -252,7 +252,10 @@ function regenIfChanged(
     if (prior !== next) triggerSignalRegenDebounced(before.pet_id);
     return;
   }
-  getEventPetId(eventId)
+  // Started inside a .then so even a synchronous throw lands in the catch, never in the
+  // caller: the rating is already saved.
+  Promise.resolve()
+    .then(() => getEventPetId(eventId))
     .then((petId) => {
       if (petId) triggerSignalRegenDebounced(petId);
     })
