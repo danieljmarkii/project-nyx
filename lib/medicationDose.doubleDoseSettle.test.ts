@@ -17,6 +17,8 @@ jest.mock('./sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   syncPendingMedicationAdministrations: jest.fn().mockResolvedValue(undefined),
 }));
+// The dose writes now ask for a Signal regen (CUL-1916); this suite drives the check only.
+jest.mock('./signal', () => ({ triggerSignalRegenDebounced: jest.fn() }));
 
 const mockOrder: string[] = [];
 const mockPatchDoubleDose = jest.fn(() => { mockOrder.push('patch'); return true; });
