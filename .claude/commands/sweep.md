@@ -1,0 +1,15 @@
+# /sweep — check, rank and launch the board's loose ends
+
+**Version:** 1.0 (2026-11-07, CUL-2651). Work outside every run order (no project, or a project without a table) reaches no `/dispatch`. A sweep checks it is still real, ranks it by what an owner would notice, and launches it through `/dispatch Loose ends`. The order, bundles, size bands, file rule and caps are `scripts/sweep/rank.ts`, tested: no hand picks.
+
+1. **Loose ends.** Find the project (`list_projects`). The first run creates it: team Culprit, a page with `Alias: Loose ends`, the run-order table, `Done means (rows):` and `## Board`, and a *Found along the way* milestone. A `/sweep` the PM types is their `take over` for it.
+2. **Candidates, by fields.** `Todo` issues outside every run order; `Backlog` ones only when an owner plainly sees the problem. Drop `Waiting on PM`, `Propose close` and launched rows. Shortlist about 20: `Live harm`, `Bug` and correctness, copy and UX, then priority, then age.
+3. **Relevance, by one general-purpose agent**, to keep this session light. From each issue, its comments and `main`, it returns a `SweepCandidate` (`rank.ts` defines every verdict, tier and size): above all the `evidence` any closing verdict needs (the merge, the v2, the original), the `files` it would edit, and `impactWhy`, the sentence an owner or vet would see. No one can say who is hurt, or it is a product call: `needsShaping`. It writes nothing.
+4. **Team read, here.** One recommendation per persona the surface routes to (`docs/personas.md`): Engineer and QA always, Designer for UI and copy, Dr. Chen and Data for clinical logic, Trust & Safety for privacy. A direction, never a blessing.
+5. **Rank.** Facts: the candidates, `inFlight` (open PRs' files, last 14 days, and running rows'), `slotsFree` and `waitingOnPm` from `/dispatch Loose ends --dry-run`, `now` (`date -u`), `nextRow`. Run `node --experimental-strip-types scripts/sweep/cli.ts rank <facts.json>`; fix a refusal in the facts.
+6. **Dry run.** Print the picks and the held, each with its reason, the Linear writes and warnings, and stop. Name any stale PR that is a pick's only hold. Only the PM's typed `go`, `go except CUL-NNN …` or `no` moves on.
+7. **On `go`:**
+   - **Linear.** `close-done`: Done, quoting the evidence. `propose-close`: the groomer's label and 7-day veto, never a close. `duplicate`: against the original. `update-description`: a dated `patch`. Age alone writes nothing.
+   - **Page.** Move the picks' issues into Loose ends, append their rows and notes, replace `Done means (rows):` with this batch, prune merged rows older than 7 days. The table is the sweep's; the Board stays dispatch's.
+   - **Launch** by `/dispatch` step 7; the `go` is the pick. `title` is the CLI's `session:` line. A `shape` pick launches DISCOVERY and plan-gated: it answers its own technical questions, convenes the team, posts a decision brief with its appetite, and builds only on the PM's go in its session.
+   - **Close.** `set_session_title` with the CLI's last line; dispatch's status update plus the `cli.ts metrics` line.
