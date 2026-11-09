@@ -1321,6 +1321,7 @@ function normallyEatenDayMean<T extends { score: number }>(
   dayOf: (m: T) => number,
   floor: number,
   minSamples: number,
+  collapseRefusals: boolean,
 ): number | null {
   const days: { day: number; sum: number; n: number; refused: boolean }[] = [];
   // A day's refusals of the food count once: a refused re-offer is the same refusal again, so
@@ -1330,7 +1331,7 @@ function normallyEatenDayMean<T extends { score: number }>(
     const refused = m.score === 0;
     const last = days[days.length - 1];
     if (last && last.day === dayOf(m)) {
-      if (refused && last.refused) continue;
+      if (collapseRefusals && refused && last.refused) continue;
       last.sum += m.score;
       last.n++;
       last.refused = last.refused || refused;
@@ -1516,7 +1517,8 @@ function detectIntakeDeclineRelative(input: IntakeDeclineInput): IntakeDeclineRe
     const normal =
       priorMean >= DECLINE.normallyEatenScoreFloor
         ? priorMean
-        : normallyEatenDayMean(prior, (m) => dayOfMeal.get(m) as number, DECLINE.normallyEatenScoreFloor, DECLINE.normallyEatenMinSamples);
+        : (normallyEatenDayMean(prior, (m) => dayOfMeal.get(m) as number, DECLINE.normallyEatenScoreFloor, DECLINE.normallyEatenMinSamples, true) ??
+          normallyEatenDayMean(prior, (m) => dayOfMeal.get(m) as number, DECLINE.normallyEatenScoreFloor, DECLINE.normallyEatenMinSamples, false));
     if (normal === null) continue;
     const candidate: IntakeDeclineFlag = {
       trigger: 'refused_normal_food',

@@ -398,4 +398,21 @@ describe('CUL-1797 adversarial pass 1 — refusing harder never quiets the new r
     meals.push({ iso: `${day(13)}T12:00:00-04:00`, rating: 'most', food: 'a' }, { iso: `${day(14)}T12:00:00-04:00`, rating: 'refused', food: 'a' });
     expect(verdict('cat', meals, `${day(14)}T20:00:00-04:00`, NY)).toContain('refused_normal_food');
   });
+
+  it('collapsing a day\'s refusals never quiets the by-day reading either (pass 2, C1)', () => {
+    // Food g eaten well twice a day keeps the day-count arm quiet. Food f1: Oct 1–3 all; refused
+    // Oct 4 and 5; Oct 6 all three times then refused twice; refused Oct 7. Collapsed, Oct 6 reads
+    // exactly 3.0, stops the trailing drop and keeps Oct 4–5 in the normal; uncollapsed it is low
+    // and the run goes. Both readings are tried, the accusing one standing.
+    const meals: M[] = [];
+    for (let d = 1; d <= 7; d++) {
+      meals.push({ iso: `${day(d)}T07:00:00-04:00`, rating: 'all', food: 'g' }, { iso: `${day(d)}T19:00:00-04:00`, rating: 'all', food: 'g' });
+    }
+    for (const d of [1, 2, 3]) meals.push({ iso: `${day(d)}T12:00:00-04:00`, rating: 'all' });
+    for (const d of [4, 5]) meals.push({ iso: `${day(d)}T12:00:00-04:00`, rating: 'refused' });
+    for (const t of ['09:00', '11:00', '13:00']) meals.push({ iso: `${day(6)}T${t}:00-04:00`, rating: 'all' });
+    for (const t of ['15:00', '17:00']) meals.push({ iso: `${day(6)}T${t}:00-04:00`, rating: 'refused' });
+    meals.push({ iso: `${day(7)}T12:00:00-04:00`, rating: 'refused' });
+    expect(verdict('cat', meals, `${day(7)}T21:00:00-04:00`, NY)).toContain('refused_normal_food');
+  });
 });

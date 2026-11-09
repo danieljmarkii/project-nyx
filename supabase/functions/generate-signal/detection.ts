@@ -4339,7 +4339,7 @@ function intakeBaselineReadings<T extends { score: number }>(
  * `floor`) are left out. By day, so a food re-offered and refused four times on one bad day counts
  * as one bad day (CUL-2696), as CUL-94 already reads the latest day; the trailing low days are the
  * decline, including the evening half of a bout across local midnight (CUL-1790). A day's refusals
- * count once, so a refused re-offer never lowers the day (adversarial pass 1). Null when what
+ * count once when `collapseRefusals` (adversarial pass 1); the caller reads both ways (pass 2). Null when what
  * is left is under `minSamples` meals or under the floor. Mirrored in lib/analytics.ts.
  */
 function normallyEatenDayMean<T extends { score: number }>(
@@ -4347,6 +4347,7 @@ function normallyEatenDayMean<T extends { score: number }>(
   dayOf: (m: T) => number,
   floor: number,
   minSamples: number,
+  collapseRefusals: boolean,
 ): number | null {
   const days: { day: number; sum: number; n: number; refused: boolean }[] = []
   // A day's refusals of the food count once: a refused re-offer is the same refusal again, so
@@ -4356,7 +4357,7 @@ function normallyEatenDayMean<T extends { score: number }>(
     const refused = m.score === 0
     const last = days[days.length - 1]
     if (last && last.day === dayOf(m)) {
-      if (refused && last.refused) continue
+      if (collapseRefusals && refused && last.refused) continue
       last.sum += m.score
       last.n++
       last.refused = last.refused || refused
@@ -5010,7 +5011,10 @@ function detectIntakeDeclineRelative(
     const normal =
       priorMean >= cfg.normallyEatenScoreFloor
         ? priorMean
-        : normallyEatenDayMean(prior, (m) => dayOfMeal.get(m) as number, cfg.normallyEatenScoreFloor, cfg.normallyEatenMinSamples)
+        : // Both by-day readings, the accusing one standing (adversarial pass 2: collapsing a day's
+          // refusals can lift that day to the floor and keep older refusal days in the normal).
+          (normallyEatenDayMean(prior, (m) => dayOfMeal.get(m) as number, cfg.normallyEatenScoreFloor, cfg.normallyEatenMinSamples, true) ??
+          normallyEatenDayMean(prior, (m) => dayOfMeal.get(m) as number, cfg.normallyEatenScoreFloor, cfg.normallyEatenMinSamples, false))
     if (normal === null) continue
 
     const candidate: IntakeDeclineFinding = {
