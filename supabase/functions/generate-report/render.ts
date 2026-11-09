@@ -106,6 +106,7 @@ import { proteinList } from '../../../lib/trialProtein.ts'
 // question ("is this record dense enough to read an absence of off-diet food?"), one constant.
 import { CHALLENGE_WINDOW_DAYS, COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
+import { MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
 import { adHocRecordStartOf, withRecordOverlaps, type AdHocRecordStart } from './medicationFacts.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
@@ -4736,9 +4737,7 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // callout reading "supports interpreting it". Like every caveat here it withholds the affirmative.
   for (const m of t.maskingTailOverlap ?? []) {
     caveats.push(
-      `${tailName(m)} ${tailEndedBit(m)}, and ${
-        m.unresolved ? 'a drug this report cannot identify is treated as one that' : 'it is a drug that'
-      } can hide signs for weeks after the last dose, so a change in the signs the trial is measuring cannot be attributed to the diet alone.`,
+      `${tailName(m)} ${tailEndedBit(m)}, and ${tailRuleBit(m)}, so a change in the signs the trial is measuring cannot be attributed to the diet alone.`,
     )
   }
   // CUL-2480 instance 4: a drug whose doses on record cross the trial but which no overlap row holds.
@@ -6198,6 +6197,16 @@ function tailEndedBit(m: TrialMaskingTail): string {
   return `ended ${h(fmtDay(m.endedOn))}, ${num(m.daysBeforeTrial)} day${m.daysBeforeTrial === 1 ? '' : 's'} before the trial`
 }
 
+/** The rule, stated as the report's rule and not as a property of the drug (adversarial pass 1):
+ *  famotidine does not act for six weeks, but the Signal counts every drug that can hide a sign
+ *  that long (`MASK_TAIL_DAYS`, sized for a depot steroid), and the report says the same thing. */
+function tailRuleBit(m: TrialMaskingTail): string {
+  const weeks = `${num(MASK_TAIL_DAYS / 7)} weeks`
+  return m.unresolved
+    ? `this report cannot tell what it is, so it counts it as a drug that may hide signs for up to ${weeks} after the last dose`
+    : `this report counts a drug that can hide signs as possibly acting for up to ${weeks} after the last dose`
+}
+
 /** One drug name, as the overlap lines print it. */
 function tailName(m: TrialMaskingTail): string {
   return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}`
@@ -6206,10 +6215,7 @@ function tailName(m: TrialMaskingTail): string {
 /** The trial block's row for a course that ended before the trial inside its masking tail. */
 function maskingTailRow(m: TrialMaskingTail): string {
   const span = m.startedAt ? `${h(fmtDay(m.startedAt))}&ndash;${h(fmtDay(m.endedOn))} &middot; ` : ''
-  const why = m.unresolved
-    ? 'this report cannot tell what it is, so it is treated as a drug that can hide signs for weeks after the last dose'
-    : 'a drug that can hide signs for weeks after the last dose'
-  return `${tailName(m)} &middot; ${span}<b>${tailEndedBit(m)}</b>; ${why}, so its effect may reach into the trial.`
+  return `${tailName(m)} &middot; ${span}<b>${tailEndedBit(m)}</b>; ${tailRuleBit(m)}, so its effect may reach into the trial.`
 }
 
 function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: ReportSnapshot): string {

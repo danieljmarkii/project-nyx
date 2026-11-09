@@ -73,6 +73,7 @@ import {
   type LeadSign,
 } from './v2Predicates.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
+import { MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
 import { backSheetsOf, episodesBlock, TRIAL_READING_LABEL, trialHeadingOf, trialReadingOf, trialRowsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
 import { carriedSectionsOf } from './sheet1CarryV2.ts'
 import { adHocGroupOf, withRecordOverlaps } from './medicationFacts.ts'
@@ -1533,7 +1534,7 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
     (m) =>
       `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''}, ended ${plainDay(m.endedOn)}, ${m.daysBeforeTrial} day${
         m.daysBeforeTrial === 1 ? '' : 's'
-      } before the trial (a drug that can hide signs for weeks after the last dose${m.unresolved ? ', taken as one since the name is not recognised' : ''})`,
+      } before the trial (counted as possibly hiding signs for up to ${MASK_TAIL_DAYS / 7} weeks after the last dose${m.unresolved ? ', since the name is not recognised' : ''})`,
   )
   if (t.medicationOverlap.length === 0 && recordOnly.length === 0 && tails.length > 0) {
     return { text: `Not a test of the diet alone. Ended before the trial: ${tails.join('; ')}.${bowl}`, lead: 'Not a test of the diet alone.' }

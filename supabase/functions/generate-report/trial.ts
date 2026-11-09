@@ -956,8 +956,10 @@ export interface TrialBlock {
   outcomeNotes: string | null
 
   medicationOverlap: TrialMedicationOverlap[]
-  /** CUL-1919: courses that ended before the trial whose masking tail reaches into it. Optional:
-   *  a stored copy built before it existed reads as unknown, never as "none". */
+  /** CUL-1919: courses that ended before the trial whose masking tail reaches into it. The builder
+   *  writes the regimens and the window's ad-hoc groups; `withRecordOverlaps` (medicationFacts.ts)
+   *  adds ad-hoc courses the window cannot see from `medicationHistory`. Optional: a stored copy built
+   *  before it existed renders as it did then (no tail rows), unless its history holds one. */
   maskingTailOverlap?: TrialMaskingTail[]
   /** CUL-2480 instance 4: render-layer only, never written by the builder (`withRecordOverlaps`). */
   recordOnlyOverlap?: TrialRecordOnlyOverlap[]

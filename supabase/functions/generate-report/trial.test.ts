@@ -5920,7 +5920,7 @@ Deno.test('CUL-1919 — prednisolone ended 2 days before the trial is named with
   assert.ok(!/No medication or supplement is recorded as overlapping/.test(block), 'the row no longer reads clean')
   assert.ok(!/supports interpreting it/.test(text), 'the affirmative is withheld beside the steroid')
   assert.ok(
-    /Prednisolone ended Jul 24, 2 days before the trial, and it is a drug that can hide signs for weeks after the last dose, so a change in the signs the trial is measuring cannot be attributed to the diet alone\./.test(
+    /Prednisolone ended Jul 24, 2 days before the trial, and this report counts a drug that can hide signs as possibly acting for up to 6 weeks after the last dose, so a change in the signs the trial is measuring cannot be attributed to the diet alone\./.test(
       block,
     ),
     block,
@@ -5952,11 +5952,11 @@ Deno.test('CUL-1919 — only a drug that can mask carries a tail; an unreadable 
   const tails = snap.trial?.maskingTailOverlap ?? []
   assert.deepEqual(tails.map((t) => [t.drugName, t.unresolved]), [["Buddy's pills", true]])
   const text = plain(renderReport(snap))
-  assert.ok(/this report cannot tell what it is, so it is treated as a drug that can hide signs/.test(text), text)
+  assert.ok(/this report cannot tell what it is, so it counts it as a drug that may hide signs for up to 6 weeks/.test(text), text)
   assert.ok(!/supports interpreting it/.test(text))
 })
 
-Deno.test('CUL-1919 — a stored trial block without the field still renders (unknown, never "none")', () => {
+Deno.test('CUL-1919 — a stored trial block without the field renders as it did before the fix', () => {
   const snap = assembleReport(lateTrialInput())
   delete (snap.trial as { maskingTailOverlap?: unknown }).maskingTailOverlap
   assert.doesNotThrow(() => renderReport(snap))
@@ -5967,4 +5967,37 @@ Deno.test('CUL-1919 — the v2 layout’s medication line names the course too',
   const doc = JSON.stringify(buildDocumentV2(snap, { owner: null, shortId: null, questions: [] }))
   assert.ok(/Not a test of the diet alone\. Ended before the trial: Prednisolone, ended Jul 24, 2 days before the trial/.test(doc), doc.slice(0, 400))
   assert.ok(!/No medication or supplement is recorded as overlapping the trial/.test(doc))
+})
+
+Deno.test('CUL-1919 adv pass 1 — an AD-HOC prednisolone course before the trial is found from the lifetime record', () => {
+  // No regimen: doses Jul 10–24 only. The trial-anchored window opens the day before Day 1, so the
+  // builder sees none of them; the lifetime record does, as production hands it over.
+  const doses = days('2026-07-10', '2026-07-24').map((d) => ({
+    eventId: id('dose'),
+    occurredAt: at(d),
+    medicationId: null,
+    medicationItemId: 'mi-pred',
+    adherence: 'given',
+    doseAmount: '5 mg',
+    pairedEventId: null,
+  }))
+  const input = lateTrialInput()
+  input.doses = doses
+  input.lifetimeDoses = doses
+  input.medicationItems = [
+    { id: 'mi-pred', genericName: 'Prednisolone', brandName: null, strength: '5 mg', route: 'oral', isPrescription: true },
+  ] as ReportInput['medicationItems']
+  const snap = assembleReport(input)
+  assert.ok(
+    (snap.medicationHistory?.entries ?? []).some((e) => e.source === 'doses' && e.lastDoseDay === '2026-07-24'),
+    'the lifetime table holds the course',
+  )
+  const text = plain(renderReport(snap))
+  const blockStart = text.indexOf('Diet trial the record, not a result')
+  const block = text.slice(blockStart, text.indexOf('Symptom frequency', blockStart))
+  assert.ok(/Prednisolone · Jul 10–Jul 24 · ended Jul 24, 2 days before the trial/.test(block), block)
+  assert.ok(!/No medication or supplement is recorded as overlapping/.test(block))
+  assert.ok(!/supports interpreting it/.test(text), 'the affirmative is withheld beside the ad-hoc steroid')
+  const doc = JSON.stringify(buildDocumentV2(snap, { owner: null, shortId: null, questions: [] }))
+  assert.ok(/Ended before the trial: Prednisolone, ended Jul 24, 2 days before the trial/.test(doc))
 })
