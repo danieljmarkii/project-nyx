@@ -98,7 +98,7 @@ import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
 // contamination finding is.
-import type { ContaminationFact, TrialBlock, TrialMedicationOverlap } from './trial.ts'
+import type { ContaminationFact, TrialBlock, TrialMaskingTail, TrialMedicationOverlap } from './trial.ts'
 // Same list formatter the owner-facing contaminant copy uses — one spelling of
 // "chicken, salmon and beef" across the product (B-351 slice 5).
 import { proteinList } from '../../../lib/trialProtein.ts'
@@ -106,6 +106,7 @@ import { proteinList } from '../../../lib/trialProtein.ts'
 // question ("is this record dense enough to read an absence of off-diet food?"), one constant.
 import { CHALLENGE_WINDOW_DAYS, COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
+import { MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
 import { adHocRecordStartOf, withRecordOverlaps, type AdHocRecordStart } from './medicationFacts.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
@@ -3686,9 +3687,17 @@ export function headlineMedicationBit(snap: ReportSnapshot, t: NonNullable<Repor
     ].filter(Boolean)
     clauses.push(`${h(r.drugName)} (${bits.join(', ')})`)
   }
-  if (clauses.length === 0) return ''
-  const list = clauses.length === 1 ? clauses[0] : `${clauses.slice(0, -1).join(', ')} and ${clauses[clauses.length - 1]}`
-  return ` <b>Medication overlapping the trial: ${list}</b>, so a change in the signs cannot be attributed to the diet alone (diet-trial block).`
+  // CUL-1919 (QUIET): a course that ended before the trial but inside its masking tail. Sheet 1 is
+  // where a vet reads the result, so the steroid stopped two days before Day 1 is named here too.
+  const tailClauses = (t.maskingTailOverlap ?? []).map((m) => `${tailName(m)} (${tailEndedBit(m)})`)
+  const join = (xs: string[]) => (xs.length === 1 ? xs[0] : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`)
+  if (clauses.length === 0 && tailClauses.length === 0) return ''
+  const tailPart = tailClauses.length > 0 ? `ended before the trial but may still have been acting: ${join(tailClauses)}` : ''
+  const lead =
+    clauses.length === 0
+      ? `Medication ${tailPart}`
+      : `Medication overlapping the trial: ${join(clauses)}${tailPart ? `; ${tailPart}` : ''}`
+  return ` <b>${lead}</b>, so a change in the signs cannot be attributed to the diet alone (diet-trial block).`
 }
 
 /** Days from one 'YYYY-MM-DD' to a later one; null when either does not parse. */
@@ -4721,6 +4730,21 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     const names = named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`
     caveats.push(
       `${names} overlapped the trial, so a change in the signs the trial is measuring cannot be attributed to the diet alone.`,
+    )
+  }
+  // CUL-1919 (QUIET): a course that ended before Day 1 but inside the masking tail the Signal uses
+  // (`lib/maskingSpans.ts`). Without it, prednisolone stopped two days before the trial left this
+  // callout reading "supports interpreting it". Like every caveat here it withholds the affirmative.
+  for (const m of t.maskingTailOverlap ?? []) {
+    caveats.push(
+      `${tailName(m)} ${tailEndedBit(m)}, and ${tailRuleBit(m)}, so a change in the signs the trial is measuring cannot be attributed to the diet alone.`,
+    )
+  }
+  // CUL-1919 adversarial pass 2 (QUIET): the drug a short pull dropped cannot be named, so the
+  // gap is, and the affirmative is withheld beside it.
+  if (medicationPullShort(snap)) {
+    caveats.push(
+      'The medication record could not be read in full, so a drug given before or during the trial may be missing here, and a change in the signs the trial is measuring cannot be attributed to the diet alone.',
     )
   }
   // CUL-2480 instance 4: a drug whose doses on record cross the trial but which no overlap row holds.
@@ -6174,7 +6198,44 @@ function routeOfOverlap(snap: ReportSnapshot, m: TrialMedicationOverlap): string
   return hits.length === 1 ? hits[0]?.trim().toLowerCase() || null : null
 }
 
+/** CUL-1919 — "ended Jul 24, 2 days before the trial". The real dates, never a clipped overlap:
+ *  the course did not overlap the trial on the calendar, and saying when it stopped is the fact. */
+function tailEndedBit(m: TrialMaskingTail): string {
+  return `ended ${h(fmtDay(m.endedOn))}, ${num(m.daysBeforeTrial)} day${m.daysBeforeTrial === 1 ? '' : 's'} before the trial`
+}
+
+/** The rule, stated as the report's rule and not as a property of the drug (adversarial pass 1):
+ *  famotidine does not act for six weeks, but the Signal counts every drug that can hide a sign
+ *  that long (`MASK_TAIL_DAYS`, sized for a depot steroid), and the report says the same thing. */
+function tailRuleBit(m: TrialMaskingTail): string {
+  const weeks = `${num(MASK_TAIL_DAYS / 7)} weeks`
+  return m.unresolved
+    ? `this report cannot tell what it is, so it counts it as a drug that may hide signs for up to ${weeks} after the last dose`
+    : `this report counts a drug that can hide signs as possibly acting for up to ${weeks} after the last dose`
+}
+
+/** CUL-1919 adversarial pass 2 (QUIET): a short medication pull keeps the NEWEST rows (CUL-975), so
+ *  the course that ended before the trial is the first one lost, and the row read clean. */
+function medicationPullShort(snap: ReportSnapshot): boolean {
+  const short = snap.incompletePulls ?? []
+  return short.includes('medication_administrations') || short.includes('medications')
+}
+
+/** One drug name, as the overlap lines print it. */
+function tailName(m: TrialMaskingTail): string {
+  return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}`
+}
+
+/** The trial block's row for a course that ended before the trial inside its masking tail. */
+function maskingTailRow(m: TrialMaskingTail): string {
+  const span = m.startedAt ? `${h(fmtDay(m.startedAt))}&ndash;${h(fmtDay(m.endedOn))} &middot; ` : ''
+  return `${tailName(m)} &middot; ${span}<b>${tailEndedBit(m)}</b>; ${tailRuleBit(m)}, so its effect may reach into the trial.`
+}
+
 function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: ReportSnapshot): string {
+  // CUL-1919 (QUIET): a steroid stopped two days before Day 1 overlaps nothing on the calendar, so
+  // this row read "No medication … overlapping" over the confound a vet most needs named.
+  const tails = (t.maskingTailOverlap ?? []).map(maskingTailRow)
   // CUL-2480 instance 4: a drug whose doses on record cross the trial, with no overlap row, is never
   // left under "No medication or supplement is recorded as overlapping".
   const recordOnly = (t.recordOnlyOverlap ?? []).map((r) => {
@@ -6191,8 +6252,11 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
         : ''
     }`
   })
+  if (t.medicationOverlap.length === 0 && recordOnly.length === 0 && tails.length > 0) {
+    return `${tails.join(' ')} <span class="qual">Dates are the course as recorded. It bears directly on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
+  }
   if (t.medicationOverlap.length === 0 && recordOnly.length > 0) {
-    return `${recordOnly.join(' ')} <span class="qual">No regimen is recorded for ${
+    return `${[...recordOnly, ...tails].join(' ')} <span class="qual">No regimen is recorded for ${
       recordOnly.length === 1 ? 'it' : 'them'
     }, so ${recordOnly.length === 1 ? 'its' : 'their'} span is the first and last logged dose, not a continuous course. It bears directly on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
   }
@@ -6207,6 +6271,9 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
     // with a prednisolone course in the excluded tail, the document was byte-identical
     // to one with no medication, and §7.2 kept its affirmative because the drug caveat
     // never fired.
+    if (medicationPullShort(snap)) {
+      return 'The medication record could not be read in full, so a course before or during the trial may be missing from this row &mdash; not checked with the owner.'
+    }
     const scope = trialCountScope(t)
     return `No medication or supplement is recorded as overlapping ${
       scope === 'during the trial' ? 'the trial window' : scope.replace(/^in /, '')
@@ -6303,7 +6370,7 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
   // the owner did not log." Round 4 read that as duration inferred from two ad-hoc
   // doses. It is not inferred, but nothing on the page said so, and the fix is to cite
   // where it comes from and where the per-regimen adherence lives.
-  return `${[...rows, ...recordOnly].join(' ')} <span class="qual">Spans are the courses as recorded, not evidence of administration &mdash; per-regimen adherence is in appendix&nbsp;D. It bears directly on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
+  return `${[...rows, ...recordOnly, ...tails].join(' ')} <span class="qual">Spans are the courses as recorded, not evidence of administration &mdash; per-regimen adherence is in appendix&nbsp;D. It bears directly on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
 }
 
 function indicationLabel(indication: 'skin' | 'gi' | 'other'): string {

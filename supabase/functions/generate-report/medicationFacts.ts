@@ -20,8 +20,9 @@
 // sentence says "on record since", and `atHistoryFloor` lets it add that dosing may predate it
 // (C-37: scope a date to the query when the read behind it may be truncated).
 import type { MedicationHistoryEntry, ReportSnapshot } from './report.ts'
-import { looksAntibacterial, type TrialRecordOnlyOverlap } from './trial.ts'
+import { looksAntibacterial, type TrialMaskingTail, type TrialRecordOnlyOverlap } from './trial.ts'
 import { dayKeyFromIndex } from '../../../lib/utils.ts'
+import { ALL_SIGNS, courseEffectOn, MASK_TAIL_DAYS, resolveDrugClasses } from '../../../lib/maskingSpans.ts'
 
 /** The earliest logged dose of an ad-hoc drug, when the record reaches before its window. */
 export interface AdHocRecordStart {
@@ -147,7 +148,7 @@ function withRecordChanges(snap: ReportSnapshot): ReportSnapshot {
 function withTrialRecordOverlaps(snap: ReportSnapshot): ReportSnapshot {
   const t = snap.trial
   if (!t) return snap
-  const withOnly = withRecordOnlyOverlaps(snap)
+  const withOnly = withRecordTails(withRecordOnlyOverlaps(snap))
   if (t.medicationOverlap.length === 0) return withOnly
   return withRedatedOverlaps(withOnly)
 }
@@ -205,6 +206,68 @@ function withRecordOnlyOverlaps(snap: ReportSnapshot): ReportSnapshot {
   if (out.length === 0) return snap
   out.sort((a, b) => a.firstDoseDay.localeCompare(b.firstDoseDay) || a.drugName.localeCompare(b.drugName))
   return { ...snap, trial: { ...t, recordOnlyOverlap: out } }
+}
+
+/** A 'YYYY-MM-DD' key as the epoch-day index `dayKeyFromIndex` inverts. */
+function dayIndexOfKey(key: string): number {
+  return Math.round(Date.parse(`${key.slice(0, 10)}T00:00:00Z`) / 86_400_000)
+}
+
+/**
+ * CUL-1919 adversarial pass 1 (QUIET): an AD-HOC masking course that ended before the trial. The
+ * builder sees only the window's doses, and a trial-anchored window opens the day before Day 1, so
+ * prednisolone dosed Jul 10–24 with no regimen never reached `maskingTailOverlap`: the trial block
+ * read clean and §7.2 said "supports interpreting it" while the lifetime table listed the course.
+ * Same rule as the builder (the Signal's `MASK_TAIL_DAYS` and `courseEffectOn`), read from the
+ * dose-derived history courses pooled by name, as `withRecordOnlyOverlaps` pools them. A builder
+ * row of the same name is re-dated from the record (its start moves only EARLIER, its end only
+ * LATER, so the tail can only grow), never duplicated.
+ */
+function withRecordTails(snap: ReportSnapshot): ReportSnapshot {
+  const t = snap.trial!
+  const hist = snap.medicationHistory
+  if (!hist) return snap
+  const trialFirst = t.elapsedStartDayIndex
+  const byName = new Map<string, { first: string; last: string }>()
+  for (const e of hist.entries) {
+    if (e.source !== 'doses' || !e.firstDoseDay || !e.lastDoseDay) continue
+    const g = byName.get(e.drugName)
+    if (!g) byName.set(e.drugName, { first: e.firstDoseDay, last: e.lastDoseDay })
+    else {
+      if (e.firstDoseDay < g.first) g.first = e.firstDoseDay
+      if (e.lastDoseDay > g.last) g.last = e.lastDoseDay
+    }
+  }
+  const tails: TrialMaskingTail[] = [...(t.maskingTailOverlap ?? [])]
+  let changed = false
+  for (const [drugName, { first, last }] of byName) {
+    const end = dayIndexOfKey(last)
+    if (end >= trialFirst || end + MASK_TAIL_DAYS < trialFirst) continue
+    const classes = resolveDrugClasses([drugName])
+    if (!ALL_SIGNS.some((sign) => courseEffectOn(classes, sign).masks)) continue
+    const at = tails.findIndex((x) => x.drugName === drugName)
+    if (at >= 0) {
+      const x = tails[at]
+      const startedAt = x.startedAt === null || first < x.startedAt ? first : x.startedAt
+      const endedOn = last > x.endedOn ? last : x.endedOn
+      if (startedAt === x.startedAt && endedOn === x.endedOn) continue
+      tails[at] = { ...x, startedAt, endedOn, daysBeforeTrial: trialFirst - dayIndexOfKey(endedOn) }
+      changed = true
+      continue
+    }
+    tails.push({
+      drugName,
+      isSupplement: snap.unlinkedMedications.find((u) => u.drugName === drugName)?.isSupplement ?? false,
+      startedAt: first,
+      endedOn: last,
+      daysBeforeTrial: trialFirst - end,
+      unresolved: classes === null,
+    })
+    changed = true
+  }
+  if (!changed) return snap
+  tails.sort((a, b) => a.daysBeforeTrial - b.daysBeforeTrial || a.drugName.localeCompare(b.drugName))
+  return { ...snap, trial: { ...t, maskingTailOverlap: tails } }
 }
 
 function withRedatedOverlaps(snap: ReportSnapshot): ReportSnapshot {
