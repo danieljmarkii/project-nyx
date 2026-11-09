@@ -62,7 +62,10 @@ export const ACTIVE_REGIMENS_FOR_STRIP_SQL = `
 //
 // The vehicle LEFT JOIN carries the paired meal's `intake_rating` so the resolver
 // can derive the B-156 in-doubt state (`isComboDoseInDoubt`) without a second read
-// — the same join `dietTrialFacts.dosesQuery` uses, for the same reason.
+// — the meal join `dietTrialFacts.dosesQuery` used before CUL-1917. That read now
+// reaches the meal through its live event; this one still joins `meals` directly,
+// which errs loud (a removed "refused" meal keeps a combo dose in doubt). Filtering
+// it naively goes quiet when a removed refused twin sits beside a live unrated one.
 //
 // Both `ma.pet_id` and `e.pet_id` are filtered: they are equal by invariant
 // (migration 023's same-pet trigger), so this is which index the planner can use,

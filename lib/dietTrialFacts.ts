@@ -767,6 +767,14 @@ export function feedingsQuery(bounded: boolean): string {
           AND e.occurred_at >= ?${bounded ? ' AND e.occurred_at <= ?' : ''}`;
 }
 
+/** A REMOVED VEHICLE IS ABSENT (CUL-1917). The paired meal is reached through its
+ *  own event, filtered on that event's `deleted_at`, so a dose whose meal was later
+ *  removed keeps its `paired_event_id` but carries no vehicle food. That is the shape
+ *  `generate-report` hands the same predicate (its events are live rows only, so the
+ *  lookup misses), and `doseRouteOf` reads a paired dose with an unknown vehicle as a
+ *  `food_vehicle` exposure. Joining `meals` directly let the removed meal's food
+ *  still clear the dose as on-list, and Home read one off-diet feeding fewer than the
+ *  report over the same record. */
 export function dosesQuery(bounded: boolean): string {
   return `SELECT ma.event_id, e.occurred_at, ma.adherence, ma.paired_event_id,
               mi.generic_name, mi.brand_name, mi.form,
@@ -775,7 +783,8 @@ export function dosesQuery(bounded: boolean): string {
          FROM medication_administrations ma
          JOIN events e ON e.id = ma.event_id
          LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
-         LEFT JOIN meals vm ON vm.event_id = ma.paired_event_id
+         LEFT JOIN events ve ON ve.id = ma.paired_event_id AND ve.deleted_at IS NULL
+         LEFT JOIN meals vm ON vm.event_id = ve.id
          LEFT JOIN food_items_cache vf ON vf.id = vm.food_item_id
         WHERE e.pet_id = ? AND ma.pet_id = ? AND e.deleted_at IS NULL
           AND e.occurred_at >= ?${bounded ? ' AND e.occurred_at <= ?' : ''}`;

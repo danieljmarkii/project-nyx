@@ -412,6 +412,43 @@ describe('dosesQuery', () => {
     db.close();
   });
 
+  // CUL-1917: a removed meal is absent. The dose keeps its pairing (the report sees
+  // the same id and misses it in its live-events map), but the removed meal's food
+  // must not classify it. Reading the meal table directly cleared the pill as on-list.
+  it('treats a paired meal whose event is soft-deleted as absent', () => {
+    const db = freshDb();
+    addFood(db, 'f-diet', 'Royal Canin', 'Hydrolyzed');
+    addEvent(db, 'meal-gone', '2026-07-05T08:00:00Z', '2026-07-05T09:00:00Z');
+    addMeal(db, 'meal-gone', 'f-diet');
+    addEvent(db, 'dose-1', '2026-07-05T08:01:00Z');
+    addDose(db, 'dose-1', null, 'meal-gone');
+    const rows = run(db, '2026-07-01T00:00:00Z');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      paired_event_id: 'meal-gone',
+      vehicle_food_item_id: null,
+      vehicle_brand: null,
+      vehicle_product_name: null,
+    });
+    db.close();
+  });
+
+  it('a dose re-linked from a removed meal to a live one reads the live meal', () => {
+    const db = freshDb();
+    addFood(db, 'f-diet', 'Royal Canin', 'Hydrolyzed');
+    addFood(db, 'f-other', 'Acme', 'Chicken bites', 'treat');
+    addEvent(db, 'meal-gone', '2026-07-05T08:00:00Z', '2026-07-05T09:00:00Z');
+    addMeal(db, 'meal-gone', 'f-other');
+    addEvent(db, 'meal-live', '2026-07-05T08:00:30Z');
+    addMeal(db, 'meal-live', 'f-diet');
+    addEvent(db, 'dose-1', '2026-07-05T08:01:00Z');
+    addDose(db, 'dose-1', null, 'meal-live');
+    const rows = run(db, '2026-07-01T00:00:00Z');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ paired_event_id: 'meal-live', vehicle_food_item_id: 'f-diet' });
+    db.close();
+  });
+
   // The pet filter is on `e.pet_id` so the planner can use `idx_events_pet_time`;
   // `ma.pet_id` rides alongside it. The two are equal by invariant (migration
   // 023's same-pet trigger), so the redundant predicate must not change the
@@ -1061,6 +1098,97 @@ describe('loadDietTrialFacts — the antigen-arm flag reaches the card', () => {
     expect(antigenPausedNoteMock).toHaveBeenCalledWith(['HP Loaf']);
     expect(input.standingNote?.body).toBe('named:HP Loaf');
     db.close();
+  });
+});
+
+// ── CUL-1917 — a dose in a removed meal: Home and the report give one count ──
+//
+// Nyx's Oct 10 8:50 AM meal was logged twice and the duplicate removed, with the pill
+// paired to the duplicate. `generate-report` builds its events from live rows only, so
+// its vehicle lookup misses and `doseRouteOf` counts a `food_vehicle` exposure. Home
+// must read the same record the same way: the removed meal's food (the trial diet
+// here) may not clear the dose. Driven through the real loader against a real engine,
+// and compared with the report's own shape: a pairing to a meal that is not there.
+describe('loadTrialPredicateFacts — a dose paired to a removed meal (CUL-1917)', () => {
+  const asyncAdapter = (real: Db) => ({
+    getFirstAsync: (sql: string, params: unknown[] = []) =>
+      Promise.resolve((real.prepare(sql).all(...params) as unknown[])[0] ?? null),
+    getAllAsync: (sql: string, params: unknown[] = []) =>
+      Promise.resolve(real.prepare(sql).all(...params)),
+  });
+
+  async function loadWithDb(real: Db) {
+    jest.resetModules();
+    jest.doMock('./db', () => ({ getDb: () => asyncAdapter(real) }));
+    jest.doMock('./analytics', () => ({
+      getIntakeDecline: jest.fn().mockResolvedValue({ status: 'none', flags: [] }),
+    }));
+    jest.doMock('./trialContaminant', () => ({
+      loadTrialProteinContext: jest.fn().mockResolvedValue(null),
+      trialDietNote: jest.fn().mockReturnValue(null),
+      antigenPausedNote: jest.fn(() => ({ title: 'paused', body: 'gap' })),
+    }));
+    return require('./dietTrialFacts') as typeof import('./dietTrialFacts');
+  }
+
+  /** Nyx's trial: on the trial kibble since Oct 1, a meal a day, a daily tablet.
+   *  `pairing` decides what the Oct 10 tablet rides in. */
+  function nyxRecord(pairing: 'removed-duplicate' | 'missing-from-record' | 'live-original') {
+    const db = freshDb();
+    addTrial(db, { id: 'trial-1', status: 'active', started_at: '2026-10-01', food_item_id: 'f-kib' });
+    addFood(db, 'f-kib', 'RC', 'Duck kibble');
+    db.prepare(
+      'INSERT INTO diet_trial_foods (id, diet_trial_id, food_item_id, role, food_label, allowed_from, allowed_until) VALUES (?,?,?,?,?,?,?)',
+    ).run('tf-kib', 'trial-1', 'f-kib', 'primary_diet', 'RC Duck kibble', '2026-10-01', null);
+    db.prepare('INSERT INTO medication_items_cache (id, generic_name, brand_name, form) VALUES (?,?,?,?)')
+      .run('mi-1', 'prednisolone', null, 'tablet');
+    for (let d = 1; d <= 12; d++) {
+      const day = String(d).padStart(2, '0');
+      addEvent(db, `meal-${day}`, `2026-10-${day}T12:50:00Z`);
+      addMeal(db, `meal-${day}`, 'f-kib', 'finished');
+    }
+    // The duplicate of Oct 10's meal, removed.
+    addEvent(db, 'meal-10-dup', '2026-10-10T12:50:30Z', '2026-10-10T13:30:00Z');
+    addMeal(db, 'meal-10-dup', 'f-kib', 'finished');
+    const paired =
+      pairing === 'removed-duplicate' ? 'meal-10-dup'
+        : pairing === 'missing-from-record' ? 'meal-never-synced'
+          : 'meal-10';
+    addEvent(db, 'dose-10', '2026-10-10T12:51:00Z');
+    db.prepare(
+      `INSERT INTO medication_administrations
+         (id, event_id, pet_id, medication_item_id, adherence, paired_event_id)
+       VALUES (?,?,?,?,?,?)`,
+    ).run('d-10', 'dose-10', PET, 'mi-1', 'given', paired);
+    return db;
+  }
+
+  async function oralRouteIds(pairing: Parameters<typeof nyxRecord>[0]) {
+    const db = nyxRecord(pairing);
+    const mod = await loadWithDb(db);
+    const out = await mod.loadTrialPredicateFacts(
+      { id: PET, name: 'Nyx', species: 'dog' },
+      new Date('2026-10-12T18:00:00Z').getTime(),
+    );
+    db.close();
+    expect(out?.facts).not.toBeNull();
+    return {
+      oral: out!.facts!.oralRoute.map((x) => x.eventId),
+      offDiet: out!.facts!.exposures.offDiet,
+    };
+  }
+
+  it('counts the tablet as an exposure, as the report does', async () => {
+    const removed = await oralRouteIds('removed-duplicate');
+    expect(removed.oral).toEqual(['dose-10']);
+    // The report's view of the same record: the paired id resolves to no live meal.
+    const reportShape = await oralRouteIds('missing-from-record');
+    expect(removed).toEqual(reportShape);
+  });
+
+  it('a tablet in the live trial meal stays on-list (the fix does not over-count)', async () => {
+    const live = await oralRouteIds('live-original');
+    expect(live.oral).toEqual([]);
   });
 });
 
