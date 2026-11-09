@@ -1,0 +1,14 @@
+# Loose ends PR-06: the widget's trial ratio follows Home
+
+**Date:** 2026-11-09
+**One thing:** none — dispatched session, not this round's teach row
+
+Shipped via #1496, for [CUL-1580](https://linear.app/projectnyx/issue/CUL-1580). Started as a plan-gated shaping brief; the PM ruled option A in session and the build followed.
+
+**What the reading found.** The issue had two parts. Part 1 held and was wider than filed. Home's strip withholds its coverage ratio on 11 reasons (`withholdingReasons`), and the widget gated on 3 of them (the bowl facts). It printed the ratio in two places, the band caption and the trial record tile ("every day logged so far"), so a cat refusing the trial diet got the tidiest line the widget can say. Part 2's premise did not hold. "Day N of M" never left the widget: the header's context line reads the trial row (`snapshot.trialDay`), not the coverage. A withheld ratio already left the day in the header and put the 7-day pips in the band. The dots cannot outlive the caption, because filled and hollow days are the ratio drawn.
+
+**What was decided.** Option A (PM, 2026-11-09): withhold wherever Home does and keep the round-7 layout. No mock frame was needed, since nothing new renders. The rejected options were a reason caption in the band (a locked-layout change with no room to say why) and dots without the caption (the same ratio). The PM also approved one line in `docs/nyx-widget-requirements.md` §2.5.
+
+**How it was built.** The publisher reads `loadDietTrialFacts` (the input Home's strip reads, intake-decline lane included) and judges it with the real `withholdingReasons`. A second read, `loadTrialPredicateFacts`, supplies only the covered-day indices, because the card input does not carry them and `lib/dietTrialFacts.ts` belonged to a parallel row. If either read throws, the ratio is withheld. The tests give one case per reason through a `Record` over the union, so a twelfth reason fails typecheck until it has a case. Each case asserts its fixture trips exactly that reason. A publish-level test checks that a refusing cat loses the caption, the dots and the tile while the header keeps "Day 10 of 56". Mutation proof: putting back the bowl-only gate fails 9 tests.
+
+**Residual.** The two reads run in parallel and could straddle a write. The dots come from one read and the caption from the other, so on a single publish they could disagree by a day. The gate itself reads one input, so this cannot surface a withheld ratio. Folding the two into one read waits on `lib/dietTrialFacts.ts` accepting a precomputed core.
