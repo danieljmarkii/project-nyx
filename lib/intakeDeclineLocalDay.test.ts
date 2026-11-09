@@ -146,10 +146,11 @@ describe('CUL-94 — a refusal bout across UTC midnight is one refusal (B-092)',
     expect(verdict('dog', meals, `${day(11)}T22:00:00-04:00`, NY)).toEqual(['refused_normal_food']);
   });
 
-  it('read in UTC days the refusal arm is still half-collapsed and silent (the defect, pinned)', () => {
-    // (UTC days also split the bout into two "low days", so the day-count arm fires there: the
-    // same mis-split, the other way. Only the refusal arm is the B-092 claim.)
-    expect(verdict('dog', meals, `${day(11)}T22:00:00-04:00`, 'UTC')).not.toContain('refused_normal_food');
+  it('read in UTC days the split bout no longer silences the refusal arm either (CUL-1797)', () => {
+    // Pinned as the defect until CUL-1797: the 19:00 refusal fell on the earlier UTC day and
+    // dragged the food's normal under the floor. The trailing low day is now the decline and is
+    // left out of the normal, so the calendar the bout is split by no longer decides the card.
+    expect(verdict('dog', meals, `${day(11)}T22:00:00-04:00`, 'UTC')).toContain('refused_normal_food');
   });
 });
 
@@ -262,5 +263,102 @@ describe('CUL-94 — the buffer day holds the onset: a good morning, then the re
       const v = verdict('cat', meals, `${day(11)}T${at}:00+00:00`, 'UTC');
       expect({ at, card: v.includes('consecutive_low') || v.includes('sustained_refusal') }).toEqual({ at, card: true });
     }
+  });
+});
+
+describe('CUL-1797 — the decline never counts as the normal (PM ruling, option 1)', () => {
+  // The issue's own records, through both real detectors. Before the ruling a refusal day that
+  // had aged PAST the buffer day stayed in the normal: the cat lost her card at n ≥ 4 on the
+  // morning of Oct 12, the dog at n ≥ 3 on the evening of Oct 10. Either intake card protects
+  // the pet (the sustained-refusal floor replaces the day-count card with its louder one).
+  const TIMES = ['07:30', '10:00', '12:00', '18:00', '21:00', '22:00'];
+  const card = (v: string[]) => v.includes('consecutive_low') || v.includes('sustained_refusal');
+
+  function cat(n: number): M[] {
+    const out: M[] = [];
+    for (let d = 1; d <= 9; d++) {
+      out.push({ iso: `${day(d)}T08:00:00-04:00`, rating: 'all' }, { iso: `${day(d)}T18:00:00-04:00`, rating: 'most' });
+    }
+    for (const t of TIMES.slice(0, n)) out.push({ iso: `${day(10)}T${t}:00-04:00`, rating: 'refused' });
+    out.push({ iso: `${day(11)}T08:00:00-04:00`, rating: 'some' }, { iso: `${day(11)}T18:00:00-04:00`, rating: 'some' });
+    out.push({ iso: `${day(12)}T07:30:00-04:00`, rating: 'some' });
+    return out;
+  }
+
+  function dog(n: number): M[] {
+    const out: M[] = [];
+    for (let d = 1; d <= 6; d++) {
+      out.push({ iso: `${day(d)}T08:00:00-04:00`, rating: 'all' }, { iso: `${day(d)}T18:00:00-04:00`, rating: 'most' });
+    }
+    for (const t of TIMES.slice(0, n)) out.push({ iso: `${day(7)}T${t}:00-04:00`, rating: 'refused' });
+    for (const d of [8, 9]) {
+      out.push({ iso: `${day(d)}T08:00:00-04:00`, rating: 'some' }, { iso: `${day(d)}T18:00:00-04:00`, rating: 'some' });
+    }
+    out.push({ iso: `${day(10)}T08:00:00-04:00`, rating: 'some' });
+    return out;
+  }
+
+  const N = [0, 1, 2, 3, 4, 5, 6];
+
+  it.each(N)('the cat (Oct 10–12) keeps an intake card at every hour of Oct 12 (%i refusals)', (n) => {
+    for (const at of ['06:00', '08:00', '20:00']) {
+      expect({ n, at, card: card(verdict('cat', cat(n), `${day(12)}T${at}:00-04:00`, NY)) }).toEqual({ n, at, card: true });
+    }
+  });
+
+  it.each(N)('the dog (Oct 7–10) keeps an intake card at every hour of Oct 10 (%i refusals)', (n) => {
+    for (const at of ['06:00', '09:00', '20:00']) {
+      expect({ n, at, card: card(verdict('dog', dog(n), `${day(10)}T${at}:00-04:00`, NY)) }).toEqual({ n, at, card: true });
+    }
+  });
+
+  it('the day-count card itself survives the harder refusal, not only the floor', () => {
+    // Where the floor is quiet (Oct 9's good meals sit inside the cat's 72 hours; the dog's four
+    // refusals all fall before 20:00 Oct 7, so its 72 hours hold only "some"), the card is the
+    // day-count arm's, and its normal is the days before the refusals.
+    expect(verdict('cat', cat(6), `${day(12)}T08:00:00-04:00`, NY)).toEqual(['consecutive_low']);
+    expect(verdict('dog', dog(4), `${day(10)}T20:00:00-04:00`, NY)).toEqual(['consecutive_low']);
+  });
+
+  it('an ordinary dip two days back is not the decline: a steady record stays quiet', () => {
+    // Nine days of "all"/"most", one "most" day, then a "most" today: nothing a full point down.
+    const steady: M[] = [];
+    for (let d = 1; d <= 10; d++) {
+      steady.push({ iso: `${day(d)}T08:00:00-04:00`, rating: 'all' }, { iso: `${day(d)}T18:00:00-04:00`, rating: 'most' });
+    }
+    steady.push({ iso: `${day(11)}T08:00:00-04:00`, rating: 'most' });
+    expect(verdict('cat', steady, `${day(11)}T09:00:00-04:00`, NY)).toEqual([]);
+    expect(verdict('dog', steady, `${day(11)}T09:00:00-04:00`, NY)).toEqual([]);
+  });
+
+  describe('the refusal arm (CUL-2696, CUL-1790)', () => {
+    it.each(N)('refusals of the food three days back never silence a fresh refusal (%i refusals)', (n) => {
+      // Nine days eating it, n refusals on Oct 10, two good meals on Oct 11, refused at 08:00
+      // Oct 12. Oct 11 was good, so neither the day-count card nor the floor speaks: this card
+      // is the only one, and it went silent at n = 4.
+      const meals: M[] = [];
+      for (let d = 1; d <= 9; d++) meals.push({ iso: `${day(d)}T08:00:00-04:00`, rating: 'all' });
+      for (const t of TIMES.slice(0, n)) meals.push({ iso: `${day(10)}T${t}:00-04:00`, rating: 'refused' });
+      meals.push({ iso: `${day(11)}T08:00:00-04:00`, rating: 'all' }, { iso: `${day(11)}T18:00:00-04:00`, rating: 'all' });
+      meals.push({ iso: `${day(12)}T08:00:00-04:00`, rating: 'refused' });
+      expect(verdict('dog', meals, `${day(12)}T09:00:00-04:00`, NY)).toEqual(['refused_normal_food']);
+    });
+
+    it.each([1, 2, 3])('a bout across local midnight is one refusal, not a history of them (%i before midnight)', (k) => {
+      // Four days eating it "most", then k refusals late on Oct 5 and one at 00:30 Oct 6.
+      const meals: M[] = [];
+      for (let d = 1; d <= 4; d++) meals.push({ iso: `${day(d)}T18:00:00-04:00`, rating: 'most' });
+      for (let i = 0; i < k; i++) meals.push({ iso: `${day(5)}T23:${String(10 + 15 * i)}:00-04:00`, rating: 'refused' });
+      meals.push({ iso: `${day(6)}T00:30:00-04:00`, rating: 'refused' });
+      expect(verdict('dog', meals, `${day(6)}T01:00:00-04:00`, NY)).toContain('refused_normal_food');
+    });
+
+    it('a food refused on most days is still not "normally eaten"', () => {
+      // Good, refused, refused, good, refused, then refused today: by day it sits at 1.6.
+      const ratings: IntakeRating[] = ['all', 'refused', 'refused', 'all', 'refused'];
+      const meals: M[] = ratings.map((rating, i) => ({ iso: `${day(i + 1)}T08:00:00-04:00`, rating }));
+      meals.push({ iso: `${day(6)}T08:00:00-04:00`, rating: 'refused' });
+      expect(verdict('dog', meals, `${day(6)}T09:00:00-04:00`, NY)).not.toContain('refused_normal_food');
+    });
   });
 });

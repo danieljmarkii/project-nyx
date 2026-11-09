@@ -327,3 +327,45 @@ describe('CUL-94 property: an evening refusal on the buffer day never quiets the
     expect(checked).toBeGreaterThan(PROPERTY_FLOOR);
   });
 });
+
+// Measured at CUL-1797: 669 of 8000 records fire and carry a meal on the day before the buffer.
+const DECLINE_PROPERTY_FLOOR = 300;
+
+describe('CUL-1797 property: refusing harder on the days before the buffer never quiets the card', () => {
+  // The issue's shape: refusals on a day older than the buffer stayed in the normal, so ONE more
+  // refusal there could silence a card (the cat at n = 4, the dog at n = 3). The detectors now read
+  // the normal at every split back through the decline, so a refusal appended after the last meal
+  // of the day before the buffer either joins the decline (left out of the normal) or sits on the
+  // day it may have begun (read at every split). Driven over the generator, both detectors.
+  it('holds on every generated record that fires, in every zone', () => {
+    let checked = 0;
+    for (let seed = 1; seed <= RECORDS_FOR_PROPERTY; seed++) {
+      const rec = generate(seed);
+      const before = serverVerdict(rec, true);
+      if (!before.some((v) => v.trigger === 'consecutive_low' || v.trigger === 'sustained_refusal')) continue;
+      const dayOf = (ms: number) => localDayIndex(ms, rec.zone);
+      const today = dayOf(rec.nowMs);
+      const rated = rec.meals.filter((m) => m.foodType === 'meal' && m.rating !== null && m.ms <= rec.nowMs);
+      const anchor = rated.some((m) => dayOf(m.ms) === today) ? today : today - 1;
+      const n = rec.species === 'cat' ? 1 : 2;
+      const target = anchor - n - 1; // the day before the buffer
+      const onTarget = rated.filter((m) => dayOf(m.ms) === target);
+      if (onTarget.length === 0) continue;
+      let after = rec;
+      // One, then three more: refusing harder is the shape the issue broke on.
+      for (let k = 1; k <= 4; k++) {
+        const t = Math.max(...onTarget.map((m) => m.ms)) + k * 60_000;
+        if (dayOf(t) !== target) break;
+        after = { ...after, meals: [...after.meals, { ms: t, foodItemId: 'f1', foodType: 'meal', rating: 'refused' as const }] };
+        const phone = phoneVerdict(after);
+        expect(serverVerdict(after, true)).toEqual(phone);
+        const card = phone.some((v) => v.trigger === 'consecutive_low' || v.trigger === 'sustained_refusal');
+        expect({ seed, k, card }).toEqual({ seed, k, card: true });
+      }
+      checked++;
+    }
+    // Non-vacuity (C-36). Reverting to the buffer-only readings reds this test (seed 26), and so
+    // does reading the earlier splits without the buffer's prefixes (seed 1744): both measured.
+    expect(checked).toBeGreaterThan(DECLINE_PROPERTY_FLOOR);
+  });
+});

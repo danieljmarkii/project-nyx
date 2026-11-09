@@ -4271,6 +4271,86 @@ function intakeDaysOf(meals: readonly RatedMeal[], timeZone: string | undefined)
   return new Map(meals.map((m) => [m, intakeDayOf(m.ms, timeZone)]))
 }
 
+/**
+ * CUL-1797 — the normals detector ②'s day-count arm reads, the accusing one standing. CUL-94 read
+ * every prefix of the buffer day (the window's meals before it, then its first meal, its first two,
+ * … all); those come first, in that order, so a record that fired before reports the same reading.
+ * Then the decline: walking back from the day before the buffer, a day whose mean sits a full point
+ * (`minDelta`) or more under the mean of the window meals older than it is part of the decline and
+ * never the normal; the first day that is not (or whose older meals are under the coverage floor)
+ * is where it may have begun. Each split from the buffer's start back to that day's start is read,
+ * each with every prefix of the buffer day, so a refusal appended to the day before the buffer
+ * only ever adds readings (the CUL-1797 property in lib/intakeDeclineParity.test.ts). Uncapped
+ * inside the window (PM ruling, option 1): a cat refusing for weeks is the one this exists for.
+ * Mirrored byte for byte in lib/analytics.ts; the parity suite drives both.
+ */
+function intakeBaselineReadings<T extends { score: number }>(
+  meals: readonly T[],
+  dayOf: (m: T) => number,
+  bufferDay: number,
+  minMeals: number,
+  minDelta: number,
+): T[][] {
+  const firstAtOrAfter = (day: number): number => {
+    const i = meals.findIndex((m) => dayOf(m) >= day)
+    return i < 0 ? meals.length : i
+  }
+  const bufferStart = firstAtOrAfter(bufferDay)
+  const bufferEnd = firstAtOrAfter(bufferDay + 1)
+  const meanOf = (from: number, to: number): number => {
+    let sum = 0
+    for (let i = from; i < to; i++) sum += meals[i].score
+    return sum / (to - from)
+  }
+  let end = bufferStart
+  let onset = bufferStart
+  while (end > 0) {
+    let start = end - 1
+    while (start > 0 && dayOf(meals[start - 1]) === dayOf(meals[end - 1])) start--
+    onset = start
+    if (start < minMeals) break
+    if (meanOf(start, end) > meanOf(0, start) - minDelta) break
+    end = start
+  }
+  const readings: T[][] = []
+  for (let split = bufferStart; split >= onset; split--) {
+    for (let cut = bufferStart; cut <= bufferEnd; cut++) {
+      readings.push([...meals.slice(0, split), ...meals.slice(bufferStart, cut)])
+    }
+  }
+  return readings
+}
+
+/**
+ * CUL-1797 — the refusal arm's second reading of a food's normal: the mean of its DAILY means
+ * over `prior` (ascending), once the trailing days it was not normally eaten (a day mean under
+ * `floor`) are left out. By day, so a food re-offered and refused four times on one bad day counts
+ * as one bad day (CUL-2696), as CUL-94 already reads the latest day; the trailing low days are the
+ * decline, including the evening half of a bout across local midnight (CUL-1790). Null when what
+ * is left is under `minSamples` meals or under the floor. Mirrored in lib/analytics.ts.
+ */
+function normallyEatenDayMean<T extends { score: number }>(
+  prior: readonly T[],
+  dayOf: (m: T) => number,
+  floor: number,
+  minSamples: number,
+): number | null {
+  const days: { day: number; sum: number; n: number }[] = []
+  for (const m of prior) {
+    const last = days[days.length - 1]
+    if (last && last.day === dayOf(m)) {
+      last.sum += m.score
+      last.n++
+    } else {
+      days.push({ day: dayOf(m), sum: m.score, n: 1 })
+    }
+  }
+  while (days.length > 0 && days[days.length - 1].sum / days[days.length - 1].n < floor) days.pop()
+  if (days.reduce((n, d) => n + d.n, 0) < minSamples) return null
+  const mean = days.reduce((sum, d) => sum + d.sum / d.n, 0) / days.length
+  return mean >= floor ? mean : null
+}
+
 /** A rated meal reduced to the fields the intake-decline / coverage logic needs. */
 interface RatedMeal {
   ms: number
@@ -4751,14 +4831,24 @@ function detectIntakeDeclineRelative(
   // pinned in lib/intakeDeclineLocalDay.test.ts). Each prefix is the same hypothesis under the
   // same full-point rule, so the union adds little multiplicity. Measured against the pre-CUL-94
   // detector over 100,000 generated records (UTC days, both triggers): none loses a card the old
-  // detector raised; 6,775 gain one, mostly the overnight hold. Residual, stated: a refusal day
-  // that has aged PAST the buffer still dilutes the normal (pre-CUL-94 too; CUL-1797).
+  // detector raised; 6,775 gain one, mostly the overnight hold.
+  //
+  // CUL-1797 (PM ruling, option 1, 2026-11-09): the decline never counts as the normal. A refusal
+  // day that had aged PAST the buffer still diluted it, so a cat that refused hard on day 1 and
+  // picked since lost her card, the more surely the harder she refused. The readings are now every
+  // split from where the decline may have begun, each with every prefix of the buffer day (see
+  // `intakeBaselineReadings`); the buffer-day prefixes come first and are the readings above, so a
+  // record that fired before reports the same reading, and no record can lose a card.
   if (recentDays.length >= consecutiveDays) {
     const recentMean = recentDays.reduce((sum, d) => sum + d.mean, 0) / recentDays.length
-    const beforeBuffer = windowMeals.filter((m) => (dayOfMeal.get(m) as number) < bufferDay)
-    const bufferMeals = windowMeals.filter((m) => dayOfMeal.get(m) === bufferDay) // ascending
-    for (let cut = 0; cut <= bufferMeals.length; cut++) {
-      const baselineMeals = cut === 0 ? beforeBuffer : [...beforeBuffer, ...bufferMeals.slice(0, cut)]
+    const readings = intakeBaselineReadings(
+      windowMeals,
+      (m) => dayOfMeal.get(m) as number,
+      bufferDay,
+      cfg.minRatedMealsForBaseline,
+      cfg.minDeclineDelta,
+    )
+    for (const baselineMeals of readings) {
       if (baselineMeals.length < cfg.minRatedMealsForBaseline) continue
       const baselineScore =
         baselineMeals.reduce((sum, m) => sum + m.score, 0) / baselineMeals.length
@@ -4886,19 +4976,27 @@ function detectIntakeDeclineRelative(
     // (B-090): the client health-watch led with this fix; porting it here re-converges
     // the two decline surfaces so they can never disagree on a refusal.
     // The owner's local day (CUL-94): a UTC day split a US-evening bout in two and left its
-    // first half in `prior`. Residual, stated: a bout across LOCAL midnight still splits (CUL-1790).
+    // first half in `prior`. A bout across LOCAL midnight (CUL-1790), and refusals of the food on
+    // an older day (CUL-2696), are read by the second reading below.
     const latestDay = dayOfMeal.get(latest)
     const prior = sorted.filter((m) => dayOfMeal.get(m) !== latestDay)
     if (prior.length < cfg.normallyEatenMinSamples) continue
     const priorMean = prior.reduce((sum, m) => sum + m.score, 0) / prior.length
-    if (priorMean < cfg.normallyEatenScoreFloor) continue
+    // CUL-1797 (PM ruling, option 1): the decline never counts as the food's normal. When the
+    // meal-weighted reading is under the floor, the food is read again by DAY, with its trailing
+    // low days (the decline) left out; the accusing reading stands, so this only adds a finding.
+    const normal =
+      priorMean >= cfg.normallyEatenScoreFloor
+        ? priorMean
+        : normallyEatenDayMean(prior, (m) => dayOfMeal.get(m) as number, cfg.normallyEatenScoreFloor, cfg.normallyEatenMinSamples)
+    if (normal === null) continue
 
     const candidate: IntakeDeclineFinding = {
       type: 'intake_decline',
       priorityClass: 'safety',
       trigger: 'refused_normal_food',
       species: input.pet.species,
-      baselineScore: priorMean,
+      baselineScore: normal,
       recentScore: latest.score,
       daysBelowBaseline: 0,
       refusedFoodLabel: latest.foodLabel,
