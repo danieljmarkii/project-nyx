@@ -675,8 +675,10 @@ export function widgetTrialCoverage(
   // condition outside `withholdingReasons`; the card read also returns a trial ended
   // inside its grace window. So a trial ended "won't eat it" between this publish's
   // active-row read and its card read would otherwise keep "every day logged so far"
-  // up. And the card must describe the SAME trial the header counts: two local active
-  // rows order differently in the two queries (adversarial-reviewer, CUL-1580).
+  // up. And the card must start on the day the header counts from: two local active
+  // rows order differently in the two queries (adversarial-reviewer, CUL-1580). Two
+  // active rows sharing a start still pass; the card is then Home's own row, so the
+  // widget states a ratio exactly when Home does.
   if (input.trial.status !== 'active' || input.trial.startedAt !== rowStartedAt) return null;
   if (withholdingReasons(input).length > 0) return null;
   return {
