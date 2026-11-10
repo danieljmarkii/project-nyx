@@ -71,10 +71,13 @@ import { COMPLETION_MOTION } from '../motion/completionMotion';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { REMOVED_DURATION_MS } from '../../store/momentStore';
 
-import { TAB_RAIL_WIDTH } from '../../hooks/useLayoutClass';
 
 // jest-expo's default window is 750pt, which is regular width: pinned to a phone, with each
 // regular case stating its own (CUL-2267).
+// The edge iOS reports for its vertical bar: null wherever its bars lie flat.
+const mockBarEdge = jest.fn<'leading' | 'trailing' | null, []>(() => null);
+jest.mock('expo-status-bar', () => ({ useVerticalBarEdgeIOS: () => mockBarEdge() }));
+
 let mockWindowWidth = 390;
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
@@ -295,10 +298,12 @@ describe('NamedCompletionCard — where it sits (CUL-802)', () => {
     expect(wrapperStyle(view).bottom).toBe(80 + 64);
   });
 
-  // CUL-2267 — at regular there is no bottom bar and the + is in the rail: the card sits at
-  // the bottom inset, centred on the scene beside the rail (half the rail to the left).
-  it('the unfolded Duo on its side: at the bottom inset, beside the rail, never over it', () => {
-    mockWindowWidth = 890;
+  // CUL-2267, CUL-2703 — where the bar is a rail in the system strip there is no bottom bar
+  // and the + stands in the rail: the card sits at the bottom inset, held to the column,
+  // which is already clear of the rail on a tab and a pushed screen alike.
+  it('the unfolded Duo on its side: at the bottom inset, in the column, never over the rail', () => {
+    mockWindowWidth = 951;
+    mockBarEdge.mockReturnValue('trailing');
     mockPathname = '/history';
     try {
       const view = render(<NamedCompletionCard />);
@@ -308,10 +313,24 @@ describe('NamedCompletionCard — where it sits (CUL-802)', () => {
         return st?.position === 'absolute' && st?.zIndex === 50;
       })[0];
       const st = StyleSheet.flatten(node.props.style as StyleProp<ViewStyle>) as { bottom: number; left: number; right: number };
-      // No safe-area provider here, so the inset reads 0.
+      // No safe-area provider here, so the bottom inset reads 0.
       expect(st.bottom).toBe(theme.space2);
-      expect(st.left).toBe(theme.space2 - TAB_RAIL_WIDTH / 2);
-      expect(st.right).toBe(theme.space2 + TAB_RAIL_WIDTH / 2);
+      expect(st.left).toBe(theme.space2);
+      expect(st.right).toBe(theme.space2);
+    } finally {
+      mockWindowWidth = 390;
+      mockBarEdge.mockReturnValue(null);
+    }
+  });
+
+  // D2 = A: unfolded and upright the bar is along the bottom, so the berth that clears it
+  // stands, as on a phone.
+  it('the unfolded Duo upright keeps the tabs berth: the bottom bar is there', () => {
+    mockWindowWidth = 669;
+    try {
+      const view = render(<NamedCompletionCard />);
+      seed();
+      expect(wrapperStyle(view).bottom).toBe(80 + 64);
     } finally {
       mockWindowWidth = 390;
     }

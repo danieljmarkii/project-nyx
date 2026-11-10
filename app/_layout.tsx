@@ -54,7 +54,7 @@ import { MedicationCompletionCard } from '../components/ui/MedicationCompletionC
 import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { Snackbar } from '../components/ui/Snackbar';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
-import { LayoutColumn } from '../components/ui/LayoutColumn';
+import { LayoutColumn, heldScreenLayout } from '../components/ui/LayoutColumn';
 import { FlightHost } from '../components/motion/FlightHost';
 import { startReducedMotionRead, useReducedMotionStore } from '../store/reducedMotionStore';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -471,46 +471,50 @@ function RootLayoutTree() {
   return (
     <>
       <StatusBar style="auto" />
-      {/* Every route, sheet host and completion card sits in the content column
-          (CUL-2237): the window at compact, a centred column on the unfolded Duo. The
-          flight, the snackbar and the cold-start cover stay outside it, in their order
-          from before: the flight is placed in window coordinates, the snackbar draws over
-          it, and the cover hides the window. A `Modal` (the sheets) and a native modal
-          route present in their own window, outside this tree: PR-08 centres those. */}
-      <LayoutColumn>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="onboarding" />
-          <Stack.Screen name="log" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="food-capture" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="medication-capture" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="food/[id]" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="medication/[id]" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="add-pet" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="archived-pets" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="mix" options={{ presentation: 'modal' }} />
-          <Stack.Screen name="event/[id]" options={recordRouteOptions(reducedMotion)} />
-          <Stack.Screen name="weight-history" />
-          <Stack.Screen name="vet-document/[id]" />
-          <Stack.Screen name="day-summary" />
-          <Stack.Screen name="ask" />
-          <Stack.Screen name="report" />
-          {/* CUL-2299: the exam room fades the report screen to black itself (instant under
-              Reduce Motion), so the route is transparent with no native transition. */}
-          <Stack.Screen
-            name="exam-room"
-            options={{ presentation: 'transparentModal', animation: 'none', gestureEnabled: false }}
-          />
-          <Stack.Screen name="rundown" />
-          <Stack.Screen name="settings" />
-          <Stack.Screen name="settings/notifications" />
-          <Stack.Screen name="settings/ai-reading" />
-          <Stack.Screen name="settings/beta" />
-          <Stack.Screen name="settings/feedback" />
-          <Stack.Screen name="settings/password" />
-        </Stack>
+      {/* Every route sits in the content column (CUL-2237), and holds it INSIDE itself
+          (CUL-2703): the stack fills the window and `screenLayout` wraps each screen, since
+          a native screen clips to its own bounds and a column around the stack cut the tabs
+          to a 560pt band on the unfolded Duo. The routes that own a navigator hold their
+          own screens (`heldScreenLayout`). The sheet hosts and the completion cards sit in
+          the same column, drawn over the stack. The flight, the snackbar and the cold-start
+          cover stay outside it, in their order from before: the flight is placed in window
+          coordinates, the snackbar draws over it, and the cover hides the window. A `Modal`
+          (the sheets) presents in its own window, outside this tree: `useSheetCap` holds
+          those. */}
+      <Stack screenOptions={{ headerShown: false }} screenLayout={heldScreenLayout}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="log" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="food-capture" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="medication-capture" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="food/[id]" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="medication/[id]" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="add-pet" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="archived-pets" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="mix" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="event/[id]" options={recordRouteOptions(reducedMotion)} />
+        <Stack.Screen name="weight-history" />
+        <Stack.Screen name="vet-document/[id]" />
+        <Stack.Screen name="day-summary" />
+        <Stack.Screen name="ask" />
+        <Stack.Screen name="report" />
+        {/* CUL-2299: the exam room fades the report screen to black itself (instant under
+            Reduce Motion), so the route is transparent with no native transition. */}
+        <Stack.Screen
+          name="exam-room"
+          options={{ presentation: 'transparentModal', animation: 'none', gestureEnabled: false }}
+        />
+        <Stack.Screen name="rundown" />
+        <Stack.Screen name="settings" />
+        <Stack.Screen name="settings/notifications" />
+        <Stack.Screen name="settings/ai-reading" />
+        <Stack.Screen name="settings/beta" />
+        <Stack.Screen name="settings/feedback" />
+        <Stack.Screen name="settings/password" />
+      </Stack>
+      <LayoutColumn overlay>
         {/* The Noticed card's intake door (CUL-870 / N-3b). It is mounted HERE, beside the
             completion cards, rather than inside the card that opens it: the sheet writes a
             meal, and a meal write reachable from Home's import closure is a third Home

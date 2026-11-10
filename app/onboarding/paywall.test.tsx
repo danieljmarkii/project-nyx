@@ -26,7 +26,7 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View };
 });
-jest.mock('expo-status-bar', () => ({ setStatusBarStyle: jest.fn() }));
+jest.mock('expo-status-bar', () => ({ setStatusBarStyle: jest.fn(), useVerticalBarEdgeIOS: () => null }));
 jest.mock('../../store/petStore', () => ({
   usePetStore: jest.fn(() => ({ activePet: mockActivePet })),
 }));

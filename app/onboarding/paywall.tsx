@@ -54,7 +54,7 @@ export default function PaywallScreen() {
   // land on a dead, non-functional trial CTA — bounce to the completion screen
   // instead. Fails CLOSED (shipped client default `false`, lib/appConfig.ts).
   const { paywall_enabled: paywallEnabled } = useAppConfig();
-  const { gutter } = useColumn();
+  const { gutters } = useColumn();
 
   // This is the only solid dark surface in the flow, so the status-bar icons must
   // flip to light while it's focused — and flip BACK when it blurs, whether the
@@ -109,7 +109,7 @@ export default function PaywallScreen() {
   return (
     // The flow's one dark ground reaches the window edge on the unfolded Duo, as the
     // Landing's night does; the content stays in the column (CUL-2245).
-    <SafeAreaView style={[styles.container, bleedFor(gutter, theme.space3)]} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.container, bleedFor(gutters, theme.space3)]} edges={['top', 'bottom']}>
       <View style={styles.topRow}>
         <TouchableOpacity
           onPress={advance}

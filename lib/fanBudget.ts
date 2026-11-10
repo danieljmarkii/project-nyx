@@ -45,13 +45,51 @@ export const FAB_BOTTOM = 72;
 export const FAB_DISC = 56;
 
 /**
- * The disc's actual offset from the screen's foot. On a phone it is `FAB_BOTTOM`, over the
- * bottom bar; at regular it stands at the rail's foot, clear of the home indicator (CUL-2242),
- * so the fan's room and a run reveal's clearance read that seat, not the phone's (CUL-2267).
+ * The disc's actual offset from the screen's foot. Over a bottom bar it is `FAB_BOTTOM`;
+ * in a rail it stands at the rail's foot, clear of the home indicator (CUL-2242), so the
+ * fan's room and a run reveal's clearance read that seat, not the phone's (CUL-2267).
  */
 export function fabBottomFor(railed: boolean, safeBottom: number): number {
   return railed ? safeBottom + theme.space3 : FAB_BOTTOM;
 }
+
+/**
+ * Where the disc stands (CUL-2703). In a rail it is centred at the rail's foot, on the
+ * rail's edge, so the + belongs to the bar and never sits over a card. Otherwise it keeps
+ * the phone's corner, measured from the COLUMN's right edge: on a phone that is the
+ * window's, and on a wide window with the bar along the bottom (the unfolded Duo upright)
+ * it is the corner of the content a thumb is already on, not the window's far edge.
+ */
+export interface FabSeat {
+  /** The window edge the disc is measured from: the fan opens toward the other. */
+  side: 'left' | 'right';
+  /** The disc's offset from that edge. */
+  inset: number;
+  /** The disc's offset from the screen's foot. */
+  bottom: number;
+  /**
+   * How far the fan's edge stands in from the disc's, toward the content. In a rail the
+   * disc is in the system's strip, and the top of that strip is the system's (the clock,
+   * the camera, a Live Activity): a pill there could not be read. So the fan opens beside
+   * the strip, clear of it by the feed's own gap. 0 everywhere else: the fan stands on
+   * the disc's edge, as on a phone.
+   */
+  fanOffset: number;
+}
+
+export function fabSeatFor(args: {
+  rail: { edge: 'left' | 'right'; width: number } | null;
+  gutterRight: number;
+  safeBottom: number;
+}): FabSeat {
+  const { rail, gutterRight, safeBottom } = args;
+  if (rail) {
+    const inset = (rail.width - FAB_DISC) / 2;
+    return { side: rail.edge, inset, bottom: fabBottomFor(true, safeBottom), fanOffset: rail.width - inset + theme.space2 };
+  }
+  return { side: 'right', inset: gutterRight + FAN_RIGHT_INSET, bottom: FAB_BOTTOM, fanOffset: 0 };
+}
+
 export const FAN_MARGIN_BOTTOM = theme.space2;
 /** Space kept clear under the status bar / Dynamic Island, above the fan's top row. */
 export const FAN_TOP_MARGIN = theme.space1;

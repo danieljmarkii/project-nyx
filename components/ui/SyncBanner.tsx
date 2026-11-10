@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useSyncStore } from '../../store/syncStore';
 import { useAppActive } from '../../hooks/useAppActive';
+import { useColumn } from '../../hooks/useLayoutClass';
 import { theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 
@@ -84,10 +85,14 @@ export function SyncBanner() {
   }, [active, tick, pendingCount, oldestPendingAt, quarantinedCount]);
 
   const text = syncBannerText({ pendingCount, oldestPendingAt, quarantinedCount }, Date.now());
+  // The band spans the window above the tabs; its words keep to the column, clear of the
+  // strip iOS stands its bars in (CUL-2703). Nothing on a phone.
+  const { gutters } = useColumn();
+  const held = gutters.left > 0 || gutters.right > 0;
   if (!text) return null;
 
   return (
-    <View style={styles.banner}>
+    <View style={[styles.banner, held && { paddingLeft: theme.space2 + gutters.left, paddingRight: theme.space2 + gutters.right }]}>
       <ThemedText style={styles.text}>{text}</ThemedText>
     </View>
   );

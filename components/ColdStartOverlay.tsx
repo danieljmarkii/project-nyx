@@ -1,8 +1,8 @@
 import { useSyncStore } from '../store/syncStore';
 import { usePetStore } from '../store/petStore';
 import { ColdStartSilhouette } from './surfaces/waits/ColdStartSilhouette';
-import { RAIL_TAB_HEIGHT, TAB_HEIGHT } from './nav/NyxTabBar';
-import { useTabRail } from '../hooks/useLayoutClass';
+import { RAIL_TAB_HEIGHT, TAB_HEIGHT, railFootFor } from './nav/NyxTabBar';
+import { useSafeBottom, useSceneGutters, useTabRail } from '../hooks/useLayoutClass';
 
 // B-054 §6 — the block-only-when-empty cold-start state.
 //
@@ -23,8 +23,11 @@ export function ColdStartOverlay() {
   const coldStartHydrating = useSyncStore((s) => s.coldStartHydrating);
   const activePet = usePetStore((s) => s.activePet);
   const petName = activePet?.name;
-  // At regular the bar is the rail down the right edge (CUL-2242), so the shape draws that.
+  // Where the bar is a rail in the system's strip (CUL-2242, CUL-2703), the shape draws
+  // that, and sits in the column Home does.
   const rail = useTabRail();
+  const sceneGutters = useSceneGutters();
+  const safeBottom = useSafeBottom();
 
   if (!petName) return null;
 
@@ -32,7 +35,8 @@ export function ColdStartOverlay() {
     <ColdStartSilhouette
       hydrating={coldStartHydrating}
       tabBarHeight={TAB_HEIGHT}
-      rail={rail ? { width: rail.width, safeRight: rail.safeRight, tabHeight: RAIL_TAB_HEIGHT } : null}
+      rail={rail ? { width: rail.width, edge: rail.edge, tabHeight: RAIL_TAB_HEIGHT, foot: railFootFor(safeBottom) } : null}
+      sceneGutters={sceneGutters}
       petName={petName}
     />
   );

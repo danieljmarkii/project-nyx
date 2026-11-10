@@ -12,6 +12,7 @@ import { OwnerNameRow } from '../components/profile/OwnerNameRow';
 import { DeleteAccountSheet } from '../components/profile/DeleteAccountSheet';
 import { supabase } from '../lib/supabase';
 import { buildSupportMailto, formatAppVersion, formatJsBundle } from '../lib/support';
+import { formatLayoutReadout, useLayoutReadout } from '../hooks/useLayoutClass';
 import { showNoMailFallback } from '../lib/supportFallback';
 import {
   APP_VERSION,
@@ -61,6 +62,7 @@ import {
 // "Culprit v1.0.0", never blank).
 
 export default function SettingsScreen() {
+  const layoutReadout = useLayoutReadout();
   const email = useAuthStore((s) => s.user?.email);
   const pets = usePetStore((s) => s.pets);
   // Beta features (B-712 PR 3; B-747 fix, W1-PR-0) — Gate 1: the row exists only
@@ -422,6 +424,13 @@ export default function SettingsScreen() {
             something they are being told. */}
         <Text style={styles.jsBundle}>
           {formatJsBundle(JS_UPDATE_ID, JS_IS_EMBEDDED, JS_CHANNEL, { abbreviate: true })}
+        </Text>
+        {/* The layout the phone reports (CUL-2703): the window, the safe-area insets and
+            where iOS stands its bars. Apple publishes no sizes for the Duo, so a device
+            check reads them here, in each pose, instead of off a screenshot's pixels.
+            The same quiet register as the bundle line above. */}
+        <Text style={styles.jsBundle} testID="settings-layout-readout">
+          {formatLayoutReadout(layoutReadout)}
         </Text>
 
         <View style={styles.bottomPad} />

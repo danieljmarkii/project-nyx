@@ -47,11 +47,13 @@ export interface ColdStartSilhouetteProps {
   tabBarHeight: number;
   /** The tab rail at regular (`useTabRail`), from the host: drawn in place of the bar. */
   rail?: SilhouetteRail | null;
+  /** The scene's gutters, from the host (`useSceneGutters`). */
+  sceneGutters?: { left: number; right: number };
   /** Whose record is arriving: the host's active pet (the only pet a cold start reads). */
   petName: string;
 }
 
-export function ColdStartSilhouette({ hydrating, tabBarHeight, rail = null, petName }: ColdStartSilhouetteProps) {
+export function ColdStartSilhouette({ hydrating, tabBarHeight, rail = null, sceneGutters, petName }: ColdStartSilhouetteProps) {
   const reduced = useReducedMotion();
   const insets = useSafeAreaInsets();
   const bumpColdStartHandoff = useSyncStore((s) => s.bumpColdStartHandoff);
@@ -119,7 +121,7 @@ export function ColdStartSilhouette({ hydrating, tabBarHeight, rail = null, petN
       accessibilityViewIsModal={hydrating}
       importantForAccessibility={hydrating ? 'yes' : 'no-hide-descendants'}
     >
-      <HomeSilhouette topInset={insets.top} tabBarHeight={tabBarHeight} rail={rail} />
+      <HomeSilhouette topInset={insets.top} tabBarHeight={tabBarHeight} rail={rail} sceneGutters={sceneGutters} />
     </Animated.View>
   );
 }

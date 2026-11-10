@@ -4,7 +4,7 @@ import { HomeHeader, HOME_HEADER_CONTENT_HEIGHT } from './HomeHeader';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
 import { colorRoles, theme } from '../../constants/theme';
-import { TAB_RAIL_WIDTH, useCanvas } from '../../hooks/useLayoutClass';
+import { useCanvas } from '../../hooks/useLayoutClass';
 import { homeFeedBleed, homeFeedStyles } from './homeFeedLayout';
 import {
   ASK_BORDER,
@@ -66,6 +66,10 @@ jest.mock('../../hooks/useTodayKey', () => ({ useTodayKey: () => '2026-09-17' })
 // every name fits at the top rung and the ladder never engages. Every assertion that
 // turns on width states its own (the CUL-599 lesson: six assertions once passed
 // vacuously on that 750pt frame).
+// The edge iOS reports for its vertical bar: null wherever its bars lie flat.
+const mockBarEdge = jest.fn<'leading' | 'trailing' | null, []>(() => null);
+jest.mock('expo-status-bar', () => ({ useVerticalBarEdgeIOS: () => mockBarEdge() }));
+
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
   default: jest.fn(() => ({ width: 320, height: 568, scale: 2, fontScale: 1 })),
@@ -377,29 +381,49 @@ describe('the day, named (CUL-1221, the critique’s BRK-26)', () => {
 // CUL-2239 — where Home's feed lays out across the canvas, its header row does too: the
 // surface reaches the scene's edges (the window's on the left, the tab rail's on the
 // right, CUL-2242), and the row's padding is the phone's, measured from those edges.
-describe('the row at regular spans Home’s canvas', () => {
+describe('the row bleeds to the scene’s edges and stays in the column', () => {
   const containerStyle = () => StyleSheet.flatten((render(<HomeHeader />).toJSON() as { props: { style: unknown } }).props.style as never) as Record<string, unknown>;
+  afterEach(() => mockBarEdge.mockReturnValue(null));
 
   it('a phone keeps its padding and no bleed', () => {
     setWindowWidth(390);
     const style = containerStyle();
     expect(style.paddingHorizontal).toBe(HEADER_PADDING_X);
-    expect(style.marginHorizontal).toBeUndefined();
+    expect(style.marginLeft).toBeUndefined();
+    expect(style.marginRight).toBeUndefined();
   });
 
-  it('the unfolded Duo upright (626pt): the scene beside the rail is the column, so no bleed', () => {
-    setWindowWidth(626);
+  // CUL-2703: the bar is along the bottom here, so the scene is the window and the
+  // header's ground reaches both of its edges.
+  it('the unfolded Duo upright (669pt): out to the window’s edges, the row in the column', () => {
+    setWindowWidth(669);
     const style = containerStyle();
-    expect(style.paddingHorizontal).toBe(HEADER_PADDING_X);
-    expect(style.marginHorizontal).toBeUndefined();
+    const gutter = (669 - theme.layoutColumnMaxWidth) / 2;
+    expect(style.marginLeft).toBe(-gutter);
+    expect(style.marginRight).toBe(-gutter);
+    expect(style.paddingLeft).toBe(HEADER_PADDING_X + gutter);
+    expect(style.paddingRight).toBe(HEADER_PADDING_X + gutter);
   });
 
-  it('the unfolded Duo on its side (890pt): out to the scene edges, padded from them', () => {
-    setWindowWidth(890);
+  it('the folded Duo (466pt): the scene beside the rail is the column, so no bleed', () => {
+    setWindowWidth(466);
+    mockBarEdge.mockReturnValue('trailing');
     const style = containerStyle();
-    const sceneInset = (890 - TAB_RAIL_WIDTH - theme.layoutColumnMaxWidth) / 2;
-    expect(style.marginHorizontal).toBe(-sceneInset);
     expect(style.paddingHorizontal).toBe(HEADER_PADDING_X);
+    expect(style.marginLeft).toBeUndefined();
+    expect(style.marginRight).toBeUndefined();
+  });
+
+  it('the unfolded Duo on its side (951pt): out to the scene’s edges, padded from them', () => {
+    setWindowWidth(951);
+    mockBarEdge.mockReturnValue('trailing');
+    const style = containerStyle();
+    const sceneGutter = (951 - theme.layoutSystemBarMinWidth - theme.layoutColumnMaxWidth) / 2;
+    expect(style.marginLeft).toBe(-sceneGutter);
+    expect(style.marginRight).toBe(-sceneGutter);
+    // Home lays out across the canvas there, and the row with it.
+    expect(style.paddingLeft).toBe(HEADER_PADDING_X);
+    expect(style.paddingRight).toBe(HEADER_PADDING_X);
   });
 });
 
@@ -415,8 +439,9 @@ describe('the row at regular spans Home’s canvas', () => {
 describe('the header’s row keeps the phone’s inset from the feed’s edge', () => {
   const rowLeft = () => {
     const style = StyleSheet.flatten((render(<HomeHeader />).toJSON() as { props: { style: unknown } }).props.style as never) as Record<string, number | undefined>;
-    return (style.marginHorizontal ?? 0) + (style.paddingHorizontal ?? 0);
+    return (style.marginLeft ?? style.marginHorizontal ?? 0) + (style.paddingLeft ?? style.paddingHorizontal ?? 0);
   };
+  afterEach(() => mockBarEdge.mockReturnValue(null));
   // The feed's left padding, whichever key Home writes it with.
   const feedPad = () => {
     const scroll = StyleSheet.flatten(homeFeedStyles.scroll) as { padding?: number; paddingHorizontal?: number; paddingLeft?: number };
@@ -428,8 +453,9 @@ describe('the header’s row keeps the phone’s inset from the feed’s edge', 
   };
   // Header minus feed, both from the scene's content box (the header's origin and the
   // body's, `sceneInset` in from the scene's edge).
-  const offsetAt = (w: number) => {
+  const offsetAt = (w: number, edge: 'trailing' | null = null) => {
     setWindowWidth(w);
+    mockBarEdge.mockReturnValue(edge);
     return rowLeft() - feedLeft();
   };
 
@@ -437,13 +463,18 @@ describe('the header’s row keeps the phone’s inset from the feed’s edge', 
     expect(offsetAt(390)).toBe(HEADER_PADDING_X - feedPad());
   });
 
-  it.each([626, 890])('at %ipt, the same offset as the phone’s', (w) => {
+  it.each([
+    ['folded', 466, 'trailing'],
+    ['unfolded and upright', 669, null],
+    ['unfolded on its side', 951, 'trailing'],
+  ] as const)('%s (%ipt), the same offset as the phone’s', (_label, w, edge) => {
     const phone = offsetAt(390);
-    expect(offsetAt(w)).toBe(phone);
+    expect(offsetAt(w, edge)).toBe(phone);
   });
 
   it('is not vacuous: the unfolded Duo on its side has a bleed for the header to follow', () => {
-    setWindowWidth(890);
+    setWindowWidth(951);
+    mockBarEdge.mockReturnValue('trailing');
     expect(renderHook(() => homeFeedBleed(useCanvas())).result.current?.marginHorizontal).toBeLessThan(0);
   });
 });

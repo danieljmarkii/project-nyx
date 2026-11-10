@@ -127,10 +127,10 @@ export default function DaySummaryScreen() {
 
   // The night ground reaches the window edge on the unfolded Duo, as the paywall's does;
   // the recap stays in the column (CUL-2244).
-  const { gutter } = useColumn();
+  const { gutters } = useColumn();
 
   return (
-    <SafeAreaView style={[styles.container, bleedFor(gutter)]} edges={['top']}>
+    <SafeAreaView style={[styles.container, bleedFor(gutters)]} edges={['top']}>
       <Header title="Today" leading="back" night onLeadingPress={goBack} />
 
       {state.status === 'loading' ? (

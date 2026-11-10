@@ -6,7 +6,7 @@ import { SyncBanner } from '../../components/ui';
 import { NyxTabBar } from '../../components/nav/NyxTabBar';
 import { useAuthStore } from '../../store/authStore';
 import { useAiConsentPreload } from '../../hooks/useAiConsentPreload';
-import { useColumn, useTabRail } from '../../hooks/useLayoutClass';
+import { useSceneGutters, useTabRail } from '../../hooks/useLayoutClass';
 import { theme } from '../../constants/theme';
 
 export default function TabsLayout() {
@@ -21,21 +21,23 @@ export default function TabsLayout() {
   usePet();
   // The AI consent answer the rows draw by (CUL-1174), read once per account.
   useAiConsentPreload();
-  // The tab navigator clips its scenes (`overflow: hidden`, the library's own), so a
-  // header inside a tab cannot bleed past a navigator sitting in the root's column
-  // (CUL-2237). At regular the layout steps back out to the window, the bar stands down
-  // the right edge as a rail (CUL-2242), and each scene pads its content back into the
-  // column beside it: the header bleeds into that padding. The step out is the whole
-  // layout's, the FAB's included, so the + can sit at the rail's foot. Nothing at compact.
-  const { gutter } = useColumn();
+  // The tabs fill the window (CUL-2703): no column stands around this navigator, so its bar
+  // reaches the window's edge and nothing here is clipped. Our bar goes where the system's
+  // bars go (PM ruling, D1 = A, D2 = A). Where iOS stands its bars in a strip down one
+  // side (a folded Duo, an unfolded one on its side, Split View), ours is a rail in that
+  // strip, on that edge, the + at its foot; where iOS lays them flat (every other iPhone,
+  // the Duo unfolded and upright), ours is the bottom row. Each scene pads its content
+  // into the column, and the header bleeds back into that padding.
   const rail = useTabRail();
+  const scene = useSceneGutters();
+  const held = rail !== null || scene.left > 0 || scene.right > 0;
 
   if (recoveryInProgress) {
     return <Redirect href="/(auth)/reset-password" />;
   }
 
   return (
-    <View style={[styles.root, gutter > 0 && { marginHorizontal: -gutter }]}>
+    <View style={styles.root}>
       {/* Everything under the FAB's menu, hidden from assistive tech while it is open
           (CUL-322 / C-14): the menu's layer is modal, and this is its host. */}
       <HiddenUnderFabMenu>
@@ -48,14 +50,15 @@ export default function TabsLayout() {
             // out to its own component so the Pet tab's fallback ladder can be tested;
             // the layout is back to being a router.
             tabBar={(props) => <NyxTabBar {...props} />}
-            // The bar's side is a layout class, not a device: one tree at every width, so a
-            // fold moves the bar from the bottom to the rail without remounting a tab.
+            // The bar's side is the system's, not a device's: one tree in every pose, so a
+            // fold moves the bar between the bottom and the rail without remounting a tab.
+            // A plain phone passes nothing, and is exactly what it was.
             screenOptions={
-              rail
+              held
                 ? {
                     headerShown: false,
-                    tabBarPosition: 'right',
-                    sceneStyle: [styles.scene, { paddingHorizontal: rail.sceneInset }],
+                    tabBarPosition: rail?.edge ?? 'bottom',
+                    sceneStyle: [styles.scene, { paddingLeft: scene.left, paddingRight: scene.right }],
                   }
                 : { headerShown: false }
             }

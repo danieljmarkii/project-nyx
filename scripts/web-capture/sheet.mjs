@@ -18,8 +18,10 @@ const [dir, out, summary] = process.argv.slice(2).map((p) => (p ? resolve(p) : p
 if (!dir || !out) throw new Error('usage: sheet.mjs <shots-dir> <out.png> [summary.md]');
 
 // The size labels capture.mjs writes, in the order a reader compares them.
-// Phones narrow to wide, then the Duo folded and unfolded, then the large text sizes.
-const SIZE_ORDER = ['320', '375x667', '390', '466x678', '626x890', '890x626', '320-textxxxL', '390-textxxxL', '320-textAX5', '390-textAX5'];
+// Phones narrow to wide, then the Duo folded, unfolded and on its side (`-barR` / `-barL`:
+// the system's strip on that edge, CUL-2703), then the large text sizes. The sizes without
+// a bar are the ones captures took before the strip was drawn.
+const SIZE_ORDER = ['320', '375x667', '390', '466x678-barR', '466x678', '669x951', '951x669-barR', '951x669-barL', '626x890', '890x626', '320-textxxxL', '390-textxxxL', '320-textAX5', '390-textAX5'];
 const files = (await readdir(dir)).filter((f) => f.endsWith('.png')).sort();
 if (files.length === 0) {
   console.error(`no captures in ${dir}`);

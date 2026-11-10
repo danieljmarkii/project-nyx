@@ -10,6 +10,9 @@
 // the Modal wrapper (the FAB presents from the root — nothing is up when it opens,
 // so the CUL-662 layer split does not apply here and must not be "tidied" into it).
 
+// The edge iOS reports for its vertical bar: null wherever its bars lie flat.
+const mockBarEdge = jest.fn<'leading' | 'trailing' | null, []>(() => null);
+jest.mock('expo-status-bar', () => ({ useVerticalBarEdgeIOS: () => mockBarEdge() }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 // momentStore reaches the sync layer, which fails fast without the client env.
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
@@ -2242,21 +2245,28 @@ describe('FAB — the mix pill', () => {
   });
 });
 
-// CUL-2242 — at regular the tab bar is a rail down the right edge, and the disc stands at
-// its foot, centred in it and clear of the home indicator. A phone keeps its corner.
-describe('FAB — the seat at the rail’s foot on the unfolded Duo', () => {
+// CUL-2242, CUL-2703 — the disc's seat follows the bar. Where the bar is a rail in the
+// system's strip the disc stands at its foot, centred in it and clear of the home
+// indicator, on the strip's edge. Elsewhere it keeps the phone's corner, measured from the
+// column's edge.
+describe('FAB — the disc’s seat follows the bar', () => {
   const RN = require('react-native');
   const { SafeAreaInsetsContext } = require('react-native-safe-area-context');
-  const { TAB_RAIL_WIDTH } = require('../../hooks/useLayoutClass');
-  const { FAB_BOTTOM, FAB_DISC, FAN_RIGHT_INSET } = require('../../lib/fanBudget');
-  const INSETS = { top: 24, right: 30, bottom: 20, left: 0 };
+  const { FAB_BOTTOM, FAB_DISC, FAN_RIGHT_INSET, fabSeatFor } = require('../../lib/fanBudget');
+  const STRIP = theme.layoutSystemBarMinWidth;
+  type Edge = 'leading' | 'trailing' | null;
   let dims: jest.SpyInstance;
-  afterEach(() => dims?.mockRestore());
+  afterEach(() => {
+    dims?.mockRestore();
+    mockBarEdge.mockReturnValue(null);
+  });
 
-  function seatAt(width: number, height: number) {
+  function seatAt(width: number, height: number, edge: Edge = null) {
     dims = jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width, height, fontScale: 1, scale: 3 });
+    mockBarEdge.mockReturnValue(edge);
+    const insets = { top: edge ? 0 : 24, bottom: 20, left: edge === 'leading' ? STRIP : 0, right: edge === 'trailing' ? STRIP : 0 };
     const view = render(
-      <SafeAreaInsetsContext.Provider value={INSETS}>
+      <SafeAreaInsetsContext.Provider value={insets}>
         <FAB />
       </SafeAreaInsetsContext.Provider>,
     );
@@ -2264,16 +2274,45 @@ describe('FAB — the seat at the rail’s foot on the unfolded Duo', () => {
     return StyleSheet.flatten(view.getByTestId('fab-disc-touch').parent!.parent!.props.style);
   }
 
-  it.each([[320, 568], [390, 844], [466, 678]])('a phone (%ix%i) keeps the corner over the bottom bar', (w, h) => {
+  it.each([[320, 568], [390, 844], [440, 956]])('a phone (%ix%i) keeps the corner over the bottom bar', (w, h) => {
     const seat = seatAt(w, h);
-    expect(seat).toMatchObject({ position: 'absolute', bottom: FAB_BOTTOM, right: FAN_RIGHT_INSET });
+    expect(seat).toMatchObject({ position: 'absolute', bottom: FAB_BOTTOM, right: FAN_RIGHT_INSET, alignItems: 'flex-end' });
+    expect(seat.left).toBeUndefined();
   });
 
-  it.each([[626, 890], [890, 626]])('the unfolded Duo (%ix%i) seats the disc centred in the rail', (w, h) => {
-    const seat = seatAt(w, h);
-    expect(seat.right).toBe(INSETS.right + (TAB_RAIL_WIDTH - FAB_DISC) / 2);
-    expect(seat.bottom).toBe(INSETS.bottom + theme.space3);
-    // The disc fits inside the rail's own width, so it never reaches over a card.
-    expect((seat.right as number) - INSETS.right + FAB_DISC).toBeLessThanOrEqual(TAB_RAIL_WIDTH);
+  // D2 = A: unfolded and upright the bar is along the bottom, so the disc keeps the
+  // phone's seat over it, at the corner of the column a thumb is already on.
+  it('the unfolded Duo upright (669x951) keeps the corner, measured from the column’s edge', () => {
+    const seat = seatAt(669, 951);
+    expect(seat.bottom).toBe(FAB_BOTTOM);
+    expect(seat.right).toBe((669 - theme.layoutColumnMaxWidth) / 2 + FAN_RIGHT_INSET);
+    // Whole, inside the window: the device check found it cut at the column's edge.
+    expect((seat.right as number) + FAB_DISC).toBeLessThan(669);
+  });
+
+  // D1 = A: where iOS stands its bars in the strip, the disc stands at the rail's foot.
+  it.each([[466, 678], [951, 669]])('in the system strip (%ix%i) the disc is centred at the rail’s foot', (w, h) => {
+    const seat = seatAt(w, h, 'trailing');
+    expect(seat.right).toBe((STRIP - FAB_DISC) / 2);
+    expect(seat.bottom).toBe(20 + theme.space3);
+    // The disc fits inside the strip, so it never reaches over a card.
+    expect((seat.right as number) * 2 + FAB_DISC).toBe(STRIP);
+  });
+
+  it('a strip on the left edge seats the disc there, and the fan opens rightward', () => {
+    const seat = seatAt(951, 669, 'leading');
+    expect(seat.left).toBe((STRIP - FAB_DISC) / 2);
+    expect(seat.right).toBe('auto');
+    expect(seat.alignItems).toBe('flex-start');
+  });
+
+  // The top of the strip is the system's (the clock, the camera), so the fan never opens
+  // in it: its edge stands clear of the strip, in the content.
+  it('in a rail the fan opens beside the strip, clear of it; off a rail it stands on the disc’s edge', () => {
+    const railed = fabSeatFor({ rail: { edge: 'right', width: STRIP }, gutterRight: STRIP, safeBottom: 20 });
+    // The fan's edge, measured from the window's: the disc's inset plus the fan's offset.
+    expect(railed.inset + railed.fanOffset).toBe(STRIP + theme.space2);
+    expect(fabSeatFor({ rail: null, gutterRight: 0, safeBottom: 20 }).fanOffset).toBe(0);
+    expect(fabSeatFor({ rail: null, gutterRight: 54.5, safeBottom: 20 }).fanOffset).toBe(0);
   });
 });

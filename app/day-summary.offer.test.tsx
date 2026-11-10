@@ -15,7 +15,7 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
-jest.mock('expo-status-bar', () => ({ setStatusBarStyle: jest.fn() }));
+jest.mock('expo-status-bar', () => ({ setStatusBarStyle: jest.fn(), useVerticalBarEdgeIOS: () => null }));
 // Off the native SVG/animation path — the primer's PrimaryButton loading spinner.
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
