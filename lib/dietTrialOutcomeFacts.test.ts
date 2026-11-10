@@ -43,7 +43,7 @@ function ev(type: string, iso: string) {
 const START = '2026-07-15';
 const NOW = new Date(2026, 6, 28, 12).getTime();
 
-async function load(rows: { event_type: string; occurred_at: string }[]) {
+async function load(rows: { event_type: string; occurred_at: string; look_local_day?: string | null }[]) {
   mockGetAllAsync.mockResolvedValueOnce(rows);
   return loadTrialOutcomeFacts({ petId: 'pet-1', startedAt: START, nowMs: NOW });
 }
@@ -493,5 +493,65 @@ describe('CUL-1483 — the sheet says the owner’s looks are not counted wherev
   it('without looks the counts stand alone', async () => {
     const facts = await load([ev('meal', at(2026, 7, 4)), ev('itch', at(2026, 7, 20))]);
     expect(buildOutcomeSheet({ facts: facts!, petName: 'Mochi' }).factLines).toEqual(['Itch/Scratch: 0 before · 1 during.']);
+  });
+});
+
+// ── CUL-1562: a look sits on its own `looks.local_day`, never the device's clock ──────
+// An owner who logs a look and then changes zones has an instant whose day in the
+// CURRENT zone is not the day the look was saved for. The stored `local_day` is the
+// truth (daily-look spec T-19); re-deriving it moved a look on the trial's first day
+// into the before-stretch, and one on the before-stretch's first day out of both, and
+// the sheet went back to "No symptoms are on the record". The instants are built from
+// LOCAL components (C-29), so each sits a day off its `local_day` in every zone CI pins.
+function look(iso: string, localDay: string | null) {
+  return { event_type: 'check_in', occurred_at: iso, look_local_day: localDay };
+}
+
+describe('CUL-1562 — a look is placed by looks.local_day', () => {
+  it('reads the stored day with the row', async () => {
+    await load([]);
+    const [sql] = mockGetAllAsync.mock.calls[0] as [string, string[]];
+    expect(sql).toMatch(/LEFT JOIN looks lk ON lk\.event_id = e\.id/);
+    expect(sql).toMatch(/lk\.local_day AS look_local_day/);
+  });
+
+  it('a look saved for the trial’s first day, logged late on the eve by this zone, is during', async () => {
+    const facts = await load([look(at(2026, 7, 14, 23), START), ev('meal', at(2026, 7, 5))]);
+    expect([facts!.beforeHasLooks, facts!.duringHasLooks]).toEqual([false, true]);
+  });
+
+  it('a look saved for the before-stretch’s first day, a day early by this zone, is before', async () => {
+    const facts = await load([look(at(2026, 6, 30, 23), '2026-07-01'), ev('itch', at(2026, 7, 20))]);
+    expect([facts!.beforeHasLooks, facts!.duringHasLooks]).toEqual([true, false]);
+    // The sheet names the looks rather than claiming nothing was logged before.
+    expect(buildOutcomeSheet({ facts: facts!, petName: 'Mochi' }).comparisonLine).not.toMatch(/^Nothing was logged/);
+  });
+
+  it('a look saved for today, already tomorrow by this zone, is during', async () => {
+    const facts = await load([look(at(2026, 7, 29, 1), '2026-07-28')]);
+    expect([facts!.beforeHasLooks, facts!.duringHasLooks]).toEqual([false, true]);
+  });
+
+  it('a look stored for tomorrow (logged in a zone ahead, then flown east) already happened, so it is during', async () => {
+    const facts = await load([look(at(2026, 7, 28, 12), '2026-07-29')]);
+    expect([facts!.beforeHasLooks, facts!.duringHasLooks]).toEqual([false, true]);
+    expect(buildOutcomeSheet({ facts: facts!, petName: 'Mochi' }).comparisonLine).not.toMatch(/No symptoms are on the record/);
+  });
+
+  it('a stored day before the before-stretch places the look nowhere, whatever its instant', async () => {
+    const facts = await load([look(at(2026, 7, 1, 1), '2026-06-30')]);
+    expect([facts!.beforeHasLooks, facts!.duringHasLooks]).toEqual([false, false]);
+  });
+
+  it('a look whose child has not reached this device falls back to its instant’s day', async () => {
+    for (const missing of [null, 'not-a-day']) {
+      const facts = await load([look(at(2026, 7, 14, 23), missing)]);
+      expect([missing, facts!.beforeHasLooks, facts!.duringHasLooks]).toEqual([missing, true, false]);
+    }
+  });
+
+  it('only a look reads the stored day: another row beside a stray look_local_day keeps its instant', async () => {
+    const facts = await load([{ event_type: 'itch', occurred_at: at(2026, 7, 14, 23), look_local_day: START }]);
+    expect(facts!.symptoms).toEqual([{ symptomType: 'itch', label: 'Itch/Scratch', before: 1, during: 0 }]);
   });
 });
