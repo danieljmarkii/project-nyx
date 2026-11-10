@@ -14,6 +14,13 @@ import type { TrialOutcomeFacts, TrialSymptomDelta } from './dietTrialCompletion
 
 const SYMPTOM_SET: ReadonlySet<string> = new Set(SYMPTOM_EVENT_TYPES);
 
+/** A stored `looks.local_day` this module can place: a real 'YYYY-MM-DD' calendar day. */
+function storedLookDay(value: string | null | undefined): string | null {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && localDayIndexOf(value) !== null
+    ? value
+    : null;
+}
+
 // The epoch-day inverse (`dayKeyFromIndex`) and its `MS_PER_DAY` constant used to
 // live here. B-417 PR 6's first cut inverted `localDayIndexOf` with the LOCAL
 // getters instead of a UTC read, and the damage was asymmetric — both errors
@@ -84,11 +91,20 @@ export async function loadTrialOutcomeFacts(args: {
     const paddedEnd = shiftDayKey(duringEndKey, 2) ?? duringEndKey;
     const toISO = new Date(`${paddedEnd}T00:00:00Z`).toISOString();
 
-    const rows = await getDb().getAllAsync<{ event_type: string; occurred_at: string }>(
-      `SELECT event_type, occurred_at
-         FROM events
-        WHERE pet_id = ? AND deleted_at IS NULL
-          AND occurred_at >= ? AND occurred_at < ?`,
+    // A look's day is its stored `looks.local_day` (daily-look spec T-19), so the read
+    // carries it. The padding above already holds a look whose `local_day` sits a day
+    // either side of its instant's day in the current zone: the widest offsets are
+    // within the day of slack each end has.
+    const rows = await getDb().getAllAsync<{
+      event_type: string;
+      occurred_at: string;
+      look_local_day: string | null;
+    }>(
+      `SELECT e.event_type, e.occurred_at, lk.local_day AS look_local_day
+         FROM events e
+         LEFT JOIN looks lk ON lk.event_id = e.id
+        WHERE e.pet_id = ? AND e.deleted_at IS NULL
+          AND e.occurred_at >= ? AND e.occurred_at < ?`,
       [args.petId, fromISO, toISO],
     );
 
@@ -104,9 +120,15 @@ export async function loadTrialOutcomeFacts(args: {
     let beforeHasLooks = false;
     let duringHasLooks = false;
     for (const r of rows) {
+      // A LOOK SITS ON ITS OWN `local_day` (CUL-1562). Re-derived from `occurred_at` in
+      // the device's CURRENT zone, an owner who crossed zones saw a look on the trial's
+      // first or last day slide into the other stretch or out of both, and the sheet
+      // went back to saying nothing is on the record. A look whose child has not
+      // reached this device falls back to its instant's day: kept, never dropped.
+      const lookDay = isLookRow(r) ? storedLookDay(r.look_local_day) : null;
       const ms = Date.parse(r.occurred_at);
-      if (!Number.isFinite(ms)) continue;
-      const key = toLocalDayKey(new Date(ms));
+      if (lookDay === null && !Number.isFinite(ms)) continue;
+      const key = lookDay ?? toLocalDayKey(new Date(ms));
       const inDuring = key >= startKey && key <= duringEndKey;
       const inBefore = !inDuring && key >= beforeStartKey && key < startKey;
       if (!inDuring && !inBefore) continue;
