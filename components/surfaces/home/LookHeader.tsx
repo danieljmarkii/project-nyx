@@ -62,7 +62,7 @@ import {
   lookMoreTodayHref,
 } from '../../../lib/lookCard';
 import { describeLook, gridChipLabel, gridSectionsFor, isLookRow, lookHeadline } from '../../../lib/lookDisplay';
-import { EMERGENCY_DOOR_LABEL, type EmergencyRead } from '../../../lib/lookEmergency';
+import { EMERGENCY_DOOR_LABEL, type EmergencyFacts, type EmergencyRead } from '../../../lib/lookEmergency';
 import { loadEmergencyFacts } from '../../../lib/lookEmergencyFacts';
 import { composeEmergencyRead } from '../../../lib/emergencyDoorRead';
 import {
@@ -149,6 +149,12 @@ interface Resting {
   facts: LookWithheldFacts;
 }
 
+/** The emergency door's own read, before it is composed with the card's resting facts. */
+type EmergencyDoorFacts =
+  | { status: 'loading' }
+  | { status: 'failed' }
+  | { status: 'loaded'; petId: string; facts: EmergencyFacts | null };
+
 export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
@@ -188,7 +194,10 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   const [spokenWrite, setSpokenWrite] = useState(false);
   const [resting, setResting] = useState<Resting | null>(null);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
-  const [emergencyRead, setEmergencyRead] = useState<EmergencyRead>({ status: 'loading' });
+  // The door's own 24h read, held raw. The sheet's read is composed in render from it and
+  // the LIVE resting facts, so a refusal logged while the sheet is open re-composes it: the
+  // emergency door never shows a calmer picture than the record (CUL-1547).
+  const [emergencyDoor, setEmergencyDoor] = useState<EmergencyDoorFacts>({ status: 'loading' });
 
   // The live subject at the instant a late answer lands (C-9 — the fold's ref idiom).
   const activePetIdRef = useRef<string | null>(null);
@@ -385,23 +394,36 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   }, [activePet, sex, openIntakeDoor]);
 
   const openEmergency = useCallback(() => {
-    setEmergencyRead({ status: 'loading' });
+    setEmergencyDoor({ status: 'loading' });
     setEmergencyOpen(true);
     if (!activePet) {
-      setEmergencyRead({ status: 'failed' });
+      setEmergencyDoor({ status: 'failed' });
       return;
     }
     const id = activePet.id;
     loadEmergencyFacts(id)
       .then((facts) => {
-        // One composition for both doors (`lib/emergencyDoorRead.ts`): the Signal's foot opens
-        // this sheet too. Arm 1 and arm 3 ride the card's own withholding facts (CUL-1372).
-        const read = composeEmergencyRead({ id }, facts, trialNotEating, resting?.petId === id ? resting.facts : null);
         if (activePetIdRef.current !== id) return;
-        setEmergencyRead(read);
+        setEmergencyDoor({ status: 'loaded', petId: id, facts });
       })
-      .catch(() => setEmergencyRead({ status: 'failed' }));
-  }, [activePet, trialNotEating, resting]);
+      .catch(() => setEmergencyDoor({ status: 'failed' }));
+  }, [activePet]);
+
+  // One composition for both doors (`lib/emergencyDoorRead.ts`): the Signal's foot opens
+  // this sheet too. Arm 1 and arm 3 ride the card's own withholding facts (CUL-1372), read
+  // live while the sheet is open (CUL-1547).
+  const emergencyRead = useMemo<EmergencyRead>(
+    () =>
+      emergencyDoor.status === 'loaded'
+        ? composeEmergencyRead(
+            { id: emergencyDoor.petId },
+            emergencyDoor.facts,
+            trialNotEating,
+            resting?.petId === emergencyDoor.petId ? resting.facts : null,
+          )
+        : emergencyDoor,
+    [emergencyDoor, trialNotEating, resting],
+  );
 
   if (!live || !activePet || !species) return null;
 

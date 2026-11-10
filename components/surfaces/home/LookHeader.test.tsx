@@ -517,6 +517,38 @@ describe('CUL-1372 (a) — the door never reads calmer than the header', () => {
   });
 });
 
+describe('CUL-1547 — the open door re-reads when the record moves under it', () => {
+  it('a refusal logged while the sheet is open re-composes the read: calmer than the record never stands', async () => {
+    const t = render(<LookHeader />);
+    await waitFor(() => expect(mockLoadWithheldFacts).toHaveBeenCalled());
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-header-more'));
+    });
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-header-emergency-door'));
+    });
+    // Opened on quiet facts: the intake row is still a conditional.
+    await waitFor(() => expect(t.getByText('Not eating for a day')).toBeTruthy());
+    expect(t.queryByTestId('look-emergency-imperative')).toBeNull();
+
+    // The owner logs a refused meal with the sheet still open: the record grows, the
+    // card's resting read reloads and now carries the intake decline.
+    const reads = mockLoadWithheldFacts.mock.calls.length;
+    mockLoadWithheldFacts.mockResolvedValue(refusing);
+    await act(async () => {
+      useEventStore.setState({ todayEvents: [{ id: 'refused-meal', pet_id: NYX.id, event_type: 'meal' } as never] });
+    });
+    await waitFor(() => expect(mockLoadWithheldFacts.mock.calls.length).toBeGreaterThan(reads));
+
+    // The same open sheet now reads the imperative, with no second fetch and no wait
+    // frame (Designer: the sheet stays put; the rows change in place).
+    await waitFor(() => expect(t.getByTestId('look-emergency-imperative')).toBeTruthy());
+    expect(t.queryByText('Not eating for a day')).toBeNull();
+    expect(t.queryByTestId('look-emergency-waiting')).toBeNull();
+    expect(mockLoadFacts).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('BRK-20 — a later look never hides an earlier concern', () => {
   it('Hiding at 7:10, Played at 8 PM: both are on Home, newest first', async () => {
     useEventStore.setState({
