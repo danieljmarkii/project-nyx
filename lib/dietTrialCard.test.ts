@@ -3784,6 +3784,55 @@ describe('the Design v2 trial line (CUL-1526)', () => {
     }))!.cardLine).toBe('Ends Aug 27 · off-diet check incomplete');
   });
 
+  // CUL-1818 — the legacy `line` (Get ready's trial row quotes it) owes the same clause.
+  // The ratio is withheld on a thin record, and the count shows only above zero, so
+  // before this the line was "food · ends date" and nothing else.
+  describe('the legacy line says the check is incomplete wherever cardLine does (CUL-1818)', () => {
+    const thin = { mayStateRecordClean: true, mayImplyRecordClean: false, totalFeedings: 40, offDiet: 0 };
+
+    it('zero off-diet over a record not clean enough to imply clean', () => {
+      expect(resolveTrialStrip(activeInput({
+        coverage: { daysLogged: 12, daysElapsed: 23 }, belowCoverageFloor: true, exposures: thin,
+      }))!.line).toBe(`${FOOD} · ends Aug 27 · off-diet check incomplete`);
+      // With the ratio stated, the clause still follows it.
+      expect(resolveTrialStrip(activeInput({
+        coverage: { daysLogged: 30, daysElapsed: 56 }, exposures: thin,
+      }))!.line).toBe(`${FOOD} · ends Aug 27 · meals logged on 30 of 56 days · off-diet check incomplete`);
+    });
+
+    it('an absent implied-clean gate, an unread classification, an unusable permit set, a dark arm', () => {
+      for (const over of [
+        { exposures: { mayStateRecordClean: true, totalFeedings: 68, offDiet: 0 } },
+        { exposures: null },
+        { allowedSetUnavailable: true, exposures: offDiet(68) },
+        { antigenArmDark: true },
+      ] as Partial<TrialCardInput>[]) {
+        expect(resolveTrialStrip(activeInput(over))!.line).toMatch(/ · off-diet check incomplete$/);
+      }
+    });
+
+    it('stays bare of the clause only when the record may imply clean', () => {
+      const line = resolveTrialStrip(activeInput())!.line!;
+      expect(line).toBe(`${FOOD} · ends Aug 27 · meals logged on 22 of 23 days`);
+      expect(line).not.toMatch(/incomplete/);
+    });
+
+    it('a logged count still leads, and never reads "No off-diet foods logged"', () => {
+      const line = resolveTrialStrip(activeInput({ antigenArmDark: true, exposures: offDiet(2) }))!.line!;
+      expect(line).toMatch(/ · 2 outside the trial diet · off-diet check incomplete$/);
+      expect(line).not.toMatch(/no off-diet/i);
+    });
+
+    it('line and cardLine never disagree about the clause', () => {
+      for (const [, state] of everyState) {
+        const strip = resolveTrialStrip(state);
+        if (!strip || strip.line === null || strip.cardLine === null) continue;
+        expect(strip.line.endsWith('off-diet check incomplete'))
+          .toBe(strip.cardLine.endsWith('off-diet check incomplete'));
+      }
+    });
+  });
+
   // The reviewer's property: an unknown count and a clean count never render alike.
   it('unknown and clean never produce the same line', () => {
     const clean = resolveTrialStrip(activeInput())!.cardLine;
