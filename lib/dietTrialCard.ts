@@ -3164,7 +3164,10 @@ function abandonedCard(
 export interface TrialStripModel {
   /** "Diet trial · day 23 of 56" | "Diet trial · day 61 — 5 days past". */
   header: string;
-  /** One line: food · end date · coverage. Null while a safety flag is live. */
+  /**
+   * One line: food · end date · coverage · off-diet count, then "off-diet check incomplete"
+   * wherever `cardLine` carries it (CUL-1818). Null while a safety flag is live.
+   */
   line: string | null;
   /** R2 again: `getDietTrialProgress().fraction`, nothing else. */
   progressFraction: number;
@@ -3402,6 +3405,12 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
       ? ` · ${stripOffDiet} off-diet ${stripOffDiet === 1 ? 'feeding' : 'feedings'} logged`
       : '') +
     (offDietUnknown ? ' · off-diet check incomplete' : '');
+  // CUL-1818 — the legacy `line` owes the same clause. Get ready's trial row quotes it
+  // verbatim (`lib/getReady.ts` `trialRow`), and with the ratio withheld above and the
+  // count shown only above zero, a thin record rendered "Zignature Kangaroo Formula ·
+  // ends Aug 27" and nothing else: the bare-date-reads-as-clean defect CUL-1780 fixed on
+  // Home, one surface over. Same predicate, same words, so the two lines cannot disagree.
+  if (offDietUnknown) parts.push('off-diet check incomplete');
   return {
     header,
     line: parts.length > 0 ? parts.join(' · ') : null,

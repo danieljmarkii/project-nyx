@@ -24,6 +24,7 @@ import type { WorthRaisingInput } from './getReady';
 import type { CachedFinding, IntakeDeclineFinding, SignalFinding } from './signal';
 import type { Rundown, RundownTile } from './rundown';
 import type { MedicationCourse, MedicationCourseEnd } from './medicationHistory';
+import { resolveTrialStrip } from './dietTrialCard';
 import type { TrialStripModel } from './dietTrialCard';
 import type { TrialScreenTrial } from './trialScreenModel';
 
@@ -1480,6 +1481,43 @@ const RUNNING_STRIP: TrialStripModel = {
   trialResponseLine: null,
   cardLine: null,
 };
+
+// CUL-1818 — Get ready quotes the strip's line verbatim, so a thin record with nothing
+// off-diet logged used to read "Zignature Kangaroo Formula · ends Aug 27": a bare date
+// that reads as a clean trial. Driven through the REAL `resolveTrialStrip`, not a
+// hand-written strip, so the pin breaks if the clause leaves the line.
+describe('CUL-1818 — the trial row says the off-diet check is incomplete on a thin record', () => {
+  const trialInput = (mayImplyRecordClean: boolean | undefined) => ({
+    trial: { status: 'active' as const, startedAt: '2026-07-03', targetDurationDays: 56, foodLabel: 'Zignature Kangaroo Formula' },
+    nowMs: new Date(2026, 6, 25, 12, 0, 0).getTime(),
+    petName: 'Biscuit',
+    species: 'dog' as const,
+    // Below the floor: the strip withholds its ratio, the shape the issue reported.
+    coverage: { daysLogged: 12, daysElapsed: 23 },
+    belowCoverageFloor: true,
+    exposures: { mayStateRecordClean: true, mayImplyRecordClean, totalFeedings: 30, offDiet: 0 },
+  });
+
+  it.each([false, undefined])('zero off-diet with mayImplyRecordClean %s → "off-diet check incomplete"', (gate) => {
+    const strip = resolveTrialStrip(trialInput(gate));
+    const { rows } = buildWorthRaising(input({ trialStrip: strip, trialScreen: null }));
+    const trial = rows.find((r) => r.id === 'trial')!;
+    expect(trial.detail).toBe('Zignature Kangaroo Formula · ends Aug 27 · off-diet check incomplete');
+    expect(trial.detail).not.toMatch(/no off-diet/i);
+  });
+
+  it('a record that may imply clean keeps the line without the clause', () => {
+    const strip = resolveTrialStrip({
+      ...trialInput(true),
+      coverage: { daysLogged: 22, daysElapsed: 23 },
+      belowCoverageFloor: false,
+    });
+    const { rows } = buildWorthRaising(input({ trialStrip: strip, trialScreen: null }));
+    expect(rows.find((r) => r.id === 'trial')!.detail).toBe(
+      'Zignature Kangaroo Formula · ends Aug 27 · meals logged on 22 of 23 days',
+    );
+  });
+});
 
 describe('TS-8 — the trial row asks the recheck questions', () => {
   it('with no screen model (trialScreen null) the trial row is the strip’s, from the strip, with no recheck', () => {
