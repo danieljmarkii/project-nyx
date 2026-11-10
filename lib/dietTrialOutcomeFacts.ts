@@ -128,7 +128,11 @@ export async function loadTrialOutcomeFacts(args: {
       const lookDay = isLookRow(r) ? storedLookDay(r.look_local_day) : null;
       const ms = Date.parse(r.occurred_at);
       if (lookDay === null && !Number.isFinite(ms)) continue;
-      const key = lookDay ?? toLocalDayKey(new Date(ms));
+      // A look stored for a day AFTER today's key happened already: its owner logged it
+      // in a zone ahead of this one (an eastbound date-line crossing). The trial runs to
+      // now, so it is during; placed by its key alone it fell outside both stretches and
+      // the sheet could say nothing is on the record over it.
+      const key = lookDay !== null && lookDay > duringEndKey ? duringEndKey : (lookDay ?? toLocalDayKey(new Date(ms)));
       const inDuring = key >= startKey && key <= duringEndKey;
       const inBefore = !inDuring && key >= beforeStartKey && key < startKey;
       if (!inDuring && !inBefore) continue;

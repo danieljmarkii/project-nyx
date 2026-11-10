@@ -532,7 +532,13 @@ describe('CUL-1562 — a look is placed by looks.local_day', () => {
     expect([facts!.beforeHasLooks, facts!.duringHasLooks]).toEqual([false, true]);
   });
 
-  it('a stored day outside both stretches places the look nowhere, whatever its instant', async () => {
+  it('a look stored for tomorrow (logged in a zone ahead, then flown east) already happened, so it is during', async () => {
+    const facts = await load([look(at(2026, 7, 28, 12), '2026-07-29')]);
+    expect([facts!.beforeHasLooks, facts!.duringHasLooks]).toEqual([false, true]);
+    expect(buildOutcomeSheet({ facts: facts!, petName: 'Mochi' }).comparisonLine).not.toMatch(/No symptoms are on the record/);
+  });
+
+  it('a stored day before the before-stretch places the look nowhere, whatever its instant', async () => {
     const facts = await load([look(at(2026, 7, 1, 1), '2026-06-30')]);
     expect([facts!.beforeHasLooks, facts!.duringHasLooks]).toEqual([false, false]);
   });
