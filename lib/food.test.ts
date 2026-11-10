@@ -795,6 +795,16 @@ describe('selectReliableFavorites', () => {
       expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW_REAL })).toEqual([]);
     });
 
+    it('a FUTURE-dated rating (a year typo) does not make a stale favourite fresh', () => {
+      const rows = [...fiveEndingAt(edge - DAY), meal({ intakeRating: 'all', ms: NOW_REAL + 300 * DAY })];
+      expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW_REAL })).toEqual([]);
+    });
+
+    it('a FUTURE-dated refusal still suppresses a fresh favourite (the recency guard keeps it)', () => {
+      const rows = [...fiveEndingAt(NOW_REAL - DAY), meal({ intakeRating: 'refused', ms: NOW_REAL + DAY })];
+      expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW_REAL })).toEqual([]);
+    });
+
     it('shows no favourite when the clock is unknown', () => {
       expect(selectReliableFavorites(fiveEndingAt(NOW_REAL), { freeFedFoodIds: NO_FREE_FED, nowMs: NaN })).toEqual([]);
     });

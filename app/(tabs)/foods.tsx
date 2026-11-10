@@ -495,9 +495,9 @@ export default function FoodsScreen() {
 
 // The reliable-favorites shelf (B-004 PR 5) — a curated strip above the catalog of
 // the foods this pet reliably finishes. Positive-only and rate-over-N: each row
-// carries the VISIBLE denominator ("Finished 9 of 11 meals"), never a bare score,
-// and the entire shelf is suppressed upstream (getReliableFavorites) during an
-// intake-decline watch, so it can never read as reassurance over a decline
+// carries the VISIBLE denominator ("Finished 9 of 11 rated meals"), never a bare score,
+// and the entire shelf is suppressed upstream (getReliableFavorites) unless the
+// intake-decline read is armed and quiet, so it can never read as reassurance over a decline
 // (intake-is-not-preference). Brands show per row — favorites span brands, so
 // there's no brand grouping here — and a tap opens the same detail screen as the
 // catalog rows below (a favorite also appears in its type group; the shelf is a

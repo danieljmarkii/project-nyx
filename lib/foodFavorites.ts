@@ -84,9 +84,9 @@ export async function getReliableFavorites(petId: string, species: Species): Pro
     getActiveArrangementsForPet(petId),
   ]);
 
-  // Active decline watch → the whole shelf stays quiet (see the doc above). The
-  // gate predicate is pure + unit-tested (lib/food shouldSuppressFavorites) so the
-  // "only a watch suppresses; thin data never does" contract isn't an untested branch.
+  // Unless the decline read is armed and quiet ('none'), the whole shelf stays quiet
+  // (see the doc above; CUL-1685's armed-twin rule). The gate predicate is pure +
+  // unit-tested (lib/food shouldSuppressFavorites), not an untested branch here.
   if (shouldSuppressFavorites(decline.status)) return [];
 
   const mealRows: FavoriteMealRow[] = rows.map((r) => ({

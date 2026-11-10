@@ -389,10 +389,13 @@ export const FAVORITE_MIN_RATE = 0.8;
  *  favorites still appear in the type-grouped list below. */
 export const FAVORITE_SHELF_LIMIT = 6;
 /** How recent a food's newest rated meal must be for it to stay a favourite (CUL-1685).
- *  MIRRORS lib/analytics.ts DECLINE.baselineWindowDays (= detection.ts DEFAULT_CONFIG.
+ *  The window LENGTH mirrors lib/analytics.ts DECLINE.baselineWindowDays (= detection.ts DEFAULT_CONFIG.
  *  intakeDecline.baselineWindowDays), and answers the same question (C-34): "is this
  *  intake still inside what the decline read can see?" A raw 14×24h edge, like the
- *  detector's. Pinned against the real detector in lib/food.test.ts. */
+ *  detector's. The meal SET is not mirrored (current free-fed arrangements, single-food
+ *  meals only): the shelf's safety rests on the pet-wide armed-twin gate
+ *  (shouldSuppressFavorites), not on this window. Pinned against the real detector in
+ *  lib/food.test.ts. */
 export const FAVORITE_FRESH_WINDOW_DAYS = 14;
 const FAVORITE_MS_PER_DAY = 86_400_000;
 
@@ -504,9 +507,13 @@ export function selectReliableFavorites(
       .filter((r) => r.ms === maxMs)
       .every((r) => FINISHED_RATINGS.has(r.intakeRating as string));
     if (!latestFinished) continue;
-    // Freshness (CUL-1685): the newest rating must be inside the detector's window. A
-    // non-finite clock fails this comparison, so an unknown "now" shows no favourite.
-    if (!(maxMs >= opts.nowMs - FAVORITE_FRESH_WINDOW_DAYS * FAVORITE_MS_PER_DAY)) continue;
+    // Freshness (CUL-1685): the newest rating AT OR BEFORE now must be inside the
+    // detector's window. A future-dated row (a skewed clock, a year typo) never counts
+    // as fresh, though it still feeds the recency guard above, where a future refusal
+    // keeps suppressing: excluding it there would drop a warning. A non-finite clock
+    // fails the comparison, so an unknown "now" shows no favourite.
+    const freshMs = qualifying.reduce((m, r) => (r.ms <= opts.nowMs && r.ms > m ? r.ms : m), -Infinity);
+    if (!(freshMs >= opts.nowMs - FAVORITE_FRESH_WINDOW_DAYS * FAVORITE_MS_PER_DAY)) continue;
     favorites.push({
       key,
       brand: g.brand,
