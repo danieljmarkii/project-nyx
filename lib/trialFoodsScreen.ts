@@ -31,6 +31,7 @@ import type { AllowedFood, TrialFoodRole } from './dietTrial';
 import { trialListFoodsOn, type TrialAllowedSet, type TrialAllowedSetTrial } from './trialAllowedSet';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
 import { recordDay } from './recordDates';
+import { trialDayClause } from './trialOverrun';
 
 // ── §4 copy pack, verbatim ──────────────────────────────────────────────────
 //
@@ -219,8 +220,10 @@ export function buildTrialFoodsScreen(
   return {
     title: trialFoodsTitle(petName),
     subtitle:
+      // Past the window: `Diet trial · day 35 — 7 days past`, the card's phrase
+      // (CUL-1181), never `day 35 of 28`.
       progress && progress.targetDays > 0
-        ? `Diet trial · day ${progress.dayCounter} of ${progress.targetDays}`
+        ? `Diet trial · ${trialDayClause(progress.dayCounter, progress.targetDays)}`
         : null,
     groups: [
       {

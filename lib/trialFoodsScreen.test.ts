@@ -148,6 +148,12 @@ describe('the screen (§2.2)', () => {
     expect(model.subtitle).toBe('Diet trial · day 12 of 28');
   });
 
+  // CUL-1181 — past the window the subtitle reads like the trial card.
+  it('reads like the trial card past the window (day 35 of a 28-day trial)', () => {
+    const late = buildTrialFoodsScreen('Biscuit', set, localNoon(2026, 8, 4))!;
+    expect(late.subtitle).toBe('Diet trial · day 35 — 7 days past');
+  });
+
   it('groups the prescribed diet apart from every permitted extra', () => {
     expect(model.groups.map((g) => g.title)).toEqual(['Trial diet', 'Also allowed']);
     expect(model.groups[0].rows.map((r) => r.label)).toEqual(['Zignature Kangaroo Formula']);

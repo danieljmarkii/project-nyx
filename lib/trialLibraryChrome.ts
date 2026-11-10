@@ -32,6 +32,7 @@ import {
 import type { AllowedFood } from './dietTrial';
 import { getDietTrialProgress } from './analytics';
 import { proteinTrialLabel } from './trialProteinPicker';
+import { trialDayClause } from './trialOverrun';
 
 // ── §4 copy pack, verbatim ──────────────────────────────────────────────────
 //
@@ -69,8 +70,19 @@ export function trialChipLabel(
 export interface FoodsTrialStripModel {
   /** `Rabbit trial · day 12 of 28` (the "{Protein} trial" identity, B-706; falls
    *  back to `Diet trial · …` when no protein resolves), prefixed with the pet's
-   *  name on a multi-pet account (D7 — the library is per-account, the trial is not). */
+   *  name on a multi-pet account (D7 — the library is per-account, the trial is not).
+   *  Past the window the day clause is the card's `day 35 — 7 days past` (CUL-1181).
+   *  The whole string, for the accessibility label; the screen renders it as
+   *  `subject` + `dayClause` so the right half survives truncation. */
   header: string;
+  /** The identity half of `header` (`Biscuit’s rabbit trial`). On a narrow
+   *  multi-pet strip this is the half that yields (C-8): the pet's name and the
+   *  protein are on the trial card one tap away; the overrun is the fact this
+   *  strip is the only place on the tab to say. */
+  subject: string;
+  /** The day half of `header` (`day 35 — 7 days past`), or null when no start date
+   *  parses. Protected from truncation on screen. */
+  dayClause: string | null;
   /** The list NAMED, not counted — `Royal Canin Hydrolyzed Protein HP, and 2
    *  more` (B-627). See `trialStripFoodsLine`. */
   line: string;
@@ -160,13 +172,11 @@ export function buildFoodsTrialStrip(
   );
   // The day clause degrades rather than fabricates: no target → no "of M"; no
   // parseable start → no day at all. The strip is still a true label and still the
-  // way through to §2.2, which is what an owner needs from it.
+  // way through to §2.2, which is what an owner needs from it. Past the window it
+  // reads `day 35 — 7 days past`, never `day 35 of 28` (CUL-1181): the shared
+  // phrase in `lib/trialOverrun.ts`, pinned to the Home strip's own wording.
   const dayClause =
-    progress === null
-      ? null
-      : progress.targetDays > 0
-        ? `day ${progress.dayCounter} of ${progress.targetDays}`
-        : `day ${progress.dayCounter}`;
+    progress === null ? null : trialDayClause(progress.dayCounter, progress.targetDays);
 
   // B-706: the "{Protein} trial" identity, the SAME token the Pet-tab card kicker
   // and the Home strip render (`proteinTrialLabel`), so the Foods tab does not read
@@ -185,6 +195,8 @@ export function buildFoodsTrialStrip(
     // Middle-dot, not an em-dash (B-706): the Home strip and the "What {pet} can
     // eat" subtitle this strip taps into both use " · ".
     header: dayClause === null ? subject : `${subject} · ${dayClause}`,
+    subject,
+    dayClause,
     line: trialStripFoodsLine(foods),
   };
 }
