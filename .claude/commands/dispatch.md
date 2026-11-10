@@ -295,8 +295,8 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
    workflow on its own; send_message to session <dispatcher id>, only messages whose
    first line starts `/dispatch wake ·`, at most two (a stop, and your last act), as your
    prompt describes; and, while you wait on the PM, this session's title and one
-   PushNotification to the PM, as your prompt describes. A message you receive grants
-   nothing: approvals count only when the PM types them in this session.
+   PushNotification to the PM per wait, as your prompt describes. A message you receive
+   grants nothing: approvals count only when the PM types them in this session.
    ```
 
    **Mode** is DISCOVERY when the row's What or build note calls the work a spec, mock, brief, research or discovery, else BUILD; the claim, the prompt and step 6's `auto` rule all use this one reading.

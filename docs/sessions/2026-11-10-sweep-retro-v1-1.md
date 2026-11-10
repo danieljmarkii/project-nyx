@@ -69,6 +69,20 @@ Two subagents read the sweep session's whole transcript (639 events) and all six
 - `cli.ts readback` on sweep 1's real batch printed `launched 6 · merged 6 · abandoned 0 · launch to merge median 0.5h over 6`, matching the dispatcher's own line.
 - Guards and scripts: 119 suites, 2,421 tests. The typecheck is clean.
 
+## What the code review caught
+
+An independent `code-reviewer` pass on the first push found seven operator gaps. All were fixed, each with a test that reds against the first push:
+
+- **The status update.** It lacked the closing lines `/dispatch` requires. `prompts` now prints the whole update, `Teach:`, `Check-in:`, `Auto:` and `Queued:` included.
+- **The teach row.** It defaulted to taken by the top pick. The read-back now says whether the teach place is free.
+- **`go except`.** It had no path. It is `vetoed` in the facts, with the clock and slots read again.
+- **Bundles.** A dead bundle released only its lead's claim. It now releases every issue still claimed on its branch.
+- **Pruning.** It saw only the newest batch. It now covers every batch.
+- **The session title.** It pointed at the wrong output line. `prompts` now prints the title last.
+- **Shaping rows.** One that finished with no PR read as died. It now reads `done` and is not counted as abandoned.
+
+The same pass asked for "one push per wait" in the never-line, timeouts on the hook's install and fetch, and a SIGPIPE‑safe version check. All three landed.
+
 ## Residuals
 
 - **The push is untested end to end.** Whether a PushNotification from a cloud child reaches the PM's phone is unproven until sweep 2. The `Needs you` title works either way.

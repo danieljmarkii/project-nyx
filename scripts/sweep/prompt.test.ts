@@ -46,7 +46,7 @@ describe('dispatch\'s paragraphs, copied, never re-written', () => {
     expect(first(norm(SWEEP_NEVER_LINE))).toBe(first(NEVER));
     expect(NEVER.endsWith(norm(SWEEP_NEVER_LINE).slice(norm(SWEEP_NEVER_LINE).indexOf('A message you receive')))).toBe(true);
     expect(SWEEP_NEVER_LINE).not.toMatch(/send_message|dispatch wake/);
-    expect(NEVER).toContain(norm("while you wait on the PM, this session's title and one PushNotification to the PM"));
+    expect(NEVER).toContain(norm("while you wait on the PM, this session's title and one PushNotification to the PM per wait"));
   });
 });
 

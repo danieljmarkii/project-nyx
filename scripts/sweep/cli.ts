@@ -11,8 +11,11 @@
 // highest PR number on the Loose ends page; 1 on a new page).
 // metrics.json: `{ launched, merged, abandoned, launchToMergeHours: number[] }`.
 // readback.json: ReadbackInput (readback.ts): the last batch, read back before ranking (CUL-2700).
-// prompts: the same facts as rank, plus `teach` (false when a row in flight carries it);
-// it prints each pick's branch, claim comment, session title and prompt, and the never-line.
+// prompts: the same facts as rank, plus `teach` (the read-back's teachFree, and false when
+// any project's newest `**/dispatch run**` update names a Teach row still in flight). It
+// prints each pick's branch, claim, launch line and prompt, the never-line, the status
+// update to post, and last, this session's title. `go except CUL-NNN` is `vetoed` in the
+// facts, with `now` and `slotsFree` read again: re-run rank, then prompts.
 
 import * as fs from 'node:fs';
 
@@ -41,7 +44,6 @@ function main(): number {
     out.forEach((o, i) => {
       say(`=== PR-${o.row} · ${o.mode} · ${sessionTitle(r.picks[i])} ===`);
       say(`branch: ${o.branch}`);
-      say(`launch line: PR-${o.row} · ${r.picks[i].issues[0]} · session <id> · branch ${o.branch} · ${input.now} · picked`);
       say('--- claim ---');
       say(o.claim);
       say('--- prompt ---');
@@ -50,6 +52,23 @@ function main(): number {
     });
     say('--- never-line (append_system_prompt, every session) ---');
     say(SWEEP_NEVER_LINE);
+    // The update a later sweep's read-back, and any `/dispatch Loose ends`, reads as memory;
+    // its closing lines are the ones dispatch's validateStatusUpdate requires.
+    const teachRow = out.find((o) => o.prompt.includes('Teach: yes — this round'))?.row;
+    say('--- status update (save_status_update; fill each session id and this session\'s id) ---');
+    say(`**/dispatch run** · ${input.now} · sweep: ${out.length} launched`);
+    say('');
+    out.forEach((o, i) => say(`PR-${o.row} · ${r!.picks[i].issues[0]} · session <id> · branch ${o.branch} · ${input.now} · picked`));
+    say('');
+    say('<the Linear writes, the held, and the read-back\'s metrics line, one line each>');
+    say('');
+    say('Dispatcher: <this session\'s id>');
+    say(`Teach: ${teachRow ? `PR-${teachRow}` : 'none'}`);
+    say('Check-in: none');
+    say('Auto: none');
+    say('Queued: none');
+    say('--- end status update ---');
+    say(`This session's title: ${sweepRunTitle(new Date(input.now), out.length)}`);
     return 0;
   }
 
@@ -102,6 +121,7 @@ function printReadback(input: ReadbackInput): number {
   say(`Prune from the page (merged over a week ago): ${b.prune.map((x) => `PR-${x}`).join(', ') || 'nothing'}`);
   say(`nextRow: ${b.nextRow}`);
   say(`waitingOnPm (this project): ${b.waitingOnPm}`);
+  say(`teach (for the prompts facts): ${b.teachFree}`);
   say(`inFlight (for the rank facts): ${JSON.stringify(b.inFlight)}`);
   say(b.metrics);
   return 0;

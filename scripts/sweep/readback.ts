@@ -17,6 +17,8 @@
 //     branch (it supersedes the claim, per its prompt) reads as died until the PM matches it.
 //   - Issues a merge closed that were not the row's are the child's read-back, not this.
 //   - A running row with no PR holds only the files its build note names.
+//   - `teachFree` knows only this project's batch; another project's teach row is the
+//     sweep's to read (its newest `**/dispatch run**` update's `Teach:` line).
 //   - Row numbers count from the updates it is given; pass every `**/dispatch run**`
 //     update, or a pruned row's number can come back (page.ts reads two digits: 01 to 99).
 
@@ -45,7 +47,9 @@ export type ReadbackInput = {
   claims: Record<string, string>; // issue → its newest `**Claimed**` or `**Released**` comment
 };
 
-export type Outcome = 'merged' | 'waiting on you' | 'running' | 'died';
+// `done`: a shaping row whose session finished with no PR (its brief was the deliverable,
+// or the PM ruled no build). It is not abandoned work, so the metrics do not count it.
+export type Outcome = 'merged' | 'waiting on you' | 'running' | 'done' | 'died';
 
 export type RowRead = { row: string; issue: string; session?: string; branch?: string; pr?: number; outcome: Outcome; detail: string };
 
@@ -57,20 +61,30 @@ export type Readback = {
   waitingOnPm: number;
   prune: string[];
   nextRow: number;
+  teachFree: boolean; // no row of the last batch that carries `Teach:` is still in flight
   metrics: string;
 };
 
 export const PRUNE_AFTER_DAYS = 7;
 const HOUR = 3_600_000;
 
-// The page's table rows (`| 07 | CUL-… | … |`) and each build note's `Files:` list.
-function pageFacts(page: string): { rows: string[]; files: Record<string, string[]> } {
-  const rows = [...page.matchAll(/^\|\s*(\d{2})\s*\|/gm)].map((m) => m[1]);
+// The page's table rows (`| 07 | CUL-1 · CUL-2 | what | — | shape |`): each row's issues
+// (a bundle names several) and lane, and each build note's `Files:` list, in the grammar
+// rank.ts pageRows writes (readback.test.ts round-trips it).
+function pageFacts(page: string): { rows: string[]; issues: Record<string, string[]>; lanes: Record<string, string>; files: Record<string, string[]> } {
+  const rows: string[] = [];
+  const issues: Record<string, string[]> = {};
+  const lanes: Record<string, string> = {};
+  for (const m of page.matchAll(/^\|\s*(\d{2})\s*\|([^|\n]*)\|.*\|\s*(\w+)\s*\|\s*$/gm)) {
+    rows.push(m[1]);
+    issues[m[1]] = [...m[2].matchAll(/CUL-\d+/g)].map((x) => x[0]);
+    lanes[m[1]] = m[3];
+  }
   const files: Record<string, string[]> = {};
   for (const m of page.matchAll(/\*\*PR-(\d{2}):\*\*.*?\bFiles: (.*?)\. Team:/g)) {
     files[m[1]] = m[2].startsWith('none') ? [] : m[2].split(',').map((f) => f.trim()).filter(Boolean);
   }
-  return { rows, files };
+  return { rows, issues, lanes, files };
 }
 
 export function readBack(input: ReadbackInput): Readback {
@@ -78,7 +92,7 @@ export function readBack(input: ReadbackInput): Readback {
   if (Number.isNaN(nowMs)) throw new Error('readback refused: `now` is not a time (take it from date -u)');
   const body = input.updates.find((u) => parseLaunchLines(u).length > 0);
   const launches = body ? parseLaunchLines(body) : [];
-  const { rows: pageRowIds, files: noteFiles } = pageFacts(input.page);
+  const { rows: pageRowIds, issues: rowIssues, lanes, files: noteFiles } = pageFacts(input.page);
 
   const rows: RowRead[] = [];
   const needsYou: string[] = [];
@@ -120,21 +134,28 @@ export function readBack(input: ReadbackInput): Readback {
       needsYou.push(`PR-${row} · ${issue} · your go, typed in its session`);
       continue;
     }
-    rows.push({ ...base, outcome: 'died', detail: `session ${bucket}, no PR${pr ? ` (#${pr.number} closed unmerged)` : ''}` });
-    // Release only this launch's own claim, and only once (dispatch step 0's rule).
-    const claim = input.claims[issue] ?? '';
-    if (l.branch && claim.startsWith('**Claimed**') && claim.includes(l.branch)) {
-      releases.push({ issue, comment: `**Released** — sweep session ${l.session ?? '?'} ended without a PR, ${input.now}` });
+    const shapeDone = bucket === 'completed' && !pr && lanes[row] === 'shape';
+    rows.push({ ...base, outcome: shapeDone ? 'done' : 'died', detail: shapeDone ? 'a shaping row that finished with no PR: read its brief on the issue' : `session ${bucket}, no PR${pr ? ` (#${pr.number} closed unmerged)` : ''}` });
+    // Release only this launch's own claims, and only once (dispatch step 0's rule): every
+    // issue of a bundle was claimed, so every one whose newest comment still claims this
+    // branch is released. A child that wrapped already released its own.
+    for (const id of new Set([issue, ...(rowIssues[row] ?? [])])) {
+      const claim = input.claims[id] ?? '';
+      if (l.branch && claim.startsWith('**Claimed**') && claim.includes(l.branch)) {
+        releases.push({ issue: id, comment: `**Released** — sweep session ${l.session ?? '?'} ended without a PR, ${input.now}` });
+      }
     }
   }
 
   // Merged rows leave the page a week after their merge, so the table stays a working list.
-  const prune = launches
+  // Every batch's rows, not only the newest batch's: an older row merges and ages too.
+  const allLaunches = input.updates.flatMap((u) => parseLaunchLines(u));
+  const prune = [...new Set(allLaunches
     .filter((l) => {
       const pr = l.branch ? input.prs.find((p) => p.branch === l.branch) : undefined;
       return pr?.merged && pr.mergedAt && nowMs - Date.parse(pr.mergedAt) > PRUNE_AFTER_DAYS * 24 * HOUR && pageRowIds.includes(l.row);
     })
-    .map((l) => l.row);
+    .map((l) => l.row))];
 
   // A row number is never reused: dispatch matches a PR to a row by the `PR-NN` in its
   // title, so a new PR-01 would read as the old, merged one. Count every row any update
@@ -144,6 +165,12 @@ export function readBack(input: ReadbackInput): Readback {
     .filter((x) => Number.isInteger(x));
   const nextRow = everRow.length ? Math.max(...everRow) + 1 : 1;
 
+  // One teach row in flight at a time (dispatch step 5): the batch's `Teach:` row frees the
+  // place once it merged, finished or died.
+  const teachRow = /^Teach:\s*PR-(\d{2})\b/m.exec(body ?? '')?.[1];
+  const teachRead = teachRow ? rows.find((r) => r.row === teachRow) : undefined;
+  const teachFree = !teachRead || ['merged', 'done', 'died'].includes(teachRead.outcome);
+
   return {
     rows,
     needsYou,
@@ -152,6 +179,7 @@ export function readBack(input: ReadbackInput): Readback {
     waitingOnPm: rows.filter((r) => r.outcome === 'waiting on you').length,
     prune,
     nextRow,
+    teachFree,
     metrics: metricsLine({
       launched: launches.length,
       merged: rows.filter((r) => r.outcome === 'merged').length,

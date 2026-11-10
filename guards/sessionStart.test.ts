@@ -20,7 +20,7 @@ describe('the session start script (CUL-2700)', () => {
   });
 
   it('never fails the session on the install or the fetch', () => {
-    expect(script).toMatch(/npm install -g "deno@\$\{DENO_VERSION\}"[^\n]*\|\| echo/);
-    expect(script).toMatch(/git fetch --unshallow[^\n]*\|\| echo/);
+    expect(script).toMatch(/timeout \d+ npm install -g "deno@\$\{DENO_VERSION\}"[^\n]*\|\| echo/);
+    expect(script).toMatch(/timeout \d+ git fetch --unshallow[^\n]*\|\| echo/);
   });
 });

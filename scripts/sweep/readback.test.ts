@@ -1,6 +1,7 @@
 // /sweep step 0 (CUL-2700): the next sweep reads back the last batch, since no dispatcher
 // stays on. Fixtures are sweep 1's real launch lines (Loose ends, 2026-11-09).
 
+import { pageRows } from './rank.ts';
 import { readBack, type PrRead, type ReadbackInput } from './readback.ts';
 
 const LAUNCH = `**/dispatch run** · 2026-11-09T14:14Z · first sweep: 6 launched (PM "go 6")
@@ -136,5 +137,52 @@ describe('the page stays a working list, and a row number is never reused', () =
     expect(readBack(input()).nextRow).toBe(5);
     expect(readBack(input({ page: '' })).nextRow).toBe(5);
     expect(readBack(input({ page: '', updates: [] })).nextRow).toBe(1);
+  });
+});
+
+describe('review fixes (code-reviewer, 2026-11-10)', () => {
+  const BUNDLE_PAGE = `| 05 | CUL-11 · CUL-12 · CUL-13 | A bundle | — | build |
+| 06 | CUL-1580 | Widget strip | — | shape |`;
+  const BUNDLE = `**/dispatch run** · sweep
+
+PR-05 · CUL-11 · session session_05 · branch claude/loose-ends-pr05-11101405 · 2026-11-10T14:05:00Z · picked
+PR-06 · CUL-1580 · session session_06 · branch claude/loose-ends-pr06-11101405 · 2026-11-10T14:05:00Z · picked
+
+Teach: PR-06`;
+  const claimed = (b: string) => `**Claimed** — branch \`${b}\`, 2026-11-10T14:05:00Z, mode BUILD.`;
+
+  it('a dead bundle releases every issue it claimed, not only the lead', () => {
+    const br = 'claude/loose-ends-pr05-11101405';
+    const b = readBack(input({ updates: [BUNDLE], page: BUNDLE_PAGE, claims: { 'CUL-11': claimed(br), 'CUL-12': claimed(br), 'CUL-13': '**Released** — done' } }));
+    expect(b.releases.map((r) => r.issue)).toEqual(['CUL-11', 'CUL-12']);
+  });
+
+  it('a shaping row that finished with no PR is done, not died, and is not abandoned work', () => {
+    const b = readBack(input({ updates: [BUNDLE], page: BUNDLE_PAGE, sessions: { session_05: 'working', session_06: 'completed' } }));
+    expect(outcomeOf(b, '06')).toBe('done');
+    expect(b.metrics).toMatch(/abandoned 0/);
+  });
+
+  it('prunes an older batch\'s merged rows once a newer batch has launched', () => {
+    const b = readBack(input({
+      now: '2026-11-20T00:00:00Z',
+      updates: [BUNDLE, LAUNCH],
+      page: `${PAGE}\n${BUNDLE_PAGE}`,
+      prs: [pr(1494, '02', { merged: true, mergedAt: '2026-11-09T14:39:39Z' })],
+    }));
+    expect(b.prune).toEqual(['02']);
+  });
+
+  it('the teach place is taken while the batch\'s teach row is in flight, and free once it is out', () => {
+    expect(readBack(input({ updates: [BUNDLE], page: BUNDLE_PAGE, sessions: { session_06: 'blocked' } })).teachFree).toBe(false);
+    expect(readBack(input({ updates: [BUNDLE], page: BUNDLE_PAGE, sessions: { session_06: 'completed' } })).teachFree).toBe(true);
+    expect(readBack(input({ updates: [], page: '' })).teachFree).toBe(true);
+  });
+
+  it('reads the files of the build notes rank.ts writes (the page grammar round-trips)', () => {
+    const p = pageRows([{ kind: 'build', issues: ['CUL-11', 'CUL-12'], what: 'A bundle', size: 'M', files: ['lib/a.ts', 'lib/b.ts'], why: 'x', team: [{ persona: 'QA', rec: 'pin it' }], doneWhen: 'y', liveHarm: false }], 5);
+    const b = readBack(input({ updates: [BUNDLE], page: [...p.rows, ...p.notes].join('\n\n'), sessions: { session_05: 'working' }, claims: {} }));
+    expect(b.inFlight).toContainEqual({ holder: 'PR-05 (running)', files: ['lib/a.ts', 'lib/b.ts'] });
+    expect(readBack(input({ updates: [BUNDLE], page: p.rows.join('\n'), claims: { 'CUL-12': claimed('claude/loose-ends-pr05-11101405') } })).releases.map((r) => r.issue)).toEqual(['CUL-12']);
   });
 });
