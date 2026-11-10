@@ -1,9 +1,10 @@
 # /sweep retro and v1.1: the PM hears about every wait, and the sweep leaves after launch
 
 **Date:** 2026-11-09 to 2026-11-10
-**One thing:** none — a retrospective and a tooling fix; the 2026-11-09 check (the property test) is still pending
+**One thing:** G5 L1 — Required checks guard the merge, not the clock: main went red with no code change · check: pending
+**One thing (re-ask):** D3 L1 — A property test states a promise and lets a generator hunt for the record that breaks it (from 2026-11-09: a cat refusing hard three days back, does the property say whether she keeps her card?) · check: pending
 
-Shipped via the session's PR ([CUL-2700](https://linear.app/projectnyx/issue/CUL-2700)).
+Shipped via #1499 ([CUL-2700](https://linear.app/projectnyx/issue/CUL-2700)).
 
 ## The retro (sweep 1, 2026-11-09)
 
@@ -82,6 +83,15 @@ An independent `code-reviewer` pass on the first push found seven operator gaps.
 - **Shaping rows.** One that finished with no PR read as died. It now reads `done` and is not counted as abandoned.
 
 The same pass asked for "one push per wait" in the never-line, timeouts on the hook's install and fetch, and a SIGPIPE‑safe version check. All three landed.
+
+## Main was red, and this PR fixes it
+
+CI's first run on this PR failed in `lib/intakeCatFloor.test.ts`, which the PR never touched; it failed on `main` too.
+
+- **The cause.** The suite pins its fixture to 2026-11-08T20:00Z, but `safetyAskLevel` reads the real clock through `intakeMeetsCatFloor`'s default. From about 2026-11-09 20:00Z, the cat who ate well "two hours ago" read as two days unfed and took the floor.
+- **No product change.** In the app the clock is always now.
+- **The fix.** The suite pins `Date.now` to its `NOW`. It is under 20 lines, test only, and listed under the PR's Along the way.
+- **Proof.** Red unpinned today; green pinned in UTC, Kiritimati and Honolulu (C-29's time axis).
 
 ## Residuals
 
