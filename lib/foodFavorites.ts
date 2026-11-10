@@ -45,7 +45,8 @@ interface FavoriteRow {
  * read the SAME detectIntakeDecline verdict the Signal/Patterns surfaces use (decline
  * ROUTING stays theirs; this only READS it) and stay silent on an active watch.
  * Hiding the shelf during a watch is the safe direction — it withholds a nicety,
- * never reassurance. notEnoughData / 'none' are NOT watches → the shelf shows normally.
+ * never reassurance. notEnoughData hides it too (CUL-1685, the armed-twin rule): the
+ * detector cannot see this pet's recent intake, so no favourite is claimed beside it.
  *
  * `species` drives the detector's clinically-set thresholds (the feline single-day
  * hepatic-lipidosis path); it is the active pet's species, passed by the caller so
@@ -83,9 +84,9 @@ export async function getReliableFavorites(petId: string, species: Species): Pro
     getActiveArrangementsForPet(petId),
   ]);
 
-  // Active decline watch → the whole shelf stays quiet (see the doc above). The
-  // gate predicate is pure + unit-tested (lib/food shouldSuppressFavorites) so the
-  // "only a watch suppresses; thin data never does" contract isn't an untested branch.
+  // Unless the decline read is armed and quiet ('none'), the whole shelf stays quiet
+  // (see the doc above; CUL-1685's armed-twin rule). The gate predicate is pure +
+  // unit-tested (lib/food shouldSuppressFavorites), not an untested branch here.
   if (shouldSuppressFavorites(decline.status)) return [];
 
   const mealRows: FavoriteMealRow[] = rows.map((r) => ({
@@ -100,5 +101,5 @@ export async function getReliableFavorites(petId: string, species: Species): Pro
   // observed, so the pure core drops them from the rate denominator (§11 #6).
   const freeFedFoodIds = new Set(arrangements.map((a) => a.food_item_id));
 
-  return selectReliableFavorites(mealRows, { freeFedFoodIds });
+  return selectReliableFavorites(mealRows, { freeFedFoodIds, nowMs: Date.now() });
 }

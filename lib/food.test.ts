@@ -8,12 +8,14 @@ import {
   type FoodScope,
   foodIntakeKey, indexIntakeStats, relativeDayLabel, foodIntakeNote,
   selectReliableFavorites, foodFavoriteNote, shouldSuppressFavorites,
-  FAVORITE_MIN_RATED_MEALS, FAVORITE_MIN_RATE, FAVORITE_SHELF_LIMIT,
+  FAVORITE_MIN_RATED_MEALS, FAVORITE_MIN_RATE, FAVORITE_SHELF_LIMIT, FAVORITE_FRESH_WINDOW_DAYS,
   type FavoriteMealRow,
   mealRowLabel,
   foodLabelOf,
 } from './food';
 import type { FoodIntakeStat, PickerFood } from './db';
+// The real decline detector, to pin the freshness window against it (CUL-1685, C-34).
+import { detectIntakeDecline, type AnalyticsMeal } from './analytics';
 
 // Minimal PickerFood fixture — only id + food_type drive these helpers; the rest
 // are filled so the shape type-checks. `id` doubles as a label for readable
@@ -548,6 +550,9 @@ describe('foodIntakeNote', () => {
 
 describe('selectReliableFavorites', () => {
   const NO_FREE_FED: ReadonlySet<string> = new Set<string>();
+  // The fixtures' rows sit at a few thousand ms; "now" a moment later keeps every one
+  // fresh, so these cases test the other gates. Freshness has its own block below.
+  const NOW = 10_000;
 
   // One meal row — defaults to a finished ('all') meal of a meal-type food;
   // override anything per case. Default ms keeps single rows deterministic.
@@ -577,7 +582,7 @@ describe('selectReliableFavorites', () => {
   it('promotes a food finished every rated meal (5 of 5)', () => {
     const favs = selectReliableFavorites(
       series(['all', 'all', 'most', 'all', 'all']),
-      { freeFedFoodIds: NO_FREE_FED },
+      { freeFedFoodIds: NO_FREE_FED, nowMs: NOW },
     );
     expect(favs).toHaveLength(1);
     expect(favs[0]).toMatchObject({ finishedMeals: 5, ratedMeals: 5, rate: 1 });
@@ -587,7 +592,7 @@ describe('selectReliableFavorites', () => {
   it('promotes at exactly the 80% bar (4 of 5 finished, newest finished)', () => {
     const favs = selectReliableFavorites(
       series(['all', 'some', 'most', 'all', 'all']),
-      { freeFedFoodIds: NO_FREE_FED },
+      { freeFedFoodIds: NO_FREE_FED, nowMs: NOW },
     );
     expect(favs).toHaveLength(1);
     expect(favs[0]).toMatchObject({ finishedMeals: 4, ratedMeals: 5 });
@@ -597,7 +602,7 @@ describe('selectReliableFavorites', () => {
   it('drops a food below the rate bar (3 of 5 finished, 60%)', () => {
     const favs = selectReliableFavorites(
       series(['all', 'some', 'some', 'all', 'all']),
-      { freeFedFoodIds: NO_FREE_FED },
+      { freeFedFoodIds: NO_FREE_FED, nowMs: NOW },
     );
     expect(favs).toEqual([]);
   });
@@ -605,7 +610,7 @@ describe('selectReliableFavorites', () => {
   it('drops a food below the sample floor even at 100% (only 4 rated meals)', () => {
     const favs = selectReliableFavorites(
       series(['all', 'all', 'all', 'all']),
-      { freeFedFoodIds: NO_FREE_FED },
+      { freeFedFoodIds: NO_FREE_FED, nowMs: NOW },
     );
     expect(favs).toEqual([]);
   });
@@ -616,7 +621,7 @@ describe('selectReliableFavorites', () => {
       ...series(['all', 'all', 'all', 'all', 'all']),
       meal({ foodType: 'treat', intakeRating: 'all', ms: 6000 }), // one treat-typed capture
     ];
-    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED })).toEqual([]);
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW })).toEqual([]);
   });
 
   it('cannot exclude an UNclassified treat (food_type null) — a known classification limit', () => {
@@ -626,7 +631,7 @@ describe('selectReliableFavorites', () => {
     // so the behavior is intentional, not an accident.
     const favs = selectReliableFavorites(
       series(['all', 'all', 'all', 'all', 'all'], { foodType: null }),
-      { freeFedFoodIds: NO_FREE_FED },
+      { freeFedFoodIds: NO_FREE_FED, nowMs: NOW },
     );
     expect(favs).toHaveLength(1);
   });
@@ -635,7 +640,7 @@ describe('selectReliableFavorites', () => {
   it('excludes free-fed meals from the denominator', () => {
     const portionFed = series(['all', 'all', 'all', 'all', 'all'], { foodItemId: 'f1', brand: 'A', productName: 'a' });
     const freeFed = series(['all', 'all', 'all', 'all', 'all'], { foodItemId: 'f2', brand: 'B', productName: 'b' });
-    const favs = selectReliableFavorites([...portionFed, ...freeFed], { freeFedFoodIds: new Set(['f2']) });
+    const favs = selectReliableFavorites([...portionFed, ...freeFed], { freeFedFoodIds: new Set(['f2']), nowMs: NOW });
     expect(favs.map((f) => f.brand)).toEqual(['A']); // B is free-fed → no observed rate
   });
 
@@ -646,7 +651,7 @@ describe('selectReliableFavorites', () => {
       ...series(['all', 'all', 'all', 'all'], { foodItemId: 'f1' }),
       ...series(['all', 'all', 'all'], { foodItemId: 'f2' }),
     ];
-    expect(selectReliableFavorites(rows, { freeFedFoodIds: new Set(['f2']) })).toEqual([]);
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: new Set(['f2']), nowMs: NOW })).toEqual([]);
   });
 
   // ── Rated-only denominator ───────────────────────────────────────────────────
@@ -655,14 +660,14 @@ describe('selectReliableFavorites', () => {
     // the unrated latest meals don't trip the recency guard (a logging gap ≠ anorexia).
     const favs = selectReliableFavorites(
       series(['all', 'all', 'all', 'all', 'all', null, null, null]),
-      { freeFedFoodIds: NO_FREE_FED },
+      { freeFedFoodIds: NO_FREE_FED, nowMs: NOW },
     );
     expect(favs[0]).toMatchObject({ finishedMeals: 5, ratedMeals: 5, rate: 1 });
   });
 
   it('drops meals with an unparseable timestamp from the qualifying set', () => {
     const rows = [...series(['all', 'all', 'all', 'all', 'all']), meal({ intakeRating: 'all', ms: NaN })];
-    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED })[0].ratedMeals).toBe(5);
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW })[0].ratedMeals).toBe(5);
   });
 
   // ── The recency guard — the decline mask (the headline case) ─────────────────
@@ -672,18 +677,18 @@ describe('selectReliableFavorites', () => {
     // the AI Signal's detector ② owns; the shelf must stay silent (no surface may
     // reassure over a decline — intake-is-not-preference; absence ≠ wellness).
     const ratings = ['all', 'all', 'all', 'all', 'all', 'all', 'all', 'all', 'all', 'refused'];
-    expect(selectReliableFavorites(series(ratings), { freeFedFoodIds: NO_FREE_FED })).toEqual([]);
+    expect(selectReliableFavorites(series(ratings), { freeFedFoodIds: NO_FREE_FED, nowMs: NOW })).toEqual([]);
   });
 
   it('suppresses when the latest rated meal is merely "some" (strict present-tense reliability)', () => {
     // 5 of 6 finished (83% ≥ bar) but the newest meal was not finished → not reliable
     // right now. Over-suppression is the safe direction (hides a nicety, never reassures).
-    expect(selectReliableFavorites(series(['all', 'all', 'all', 'all', 'all', 'some']), { freeFedFoodIds: NO_FREE_FED }))
+    expect(selectReliableFavorites(series(['all', 'all', 'all', 'all', 'all', 'some']), { freeFedFoodIds: NO_FREE_FED, nowMs: NOW }))
       .toEqual([]);
   });
 
   it('promotes when the latest rated meal is finished despite an earlier miss', () => {
-    const favs = selectReliableFavorites(series(['some', 'all', 'all', 'all', 'all', 'all']), { freeFedFoodIds: NO_FREE_FED });
+    const favs = selectReliableFavorites(series(['some', 'all', 'all', 'all', 'all', 'all']), { freeFedFoodIds: NO_FREE_FED, nowMs: NOW });
     expect(favs).toHaveLength(1);
     expect(favs[0]).toMatchObject({ finishedMeals: 5, ratedMeals: 6 });
   });
@@ -694,7 +699,7 @@ describe('selectReliableFavorites', () => {
       meal({ intakeRating: 'all', ms: 5000 }),
       meal({ intakeRating: 'refused', ms: 5000 }), // tie at the max ms, a refusal
     ];
-    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED })).toEqual([]);
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW })).toEqual([]);
   });
 
   // ── Grouping ─────────────────────────────────────────────────────────────────
@@ -703,7 +708,7 @@ describe('selectReliableFavorites', () => {
       ...series(['all', 'all', 'all'], { foodItemId: 'cap1' }),
       ...series(['all', 'all'], { foodItemId: 'cap2' }),
     ];
-    const favs = selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED });
+    const favs = selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW });
     expect(favs).toHaveLength(1);
     expect(favs[0]).toMatchObject({ ratedMeals: 5, finishedMeals: 5 });
   });
@@ -713,7 +718,7 @@ describe('selectReliableFavorites', () => {
       ...series(['all', 'all', 'all'], { brand: 'Tiki Cat', productName: 'Ahi Tuna', foodItemId: 'c1' }),
       ...series(['all', 'all'], { brand: 'TIKI CAT', productName: 'ahi tuna', foodItemId: 'c2' }),
     ];
-    const favs = selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED });
+    const favs = selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW });
     expect(favs).toHaveLength(1);
     expect(favs[0].ratedMeals).toBe(5);
     expect(favs[0].brand).toBe('Tiki Cat');
@@ -721,7 +726,7 @@ describe('selectReliableFavorites', () => {
 
   // ── Positive-only + ranking ──────────────────────────────────────────────────
   it('is positive-only — a mostly-refused food yields NO row, never a negative one', () => {
-    expect(selectReliableFavorites(series(['refused', 'refused', 'picked', 'some', 'refused']), { freeFedFoodIds: NO_FREE_FED }))
+    expect(selectReliableFavorites(series(['refused', 'refused', 'picked', 'some', 'refused']), { freeFedFoodIds: NO_FREE_FED, nowMs: NOW }))
       .toEqual([]);
   });
 
@@ -729,14 +734,14 @@ describe('selectReliableFavorites', () => {
     const a = series(['all', 'all', 'all', 'all', 'all'], { brand: 'A', productName: 'a', foodItemId: 'a' }); // 1.0
     const b = series(['all', 'some', 'all', 'all', 'all'], { brand: 'B', productName: 'b', foodItemId: 'b' }); // 0.8
     const c = series(['all', 'all', 'all', 'all', 'all', 'all', 'some', 'all'], { brand: 'C', productName: 'c', foodItemId: 'c' }); // 0.875
-    const favs = selectReliableFavorites([...b, ...a, ...c], { freeFedFoodIds: NO_FREE_FED });
+    const favs = selectReliableFavorites([...b, ...a, ...c], { freeFedFoodIds: NO_FREE_FED, nowMs: NOW });
     expect(favs.map((f) => f.brand)).toEqual(['A', 'C', 'B']);
   });
 
   it('breaks a rate tie by the larger denominator (more evidence first)', () => {
     const small = series(['all', 'all', 'all', 'all', 'all'], { brand: 'Small', productName: 's', foodItemId: 's' });
     const big = series(['all', 'all', 'all', 'all', 'all', 'all', 'all', 'all'], { brand: 'Big', productName: 'b', foodItemId: 'b' });
-    expect(selectReliableFavorites([...small, ...big], { freeFedFoodIds: NO_FREE_FED }).map((f) => f.brand))
+    expect(selectReliableFavorites([...small, ...big], { freeFedFoodIds: NO_FREE_FED, nowMs: NOW }).map((f) => f.brand))
       .toEqual(['Big', 'Small']);
   });
 
@@ -745,17 +750,78 @@ describe('selectReliableFavorites', () => {
     for (let i = 0; i < FAVORITE_SHELF_LIMIT + 2; i++) {
       rows.push(...series(['all', 'all', 'all', 'all', 'all'], { brand: `B${i}`, productName: `p${i}`, foodItemId: `f${i}` }));
     }
-    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED })).toHaveLength(FAVORITE_SHELF_LIMIT);
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW })).toHaveLength(FAVORITE_SHELF_LIMIT);
   });
 
   it('honors overridden floor and rate thresholds (options plumb through)', () => {
     const rows = series(['all', 'all', 'all']); // 3/3
-    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED })).toEqual([]); // default floor 5
-    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, minRatedMeals: 3 })).toHaveLength(1);
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW })).toEqual([]); // default floor 5
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW, minRatedMeals: 3 })).toHaveLength(1);
   });
 
   it('returns an empty array for no meals', () => {
-    expect(selectReliableFavorites([], { freeFedFoodIds: NO_FREE_FED })).toEqual([]);
+    expect(selectReliableFavorites([], { freeFedFoodIds: NO_FREE_FED, nowMs: NOW })).toEqual([]);
+  });
+
+  // CUL-1685: a favourite is a present-tense claim, so its newest rating must sit
+  // inside the decline detector's window. Boundaries derive from the shipped constant.
+  describe('freshness (CUL-1685)', () => {
+    const DAY = 86_400_000;
+    const NOW_REAL = Date.UTC(2026, 10, 10, 12);
+    const edge = NOW_REAL - FAVORITE_FRESH_WINDOW_DAYS * DAY;
+    // Five finished meals a day apart, the newest at `newestMs`.
+    const fiveEndingAt = (newestMs: number) =>
+      [4, 3, 2, 1, 0].map((back) => meal({ intakeRating: 'all', ms: newestMs - back * DAY }));
+
+    it('drops a favourite whose newest rating is older than the window (the Aug 12 shelf)', () => {
+      const favs = selectReliableFavorites(fiveEndingAt(edge - 1), { freeFedFoodIds: NO_FREE_FED, nowMs: NOW_REAL });
+      expect(favs).toEqual([]);
+    });
+
+    it('keeps it when the newest rating sits exactly on the window edge, and inside it', () => {
+      expect(selectReliableFavorites(fiveEndingAt(edge), { freeFedFoodIds: NO_FREE_FED, nowMs: NOW_REAL })).toHaveLength(1);
+      expect(selectReliableFavorites(fiveEndingAt(NOW_REAL - DAY), { freeFedFoodIds: NO_FREE_FED, nowMs: NOW_REAL })).toHaveLength(1);
+    });
+
+    it('counts the stale ratings once one fresh rating arrives (the window gates, it does not trim)', () => {
+      const rows = [...fiveEndingAt(edge - 30 * DAY), meal({ intakeRating: 'most', ms: NOW_REAL - DAY })];
+      const favs = selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW_REAL });
+      expect(favs).toHaveLength(1);
+      expect(favs[0]).toMatchObject({ finishedMeals: 6, ratedMeals: 6 });
+    });
+
+    it('a fresh UNRATED meal does not revive a stale favourite (logging is not a rating)', () => {
+      const rows = [...fiveEndingAt(edge - DAY), meal({ intakeRating: null, ms: NOW_REAL - DAY })];
+      expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW_REAL })).toEqual([]);
+    });
+
+    it('a FUTURE-dated rating (a year typo) does not make a stale favourite fresh', () => {
+      const rows = [...fiveEndingAt(edge - DAY), meal({ intakeRating: 'all', ms: NOW_REAL + 300 * DAY })];
+      expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW_REAL })).toEqual([]);
+    });
+
+    it('a FUTURE-dated refusal still suppresses a fresh favourite (the recency guard keeps it)', () => {
+      const rows = [...fiveEndingAt(NOW_REAL - DAY), meal({ intakeRating: 'refused', ms: NOW_REAL + DAY })];
+      expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW_REAL })).toEqual([]);
+    });
+
+    it('shows no favourite when the clock is unknown', () => {
+      expect(selectReliableFavorites(fiveEndingAt(NOW_REAL), { freeFedFoodIds: NO_FREE_FED, nowMs: NaN })).toEqual([]);
+    });
+
+    it("mirrors the decline detector's window: the detector arms on ratings just inside it, not just outside", () => {
+      // C-34: drive the real detector and derive its boundary from OUR constant, so a
+      // drift in either window reds this test. Four rated meals is the detector's floor.
+      const am = (ms: number): AnalyticsMeal => ({
+        ms, foodItemId: 'f1', foodLabel: 'Tiki Cat Ahi Tuna', foodType: 'meal',
+        primaryProtein: null, intakeRating: 'all',
+      });
+      const fourAt = (newestMs: number) => [3, 2, 1, 0].map((back) => am(newestMs - back * 60_000));
+      const statusFor = (meals: AnalyticsMeal[]) =>
+        detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW_REAL, meals, freeFedSpans: [] }).status;
+      expect(statusFor(fourAt(edge + 3 * 60_000 + 1))).not.toBe('not_enough_data');
+      expect(statusFor(fourAt(edge - 1))).toBe('not_enough_data');
+    });
   });
 });
 
@@ -765,11 +831,16 @@ describe('foodFavoriteNote', () => {
   });
 
   it('always shows the denominator (the rate receipts, never a bare percentage)', () => {
-    expect(foodFavoriteNote(fav(9, 10))).toBe('Finished 9 of 10 meals');
+    expect(foodFavoriteNote(fav(9, 10))).toBe('Finished 9 of 10 rated meals');
   });
 
   it('reads naturally at a perfect rate', () => {
-    expect(foodFavoriteNote(fav(7, 7))).toBe('Finished 7 of 7 meals');
+    expect(foodFavoriteNote(fav(7, 7))).toBe('Finished 7 of 7 rated meals');
+  });
+
+  it('names the denominator as RATED meals, so it never reads as the logged total (CUL-1685, C-3)', () => {
+    // The PM's cat: 264 logged, 29 rated. "of 29 meals" read as the whole count.
+    expect(foodFavoriteNote(fav(29, 29))).toBe('Finished 29 of 29 rated meals');
   });
 });
 
@@ -778,13 +849,17 @@ describe('shouldSuppressFavorites', () => {
     expect(shouldSuppressFavorites('watch')).toBe(true);
   });
 
-  it('does NOT suppress on no watch or thin data (absence of a decline ≠ a decline)', () => {
-    // The safety contract from the other side: a quiet detector or a baseline too
-    // thin to assess must never blank the shelf — only an ACTIVE watch does. Guards
-    // against a future change that wrongly hides favorites whenever decline is
-    // unknown (which would itself be a silent, confusing data-loss for the owner).
+  it('shows the shelf only while the decline read is armed and quiet', () => {
     expect(shouldSuppressFavorites('none')).toBe(false);
-    expect(shouldSuppressFavorites('not_enough_data')).toBe(false);
+  });
+
+  it('suppresses when the decline read cannot see recent intake (the armed-twin rule, CUL-1685)', () => {
+    // A positive intake claim beside a blind detector reassures over absent data.
+    expect(shouldSuppressFavorites('not_enough_data')).toBe(true);
+  });
+
+  it('suppresses on a status it does not know (a new state errs toward withholding)', () => {
+    expect(shouldSuppressFavorites('something_new')).toBe(true);
   });
 });
 

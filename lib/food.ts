@@ -372,6 +372,12 @@ export function foodIntakeNote(stat: FoodIntakeStat | undefined, now: number): s
 //     SUPPRESSED here (the AI Signal's detector ② owns that refusal), so the shelf
 //     can never call a food a "favorite" in the same breath the pet is refusing it.
 //     Over-suppression is the SAFE direction — it hides a nicety, never reassures.
+//   • FRESH — the food's newest rated meal is within FAVORITE_FRESH_WINDOW_DAYS of now
+//     (CUL-1685). Without it a rating streak that stopped months ago kept a favourite
+//     on the shelf forever ("Finished 29 of 29" on ratings last made Aug 12), asserting
+//     present-tense acceptance from a stale sample: absence of recent data read as
+//     wellness. The window is the decline detector's own baseline window, so a food is
+//     called a favourite only while its intake is still inside what that detector reads.
 
 /** Min rated, directly-observed meals before a "favorite" is a claim and not noise.
  *  One above analytics' neutral-rate floor (minRatedMealsForIntakeRate = 4): a
@@ -382,6 +388,16 @@ export const FAVORITE_MIN_RATE = 0.8;
 /** Cap so the shelf stays a curated strip, not a second full catalog — lower-ranked
  *  favorites still appear in the type-grouped list below. */
 export const FAVORITE_SHELF_LIMIT = 6;
+/** How recent a food's newest rated meal must be for it to stay a favourite (CUL-1685).
+ *  The window LENGTH mirrors lib/analytics.ts DECLINE.baselineWindowDays (= detection.ts DEFAULT_CONFIG.
+ *  intakeDecline.baselineWindowDays), and answers the same question (C-34): "is this
+ *  intake still inside what the decline read can see?" A raw 14×24h edge, like the
+ *  detector's. The meal SET is not mirrored (current free-fed arrangements, single-food
+ *  meals only): the shelf's safety rests on the pet-wide armed-twin gate
+ *  (shouldSuppressFavorites), not on this window. Pinned against the real detector in
+ *  lib/food.test.ts. */
+export const FAVORITE_FRESH_WINDOW_DAYS = 14;
+const FAVORITE_MS_PER_DAY = 86_400_000;
 
 /** WSAVA ratings that count a meal as "finished". Mirrors analytics' FINISHED_SCORE
  *  (most | all); any other/absent rating is not finished. */
@@ -418,6 +434,9 @@ export interface FavoriteOptions {
   /** Foods currently free-fed for this pet — their meals are excluded (§11 #6).
    *  Pass an empty set when none are free-fed (the core never assumes a default). */
   freeFedFoodIds: ReadonlySet<string>;
+  /** Now, epoch ms — the freshness gate's clock. Required: a favourite is a present-tense
+   *  claim, so the core never guesses the time (a non-finite value yields no favourites). */
+  nowMs: number;
   /** Override the sample floor (tests). Default FAVORITE_MIN_RATED_MEALS. */
   minRatedMeals?: number;
   /** Override the rate bar (tests). Default FAVORITE_MIN_RATE. */
@@ -488,6 +507,13 @@ export function selectReliableFavorites(
       .filter((r) => r.ms === maxMs)
       .every((r) => FINISHED_RATINGS.has(r.intakeRating as string));
     if (!latestFinished) continue;
+    // Freshness (CUL-1685): the newest rating AT OR BEFORE now must be inside the
+    // detector's window. A future-dated row (a skewed clock, a year typo) never counts
+    // as fresh, though it still feeds the recency guard above, where a future refusal
+    // keeps suppressing: excluding it there would drop a warning. A non-finite clock
+    // fails the comparison, so an unknown "now" shows no favourite.
+    const freshMs = qualifying.reduce((m, r) => (r.ms <= opts.nowMs && r.ms > m ? r.ms : m), -Infinity);
+    if (!(freshMs >= opts.nowMs - FAVORITE_FRESH_WINDOW_DAYS * FAVORITE_MS_PER_DAY)) continue;
     favorites.push({
       key,
       brand: g.brand,
@@ -511,23 +537,25 @@ export function selectReliableFavorites(
 
 // The shelf-row line for a reliable favorite — the denominator is ALWAYS shown
 // (the rate's receipts, never a bare "82%" that could read as a preference score).
-// "Meals" here = rated, directly-observed meals, the honest base of the rate; the
+// The denominator is rated, directly-observed meals, and the line SAYS so (CUL-1685):
+// "of 29 meals" beside a food logged 264 times read as the whole count (C-3). The
 // floor guarantees ratedMeals ≥ 5, so the phrasing is always plural. Pure.
 export function foodFavoriteNote(fav: ReliableFavorite): string {
-  return `Finished ${fav.finishedMeals} of ${fav.ratedMeals} meals`;
+  return `Finished ${fav.finishedMeals} of ${fav.ratedMeals} rated meals`;
 }
 
 // Pure: should the ENTIRE favorites shelf be suppressed, given the pet's intake-
-// decline verdict? ONLY an active `'watch'` suppresses — `'none'` and
-// `'not_enough_data'` do NOT. This pins the cross-surface arm of the safety
-// invariant from BOTH sides: an active decline watch ALWAYS hides the shelf (no
-// surface reassures over a decline), while thin/absent decline data must NEVER hide
-// it (absence of a decline signal ≠ a decline — that would wrongly blank the shelf
-// whenever the baseline is too thin to assess). Kept pure + named so the gate is a
-// tested unit, not an inline branch buried in the I/O wrapper. `declineStatus` is
-// the IntakeDeclineResult.status the wrapper reads from getIntakeDecline.
+// decline verdict? The shelf shows ONLY while the decline read is armed and quiet
+// (`'none'`): the armed-twin rule (CUL-1683 DELIGHT-3, ruled for the shelf in
+// CUL-1685). An active `'watch'` hides it (no surface reassures over a decline), and
+// so does `'not_enough_data'`: that state means the detector cannot see this pet's
+// recent intake, so a positive intake claim beside it would reassure over a blind
+// read (n=1 never reassures; absence of data ≠ wellness). Any status this function
+// does not know also hides it, so a new state errs toward withholding the nicety.
+// Kept pure + named so the gate is a tested unit, not an inline branch in the I/O
+// wrapper. `declineStatus` is the IntakeDeclineResult.status from getIntakeDecline.
 export function shouldSuppressFavorites(declineStatus: string): boolean {
-  return declineStatus === 'watch';
+  return declineStatus !== 'none';
 }
 
 /** A regex-safe copy of a format word ("Freeze-dried" carries a hyphen). */

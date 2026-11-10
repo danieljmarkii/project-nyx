@@ -24,7 +24,7 @@ interface Props {
   // pet). Appended to the accessibilityLabel so a screen reader hears it too.
   intakeNote?: string | null;
   // Reliable-favorites shelf line (B-004 PR 5) — the denominator-bearing finished
-  // rate ("Finished 9 of 11 meals") built by lib/food.foodFavoriteNote. Only the
+  // rate ("Finished 9 of 11 rated meals") built by lib/food.foodFavoriteNote. Only the
   // shelf passes it; the type-grouped list below passes intakeNote instead, so the
   // two don't co-occur in practice. Rendered with a touch more weight than the
   // muted last-logged line (it's the shelf row's point) but kept calm and factual —
