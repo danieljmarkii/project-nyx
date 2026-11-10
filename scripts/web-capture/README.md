@@ -18,14 +18,23 @@ node scripts/web-capture/sheet.mjs /tmp/shots /tmp/sheet.png   # one contact she
 full captures from its check's summary. Reported, never gating: red means the harness or
 a shot broke (a screen it could not reach, a Signal lead that moved), and it holds no merge.
 
-Knobs (env): `CAPTURE_SIZES` (`320@1,375x667@1,390@1,466x678@1,626x890@1,890x626@1,390@3.571,320@3.571`;
-`W[xH]@text multiplier`, height 844 when omitted, the multiplier from RN's iOS table: 1.353 is the largest Settings size, 3.571 is AX5), `CAPTURE_SET`
+Knobs (env): `CAPTURE_SIZES` (`320@1,375x667@1,390@1,466x678+right@1,669x951@1,951x669+right@1,951x669+left@1,390@3.571,320@3.571`;
+`W[xH][+left|+right]@text multiplier`, height 844 when omitted, the multiplier from RN's iOS table: 1.353 is the largest Settings size, 3.571 is AX5; `+right` / `+left` is the strip iOS stands its bars in on a Duo, see below), `CAPTURE_SET`
 (`pr`, the default: the shots every PR run takes; `all` adds the every-size sweeps' routes, CUL-2245), `CAPTURE_ONLY`
 (shot names), `CAPTURE_NOW` (the frozen clock), `CAPTURE_SETTLE_MS` (the floor before a
 screen is first looked at), `CAPTURE_QUIET_MS`, `CAPTURE_SETTLE_TIMEOUT_MS` and `CAPTURE_MARKERS=off` (see below), `CAPTURE_FLAGS` and
 `CAPTURE_STORAGE` (app_config rows and device-local state, for building an older commit),
 `CAPTURE_DEBUG` (log every request), `CAPTURE_SIGNALS` (signals.deno.ts's output; capture
 refuses one computed at another instant or under other flags).
+
+**The Duo's strip (CUL-2703).** Folded, on its side and in Split View, iOS stands its bars
+(the clock and the camera with them) in a strip about 84pt wide down one edge, and the app
+moves its own tab bar into it. A browser has no strip, so a size written `466x678+right`
+tells the app the edge through `stubs/statusBar.ts` and draws the strip over the page,
+see-through: anything the app leaves under it is on the sheet. What this cannot show is
+what only a phone does: a native stack screen clips to its bounds, which is how the first
+device check found Home cut to a 560pt band while every capture was clean
+(`components/ui/LayoutColumn.test.tsx` holds that one on the structure instead).
 
 **When a shot is taken (CUL-2266).** Never on a timer alone. After a short floor, the
 script waits until the screen has settled: no request open or newly started, the SQLite

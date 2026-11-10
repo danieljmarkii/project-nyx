@@ -16,6 +16,10 @@ import { RUN_REVEAL, runRevealDistance, useRunRevealHost, type RunRevealGeometry
 
 // jest-expo's default window is 750pt, which is regular width: pinned to a phone, with each
 // regular case stating its own (CUL-2267).
+// The edge iOS reports for its vertical bar: null wherever its bars lie flat.
+const mockBarEdge = jest.fn<'leading' | 'trailing' | null, []>(() => null);
+jest.mock('expo-status-bar', () => ({ useVerticalBarEdgeIOS: () => mockBarEdge() }));
+
 let mockWindowWidth = 390;
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
@@ -211,10 +215,11 @@ describe('useRunRevealHost — the list scrolls once, after the content grows', 
   const plusTop = 764 + 80 - (fabBottomFor(false, 0) + FAB_DISC);
   const expected = runRevealDistance({ ...low, viewTop: VIEW.top, viewBottom: VIEW.bottom, plusTop });
 
-  // CUL-2267 — at regular the plus stands at the rail's foot, so the run is shown clear of
-  // that seat, not the phone's: a reveal moves the list less, never more.
-  it('at regular the plus’s top is the rail seat’s, not the phone’s', () => {
-    mockWindowWidth = 890;
+  // CUL-2267, CUL-2703 — where the bar is a rail the plus stands at its foot, so the run is
+  // shown clear of that seat, not the phone's: a reveal moves the list less, never more.
+  it('in a rail the plus’s top is the rail seat’s, not the phone’s', () => {
+    mockWindowWidth = 466;
+    mockBarEdge.mockReturnValue('trailing');
     try {
       const t = host();
       t.result.current.request((done) => done(low));
@@ -228,6 +233,7 @@ describe('useRunRevealHost — the list scrolls once, after the content grows', 
       else expect(t.scrollBy).not.toHaveBeenCalled();
     } finally {
       mockWindowWidth = 390;
+      mockBarEdge.mockReturnValue(null);
     }
   });
 

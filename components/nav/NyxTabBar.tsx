@@ -1,7 +1,6 @@
-import { useContext } from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
-import { TAB_RAIL_WIDTH, useColumn, useTabRail } from '../../hooks/useLayoutClass';
+import { TAB_RAIL_WIDTH, useColumn, useSafeBottom, useTabRail } from '../../hooks/useLayoutClass';
+import { fabBottomFor, FAB_DISC } from '../../lib/fanBudget';
 import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { PetAvatar } from '../pet/PetAvatar';
@@ -117,11 +116,22 @@ const TAB_BOTTOM_PAD = Platform.OS === 'ios' ? theme.space3 : theme.space1;
  */
 export const TAB_HEIGHT = TAB_CONTENT_HEIGHT + TAB_TOP_PAD + TAB_BOTTOM_PAD;
 
-// The rail (CUL-2242). Each tab is the bottom bar's tab turned on its side: the same
-// slot, label and tick, in a box with the bar's own top and bottom padding, so a tab
-// reads the same whichever edge it stands on. The rail's top clears the status bar.
+// The rail (CUL-2242, re-seated by CUL-2703). Each tab is the bottom bar's tab turned on
+// its side: the same slot, label and tick, in a box with the bar's own top and bottom
+// padding, so a tab reads the same whichever edge it stands on.
+//
+// The rail IS the strip iOS stands its own bars in, so the top of it is the system's: the
+// camera, the clock and the battery, and a Live Activity growing down from the camera.
+// iOS reports no line where its part ends (the top inset is 0 there), so the tabs stand
+// at the rail's FOOT, above the +, which is where Apple's own tab bar stays in the strip.
+// The room between is the system's to grow into.
 export const RAIL_TAB_HEIGHT = TAB_CONTENT_HEIGHT + TAB_TOP_PAD * 2;
-const RAIL_TOP_PAD = theme.space2;
+const RAIL_PLUS_GAP = theme.space2;
+
+/** The rail's foot: the +'s seat (`fabBottomFor`), its disc, and the gap the tabs keep above it. */
+export function railFootFor(safeBottom: number): number {
+  return fabBottomFor(true, safeBottom) + FAB_DISC + RAIL_PLUS_GAP;
+}
 
 export function NyxTabBar({ state, descriptors, emitter, navigateToTab }: TabBarProps) {
   // Subscribed, not read once: switching pets must re-title the tab, and the
@@ -131,12 +141,13 @@ export function NyxTabBar({ state, descriptors, emitter, navigateToTab }: TabBar
 
   // The ladder is a function of the tab's width, and the tab's width is the column
   // split between the routes — so it re-resolves on rotation and on a foldable,
-  // rather than baking in the width the app happened to launch at. At regular the bar
-  // is a rail down the right edge (CUL-2242), every tab the rail's width, so the ladder
-  // fits the name to one tab of it.
-  const { width } = useColumn();
+  // rather than baking in the width the app happened to launch at. Where the bar is a
+  // rail (CUL-2242) every tab is one rail tab wide, so the ladder fits the name to that.
+  // The bottom bar spans the window and holds its tabs to the column (CUL-2703).
+  const { width, gutters } = useColumn();
   const rail = useTabRail();
-  const insets = useContext(SafeAreaInsetsContext);
+  const safeBottom = useSafeBottom();
+  const held = gutters.left > 0 || gutters.right > 0;
   const labelBudget = rail
     ? tabLabelBudget(TAB_RAIL_WIDTH, 1)
     : tabLabelBudget(width, state.routes.length);
@@ -149,13 +160,10 @@ export function NyxTabBar({ state, descriptors, emitter, navigateToTab }: TabBar
         rail
           ? [
               styles.rail,
-              {
-                width: rail.width,
-                paddingRight: rail.safeRight,
-                paddingTop: (insets?.top ?? 0) + RAIL_TOP_PAD,
-              },
+              rail.edge === 'left' ? styles.railOnLeft : styles.railOnRight,
+              { width: rail.width, paddingBottom: railFootFor(safeBottom) },
             ]
-          : styles.tabBar
+          : [styles.tabBar, held && { paddingLeft: gutters.left, paddingRight: gutters.right }]
       }
     >
       {state.routes.map((route, index) => {
@@ -244,17 +252,25 @@ const styles = StyleSheet.create({
     paddingBottom: TAB_BOTTOM_PAD,
     paddingTop: TAB_TOP_PAD,
   },
-  // Down the right edge under the status bar, the + at its foot (the FAB places itself
-  // there). The divider moves with the bar, to the edge that faces the content.
+  // Down the system's strip, the tabs at its foot and the + beneath them (the FAB places
+  // itself there). The divider stands on the edge that faces the content.
   rail: {
     flexDirection: 'column',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
     backgroundColor: theme.colorSurface,
+    borderColor: theme.colorBorder,
+  },
+  railOnRight: {
     borderLeftWidth: 1,
-    borderLeftColor: theme.colorBorder,
+  },
+  railOnLeft: {
+    borderRightWidth: 1,
   },
   // A fixed box, never `flex: 0`: react-native-web spells that with a zero basis, which
   // beats the height and lays every tab out zero tall.
   railTab: {
+    width: TAB_RAIL_WIDTH,
     height: RAIL_TAB_HEIGHT,
   },
   barTab: {

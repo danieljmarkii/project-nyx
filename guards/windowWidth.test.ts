@@ -4,7 +4,7 @@
 // sized off the window there sizes itself for a screen its content does not sit in: the
 // root layout centres everything in a column (`components/ui/LayoutColumn.tsx`). So the
 // window's WIDTH is read in one place, `hooks/useLayoutClass.ts`, and everything else
-// asks it: `useColumnWidth()` for content, `useColumn().gutter` for chrome that bleeds,
+// asks it: `useColumnWidth()` for content, `useColumn().gutters` for chrome that bleeds,
 // `useWindowFrame()` for the few things that must span the window. Height and fontScale
 // stay free: the column caps width only.
 //

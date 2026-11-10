@@ -15,7 +15,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { TAB_RAIL_WIDTH, useColumnWidth, useTabRail, useWindowFrame } from '../../hooks/useLayoutClass';
+import { useColumn, useTabRail, useWindowFrame } from '../../hooks/useLayoutClass';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
@@ -56,7 +56,7 @@ import {
   type Point, type Rect, type Rest, type SlideKind, type SlideTarget,
 } from '../../lib/fanSlide';
 import {
-  planFan, fabBottomFor, FAB_BOTTOM, FAB_DISC, FAN_MARGIN_BOTTOM, FAN_RIGHT_INSET, FAN_GAP,
+  planFan, fabSeatFor, FAB_BOTTOM, FAB_DISC, FAN_MARGIN_BOTTOM, FAN_RIGHT_INSET, FAN_GAP,
   PILL_MIN_HEIGHT, PILL_PADDING_V, PILL_PADDING_LEFT, PILL_PADDING_RIGHT, PILL_INNER_GAP,
   PILL_GLYPH, PILL_CHEVRON, PILL_LABEL_SIZE, FOOD_TAG_GAP, FOOD_TAG_PADDING_H, FOOD_TAG_PADDING_V,
   LOG_FOR_LABEL_GAP, LOG_FOR_NAME_LINES,
@@ -329,10 +329,13 @@ function FanPill({
  * only how it arrives. `slot` 0 is the pill nearest the disc.
  */
 function FanSlot({
-  anim, fade, exit, reducedMotion, children,
+  anim, fade, exit, reducedMotion, mirrored, children,
 }: {
   anim: Animated.Value;
   fade: Animated.Value;
+  /** The disc stands on the window's left edge (CUL-2703), so the pill grows out of the
+   *  disc's other corner and travels the other way. */
+  mirrored: boolean;
   /** CUL-1643: the chosen food's own fade. It stands in for the slot's opacity, so the
    *  pill stays put at full while the others retract, and leaves under the card. */
   exit?: Animated.Value;
@@ -349,12 +352,12 @@ function FanSlot({
     : {
         opacity: exit ?? anim.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' }),
         transform: [
-          { translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [FAN_FROM.x, 0] }) },
+          { translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [mirrored ? -FAN_FROM.x : FAN_FROM.x, 0] }) },
           { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [FAN_FROM.y, 0] }) },
           { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [FAN_FROM.scale, 1] }) },
         ],
       };
-  return <Animated.View style={[styles.fanSlot, style]}>{children}</Animated.View>;
+  return <Animated.View style={[styles.fanSlot, mirrored && styles.fanSlotMirrored, style]}>{children}</Animated.View>;
 }
 
 /**
@@ -580,21 +583,31 @@ export function FAB() {
   // no reason to own one (on device expo-router's root always provides it).
   // The fan's width is the column's (CUL-2237); its height stays the window's.
   const frame = useWindowDimensions();
-  const columnWidth = useColumnWidth();
+  const { width: columnWidth, gutters } = useColumn();
   // The page the disc and the pills are measured on, for the slide's signature below.
   const windowFrame = useWindowFrame();
   const safeTop = useContext(SafeAreaInsetsContext)?.top ?? 0;
-  // At regular the tab bar is a rail down the right edge (CUL-2242), and the disc stands
-  // at its foot, centred in it, clear of the home indicator: the + belongs to the bar, so
-  // it never sits over a card. The layout steps out to the window at regular, so these
-  // offsets are the window's. Null at compact, where the disc keeps the phone's corner.
+  // Where the tab bar is a rail in the system's strip (CUL-2242, CUL-2703), the disc
+  // stands at its foot, centred in it, clear of the home indicator: the + belongs to the
+  // bar, so it never sits over a card. Elsewhere it keeps the phone's corner, measured
+  // from the column's edge. The tabs layout fills the window, so these offsets are the
+  // window's. Null on a plain phone, whose style is the sheet's own.
   const rail = useTabRail();
   const safeBottom = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
+  const seat = fabSeatFor({ rail, gutterRight: gutters.right, safeBottom });
   // The disc's seat from the screen's foot, read by the fan's budget too (CUL-2267).
-  const fabBottom = fabBottomFor(rail !== null, safeBottom);
-  const railSeat = rail
-    ? { right: rail.safeRight + (TAB_RAIL_WIDTH - FAB_DISC) / 2, bottom: fabBottom }
-    : null;
+  const fabBottom = seat.bottom;
+  // A strip on the left edge (the Duo turned the other way, Split View's left window)
+  // puts the disc there, and the fan opens rightward from it.
+  const mirrored = seat.side === 'left';
+  const seatStyle = mirrored
+    ? [styles.fabContainerMirrored, { left: seat.inset, bottom: seat.bottom }]
+    : seat.inset === FAN_RIGHT_INSET && seat.bottom === FAB_BOTTOM
+      ? null
+      : { right: seat.inset, bottom: seat.bottom };
+  // In a rail the fan opens beside the system's strip, never in it (`FabSeat.fanOffset`).
+  const fanBesideRail =
+    seat.fanOffset > 0 ? (mirrored ? { marginLeft: seat.fanOffset } : { marginRight: seat.fanOffset }) : null;
   const fanScroll = useRef<ScrollViewInstance>(null);
   const fanSnapped = useRef(false);
 
@@ -1606,6 +1619,7 @@ export function FAB() {
       fade={fade}
       exit={row.key === chosen?.key ? chosenExit : undefined}
       reducedMotion={reducedMotion}
+      mirrored={mirrored}
     >
       {row.node}
     </FanSlot>
@@ -1647,9 +1661,9 @@ export function FAB() {
           </Animated.View>
         )}
 
-        <View style={[styles.fabContainer, railSeat]} pointerEvents="box-none">
+        <View style={[styles.fabContainer, seatStyle]} pointerEvents="box-none">
           {open && (
-            <View style={styles.fan} pointerEvents="box-none">
+            <View style={[styles.fan, mirrored && styles.fanMirrored, fanBesideRail]} pointerEvents="box-none">
               {fanPlan.scroll && activePet ? (
                 // CUL-1636, the budget's last step: even with no food the doors stand
                 // taller than the screen (AX2 and up on a small phone). The chip stays
@@ -1661,7 +1675,7 @@ export function FAB() {
                     ref={fanScroll}
                     testID="fab-fan-scroll"
                     style={scrollCap}
-                    contentContainerStyle={styles.fanScrollContent}
+                    contentContainerStyle={[styles.fanScrollContent, mirrored && styles.fanScrollContentMirrored]}
                     showsVerticalScrollIndicator
                     // A snap to the bottom on layout, never an animated scroll: it is where
                     // the column opens, not motion the owner sees.
@@ -1833,6 +1847,24 @@ const styles = StyleSheet.create({
     // Pills grow out of the disc's corner (beat 4), so they scale about theirs.
     transformOrigin: 'bottom right',
     alignItems: 'flex-end',
+  },
+  // The disc on the window's left edge (CUL-2703): the same fan, turned to open rightward.
+  // The container lets go of the right edge; its `left` and `bottom` are the seat's.
+  fabContainerMirrored: {
+    right: 'auto',
+    alignItems: 'flex-start',
+  },
+  fanMirrored: {
+    alignItems: 'flex-start',
+  },
+  fanScrollContentMirrored: {
+    alignItems: 'flex-start',
+    paddingLeft: 0,
+    paddingRight: theme.space1,
+  },
+  fanSlotMirrored: {
+    transformOrigin: 'bottom left',
+    alignItems: 'flex-start',
   },
   pill: {
     flexDirection: 'row',

@@ -73,16 +73,17 @@ export function NightHeroGround() {
   // unfolded Duo it stays beside the moon instead of drifting right. One number on a phone.
   const { width, height } = useWindowFrame();
   const column = useColumn();
+  const held = column.gutters.left > 0 || column.gutters.right > 0;
   // Whorl group transform: motif units → px, centred on the placement fractions.
   const whorlScale = column.width * WHORL_SCALE_PER_WIDTH;
-  const whorlTx = column.gutter + column.width * WHORL_CX_FRAC - WHORL_MOTIF_CENTRE * whorlScale;
+  const whorlTx = column.gutters.left + column.width * WHORL_CX_FRAC - WHORL_MOTIF_CENTRE * whorlScale;
   const whorlTy = height * WHORL_CY_FRAC - WHORL_MOTIF_CENTRE * whorlScale;
   return (
     // Decorative only — non-interactive (CTAs beneath stay tappable) and hidden
     // from screen readers (the hero's "Culprit" group carries the meaning), per
     // the OnboardingHeader precedent for full-bleed decorative art.
     <View
-      style={[styles.fill, column.gutter > 0 && { left: -column.gutter, right: -column.gutter }]}
+      style={[styles.fill, held && { left: -column.gutters.left, right: -column.gutters.right }]}
       pointerEvents="none"
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"

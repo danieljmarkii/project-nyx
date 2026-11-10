@@ -31,12 +31,14 @@ const TAB_SLOTS = 4;
 
 export const HOME_SILHOUETTE_TEST_ID = 'design-v2-home-silhouette';
 
-/** The tab rail at regular (CUL-2242): its width, the right safe inset included. */
+/** The tab rail (CUL-2242, CUL-2703): the system strip's width, on the system's edge. */
 export interface SilhouetteRail {
   width: number;
-  safeRight: number;
+  edge: 'left' | 'right';
   /** One rail tab's height (`RAIL_TAB_HEIGHT`), handed in for the reason `tabBarHeight` is. */
   tabHeight: number;
+  /** The room under the tabs for the + (`railFootFor`): the tabs stand at the rail's foot. */
+  foot: number;
 }
 
 export interface HomeSilhouetteProps {
@@ -44,15 +46,21 @@ export interface HomeSilhouetteProps {
   topInset?: number;
   /** `TAB_HEIGHT` from the host; omit to draw no bar (a body-only silhouette). */
   tabBarHeight?: number;
-  /** At regular, the rail the host's bar stands as: drawn down the right edge in place of
-   *  the bottom bar, so the shape gives way to the screen it predicts (CUL-2267). */
+  /** Where the host's bar is a rail: drawn down that edge in place of the bottom bar, so
+   *  the shape gives way to the screen it predicts (CUL-2267). */
   rail?: SilhouetteRail | null;
+  /** The scene's gutters (`useSceneGutters`), so the shape sits in the column Home does. */
+  sceneGutters?: { left: number; right: number };
 }
 
-export function HomeSilhouette({ topInset = 0, tabBarHeight, rail = null }: HomeSilhouetteProps) {
+export function HomeSilhouette({ topInset = 0, tabBarHeight, rail = null, sceneGutters }: HomeSilhouetteProps) {
+  const held = sceneGutters != null && (sceneGutters.left > 0 || sceneGutters.right > 0);
   return (
-    <SilhouetteFrame testID={HOME_SILHOUETTE_TEST_ID} style={[styles.fill, rail && styles.railed]}>
-      <View style={styles.scene}>
+    <SilhouetteFrame
+      testID={HOME_SILHOUETTE_TEST_ID}
+      style={[styles.fill, rail && (rail.edge === 'left' ? styles.railedLeft : styles.railed)]}
+    >
+      <View style={[styles.scene, held && { paddingLeft: sceneGutters.left, paddingRight: sceneGutters.right }]}>
         {/* The header row: avatar, the pet's name, the date at the right. */}
         <View style={[styles.header, { paddingTop: topInset }]}>
           <View style={styles.headerRow}>
@@ -100,7 +108,7 @@ export function HomeSilhouette({ topInset = 0, tabBarHeight, rail = null }: Home
       {rail ? (
         <View
           testID="home-silhouette-rail"
-          style={[styles.tabRail, { width: rail.width, paddingRight: rail.safeRight, paddingTop: topInset + theme.space2 }]}
+          style={[styles.tabRail, rail.edge === 'left' ? styles.tabRailOnLeft : styles.tabRailOnRight, { width: rail.width, paddingBottom: rail.foot }]}
         >
           {Array.from({ length: TAB_SLOTS }, (_, i) => (
             <View key={i} style={[styles.railSlot, { height: rail.tabHeight }]}>
@@ -127,6 +135,9 @@ const styles = StyleSheet.create({
   railed: {
     flexDirection: 'row',
   },
+  railedLeft: {
+    flexDirection: 'row-reverse',
+  },
   // Groups the header and body, so at regular the rail can stand beside them. On a phone
   // it is the frame's column, unchanged.
   scene: {
@@ -134,9 +145,15 @@ const styles = StyleSheet.create({
   },
   tabRail: {
     backgroundColor: theme.colorSurface,
-    borderLeftWidth: 1,
-    borderLeftColor: theme.colorBorder,
+    borderColor: theme.colorBorder,
     alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  tabRailOnRight: {
+    borderLeftWidth: 1,
+  },
+  tabRailOnLeft: {
+    borderRightWidth: 1,
   },
   railSlot: {
     justifyContent: 'center',

@@ -87,10 +87,19 @@ describe('Home’s silhouette and the tab bar’s side', () => {
     expect(view.queryByTestId('home-silhouette-rail', HIDDEN)).toBeNull();
   });
 
-  it('at regular the rail stands down the right edge, at its width, and no bottom bar', () => {
-    const view = render(<HomeSilhouette topInset={24} tabBarHeight={83} rail={{ width: 80, safeRight: 0, tabHeight: 65 }} />);
+  it('in the system strip the rail stands on its edge, the tabs at its foot, and no bottom bar', () => {
+    const view = render(<HomeSilhouette tabBarHeight={83} rail={{ width: 84, edge: 'right', tabHeight: 65, foot: 116 }} />);
     expect(view.queryByTestId('home-silhouette-bar', HIDDEN)).toBeNull();
     const rail = view.getByTestId('home-silhouette-rail', HIDDEN);
-    expect(StyleSheet.flatten(rail.props.style)).toEqual(expect.objectContaining({ width: 80, paddingTop: 24 + 16 }));
+    expect(StyleSheet.flatten(rail.props.style)).toEqual(
+      expect.objectContaining({ width: 84, paddingBottom: 116, justifyContent: 'flex-end', borderLeftWidth: 1 }),
+    );
+  });
+
+  it('a strip on the left edge puts the rail there, its divider facing the content', () => {
+    const view = render(<HomeSilhouette tabBarHeight={83} rail={{ width: 84, edge: 'left', tabHeight: 65, foot: 116 }} />);
+    const rail = view.getByTestId('home-silhouette-rail', HIDDEN);
+    expect(StyleSheet.flatten(rail.props.style)).toEqual(expect.objectContaining({ borderRightWidth: 1 }));
+    expect(StyleSheet.flatten(rail.props.style).borderLeftWidth).toBeUndefined();
   });
 });

@@ -386,12 +386,19 @@ export const theme = {
   layoutCompareLabelMax: 160,
   layoutFrameMaxHeightRatio: 0.5,
   // A screen with a layout of its own at regular (CUL-2239, Home) steps out of the column
-  // to the scene beside the tab rail, up to this: two phone-width columns and their
-  // gutters, never wider. It splits only where two columns each at least the narrowest
-  // phone's content (320 less the feed's 24pt padding each side, 272) fit with the feed's
-  // padding and gap (3 × 24): 616.
+  // to what is left between the window's sides, up to this: two phone-width columns and
+  // their gutters, never wider. It splits only where two columns each as wide as the
+  // reference phone's content (390 less the feed's 24pt padding each side, 342) fit with
+  // the feed's padding and gap (3 × 24): 756. The line was 616, two columns of the
+  // NARROWEST phone's content, set when the unfolded Duo was taken to be 626pt wide and
+  // 546 beside a rail. Measured it is 669 with a bottom bar (CUL-2703), which 616 would
+  // split into two 298pt columns: upright stays one column, on its side (867) splits.
   layoutCanvasMaxWidth: 1120,
-  layoutSplitMinWidth: 616,
+  layoutSplitMinWidth: 756,
+  // The strip iOS stands its bars in on a Duo, folded, on its side and in Split View: the
+  // least a side holding the system's vertical bar is ever inset by (Expo's SDK 58 guide;
+  // Apple publishes no number). A reported inset wider than this wins (CUL-2703).
+  layoutSystemBarMinWidth: 84,
 
   // ── Hit target ────────────────────────────────────────────────────────────
   // The 44pt minimum touch target (Apple HIG; CUL-658, CUL-1897 D3). `minHeight: 44`

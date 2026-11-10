@@ -25,6 +25,10 @@ jest.mock('../../lib/storage', () => ({
 // 750pt wide — a frame no supported phone has, on which every name fits at the top
 // rung and the ladder never engages. Every acceptance criterion here is stated at a
 // width on purpose, so a reader can see which frame the ruling is about.
+// The edge iOS reports for its vertical bar: null wherever its bars lie flat.
+const mockBarEdge = jest.fn<'leading' | 'trailing' | null, []>(() => null);
+jest.mock('expo-status-bar', () => ({ useVerticalBarEdgeIOS: () => mockBarEdge() }));
+
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
   default: jest.fn(() => ({ width: 320, height: 568, scale: 2, fontScale: 1 })),
@@ -423,56 +427,109 @@ describe('navigation', () => {
 // CUL-2242 — at regular (the unfolded Duo) the bar is a rail down the right edge, under
 // the status bar; at compact it is the phone's bottom row, unchanged. The side itself is
 // the tab layout's `tabBarPosition`; this suite pins what the bar draws on each side.
-describe('the rail at regular', () => {
+describe('the bar goes where the system bars go (CUL-2703)', () => {
   const { SafeAreaInsetsContext } = require('react-native-safe-area-context');
   const { TAB_RAIL_WIDTH } = require('../../hooks/useLayoutClass');
-  const INSETS = { top: 24, right: 30, bottom: 20, left: 0 };
+  const { railFootFor } = require('./NyxTabBar');
+  const STRIP = theme.layoutSystemBarMinWidth;
+  type Edge = 'leading' | 'trailing' | null;
 
-  function renderAt(width: number, props = makeProps(0)) {
+  // A pose: the window's width, the edge iOS reports for its vertical bar, the insets.
+  function renderAt(width: number, edge: Edge = null, props = makeProps(0)) {
     setWindowWidth(width);
+    mockBarEdge.mockReturnValue(edge);
+    const insets = {
+      top: edge ? 0 : 24,
+      bottom: 20,
+      left: edge === 'leading' ? STRIP : 0,
+      right: edge === 'trailing' ? STRIP : 0,
+    };
     const view = render(
-      <SafeAreaInsetsContext.Provider value={INSETS}>
+      <SafeAreaInsetsContext.Provider value={insets}>
         <NyxTabBar {...props} />
       </SafeAreaInsetsContext.Provider>,
     );
     const bar = StyleSheet.flatten(view.getByTestId('nyx-tab-bar').props.style);
-    return { ...view, bar, props };
+    return { ...view, bar, props, insets };
   }
 
-  it.each([320, 390, 466])('a phone (%ipt) keeps the bottom row, safe areas untouched', (w) => {
+  afterEach(() => mockBarEdge.mockReturnValue(null));
+
+  it.each([320, 390, 440])('a phone (%ipt) keeps the bottom row, its style untouched', (w) => {
     const { bar, getByLabelText } = renderAt(w);
     expect(StyleSheet.flatten(getByLabelText('History').props.style).flex).toBe(1);
     expect(bar.flexDirection).toBe('row');
     expect(bar.height).toBe(TAB_HEIGHT);
     expect(bar.width).toBeUndefined();
+    expect(bar.paddingLeft).toBeUndefined();
     expect(bar.paddingRight).toBeUndefined();
     expect(bar.paddingHorizontal).toBeUndefined();
   });
 
-  it.each([626, 890])('the unfolded Duo (%ipt) stands the tabs in a column, clear of the status bar', (w) => {
-    const { bar } = renderAt(w);
+  // D2 = A: unfolded and upright iOS lays its bars flat, so ours is the bottom row at any
+  // width. The bar spans the window and holds its tabs to the column.
+  it('the unfolded Duo upright (669pt) keeps the bottom row, its tabs held to the column', () => {
+    const { bar, getByLabelText } = renderAt(669);
+    expect(bar.flexDirection).toBe('row');
+    expect(bar.height).toBe(TAB_HEIGHT);
+    expect(bar.width).toBeUndefined();
+    expect(bar.paddingLeft).toBe((669 - theme.layoutColumnMaxWidth) / 2);
+    expect(bar.paddingRight).toBe((669 - theme.layoutColumnMaxWidth) / 2);
+    expect(StyleSheet.flatten(getByLabelText('History').props.style).flex).toBe(1);
+  });
+
+  // D1 = A: where iOS stands its bars in the strip, ours is a rail in that strip.
+  it.each([
+    ['folded', 466],
+    ['unfolded on its side', 951],
+  ])('%s (%ipt): the tabs stand in the system strip, at its foot, above the +', (_label, w) => {
+    const { bar, insets } = renderAt(w, 'trailing');
     expect(bar.flexDirection).toBe('column');
     expect(bar.height).toBeUndefined();
-    expect(bar.width).toBe(TAB_RAIL_WIDTH + INSETS.right);
-    expect(bar.paddingRight).toBe(INSETS.right);
-    expect(bar.paddingTop).toBeGreaterThan(INSETS.top);
+    // The rail is the strip: one strip, not ours beside the system one.
+    expect(bar.width).toBe(STRIP);
+    // Foot first, with the + and its gap beneath: the top of the strip is the system
+    // clock and camera, and iOS reports no line where they end.
+    expect(bar.justifyContent).toBe('flex-end');
+    expect(bar.paddingBottom).toBe(railFootFor(insets.bottom));
+    expect(bar.paddingTop).toBeUndefined();
     // The divider faces the content, on the rail's left.
     expect(bar.borderLeftWidth).toBe(1);
+    expect(bar.borderRightWidth).toBeUndefined();
     expect(bar.borderTopWidth).toBeUndefined();
   });
 
-  it('gives every tab a fixed box that clears the 44pt floor, not a share of the height', () => {
-    const { getByLabelText } = renderAt(890);
+  it('a strip on the left edge stands the rail there, its divider on the right', () => {
+    const { bar } = renderAt(951, 'leading');
+    expect(bar.flexDirection).toBe('column');
+    expect(bar.width).toBe(STRIP);
+    expect(bar.borderRightWidth).toBe(1);
+    expect(bar.borderLeftWidth).toBeUndefined();
+  });
+
+  it('gives every rail tab a fixed box that clears the 44pt floor, not a share of the height', () => {
+    const { getByLabelText } = renderAt(466, 'trailing');
     for (const label of ['Home', 'History', 'Foods', 'Biscuit — pet profile']) {
       const tab = StyleSheet.flatten(getByLabelText(label).props.style);
       expect(tab.flex).toBeUndefined();
       expect(tab.height).toBeGreaterThanOrEqual(theme.hitTarget);
+      expect(tab.width).toBe(TAB_RAIL_WIDTH);
     }
+  });
+
+  // The folded Duo is the shortest screen with a rail: four tabs, the + and the room the
+  // system keeps at the top must all fit in its height.
+  it('four rail tabs and the + leave the top of a 678pt strip to the system', () => {
+    const { RAIL_TAB_HEIGHT } = require('./NyxTabBar');
+    const tabsTop = 678 - railFootFor(20) - 4 * RAIL_TAB_HEIGHT;
+    // The clock and battery end about 150pt down on the device check's screenshot; the
+    // rest is the Dynamic Island's to grow into.
+    expect(tabsTop).toBeGreaterThanOrEqual(250);
   });
 
   it('fits the pet’s name to one tab of the rail', () => {
     setActivePet(makePet({ name: 'Schrodingers Cat' }));
-    const { queryByText, getByLabelText } = renderAt(890);
+    const { queryByText, getByLabelText } = renderAt(466, 'trailing');
     // Too long for an 80pt tab at either rung: the ladder falls back, VoiceOver keeps it.
     expect(queryByText('Pet')).toBeTruthy();
     expect(getByLabelText('Schrodingers Cat — pet profile')).toBeTruthy();
@@ -481,7 +538,7 @@ describe('the rail at regular', () => {
   // AC 3: a re-tap is the screens' to answer (Home returns to the Signal, History to
   // today), and they hear it through this event on either side.
   it('a re-tap on the focused tab still emits tabPress and navigates nowhere', () => {
-    const { getByLabelText, props } = renderAt(890, makeProps(1));
+    const { getByLabelText, props } = renderAt(466, 'trailing', makeProps(1));
     fireEvent.press(getByLabelText('History'));
     expect(props.emitter.emit).toHaveBeenCalledWith({ type: 'tabPress', target: 'history-1', canPreventDefault: true });
     expect(props.navigateToTab).not.toHaveBeenCalled();

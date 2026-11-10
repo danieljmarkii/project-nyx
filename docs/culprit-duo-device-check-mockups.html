@@ -1,0 +1,436 @@
+<title>Duo Device Check</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="exploratory">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="mockups/theme.css">
+<style>
+  /* ============================================================
+     Duo device check, ROUND 1 (exploratory). Drawn from the PM's two
+     screenshots of 1.3.0 on a Duo (2026-11-10) and from Apple's and Expo's
+     Duo guidance. It asks two questions: where our tab bar stands when the
+     phone is folded (D1) and when it is unfolded and upright (D2).
+     Layout: the house mock page (paper, serif heads, device frames). Page
+     chrome follows the viewer's theme; the DEVICE FRAMES never do, since
+     the app is light only. Inside a frame, colours and sizes are tokens
+     from mockups/theme.css. Frames are drawn at 1pt = 1px and scaled.
+     System furniture (the strip, the clock, the camera) is drawn in the
+     page's violet so it never reads as ours.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1; --tag: #3F35A0; --tag-wash: #ECEAF6;
+    --cur: #08685B; --cur-wash: #E3F2EF; --bad: #9F1239; --bad-wash: #FFE4E6;
+    --serif: "Newsreader", ui-serif, Charter, Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11); --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+      --cur: #7FD8C6; --cur-wash: rgba(127,216,198,0.14); --bad: #FDA4AF; --bad-wash: rgba(251,113,133,0.16);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11); --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+    --cur: #7FD8C6; --cur-wash: rgba(127,216,198,0.14); --bad: #FDA4AF; --bad-wash: rgba(251,113,133,0.16);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 64px; }
+
+  /* ---------- page type ---------- */
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; display: flex; flex-direction: column; gap: 12px; }
+  .eyebrow, .secno { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(36px, 6vw, 56px); line-height: 1.05; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+  h1 em { font-style: italic; }
+  h2 { font-family: var(--serif); font-weight: 400; font-size: 30px; line-height: 1.15; margin: 0; text-wrap: balance; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  p { margin: 0; max-width: 70ch; }
+  .lede { font-size: 18px; color: var(--ink-2); max-width: 66ch; }
+  .muted { color: var(--ink-2); }
+  a { color: var(--tag); }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--tag-wash); color: var(--ink); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+  section { display: flex; flex-direction: column; gap: 20px; }
+  .sec-head { display: flex; flex-direction: column; gap: 8px; }
+  .tag { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: var(--tag-wash); color: var(--tag); white-space: nowrap; align-self: flex-start; }
+  .tag.cur { background: var(--cur-wash); color: var(--cur); }
+  .tag.bad { background: var(--bad-wash); color: var(--bad); }
+
+  /* ---------- tables + briefs ---------- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper-2); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 720px; }
+  th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--rule-soft); }
+  th { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); background: var(--paper); }
+  tr:last-child td { border-bottom: 0; }
+  td b { font-weight: 600; }
+  .brief { border: 1px solid var(--rule); border-radius: 12px; background: var(--paper-2); padding: 18px 20px; display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px 16px; font-size: 15px; }
+  .brief dt { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); padding-top: 3px; }
+  .brief dd { margin: 0; min-width: 0; }
+  @media (max-width: 560px) { .brief { grid-template-columns: minmax(0, 1fr); } }
+
+  /* ---------- frame rows ---------- */
+  .row { display: flex; flex-wrap: wrap; gap: 28px 32px; align-items: flex-start; }
+  figure { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  figcaption { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--ink-2); }
+  figcaption h3 { color: var(--ink); }
+  .scroller { overflow-x: auto; max-width: 100%; }
+  .shot { position: relative; flex: none; border-radius: 20px; box-shadow: 0 0 0 1px var(--rule), 0 10px 30px rgba(27,26,46,0.10); overflow: hidden; }
+  .shot.boxed { outline: 2px dashed var(--ink-3); outline-offset: 6px; }
+  .pick { outline: 2px solid var(--cur); outline-offset: 6px; }
+
+  /* ---------- the device (1pt = 1px, scaled by its .shot) ---------- */
+  .dev { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: var(--colorNeutralLight); color: var(--colorTextPrimary); font-family: "Geist", -apple-system, sans-serif; font-size: 15px; line-height: 22px; overflow: hidden; }
+  .dev * { box-sizing: border-box; }
+  .abs { position: absolute; }
+  .scene { position: absolute; top: 0; display: flex; justify-content: center; overflow: hidden; }
+  .col { display: flex; flex-direction: column; gap: var(--space2); padding: 0 var(--space2) var(--space2); }
+  .col.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space2); align-items: start; align-content: start; }
+  .col.two .hh { grid-column: 1 / -1; }
+  .stack { display: flex; flex-direction: column; gap: var(--space2); }
+
+  /* Home */
+  /* The header's ground reaches the scene's edges (.hh-ground); its content stays in the column. */
+  .hh { display: flex; align-items: center; gap: var(--space1); padding: var(--space1_5) 0 var(--space1); position: relative; }
+  .hh-ground { position: absolute; top: 0; background: var(--colorSurface); border-bottom: 1px solid var(--colorBorder); }
+  .av { width: 28px; height: 28px; border-radius: 50%; background: var(--colorWhorlRidgeDay); flex: none; }
+  .av.me { background: var(--colorNeutralDark); color: #fff; font-size: 13px; font-weight: 600; display: grid; place-items: center; }
+  .pet { font-size: var(--textLG); font-weight: 600; }
+  .grow { flex: 1; }
+  .date { font-size: var(--textXS); color: var(--colorTextSecondary); }
+  .ask { font-size: var(--textSM); font-weight: 600; border: 1px solid var(--colorBorderStrong); border-radius: var(--radiusFull); padding: 3px 12px; display: flex; align-items: center; gap: 6px; background: var(--colorSurface); }
+  .ask i { width: 6px; height: 6px; border-radius: 50%; background: var(--colorAction); display: block; }
+  .card { background: var(--colorSurface); border-radius: var(--radiusMedium); box-shadow: var(--shadow-card); padding: var(--space2); display: flex; flex-direction: column; }
+  .lbl { font-size: var(--textXS); font-weight: 500; letter-spacing: var(--trackingWidest); color: var(--colorTextTertiary); text-transform: uppercase; }
+  .micro { font-size: var(--textXS); letter-spacing: var(--trackingWide); color: var(--colorTextTertiary); text-transform: uppercase; margin-top: var(--space1); }
+  .lead { font-family: "Newsreader", Georgia, serif; font-size: 21px; line-height: 28px; }
+  .call { font-size: var(--textSM); color: var(--colorEventSymptomInk); }
+  .cap { font-size: var(--textSM); line-height: var(--lineHeightSM); color: var(--colorTextSecondary); }
+  .srow { border-top: 1px solid var(--colorBorder); margin-top: var(--space1_5); padding-top: var(--space1_5); display: flex; align-items: center; gap: var(--space1); }
+  .srow > div { flex: 1; min-width: 0; }
+  .srow b { font-weight: 600; display: block; }
+  .chev { color: var(--colorTextTertiary); font-size: 20px; flex: none; }
+  .foot { display: flex; justify-content: space-between; gap: var(--space1); margin-top: var(--space2); font-size: var(--textXS); color: var(--colorTextTertiary); }
+  .foot span:last-child { color: var(--colorAction); font-size: var(--textSM); font-weight: 500; white-space: nowrap; }
+  .appt { flex-direction: row; gap: var(--space2); }
+  .appt .d { text-align: center; font-weight: 600; font-size: var(--textLG); line-height: 20px; }
+  .appt .d small { display: block; font-size: var(--textMicro); letter-spacing: var(--trackingWidest); color: var(--colorTextTertiary); }
+  .links { display: flex; gap: var(--space2); margin-top: var(--space1_5); font-size: var(--textSM); color: var(--colorTextSecondary); }
+  .links span:first-child { color: var(--colorAction); font-weight: 600; }
+
+  /* Meal */
+  .hdr { height: 48px; display: flex; align-items: center; padding: 0 var(--space2); background: var(--colorSurface); border-bottom: 1px solid var(--colorBorder); flex: none; }
+  .hdr .side { width: 56px; font-size: 26px; line-height: 26px; }
+  .hdr .side.r { text-align: right; font-size: var(--textMD); font-weight: 600; }
+  .hdr .ttl { flex: 1; text-align: center; font-size: var(--textLG); font-weight: 600; }
+  .meal { display: flex; flex-direction: column; width: 100%; }
+  .meal .body { padding: var(--space3); display: flex; flex-direction: column; gap: var(--space0_5); }
+  .meal h4 { margin: 0; font-size: var(--textXL); line-height: 28px; font-weight: 600; }
+  .meal .lbl { margin-top: var(--space2); }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--space1); margin: var(--space0_5) 0 var(--space2); }
+  .chips span { border: 1px solid var(--colorBorderStrong); border-radius: var(--radiusFull); padding: 6px 14px; font-size: var(--textSM); background: var(--colorSurface); }
+  .act { border-top: 1px solid var(--colorBorder); padding: var(--space2) 0; color: var(--colorAction); font-weight: 500; }
+  .act.del { color: var(--colorDestructive); }
+
+  /* Bars */
+  .bar { position: absolute; bottom: 0; height: 81px; background: var(--colorSurface); border-top: 1px solid var(--colorBorder); display: flex; justify-content: center; }
+  .bar-in { display: flex; padding: var(--space1) 0 var(--space3); }
+  .rail { position: absolute; top: 0; bottom: 0; background: var(--colorSurface); border-left: 1px solid var(--colorBorder); display: flex; flex-direction: column; }
+  .rail.foot-first { justify-content: flex-end; }
+  .tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--colorTextTertiary); font-size: var(--textXS); font-weight: 500; line-height: 14px; letter-spacing: var(--trackingWide); }
+  .rail .tab { flex: none; height: 65px; }
+  .tab svg { width: 22px; height: 22px; display: block; }
+  .tab .pa { width: 22px; height: 22px; border-radius: 50%; background: var(--colorWhorlRidgeDay); }
+  .tab::after { content: ""; width: 4px; height: 4px; border-radius: 50%; }
+  .tab.on { color: var(--colorNeutralDark); font-weight: 600; }
+  .tab.on::after { background: var(--colorAccentInkSelected); }
+  .fab { position: absolute; width: 56px; height: 56px; border-radius: 50%; background: var(--colorBrandNightElevated); box-shadow: var(--shadow-fab); }
+  .fab::before, .fab::after { content: ""; position: absolute; left: 50%; top: 50%; background: #fff; border-radius: 2px; transform: translate(-50%, -50%); }
+  .fab::before { width: 20px; height: 2.5px; }
+  .fab::after { width: 2.5px; height: 20px; }
+
+  /* System furniture: never ours, so never our colours */
+  .sys { color: #3F35A0; font-weight: 600; font-size: 15px; pointer-events: none; }
+  .sys-strip { position: absolute; top: 0; bottom: 0; right: 0; width: 84px; display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 16px;
+    background: repeating-linear-gradient(135deg, rgba(63,53,160,0.10) 0 6px, rgba(63,53,160,0.03) 6px 12px); border-left: 1px dashed rgba(63,53,160,0.45); }
+  .sys-strip.clear { background: none; border-left: 0; }
+  .cam { width: 46px; height: 46px; border-radius: 23px; background: #1B1A2E; margin-bottom: 14px; }
+  .ring { width: 26px; height: 26px; border-radius: 50%; border: 3px solid #3F35A0; }
+  .sys-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 0 28px; }
+  .gut { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(159,18,57,0.16) 0 6px, rgba(159,18,57,0.05) 6px 12px); }
+  .band { position: absolute; top: 0; bottom: 0; overflow: hidden; }
+  .pin { position: absolute; width: 26px; height: 26px; border-radius: 50%; background: #9F1239; color: #fff; font-size: 14px; font-weight: 600; display: grid; place-items: center; box-shadow: 0 0 0 3px #fff; z-index: 5; }
+  ol.pins { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <span class="eyebrow">Every iPhone, the Duo included · device check · round 1, ruled 2026-11-10</span>
+    <h1>Where our bars stand, <em>pose by pose</em></h1>
+    <p class="lede">Your two screenshots of 1.3.0 on the Duo come down to one cause each, and to one thing we got backwards: iOS moves its bars to a strip down the side when the phone is folded and lays them flat again when it is unfolded and upright. We built the opposite. Two decisions below settle where our tab bar and the + stand.</p>
+    <dl class="brief">
+      <dt>Ruled</dt><dd><b>D1 = A and D2 = A</b>, PM, 2026-11-10: "A on both, go ahead and build it." One rule follows: our bar goes where the system's bars go. The frames marked A are what was built (CUL-2703, PR 1505); the boxed frames stay as the options that were weighed.</dd>
+      <dt>Built beyond the frames</dt><dd>The + menu opens beside the strip, never in it, since the top of the strip is the clock and the camera. A strip on the left edge mirrors everything. Settings carries a layout readout at its foot for the next device check.</dd>
+    </dl>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <span class="secno">1 · What the screenshots show</span>
+      <h2>Two defects, both measured off your pixels</h2>
+      <p class="muted">Violet hatching is iOS's own strip. Red hatching is screen we lose. Neither appears in the layout captures, which run in a browser: a browser has no side strip and lets a screen draw past its column, and the phone does neither.</p>
+    </div>
+    <div class="row">
+      <figure>
+        <div class="shot" data-frame="todayOpen"></div>
+        <figcaption style="max-width: 368px">
+          <span class="tag bad">Today · unfolded, upright</span>
+          <h3>Home is cut to a 560pt window</h3>
+          <ol class="pins">
+            <li>The app centres every screen in a 560pt column, then the tabs try to step back out to the full width. On the phone the navigator clips them, so 54pt is lost on each side.</li>
+            <li>The first 54pt of every card is gone, the pet's photo with it.</li>
+            <li>The sliver "peeking in" is our own side tab bar. Only its first 25pt shows, and the + at its foot is cut with it.</li>
+          </ol>
+        </figcaption>
+      </figure>
+      <figure>
+        <div class="shot" data-frame="todayFolded"></div>
+        <figcaption style="max-width: 280px">
+          <span class="tag bad">Today · folded</span>
+          <h3>Screens run under the system strip</h3>
+          <ol class="pins">
+            <li>Folded, iOS puts the clock, the battery and the camera in a strip about 84pt wide down the right. Our screens pad the top and bottom only, so Edit sits beneath it.</li>
+            <li>The last 84pt of every row and divider is under the strip too.</li>
+          </ol>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="secno">2 · What iOS does</span>
+      <h2>The system's bars move with the pose</h2>
+      <p class="muted">From Apple's four Duo talks and Expo's SDK 58 guide. Apple has no API that moves a custom tab bar: an app that draws its own, as we do, reads which edge the system chose and follows it.</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Pose</th><th>iOS's own apps</th><th>Culprit 1.3.0</th></tr></thead>
+        <tbody>
+          <tr><td><b>Folded</b></td><td>Tab bar, back button, toolbar, clock and Dynamic Island all stand in a strip down the right. Nothing along the top or bottom.</td><td>Bottom bar. Screens run under the strip.</td></tr>
+          <tr><td><b>Unfolded, upright</b></td><td>Flat bars, top and bottom. "The only pose where we've kept horizontal bars."</td><td>Our side rail, clipped by the column.</td></tr>
+          <tr><td><b>Unfolded, on its side</b></td><td>The side strip again, on whichever edge the hardware puts it.</td><td>Our rail beside the system's strip, two strips wide. Read from the code, not yet seen on the phone.</td></tr>
+          <tr><td><b>Split View</b></td><td>The strip sits on each window's outer edge, so the left window has it on the left.</td><td>Not handled. We read the right edge only.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="secno">D1 · Folded</span>
+      <h2>What stands in the 84pt strip?</h2>
+      <p class="muted">The folded screen is the short one. The strip is there whatever we do, unless we ask iOS to take it away.</p>
+    </div>
+    <div class="row">
+      <figure>
+        <div class="shot pick" data-frame="d1a"></div>
+        <figcaption style="max-width: 280px">
+          <span class="tag cur">A · ruled, built</span>
+          <h3>Our tabs stand in the strip</h3>
+          <span>What Apple's own apps do. The tabs sit at the strip's foot above the +, clear of the clock and of a Live Activity growing down from the camera. The record gets the screen's full height.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <div class="shot boxed" data-frame="d1b"></div>
+        <figcaption style="max-width: 280px">
+          <span class="tag">B · option</span>
+          <h3>Bottom bar, beside an empty strip</h3>
+          <span>The least change. Everything moves left of the strip and stays a phone layout. The strip holds a clock and nothing else, and the bar still takes 81pt of the shortest screen we support.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <div class="shot boxed" data-frame="d1c"></div>
+        <figcaption style="max-width: 280px">
+          <span class="tag">C · option</span>
+          <h3>Ask iOS for flat bars</h3>
+          <span>One setting returns the clock to the top and the Duo behaves like a small iPhone. The widest of the three and the shortest: status bar and tab bar together take about 130pt. Apple means this for a calculator or a video player.</span>
+        </figcaption>
+      </figure>
+    </div>
+    <dl class="brief">
+      <dt>Deciding</dt><dd>Whether the folded Duo keeps a bottom tab bar or moves the tabs and the + into the system's strip.</dd>
+      <dt>Options</dt><dd><b>A, tabs in the strip (recommended):</b> it matches every Apple app on this phone and gives the short screen its height back. <b>B:</b> bottom bar beside an empty strip. <b>C:</b> opt out of the strip.</dd>
+      <dt>Consequence</dt><dd>A makes the bar's side follow the system's edge, which also covers the phone on its side and Split View with no further design. B or C keep the bar's side tied to width, and those two poses stay as they are.</dd>
+      <dt>Risk</dt><dd>A depends on iOS reporting the strip's edge to us. If the phone says otherwise, B is the fallback and costs nothing extra to switch to.</dd>
+    </dl>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="secno">D2 · Unfolded, upright</span>
+      <h2>Bottom bar, or our side rail repaired?</h2>
+      <p class="muted">iOS has no strip in this pose. Both frames fix the clipping; they differ in where the bar and the + live.</p>
+    </div>
+    <div class="row">
+      <figure>
+        <div class="shot pick" data-frame="d2a"></div>
+        <figcaption style="max-width: 368px">
+          <span class="tag cur">A · ruled, built</span>
+          <h3>Bottom bar, as iOS keeps it here</h3>
+          <span>The phone layout at a wider measure: the column centred, the bar across the foot with its tabs held to the column, the + at the column's corner where a thumb already goes.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <div class="shot boxed" data-frame="d2b"></div>
+        <figcaption style="max-width: 368px">
+          <span class="tag">B · option</span>
+          <h3>Our side rail, repaired</h3>
+          <span>What CUL-2242 meant to ship: the rail down the right under the status bar, the + at its foot. It keeps more height, and it is the one pose where we would stand our bar on a side iOS leaves empty.</span>
+        </figcaption>
+      </figure>
+    </div>
+    <dl class="brief">
+      <dt>Deciding</dt><dd>Where the tab bar stands when the Duo is open and upright.</dd>
+      <dt>Options</dt><dd><b>A, bottom bar (recommended):</b> one rule for every pose, "our bar goes where the system's bars go". <b>B:</b> keep the side rail here, repaired.</dd>
+      <dt>Consequence</dt><dd>A unseats part of CUL-2242 (the rail at every wide width) and keeps its work: the rail still stands when the phone is on its side. B keeps CUL-2242 whole and makes this pose the exception to D1's rule.</dd>
+    </dl>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="secno">3 · What follows from A and A</span>
+      <h2>The other poses need no new design</h2>
+    </div>
+    <div class="row">
+      <figure>
+        <div class="scroller"><div class="shot" data-frame="side"></div></div>
+        <figcaption style="max-width: 571px">
+          <span class="tag cur">Unfolded, on its side</span>
+          <h3>One strip, and Home's two columns beside it</h3>
+          <span>Our tabs share the system's strip instead of standing next to it, which hands 80pt back to the two column Home built in CUL-2239. On the other rotation the strip, the tabs and the + all move to the left edge.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <div class="shot" data-frame="mealFixed"></div>
+        <figcaption style="max-width: 280px">
+          <span class="tag cur">Folded · a pushed screen</span>
+          <h3>Edit clears the clock</h3>
+          <span>Every screen ends where the strip begins, the header included, so no action or row sits under it. This one holds in every option but C.</span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="secno">Sources</span>
+      <h2>Where this comes from</h2>
+    </div>
+    <p class="muted">Apple: <a href="https://developer.apple.com/videos/play/tech-talks/111461/">Prepare your app for iPhone Duo</a>, <a href="https://developer.apple.com/videos/play/tech-talks/111466/">Design for iPhone Duo</a>, <a href="https://developer.apple.com/videos/play/tech-talks/111462/">Raise the bar with iPhone Duo</a>, <a href="https://developer.apple.com/videos/play/tech-talks/111463/">Strike a pose with adaptive layouts</a>, and the <a href="https://developer.apple.com/forums/thread/847644">Group Lab summary</a>. Expo: <a href="https://expo.dev/blog/supporting-iphone-duo">Supporting iPhone Duo with Expo</a>. Apple publishes no point sizes for the Duo. The frames use 466 by 678 folded, from the pixel count, and 669 by 951 unfolded, which is what your screenshot's geometry fits to within a point. The build includes a readout that settles both on the phone.</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  var G = {
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg>',
+    hist: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+    food: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11h17a8.5 8.5 0 0 1-17 0z"/><path d="M8 19.5h8"/></svg>'
+  };
+  function tabs() {
+    return '<div class="tab on">' + G.home + 'Home</div><div class="tab">' + G.hist + 'History</div><div class="tab">' + G.food + 'Foods</div><div class="tab"><span class="pa"></span>Nyx</div>';
+  }
+  function signal() {
+    return '<div class="card"><span class="lbl">Signal</span><span class="micro">Read · Nov 7</span><span class="lead">A vomit read says to call</span><span class="call">Call your vet today</span>' +
+      '<div class="srow"><div><b>Vomiting, 4 times in the last 7 days</b><span class="call">Worth booking a vet visit soon</span></div><span class="chev">›</span></div>' +
+      '<div class="srow"><div><b>Vomiting in 6 of the last 8 weeks</b><span class="cap">18 episodes in those weeks</span></div><span class="chev">›</span></div>' +
+      '<div class="srow"><div><b>Coughing in 4 of the last 8 weeks</b><span class="cap">6 episodes in those weeks</span></div><span class="chev">›</span></div>' +
+      '<div class="foot"><span>A read of Nyx\'s logs, not a diagnosis.</span><span>All patterns ›</span></div></div>';
+  }
+  function appt() {
+    return '<div class="card"><div class="appt card" style="box-shadow:none;padding:0"><div class="d">14<small>NOV</small></div><div><b style="font-weight:600">Saturday · 9:00 am</b><div class="cap">Completely Cat Clinic · Dr Coleman</div></div></div><div class="links"><span>Get ready</span><span>Add a question</span></div></div>';
+  }
+  function today() {
+    return '<div class="card"><span class="lbl">Today</span><span class="lead" style="font-size:19px">How does Nyx seem today?</span></div>';
+  }
+  function hh(top) {
+    return '<div class="hh" style="padding-top:' + (top + 12) + 'px"><span class="av"></span><span class="pet">Nyx ⌄</span><span class="grow"></span><span class="date">Mon, Nov 9</span><span class="ask"><i></i>Ask</span><span class="av me">D</span></div>';
+  }
+  function home(top, two) {
+    if (two) return hh(top) + '<div class="stack">' + signal() + '</div><div class="stack">' + appt() + today() + '</div>';
+    return hh(top) + signal() + appt() + today();
+  }
+  function meal(top) {
+    return '<div class="meal" style="padding-top:' + top + 'px"><div class="hdr"><span class="side">‹</span><span class="ttl">Meal</span><span class="side r">Edit</span></div><div class="body">' +
+      '<h4>Monday, Nov 9 · 2:16 PM</h4><span class="cap">Meal · witnessed · 5 hr ago · Nyx\'s record</span>' +
+      '<span class="lbl">Food</span><span style="font-size:17px;font-weight:500">Limited Ingredient Diet Real Rabbit Entrée Paté</span><span class="cap">Instinct · WET</span>' +
+      '<span class="lbl">Intake</span><div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div>' +
+      '<div class="act">+ Add a med given with this</div><div class="act">+ Mixed with another food</div><div class="act del">Remove this meal</div></div></div>';
+  }
+  var SYS_SIDE = '<span class="cam"></span><span>6:48</span><span class="ring"></span>';
+
+  // One stage: the app's own layers for a window of w by h points.
+  //   strip: iOS's side strip is present. under: our content runs beneath it (the defect).
+  //   bar: 'bottom' | 'rail' (our own rail beside the content) | 'strip' (our tabs in iOS's strip) | 'none'.
+  function stage(o) {
+    var strip = o.strip ? 84 : 0;
+    var railW = o.bar === 'rail' ? 80 : 0;
+    var sceneW = o.w - (o.under ? 0 : strip) - railW;
+    var colW = o.two ? sceneW : Math.min(sceneW, 560);
+    var barH = o.bar === 'bottom' ? 81 : 0;
+    var top = o.top || 0;
+    var body = o.screen === 'meal' ? meal(top) : home(top, o.two);
+    var html = (o.screen === 'meal' ? '' : '<div class="hh-ground" style="left:0;width:' + sceneW + 'px;height:' + (top + 49) + 'px"></div>') +
+      '<div class="scene" style="left:0;width:' + sceneW + 'px;bottom:' + barH + 'px">' +
+      (o.screen === 'meal' ? body : '<div class="col' + (o.two ? ' two' : '') + '" style="width:' + colW + 'px">' + body + '</div>') + '</div>';
+    if (o.bar === 'bottom') {
+      html += '<div class="bar" style="left:0;width:' + sceneW + 'px"><div class="bar-in" style="width:' + colW + 'px">' + tabs() + '</div></div>';
+      html += '<div class="fab" style="left:' + ((sceneW - colW) / 2 + colW - 24 - 56) + 'px;bottom:' + (barH + 16) + 'px"></div>';
+    }
+    if (o.bar === 'rail') {
+      html += '<div class="rail" style="right:' + strip + 'px;width:80px;padding-top:' + (top + 16) + 'px">' + tabs() + '</div>';
+      html += '<div class="fab" style="right:' + (strip + 12) + 'px;bottom:44px"></div>';
+    }
+    if (o.bar === 'strip') {
+      html += '<div class="rail foot-first" style="right:0;width:84px;padding-bottom:118px">' + tabs() + '</div>';
+      html += '<div class="fab" style="right:14px;bottom:38px"></div>';
+    }
+    if (o.strip) html += '<div class="sys sys-strip' + (o.bar === 'strip' ? ' clear' : '') + '">' + SYS_SIDE + '</div>';
+    if (top) html += '<div class="sys sys-top" style="height:' + top + 'px"><span>6:45</span><span class="ring"></span></div>';
+    return html;
+  }
+
+  var FRAMES = {
+    // The defect, drawn the way the phone draws it: a 560pt band of a 669pt layout.
+    todayOpen: { w: 669, h: 951, s: 0.55, raw: function () {
+      var inner = stage({ w: 669, h: 951, top: 74, bar: 'rail' });
+      return '<div class="gut" style="left:0;width:54.5px"></div><div class="gut" style="right:0;width:54.5px"></div>' +
+        '<div class="band" style="left:54.5px;width:560px"><div class="abs" style="left:-54.5px;width:669px;top:0;bottom:0">' + inner + '</div></div>' +
+        '<div class="sys sys-top" style="height:74px"><span>6:45</span><span class="ring"></span></div>' +
+        '<span class="pin" style="left:14px;top:300px">1</span><span class="pin" style="left:70px;top:130px">2</span><span class="pin" style="left:574px;top:560px">3</span>';
+    } },
+    todayFolded: { w: 466, h: 678, s: 0.6, raw: function () {
+      return stage({ w: 466, h: 678, strip: true, under: true, bar: 'none', screen: 'meal' }) +
+        '<span class="pin" style="left:346px;top:11px">1</span><span class="pin" style="left:346px;top:330px">2</span>';
+    } },
+    d1a: { w: 466, h: 678, s: 0.6, strip: true, bar: 'strip' },
+    d1b: { w: 466, h: 678, s: 0.6, strip: true, bar: 'bottom' },
+    d1c: { w: 466, h: 678, s: 0.6, top: 50, bar: 'bottom' },
+    d2a: { w: 669, h: 951, s: 0.55, top: 74, bar: 'bottom' },
+    d2b: { w: 669, h: 951, s: 0.55, top: 74, bar: 'rail' },
+    side: { w: 951, h: 669, s: 0.6, strip: true, bar: 'strip', two: true },
+    mealFixed: { w: 466, h: 678, s: 0.6, strip: true, bar: 'none', screen: 'meal' }
+  };
+  document.querySelectorAll('[data-frame]').forEach(function (el) {
+    var f = FRAMES[el.getAttribute('data-frame')];
+    if (!f) return;
+    el.style.width = f.w * f.s + 'px';
+    el.style.height = f.h * f.s + 'px';
+    el.innerHTML = '<div class="dev" style="width:' + f.w + 'px;height:' + f.h + 'px;transform:scale(' + f.s + ')">' + (f.raw ? f.raw() : stage(f)) + '</div>';
+  });
+})();
+</script>

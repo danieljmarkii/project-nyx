@@ -1,31 +1,119 @@
-import type { ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useCallback, useState, type ReactElement, type ReactNode } from 'react';
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { theme } from '../../constants/theme';
-import { useColumn } from '../../hooks/useLayoutClass';
+import { useColumn, useWindowFrame } from '../../hooks/useLayoutClass';
 
 /**
- * The app's content column (CUL-2237). It wraps the whole stack at the root, so every
- * route sits in it without a per-screen change. At compact the column IS the window
- * (gutter 0, no max width): the tree is the same at every size, so a fold never remounts
- * the navigator, and no phone moves a pixel.
+ * The app's content column (CUL-2237), held INSIDE each screen (CUL-2703).
  *
- * At compact both Views are transparent and unstyled beyond `flex: 1`, so whatever showed
- * behind the stack on main (a modal's presentation, a push's gap) still does. At regular
- * the column is centred, and the gutters show the app's ground. Chrome that
- * must still reach the window edge (the tab bar, Home's header, the Landing's night)
- * bleeds out by `useColumn().gutter` on its own, keeping its content in the column.
+ * It was one column around the whole stack, and that is the defect the first Duo device
+ * check found: a native stack screen clips to its own bounds, so a screen sized to the
+ * column could never draw past it. The tabs stepped back out with a negative margin and
+ * were cut to a 560pt band, the + with them. So the navigators fill the window, and each
+ * screen wraps its own content here (`screenInColumn`, the stacks' `screenLayout`): the
+ * screen is the window, the column sits in it, and chrome that must reach the window edge
+ * (Home's header, the Landing's night) bleeds out by `useColumn().gutters` and is no
+ * longer clipped.
+ *
+ * On a phone held upright both gutters are 0 and both Views are transparent and unstyled
+ * beyond `flex: 1`, so whatever showed behind a screen still does and no phone moves a
+ * pixel. Where a side is held (a wide window, or the strip iOS keeps for its bars), the
+ * column steps in from each side by that side's gutter and the gutters show the ground.
+ *
+ * A HOST NARROWER THAN THE WINDOW is a card the platform centred (a modal route on the
+ * unfolded Duo). It is clear of the window's sides, so the window's gutters are not its
+ * own: the column is capped and centred in the card instead. The host's width arrives by
+ * `onLayout`, which is the card's own measure, never a window read.
+ *
+ * `overlay`: the same column, drawn over the stack and transparent to touch, for the
+ * root's sheet hosts and completion cards, which sit in the column over every screen.
+ *
+ * `clear`: no ground in the gutters, for a route that is see-through by design (the exam
+ * room fades to black over the report it was opened from): its gutters show the screen
+ * beneath, which holds its own column and ground.
  */
-export function LayoutColumn({ children }: { children: ReactNode }) {
-  const { width, gutter } = useColumn();
+export function LayoutColumn({
+  children,
+  overlay = false,
+  clear = false,
+}: {
+  children: ReactNode;
+  overlay?: boolean;
+  clear?: boolean;
+}) {
+  const { gutters } = useColumn();
+  const windowWidth = useWindowFrame().width;
+  const [hostWidth, setHostWidth] = useState<number | null>(null);
+  const onHostLayout = useCallback((e: LayoutChangeEvent) => setHostWidth(e.nativeEvent.layout.width), []);
+
+  const held = gutters.left > 0 || gutters.right > 0;
+  // Unmeasured reads as the window: the first frame of a full-screen route is right, and
+  // a centred card corrects itself on its first layout.
+  const spansWindow = hostWidth === null || hostWidth >= windowWidth - 1;
+  const column = !held
+    ? null
+    : spansWindow
+      ? { marginLeft: gutters.left, marginRight: gutters.right }
+      : styles.inCard;
+
+  if (overlay) {
+    return (
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        <View style={[styles.fill, held && { marginLeft: gutters.left, marginRight: gutters.right }]} pointerEvents="box-none">
+          {children}
+        </View>
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.fill, gutter > 0 && styles.ground]}>
-      <View style={[styles.fill, gutter > 0 && styles.column, gutter > 0 && { width }]}>{children}</View>
+    // Measured in every pose, not only while held: a host measured as a card and then
+    // unheld would otherwise keep that width into the next fold.
+    <View style={[styles.fill, held && !clear && styles.ground]} onLayout={onHostLayout}>
+      <View style={[styles.fill, column]}>{children}</View>
     </View>
   );
+}
+
+/**
+ * A stack's `screenLayout`: every screen of that navigator sits in the column. A layout
+ * that owns a navigator passes this, so its screens are held inside themselves and none is
+ * clipped by a column around the navigator.
+ */
+export function screenInColumn({ children }: { children: ReactElement }): ReactElement {
+  return <LayoutColumn>{children}</LayoutColumn>;
+}
+
+/**
+ * The root stack's routes that own a navigator of their own, as `app/` names them. Each
+ * holds its screens itself: the two stacks pass `screenInColumn`, and the tabs pad each
+ * scene and stand their bar at the window's edge. Wrapping one here would put a column
+ * around a navigator again, which is the clip this file exists to end.
+ * `LayoutColumn.test.tsx` reads `app/` for every folder with a `_layout`, so a new group
+ * cannot be missed.
+ */
+export const SELF_HELD_ROUTES: ReadonlySet<string> = new Set(['(auth)', '(tabs)', 'onboarding']);
+
+/**
+ * The root stack's `screenLayout`: every leaf route in the column, a group left to itself.
+ * A transparent route keeps its column and loses the ground, or the screen it is meant to
+ * show through would be painted over wherever a side is held.
+ */
+export function heldScreenLayout({
+  children,
+  route,
+  options,
+}: {
+  children: ReactElement;
+  route: { name: string };
+  options?: { presentation?: string };
+}): ReactElement {
+  if (SELF_HELD_ROUTES.has(route.name)) return children;
+  return <LayoutColumn clear={options?.presentation === 'transparentModal'}>{children}</LayoutColumn>;
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   ground: { backgroundColor: theme.colorNeutralLight },
-  column: { alignSelf: 'center' },
+  inCard: { width: '100%', maxWidth: theme.layoutColumnMaxWidth, alignSelf: 'center' },
 });

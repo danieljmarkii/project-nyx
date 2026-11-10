@@ -410,14 +410,21 @@ if (!['pr', 'all'].includes(CAPTURE_SET)) throw new Error(`CAPTURE_SET is pr or 
 // 844pt height every capture used before. Text multipliers are RN's own iOS table
 // (React/CoreModules/RCTAccessibilityManager.mm): xxxLarge is the largest size in
 // Settings > Display > Text Size, AX5 the largest with Larger Accessibility Sizes on.
-// The defaults add the SE (375x667), the folded Duo (466x678) and the unfolded Duo both
-// ways (626x890, 890x626); Duo points are pixels / 3, since Apple has not published them.
-const SIZES = (process.env.CAPTURE_SIZES ?? '320@1,375x667@1,390@1,466x678@1,626x890@1,890x626@1,390@3.571,320@3.571').split(',').map((s) => {
-  const [dims, f] = s.split('@');
+// The defaults add the SE (375x667) and the Duo in its poses (CUL-2703): folded (466x678)
+// and on its side (951x669), where iOS stands its bars in a strip down one edge, and
+// unfolded and upright (669x951), where its bars lie flat. `+right` or `+left` after the
+// dimensions is that strip: the app is told the edge (`stubs/statusBar.ts`), and the strip
+// is drawn over the page so content under it shows. 466x678 is pixels / 3; 669x951 is
+// what the first device check's screenshot fits. Apple has published neither.
+const SIZES = (process.env.CAPTURE_SIZES ?? '320@1,375x667@1,390@1,466x678+right@1,669x951@1,951x669+right@1,951x669+left@1,390@3.571,320@3.571').split(',').map((s) => {
+  const [dimsBar, f] = s.split('@');
+  const [dims, bar] = dimsBar.split('+');
+  if (bar !== undefined && bar !== 'left' && bar !== 'right') throw new Error(`a size's bar is +left or +right, not +${bar}`);
   const [w, h] = dims.split('x');
   const scale = Number(f ?? 1);
   const text = scale === 1 ? '' : `-text${scale === 3.571 ? 'AX5' : scale === 1.353 ? 'xxxL' : scale}`;
-  return { width: Number(w), height: Number(h ?? 844), scale, label: `${dims}${text}` };
+  const strip = bar ? `-bar${bar === 'right' ? 'R' : 'L'}` : '';
+  return { width: Number(w), height: Number(h ?? 844), scale, bar: bar ?? null, label: `${dims}${strip}${text}` };
 });
 
 async function captureSize(browser, size, server, shots, group) {
@@ -438,10 +445,29 @@ async function captureSize(browser, size, server, shots, group) {
   });
   await context.clock.setFixedTime(NOW);
   await context.addInitScript(
-    ({ key, session, scale, storage }) => {
+    ({ key, session, scale, storage, bar }) => {
       if (session) localStorage.setItem('securestore:' + key, JSON.stringify(session));
       for (const [k, v] of Object.entries(storage)) localStorage.setItem(k, v);
       globalThis.__NYX_FONT_SCALE = scale;
+      // The strip iOS stands its bars in (CUL-2703): the edge for the app, and the strip
+      // itself drawn over the page, see-through, so anything left under it is on the sheet.
+      if (bar) {
+        globalThis.__NYX_SYSTEM_BAR_EDGE = bar === 'right' ? 'trailing' : 'leading';
+        window.addEventListener('DOMContentLoaded', () => {
+          const strip = document.createElement('div');
+          strip.setAttribute('aria-hidden', 'true');
+          strip.style.cssText =
+            `position:fixed;top:0;bottom:0;${bar}:0;width:84px;z-index:2147483647;pointer-events:none;` +
+            'display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:16px;' +
+            'font:600 15px -apple-system,system-ui,sans-serif;color:#3F35A0;' +
+            'background:repeating-linear-gradient(135deg,rgba(63,53,160,.10) 0 6px,rgba(63,53,160,.03) 6px 12px);' +
+            `border-${bar === 'right' ? 'left' : 'right'}:1px dashed rgba(63,53,160,.45)`;
+          strip.innerHTML =
+            '<span style="width:46px;height:46px;border-radius:23px;background:#1B1A2E;margin-bottom:14px"></span>' +
+            '<span>9:41</span><span style="width:26px;height:26px;border-radius:50%;border:3px solid #3F35A0"></span>';
+          document.body.appendChild(strip);
+        });
+      }
       // Every frame an animation asks for, counted (AT REST above).
       const raf = window.requestAnimationFrame.bind(window);
       globalThis.__NYX_CAPTURE_FRAMES = 0;
@@ -452,7 +478,7 @@ async function captureSize(browser, size, server, shots, group) {
     },
     // CAPTURE_STORAGE seeds device-local state (AsyncStorage is localStorage on web), e.g.
     // an older build's beta opt-ins: '{"culprit.betaOptIns.v1":"{\\"history_v2\\":true}"}'.
-    { key: 'sb-fixture-auth-token', session: signedIn ? session : null, scale: size.scale, storage: JSON.parse(process.env.CAPTURE_STORAGE ?? '{}') },
+    { key: 'sb-fixture-auth-token', session: signedIn ? session : null, scale: size.scale, storage: JSON.parse(process.env.CAPTURE_STORAGE ?? '{}'), bar: size.bar },
   );
   // Realtime would open a socket to the fixture host; there is nothing to say on it.
   await context.routeWebSocket(/fixture\.nyx-capture\.invalid/, (ws) => ws.close());

@@ -14,6 +14,8 @@ const WEB_STUBS = {
   'react-native-web/dist/exports/findNodeHandle': 'findNodeHandle.ts',
   '@expo/ui/swift-ui': 'nativeViewsInert.ts',
   '@expo/ui/swift-ui/modifiers': 'nativeViewsInert.ts',
+  // The edge iOS reports for its vertical bar, which a browser never has (CUL-2703).
+  'expo-status-bar': 'statusBar.ts',
 };
 
 module.exports = function applyWebCapture(config) {
