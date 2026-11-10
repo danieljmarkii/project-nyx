@@ -17,6 +17,12 @@ const HOUR = 3_600_000;
 const NOW = Date.parse('2026-11-08T20:00:00Z');
 const LAST_ALL = '2026-11-07T07:00:00.000Z'; // 37 h before NOW
 
+// `safetyAskLevel` reads the real clock (`intakeMeetsCatFloor`'s default `nowMs`), so the suite
+// pins it to NOW. Unpinned, this date-pinned fixture aged past 24 h on 2026-11-09 and the cat who
+// ate well "two hours ago" read as floored (C-29's time axis).
+beforeEach(() => { jest.spyOn(Date, 'now').mockReturnValue(NOW); });
+afterEach(() => { jest.restoreAllMocks(); });
+
 function card(over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineFinding {
   return {
     type: 'intake_decline',
