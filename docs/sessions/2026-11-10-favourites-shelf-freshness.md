@@ -17,4 +17,5 @@ Shaping row for CUL-1685, launched by /sweep. The Foods tab's favourites shelf r
 - All-time counts can outvote recent refusals of one food while the pet eats others normally. This was added as an instance on CUL-2699, the same class.
 - Free-fed exclusion uses current arrangements, not historical spans. Parked on CUL-1685.
 
-Shipped via the session's PR (`Loose ends PR-08: …`).
+Shipped via #1503.
+**One thing:** none — dispatched session, not this round's teach row
