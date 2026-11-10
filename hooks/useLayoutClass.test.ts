@@ -1,7 +1,7 @@
 import { theme } from '../constants/theme';
 import {
   bleedFor, canvasFor, columnFor, formatLayoutReadout, layoutClassFor, sceneGuttersFor, sheetCapFor,
-  sheetMaxHeightFor, sidesFor, tabRailFor, NO_SIDES, TAB_RAIL_WIDTH, type Sides,
+  sheetMaxHeightFor, showsLayoutReadout, sidesFor, tabRailFor, NO_SIDES, TAB_RAIL_WIDTH, type Sides,
 } from './useLayoutClass';
 
 const STRIP = theme.layoutSystemBarMinWidth;
@@ -250,5 +250,22 @@ describe('formatLayoutReadout', () => {
       .toBe('469.3\u00d7951 \u00b7 insets 0 0 21 84 \u00b7 bars left');
     expect(formatLayoutReadout({ width: 390, height: 844, insets: null, barEdge: null }))
       .toBe('390\u00d7844 \u00b7 insets unknown \u00b7 bars flat');
+  });
+});
+
+// A diagnostic for a device check, so an owner on a plain phone never sees it.
+describe('showsLayoutReadout', () => {
+  const at = (width: number, barEdge: 'leading' | 'trailing' | null = null) =>
+    showsLayoutReadout({ width, height: 844, insets: null, barEdge });
+
+  it.each([320, 375, 390, 440])('is hidden on a %ipt phone', (w) => {
+    expect(at(w)).toBe(false);
+  });
+
+  it('shows in every Duo pose: folded and Split View by the bar, unfolded by the width', () => {
+    expect(at(466, 'trailing')).toBe(true);
+    expect(at(469, 'leading')).toBe(true);
+    expect(at(669)).toBe(true);
+    expect(at(951, 'trailing')).toBe(true);
   });
 });

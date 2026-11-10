@@ -1,7 +1,8 @@
 # The first Duo device check: Home uncropped, screens clear of the system strip, the bar where iOS puts its own
 
 **Date:** 2026-11-10
-**One thing:** pending, written at wrap
+**One thing:** S1 L1 — Code vs build vs OTA: a JS change can ride to the installed app, a native change needs a new build · check: pending
+**One thing (re-ask):** G1 L1 — A commit is a saved snapshot (asked again: CI went green on this PR's first commit, which held only the mock; does that green say anything about the last commit, which holds the build?) · check: pending
 
 Interactive session with the PM, who had shipped 1.3.0 without a device pass and sent two screenshots from a real Duo: Home unfolded, "rough", the + cut off and something peeking in on the right; a meal record folded, Edit overlapping the system's clock. The ask was to research how people build for the Duo, then polish. Filed and built as CUL-2703, under CUL-2226's project.
 
@@ -44,7 +45,8 @@ One rule follows: our bar goes where the system's bars go. It unseats the "rail 
 - 20,000 plus jest tests, typecheck clean. The geometry, the tab bar, the + and the column each have pose tests (folded, upright, on its side, strip left).
 - The guard for the clip is on the structure, since no test renderer and no browser can see it: `components/ui/LayoutColumn.test.tsx` reads `app/` and reds if any navigator is wrapped in a column or a folder with a `_layout` is not held by itself. Proven by mutation three ways: removing the root's `screenLayout`, removing the strip floor, and standing a rail with no system bar each red.
 - Captures at the four Duo poses, read by eye.
-- A `code-reviewer` pass on the diff.
+- A `code-reviewer` pass on the diff. It cleared the eight risk areas it was pointed at and found one regression: the exam room is a transparent route, and a column with a ground in its gutters would have painted over the report it fades from, in every Duo pose. A transparent route now takes a clear column. It also found that the host's width was measured only while a side was held, so a width read while a modal was a card could outlive the card; the host is now measured in every pose. Both have tests.
+- On the reviewer's note that the readout line is jargon on an owner's screen: it is drawn only off a plain phone (a wide window or a system bar on a side), and its removal after the device check is an instance on CUL-2272.
 
 ## What is not known until the phone says
 

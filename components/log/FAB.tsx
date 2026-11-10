@@ -601,7 +601,7 @@ export function FAB() {
   // puts the disc there, and the fan opens rightward from it.
   const mirrored = seat.side === 'left';
   const seatStyle = mirrored
-    ? ({ left: seat.inset, right: 'auto', bottom: seat.bottom, alignItems: 'flex-start' } as const)
+    ? [styles.fabContainerMirrored, { left: seat.inset, bottom: seat.bottom }]
     : seat.inset === FAN_RIGHT_INSET && seat.bottom === FAB_BOTTOM
       ? null
       : { right: seat.inset, bottom: seat.bottom };
@@ -1849,6 +1849,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   // The disc on the window's left edge (CUL-2703): the same fan, turned to open rightward.
+  // The container lets go of the right edge; its `left` and `bottom` are the seat's.
+  fabContainerMirrored: {
+    right: 'auto',
+    alignItems: 'flex-start',
+  },
   fanMirrored: {
     alignItems: 'flex-start',
   },

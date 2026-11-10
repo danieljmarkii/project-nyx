@@ -72,7 +72,8 @@ export function layoutClassFor(windowWidth: number, windowHeight: number): Layou
  * bar (`useVerticalBarEdgeIOS`: 'trailing' on a folded Duo, null wherever the status bar
  * is along the top). Where an edge is reported, that side is at least the strip's width:
  * the strip is there whether or not the inset has caught up with it, and content under
- * the clock is the defect this exists to prevent.
+ * the clock is the defect this exists to prevent. Leading is read as left: the app is
+ * left-to-right only, and the strip follows the hardware, not the language.
  */
 export function sidesFor(
   insets: { left: number; right: number } | null | undefined,
@@ -162,6 +163,15 @@ export function useLayoutReadout(): LayoutReadout {
     insets: insets ? { top: insets.top, right: insets.right, bottom: insets.bottom, left: insets.left } : null,
     barEdge,
   };
+}
+
+/**
+ * The line is a device-check diagnostic, so it is drawn only where there is something to
+ * check: a window wide enough for the column to cap, or a system bar on a side. A plain
+ * phone has neither, and its owner never sees the line.
+ */
+export function showsLayoutReadout(r: LayoutReadout): boolean {
+  return r.barEdge !== null || r.width >= theme.layoutRegularMinWidth;
 }
 
 const readoutNumber = (n: number): string => String(Math.round(n * 10) / 10);

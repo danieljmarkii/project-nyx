@@ -27,8 +27,20 @@ import { useColumn, useWindowFrame } from '../../hooks/useLayoutClass';
  *
  * `overlay`: the same column, drawn over the stack and transparent to touch, for the
  * root's sheet hosts and completion cards, which sit in the column over every screen.
+ *
+ * `clear`: no ground in the gutters, for a route that is see-through by design (the exam
+ * room fades to black over the report it was opened from): its gutters show the screen
+ * beneath, which holds its own column and ground.
  */
-export function LayoutColumn({ children, overlay = false }: { children: ReactNode; overlay?: boolean }) {
+export function LayoutColumn({
+  children,
+  overlay = false,
+  clear = false,
+}: {
+  children: ReactNode;
+  overlay?: boolean;
+  clear?: boolean;
+}) {
   const { gutters } = useColumn();
   const windowWidth = useWindowFrame().width;
   const [hostWidth, setHostWidth] = useState<number | null>(null);
@@ -55,7 +67,9 @@ export function LayoutColumn({ children, overlay = false }: { children: ReactNod
   }
 
   return (
-    <View style={[styles.fill, held && styles.ground]} onLayout={held ? onHostLayout : undefined}>
+    // Measured in every pose, not only while held: a host measured as a card and then
+    // unheld would otherwise keep that width into the next fold.
+    <View style={[styles.fill, held && !clear && styles.ground]} onLayout={onHostLayout}>
       <View style={[styles.fill, column]}>{children}</View>
     </View>
   );
@@ -80,9 +94,22 @@ export function screenInColumn({ children }: { children: ReactElement }): ReactE
  */
 export const SELF_HELD_ROUTES: ReadonlySet<string> = new Set(['(auth)', '(tabs)', 'onboarding']);
 
-/** The root stack's `screenLayout`: every leaf route in the column, a group left to itself. */
-export function heldScreenLayout({ children, route }: { children: ReactElement; route: { name: string } }): ReactElement {
-  return SELF_HELD_ROUTES.has(route.name) ? children : <LayoutColumn>{children}</LayoutColumn>;
+/**
+ * The root stack's `screenLayout`: every leaf route in the column, a group left to itself.
+ * A transparent route keeps its column and loses the ground, or the screen it is meant to
+ * show through would be painted over wherever a side is held.
+ */
+export function heldScreenLayout({
+  children,
+  route,
+  options,
+}: {
+  children: ReactElement;
+  route: { name: string };
+  options?: { presentation?: string };
+}): ReactElement {
+  if (SELF_HELD_ROUTES.has(route.name)) return children;
+  return <LayoutColumn clear={options?.presentation === 'transparentModal'}>{children}</LayoutColumn>;
 }
 
 const styles = StyleSheet.create({

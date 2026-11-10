@@ -212,6 +212,7 @@ describe('Settings — the version foot names the JS bundle (CUL-690)', () => {
 // iOS stands its bars. What it SAYS is pinned in hooks/useLayoutClass.test.ts; this pins
 // that it mounts, under the bundle line, since the next device check reads it off the phone.
 describe('Settings — the version foot carries the layout readout (CUL-2703)', () => {
+  // jest-expo's window is 750pt wide, which is off a plain phone, so the line is drawn.
   it('renders the window, the insets and the bars’ side on one line', () => {
     const { getByTestId } = render(<SettingsScreen />);
     expect(getByTestId('settings-layout-readout').props.children).toMatch(/^\d+(\.\d)?\u00d7\d+(\.\d)? \u00b7 insets .+ \u00b7 bars (flat|left|right)$/);

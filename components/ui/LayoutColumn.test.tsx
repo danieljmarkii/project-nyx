@@ -52,11 +52,13 @@ afterEach(() => {
 });
 
 describe('LayoutColumn', () => {
-  it.each([320, 390, 440])('a %ipt phone: both views are flex 1 and nothing else, and nothing is measured', (w) => {
-    const { outer, inner } = renderColumn(w);
+  it.each([320, 390, 440])('a %ipt phone: both views are flex 1 and nothing else, measured or not', (w) => {
+    const { outer, inner, measure } = renderColumn(w);
     expect(flat(outer().props.style)).toEqual({ flex: 1 });
     expect(flat(inner().props.style)).toEqual({ flex: 1 });
-    expect(outer().props.onLayout).toBeUndefined();
+    measure(w);
+    expect(flat(outer().props.style)).toEqual({ flex: 1 });
+    expect(flat(inner().props.style)).toEqual({ flex: 1 });
   });
 
   it('the unfolded Duo upright (669pt): the column is centred and the gutters show the ground', () => {
@@ -94,6 +96,32 @@ describe('LayoutColumn', () => {
     expect(flat(inner().props.style)).toEqual(before);
   });
 
+  // The host is measured in every pose, so a width read while it was a card never
+  // outlives the card.
+  it('a host measured as a card and then as the window takes the window’s gutters again', () => {
+    const { inner, measure } = renderColumn(951, 'trailing');
+    const asWindow = flat(inner().props.style);
+    measure(540);
+    expect(flat(inner().props.style).maxWidth).toBe(theme.layoutColumnMaxWidth);
+    measure(951);
+    expect(flat(inner().props.style)).toEqual(asWindow);
+  });
+
+  // The exam room is a transparent route that fades to black over the report: a ground in
+  // its gutters would paint over the screen it is meant to show through.
+  it('a clear column keeps its gutters and paints no ground', () => {
+    mockWindowWidth = 669;
+    const view = render(
+      <LayoutColumn clear>
+        <Text>content</Text>
+      </LayoutColumn>,
+    );
+    const outer = view.toJSON() as unknown as Node;
+    const gutter = (669 - theme.layoutColumnMaxWidth) / 2;
+    expect(flat(outer.props.style)).toEqual({ flex: 1 });
+    expect(flat(outer.children[0].props.style)).toEqual({ flex: 1, marginLeft: gutter, marginRight: gutter });
+  });
+
   it('the overlay is the same column over the stack: it fills, paints nothing and passes touch through', () => {
     const { outer, inner } = renderColumn(669, null, true);
     const gutter = (669 - theme.layoutColumnMaxWidth) / 2;
@@ -118,6 +146,23 @@ describe('the stacks’ screen layouts', () => {
     for (const name of SELF_HELD_ROUTES) {
       expect(heldScreenLayout({ children: child, route: { name } })).toBe(child);
     }
+  });
+
+  it('the root gives a transparent route a clear column, and every other route its ground', () => {
+    const transparent = heldScreenLayout({ children: child, route: { name: 'exam-room' }, options: { presentation: 'transparentModal' } });
+    expect(transparent.type).toBe(LayoutColumn);
+    expect((transparent.props as { clear?: boolean }).clear).toBe(true);
+    for (const options of [undefined, {}, { presentation: 'modal' }, { presentation: 'card' }]) {
+      const held = heldScreenLayout({ children: child, route: { name: 'log' }, options });
+      expect((held.props as { clear?: boolean }).clear).toBe(false);
+    }
+  });
+
+  // The route that is transparent today, read off the root: if it stops saying so, the
+  // clear column above is switching on nothing.
+  it('the exam room is still declared transparent at the root', () => {
+    const root = fs.readFileSync(path.resolve(__dirname, '../../app/_layout.tsx'), 'utf8');
+    expect(root).toMatch(/name="exam-room"\s+options=\{\{ presentation: 'transparentModal'/);
   });
 });
 
