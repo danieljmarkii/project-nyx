@@ -171,6 +171,8 @@ describe('the Foods-tab trial strip (FR-1)', () => {
   it('renders the day counter and names the foods on the list', () => {
     expect(buildFoodsTrialStrip(SET, opts, DAY_12)).toEqual({
       header: 'Diet trial · day 12 of 28',
+      subject: 'Diet trial',
+      dayClause: 'day 12 of 28',
       line: 'Zignature Kangaroo Formula, and 1 more',
     });
   });
@@ -237,9 +239,25 @@ describe('the Foods-tab trial strip (FR-1)', () => {
         { startedAt: TRIAL.startedAt, targetDurationDays: TRIAL.targetDurationDays },
         at,
       );
-      expect(buildFoodsTrialStrip(SET, opts, at)?.header)
-        .toBe(`Diet trial · day ${expected?.dayCounter} of 28`);
+      // Past the window (Aug 4 is day 35) the card's phrase, never "day 35 of 28"
+      // (CUL-1181): this test used to pin the fraction there.
+      const past = (expected?.dayCounter ?? 0) - 28;
+      expect(buildFoodsTrialStrip(SET, opts, at)?.header).toBe(
+        past > 0
+          ? `Diet trial · day ${expected?.dayCounter} — ${past} days past`
+          : `Diet trial · day ${expected?.dayCounter} of 28`,
+      );
     }
+  });
+
+  // CUL-1181 — the literal, so a regression to the fraction reds on a string an
+  // owner would actually read.
+  it('reads like the trial card past the window (day 35 of a 28-day trial)', () => {
+    const strip = buildFoodsTrialStrip(SET, { petName: 'Pumpernickel', multiPet: true }, localNoon(2026, 8, 4))!;
+    expect(strip.header).toBe('Pumpernickel’s diet trial · day 35 — 7 days past');
+    expect(strip.subject).toBe('Pumpernickel’s diet trial');
+    expect(strip.dayClause).toBe('day 35 — 7 days past');
+    expect(strip.header).not.toMatch(/of 28/);
   });
 
   it('drops the "of M" rather than printing a target of zero', () => {

@@ -49,9 +49,22 @@ export function FoodsTrialStrip({ model, onPress }: Props) {
             grew to three or four lines would stop reading as context and start
             reading as content, and B-627 accepted truncation as the cost of
             naming. The full list is one tap away on §2.2. */}
-        <ThemedText style={styles.header} numberOfLines={1} testID="foods-trial-strip-header">
-          {model.header}
-        </ThemedText>
+        {/* The header is two fragments so the right half survives a narrow strip
+            (C-8, CUL-1181): "Pumpernickel’s kangaroo trial · day 35 — 7 days past"
+            runs past a ~262pt column at 375pt wide. The subject yields (the pet's
+            name and protein are on the trial card one tap away); the day clause,
+            the only place on this tab that says the trial is past its window, is
+            protected. The accessibility label above reads the whole header. */}
+        <View style={styles.headerRow} testID="foods-trial-strip-header">
+          <ThemedText style={[styles.header, styles.subject]} numberOfLines={1}>
+            {model.dayClause === null ? model.subject : `${model.subject} · `}
+          </ThemedText>
+          {model.dayClause !== null && (
+            <ThemedText style={[styles.header, styles.dayClause]} numberOfLines={1}>
+              {model.dayClause}
+            </ThemedText>
+          )}
+        </View>
         <ThemedText style={styles.line} numberOfLines={1} testID="foods-trial-strip-line">
           {model.line}
         </ThemedText>
@@ -88,6 +101,16 @@ const styles = StyleSheet.create({
   text: {
     flex: 1,
     gap: 2,
+  },
+  headerRow: {
+    flexDirection: 'row',
+  },
+  subject: {
+    flexShrink: 1,
+  },
+  dayClause: {
+    flexShrink: 0,
+    maxWidth: '100%',
   },
   header: {
     fontSize: theme.textSM,
