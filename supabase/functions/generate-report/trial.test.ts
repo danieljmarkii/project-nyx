@@ -6016,3 +6016,44 @@ Deno.test('CUL-1919 adv pass 2 — a short medication pull never reads clean bes
   assert.ok(/The medication record could not be read in full; a course before or during the trial may be missing/.test(doc))
   assert.ok(!/No medication or supplement is recorded as overlapping the trial/.test(doc))
 })
+
+// ── CUL-2707 — a refused trial's bottom line never calls it a broken elimination ──────────────
+// The CUL-1823 refusal shape: 21 days, every rated feeding "ate some", the owner's stop reason
+// "refused", one chicken treat on day 3. The refusal leads the box; the treat is a fact beside it,
+// never "an elimination that was broken", and never a ratio that counts the refused bowls as fed.
+
+function cul2707RefusalInput(stoppedReason: 'refused' | null = 'refused'): ReportInput {
+  const events = days('2026-06-01', '2026-06-21').map((d) =>
+    meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'some' }),
+  )
+  events.push(meal({ date: '2026-06-03', time: '18:00:00', brand: 'Jerky Co', product: 'Chicken Jerky', foodItemId: 'f-jerky', foodType: 'treat', proteins: ['chicken'], ingredientsNotes: 'Chicken.' }))
+  const input = wellLoggedTrialInput({ events })
+  input.dietTrials[0].status = 'abandoned'
+  input.dietTrials[0].endedAt = '2026-06-21'
+  ;(input.dietTrials[0] as { stoppedReason?: string | null }).stoppedReason = stoppedReason
+  return input
+}
+
+function interpretingBox(html: string): string {
+  const m = html.match(/<div class="callout"><span class="k">Interpreting this record<\/span>([\s\S]*?)<\/div>/)
+  assert.ok(m, 'the Interpreting this record box rendered')
+  return plain(m![1])
+}
+
+Deno.test('CUL-2707 — a refused trial with one off-diet treat states the treat as a fact, never a broken elimination', () => {
+  const snap = assembleReport(cul2707RefusalInput())
+  assert.equal(snap.trial?.exposures.offDiet, 1, 'non-vacuity: the treat is the one off-diet feeding')
+  const box = interpretingBox(renderReport(snap))
+  assert.ok(/^\s*Not one rated feeding of the trial diet was finished \(0 of 21 finished\), so this record documents a refusal rather than an elimination/.test(box), `the refusal leads: ${box}`)
+  assert.ok(/Also fed off the trial diet: 1 feeding on Jun 3, 2026 \(appendix C; a floor, not a total\)\./.test(box), `the treat is a fact: ${box}`)
+  assert.ok(!/elimination that was broken/.test(box), `never a broken elimination: ${box}`)
+  assert.ok(!/\d+ of \d+ feedings/.test(box), `no ratio counts the refused bowls as feedings: ${box}`)
+})
+
+Deno.test('CUL-2707 — without a refusal the same treat still reads as a broken elimination (CUL-2516 holds)', () => {
+  const input = cul2707RefusalInput(null)
+  for (const e of input.events) if (e.meal?.foodItemId === 'f-hp') e.meal.intakeRating = 'all'
+  const box = interpretingBox(renderReport(assembleReport(input)))
+  assert.ok(!/documents a refusal/.test(box), `non-vacuity: no refusal sentence: ${box}`)
+  assert.ok(/The trial diet was not fed exclusively: 1 of \d+ feedings .*so this record shows an elimination that was broken, not a clean one\./.test(box), box)
+})
