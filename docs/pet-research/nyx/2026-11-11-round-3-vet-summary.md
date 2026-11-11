@@ -7,7 +7,7 @@
 1. **Possible 15% weight loss:** 4.40 kg (home, before 07-26, date uncertain) against 3.73 kg (your scale, 09-16). No weight since. Appetite not recorded since 08-17.
 2. **Vomiting is heavier, not lighter:** 13 episodes in the last 28 days, 6 since chicken was withdrawn on 10-28. On rabbit before the challenge: 18 in 85 days (1.5 a week; 20 of those days on prednisolone).
 3. **The cough is back and daily** after easing on prednisolone. Your 09-16 instruction was to call if it outlasted the full strength course.
-4. **Third ear flare.** Signs returned 37 and 43 days after each course of drops ended. The owner restarted the drops on 11-09 without an exam.
+4. **Third round of ear trouble.** It was back in the log 37 and 43 days after each course of drops ended (not recorded: whether the ears cleared in between). The owner restarted the drops on 11-09 without an exam.
 5. **No blood, urine, stool, parasite or imaging result** in six months; no preventive or dewormer logged.
 
 ## Vomiting episodes by period
@@ -16,14 +16,14 @@ Logs within 3 hours are one episode. "Within 30 min": the last logged feeding wa
 
 | Period | Days | All (per week) | Within 30 min of a feeding | Later | Found |
 |---|---|---|---|---|---|
-| Before the trial, 05-16 to 07-25 | 71.0 | 28 (2.8) | not readable: dry food was down all day | | 12 |
+| Before the trial, 05-16 to 07-25 | 71.0 | 28 (2.8) | at least 9 | not readable: dry food was down all day | 12 |
 | Rabbit trial, 07-26 to 09-20 | 57.0 | 12 (1.5) | 9 | 3 | 4 |
 | Rabbit, on prednisolone, 09-21 to 10-10 | 20.0 | 4 (1.4) | 3 | 1 | 0 |
 | Rabbit, prednisolone stopped, 10-11 to 10-18 | 7.6 | 2 (1.8) | 2 | 0 | 0 |
 | Chicken challenge, 10-18 to 10-28 | 10.4 | 5 (3.4) | 1 | 4 | 0 |
 | Rabbit again, 10-29 to 11-11 | 13.5 | 6 (3.1) | 4 | 2 | 1 |
 
-- **Timing against food type (an association, not a cause).** Of the 19 episodes within 30 minutes of a feeding since 07-26, 18 followed dry kibble (351 dry feedings) and 1 was a found vomit logged at a treat. None followed wet food (166 feedings; 259 since May). Ten of the 18 kibble meals were logged at the same sitting as the vomit. Slow feeder since 09-21: too few episodes to tell (ratio 0.86, 95% CI 0.20 to 2.97). Vomit or regurgitation: not yet observed; we will bring video.
+- **Timing against food type (an association, not a cause).** Of the 19 episodes within 30 minutes of a feeding since 07-26, 18 followed dry kibble (351 dry feedings) and 1 was a found vomit logged at a treat. None followed a wet meal (166 since 07-26). Ten of the 18 kibble meals were logged at the same sitting as the vomit. Slow feeder since 09-21: too few episodes to tell (ratio 0.86, 95% CI 0.20 to 2.97). Vomit or regurgitation: not yet observed; we will bring video.
 - **The four later episodes of 10-26 to 10-28** came 1 to 5 hours after meals, on days 8 to 10 of the chicken challenge, which began 8 days after her last prednisolone dose and added rice and tapioca.
 
 ## The rest of the record
