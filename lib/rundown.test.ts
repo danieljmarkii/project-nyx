@@ -58,6 +58,8 @@ import {
   pastMedEndDetail,
   earlierCoursesTile,
   pastMedCourseTile,
+  pastCourseTap,
+  currentMedTiles,
   splitPastCourses,
   buildPastMedications,
   pastMedsSectionLabel,
@@ -69,6 +71,7 @@ import {
   type MedItemName,
 } from './rundown';
 import type { MedicationCourse } from './medicationHistory';
+import { resolveMedAnchorRegimenId } from './profileFocus';
 import { dayKeyToLocalDate, localDayIndexOf } from './utils';
 import type { SinceVisitDay } from './visitWindow';
 
@@ -488,15 +491,46 @@ describe('earlierCoursesTile (the D3 fold)', () => {
 });
 
 describe('pastMedCourseTile (tap targets)', () => {
-  it('a regimen course taps to its detail screen', () => {
-    expect(pastMedCourseTile(course({ source: 'regimen', regimenId: 'reg-9' }), 'Metronidazole', TODAY).tap).toEqual(
-      { kind: 'medication', medicationId: 'reg-9' },
-    );
+  // CUL-1350: `/medication/[id]` reads the drug LIBRARY, so a regimen id there resolved no row.
+  it('a regimen course opens its drug\'s library item, never the course id', () => {
+    const tap = pastMedCourseTile(
+      course({ source: 'regimen', regimenId: 'reg-9', medicationItemId: 'item-metro' }),
+      'Metronidazole',
+      TODAY,
+    ).tap;
+    expect(tap).toEqual({ kind: 'medication', medicationItemId: 'item-metro' });
+  });
+  it('a regimen course with no library item opens History on that course', () => {
+    expect(pastCourseTap(course({ key: 'reg-9', regimenId: 'reg-9', medicationItemId: null }))).toEqual({
+      kind: 'history',
+      door: { scope: 'course', courseKey: 'reg-9' },
+    });
   });
   it('a dose-derived course (no regimen) taps to History, on that course (HV-11)', () => {
     expect(
       pastMedCourseTile(course({ key: 'item:item-1', source: 'doses', regimenId: null, drugName: null }), 'Zyrtec', TODAY).tap,
     ).toEqual({ kind: 'history', door: { scope: 'course', courseKey: 'item:item-1' } });
+  });
+});
+
+describe('currentMedTiles', () => {
+  it('None active is the designed empty row, opening the medications section', () => {
+    expect(currentMedTiles([], [], TODAY)).toEqual([
+      { key: 'meds', label: 'Current meds', value: 'None active', tap: { kind: 'meds' }, empty: true },
+    ]);
+  });
+  it('reads last dose off the shared course, and says so honestly when there is none', () => {
+    const regs = [
+      { id: 'reg-a', medicationItemId: 'item-a', drugName: 'Amoxicillin', dosesPerDay: 2 },
+      { id: 'reg-b', medicationItemId: null, drugName: 'Gabapentin', dosesPerDay: null },
+    ];
+    const tiles = currentMedTiles(
+      regs,
+      [course({ key: 'reg-a', regimenId: 'reg-a', isActive: true, lastDoseIso: '2026-07-10T12:00:00Z' })],
+      TODAY,
+    );
+    expect(tiles[0].value).toMatch(/· last /);
+    expect(tiles[1].value).toMatch(/no dose logged yet$/);
   });
 });
 
@@ -534,6 +568,7 @@ describe('buildPastMedications', () => {
     key: 'reg-metro',
     source: 'regimen',
     regimenId: 'reg-metro',
+    medicationItemId: 'item-metro',
     drugName: 'Metronidazole',
     startedAt: '2026-03-03',
     runDays: 14,
@@ -551,7 +586,7 @@ describe('buildPastMedications', () => {
     expect(tiles[0].tap).toEqual({ kind: 'history', door: { scope: 'course', courseKey: 'item:item-zyrtec' } });
     expect(tiles[1].label).toBe('Metronidazole');
     expect(tiles[1].detail).toMatch(/^Ended /);
-    expect(tiles[1].tap).toEqual({ kind: 'medication', medicationId: 'reg-metro' });
+    expect(tiles[1].tap).toEqual({ kind: 'medication', medicationItemId: 'item-metro' });
   });
 
   it('falls back to "Medication" for a dose-derived course with no cached name', () => {
@@ -689,7 +724,7 @@ describe('buildRundown', () => {
     mockGetAllAsync.mockImplementation(async (sql: string) => {
       // readActiveRegimens (the "Current meds" block) — matched by its status filter.
       if (sql.includes("status = 'active'")) {
-        return [{ id: 'reg-1', drug_name: 'Cerenia', doses_per_day: null, last_dose: at(7, 10, 9) }];
+        return [{ id: 'reg-1', medication_item_id: 'item-cerenia', drug_name: 'Cerenia', doses_per_day: null }];
       }
       // The shared visit bound (`readLatestVisitBefore`): every live visit day, filtered
       // in code. Jul 18 is the rundown's own day and Jul 25 is ahead: neither anchors.
@@ -709,9 +744,18 @@ describe('buildRundown', () => {
       if (sql.includes('SELECT started_at FROM medications')) {
         return [{ started_at: '2026-07-02' }, { started_at: '2026-06-01' }];
       }
-      // The three past-meds reads have no history in this test → empty (past block absent).
-      if (sql.includes('target_duration_doses')) return []; // readAllRegimens
-      if (sql.includes('ma.medication_id AS medication_id')) return []; // readAllDoses
+      // The course reads: the one active regimen and its one linked dose (its last dose),
+      // so no past course exists and the past block is absent.
+      if (sql.includes('target_duration_doses')) {
+        return [{
+          id: 'reg-1', medication_item_id: 'item-cerenia', drug_name: 'Cerenia', dose_amount: null,
+          route: null, doses_per_day: null, schedule_notes: null, started_at: '2026-07-01',
+          target_duration_days: null, target_duration_doses: null, status: 'active', ended_at: null,
+        }];
+      }
+      if (sql.includes('ma.medication_id AS medication_id')) {
+        return [{ medication_id: 'reg-1', medication_item_id: 'item-cerenia', adherence: 'given', deleted_at: null, occurred_at: at(7, 10, 9) }];
+      }
       if (sql.includes('medication_items_cache')) return []; // readMedicationItemNames
       if (sql.includes('event_type = ?')) {
         // 7 vomit events all at the same instant → one band, TZ-robust 7-of-7 cluster.
@@ -799,7 +843,7 @@ describe('buildRundown', () => {
     expect(metro?.value).toContain('14 days'); // DATE-derived span — TZ-stable
     expect(metro?.value).toContain('2 doses');
     expect(metro?.detail).toMatch(/^Ended /);
-    expect(metro?.tap).toEqual({ kind: 'medication', medicationId: 'reg-metro' });
+    expect(metro?.tap).toEqual({ kind: 'medication', medicationItemId: 'item-metro' });
 
     // The ad-hoc course renders brand-first, "No end recorded" (H1: silence never an ending).
     const zyrtec = past.find((t) => t.label === 'Zyrtec');
@@ -811,6 +855,78 @@ describe('buildRundown', () => {
     expect(zyrtec?.tap).toEqual({ kind: 'history', door: { scope: 'course', courseKey: 'item:item-zyrtec' } });
 
     assertNoReassuranceAcrossTiles(r);
+  });
+
+  // CUL-1350. Every medication tile's door must resolve on the screen it opens: the Pet tab
+  // resolves a med key against its active regimens (`resolveMedAnchorRegimenId`), and
+  // `/medication/[id]` reads `medication_items` by id. Driven through the real builder.
+  it('every medication tile opens a screen that resolves its id (CUL-1350)', async () => {
+    const regimenRows = [
+      {
+        id: 'reg-amox', medication_item_id: 'item-amox', drug_name: 'Amoxicillin', dose_amount: null,
+        route: null, doses_per_day: 2, schedule_notes: null, started_at: '2026-07-28',
+        target_duration_days: 10, target_duration_doses: null, status: 'active', ended_at: null,
+      },
+      {
+        id: 'reg-gaba', medication_item_id: null, drug_name: 'Gabapentin', dose_amount: null,
+        route: null, doses_per_day: null, schedule_notes: null, started_at: '2026-06-01',
+        target_duration_days: null, target_duration_doses: null, status: 'active', ended_at: null,
+      },
+      {
+        id: 'reg-metro', medication_item_id: 'item-metro', drug_name: 'Metronidazole', dose_amount: null,
+        route: null, doses_per_day: 2, schedule_notes: null, started_at: '2026-03-03',
+        target_duration_days: 14, target_duration_doses: null, status: 'completed', ended_at: '2026-03-16',
+      },
+      {
+        id: 'reg-pred', medication_item_id: null, drug_name: 'Prednisolone', dose_amount: null,
+        route: null, doses_per_day: 1, schedule_notes: null, started_at: '2026-05-01',
+        target_duration_days: 7, target_duration_doses: null, status: 'completed', ended_at: '2026-05-07',
+      },
+    ];
+    const active = regimenRows.filter((r) => r.status === 'active');
+    const libraryItemIds = new Set(['item-amox', 'item-metro']);
+    mockGetAllAsync.mockImplementation(async (sql: string) => {
+      if (sql.includes("status = 'active'")) {
+        return [...active]
+          .sort((a, b) => b.started_at.localeCompare(a.started_at))
+          .map((r) => ({ id: r.id, medication_item_id: r.medication_item_id, drug_name: r.drug_name, doses_per_day: r.doses_per_day }));
+      }
+      if (sql.includes('target_duration_doses')) return regimenRows;
+      if (sql.includes('ma.medication_id AS medication_id')) {
+        return [
+          // Amoxicillin's only dose was logged with no course link, inside its window: the shared
+          // rule attributes it by drug, so the tile must not read "no dose logged yet".
+          { medication_id: null, medication_item_id: 'item-amox', adherence: 'given', deleted_at: null, occurred_at: new Date(2026, 7, 1, 12).toISOString() },
+          { medication_id: 'reg-metro', medication_item_id: 'item-metro', adherence: 'given', deleted_at: null, occurred_at: '2026-03-05T12:00:00Z' },
+          { medication_id: 'reg-pred', medication_item_id: null, adherence: 'given', deleted_at: null, occurred_at: '2026-05-03T12:00:00Z' },
+        ];
+      }
+      return [];
+    });
+
+    const r = await buildRundown('pet-1', 'Pixel', Date.parse('2026-08-04T12:00:00Z'));
+    const medTiles = [...r.tiles.filter((t) => t.key === 'meds'), ...r.pastMedications];
+    expect(medTiles.map((t) => t.label)).toEqual(['Amoxicillin', 'Gabapentin', 'Prednisolone', 'Metronidazole']);
+
+    const regimenIds = new Set(regimenRows.map((r) => r.id));
+    for (const tile of medTiles) {
+      const tap = tile.tap;
+      if (tap?.kind === 'meds') {
+        // An active course lands on ITS row of the Pet tab's medications card.
+        const regimen = active.find((a) => a.drug_name === tile.label);
+        expect(resolveMedAnchorRegimenId(active, tap.medKey)).toBe(regimen?.id);
+      } else if (tap?.kind === 'medication') {
+        expect(libraryItemIds.has(tap.medicationItemId)).toBe(true);
+        expect(regimenIds.has(tap.medicationItemId)).toBe(false);
+      } else {
+        // History's course door, keyed by the same derivation History runs.
+        expect(tap).toEqual({ kind: 'history', door: { scope: 'course', courseKey: 'reg-pred' } });
+        expect(r.facts.courses.some((c) => c.key === 'reg-pred')).toBe(true);
+      }
+    }
+    expect(medTiles.find((t) => t.label === 'Metronidazole')?.tap).toEqual({ kind: 'medication', medicationItemId: 'item-metro' });
+    expect(medTiles.find((t) => t.label === 'Amoxicillin')?.value).toBe('Twice a day · last Aug 1');
+    expect(medTiles.find((t) => t.label === 'Gabapentin')?.value).toMatch(/no dose logged yet$/);
   });
 
   it('a visit saved TODAY anchors nothing until tomorrow (H-11): no window, never "since today"', async () => {

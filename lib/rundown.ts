@@ -45,6 +45,7 @@ import {
   type MedicationHistoryRegimen,
 } from './medicationHistory';
 import { drugDisplayName, type AttributableDose } from './medications';
+import { medStripKeyForRegimen } from './medStrip';
 
 // ── Tap targets ─────────────────────────────────────────────────────────────
 // Semantic (route-agnostic) so the pure layer stays testable; the screen maps
@@ -61,8 +62,13 @@ export type RundownTap =
   | { kind: 'symptom'; symptomType: string } // → /insights/[metric]
   | { kind: 'patterns' } //                     → /insights
   | { kind: 'weight' } //                       → /(tabs)/profile?focus=weight (CUL-753)
-  | { kind: 'medication'; medicationId: string } // → /medication/[id]
-  | { kind: 'meds' } //                         → /(tabs)/profile?focus=medications (no single med)
+  // The drug library's item screen (`/medication/[id]` reads `medication_items`), so the id is
+  // ALWAYS a library-item id, never a course's `medications.id` (CUL-1350: a course id there
+  // read no row and the screen said "Medication not found").
+  | { kind: 'medication'; medicationItemId: string } // → /medication/[id]
+  // The Pet tab's medications card. `medKey` (`medStripKeyForRegimen`) lands it on one
+  // active course's row; absent, the section (the *None active* tile names no course).
+  | { kind: 'meds'; medKey?: string } //          → /(tabs)/profile?focus=medications
   | { kind: 'foods' } //                        → /(tabs)/foods
   | { kind: 'history'; door: RundownHistoryDoor } // → /(tabs)/history (`rundownHistoryHref`)
   | { kind: 'log-visit' }; //                   → /vet-visits?add=happened (none logged yet)
@@ -492,9 +498,20 @@ export function earlierCoursesTile(count: number): RundownTile {
 }
 
 /**
- * One past-course row. Regimen courses tap to their detail screen (`/medication/[id]`,
- * where PR 3 renders the past-course facts); a dose-derived course has no regimen, so it
- * taps to History (its doses' home). Normal emphasis — a "No end recorded" course is a real
+ * Where a PAST course's row opens (CUL-1350). There is no course screen yet, so a regimen
+ * course opens its drug's library item when it names one (`/medication/[id]` reads
+ * `medication_items`, so it is handed the item id, never the regimen's). Anything else opens
+ * History on that course's doses, the door a dose-derived course has always taken: History
+ * keys courses through the same derivation (`courseKeysOf`), so both kinds of key resolve.
+ */
+export function pastCourseTap(course: MedicationCourse): RundownTap {
+  return course.source === 'regimen' && course.medicationItemId
+    ? { kind: 'medication', medicationItemId: course.medicationItemId }
+    : { kind: 'history', door: { scope: 'course', courseKey: course.key } };
+}
+
+/**
+ * One past-course row; its door is `pastCourseTap`. Normal emphasis — a "No end recorded" course is a real
  * course, not a designed-empty row, so it is NOT faded (the register line carries the
  * distinction, not the styling).
  */
@@ -508,11 +525,39 @@ export function pastMedCourseTile(
     label: drugName,
     value: pastMedTileValue(course, today),
     detail: pastMedEndDetail(course, today),
-    tap:
-      course.source === 'regimen' && course.regimenId
-        ? { kind: 'medication', medicationId: course.regimenId }
-        : { kind: 'history', door: { scope: 'course', courseKey: course.key } },
+    tap: pastCourseTap(course),
   };
+}
+
+/**
+ * The *Current meds* block: one tile per active regimen, or the designed *None active* row.
+ *
+ * Each tile opens the Pet tab's medications card ON its course (`medStripKeyForRegimen`, the
+ * key the Pet tab resolves back to a row), never `/medication/[id]`, which reads the drug
+ * library and cannot resolve a course id (CUL-1350). Its last dose is the course's
+ * `lastDoseIso` from the ONE shared derivation (`deriveMedicationCourses` → `attributeDoses`),
+ * so a dose logged before the course existed, matched by drug and window, counts here as it
+ * does on every other surface; a bare `medication_id` join read it as never dosed.
+ */
+export function currentMedTiles(
+  regimens: ActiveRegimen[],
+  courses: MedicationCourse[],
+  today: string,
+): RundownTile[] {
+  if (regimens.length === 0) {
+    return [{ key: 'meds', label: 'Current meds', value: 'None active', tap: { kind: 'meds' }, empty: true }];
+  }
+  const lastDoseByRegimen = new Map<string, string | null>();
+  for (const c of courses) if (c.regimenId) lastDoseByRegimen.set(c.regimenId, c.lastDoseIso);
+  return regimens.map((reg) => ({
+    key: 'meds' as const,
+    label: reg.drugName,
+    value: `${frequencyLabel(reg.dosesPerDay)} · ${lastDoseLabel(lastDoseByRegimen.get(reg.id) ?? null, today)}`,
+    tap: {
+      kind: 'meds' as const,
+      medKey: medStripKeyForRegimen({ id: reg.id, medication_item_id: reg.medicationItemId }),
+    },
+  }));
 }
 
 /**
@@ -594,30 +639,25 @@ export function rundownToPlainText(rundown: Rundown): string {
 
 // ── Local reads (thin; the pure logic above does the work) ──────────────────
 
-interface ActiveRegimen {
+export interface ActiveRegimen {
   id: string;
+  medicationItemId: string | null;
   drugName: string;
   dosesPerDay: number | null;
-  lastDoseIso: string | null;
 }
 
-/** Active regimens for a pet, most-recently-started first, each with its last logged dose. */
+/** Active regimens for a pet, most-recently-started first. Their last dose comes from the
+ *  shared course derivation (`currentMedTiles`), never a join of its own. */
 async function readActiveRegimens(petId: string): Promise<ActiveRegimen[]> {
   const db = getDb();
   const rows = await db.getAllAsync<{
     id: string;
+    medication_item_id: string | null;
     drug_name: string;
     doses_per_day: number | null;
-    last_dose: string | null;
   }>(
-    // Last dose is the newest non-deleted administration event linked to this
-    // regimen (the meds→administrations→events soft-delete chain), mirroring the
-    // occurred_at ordering `recentMedicationsQuery` uses.
-    `SELECT m.id AS id, m.drug_name AS drug_name, m.doses_per_day AS doses_per_day,
-            (SELECT MAX(e.occurred_at)
-               FROM medication_administrations ma
-               JOIN events e ON e.id = ma.event_id
-              WHERE ma.medication_id = m.id AND e.deleted_at IS NULL) AS last_dose
+    `SELECT m.id AS id, m.medication_item_id AS medication_item_id, m.drug_name AS drug_name,
+            m.doses_per_day AS doses_per_day
        FROM medications m
       WHERE m.pet_id = ? AND m.status = 'active'
       ORDER BY m.started_at DESC`,
@@ -625,9 +665,9 @@ async function readActiveRegimens(petId: string): Promise<ActiveRegimen[]> {
   );
   return (rows ?? []).map((r) => ({
     id: r.id,
+    medicationItemId: r.medication_item_id,
     drugName: r.drug_name,
     dosesPerDay: r.doses_per_day,
-    lastDoseIso: r.last_dose,
   }));
 }
 
@@ -939,25 +979,10 @@ export async function buildRundown(
     });
   }
 
-  // 5 — Current meds (one tile per active regimen; PRN vs schedule + last dose).
-  if (regimens.length === 0) {
-    tiles.push({
-      key: 'meds',
-      label: 'Current meds',
-      value: 'None active',
-      tap: { kind: 'meds' },
-      empty: true,
-    });
-  } else {
-    for (const reg of regimens) {
-      tiles.push({
-        key: 'meds',
-        label: reg.drugName,
-        value: `${frequencyLabel(reg.dosesPerDay)} · ${lastDoseLabel(reg.lastDoseIso, today)}`,
-        tap: { kind: 'medication', medicationId: reg.id },
-      });
-    }
-  }
+  // 5 — Current meds (one tile per active regimen; PRN vs schedule + last dose). The ONE
+  // shared course derivation (block 7 reads it too) supplies each course's last dose.
+  const courses = deriveMedicationCourses({ regimens: allRegimens, doses: allDoses });
+  tiles.push(...currentMedTiles(regimens, courses, today));
 
   // 6 — Since the last vet visit (or an honest "none logged" forward state).
   if (!lastVisit) {
@@ -986,7 +1011,6 @@ export async function buildRundown(
   // (D3 ratified 2026-08-04). Active courses are dropped here — the current-meds tiles above own
   // them — so a course is never duplicated across the two blocks. Deterministic + offline:
   // the derivation is pure and every input is a local-mirror read.
-  const courses = deriveMedicationCourses({ regimens: allRegimens, doses: allDoses });
   const pastMedications = buildPastMedications(courses, medItemNames, nowMs);
 
   return {
