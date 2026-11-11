@@ -32,6 +32,15 @@ function mockServerFrom(table: string) {
       }
       return { error: null };
     },
+    select: () => ({
+      eq: (_col: string, id: string) => ({
+        maybeSingle: async () => {
+          const row = mockServer.items.get(id);
+          if (!row || mockServer.hidden.has(id)) return { data: null, error: null };
+          return { data: { photo_paths: row.photo_paths }, error: null };
+        },
+      }),
+    }),
     update: (patch: Row) => ({
       eq: (_col: string, id: string) => ({
         select: async () => {
@@ -66,6 +75,7 @@ function mockAdapter() {
 }
 
 const mockUploadPhoto = jest.fn();
+const mockCompress = jest.fn();
 
 jest.mock('expo-sqlite', () => ({ openDatabaseSync: () => mockAdapter() }));
 jest.mock('./supabase', () => ({
@@ -77,7 +87,7 @@ jest.mock('./supabase', () => ({
 jest.mock('./storage', () => ({
   ...jest.requireActual('./storage'),
   uploadPhoto: (...args: unknown[]) => mockUploadPhoto(...args),
-  compressForUpload: jest.fn(async () => 'file:///compressed.jpg'),
+  compressForUpload: (...args: unknown[]) => mockCompress(...args),
   // The durable copy is a filesystem move; here it keeps the name it was given.
   persistCapture: (uri: string) => uri,
 }));
@@ -89,7 +99,7 @@ import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 import { MAX_SYNC_ATTEMPTS } from './syncQueue';
 import { buildMedicationPhotoPath, MEDICATION_PHOTOS_BUCKET } from './storage';
 import { queueMedicationLabelUpload } from './medicationLabelQueue';
-import { syncPendingMedicationLabels } from './sync';
+import { notifySignedOut, syncPendingMedicationLabels } from './sync';
 
 const ITEM = 'item-1';
 const PATH = buildMedicationPhotoPath('user-1', ITEM, '0-label');
@@ -128,6 +138,8 @@ beforeEach(async () => {
   mockServer.hidden.clear();
   mockServer.updates.length = 0;
   mockUploadPhoto.mockReset();
+  mockCompress.mockReset();
+  mockCompress.mockResolvedValue('file:///compressed.jpg');
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 
@@ -223,5 +235,47 @@ describe('what the queue never claims', () => {
     const row = queueRow();
     expect(row.synced).toBe(0);
     expect(row.sync_error).not.toBeNull();
+  });
+
+  it('a label the server already holds wins: the queued one is retired unsent', async () => {
+    // The owner replaced the label on the detail screen (here or on another phone)
+    // before the queue drained. Same key, same column: sending the queued photo would
+    // put the older capture back over the owner's choice.
+    await captureSavedOffline();
+    mockServer.items.set(ITEM, { id: ITEM, generic_name: 'Prednisolone', photo_paths: [PATH] });
+    mockUploadPhoto.mockResolvedValue(undefined);
+    await syncPendingMedicationLabels();
+    expect(mockUploadPhoto).not.toHaveBeenCalled();
+    expect(mockServer.updates).toHaveLength(0);
+    expect(queueRow()).toMatchObject({ synced: 1 });
+  });
+
+  it('a label that cannot be re-encoded is never sent as the original (EXIF), and spends the budget', async () => {
+    await captureSavedOffline();
+    mockCompress.mockRejectedValue(new Error('could not decode image'));
+    mockUploadPhoto.mockResolvedValue(undefined);
+    await syncPendingMedicationLabels();
+    expect(mockUploadPhoto).not.toHaveBeenCalled();
+    expect(queueRow()).toMatchObject({ synced: 0, sync_attempts: 1 });
+  });
+
+  it('a second save of the same drug keeps one queued label, the newest', async () => {
+    await captureSavedOffline();
+    await queueMedicationLabelUpload(
+      { runAsync: (sql, params) => mockAdapter().runAsync(sql, params) },
+      { medicationItemId: ITEM, localUri: 'file:///docs/retake.jpg', storagePath: PATH },
+      NOW,
+    );
+    const rows = mockLocal.db!.prepare('SELECT local_uri FROM medication_label_uploads').all() as Row[];
+    expect(rows).toEqual([{ local_uri: 'file:///docs/retake.jpg' }]);
+  });
+
+  it('a sign-out during the upload stops the pass before anything else is written', async () => {
+    await captureSavedOffline();
+    mockUploadPhoto.mockImplementation(async () => { notifySignedOut(); });
+    await syncPendingMedicationLabels();
+    expect(mockServer.updates).toHaveLength(0);
+    expect(cachePhoto()).toBeNull();
+    expect(queueRow()).toMatchObject({ synced: 0, sync_attempts: 0 });
   });
 });

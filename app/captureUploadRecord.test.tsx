@@ -46,6 +46,9 @@ jest.mock('../lib/storage', () => ({
   ...jest.requireActual('../lib/storage'),
   uploadPhoto: jest.fn(),
   compressForUpload: jest.fn(async () => 'file:///compressed.jpg'),
+  // The queue's durable copy is a filesystem move the jest mock cannot make; the
+  // queue write itself is what these tests read (CUL-1920).
+  persistCapture: (uri: string) => uri,
 }));
 jest.mock('../hooks/useReducedMotion', () => ({ useReducedMotion: jest.fn(() => true) }));
 jest.mock('../hooks/useAppActive', () => ({ useAppActive: jest.fn(() => true) }));

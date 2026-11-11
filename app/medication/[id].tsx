@@ -353,6 +353,13 @@ export default function MedicationDetailScreen() {
           'UPDATE medication_items_cache SET photo_path = ? WHERE id = ?',
           [storagePath, row.id],
         );
+        // CUL-1920: a label still queued from an offline capture is older than the one
+        // just chosen, and shares its key. Retire it unsent (marked, not deleted, so the
+        // sign-out wipe still finds its file through the row).
+        await getDb().runAsync(
+          'UPDATE medication_label_uploads SET synced = 1 WHERE id = ?',
+          [row.id],
+        );
       } catch (err) {
         console.warn('[medication-detail] cache photo update failed:', err);
       }

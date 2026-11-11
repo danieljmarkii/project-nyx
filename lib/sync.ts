@@ -2635,11 +2635,25 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
 //     never sent. The sign-out wipe deletes this table, so the only way to reach
 //     it is a wipe that failed; Storage would refuse it with a 403, which reads as
 //     transient and would retry for ever, so it is parked here as terminal.
+//   • A label the server already holds wins. The detail screen's "replace the
+//     label" writes the same fixed key (`…/0-label.jpg`) and the same column, so a
+//     queued label sent after it would put the OLDER photo back over the owner's
+//     choice. The drain reads photo_paths first and retires its row unsent when the
+//     slot is already filled (the detail screen also retires the row itself, for
+//     the replace made on this phone). (rls-privacy-reviewer, CUL-1920.)
+//   • The label is re-encoded with compressForUpload, never prepareAttachmentUpload:
+//     that helper uploads the ORIGINAL when compression fails, which would carry the
+//     photo's EXIF into the bucket. Here a failed re-encode throws, and the upload
+//     classifier spends the budget instead.
+//   • A sign-out mid-pass stops it before any further write (the epoch check the
+//     pulls use), so nothing the pass learned lands in the next account's store.
 export function syncPendingMedicationLabels(): Promise<void> {
   return serializeQueuePush('medication_label_uploads', drainMedicationLabelsQueue);
 }
 
 async function drainMedicationLabelsQueue(): Promise<void> {
+  const epoch = currentSignOutEpoch();
+  const stale = () => currentSignOutEpoch() !== epoch;
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const uid = session.user.id;
@@ -2653,6 +2667,7 @@ async function drainMedicationLabelsQueue(): Promise<void> {
 
   const own = pending.filter((r) => r.storage_path.startsWith(`${uid}/`));
   for (const r of pending) {
+    if (stale()) return;
     if (!own.includes(r)) {
       await applyFailurePolicy(db, 'medication_label_uploads', r, 'terminal',
         'label belongs to another account');
@@ -2663,23 +2678,46 @@ async function drainMedicationLabelsQueue(): Promise<void> {
   await presyncMedicationItems(db, uid, own.map((r) => r.id));
 
   for (const row of own) {
+    if (stale()) return;
+
+    const current = await supabase
+      .from('medication_items')
+      .select('photo_paths')
+      .eq('id', row.id)
+      .maybeSingle();
+    if (current.error) {
+      console.warn('[sync] medication label read failed:', current.error.message);
+      await recordPushFailure(db, 'medication_label_uploads', row, current.error);
+      continue;
+    }
+    const held = (current.data as { photo_paths?: string[] | null } | null)?.photo_paths ?? [];
+    if (held.length > 0) {
+      // The slot is filled (a replace on the detail screen, here or on another phone,
+      // or this drain's own earlier pass): retire the row unsent.
+      if (stale()) return;
+      await markSyncedInsertOnly(db, 'medication_label_uploads', [row.id]);
+      continue;
+    }
+
     try {
-      // Compress and strip EXIF before the upload, as every re-upload path does.
-      const prep = await prepareAttachmentUpload(row.local_uri, 'image/jpeg');
-      await uploadPhoto(MEDICATION_PHOTOS_BUCKET, row.storage_path, prep.uri, prep.mimeType);
+      const compressed = await compressForUpload(row.local_uri);
+      await uploadPhoto(MEDICATION_PHOTOS_BUCKET, row.storage_path, compressed, 'image/jpeg');
     } catch (e) {
-      // A network throw costs nothing (the offline case); a permanent one spends
-      // the budget and quarantines (B-586).
+      // A network throw costs nothing (the offline case); a permanent one, or a
+      // re-encode that failed, spends the budget and quarantines (B-586).
       console.warn('[sync] medication label upload failed:', e);
+      if (stale()) return;
       await recordUploadFailure(db, 'medication_label_uploads', row, e);
       continue;
     }
+    if (stale()) return;
 
     const { data, error } = await supabase
       .from('medication_items')
       .update({ photo_paths: [row.storage_path] })
       .eq('id', row.id)
       .select('id');
+    if (stale()) return;
     if (error) {
       console.warn('[sync] medication label photo_paths update failed:', error.message);
       await recordPushFailure(db, 'medication_label_uploads', row, error);
@@ -2690,7 +2728,9 @@ async function drainMedicationLabelsQueue(): Promise<void> {
       continue;
     }
 
-    // The photo is on the server and the row names it: only now does the cache claim it.
+    // The photo is on the server and the row names it: only now does the cache claim
+    // it. A cache row that is gone (changes 0) is left to refreshMedicationCache, which
+    // pulls the row this update just wrote at the end of the same sync cycle.
     await db.runAsync(
       'UPDATE medication_items_cache SET photo_path = ? WHERE id = ?',
       [row.storage_path, row.id],
