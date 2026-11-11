@@ -2108,8 +2108,16 @@ function parseQuestionsForPush(raw: string | null): unknown[] | null {
 // that bypass silently clobbered the compressed object with the multi-MB original,
 // which then OOM'd analyze-vomit (a 546 memory kill) and left the read stuck.
 // Non-images (e.g. a vet-visit PDF) and already-remote rows ('' / non-file
-// local_uri) pass through untouched; a compression failure falls back to the
-// original so a re-upload is never blocked. Exported for unit testing.
+// local_uri) pass through untouched.
+//
+// CUL-2708 — a failed re-encode THROWS; it never falls back to the original. The
+// re-encode is also what strips the photo's EXIF, GPS included, so the original
+// carries the place the owner took it, and an event photo can reach a shared vet
+// report. The queue drains catch the throw into recordUploadFailure, which reads a
+// local (non-Storage) throw as 'rejected': the row spends its retry budget and then
+// quarantines with this message as its reason, and the original never goes up.
+// ensureEventAttachmentsSynced skips the upload on the same throw. Same rule the
+// capture paths and the medication label drain already follow. Exported for tests.
 export async function prepareAttachmentUpload(
   localUri: string,
   mimeType: string,
@@ -2118,7 +2126,8 @@ export async function prepareAttachmentUpload(
     try {
       return { uri: await compressForUpload(localUri), mimeType: 'image/jpeg' };
     } catch (e) {
-      console.warn('[sync] attachment compress failed, uploading original:', e);
+      const reason = e instanceof Error ? e.message : String(e);
+      throw new Error(`attachment re-encode failed: ${reason}`);
     }
   }
   return { uri: localUri, mimeType };
