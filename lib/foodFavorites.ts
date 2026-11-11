@@ -3,7 +3,7 @@
 // free-fed / rated filtering, the sample floor, the rate bar, and the recency
 // guard) lives in the pure selectReliableFavorites in lib/food — unit-tested and
 // adversarially reviewed. This wrapper only reads SQLite + resolves the free-fed
-// set, applies the clinical decline gate, and delegates.
+// spans, applies the clinical decline gate, and delegates.
 //
 // It is its OWN module rather than another lib/db function so that importing the
 // free-fed helper + the decline detector (lib/feedingArrangements / lib/analytics,
@@ -12,8 +12,9 @@
 // cores keep testing without the expo-sqlite stack; this module is the one place
 // the pieces are wired to the database.
 import { getDb } from './db';
-import { getActiveArrangementsForPet } from './feedingArrangements';
-import { getIntakeDecline, type Species } from './analytics';
+import { getIntakeDecline, readFreeFedIntakeSpans, type Species } from './analytics';
+import { isFreeFedIntakeMeal, mayBeFreeFedIntakeMeal, type FreeFedIntakeSpan } from './freeFedIntake';
+import { FINISHED_SCORE, INTAKE_SCORE } from './intakeEvidence';
 import { selectReliableFavorites, shouldSuppressFavorites, type FavoriteMealRow, type ReliableFavorite } from './food';
 
 // One row per non-deleted meal of a CACHED (identifiable) food for this pet — a
@@ -24,7 +25,7 @@ import { selectReliableFavorites, shouldSuppressFavorites, type FavoriteMealRow,
 // no-op). Scope is on m.pet_id (the meals→events FK guarantees the event is this
 // pet's); we read rating + occurred_at per meal and let the pure core do the
 // grouping and every exclusion, so the SQL stays a dumb projection.
-interface FavoriteRow {
+export interface FavoriteRow {
   food_item_id: string;
   brand: string;
   product_name: string;
@@ -72,16 +73,51 @@ export const FAVORITE_MEALS_SQL = `SELECT f.id AS food_item_id, f.brand, f.produ
            SELECT 1 FROM meal_components mc WHERE mc.event_id = m.event_id AND mc.deleted_at IS NULL
          )`;
 
+/**
+ * The shelf's meal rows, minus every rating logged while ITS food's bowl was down (CUL-1551).
+ * BY DATE, NEVER BY FOOD: the same spans and the same predicate every other intake surface
+ * reads (`readFreeFedIntakeSpans` + `isFreeFedIntakeMeal`, CUL-1086 / CUL-1237). The old rule
+ * dropped every meal of a food free-fed TODAY, so a bowl left out last month and since taken
+ * up had its "ate it all" counted as a watched meal, and a meal-fed food set down as a bowl
+ * this week lost its watched ratings. A non-finite time is kept here and dropped by the core.
+ *
+ * ASYMMETRIC where an instant is missing (a pre-076 take-up day): a FINISHED rating counts only
+ * when it was certainly watched (`mayBeFreeFedIntakeMeal`, the decline detector's own
+ * `certainlyWatchedMeal` rule), and any other rating is set aside only when it was certainly a
+ * bowl (`isFreeFedIntakeMeal`). A possible bowl's "ate it all" must never become the latest
+ * rating that clears the recency guard over a watched refusal; a possible bowl's refusal still
+ * suppresses (adversarial pass on CUL-1551).
+ * EXPORTED so the test drives the production filter, not a copy of it.
+ */
+export function observedFavoriteRows(rows: readonly FavoriteRow[], spans: readonly FreeFedIntakeSpan[]): FavoriteMealRow[] {
+  const out: FavoriteMealRow[] = [];
+  for (const r of rows) {
+    const ms = Date.parse(r.occurred_at);
+    const finished = (INTAKE_SCORE[r.intake_rating as string] ?? 0) >= FINISHED_SCORE;
+    const setAside = finished ? mayBeFreeFedIntakeMeal : isFreeFedIntakeMeal;
+    if (setAside(r.food_item_id, ms, spans)) continue;
+    out.push({
+      foodItemId: r.food_item_id,
+      brand: r.brand,
+      productName: r.product_name,
+      foodType: r.food_type,
+      intakeRating: r.intake_rating,
+      ms,
+    });
+  }
+  return out;
+}
+
 export async function getReliableFavorites(petId: string, species: Species): Promise<ReliableFavorite[]> {
   const db = getDb();
   // All reads in parallel — the common (no-watch) path pays one round-trip, not
   // three. On the rare active-watch load BOTH the favorites query and the
-  // arrangements read are discarded (the early return below); they're local
+  // spans read are discarded (the early return below); they're local
   // SQLite reads, so optimizing the common case wins over saving them.
-  const [decline, rows, arrangements] = await Promise.all([
+  const [decline, rows, spans] = await Promise.all([
     getIntakeDecline(petId, species),
     db.getAllAsync<FavoriteRow>(FAVORITE_MEALS_SQL, [petId]),
-    getActiveArrangementsForPet(petId),
+    readFreeFedIntakeSpans(petId),
   ]);
 
   // Unless the decline read is armed and quiet ('none'), the whole shelf stays quiet
@@ -89,17 +125,7 @@ export async function getReliableFavorites(petId: string, species: Species): Pro
   // unit-tested (lib/food shouldSuppressFavorites), not an untested branch here.
   if (shouldSuppressFavorites(decline.status)) return [];
 
-  const mealRows: FavoriteMealRow[] = rows.map((r) => ({
-    foodItemId: r.food_item_id,
-    brand: r.brand,
-    productName: r.product_name,
-    foodType: r.food_type,
-    intakeRating: r.intake_rating,
-    ms: Date.parse(r.occurred_at),
-  }));
-  // Currently free-fed foods for this pet — their meals' intake isn't directly
-  // observed, so the pure core drops them from the rate denominator (§11 #6).
-  const freeFedFoodIds = new Set(arrangements.map((a) => a.food_item_id));
-
-  return selectReliableFavorites(mealRows, { freeFedFoodIds, nowMs: Date.now() });
+  // Free-fed ratings are set aside here, by the bowl in force when each was logged (§11 #6),
+  // so the core's by-food set stays empty: there is no food that is free-fed for all time.
+  return selectReliableFavorites(observedFavoriteRows(rows, spans), { freeFedFoodIds: new Set(), nowMs: Date.now() });
 }
