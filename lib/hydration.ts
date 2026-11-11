@@ -318,6 +318,11 @@ export const LOCAL_WIPE_TABLES = [
   // medication set stays contiguous and still lands before its parent tables.
   'medication_administrations',
   'medications',
+  // CUL-1920 medication_label_uploads — a medicine label photographed offline,
+  // waiting to upload. A TRUST & SAFETY REQUIREMENT: a prescription label names the
+  // clinic, the owner and the pet. clearLocalData deletes the file through its
+  // local_uri before this list deletes the row, so neither survives a sign-out.
+  'medication_label_uploads',
   'medication_items_cache',
   // B-186 weight_checks — the weight-measurement child, FK→events ON DELETE
   // CASCADE locally, so it MUST precede events (same rule as

@@ -965,6 +965,7 @@ export const LOCAL_URI_TABLES_SQL = `
 //     table fails the build here too rather than only being *silently handled*.
 export const KNOWN_LOCAL_URI_TABLES = [
   'event_attachments',
+  'medication_label_uploads',
   'vet_documents',
   'vet_visit_attachments',
 ] as const;

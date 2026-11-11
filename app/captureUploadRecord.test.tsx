@@ -269,12 +269,22 @@ describe('food capture: what the commit says about the read', () => {
 });
 
 describe('medication capture: the commit records only a label that uploaded', () => {
-  it('offline: no photo path on the row or in the cache', async () => {
+  // CUL-1920: offline, the label is queued for the next sync instead of dropped. Until
+  // that upload lands, nothing claims it: the row's upsert leaves photo_paths out (so a
+  // late upsert cannot clobber what the queue writes), and the cache holds no path.
+  it('offline: the label is queued, and neither the row nor the cache names it', async () => {
     uploadMock.mockRejectedValue(new Error('Network request failed'));
     await saveMedication();
     expect(uploadMock).toHaveBeenCalled();
-    expect(savedRow('medication_items').photo_paths).toEqual([]);
+    const call = mockUpsert.mock.calls.find((c) => 'generic_name' in ((c as unknown[])[0] as object));
+    expect(call).toBeTruthy();
+    expect('photo_paths' in ((call as unknown[])[0] as object)).toBe(false);
     expect(cachedPhotoPath('medication_items_cache', MED_CACHE_PHOTO)).toBeNull();
+    const queued = mockRunAsync.mock.calls.find((c) =>
+      String((c as unknown[])[0]).includes('INTO medication_label_uploads'));
+    expect(queued).toBeTruthy();
+    const params = (queued as unknown[])[1] as string[];
+    expect(params[2]).toMatch(/^u1\/.+\/0-label/);
   });
 
   it('uploaded: the label is recorded on the row and in the cache', async () => {
@@ -284,5 +294,8 @@ describe('medication capture: the commit records only a label that uploaded', ()
     expect(paths).toHaveLength(1);
     expect(paths[0]).toMatch(/0-label/);
     expect(cachedPhotoPath('medication_items_cache', MED_CACHE_PHOTO)).toBe(paths[0]);
+    // A label that landed is never queued a second time.
+    expect(mockRunAsync.mock.calls.some((c) =>
+      String((c as unknown[])[0]).includes('medication_label_uploads'))).toBe(false);
   });
 });

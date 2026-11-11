@@ -3,7 +3,7 @@ import { getDb, getWatermark, setWatermark } from './db';
 import { markRecordHydrated } from './coldStart';
 import { isUploadInFlight, markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
-import { uploadPhoto, compressForUpload } from './storage';
+import { uploadPhoto, compressForUpload, MEDICATION_PHOTOS_BUCKET } from './storage';
 import {
   reconcileBatch,
   advanceWatermark,
@@ -137,6 +137,7 @@ type QueueTable =
   | 'feeding_arrangements'
   | 'medications'
   | 'medication_administrations'
+  | 'medication_label_uploads'
   | 'diet_trials'
   | 'diet_trial_foods'
   | 'notification_preferences'
@@ -165,6 +166,7 @@ type QueueTable =
 export const INSERT_ONLY_QUEUE_TABLES = [
   'event_attachments',
   'vet_visit_attachments',
+  'medication_label_uploads',
   'care_acknowledgements',
   'vet_calls',
   'vet_call_follow_ups',
@@ -2615,6 +2617,88 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
     rearmOnlyPushContext('medication_administrations', unsynced, mark));
 }
 
+// CUL-1920: push the label photos that failed to upload at capture (offline).
+//
+// Shaped like the vet-visit attachment loop: the object first, the row second, and
+// the row marked only once both landed. Three things are particular to it:
+//
+//   • The drug row may not be on the server yet (capture's own upsert is fire-and-
+//     forget, and an offline save loses it), so the drain pre-syncs it first, the
+//     same ignoreDuplicates pre-sync the dose push uses. A 0-row update below
+//     means the row still is not there (or RLS hid it): that costs an attempt and
+//     the label stays queued, never marked.
+//   • photo_paths is written by a targeted UPDATE, never an upsert, so it cannot
+//     clobber the owner's confirmed fields. Capture leaves photo_paths out of its
+//     own upsert while the label is queued, so a late capture upsert cannot wipe
+//     what this wrote either.
+//   • A label whose path is not under the signed-in account's {uid}/ prefix is
+//     never sent. The sign-out wipe deletes this table, so the only way to reach
+//     it is a wipe that failed; Storage would refuse it with a 403, which reads as
+//     transient and would retry for ever, so it is parked here as terminal.
+export function syncPendingMedicationLabels(): Promise<void> {
+  return serializeQueuePush('medication_label_uploads', drainMedicationLabelsQueue);
+}
+
+async function drainMedicationLabelsQueue(): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const uid = session.user.id;
+
+  const db = getDb();
+  const pending = await db.getAllAsync<{ id: string; local_uri: string; storage_path: string }>(
+    `SELECT id, local_uri, storage_path FROM medication_label_uploads
+      WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} ORDER BY created_at LIMIT 20`,
+  );
+  if (pending.length === 0) return;
+
+  const own = pending.filter((r) => r.storage_path.startsWith(`${uid}/`));
+  for (const r of pending) {
+    if (!own.includes(r)) {
+      await applyFailurePolicy(db, 'medication_label_uploads', r, 'terminal',
+        'label belongs to another account');
+    }
+  }
+  if (own.length === 0) return;
+
+  await presyncMedicationItems(db, uid, own.map((r) => r.id));
+
+  for (const row of own) {
+    try {
+      // Compress and strip EXIF before the upload, as every re-upload path does.
+      const prep = await prepareAttachmentUpload(row.local_uri, 'image/jpeg');
+      await uploadPhoto(MEDICATION_PHOTOS_BUCKET, row.storage_path, prep.uri, prep.mimeType);
+    } catch (e) {
+      // A network throw costs nothing (the offline case); a permanent one spends
+      // the budget and quarantines (B-586).
+      console.warn('[sync] medication label upload failed:', e);
+      await recordUploadFailure(db, 'medication_label_uploads', row, e);
+      continue;
+    }
+
+    const { data, error } = await supabase
+      .from('medication_items')
+      .update({ photo_paths: [row.storage_path] })
+      .eq('id', row.id)
+      .select('id');
+    if (error) {
+      console.warn('[sync] medication label photo_paths update failed:', error.message);
+      await recordPushFailure(db, 'medication_label_uploads', row, error);
+      continue;
+    }
+    if (!data || data.length === 0) {
+      await recordPushFailure(db, 'medication_label_uploads', row, RLS_FILTERED_ERROR);
+      continue;
+    }
+
+    // The photo is on the server and the row names it: only now does the cache claim it.
+    await db.runAsync(
+      'UPDATE medication_items_cache SET photo_path = ? WHERE id = ?',
+      [row.storage_path, row.id],
+    );
+    await markSyncedInsertOnly(db, 'medication_label_uploads', [row.id]);
+  }
+}
+
 // ── Diet-trial mirror push (B-417 PR 2) ──────────────────────────────────────
 //
 // The diet-trial writers were the FIRST to need `.select('id')` + a set
@@ -4716,6 +4800,8 @@ async function pushAllQueues(): Promise<void> {
   await syncPendingFeedingArrangements();
   await syncPendingMedications();
   await syncPendingMedicationAdministrations();
+  // CUL-1920: after the doses, whose push pre-syncs the drug row the label names.
+  await syncPendingMedicationLabels();
   // B-417: trials before their allowed set — diet_trial_foods.diet_trial_id
   // FKs to diet_trials server-side, and 041's same-pet trigger refuses a child whose
   // trial is not there with a TERMINAL 23514. The foods drain holds such a child

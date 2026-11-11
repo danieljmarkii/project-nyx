@@ -51,6 +51,7 @@ import {
   uploadPhoto, compressForUpload, buildMedicationPhotoPath, MEDICATION_PHOTOS_BUCKET,
 } from '../lib/storage';
 import { uploadedPhotoPath } from '../lib/captureUploads';
+import { queueMedicationLabelUpload } from '../lib/medicationLabelQueue';
 import { uuid } from '../lib/utils';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { useColumnWidth, useLayoutClass, useWindowFrame } from '../hooks/useLayoutClass';
@@ -376,6 +377,24 @@ export default function MedicationCaptureScreen() {
        isRx ? 1 : 0, labelPath, now],
     );
 
+    // CUL-1920: a label whose upload failed (offline) is queued, not dropped. The
+    // queue uploads it on the next sync, then names it on the row and in the cache;
+    // until then neither claims it. Queued before the dose below, so the push that
+    // dose starts already finds it. A queue write that fails must not lose the
+    // medicine, so it is logged and the save goes on.
+    const labelQueued = !!labelPhoto && !labelPath;
+    if (labelQueued) {
+      try {
+        await queueMedicationLabelUpload(db, {
+          medicationItemId,
+          localUri: labelPhoto.localUri,
+          storagePath: labelPhoto.storagePath,
+        }, now);
+      } catch (e) {
+        console.warn('[medication-capture] label queue write failed:', e);
+      }
+    }
+
     // Remote upsert with the owner-confirmed values — the ONLY writer of the
     // globally-readable catalog row (the extractor writes nothing). Fire-and-forget
     // (mirrors food-capture); the dose's presyncMedicationItems uses
@@ -393,7 +412,10 @@ export default function MedicationCaptureScreen() {
       default_route: route,
       is_prescription: isRx,
       created_by_user_id: user?.id ?? null,
-      photo_paths: labelPath ? [labelPath] : [],
+      // A queued label is left out entirely, so this upsert (which may land late) can
+      // never overwrite the path the queue writes once its upload lands. On insert the
+      // column takes its default, an empty list.
+      ...(labelQueued ? {} : { photo_paths: labelPath ? [labelPath] : [] }),
       ai_extraction_status: labelPhoto ? (aiRead ? 'completed' : 'failed') : 'manual',
       ai_extraction_error: null,
     }, { onConflict: 'id' }).then(({ error }) => {
@@ -677,12 +699,13 @@ export default function MedicationCaptureScreen() {
               </View>
             ) : extractionFailed ? (
               <View style={styles.failedBanner}>
-                {/* CUL-2164: the photo is claimed only once its upload finished; an offline
-                    capture fails before any photo reaches storage. */}
+                {/* CUL-2164: the photo is claimed only once its upload finished. CUL-1920: a
+                    label that did not upload is queued at save and uploads on the next
+                    sync, so the band promises that, and nothing earlier. */}
                 <ThemedText style={styles.failedBannerText}>
                   {labelUploaded
                     ? "Couldn't read the label. Fill in what you know below; the label photo is saved."
-                    : "Couldn't read the label. Fill in what you know below."}
+                    : "Couldn't read the label. Fill in what you know below; once you save, the label photo will upload on its own."}
                 </ThemedText>
               </View>
             ) : null}
