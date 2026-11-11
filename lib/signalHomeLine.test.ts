@@ -260,8 +260,9 @@ function redFlags(): IncidentRedFlagFinding[] {
   for (const incidentType of ['vomit', 'stool'] as const)
     for (const flags of [['blood'], ['foreign_material'], ['blood', 'foreign_material']] as const)
       for (const flaggedIncidentCount of [1, 3])
-        // 23:30 UTC: the local day is the NEXT day east of UTC — the eyebrow must say the UTC one.
-        out.push({ type: 'incident_red_flag', priorityClass: 'safety', incidentType, flags: [...flags], mostRecentFlaggedIso: '2026-09-22T23:30:00Z', flaggedIncidentCount, windowDays: 14 });
+        // CUL-2232 (C-29): 23:30 LOCAL on Sep 22, which is the next UTC day west of UTC. The
+        // engine stamps the owner's day, so the sentence and the eyebrow both say Sep 22.
+        out.push({ type: 'incident_red_flag', priorityClass: 'safety', incidentType, flags: [...flags], mostRecentFlaggedIso: new Date(2026, 8, 22, 23, 30).toISOString(), mostRecentFlaggedLocalDay: '2026-09-22', flaggedIncidentCount, windowDays: 14 });
   return out;
 }
 
@@ -333,7 +334,7 @@ describe('PARITY: the Home row counts from the sentence’s own fields (the scre
     }
   });
 
-  it('the photo read’s headline is the sentence’s own phrase (“possible …”) and its date the sentence’s UTC day', () => {
+  it('the photo read’s headline is the sentence’s own phrase (“possible …”) and its date the sentence’s own (local) day', () => {
     for (const f of redFlags()) {
       const l = line(f);
       const phrase = l.headline.replace(/ in (a )?\w+ photos?$/, '').toLowerCase();

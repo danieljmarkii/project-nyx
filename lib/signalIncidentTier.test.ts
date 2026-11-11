@@ -21,12 +21,17 @@ import { TIER_WORDS } from './incidentTierWords';
 import { safetyArrivalSpoken } from './signalSafetySpeech';
 import { localCallDay } from './callNowDated';
 
+// CUL-2232 (C-29): built from LOCAL components, because every red flag date on the phone is the
+// owner's local day; a UTC literal at 07:00 is the day before in Honolulu.
+const OCT_8 = new Date(2026, 9, 8, 7, 2).toISOString();
+const SEP_28 = new Date(2026, 8, 28, 7, 0).toISOString();
+
 const card = (over: Partial<IncidentRedFlagFinding> = {}): IncidentRedFlagFinding => ({
   type: 'incident_red_flag',
   priorityClass: 'safety',
   incidentType: 'vomit',
   flags: ['blood'],
-  mostRecentFlaggedIso: '2026-10-08T07:02:00.000Z',
+  mostRecentFlaggedIso: OCT_8,
   flaggedIncidentCount: 1,
   windowDays: 14,
   ...over,
@@ -80,7 +85,7 @@ describe('a new-rule call speaks the map’s words on Home', () => {
   });
 
   it('a call-only card names a read and its day, never a photo or a source', () => {
-    const line = signalHomeLine(recordCall({ tier: 'call_now', tierIso: '2026-10-08T07:02:00.000Z' }))!;
+    const line = signalHomeLine(recordCall({ tier: 'call_now', tierIso: OCT_8 }))!;
     expect(line).toEqual({
       eyebrow: 'Read · Oct 8',
       headline: 'A vomit read says to call',
@@ -94,7 +99,7 @@ describe('a new-rule call speaks the map’s words on Home', () => {
   });
 
   it('a call from a later read than the flagged photo carries that read’s day (never pinned on the photo)', () => {
-    const f = card({ tier: 'call_now', mostRecentFlaggedIso: '2026-09-28T07:00:00.000Z', tierIso: '2026-10-08T07:02:00.000Z' });
+    const f = card({ tier: 'call_now', mostRecentFlaggedIso: SEP_28, tierIso: OCT_8 });
     const line = signalHomeLine(f)!;
     expect(line.eyebrow).toBe('Photo read · Sep 28');
     // The call's read is dated by the phone's local day (PR-30c: one zone per row).
@@ -108,9 +113,9 @@ describe('a new-rule call speaks the map’s words on Home', () => {
     expect(signalHomeLine(later)!.count).toBe(`The call is from a read on ${T.short} · A later read on ${L.short} says call today`);
     expect(evidenceText(later, 'Nyx')).toContain(`A later read, on ${L.long}, says to call your vet today.`);
     // One instant, two spellings: one read (C-40).
-    expect(signalHomeLine(card({ tier: 'call_now', mostRecentFlaggedIso: '2026-10-08T07:02:00.000Z', tierIso: '2026-10-08T07:02:00+00:00' }))!.count).toBeNull();
+    expect(signalHomeLine(card({ tier: 'call_now', mostRecentFlaggedIso: OCT_8, tierIso: OCT_8.replace('.000Z', '+00:00') }))!.count).toBeNull();
     // The same read: no second date.
-    expect(signalHomeLine(card({ tier: 'call_now', tierIso: '2026-10-08T07:02:00.000Z' }))!.count).toBeNull();
+    expect(signalHomeLine(card({ tier: 'call_now', tierIso: OCT_8 }))!.count).toBeNull();
   });
 
   it('every surface naming a new-rule card carries its ask and never the shipped words or a photo it did not read', () => {
@@ -173,7 +178,7 @@ describe('the banner picks the household’s loudest ask', () => {
 // the banner, the screen's sentence and evidence and the arrival speech. The card never leaves,
 // never loses its ask, and a call today or an earlier-rule card never moves.
 describe('a call now after its first day (PR-30c)', () => {
-  const READ = '2026-10-08T07:02:00.000Z';
+  const READ = OCT_8;
   const DAY = 24 * 60 * 60 * 1000;
   // The dated day is the phone's LOCAL day of the said-at instant (timezone-honest, B-514).
   const D = localCallDay(READ)!;
@@ -216,7 +221,7 @@ describe('a call now after its first day (PR-30c)', () => {
   });
 
   it('a call from a later read keeps one date on the row (the ask carries it), and a later call today still shows', () => {
-    const f = callNow({ mostRecentFlaggedIso: '2026-09-28T07:00:00.000Z' });
+    const f = callNow({ mostRecentFlaggedIso: SEP_28 });
     expect(signalHomeLine(f, null, dayTwo)!.count).toBeNull();
     expect(signalHomeLine(f, null, dayTwo)!.ask).toBe(`on ${D.short}, a read said: call your vet now`);
     const later = { ...f, laterCallTodayIso: '2026-10-09T07:00:00.000Z' };

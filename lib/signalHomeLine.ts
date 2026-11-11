@@ -27,7 +27,7 @@ import { DEFERENTIAL_ASK, FLOOR_ASK } from './incidentAskWords';
 import { bookedVisitCallBeforeAsk, bookedVisitOf, careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, intakeMeetsCatFloor, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, sustainedRefusalOf, symptomWord, UNKNOWN_INTAKE_COPY } from './signalCopy';
+import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, intakeMeetsCatFloor, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayLocal, sustainedRefusalOf, symptomWord, UNKNOWN_INTAKE_COPY } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import { localCallDay } from './callNowDated';
 import type { SignalScreenModel } from './signalScreen';
@@ -226,15 +226,15 @@ function countLine(finding: SignalFinding, nowMs: number | undefined): string | 
 
 function eyebrow(finding: SignalFinding): string | null {
   if (finding.type !== 'incident_red_flag') return null;
-  // The photo record's own day, UTC like the sentence ("on September 22") and the phone
-  // script — never a local day that could disagree with the screen by one.
+  // The photo record's own day, the owner's local day like the sentence ("on September 22"),
+  // the strip and the phone script (CUL-2232), so no surface disagrees with another by one.
   // PR-30a: a call-only card is dated by the read whose words its ask is, and its eyebrow never
   // says a photo found something.
   if (isCallOnlyFinding(finding)) {
-    const d = stripDayUTC(finding.tierIso ?? finding.mostRecentFlaggedIso);
+    const d = stripDayLocal(finding.tierIso ?? finding.mostRecentFlaggedIso);
     return d ? `Read · ${d.short}` : 'Read';
   }
-  const day = stripDayUTC(finding.mostRecentFlaggedIso);
+  const day = stripDayLocal(finding.mostRecentFlaggedIso);
   if (!day) return finding.flaggedIncidentCount === 1 ? 'Photo read' : 'Photo reads';
   return finding.flaggedIncidentCount === 1 ? `Photo read · ${day.short}` : `Photo reads · latest ${day.short}`;
 }

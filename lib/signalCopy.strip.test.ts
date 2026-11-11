@@ -214,7 +214,8 @@ const redFlag = (over: Partial<IncidentRedFlagFinding> = {}): IncidentRedFlagFin
   priorityClass: 'safety',
   incidentType: 'vomit',
   flags: ['blood'],
-  mostRecentFlaggedIso: '2026-09-01T08:00:00.000Z',
+  // Built from LOCAL components (C-29): the strip prints the owner's local day (CUL-2232).
+  mostRecentFlaggedIso: new Date(2026, 8, 1, 8, 0).toISOString(),
   flaggedIncidentCount: 2,
   windowDays: 14,
   ...over,
@@ -337,7 +338,7 @@ describe('the safety strips — verbatim per type, the ask is the card’s own v
     expect(stripCountLine(refused)).not.toMatch(/Royal/);
   });
 
-  it('the red flag: what the photo showed, the family noun, an AI read of N, the photo record’s own UTC day', () => {
+  it('the red flag: what the photo showed, the family noun, an AI read of N, the photo record’s own LOCAL day (CUL-2232)', () => {
     expect(stripNameLine(redFlag())).toBe('Blood in a vomit photo');
     expect(stripNameLine(redFlag({ flags: ['foreign_material'], incidentType: 'stool' }))).toBe('Something unusual in a stool photo');
     // Blood leads when both are flagged — the engine's stable order and the more urgent read.
@@ -345,10 +346,13 @@ describe('the safety strips — verbatim per type, the ask is the card’s own v
     expect(stripAskLine(redFlag())).toBe('Call your vet');
     expect(stripCountLine(redFlag())).toBe('AI read of 2 logged photos · last Sep 1');
     expect(stripCountLine(redFlag({ flaggedIncidentCount: 1 }))).toBe('AI read of 1 logged photo · last Sep 1');
-    // The strip's day is the SAME day the sentence and the phone script print (UTC), so the
-    // three surfaces on one card agree — and it ignores the local-record context entirely.
+    // The strip's day is the SAME day the sentence and the phone script print (the owner's
+    // local day), so the three surfaces on one card agree — and it ignores the local-record
+    // context entirely.
     expect(stripCountLine(redFlag(), LAST)).toBe('AI read of 2 logged photos · last Sep 1');
-    expect(stripCountLine(redFlag({ mostRecentFlaggedIso: '2026-08-31T23:30:00.000Z' }))).toBe('AI read of 2 logged photos · last Aug 31');
+    // CUL-2232: an evening photo is the evening's day, wherever the UTC date has already turned.
+    expect(stripCountLine(redFlag({ mostRecentFlaggedIso: new Date(2026, 7, 31, 23, 30).toISOString() }))).toBe('AI read of 2 logged photos · last Aug 31');
+    expect(stripCountLine(redFlag({ mostRecentFlaggedIso: new Date(2026, 9, 27, 19, 40).toISOString() }))).toBe('AI read of 2 logged photos · last Oct 27');
   });
 
   it('the spoken sentence says the ask and expands the month (§7)', () => {
@@ -360,14 +364,14 @@ describe('the safety strips — verbatim per type, the ask is the card’s own v
   });
 });
 
-describe('the strip day (§3.4 / B-514) — the device-zone day for the record, the UTC day for the photo', () => {
+describe('the strip day (§3.4 / B-514) — the device-zone day for every instant, the UTC reading only for a date-only day', () => {
   it('reads the local calendar day off local components, year-less', () => {
     expect(stripDayLocal(AUG_26_LOCAL_NOON)).toEqual({ short: 'Aug 26', spoken: 'August 26' });
     // Just after local midnight is still that local day, whatever the UTC string says.
     expect(stripDayLocal(new Date(2026, 8, 30, 0, 5).toISOString())).toEqual({ short: 'Sep 30', spoken: 'September 30' });
     expect(stripDayLocal(new Date(2026, 11, 31, 23, 55).toISOString())).toEqual({ short: 'Dec 31', spoken: 'December 31' });
   });
-  it('reads the UTC day for the photo record, matching the phone script', () => {
+  it('reads a date-only local day (the engine’s firstLocalDay) as that day, at any zone', () => {
     expect(stripDayUTC('2026-08-06T23:59:00.000Z')).toEqual({ short: 'Aug 6', spoken: 'August 6' });
     expect(stripDayUTC('2026-08-07T00:01:00.000Z')).toEqual({ short: 'Aug 7', spoken: 'August 7' });
   });

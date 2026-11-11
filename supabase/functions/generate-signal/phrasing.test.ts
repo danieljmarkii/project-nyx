@@ -38,6 +38,7 @@ import {
   SYMPTOM_LABEL,
   VISIBLE_CARD_CAP,
 } from './phrasing.ts'
+import { detectIncidentRedFlags } from './detection.ts'
 import type {
   CorrelationFinding,
   IntakeDeclineFinding,
@@ -1565,4 +1566,73 @@ Deno.test('CUL-1195 — timing_story sentence carries the long band’s refused-
   assert.ok(t.includes('3 of the long-after ones followed a refused meal'), t)
   assert.ok(validatePhrasing(t, withRefusal), t)
   assert.ok(!/refus/i.test(templateTimingStory(timingStory({ long: { ...base.long, afterRefusalCount: 0 } }), 'Nyx')))
+})
+
+// ── CUL-2232: the red flag sentence names the OWNER'S day (C-29: a zone west of UTC) ─────────
+// The live case: Nyx vomited at 19:40 CDT on Oct 27, which is 00:40 UTC on Oct 28. The stored
+// sentence is what Ask relays word for word, so it must say October 27.
+const CHICAGO_EVENING_VOMIT = '2026-10-28T00:40:00.000Z' // Oct 27, 19:40 CDT
+const chicagoRedFlags = (timezone: string | undefined, call?: 'call_today' | 'call_now') =>
+  detectIncidentRedFlags({
+    pet: { name: 'Nyx', species: 'cat', dietTrialActive: false },
+    symptomEvents: [],
+    mealEvents: [],
+    now: '2026-10-28T01:15:00.000Z',
+    timezone,
+    incidentAnalyses: [{
+      eventId: 'e-1',
+      incidentType: 'vomit',
+      occurredAt: CHICAGO_EVENING_VOMIT,
+      bloodPresent: call ? null : 'fresh_red',
+      stoolBloodPresent: null,
+      foreignMaterialPresent: null,
+      ...(call ? { call } : {}),
+    }],
+  })
+
+Deno.test('CUL-2232 — an evening vomit in Chicago is dated Oct 27 in the stored sentence, call-only and photo cards alike', () => {
+  const [callOnly] = chicagoRedFlags('America/Chicago', 'call_today')
+  assert.equal(callOnly.callOnly, true)
+  assert.equal(callOnly.tierLocalDay, '2026-10-27')
+  const t = templateIncidentRedFlag(callOnly, 'Nyx')
+  assert.ok(t.startsWith("The read of Nyx's vomit on October 27 says to call your vet today."), t)
+  assert.ok(!/October 28/.test(t), t)
+
+  const [photo] = chicagoRedFlags('America/Chicago')
+  assert.equal(photo.mostRecentFlaggedLocalDay, '2026-10-27')
+  const p = templateIncidentRedFlag(photo, 'Nyx')
+  assert.ok(/showed possible blood, on October 27/.test(p), p)
+  assert.ok(!/October 28/.test(p), p)
+  // The ask is the same words, only the date moved (Dr. Chen).
+  assert.equal(p.replace('October 27', 'X'), templateIncidentRedFlag({ ...photo, mostRecentFlaggedLocalDay: undefined }, 'Nyx').replace('October 28', 'X'))
+})
+
+Deno.test('CUL-2232 — no stored zone (or an invalid one) keeps the UTC day and stamps nothing', () => {
+  for (const tz of [undefined, 'Not/AZone']) {
+    const [f] = chicagoRedFlags(tz, 'call_today')
+    assert.equal(f.tierLocalDay, undefined)
+    assert.equal(f.mostRecentFlaggedLocalDay, undefined)
+    assert.ok(templateIncidentRedFlag(f, 'Nyx').includes('on October 28 says'))
+  }
+})
+
+Deno.test('CUL-2232 — a separate call read and a later call today are dated by their own local days', () => {
+  const t = templateIncidentRedFlag(
+    incidentRedFlag({
+      flags: ['blood'],
+      mostRecentFlaggedIso: '2026-10-26T15:00:00.000Z',
+      mostRecentFlaggedLocalDay: '2026-10-26',
+      tier: 'call_now',
+      tierIso: '2026-10-27T03:00:00.000Z',
+      tierLocalDay: '2026-10-26',
+      laterCallTodayIso: '2026-10-28T00:40:00.000Z',
+      laterCallTodayLocalDay: '2026-10-27',
+    }),
+    'Nyx',
+  )
+  assert.ok(t.includes('on October 26. A read on October 26 says to'), t)
+  assert.ok(t.includes('A later read, on October 27, says to'), t)
+  // A malformed stamp (a row the owner can write) falls back to the UTC instant, never prints junk.
+  const junk = templateIncidentRedFlag(incidentRedFlag({ mostRecentFlaggedLocalDay: 'soon' }), 'Nyx')
+  assert.ok(junk.includes('on May 28'), junk)
 })
