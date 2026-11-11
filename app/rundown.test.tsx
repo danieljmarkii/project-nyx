@@ -90,6 +90,26 @@ describe('the Pet-tab doors (CUL-753)', () => {
   });
 });
 
+describe('the medication doors (CUL-1350)', () => {
+  it('an active course lands on its own row of the medications card', async () => {
+    (buildRundown as jest.Mock).mockResolvedValue({
+      petName: 'Mochi',
+      generatedAtMs: 0,
+      pastMedications: [tile('meds_past', 'Metronidazole', { kind: 'medication', medicationItemId: 'item-metro' })],
+      facts: { courses: [], medItemNames: new Map(), lastVisitAt: null, weighIns: [] },
+      tiles: [tile('meds', 'Amoxicillin', { kind: 'meds', medKey: 'item-amox' })],
+    });
+    const { findByLabelText } = render(<RundownScreen />);
+    fireEvent.press(await findByLabelText(/^Amoxicillin:/));
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: PROFILE_ROUTE,
+      params: { focus: 'medications', med: 'item-amox', ts: expect.any(String) },
+    });
+    fireEvent.press(await findByLabelText(/^Metronidazole:/));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/medication/[id]', params: { id: 'item-metro' } });
+  });
+});
+
 describe('the log-a-visit door (CUL-942, CUL-905)', () => {
   it('opens the booking sheet on its Already-happened arm, never the retired form', async () => {
     // One way to log a visit: the Pet tab's *Log a past visit* lands on this same

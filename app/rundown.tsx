@@ -111,8 +111,8 @@ type Status = 'loading' | 'ready' | 'error';
 // The weight and meds tiles are DOORS onto the Pet tab and go through
 // `profileFocusHref` — the CUL-170 vocabulary — never the bare tab route, which
 // lands at the top of the profile and leaves the owner scrolling for the card in
-// the consult room (CUL-753). The meds tile names no single med (lib/rundown), so
-// it takes the section fallback the medications door already has.
+// the consult room (CUL-753). An active course's tile carries its med key and lands on
+// that course's row (CUL-1350); *None active* names none and takes the section.
 function navigateTo(tap: RundownTap, historyScoped: boolean): void {
   switch (tap.kind) {
     case 'symptom':
@@ -125,10 +125,11 @@ function navigateTo(tap: RundownTap, historyScoped: boolean): void {
       router.push(profileFocusHref({ focus: 'weight', nowMs: Date.now() }));
       return;
     case 'meds':
-      router.push(profileFocusHref({ focus: 'medications', nowMs: Date.now() }));
+      router.push(profileFocusHref({ focus: 'medications', medKey: tap.medKey, nowMs: Date.now() }));
       return;
     case 'medication':
-      router.push({ pathname: '/medication/[id]', params: { id: tap.medicationId } });
+      // A drug-library item id, never a course id (CUL-1350): this screen reads `medication_items`.
+      router.push({ pathname: '/medication/[id]', params: { id: tap.medicationItemId } });
       return;
     case 'foods':
       router.push('/(tabs)/foods');

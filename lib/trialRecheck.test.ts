@@ -270,8 +270,8 @@ function rundown(tiles: RundownTile[] = TILES): Rundown {
 
 const TILES: RundownTile[] = [
   { key: 'weight', label: 'Weight', value: '41.2–42.0 lb', detail: '3 weigh-ins', tap: { kind: 'weight' } },
-  { key: 'meds', label: 'Apoquel', value: 'Twice a day · last dose today', tap: { kind: 'medication', medicationId: 'm1' } },
-  { key: 'meds', label: 'Cerenia', value: 'As needed · last dose Jul 20', tap: { kind: 'medication', medicationId: 'm2' } },
+  { key: 'meds', label: 'Apoquel', value: 'Twice a day · last dose today', tap: { kind: 'meds', medKey: 'item-apoquel' } },
+  { key: 'meds', label: 'Cerenia', value: 'As needed · last dose Jul 20', tap: { kind: 'meds', medKey: 'regimen:m2' } },
 ];
 
 /** The screen's model as the SCREEN builds it (real facts) and as GET READY does. */
