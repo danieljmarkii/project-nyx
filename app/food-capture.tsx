@@ -50,8 +50,9 @@ import { insertMeal } from '../lib/meals';
 import { offerCapturedFood } from '../lib/captureHandBack';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import {
-  uploadedPhotoPath, uploadedPhotoPaths, queueFoodPhotoUpload, queuedFoodPhotoPath, type FoodPhotoSlot,
+  uploadedPhotoPath, uploadedPhotoPaths, queuedFoodPhotoPath, type FoodPhotoSlot,
 } from '../lib/captureUploads';
+import { queueFoodPhotoUpload, foodPhotoQueueId } from '../lib/foodPhotoQueue';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 import { seedPickerProteins, pickerProteinsToSet, pickerProteinWrite, proteinsToCacheText } from '../lib/protein';
 import { PENDING_CAPTURE_LABEL, foodIntakeKey } from '../lib/food';
@@ -676,39 +677,44 @@ export default function FoodCaptureScreen() {
 
     // CUL-2704: a photo that did not upload (offline, or the typed form before any
     // read) is queued, not dropped. The next sync uploads it under its own key and
-    // only then names it on the row and in the cache. When any photo is queued, every
-    // photo the row does not already list goes with it (an uploaded one the row lost
-    // re-uploads under its own key), and the upsert below leaves photo_paths out, so
-    // that late fire-and-forget write can never wipe what the queue fills. A queue
-    // write that fails must not lose the food, so it is logged and the save goes on.
+    // only then names it on the row and in the cache. When any photo needs the queue,
+    // every photo the row does not already list goes with it (an uploaded one the row
+    // lost re-uploads under its own key), and the upsert below leaves photo_paths out,
+    // so that late fire-and-forget write can never wipe what the queue fills.
+    //
+    // A queue write that fails must not lose the food, so the save goes on; and it must
+    // not lose a photo that DID upload either, so if any queue write fails the upsert
+    // falls back to listing every uploaded photo, as it did before the queue existed.
+    // One row per food and slot, so a retried save replaces rather than doubles it.
     const slotPhotos: { slot: FoodPhotoSlot; photo: CapturedPhoto | null }[] = [
       { slot: 'front', photo: frontPhoto },
       { slot: 'ingredients', photo: ingredientsPhoto },
       { slot: 'barcode', photo: barcodePhoto },
     ];
     const anyUnuploaded = slotPhotos.some(({ photo }) => photo && !uploadedUris.current.has(photo.localUri));
-    const toQueue = anyUnuploaded
+    const toQueue = anyUnuploaded && user?.id
       ? slotPhotos.filter(({ photo }) => photo && !recordedUris.current.has(photo.localUri))
       : [];
-    const photosQueued = toQueue.length > 0 && !!user?.id;
-    if (photosQueued && user?.id) {
-      for (const { slot, photo } of toQueue) {
-        if (!photo) continue;
-        const queueId = uuid();
-        try {
-          await queueFoodPhotoUpload(db, {
-            id: queueId,
-            foodItemId: foodId,
-            slot,
-            ownerUserId: user.id,
-            localUri: photo.localUri,
-            storagePath: queuedFoodPhotoPath(foodId, slot, queueId.slice(0, 8)),
-          }, now);
-        } catch (e) {
-          console.warn('[food-capture] photo queue write failed:', e);
-        }
+    let queuedCount = 0;
+    let queueFailed = false;
+    for (const { slot, photo } of toQueue) {
+      if (!photo || !user?.id) continue;
+      try {
+        await queueFoodPhotoUpload(db, {
+          id: foodPhotoQueueId(foodId, slot),
+          foodItemId: foodId,
+          slot,
+          ownerUserId: user.id,
+          localUri: photo.localUri,
+          storagePath: queuedFoodPhotoPath(foodId, slot, uuid().slice(0, 8)),
+        }, now);
+        queuedCount += 1;
+      } catch (e) {
+        queueFailed = true;
+        console.error('[food-capture] photo queue write failed:', e);
       }
     }
+    const photosQueued = queuedCount > 0 && !queueFailed;
 
     // If extraction didn't run (manual path), the row may not exist remotely
     // yet — upsert with the user-confirmed values. If it does exist (AI path),

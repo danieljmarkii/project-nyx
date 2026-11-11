@@ -1,11 +1,5 @@
-jest.mock('./storage', () => ({
-  // The durable copy is a filesystem move the jest mock cannot make; it keeps its name.
-  persistCapture: (_uri: string, name: string) => `file:///docs/${name}`,
-}));
-
 import {
   uploadedPhotoPath, uploadedPhotoPaths, queuedFoodPhotoPath, foodSlotFilled, foodPathsWith,
-  queueFoodPhotoUpload, QUEUE_FOOD_PHOTO_SQL,
 } from './captureUploads';
 
 const front = { localUri: 'file:///front.jpg', storagePath: 'f1/0-front.jpg' };
@@ -74,19 +68,5 @@ describe('foodPathsWith', () => {
   it('never drops what the row already lists', () => {
     const held = ['f1/0-front.jpg', 'f1/1-additional.jpg', 'f1/1-ingredients.jpg'];
     expect(foodPathsWith(held, 'f1/2-qc-barcode.jpg')).toEqual([...held, 'f1/2-qc-barcode.jpg']);
-  });
-});
-
-describe('queueFoodPhotoUpload', () => {
-  it('queues the durable copy, never the picker\'s cache path', async () => {
-    const runAsync = jest.fn(async () => undefined);
-    await queueFoodPhotoUpload({ runAsync }, {
-      id: 'q1', foodItemId: 'f1', slot: 'ingredients', ownerUserId: 'u1',
-      localUri: 'file:///cache/ImagePicker/ing.jpg', storagePath: 'f1/1-qq1-ingredients.jpg',
-    }, '2026-11-11T15:00:00.000Z');
-    expect(runAsync).toHaveBeenCalledWith(QUEUE_FOOD_PHOTO_SQL, [
-      'q1', 'f1', 'ingredients', 'u1', 'file:///docs/food-q1.jpg', 'f1/1-qq1-ingredients.jpg',
-      '2026-11-11T15:00:00.000Z',
-    ]);
   });
 });

@@ -18,6 +18,8 @@ const mockServer = {
   items: new Map<string, Row>(),
   /** Food ids the server's RLS hides from this account: an update matches no row. */
   hidden: new Set<string>(),
+  /** Food ids the server lets this account read but refuses to update. */
+  refused: new Set<string>(),
   updates: [] as { id: string; patch: Row; expected: unknown }[],
 };
 
@@ -57,7 +59,7 @@ function mockServerFrom(table: string) {
           const expected = filters.find(([c]) => c === 'photo_paths')?.[1];
           mockServer.updates.push({ id, patch, expected });
           const row = mockServer.items.get(id);
-          if (!row || mockServer.hidden.has(id)) return { data: [], error: null };
+          if (!row || mockServer.hidden.has(id) || mockServer.refused.has(id)) return { data: [], error: null };
           if (typeof expected === 'string'
             && JSON.stringify(parseLiteral(expected)) !== JSON.stringify(row.photo_paths)) {
             return { data: [], error: null };
@@ -116,7 +118,8 @@ import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 import { MAX_SYNC_ATTEMPTS } from './syncQueue';
 import { FOOD_PHOTOS_BUCKET } from './storage';
-import { queueFoodPhotoUpload, queuedFoodPhotoPath, type FoodPhotoSlot } from './captureUploads';
+import { queuedFoodPhotoPath, type FoodPhotoSlot } from './captureUploads';
+import { queueFoodPhotoUpload } from './foodPhotoQueue';
 import { LOCAL_WIPE_TABLES } from './hydration';
 import { notifySignedOut, pgTextArrayLiteral, syncPendingFoodPhotos } from './sync';
 
@@ -174,6 +177,7 @@ beforeEach(async () => {
   await applyColumnUpgrades(async (sql) => mockLocal.db!.exec(sql));
   mockServer.items.clear();
   mockServer.hidden.clear();
+  mockServer.refused.clear();
   mockServer.updates.length = 0;
   mockUploadPhoto.mockReset();
   mockCompress.mockReset();
@@ -280,6 +284,20 @@ describe('what the queue never claims', () => {
     expect(cachePhoto()).toBeNull();
   });
 
+  it('an update refused on a visible row, with the list unchanged, costs an attempt and parks', async () => {
+    // The row reads fine but the write never takes: without a cost this would re-upload
+    // on every sync for ever.
+    await captureSavedOffline(['front']);
+    mockServer.items.set(FOOD, { id: FOOD, brand: 'Weruva', photo_paths: [] });
+    mockServer.refused.add(FOOD);
+    mockUploadPhoto.mockResolvedValue(undefined);
+    await syncPendingFoodPhotos();
+    expect(queueRow('front')).toMatchObject({ synced: 0, sync_attempts: 1 });
+    for (let i = 1; i < MAX_SYNC_ATTEMPTS; i += 1) await syncPendingFoodPhotos();
+    expect(queueRow('front').sync_error).not.toBeNull();
+    expect(cachePhoto()).toBeNull();
+  });
+
   it('a rejected update spends the budget and parks after the last attempt', async () => {
     await captureSavedOffline(['front']);
     mockServer.hidden.add(FOOD);
@@ -327,7 +345,10 @@ describe('what the queue never claims', () => {
     expect(serverPaths()).toEqual([REPLACED_FRONT, PATHS.ingredients]);
   });
 
-  it('a replace that lands DURING the upload still wins, and the queued object is taken back', async () => {
+  // nyx-food-photos grants no owner DELETE (046), and Storage refuses a remove there with
+  // no error, so the drain never asks for one: it would only claim a removal that did
+  // not happen. The lost photo stays in the owner's own prefix, named by no row.
+  it('a replace that lands DURING the upload still wins, and the drain claims no removal', async () => {
     await captureSavedOffline(['front']);
     mockServer.items.set(FOOD, { id: FOOD, brand: 'Weruva', photo_paths: [] });
     mockUploadPhoto.mockImplementation(async (_bucket: string, key: string) => {
@@ -336,7 +357,7 @@ describe('what the queue never claims', () => {
     });
     await syncPendingFoodPhotos();
     expect(serverPaths()).toEqual([REPLACED_FRONT]);
-    expect(mockRemove).toHaveBeenCalledWith([PATHS.front]);
+    expect(mockRemove).not.toHaveBeenCalled();
     expect(queueRow('front')).toMatchObject({ synced: 1, sync_attempts: 0 });
     expect(cachePhoto()).toBeNull();
   });
@@ -365,6 +386,14 @@ describe('what the queue never claims', () => {
     expect(mockServer.updates).toHaveLength(0);
     expect(cachePhoto()).toBeNull();
     expect(queueRow('front')).toMatchObject({ synced: 0, sync_attempts: 0 });
+  });
+
+  it('a NULL inside the server\'s list never aborts the pass, and the row parks rather than loops', async () => {
+    await captureSavedOffline(['front']);
+    mockServer.items.set(FOOD, { id: FOOD, brand: 'Weruva', photo_paths: [null] });
+    mockUploadPhoto.mockResolvedValue(undefined);
+    await expect(syncPendingFoodPhotos()).resolves.toBeUndefined();
+    expect(queueRow('front')).toMatchObject({ synced: 0, sync_attempts: 1 });
   });
 
   it('the sign-out wipe takes the queue with it', () => {

@@ -30,10 +30,12 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
 const mockUpsert = jest.fn(async () => ({ error: null }));
-const mockRunAsync = jest.fn(async () => ({ changes: 1 }));
+const mockRunAsync = jest.fn(async (_sql?: string, _params?: unknown[]) => ({ changes: 1 }));
 // CUL-2704: the capture's targeted photo_paths write after the uploads settle.
-const mockUpdate = jest.fn((_patch: Record<string, unknown>) => {
-  const chain = { eq: () => chain, select: async () => ({ data: [{ id: 'f' }], error: null }) };
+type UpdateResult = { data: { id: string }[] | null; error: { message: string } | null };
+type UpdateChain = { eq: () => UpdateChain; select: () => Promise<UpdateResult> };
+const mockUpdate = jest.fn((_patch: Record<string, unknown>): UpdateChain => {
+  const chain: UpdateChain = { eq: () => chain, select: async () => ({ data: [{ id: 'f' }], error: null }) };
   return chain;
 });
 jest.mock('../lib/supabase', () => ({
@@ -205,6 +207,29 @@ describe('food capture: the commit records only photos that uploaded', () => {
     expect(listed[0]).toMatch(/\/0-front\.jpg$/);
     expect(queuedFoodPhotos().map(([slot]) => slot)).toEqual(['ingredients']);
     expect('photo_paths' in savedRow('food_items')).toBe(false);
+  });
+});
+
+describe('food capture: a queue write that fails loses nothing that uploaded (CUL-2704)', () => {
+  it('falls back to listing every uploaded photo on the row', async () => {
+    uploadMock.mockImplementation(async (_bucket: string, path: string) => {
+      if (path.includes('ingredients')) throw new Error('Network request failed');
+    });
+    // The capture's own listing write fails, so the uploaded front is not on the row yet,
+    // and the queue write fails too: the upsert must still name the front.
+    mockUpdate.mockImplementationOnce(() => {
+      const chain: UpdateChain = { eq: () => chain, select: async () => ({ data: null, error: { message: 'offline' } }) };
+      return chain;
+    });
+    mockRunAsync.mockImplementation(async (sql?: string) => {
+      if (String(sql).includes('INTO food_photo_uploads')) throw new Error('disk full');
+      return { changes: 1 };
+    });
+    await saveFood(true);
+    const paths = savedRow('food_items').photo_paths as string[];
+    expect(paths).toHaveLength(1);
+    expect(paths[0]).toMatch(/\/0-front\.jpg$/);
+    mockRunAsync.mockImplementation(async () => ({ changes: 1 }));
   });
 });
 

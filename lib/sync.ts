@@ -2649,7 +2649,9 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
 //     it), so its upload can never overwrite another object; and the photo_paths
 //     update is a compare-and-set on the list this pass read, so it applies only if
 //     nothing changed since. Lost to a replace that landed first (read or update),
-//     the row is retired unsent and the object it uploaded, if any, removed. The
+//     the row is retired unsent, and where the bucket grants the owner a DELETE (the
+//     label bucket; not the food bucket, see canRemove) the object it uploaded is
+//     removed. The
 //     detail screens also retire the row themselves for a replace made on this
 //     phone. (rls-privacy-reviewer, CUL-1920.) A compare-and-set lost to some OTHER
 //     change (a photo added to another slot) costs nothing: the next pass reads again.
@@ -2681,6 +2683,13 @@ interface CapturePhotoQueue {
   foreignReason: string;
   presync: (db: Db, uid: string, itemIds: string[]) => Promise<void>;
   slotFilled: (held: readonly string[], row: CapturePhotoRow) => boolean;
+  /**
+   * Whether the bucket lets the owner delete an object, so a photo that lost to a
+   * replace can be taken back. nyx-medication-photos grants an owner DELETE (021);
+   * nyx-food-photos deliberately does not (046), and a remove there is refused with
+   * no error, so the food drain never claims it took anything back.
+   */
+  canRemove: boolean;
   pathsWith: (held: readonly string[], row: CapturePhotoRow) => string[];
 }
 
@@ -2698,6 +2707,7 @@ const MEDICATION_LABEL_QUEUE: CapturePhotoQueue = {
   presync: presyncMedicationItems,
   // One label per drug: any label held fills the slot.
   slotFilled: (held) => held.length > 0,
+  canRemove: true,
   pathsWith: (_held, row) => [row.storage_path],
 };
 
@@ -2714,6 +2724,9 @@ const FOOD_PHOTO_QUEUE: CapturePhotoQueue = {
   foreignReason: 'photo belongs to another account',
   presync: (db, uid, itemIds) => presyncFoodItems(db, uid, itemIds, 'capture photos'),
   slotFilled: (held, row) => foodSlotFilled(held, row.slot),
+  // The lost photo stays in the owner's own {foodId}/ prefix, named by no row, until the
+  // account's deletion sweeps the prefix.
+  canRemove: false,
   pathsWith: (held, row) => foodPathsWith(held, row.storage_path),
 };
 
@@ -2730,6 +2743,10 @@ export function syncPendingFoodPhotos(): Promise<void> {
 // names one element.
 export function pgTextArrayLiteral(values: readonly string[]): string {
   return `{${values.map((v) => `"${v.replace(/[\\"]/g, (c) => `\\${c}`)}"`).join(',')}}`;
+}
+
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 async function drainCapturePhotoQueue(q: CapturePhotoQueue): Promise<void> {
@@ -2756,7 +2773,11 @@ async function drainCapturePhotoQueue(q: CapturePhotoQueue): Promise<void> {
 
   const readHeld = async (itemId: string) => {
     const res = await supabase.from(q.itemTable).select('photo_paths').eq('id', itemId).maybeSingle();
-    const held = (res.data as { photo_paths?: string[] | null } | null)?.photo_paths ?? [];
+    const raw = (res.data as { photo_paths?: unknown[] | null } | null)?.photo_paths ?? [];
+    // A non-text element (a NULL inside the array) would throw in the slot check and
+    // abort every sync cycle. Read past it: the compare-and-set then never matches the
+    // real array, which costs an attempt per pass, so the row parks rather than loops.
+    const held = raw.filter((p): p is string => typeof p === 'string');
     return { error: res.error, visible: res.data != null, held };
   };
 
@@ -2806,17 +2827,23 @@ async function drainCapturePhotoQueue(q: CapturePhotoQueue): Promise<void> {
     if (!data || data.length === 0) {
       // No row matched: a replace filled the slot after the read above (the photo
       // lost; retire it and take back its object), the list changed some other way
-      // (the next pass reads it again), or the row is not visible to this account
-      // (an honest failure that costs an attempt).
+      // (the next pass reads it again), or the update was refused or the row is not
+      // visible to this account (an honest failure that costs an attempt).
       const after = await readHeld(row.item_id);
       if (stale()) return;
       if (!after.error && q.slotFilled(after.held, row)) {
-        const { error: removeErr } = await supabase.storage.from(q.bucket).remove([row.storage_path]);
-        if (removeErr) console.warn(`[sync] superseded ${q.table} photo not removed:`, removeErr.message);
+        if (q.canRemove) {
+          const { error: removeErr } = await supabase.storage.from(q.bucket).remove([row.storage_path]);
+          if (removeErr) console.warn(`[sync] superseded ${q.table} photo not removed:`, removeErr.message);
+        }
         await markSyncedInsertOnly(db, q.table, [row.id]);
         continue;
       }
-      if (!after.error && after.visible) continue;
+      // Visible, unfilled, and the list MOVED: the compare-and-set lost to another
+      // change, which costs nothing, and the next pass reads again. Visible and
+      // UNCHANGED means the update itself was refused: that costs an attempt like an
+      // RLS-hidden row, so the budget still bounds it.
+      if (!after.error && after.visible && !sameList(after.held, current.held)) continue;
       await recordPushFailure(db, q.table, row, RLS_FILTERED_ERROR);
       continue;
     }
@@ -4936,9 +4963,6 @@ async function pushAllQueues(): Promise<void> {
   await syncPendingMedicationAdministrations();
   // CUL-1920: after the doses, whose push pre-syncs the drug row the label names.
   await syncPendingMedicationLabels();
-  // CUL-2704: a food capture's photos queued offline. Its own pre-sync puts the food
-  // row up first, which the bucket's owner policy needs before it takes the upload.
-  await syncPendingFoodPhotos();
   // B-417: trials before their allowed set — diet_trial_foods.diet_trial_id
   // FKs to diet_trials server-side, and 041's same-pet trigger refuses a child whose
   // trial is not there with a TERMINAL 23514. The foods drain holds such a child
@@ -4962,6 +4986,12 @@ async function pushAllQueues(): Promise<void> {
   // account-wide, pet_id NULL), so its position is free — last, after the
   // pet-scoped queues.
   await syncPendingNotificationPreferences();
+  // CUL-2704: a food capture's photos queued offline. LAST on purpose: up to twenty
+  // serial uploads on a weak link must never hold up the queues above (EN-4's
+  // re-checks among them), and nothing above depends on it (every food-referencing
+  // drain pre-syncs its own food row). Its own pre-sync puts the food row up first,
+  // which the bucket's owner policy needs before it takes the upload.
+  await syncPendingFoodPhotos();
 }
 
 export async function syncNow(): Promise<void> {

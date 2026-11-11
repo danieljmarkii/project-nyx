@@ -1,5 +1,3 @@
-import { persistCapture } from './storage';
-
 // CUL-2170: what a capture commit may record about its photos. A photo path is a
 // claim that the object exists in Storage, so the commit lists only photos whose
 // own upload resolved. Keyed by the photo's local URI, never its storage path:
@@ -80,45 +78,4 @@ export function foodPathsWith(held: readonly string[], path: string): string[] {
     .map((p, i) => ({ p, i }))
     .sort((a, b) => slotIndexOf(a.p) - slotIndexOf(b.p) || a.i - b.i)
     .map(({ p }) => p);
-}
-
-export interface QueuedFoodPhoto {
-  id: string;
-  foodItemId: string;
-  slot: FoodPhotoSlot;
-  ownerUserId: string;
-  localUri: string;
-  storagePath: string;
-}
-
-interface QueueDb {
-  runAsync(sql: string, params: string[]): Promise<unknown>;
-}
-
-export const QUEUE_FOOD_PHOTO_SQL = `INSERT OR REPLACE INTO food_photo_uploads
-   (id, food_item_id, slot, owner_user_id, local_uri, storage_path, created_at,
-    synced, sync_attempts, sync_error)
- VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, NULL)`;
-
-/**
- * Queue one photo. The file is first copied out of the picker's cache directory,
- * which the OS may clear, into the app's attachments directory; that copy is also
- * what the sign-out wipe deletes. A failed copy hands back the cache path and the
- * photo still queues (the event photos' best-effort rule).
- */
-export async function queueFoodPhotoUpload(
-  db: QueueDb,
-  photo: QueuedFoodPhoto,
-  nowIso: string,
-): Promise<void> {
-  const durableUri = persistCapture(photo.localUri, `food-${photo.id}.jpg`);
-  await db.runAsync(QUEUE_FOOD_PHOTO_SQL, [
-    photo.id,
-    photo.foodItemId,
-    photo.slot,
-    photo.ownerUserId,
-    durableUri,
-    photo.storagePath,
-    nowIso,
-  ]);
 }
