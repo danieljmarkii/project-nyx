@@ -49,7 +49,10 @@ import { supabase } from '../lib/supabase';
 import { insertMeal } from '../lib/meals';
 import { offerCapturedFood } from '../lib/captureHandBack';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
-import { uploadedPhotoPath, uploadedPhotoPaths } from '../lib/captureUploads';
+import {
+  uploadedPhotoPath, uploadedPhotoPaths, queuedFoodPhotoPath, type FoodPhotoSlot,
+} from '../lib/captureUploads';
+import { queueFoodPhotoUpload, foodPhotoQueueId } from '../lib/foodPhotoQueue';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 import { seedPickerProteins, pickerProteinsToSet, pickerProteinWrite, proteinsToCacheText } from '../lib/protein';
 import { PENDING_CAPTURE_LABEL, foodIntakeKey } from '../lib/food';
@@ -201,6 +204,10 @@ export default function FoodCaptureScreen() {
   // photo Storage does not hold. A ref, not state: the commit reads it after
   // the awaited uploads, never through a render.
   const uploadedUris = useRef<Set<string>>(new Set());
+  // Local URIs of the uploaded photos the server row LISTS (CUL-2704): the capture's
+  // own photo_paths write after the uploads landed. An uploaded photo the row does
+  // not list (that write failed) is queued with the ones that never uploaded.
+  const recordedUris = useRef<Set<string>>(new Set());
   // P8 (CUL-1910): an offline owner is told before the wait, not after it, since the
   // read can only fail without a connection. Render only: the upload path below still
   // routes any failure to the typed form.
@@ -437,7 +444,9 @@ export default function FoodCaptureScreen() {
         // food_type is intentionally NOT set here — the user picks it on the
         // confirm screen. commitFood writes it through to food_items on save.
         created_by_user_id: user?.id ?? null,
-        photo_paths: storagePaths,
+        // CUL-2704: no photo is claimed before its upload landed. The paths are written
+        // once the uploads settle (below); a photo that did not upload is queued at save.
+        photo_paths: [],
         ai_extraction_status: 'pending',
         source: 'ai_extracted',
       });
@@ -466,6 +475,22 @@ export default function FoodCaptureScreen() {
         await uploadPhoto('nyx-food-photos', p.storagePath, compressedUri);
         uploadedUris.current.add(p.localUri);
       }));
+      // CUL-2704: name on the row the photos that did land, before anything else can
+      // fail, so a capture whose other photos are queued still lists these. Targeted,
+      // never the upsert, and only what Storage holds (CUL-2170).
+      const landed = photos.filter((p) => uploadedUris.current.has(p.localUri));
+      if (landed.length > 0) {
+        const { data: listed, error: listError } = await supabase
+          .from('food_items')
+          .update({ photo_paths: landed.map((p) => p.storagePath) })
+          .eq('id', foodId)
+          .select('id');
+        if (listError || !listed || listed.length === 0) {
+          console.warn('[food-capture] photo_paths write failed:', listError?.message ?? 'no row');
+        } else {
+          for (const p of landed) recordedUris.current.add(p.localUri);
+        }
+      }
       const failedUpload = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected');
       if (failedUpload) throw failedUpload.reason;
 
@@ -650,6 +675,47 @@ export default function FoodCaptureScreen() {
       );
     }
 
+    // CUL-2704: a photo that did not upload (offline, or the typed form before any
+    // read) is queued, not dropped. The next sync uploads it under its own key and
+    // only then names it on the row and in the cache. When any photo needs the queue,
+    // every photo the row does not already list goes with it (an uploaded one the row
+    // lost re-uploads under its own key), and the upsert below leaves photo_paths out,
+    // so that late fire-and-forget write can never wipe what the queue fills.
+    //
+    // A queue write that fails must not lose the food, so the save goes on; and it must
+    // not lose a photo that DID upload either, so if any queue write fails the upsert
+    // falls back to listing every uploaded photo, as it did before the queue existed.
+    // One row per food and slot, so a retried save replaces rather than doubles it.
+    const slotPhotos: { slot: FoodPhotoSlot; photo: CapturedPhoto | null }[] = [
+      { slot: 'front', photo: frontPhoto },
+      { slot: 'ingredients', photo: ingredientsPhoto },
+      { slot: 'barcode', photo: barcodePhoto },
+    ];
+    const anyUnuploaded = slotPhotos.some(({ photo }) => photo && !uploadedUris.current.has(photo.localUri));
+    const toQueue = anyUnuploaded && user?.id
+      ? slotPhotos.filter(({ photo }) => photo && !recordedUris.current.has(photo.localUri))
+      : [];
+    let queuedCount = 0;
+    let queueFailed = false;
+    for (const { slot, photo } of toQueue) {
+      if (!photo || !user?.id) continue;
+      try {
+        await queueFoodPhotoUpload(db, {
+          id: foodPhotoQueueId(foodId, slot),
+          foodItemId: foodId,
+          slot,
+          ownerUserId: user.id,
+          localUri: photo.localUri,
+          storagePath: queuedFoodPhotoPath(foodId, slot, uuid().slice(0, 8)),
+        }, now);
+        queuedCount += 1;
+      } catch (e) {
+        queueFailed = true;
+        console.error('[food-capture] photo queue write failed:', e);
+      }
+    }
+    const photosQueued = queuedCount > 0 && !queueFailed;
+
     // If extraction didn't run (manual path), the row may not exist remotely
     // yet — upsert with the user-confirmed values. If it does exist (AI path),
     // the Edge Function already wrote richer fields; we only patch when user
@@ -665,7 +731,11 @@ export default function FoodCaptureScreen() {
       format,
       food_type: type,
       created_by_user_id: user?.id ?? null,
-      photo_paths: uploadedPhotoPaths([frontPhoto, ingredientsPhoto, barcodePhoto], uploadedUris.current),
+      // Left out entirely while photos are queued (see above); on insert the column
+      // takes its default, an empty list, and the queue fills it.
+      ...(photosQueued
+        ? {}
+        : { photo_paths: uploadedPhotoPaths([frontPhoto, ingredientsPhoto, barcodePhoto], uploadedUris.current) }),
       // 'failed' only when a read was asked for and did not land; a food typed in before
       // any read ran (offline, or the camera refused mid-flow) is 'manual', photo or not.
       ai_extraction_status: frontPhoto && readStarted ? (aiRead ? 'completed' : 'failed') : 'manual',
@@ -1138,6 +1208,11 @@ export default function FoodCaptureScreen() {
         : () => router.back();
     // P7: after a read was asked for, the photo stays in view while the owner types.
     const showThumb = !!frontPhoto && readStarted;
+    // CUL-2704: a photo the capture holds whose upload has not landed, which the save
+    // queues. Read off the ref after the awaited uploads, so the edit step's first
+    // frame already knows.
+    const photosWaiting = [frontPhoto, ingredientsPhoto, barcodePhoto]
+      .some((p) => p && !uploadedUris.current.has(p.localUri));
     return (
       <SafeAreaView style={[styles.container, styles.ground]}>
         <Header title="Edit food" leading="back" onLeadingPress={goBack} />
@@ -1154,13 +1229,17 @@ export default function FoodCaptureScreen() {
             ) : extractionFailed ? (
               // F6: a failed read is not a symptom, so it sits on the quiet band.
               <QuietBand testID="capture-read-failed">
-                {/* CUL-2164 / D-1 (A): says only what is true. Nothing retries in the
-                    background, and the food page's retry is named only when it exists:
-                    the server recorded its own failed read (retryOnFoodPage). */}
+                {/* CUL-2164 / D-1 (A): says only what is true. The read does not retry in
+                    the background, and the food page's retry is named only when it exists:
+                    the server recorded its own failed read (retryOnFoodPage). CUL-2704: a
+                    photo that did not upload is queued at save and uploads on the next
+                    sync, so the band promises that, and nothing earlier. */}
                 <ThemedText variant="caption" style={styles.bandText}>
                   {retryOnFoodPage
                     ? "Couldn't read the label. Fill in what you know below; you can try reading it again from the food's page."
-                    : "Couldn't read the label. Fill in what you know below."}
+                    : photosWaiting
+                      ? "Couldn't read the label. Fill in what you know below; once you save, your photos will upload on their own."
+                      : "Couldn't read the label. Fill in what you know below."}
                 </ThemedText>
               </QuietBand>
             ) : null}

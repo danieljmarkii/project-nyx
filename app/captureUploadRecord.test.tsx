@@ -30,12 +30,20 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
 const mockUpsert = jest.fn(async () => ({ error: null }));
-const mockRunAsync = jest.fn(async () => ({ changes: 1 }));
+const mockRunAsync = jest.fn(async (_sql?: string, _params?: unknown[]) => ({ changes: 1 }));
+// CUL-2704: the capture's targeted photo_paths write after the uploads settle.
+type UpdateResult = { data: { id: string }[] | null; error: { message: string } | null };
+type UpdateChain = { eq: () => UpdateChain; select: () => Promise<UpdateResult> };
+const mockUpdate = jest.fn((_patch: Record<string, unknown>): UpdateChain => {
+  const chain: UpdateChain = { eq: () => chain, select: async () => ({ data: [{ id: 'f' }], error: null }) };
+  return chain;
+});
 jest.mock('../lib/supabase', () => ({
   supabase: {
     from: jest.fn(() => ({
       insert: jest.fn(async () => ({ error: null })),
       upsert: mockUpsert,
+      update: mockUpdate,
       select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
     })),
     functions: { invoke: jest.fn() },
@@ -94,7 +102,7 @@ beforeEach(() => {
 // The row the commit upserted into the named table on save.
 function savedRow(table: string): Record<string, unknown> {
   expect(fromMock).toHaveBeenCalledWith(table);
-  const call = mockUpsert.mock.calls.find((c) => 'photo_paths' in ((c as unknown[])[0] as object));
+  const call = mockUpsert.mock.calls.find((c) => 'created_by_user_id' in ((c as unknown[])[0] as object));
   expect(call).toBeTruthy();
   return (call as unknown[])[0] as Record<string, unknown>;
 }
@@ -142,13 +150,37 @@ const FOOD_CACHE_PHOTO = 5;
 // medication_items_cache VALUES (id, generic, brand, strength, form, route, is_rx, photo_path, now)
 const MED_CACHE_PHOTO = 7;
 
+// CUL-2704: the food photos the save queued, as [slot, storage path].
+function queuedFoodPhotos(): [string, string][] {
+  return mockRunAsync.mock.calls
+    .filter((c) => String((c as unknown[])[0]).includes('INTO food_photo_uploads'))
+    .map((c) => {
+      const params = (c as unknown[])[1] as string[];
+      return [params[2], params[5]];
+    });
+}
+
+// The paths the capture's own photo_paths write listed, once the uploads settled.
+function listedAfterUpload(): unknown {
+  return (mockUpdate.mock.calls[0] as unknown[] | undefined)?.[0];
+}
+
 describe('food capture: the commit records only photos that uploaded', () => {
-  it('offline: no photo path on the row or in the cache', async () => {
+  // CUL-2704: offline, the photo is queued for the next sync instead of dropped. Until
+  // that upload lands, nothing claims it: the upsert leaves photo_paths out (so a late
+  // upsert cannot clobber what the queue writes), and the cache holds no path.
+  it('offline: the photo is queued, and neither the row nor the cache names it', async () => {
     uploadMock.mockRejectedValue(new Error('Network request failed'));
     await saveFood(false);
     expect(uploadMock).toHaveBeenCalled();
-    expect(savedRow('food_items').photo_paths).toEqual([]);
+    expect('photo_paths' in savedRow('food_items')).toBe(false);
+    expect(listedAfterUpload()).toBeUndefined();
     expect(cachedPhotoPath('food_items_cache', FOOD_CACHE_PHOTO)).toBeNull();
+    const queued = queuedFoodPhotos();
+    expect(queued).toHaveLength(1);
+    expect(queued[0][0]).toBe('front');
+    // Its own key, never the slot's fixed 0-front.jpg, and still found by the slot suffix.
+    expect(queued[0][1]).toMatch(/\/0-q[0-9a-f]{8}-front\.jpg$/);
   });
 
   it('uploaded: the front is recorded on the row and in the cache', async () => {
@@ -158,6 +190,8 @@ describe('food capture: the commit records only photos that uploaded', () => {
     expect(paths).toHaveLength(1);
     expect(paths[0]).toMatch(/\/0-front\.jpg$/);
     expect(cachedPhotoPath('food_items_cache', FOOD_CACHE_PHOTO)).toBe(paths[0]);
+    // Nothing failed, so nothing is queued.
+    expect(queuedFoodPhotos()).toEqual([]);
   });
 
   it('partial: only the photo whose upload finished is recorded', async () => {
@@ -166,9 +200,36 @@ describe('food capture: the commit records only photos that uploaded', () => {
     });
     await saveFood(true);
     expect(uploadMock).toHaveBeenCalledTimes(2);
+    // The front that landed is listed on the row by the capture itself; the
+    // ingredients photo is queued; the upsert claims neither.
+    const listed = (listedAfterUpload() as { photo_paths: string[] }).photo_paths;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatch(/\/0-front\.jpg$/);
+    expect(queuedFoodPhotos().map(([slot]) => slot)).toEqual(['ingredients']);
+    expect('photo_paths' in savedRow('food_items')).toBe(false);
+  });
+});
+
+describe('food capture: a queue write that fails loses nothing that uploaded (CUL-2704)', () => {
+  it('falls back to listing every uploaded photo on the row', async () => {
+    uploadMock.mockImplementation(async (_bucket: string, path: string) => {
+      if (path.includes('ingredients')) throw new Error('Network request failed');
+    });
+    // The capture's own listing write fails, so the uploaded front is not on the row yet,
+    // and the queue write fails too: the upsert must still name the front.
+    mockUpdate.mockImplementationOnce(() => {
+      const chain: UpdateChain = { eq: () => chain, select: async () => ({ data: null, error: { message: 'offline' } }) };
+      return chain;
+    });
+    mockRunAsync.mockImplementation(async (sql?: string) => {
+      if (String(sql).includes('INTO food_photo_uploads')) throw new Error('disk full');
+      return { changes: 1 };
+    });
+    await saveFood(true);
     const paths = savedRow('food_items').photo_paths as string[];
     expect(paths).toHaveLength(1);
     expect(paths[0]).toMatch(/\/0-front\.jpg$/);
+    mockRunAsync.mockImplementation(async () => ({ changes: 1 }));
   });
 });
 
@@ -197,9 +258,10 @@ describe('food capture: a late upload is waited for, not dropped', () => {
     fireEvent.changeText(view.getByPlaceholderText('e.g. Gastrointestinal Adult'), 'Duck Stew');
     await act(async () => { fireEvent.press(view.getByText('Save')); });
     await waitFor(() => expect(mockUpsert).toHaveBeenCalled());
-    const paths = savedRow('food_items').photo_paths as string[];
-    expect(paths).toHaveLength(1);
-    expect(paths[0]).toMatch(/\/0-front\.jpg$/);
+    const listed = (listedAfterUpload() as { photo_paths: string[] }).photo_paths;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatch(/\/0-front\.jpg$/);
+    expect(queuedFoodPhotos().map(([slot]) => slot)).toEqual(['ingredients']);
   });
 });
 
@@ -224,7 +286,9 @@ describe('food capture: what the commit says about the read', () => {
     expect(invokeMock).not.toHaveBeenCalled();
     expect(row.source).toBe('user');
     expect(row.ai_extraction_status).toBe('manual');
-    expect(row.photo_paths).toEqual([]);
+    // CUL-2704: the photo taken offline is queued, and the row does not claim it.
+    expect('photo_paths' in row).toBe(false);
+    expect(queuedFoodPhotos().map(([slot]) => slot)).toEqual(['front']);
   });
 
   it('a read that was asked for and failed is recorded as failed, never as read', async () => {

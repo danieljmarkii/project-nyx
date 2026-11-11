@@ -55,6 +55,7 @@ export async function compressForUpload(
 // a non-compliant path. `userId` is `supabase.auth` user.id; `medicationItemId`
 // is the medication_items uuid the photo belongs to.
 export const MEDICATION_PHOTOS_BUCKET = 'nyx-medication-photos';
+export const FOOD_PHOTOS_BUCKET = 'nyx-food-photos';
 
 export function buildMedicationPhotoPath(
   userId: string,

@@ -519,6 +519,20 @@ export default function FoodDetailScreen() {
         .eq('id', row.id);
       if (error) throw error;
       setRow({ ...row, photo_paths: nextPaths });
+      // CUL-2704: a photo still queued from an offline capture for this slot is older
+      // than the one just chosen. Retire it unsent (marked, not deleted, so the sign-out
+      // wipe still finds its file through the row). Best-effort: the drain also retires
+      // it on its own once it reads the filled slot.
+      if (slot !== 'additional') {
+        try {
+          await getDb().runAsync(
+            'UPDATE food_photo_uploads SET synced = 1 WHERE food_item_id = ? AND slot = ?',
+            [row.id, slot],
+          );
+        } catch (queueErr) {
+          console.warn('[food-detail] queued photo not retired:', queueErr);
+        }
+      }
     } catch (err) {
       console.error('[food-detail] add photo failed:', err);
       Alert.alert('Could not add photo', 'Try again in a moment.');

@@ -3,7 +3,8 @@ import { getDb, getWatermark, setWatermark } from './db';
 import { markRecordHydrated } from './coldStart';
 import { isUploadInFlight, markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
-import { uploadPhoto, compressForUpload, MEDICATION_PHOTOS_BUCKET } from './storage';
+import { uploadPhoto, compressForUpload, MEDICATION_PHOTOS_BUCKET, FOOD_PHOTOS_BUCKET } from './storage';
+import { foodSlotFilled, foodPathsWith } from './captureUploads';
 import {
   reconcileBatch,
   advanceWatermark,
@@ -138,6 +139,7 @@ type QueueTable =
   | 'medications'
   | 'medication_administrations'
   | 'medication_label_uploads'
+  | 'food_photo_uploads'
   | 'diet_trials'
   | 'diet_trial_foods'
   | 'notification_preferences'
@@ -167,6 +169,7 @@ export const INSERT_ONLY_QUEUE_TABLES = [
   'event_attachments',
   'vet_visit_attachments',
   'medication_label_uploads',
+  'food_photo_uploads',
   'care_acknowledgements',
   'vet_calls',
   'vet_call_follow_ups',
@@ -2617,43 +2620,141 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
     rearmOnlyPushContext('medication_administrations', unsynced, mark));
 }
 
-// CUL-1920: push the label photos that failed to upload at capture (offline).
+// CUL-1920 / CUL-2704: push the capture photos that failed to upload at capture
+// (offline). One drain, two queues: the medicine label (medication_label_uploads,
+// one slot per drug) and the food package photos (food_photo_uploads, front /
+// ingredients / barcode). Each queue supplies only what differs: its table, its
+// bucket, the item it fills, how to tell a row is this account's, the pre-sync, and
+// its slot rule.
 //
 // Shaped like the vet-visit attachment loop: the object first, the row second, and
-// the row marked only once both landed. Three things are particular to it:
+// the row marked only once both landed. What every queue shares:
 //
-//   • The drug row may not be on the server yet (capture's own upsert is fire-and-
+//   • The item row may not be on the server yet (capture's own upsert is fire-and-
 //     forget, and an offline save loses it), so the drain pre-syncs it first, the
-//     same ignoreDuplicates pre-sync the dose push uses. A 0-row update below
-//     means the row still is not there (or RLS hid it): that costs an attempt and
-//     the label stays queued, never marked.
+//     same ignoreDuplicates pre-sync the dose and meal pushes use. For food this is
+//     also what lets Storage take the upload: the bucket's INSERT policy resolves
+//     {foodId}/… to the food's owner, so no row means a refused upload.
 //   • photo_paths is written by a targeted UPDATE, never an upsert, so it cannot
-//     clobber the owner's confirmed fields. Capture leaves photo_paths out of its
-//     own upsert while the label is queued, so a late capture upsert cannot wipe
-//     what this wrote either.
-//   • A label whose path is not under the signed-in account's {uid}/ prefix is
-//     never sent. The sign-out wipe deletes this table, so the only way to reach
-//     it is a wipe that failed; Storage would refuse it with a 403, which reads as
-//     transient and would retry for ever, so it is parked here as terminal.
-//   • A label the server already holds wins. The detail screen's "replace the
-//     label" fills the same slot, and an older queued photo must never land over
-//     the owner's choice. Each queued label has its own storage key (capture builds
-//     `0-label-<id>`), so its upload can never overwrite another object; and the
-//     photo_paths update applies only while the slot is still EMPTY. Lost to a
-//     replace that landed first (read or update), the row is retired unsent and
-//     the object it uploaded, if any, removed. The detail screen also retires the
-//     row itself for a replace made on this phone. (rls-privacy-reviewer, CUL-1920.)
-//   • The label is re-encoded with compressForUpload, never prepareAttachmentUpload:
+//     clobber the owner's confirmed fields. Capture leaves photo_paths out of its own
+//     upsert while anything is queued, so a late capture upsert cannot wipe what this
+//     wrote either.
+//   • A row that is not this account's is never sent. The sign-out wipe deletes both
+//     tables, so the only way to reach one is a wipe that failed; Storage would
+//     refuse it with a 403, which reads as transient and would retry for ever, so it
+//     is parked here as terminal.
+//   • A photo the server already holds for the slot wins. The detail screens'
+//     "replace" fills the same slot, and an older queued photo must never land over
+//     the owner's choice. Each queued photo has its own storage key (capture builds
+//     it), so its upload can never overwrite another object; and the photo_paths
+//     update is a compare-and-set on the list this pass read, so it applies only if
+//     nothing changed since. Lost to a replace that landed first (read or update),
+//     the row is retired unsent, and where the bucket grants the owner a DELETE (the
+//     label bucket; not the food bucket, see canRemove) the object it uploaded is
+//     removed. The
+//     detail screens also retire the row themselves for a replace made on this
+//     phone. (rls-privacy-reviewer, CUL-1920.) A compare-and-set lost to some OTHER
+//     change (a photo added to another slot) costs nothing: the next pass reads again.
+//   • The photo is re-encoded with compressForUpload, never prepareAttachmentUpload:
 //     that helper uploads the ORIGINAL when compression fails, which would carry the
 //     photo's EXIF into the bucket. Here a failed re-encode throws, and the upload
 //     classifier spends the budget instead.
 //   • A sign-out mid-pass stops it before any further write (the epoch check the
 //     pulls use), so nothing the pass learned lands in the next account's store.
-export function syncPendingMedicationLabels(): Promise<void> {
-  return serializeQueuePush('medication_label_uploads', drainMedicationLabelsQueue);
+
+interface CapturePhotoRow {
+  id: string;
+  item_id: string;
+  slot: string;
+  owner: string;
+  local_uri: string;
+  storage_path: string;
 }
 
-async function drainMedicationLabelsQueue(): Promise<void> {
+interface CapturePhotoQueue {
+  table: 'medication_label_uploads' | 'food_photo_uploads';
+  bucket: string;
+  /** The upload itself, written per queue so each call names its bucket constant
+   *  (lib/storagePolicies.test.ts resolves every uploadPhoto bucket to a literal). */
+  send: (storagePath: string, compressedUri: string) => Promise<void>;
+  itemTable: 'medication_items' | 'food_items';
+  cacheTable: 'medication_items_cache' | 'food_items_cache';
+  /** Selects the pending rows as CapturePhotoRow, oldest first. */
+  pendingSql: string;
+  /** Whether the row is the signed-in account's, and what a row that is not is parked with. */
+  owns: (row: CapturePhotoRow, uid: string) => boolean;
+  foreignReason: string;
+  presync: (db: Db, uid: string, itemIds: string[]) => Promise<void>;
+  slotFilled: (held: readonly string[], row: CapturePhotoRow) => boolean;
+  /**
+   * Whether the bucket lets the owner delete an object, so a photo that lost to a
+   * replace can be taken back. nyx-medication-photos grants an owner DELETE (021);
+   * nyx-food-photos deliberately does not (046), and a remove there is refused with
+   * no error, so the food drain never claims it took anything back.
+   */
+  canRemove: boolean;
+  pathsWith: (held: readonly string[], row: CapturePhotoRow) => string[];
+}
+
+const MEDICATION_LABEL_QUEUE: CapturePhotoQueue = {
+  table: 'medication_label_uploads',
+  bucket: MEDICATION_PHOTOS_BUCKET,
+  send: (path, uri) => uploadPhoto(MEDICATION_PHOTOS_BUCKET, path, uri, 'image/jpeg'),
+  itemTable: 'medication_items',
+  cacheTable: 'medication_items_cache',
+  // Keyed by the drug it labels; the path's {uid}/ prefix is the account.
+  pendingSql: `SELECT id, id AS item_id, 'label' AS slot, '' AS owner, local_uri, storage_path
+                 FROM medication_label_uploads
+                WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} ORDER BY created_at LIMIT 20`,
+  owns: (row, uid) => row.storage_path.startsWith(`${uid}/`),
+  foreignReason: 'label belongs to another account',
+  presync: presyncMedicationItems,
+  // One label per drug: any label held fills the slot.
+  slotFilled: (held) => held.length > 0,
+  canRemove: true,
+  pathsWith: (_held, row) => [row.storage_path],
+};
+
+const FOOD_PHOTO_QUEUE: CapturePhotoQueue = {
+  table: 'food_photo_uploads',
+  bucket: FOOD_PHOTOS_BUCKET,
+  send: (path, uri) => uploadPhoto(FOOD_PHOTOS_BUCKET, path, uri, 'image/jpeg'),
+  itemTable: 'food_items',
+  cacheTable: 'food_items_cache',
+  // A food path ({foodId}/…) names no account, so the row carries the one that took it.
+  pendingSql: `SELECT id, food_item_id AS item_id, slot, owner_user_id AS owner, local_uri, storage_path
+                 FROM food_photo_uploads
+                WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} ORDER BY created_at LIMIT 20`,
+  owns: (row, uid) => row.owner === uid,
+  foreignReason: 'photo belongs to another account',
+  presync: (db, uid, itemIds) => presyncFoodItems(db, uid, itemIds, 'capture photos'),
+  slotFilled: (held, row) => foodSlotFilled(held, row.slot),
+  // The lost photo stays in the owner's own {foodId}/ prefix, named by no row, until the
+  // account's deletion sweeps the prefix.
+  canRemove: false,
+  pathsWith: (held, row) => foodPathsWith(held, row.storage_path),
+};
+
+export function syncPendingMedicationLabels(): Promise<void> {
+  return serializeQueuePush('medication_label_uploads', () => drainCapturePhotoQueue(MEDICATION_LABEL_QUEUE));
+}
+
+export function syncPendingFoodPhotos(): Promise<void> {
+  return serializeQueuePush('food_photo_uploads', () => drainCapturePhotoQueue(FOOD_PHOTO_QUEUE));
+}
+
+// A text[] as the literal PostgREST compares it against: `{a,b}`. Each element is
+// double-quoted (with " and \ escaped) so a path holding a comma or brace still
+// names one element.
+export function pgTextArrayLiteral(values: readonly string[]): string {
+  return `{${values.map((v) => `"${v.replace(/[\\"]/g, (c) => `\\${c}`)}"`).join(',')}}`;
+}
+
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+async function drainCapturePhotoQueue(q: CapturePhotoQueue): Promise<void> {
   const epoch = currentSignOutEpoch();
   const stale = () => currentSignOutEpoch() !== epoch;
   const { data: { session } } = await supabase.auth.getSession();
@@ -2661,102 +2762,106 @@ async function drainMedicationLabelsQueue(): Promise<void> {
   const uid = session.user.id;
 
   const db = getDb();
-  const pending = await db.getAllAsync<{ id: string; local_uri: string; storage_path: string }>(
-    `SELECT id, local_uri, storage_path FROM medication_label_uploads
-      WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} ORDER BY created_at LIMIT 20`,
-  );
+  const pending = await db.getAllAsync<CapturePhotoRow>(q.pendingSql);
   if (pending.length === 0) return;
 
-  const own = pending.filter((r) => r.storage_path.startsWith(`${uid}/`));
+  const own = pending.filter((r) => q.owns(r, uid));
   for (const r of pending) {
     if (stale()) return;
     if (!own.includes(r)) {
-      await applyFailurePolicy(db, 'medication_label_uploads', r, 'terminal',
-        'label belongs to another account');
+      await applyFailurePolicy(db, q.table, r, 'terminal', q.foreignReason);
     }
   }
   if (own.length === 0) return;
 
-  await presyncMedicationItems(db, uid, own.map((r) => r.id));
+  await q.presync(db, uid, [...new Set(own.map((r) => r.item_id))]);
+
+  const readHeld = async (itemId: string) => {
+    const res = await supabase.from(q.itemTable).select('photo_paths').eq('id', itemId).maybeSingle();
+    const raw = (res.data as { photo_paths?: unknown[] | null } | null)?.photo_paths ?? [];
+    // A non-text element (a NULL inside the array) would throw in the slot check and
+    // abort every sync cycle. Read past it: the compare-and-set then never matches the
+    // real array, which costs an attempt per pass, so the row parks rather than loops.
+    const held = raw.filter((p): p is string => typeof p === 'string');
+    return { error: res.error, visible: res.data != null, held };
+  };
 
   for (const row of own) {
     if (stale()) return;
 
-    const current = await supabase
-      .from('medication_items')
-      .select('photo_paths')
-      .eq('id', row.id)
-      .maybeSingle();
+    const current = await readHeld(row.item_id);
     if (current.error) {
-      console.warn('[sync] medication label read failed:', current.error.message);
-      await recordPushFailure(db, 'medication_label_uploads', row, current.error);
+      console.warn(`[sync] ${q.table} read failed:`, current.error.message);
+      await recordPushFailure(db, q.table, row, current.error);
       continue;
     }
-    const held = (current.data as { photo_paths?: string[] | null } | null)?.photo_paths ?? [];
-    if (held.length > 0) {
-      // The slot is filled (a replace on the detail screen, here or on another phone,
+    if (q.slotFilled(current.held, row)) {
+      // The slot is filled (a replace on a detail screen, here or on another phone,
       // or this drain's own earlier pass): retire the row unsent.
       if (stale()) return;
-      await markSyncedInsertOnly(db, 'medication_label_uploads', [row.id]);
+      await markSyncedInsertOnly(db, q.table, [row.id]);
       continue;
     }
 
     try {
       const compressed = await compressForUpload(row.local_uri);
-      await uploadPhoto(MEDICATION_PHOTOS_BUCKET, row.storage_path, compressed, 'image/jpeg');
+      await q.send(row.storage_path, compressed);
     } catch (e) {
       // A network throw costs nothing (the offline case); a permanent one, or a
       // re-encode that failed, spends the budget and quarantines (B-586).
-      console.warn('[sync] medication label upload failed:', e);
+      console.warn(`[sync] ${q.table} upload failed:`, e);
       if (stale()) return;
-      await recordUploadFailure(db, 'medication_label_uploads', row, e);
+      await recordUploadFailure(db, q.table, row, e);
       continue;
     }
     if (stale()) return;
 
+    const next = q.pathsWith(current.held, row);
     const { data, error } = await supabase
-      .from('medication_items')
-      .update({ photo_paths: [row.storage_path] })
-      .eq('id', row.id)
-      .eq('photo_paths', '{}')
+      .from(q.itemTable)
+      .update({ photo_paths: next })
+      .eq('id', row.item_id)
+      .eq('photo_paths', pgTextArrayLiteral(current.held))
       .select('id');
     if (stale()) return;
     if (error) {
-      console.warn('[sync] medication label photo_paths update failed:', error.message);
-      await recordPushFailure(db, 'medication_label_uploads', row, error);
+      console.warn(`[sync] ${q.table} photo_paths update failed:`, error.message);
+      await recordPushFailure(db, q.table, row, error);
       continue;
     }
     if (!data || data.length === 0) {
-      // No row matched: either a replace filled the slot after the read above (the
-      // label lost; retire it and take back its object), or the row is not visible
-      // to this account (an honest failure that costs an attempt).
-      const after = await supabase
-        .from('medication_items')
-        .select('photo_paths')
-        .eq('id', row.id)
-        .maybeSingle();
+      // No row matched: a replace filled the slot after the read above (the photo
+      // lost; retire it and take back its object), the list changed some other way
+      // (the next pass reads it again), or the update was refused or the row is not
+      // visible to this account (an honest failure that costs an attempt).
+      const after = await readHeld(row.item_id);
       if (stale()) return;
-      const filled = (after.data as { photo_paths?: string[] | null } | null)?.photo_paths ?? [];
-      if (!after.error && filled.length > 0) {
-        const { error: removeErr } = await supabase.storage
-          .from(MEDICATION_PHOTOS_BUCKET)
-          .remove([row.storage_path]);
-        if (removeErr) console.warn('[sync] superseded medication label not removed:', removeErr.message);
-        await markSyncedInsertOnly(db, 'medication_label_uploads', [row.id]);
+      if (!after.error && q.slotFilled(after.held, row)) {
+        if (q.canRemove) {
+          const { error: removeErr } = await supabase.storage.from(q.bucket).remove([row.storage_path]);
+          if (removeErr) console.warn(`[sync] superseded ${q.table} photo not removed:`, removeErr.message);
+        }
+        await markSyncedInsertOnly(db, q.table, [row.id]);
         continue;
       }
-      await recordPushFailure(db, 'medication_label_uploads', row, RLS_FILTERED_ERROR);
+      // Visible, unfilled, and the list MOVED: the compare-and-set lost to another
+      // change, which costs nothing, and the next pass reads again. Visible and
+      // UNCHANGED means the update itself was refused: that costs an attempt like an
+      // RLS-hidden row, so the budget still bounds it.
+      if (!after.error && after.visible && !sameList(after.held, current.held)) continue;
+      await recordPushFailure(db, q.table, row, RLS_FILTERED_ERROR);
       continue;
     }
 
     // The photo is on the server and the row names it: only now does the cache claim
-    // it. A cache row that is gone (changes 0) is left to refreshMedicationCache, which
-    // pulls the row this update just wrote at the end of the same sync cycle.
+    // it, as the list's first photo (every reader's picture). A cache row that is gone
+    // (changes 0) is left to the cache refresh, which pulls the row this update just
+    // wrote at the end of the same sync cycle.
     await db.runAsync(
-      'UPDATE medication_items_cache SET photo_path = ? WHERE id = ?',
-      [row.storage_path, row.id],
+      `UPDATE ${q.cacheTable} SET photo_path = ? WHERE id = ?`,
+      [next[0] ?? null, row.item_id],
     );
-    await markSyncedInsertOnly(db, 'medication_label_uploads', [row.id]);
+    await markSyncedInsertOnly(db, q.table, [row.id]);
   }
 }
 
@@ -4886,6 +4991,12 @@ async function pushAllQueues(): Promise<void> {
   // account-wide, pet_id NULL), so its position is free — last, after the
   // pet-scoped queues.
   await syncPendingNotificationPreferences();
+  // CUL-2704: a food capture's photos queued offline. LAST on purpose: up to twenty
+  // serial uploads on a weak link must never hold up the queues above (EN-4's
+  // re-checks among them), and nothing above depends on it (every food-referencing
+  // drain pre-syncs its own food row). Its own pre-sync puts the food row up first,
+  // which the bucket's owner policy needs before it takes the upload.
+  await syncPendingFoodPhotos();
 }
 
 export async function syncNow(): Promise<void> {

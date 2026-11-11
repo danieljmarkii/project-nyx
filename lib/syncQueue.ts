@@ -346,6 +346,8 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   { table: 'medication_administrations', pendingSince: 'updated_at' },
   // CUL-1920: a label photo that failed to upload at capture. Insert-only.
   { table: 'medication_label_uploads', pendingSince: 'created_at' },
+  // CUL-2704: a food capture's photo that failed to upload at capture. Insert-only.
+  { table: 'food_photo_uploads', pendingSince: 'created_at' },
   { table: 'diet_trials', pendingSince: 'updated_at' },
   { table: 'diet_trial_foods', pendingSince: 'updated_at' },
   // B-661 — the per-account notification-preferences mirror (LWW, updated_at).
