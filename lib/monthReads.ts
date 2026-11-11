@@ -70,7 +70,7 @@ import { getDb, getTimeline, type TimelineRow } from './db';
 import { boutSpansOf, episodeDaysOf, type BoutSpan } from './chartModels';
 import { collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type MealTimingConfig } from './mealTiming';
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
-import { isFinishedMeal, qualifyingIntakeMeals, readFreeFedIntakeSpans, SYMPTOM_EVENT_TYPES, type AnalyticsMeal } from './analytics';
+import { isFinishedMeal, isRefusedMeal, qualifyingIntakeMeals, readFreeFedIntakeSpans, SYMPTOM_EVENT_TYPES, type AnalyticsMeal } from './analytics';
 import { readCopies } from './readCopy';
 import { isWorthACall } from './readState';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
@@ -127,8 +127,6 @@ const MS_PER_DAY = 86_400_000;
 const UNIX_EPOCH_JULIAN_DAY = 2_440_587.5;
 /** The daily look's event type — the one row that is never coverage (§5.6, T-5). */
 export const LOOK_EVENT_TYPE = 'check_in';
-/** The rating a refusal carries (`INTAKE_SCORE` in `lib/analytics.ts`). */
-const REFUSED_RATING = 'refused';
 /** A feeding: the one event type a meal row hangs off. */
 const FEEDING_EVENT_TYPE = 'meal';
 const SYMPTOM_TYPE_SET: ReadonlySet<string> = new Set(SYMPTOM_EVENT_TYPES);
@@ -305,7 +303,7 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     if (isFinishedMeal(m)) continue;
     leftSomeSet.add(k);
     // A meal is counted once, refused first: the accusing word is never the lighter one.
-    if (m.intakeRating === REFUSED_RATING) refusedMealDays.push(k);
+    if (isRefusedMeal(m)) refusedMealDays.push(k);
     else leftSomeMealDays.push(k);
   }
 

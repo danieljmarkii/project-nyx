@@ -886,6 +886,14 @@ export function isFinishedMeal(m: AnalyticsMeal): boolean {
   return (INTAKE_SCORE[m.intakeRating as string] ?? 0) >= FINISHED_SCORE;
 }
 
+/** A meal rated Refused: the ONE refused predicate, shared by the Patterns month
+ *  (`lib/monthReads.ts`'s `refusedMealDays`) and History's day facts (`DayFacts.refusedMeals`),
+ *  so the two surfaces name and count the same refusals (CUL-1553, CUL-1559). Picked is not
+ *  in it: the month counts it as left some, and so does the strip. */
+export function isRefusedMeal(m: AnalyticsMeal): boolean {
+  return m.intakeRating === 'refused';
+}
+
 /**
  * Rated, non-treat, non-free-fed meals — the ONE definition of an intake-rate
  * "qualifying meal" (§11 #1 treats-out, §11 #6 free-fed-out), shared by the
