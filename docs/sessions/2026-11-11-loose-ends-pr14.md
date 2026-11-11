@@ -1,7 +1,8 @@
 # Loose ends PR-14: shaping the offline label photo
 
 **Date:** 2026-11-11
-**Mode:** DISCOVERY (shaping brief), [CUL-1920](https://linear.app/projectnyx/issue/CUL-1920)
+**One thing:** none — dispatched session, not this round's teach row
+**Mode:** DISCOVERY (shaping brief), then BUILD on the PM's `go 1`, [CUL-1920](https://linear.app/projectnyx/issue/CUL-1920)
 
 ## What the code says
 
