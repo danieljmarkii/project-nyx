@@ -315,31 +315,44 @@ export async function readPetSeamReads(petId: string): Promise<SeamRead[]> {
   );
 }
 
+/** The newest settled read near a Signal row's build: its `updated_at` as the server wrote
+ *  it, and whether it is at or after the build (`afterBuild`) or inside the race margin
+ *  before it. */
+export interface ReadNearBuild {
+  updatedAt: string;
+  afterBuild: boolean;
+}
+
 /**
- * Whether a read for one pet's live events changed on this phone's copy at or after an
- * instant: Home's Signal asks it with its row's `generated_at` (CUL-1105). A read that
- * landed after the Signal was built (the owner logged at 2am and locked the phone; the
- * next morning's sync pull brought the read in) is a read that rebuild never saw, so Home
- * rebuilds. Pending rows do not count: the rebuild waits for the verdict.
+ * The newest settled read for one pet's live events that changed at or after `sinceIso`
+ * less `marginMs`, or null: Home's Signal asks it with its row's `generated_at` (CUL-1105).
+ * A read at or after the build is one that rebuild never saw. A read inside the margin
+ * BEFORE it may not have been seen either: `generated_at` is stamped at the insert, after
+ * the rebuild loaded its data and phrased, so a read written in that span (the adversarial
+ * pass's race) sorts before the row that missed it. A read after the build is preferred,
+ * then the newest. Pending rows never count: the rebuild waits for the verdict.
  *
  * Compared in SQL on PARSED instants (`julianday`), never as text (C-40): the copy holds
  * the server's `…+00:00` spelling and the Signal row may carry either. At or after, not
- * strictly after, so a millisecond tie rebuilds (the louder side; the rebuild's own
- * `generated_at` is later, so it settles). An unparseable instant reads as changed.
- * Local only; throws on a local read failure, and the caller keeps the cached Signal.
+ * strictly after, so a millisecond tie counts as after (the louder side). An unparseable
+ * instant on either side reads as after. Local only; throws on a local read failure, and
+ * the caller keeps the cached Signal.
  */
-export async function readChangedSince(petId: string, sinceIso: string): Promise<boolean> {
-  const rows = await getDb().getAllAsync<{ hit: number }>(
-    `SELECT 1 AS hit
+export async function readNearBuild(petId: string, sinceIso: string, marginMs: number): Promise<ReadNearBuild | null> {
+  const marginDays = marginMs / 86_400_000;
+  const after = `(julianday(?) IS NULL OR julianday(v.updated_at) IS NULL OR julianday(v.updated_at) >= julianday(?))`;
+  const rows = await getDb().getAllAsync<{ updated_at: string; after_build: number }>(
+    `SELECT v.updated_at AS updated_at, ${after} AS after_build
        FROM event_ai_verdicts v
        JOIN events e ON e.id = v.event_id
       WHERE e.pet_id = ? AND e.deleted_at IS NULL AND v.status != 'pending'
-        AND (julianday(?) IS NULL OR julianday(v.updated_at) IS NULL
-             OR julianday(v.updated_at) >= julianday(?))
+        AND (${after} OR julianday(v.updated_at) >= julianday(?) - ?)
+      ORDER BY after_build DESC, julianday(v.updated_at) DESC
       LIMIT 1`,
-    [petId, sinceIso, sinceIso],
+    [sinceIso, sinceIso, petId, sinceIso, sinceIso, sinceIso, marginDays],
   );
-  return rows.length > 0;
+  const r = rows[0];
+  return r ? { updatedAt: r.updated_at, afterBuild: r.after_build === 1 } : null;
 }
 
 /** The server's hash form of `photo_set_key` (engineStamps.ts): 64 hex, no comma, no

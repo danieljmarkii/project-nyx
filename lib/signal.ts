@@ -17,7 +17,7 @@ import { supabase } from './supabase';
 import { useSyncStore } from '../store/syncStore';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { countRecordGaps } from './db';
-import { readChangedSince } from './readCopy';
+import { readNearBuild } from './readCopy';
 import { currentSignOutEpoch } from './signOutEpoch';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
@@ -854,37 +854,49 @@ export function isSignalCacheStale(row: SignalCacheRow | null, nowMs = Date.now(
 }
 
 // ── A read that landed after the Signal was built (CUL-1105) ─────────────────────
-// The primary path is the copy's writer (`lib/readCopy.ts` `writeCopies`), which rebuilds a
-// pet's Signal whenever a settled read moves the copy, by any caller. This is the BACKSTOP
-// for a read the copy already holds when Home opens but whose rebuild never ran (the app
-// was killed inside the 5s debounce): a fresh row is also stale when a read for its pet
-// changed at or after its `generated_at`. It cannot see a read written during a rebuild's
-// own run (`generated_at` is stamped at the insert, after the load); the writer's trigger
-// covers that one. The rebuild is a write to the record and goes as a log, which the
-// per-pet cap never turns away (CUL-2059).
+// The primary path is the copy's writer (`lib/readCopy.ts` `writeCopies`), which arms a
+// rebuild for a pet whenever a settled read moves the copy, by any caller. That rebuild is
+// an in-memory timer, so it dies with the app. This is the BACKSTOP, run when Home and the
+// cross-pet banner read a row still inside its expiry:
+//   · a settled read at or after the row's `generated_at` is one the row never saw;
+//   · a settled read inside `LANDED_READ_RACE_MS` BEFORE it may not have been seen either:
+//     `generated_at` is stamped at the insert, after the rebuild loaded and phrased, so a
+//     read written during a rebuild sorts before the row that missed it (adversarial pass
+//     2: the read lands mid-rebuild, the owner swipes the app away inside the writer's 5s
+//     debounce, and on the next launch the pull finds the copy unchanged).
+// Either rebuild is a write to the record and goes as a log, which the per-pet cap never
+// turns away (CUL-2059).
 //
-// Once per row: the set holds each (pet, generated_at) a landed read is rebuilding or has
-// rebuilt, so a success that somehow leaves the same row (and bumps the signalTick that
-// re-runs this check) cannot loop. A rebuild that FAILS releases its key, so the next open
-// asks again (a failure bumps no tick, so that cannot loop either); a success writes a
-// later `generated_at`, a new key. Account state, cleared by `cancelPendingSignalRegens`.
-// A failed local read keeps the cached Signal (the expiry still rebuilds it).
+// Each rebuild has a key, so none can chain on the signalTick its success bumps:
+//   · after the build: once per ROW (pet, generated_at). A success writes a later row, a
+//     new key, which the read no longer postdates;
+//   · inside the margin: once per READ VERSION (pet, read updated_at), per app process. The
+//     next row is still within the margin of the same read, so a row key would rebuild it
+//     again on every success until the margin ran out; the read key stops at one. Its cost
+//     is at most one extra counted rebuild per read per launch (the loud side).
+// A rebuild that FAILS releases its key, so the next open asks again (a failure bumps no
+// tick, so that cannot loop). Account state, cleared by `cancelPendingSignalRegens`. A
+// failed local read keeps the cached Signal (the expiry still rebuilds it).
+export const LANDED_READ_RACE_MS = 120_000;
 const readRebuiltRows = new Set<string>();
 
-export async function signalMissesLandedRead(petId: string, row: SignalCacheRow | null): Promise<boolean> {
-  if (!row?.generatedAt || isSignalCacheStale(row)) return false;
-  if (readRebuiltRows.has(`${petId}|${row.generatedAt}`)) return false;
+/** The key a landed read's rebuild runs under, or null when the row has seen every read. */
+export async function landedReadRebuildKey(petId: string, row: SignalCacheRow | null): Promise<string | null> {
+  if (!row?.generatedAt || isSignalCacheStale(row)) return null;
+  let near: Awaited<ReturnType<typeof readNearBuild>>;
   try {
-    return await readChangedSince(petId, row.generatedAt);
+    near = await readNearBuild(petId, row.generatedAt, LANDED_READ_RACE_MS);
   } catch (e) {
     console.warn('[signal] read-change check failed:', e);
-    return false;
+    return null;
   }
+  if (!near) return null;
+  const key = near.afterBuild ? `row|${petId}|${row.generatedAt}` : `read|${petId}|${near.updatedAt}`;
+  return readRebuiltRows.has(key) ? null : key;
 }
 
-/** The rebuild `signalMissesLandedRead` asked for: a log-reason regen, keyed to the row. */
-export function regenerateForLandedRead(petId: string, generatedAt: string): Promise<{ error: string | null }> {
-  const key = `${petId}|${generatedAt}`;
+/** The rebuild `landedReadRebuildKey` asked for: a log-reason regen, held under its key. */
+export function regenerateForLandedRead(petId: string, key: string): Promise<{ error: string | null }> {
   readRebuiltRows.add(key);
   return regenerateSignal(petId, 'log').then((res) => {
     if (res.error) readRebuiltRows.delete(key);
@@ -1069,8 +1081,9 @@ export async function readSignalsAndRefresh(
       const row = await readSignalCache(petId);
       if (isSignalCacheStale(row)) {
         if (currentSignOutEpoch() === epoch) regenerateSignal(petId).catch(() => {});
-      } else if (row?.generatedAt && (await signalMissesLandedRead(petId, row))) {
-        if (currentSignOutEpoch() === epoch) regenerateForLandedRead(petId, row.generatedAt).catch(() => {});
+      } else {
+        const key = await landedReadRebuildKey(petId, row);
+        if (key && currentSignOutEpoch() === epoch) regenerateForLandedRead(petId, key).catch(() => {});
       }
       byPet.set(petId, row?.findings ?? []);
     } catch {

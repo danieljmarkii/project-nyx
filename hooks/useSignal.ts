@@ -9,13 +9,14 @@ import {
   isSignalCacheStale,
   readSignalsAndRefresh,
   regenerateSignal,
-  signalMissesLandedRead,
+  landedReadRebuildKey,
   regenerateForLandedRead,
   type CachedFinding,
   type CoverageDiagnostic,
 } from '../lib/signal';
 import { bannerCopy, selectCrossPetSafetyFinding, validateBannerPhrasing } from '../lib/signalCopy';
 import { QUIET_STRETCH_MS } from '../lib/signalWatching';
+import { currentSignOutEpoch } from '../lib/signOutEpoch';
 
 export interface SignalState {
   /** The pet these findings belong to, or null before a pet is loaded. Exposed so a
@@ -202,6 +203,7 @@ export function useSignal(): SignalState {
       if (!petId) return;
       let cancelled = false;
 
+      const epoch = currentSignOutEpoch();
       (async () => {
         if (!cancelled) setLocalCtx(getLocalSignalContext(petId));
         try {
@@ -213,14 +215,14 @@ export function useSignal(): SignalState {
           setGeneratedAt(row?.generatedAt ?? null);
           setAnswered(true);
 
-          // CUL-1105: a read that landed after this row was built is one it never saw; that
-          // rebuild goes as a log (`signalMissesLandedRead`, once per row).
+          // CUL-1105: a read this row may never have seen rebuilds it, as a log, once per
+          // key (`landedReadRebuildKey`). Epoch-checked after the await, like the banner.
           const expired = isSignalCacheStale(row);
-          const landedFor = !expired && row?.generatedAt && (await signalMissesLandedRead(petId, row)) ? row.generatedAt : null;
-          if (cancelled) return;
-          if (expired || landedFor) {
+          const landedKey = expired ? null : await landedReadRebuildKey(petId, row);
+          if (cancelled || currentSignOutEpoch() !== epoch) return;
+          if (expired || landedKey) {
             // Daily-expiry regen — off the render path; re-read when it lands.
-            (landedFor ? regenerateForLandedRead(petId, landedFor) : regenerateSignal(petId))
+            (landedKey ? regenerateForLandedRead(petId, landedKey) : regenerateSignal(petId))
               .then(() => readSignalCache(petId))
               .then((fresh) => {
                 if (cancelled || !fresh) return;

@@ -217,7 +217,7 @@ import {
   pullReadCopyFor,
   readCopies,
   readPetSeamReads,
-  readChangedSince,
+  readNearBuild,
   writeCopies,
 } from './readCopy';
 import { newSinceLineOf } from './ruleSeam';
@@ -1149,11 +1149,11 @@ describe('the reasons (CUL-2678): the copy keeps what a chip needs to pick the r
   });
 });
 
-// ── CUL-1105: a read that landed after the Signal was built ─────────────────────────────
+// ── CUL-1105: a read near the Signal's build ─────────────────────────────────────────────
 // Home asks with its Signal row's `generated_at`. The copy holds the server's `+00:00`
 // spelling; the Signal row can carry the `.000Z` one. Same instant, different text (C-40):
 // the test pins both halves so a text compare cannot pass it.
-describe("readChangedSince — a read newer than the pet's Signal (CUL-1105)", () => {
+describe("readNearBuild — a read the pet's Signal may not have seen (CUL-1105)", () => {
   function event(id: string, petId: string, deletedAt: string | null = null) {
     mockDb
       .prepare('INSERT INTO events (id, pet_id, event_type, occurred_at, deleted_at) VALUES (?, ?, ?, ?, ?)')
@@ -1164,21 +1164,41 @@ describe("readChangedSince — a read newer than the pet's Signal (CUL-1105)", (
       .prepare('INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES (?, ?, ?, ?)')
       .run(eventId, status, 'worth_a_call', updatedAt);
   const BUILT = '2026-11-11T02:00:05.000Z';
+  const MARGIN = 120_000;
 
-  it('a read that landed after the Signal was built is seen; one before it is not', async () => {
+  it('a read after the build is after it; one well before the margin is nothing', async () => {
     event('ev', 'nyx');
     verdict('ev', '2026-11-11T02:00:40+00:00');
-    expect(await readChangedSince('nyx', BUILT)).toBe(true);
-    expect(await readChangedSince('nyx', '2026-11-11T02:01:00.000Z')).toBe(false);
+    expect(await readNearBuild('nyx', BUILT, MARGIN)).toEqual({ updatedAt: '2026-11-11T02:00:40+00:00', afterBuild: true });
+    expect(await readNearBuild('nyx', '2026-11-11T02:10:00.000Z', MARGIN)).toBeNull();
   });
 
-  it('the same instant in the other spelling counts (a tie rebuilds), though as text it sorts earlier', async () => {
+  it('a read written during the rebuild (before generated_at, inside the margin) is reported, not after', async () => {
+    event('ev', 'nyx');
+    verdict('ev', '2026-11-11T02:00:09+00:00');
+    expect(await readNearBuild('nyx', '2026-11-11T02:00:12.000Z', MARGIN)).toEqual({
+      updatedAt: '2026-11-11T02:00:09+00:00',
+      afterBuild: false,
+    });
+  });
+
+  it('prefers a read after the build over a newer-looking one inside the margin, then the newest', async () => {
+    event('a', 'nyx');
+    event('b', 'nyx');
+    event('c', 'nyx');
+    verdict('a', '2026-11-11T02:00:01+00:00');
+    verdict('b', '2026-11-11T02:00:30+00:00');
+    verdict('c', '2026-11-11T02:00:50+00:00');
+    expect(await readNearBuild('nyx', BUILT, MARGIN)).toEqual({ updatedAt: '2026-11-11T02:00:50+00:00', afterBuild: true });
+  });
+
+  it('the same instant in the other spelling is after (a tie rebuilds), though as text it sorts earlier', async () => {
     event('ev', 'nyx');
     verdict('ev', '2026-11-11T02:00:05+00:00');
     // The trap: '+' sorts before '.', so a text >= would call this read older than the Signal.
     expect('2026-11-11T02:00:05+00:00' >= BUILT).toBe(false);
     expect(Date.parse('2026-11-11T02:00:05+00:00')).toBe(Date.parse(BUILT));
-    expect(await readChangedSince('nyx', BUILT)).toBe(true);
+    expect((await readNearBuild('nyx', BUILT, MARGIN))?.afterBuild).toBe(true);
   });
 
   it("only this pet's live events, and never a read still pending", async () => {
@@ -1188,14 +1208,14 @@ describe("readChangedSince — a read newer than the pet's Signal (CUL-1105)", (
     verdict('mine-pending', '2026-11-11T02:00:40+00:00', 'pending');
     verdict('mine-deleted', '2026-11-11T02:00:40+00:00');
     verdict('milo-ev', '2026-11-11T02:00:40+00:00');
-    expect(await readChangedSince('nyx', BUILT)).toBe(false);
-    expect(await readChangedSince('milo', BUILT)).toBe(true);
+    expect(await readNearBuild('nyx', BUILT, MARGIN)).toBeNull();
+    expect(await readNearBuild('milo', BUILT, MARGIN)).not.toBeNull();
   });
 
-  it('an instant it cannot parse reads as changed (the loud side)', async () => {
+  it('an instant it cannot parse reads as after (the loud side)', async () => {
     event('ev', 'nyx');
-    verdict('ev', '2026-11-11T02:00:00+00:00');
-    expect(await readChangedSince('nyx', 'not a time')).toBe(true);
+    verdict('ev', '2026-11-11T01:00:00+00:00');
+    expect((await readNearBuild('nyx', 'not a time', MARGIN))?.afterBuild).toBe(true);
   });
 });
 
@@ -1216,7 +1236,7 @@ describe('writeCopies — a settled read that moved the copy rebuilds its pet’
   it('Home checked first (nothing on the phone), then the pull lands the read: the pull rebuilds', async () => {
     event('ev', 'nyx');
     // Home's check, against a copy that does not hold the read yet.
-    expect(await readChangedSince('nyx', '2026-11-11T02:00:05.000Z')).toBe(false);
+    expect(await readNearBuild('nyx', '2026-11-11T02:00:05.000Z', 120_000)).toBeNull();
     mockServer = [row('ev', '2026-11-11T02:00:40+00:00', 'worth_a_call')];
     await pullReadCopies(mockAdapter, never);
     expect(mockRegen).toHaveBeenCalledTimes(1);
@@ -1225,11 +1245,11 @@ describe('writeCopies — a settled read that moved the copy rebuilds its pet’
 
   it('a read written while a rebuild ran (older than its generated_at) still rebuilds when it moves the copy', async () => {
     event('ev', 'nyx');
-    // updated_at 02:00:09, a rebuild stamped at 02:00:12: the freshness check calls it seen…
+    // updated_at 02:00:09, a rebuild stamped at 02:00:12: the read sorts before the row…
     mockServer = [row('ev', '2026-11-11T02:00:09+00:00', 'worth_a_call')];
     await pullReadCopies(mockAdapter, never);
-    expect(await readChangedSince('nyx', '2026-11-11T02:00:12.000Z')).toBe(false);
-    // …but the writer armed the rebuild on the move itself.
+    expect((await readNearBuild('nyx', '2026-11-11T02:00:12.000Z', 120_000))?.afterBuild).toBe(false);
+    // …and the writer armed the rebuild on the move itself.
     expect(mockRegen).toHaveBeenCalledWith('nyx');
   });
 

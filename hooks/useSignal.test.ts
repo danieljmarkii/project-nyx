@@ -7,7 +7,7 @@ import {
   isSignalCacheStale,
   regenerateSignal,
   readSignalsAndRefresh,
-  signalMissesLandedRead,
+  landedReadRebuildKey,
   regenerateForLandedRead,
 } from '../lib/signal';
 import type { CachedFinding } from '../lib/signal';
@@ -59,7 +59,7 @@ jest.mock('../lib/signal', () => ({
   isSignalCacheStale: jest.fn(),
   regenerateSignal: jest.fn(),
   readSignalsAndRefresh: jest.fn(),
-  signalMissesLandedRead: jest.fn(),
+  landedReadRebuildKey: jest.fn(),
   regenerateForLandedRead: jest.fn(),
 }));
 
@@ -67,7 +67,7 @@ const mockedReadCache = readSignalCache as jest.Mock;
 const mockedIsStale = isSignalCacheStale as jest.Mock;
 const mockedRegenerate = regenerateSignal as jest.Mock;
 const mockedRefresh = readSignalsAndRefresh as jest.Mock;
-const mockedMissesRead = signalMissesLandedRead as jest.Mock;
+const mockedRebuildKey = landedReadRebuildKey as jest.Mock;
 const mockedRegenForRead = regenerateForLandedRead as jest.Mock;
 
 const finding: CachedFinding = {
@@ -94,7 +94,7 @@ beforeEach(() => {
   mockLocalRowsByPet = {};
   mockedIsStale.mockReturnValue(false);
   mockedRegenerate.mockResolvedValue({ error: null });
-  mockedMissesRead.mockResolvedValue(false);
+  mockedRebuildKey.mockResolvedValue(null);
   mockedRegenForRead.mockResolvedValue({ error: null });
   usePetStore.setState({ pets: [PET_A, PET_B], activePet: PET_A });
 });
@@ -377,19 +377,31 @@ describe('useSignal — a read that landed after the Signal was built (CUL-1105)
 
   it('rebuilds a fresh row that missed a read, for the active pet, and draws the rebuilt row', async () => {
     mockedReadCache.mockResolvedValueOnce(fresh).mockResolvedValue(withFlag);
-    mockedMissesRead.mockResolvedValue(true);
+    mockedRebuildKey.mockResolvedValue('row|pet-a|key');
     const { result } = renderHook(() => useSignal());
     await waitFor(() => expect(result.current.findings).toEqual([finding]));
-    expect(mockedMissesRead).toHaveBeenCalledWith(PET_A.id, fresh);
-    expect(mockedRegenForRead).toHaveBeenCalledWith(PET_A.id, BUILT);
+    expect(mockedRebuildKey).toHaveBeenCalledWith(PET_A.id, fresh);
+    expect(mockedRegenForRead).toHaveBeenCalledWith(PET_A.id, 'row|pet-a|key');
     expect(mockedRegenerate).not.toHaveBeenCalled();
+  });
+
+  it('a sign-out while the copy is read arms nothing (CUL-642’s class)', async () => {
+    mockedReadCache.mockResolvedValue(fresh);
+    mockedRebuildKey.mockImplementation(async () => {
+      require('../lib/signOutEpoch').notifySignedOut();
+      return 'row|pet-a|key';
+    });
+    const { result } = renderHook(() => useSignal());
+    await waitFor(() => expect(result.current.answered).toBe(true));
+    await waitFor(() => expect(mockedRebuildKey).toHaveBeenCalled());
+    expect(mockedRegenForRead).not.toHaveBeenCalled();
   });
 
   it('a fresh row no read has passed rebuilds nothing', async () => {
     mockedReadCache.mockResolvedValue(fresh);
     const { result } = renderHook(() => useSignal());
     await waitFor(() => expect(result.current.answered).toBe(true));
-    await waitFor(() => expect(mockedMissesRead).toHaveBeenCalled());
+    await waitFor(() => expect(mockedRebuildKey).toHaveBeenCalled());
     expect(mockedRegenForRead).not.toHaveBeenCalled();
     expect(mockedRegenerate).not.toHaveBeenCalled();
   });
@@ -397,10 +409,10 @@ describe('useSignal — a read that landed after the Signal was built (CUL-1105)
   it('an expired row takes the expiry’s refresh and never asks about reads', async () => {
     mockedReadCache.mockResolvedValue(fresh);
     mockedIsStale.mockReturnValue(true);
-    mockedMissesRead.mockResolvedValue(true);
+    mockedRebuildKey.mockResolvedValue('row|pet-a|key');
     renderHook(() => useSignal());
     await waitFor(() => expect(mockedRegenerate).toHaveBeenCalledWith(PET_A.id));
-    expect(mockedMissesRead).not.toHaveBeenCalled();
+    expect(mockedRebuildKey).not.toHaveBeenCalled();
     expect(mockedRegenForRead).not.toHaveBeenCalled();
   });
 });
