@@ -10,7 +10,7 @@
 jest.mock('../nav/NyxTabBar', () => ({ TAB_HEIGHT: 80 }));
 
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { Animated, StyleSheet } from 'react-native';
+import { AccessibilityInfo, Animated, Platform, StyleSheet } from 'react-native';
 import { Snackbar } from './Snackbar';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { colorRoles, theme } from '../../constants/theme';
@@ -196,5 +196,87 @@ describe('Snackbar — the card\'s entry and exit (CUL-1691 PR 4)', () => {
       ]);
       expect(translateYOf(view)).toBe(0);
     });
+  });
+});
+
+// CUL-1709 — the Snackbar is heard (C-44). The message carries an Android live region and
+// `useLiveRegionAnnouncement` is its iOS half, handed the message itself. What a blind
+// owner needs: every show spoken (a word swap and a repeat of the same words included),
+// nothing spoken on the way out, and an Undo they can only reach while it can be seen.
+describe('Snackbar — announced to a screen reader (CUL-1709)', () => {
+  let announce: jest.SpyInstance;
+  const originalOS = Platform.OS;
+
+  beforeEach(() => {
+    // React Native's jest preset already makes this a mock, which spyOn hands back with
+    // every earlier test's calls on it: clear it, or this suite reads the others' words.
+    announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    announce.mockClear();
+    Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'ios' });
+  });
+  afterEach(() => {
+    announce.mockRestore();
+    Object.defineProperty(Platform, 'OS', { configurable: true, get: () => originalOS });
+  });
+
+  const spoken = () => announce.mock.calls.map((c) => c[0]);
+
+  it('speaks the message on show, and nothing before it', () => {
+    render(<Snackbar />);
+    expect(announce).not.toHaveBeenCalled();
+    seed(jest.fn());
+    expect(spoken()).toEqual(['Removed from your library']);
+  });
+
+  it('puts the Android live region on the node whose words iOS speaks', () => {
+    const view = render(<Snackbar />);
+    seed(jest.fn());
+    expect(view.getByText('Removed from your library').props.accessibilityLiveRegion).toBe('polite');
+    expect(spoken()).toEqual(['Removed from your library']);
+  });
+
+  it('speaks a word swap over a visible Snackbar', () => {
+    render(<Snackbar />);
+    seed(jest.fn());
+    act(() => useSnackbarStore.getState().show({ message: 'Copied support@getculprit.app' }));
+    expect(spoken()).toEqual(['Removed from your library', 'Copied support@getculprit.app']);
+  });
+
+  it('speaks the same words again when they are a second show', () => {
+    render(<Snackbar />);
+    seed(jest.fn());
+    seed(jest.fn());
+    expect(spoken()).toEqual(['Removed from your library', 'Removed from your library']);
+  });
+
+  it('speaks a delayed show when it appears, not when it is armed', () => {
+    render(<Snackbar />);
+    act(() => {
+      useSnackbarStore.getState().show({ message: 'Password updated' }, { delayMs: 300 });
+    });
+    expect(announce).not.toHaveBeenCalled();
+    act(() => jest.advanceTimersByTime(300));
+    expect(spoken()).toEqual(['Password updated']);
+  });
+
+  it('says nothing on the way out: the dwell ending, a hide or the action', () => {
+    render(<Snackbar />);
+    seed(jest.fn());
+    announce.mockClear();
+    act(() => jest.advanceTimersByTime(5000));
+    seed(jest.fn());
+    announce.mockClear();
+    act(() => useSnackbarStore.getState().runAction());
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('keeps Undo reachable while shown and hides it from a screen reader once gone', () => {
+    const view = render(<Snackbar />);
+    seed(jest.fn());
+    expect(view.getByRole('button', { name: 'Undo' })).toBeTruthy();
+    act(() => useSnackbarStore.getState().hide());
+    // Still mounted for the fade, but out of the accessibility tree.
+    expect(view.queryByRole('button', { name: 'Undo' })).toBeNull();
+    expect(view.getByText('Undo', { includeHiddenElements: true })).toBeTruthy();
   });
 });
