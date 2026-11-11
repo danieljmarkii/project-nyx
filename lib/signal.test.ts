@@ -3,6 +3,8 @@ import {
   readSignalCacheOrLast,
   readSignalsAndRefresh,
   regenerateSignal,
+  regenerateForLandedRead,
+  signalMissesLandedRead,
   triggerSignalRegenDebounced,
   isSignalCacheStale,
   type SignalCacheRow,
@@ -23,6 +25,14 @@ jest.mock('./supabase', () => ({
 jest.mock('./sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   syncPendingMeals: jest.fn().mockResolvedValue(undefined),
+}));
+
+// CUL-1105: whether a read landed after the Signal was built is a local copy read
+// (`lib/readCopy.ts`, tested on real SQLite there). Stubbed false, so every older case here
+// runs as before.
+const mockReadChangedSince = jest.fn(async (_petId: string, _since: string) => false);
+jest.mock('./readCopy', () => ({
+  readChangedSince: (petId: string, since: string) => mockReadChangedSince(petId, since),
 }));
 
 const mockedFrom = supabase.from as jest.Mock;
@@ -327,5 +337,90 @@ describe('triggerSignalRegenDebounced — acknowledgment flag (SR-3 §5.3)', () 
 
     await jest.advanceTimersByTimeAsync(5000); // t=21000, past the renewed ceiling → fail-quiet
     expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(false);
+  });
+});
+
+// ── CUL-1105: a read that landed after the Signal was built ─────────────────────────────
+describe('a read newer than the Signal rebuilds it, as a log, once per row (CUL-1105)', () => {
+  const BUILT = '2026-11-11T02:00:05.000Z';
+  const fresh = (generatedAt: string | null = BUILT): SignalCacheRow => ({
+    signalText: null,
+    isBuilding: false,
+    findings: [],
+    coverage: [],
+    generatedAt,
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+  });
+  const reasons = () => mockedInvoke.mock.calls.map((c) => (c[1] as { body: { petId: string; reason: string } }).body);
+
+  beforeEach(() => {
+    cancelPendingSignalRegens();
+    mockedInvoke.mockReset().mockResolvedValue({ data: {}, error: null });
+    mockReadChangedSince.mockReset().mockResolvedValue(false);
+  });
+  afterEach(() => mockReadChangedSince.mockReset().mockResolvedValue(false));
+
+  it('asks the copy with the row’s own generated_at, and answers what it says', async () => {
+    mockReadChangedSince.mockResolvedValue(true);
+    expect(await signalMissesLandedRead('nyx', fresh())).toBe(true);
+    expect(mockReadChangedSince).toHaveBeenCalledWith('nyx', BUILT);
+    mockReadChangedSince.mockResolvedValue(false);
+    expect(await signalMissesLandedRead('nyx', fresh())).toBe(false);
+  });
+
+  it('an expired or missing row is the expiry’s rebuild, not this one', async () => {
+    mockReadChangedSince.mockResolvedValue(true);
+    expect(await signalMissesLandedRead('nyx', null)).toBe(false);
+    expect(await signalMissesLandedRead('nyx', { ...fresh(), expiresAt: new Date(Date.now() - 1000).toISOString() })).toBe(false);
+    expect(await signalMissesLandedRead('nyx', fresh(null))).toBe(false);
+    expect(mockReadChangedSince).not.toHaveBeenCalled();
+  });
+
+  it('a failed local read keeps the cached Signal and does not throw', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockReadChangedSince.mockRejectedValue(new Error('db gone'));
+      await expect(signalMissesLandedRead('nyx', fresh())).resolves.toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('the rebuild goes as a log, so the cap never turns it away (CUL-2059)', async () => {
+    await regenerateForLandedRead('nyx', BUILT);
+    expect(reasons()).toEqual([expect.objectContaining({ petId: 'nyx', reason: 'log' })]);
+  });
+
+  it('once per row: a rebuilt row is not asked again, so a tick cannot loop it', async () => {
+    mockReadChangedSince.mockResolvedValue(true);
+    await regenerateForLandedRead('nyx', BUILT);
+    expect(await signalMissesLandedRead('nyx', fresh())).toBe(false);
+    // A newer row (the rebuild's own) is a new key, asked afresh.
+    expect(await signalMissesLandedRead('nyx', fresh('2026-11-11T08:00:00.000Z'))).toBe(true);
+    // Another pet's row with the same instant is its own key.
+    expect(await signalMissesLandedRead('milo', fresh())).toBe(true);
+  });
+
+  it('a rebuild that FAILED releases its row, so the next open asks again', async () => {
+    mockReadChangedSince.mockResolvedValue(true);
+    mockedInvoke.mockResolvedValue({ data: null, error: { message: 'offline' } });
+    await regenerateForLandedRead('nyx', BUILT);
+    expect(await signalMissesLandedRead('nyx', fresh())).toBe(true);
+  });
+
+  it('a sign-out forgets every rebuilt row (account state)', async () => {
+    mockReadChangedSince.mockResolvedValue(true);
+    await regenerateForLandedRead('nyx', BUILT);
+    cancelPendingSignalRegens();
+    expect(await signalMissesLandedRead('nyx', fresh())).toBe(true);
+  });
+
+  it('the cross-pet banner rebuilds a fresh row that missed a read, as a log, and leaves the rest', async () => {
+    const at = (iso: string) => ({ data: { ...row(), generated_at: iso } as SignalSelectRow, error: null });
+    installCaches({ landed: at(BUILT), quiet: at('2026-11-11T02:00:06.000Z') });
+    mockReadChangedSince.mockImplementation(async (petId: string) => petId === 'landed');
+    await readSignalsAndRefresh(['landed', 'quiet']);
+    await flush();
+    expect(reasons()).toEqual([expect.objectContaining({ petId: 'landed', reason: 'log' })]);
   });
 });

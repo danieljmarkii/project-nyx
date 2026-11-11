@@ -46,6 +46,13 @@ jest.mock('./sync', () => {
   };
 });
 
+// CUL-1105: a landed read rebuilds its RECORD's pet's Signal. The pet comes from the local
+// event row (stubbed here: lib/db.ts loads expo-sqlite) and the rebuild is counted.
+const mockEventPetId = jest.fn(async (_id: string): Promise<string | null> => 'pet-of-record');
+jest.mock('./db', () => ({ getEventPetId: (id: string) => mockEventPetId(id) }));
+const mockRegen = jest.fn();
+jest.mock('./signal', () => ({ triggerSignalRegenDebounced: (petId: string) => mockRegen(petId) }));
+
 import {
   EDITABLE_VOMIT_FIELDS,
   EDITABLE_STOOL_FIELDS,
@@ -74,6 +81,7 @@ import { onAnalysisChainClaimed } from './analysisChain';
 import { supabase } from './supabase';
 import { refreshReadCopy, refreshReadCopyOutcome } from './sync';
 import { useSyncStore } from '../store/syncStore';
+import { notifySignedOut } from './signOutEpoch';
 
 // Grab a typed handle to the mocked invoke AFTER import (referencing it inside
 // the jest.mock factory hits a TDZ/hoisting trap).
@@ -1140,5 +1148,104 @@ describe('an owner edit refreshes the read copy (CUL-2678)', () => {
     update({ message: 'denied' });
     expect(await save()).toEqual({ error: 'denied' });
     expect(refreshReadCopyOutcome).not.toHaveBeenCalled();
+  });
+});
+
+// ── CUL-1105: the Signal is rebuilt when a read lands or an edit saves ─────────────
+// `generate-signal` builds the red-flag card from the server's analysis row, so the rebuild
+// armed at log time saw a pending read. Every landing that moved the copy, and every saved
+// edit, arms one more rebuild for the event's own pet, never the active one (C-9).
+describe('a landed read rebuilds the Signal for its record’s pet (CUL-1105)', () => {
+  const outcome = refreshReadCopyOutcome as jest.Mock;
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  // Each call answers the next queued outcome; once the queue is empty, `unchanged`.
+  const answers = (...queue: string[]) => outcome.mockImplementation(async () => queue.shift() ?? 'unchanged');
+  const update = (error: { message: string } | null) => {
+    const eq = jest.fn().mockResolvedValue({ error });
+    (supabase.from as jest.Mock).mockReturnValue({ update: jest.fn(() => ({ eq })) });
+  };
+
+  beforeEach(() => {
+    mockRegen.mockReset();
+    mockEventPetId.mockReset().mockResolvedValue('pet-of-record');
+    mockInvoke.mockReset().mockResolvedValue({ error: null });
+  });
+  afterEach(() => {
+    cancelAllAnalysisWatches();
+    jest.useRealTimers();
+    outcome.mockReset().mockImplementation(async (id: string) => ((await mockRefreshReadCopy(id)) ? 'changed' : 'unchanged'));
+  });
+
+  it.each([
+    ['vomit', triggerVomitAnalysis],
+    ['stool', triggerStoolAnalysis],
+  ])('%s: a read that landed and moved the copy rebuilds once, for the event’s pet', async (_kind, trigger) => {
+    answers('changed');
+    await trigger(`ev-land-${_kind}`);
+    await flush();
+    expect(mockEventPetId).toHaveBeenCalledWith(`ev-land-${_kind}`);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('pet-of-record');
+  });
+
+  it('a landing that moved nothing rebuilds nothing (the log’s own rebuild already saw it)', async () => {
+    answers('unchanged');
+    await triggerVomitAnalysis('ev-land-same');
+    await flush();
+    expect(mockRegen).not.toHaveBeenCalled();
+  });
+
+  it('a read the WATCH saved (it landed after the chain returned) rebuilds too', async () => {
+    jest.useFakeTimers();
+    answers('changed');
+    watchAnalysisRow('ev-land-late', async () => true, () => {});
+    await jest.advanceTimersByTimeAsync(ANALYSIS_WATCH_FALLBACK_DELAYS_MS[0]);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('pet-of-record');
+  });
+
+  it('a read whose first save failed rebuilds when the copy watch lands it', async () => {
+    jest.useFakeTimers();
+    answers('failed', 'changed');
+    await triggerStoolAnalysis('ev-land-retry');
+    expect(mockRegen).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(ANALYSIS_WATCH_FALLBACK_DELAYS_MS[0]);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+  });
+
+  it('an event with no local row rebuilds nothing: an unknown pet is never guessed', async () => {
+    mockEventPetId.mockResolvedValue(null);
+    answers('changed');
+    await triggerVomitAnalysis('ev-land-orphan');
+    await flush();
+    expect(mockRegen).not.toHaveBeenCalled();
+  });
+
+  it('a sign-out between the lookup and the arm drops the rebuild (CUL-642’s class)', async () => {
+    let release!: (v: string) => void;
+    mockEventPetId.mockReturnValue(new Promise<string>((r) => { release = r; }));
+    answers('changed');
+    await triggerVomitAnalysis('ev-land-signout');
+    notifySignedOut();
+    release('pet-of-previous-owner');
+    await flush();
+    expect(mockRegen).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['vomit', () => saveVomitFieldEdits('ev-edit', { blood_present: 'none' } as VomitEditableFields)],
+    ['stool', () => saveStoolFieldEdits('ev-edit', { stool_blood_present: 'no' } as StoolEditableFields)],
+  ])('a saved %s edit rebuilds (it can clear the card), a refused one does not', async (_kind, save) => {
+    update(null);
+    expect(await save()).toEqual({ error: null });
+    await flush();
+    expect(mockEventPetId).toHaveBeenCalledWith('ev-edit');
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('pet-of-record');
+    mockRegen.mockReset();
+    update({ message: 'denied' });
+    expect(await save()).toEqual({ error: 'denied' });
+    await flush();
+    expect(mockRegen).not.toHaveBeenCalled();
   });
 });

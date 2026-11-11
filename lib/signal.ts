@@ -17,6 +17,7 @@ import { supabase } from './supabase';
 import { useSyncStore } from '../store/syncStore';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { countRecordGaps } from './db';
+import { readChangedSince } from './readCopy';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
 // The jsonb column ai_signals.findings is the contract. These types mirror the
@@ -851,6 +852,43 @@ export function isSignalCacheStale(row: SignalCacheRow | null, nowMs = Date.now(
   return exp <= nowMs;
 }
 
+// ── A read that landed after the Signal was built (CUL-1105) ─────────────────────
+// The owner logs a photographed vomit at 2am and locks the phone; the server writes the
+// read after the log's own rebuild ran, and the next morning's sync pull brings it into
+// the phone's copy. The cached Signal is still inside its expiry, so nothing rebuilds and
+// a red-flag card waits a day. So a fresh row is also stale when a read for its pet
+// changed at or after its `generated_at`. That rebuild is a write to the record and goes
+// as a log, which the per-pet cap never turns away (CUL-2059).
+//
+// Once per row: the set holds each (pet, generated_at) a landed read is rebuilding or has
+// rebuilt, so a success that somehow leaves the same row (and bumps the signalTick that
+// re-runs this check) cannot loop. A rebuild that FAILS releases its key, so the next open
+// asks again (a failure bumps no tick, so that cannot loop either); a success writes a
+// later `generated_at`, a new key. Account state, cleared by `cancelPendingSignalRegens`.
+// A failed local read keeps the cached Signal (the expiry still rebuilds it).
+const readRebuiltRows = new Set<string>();
+
+export async function signalMissesLandedRead(petId: string, row: SignalCacheRow | null): Promise<boolean> {
+  if (!row?.generatedAt || isSignalCacheStale(row)) return false;
+  if (readRebuiltRows.has(`${petId}|${row.generatedAt}`)) return false;
+  try {
+    return await readChangedSince(petId, row.generatedAt);
+  } catch (e) {
+    console.warn('[signal] read-change check failed:', e);
+    return false;
+  }
+}
+
+/** The rebuild `signalMissesLandedRead` asked for: a log-reason regen, keyed to the row. */
+export function regenerateForLandedRead(petId: string, generatedAt: string): Promise<{ error: string | null }> {
+  const key = `${petId}|${generatedAt}`;
+  readRebuiltRows.add(key);
+  return regenerateSignal(petId, 'log').then((res) => {
+    if (res.error) readRebuiltRows.delete(key);
+    return res;
+  });
+}
+
 // ── Regeneration ──────────────────────────────────────────────────────────────
 // generate-signal recomputes detection over the pet's data IN SUPABASE (not local
 // SQLite), then phrases + writes the cache. So we flush the offline queue first,
@@ -1024,6 +1062,8 @@ export async function readSignalsAndRefresh(
       const row = await readSignalCache(petId);
       if (isSignalCacheStale(row)) {
         regenerateSignal(petId).catch(() => {});
+      } else if (row?.generatedAt && (await signalMissesLandedRead(petId, row))) {
+        regenerateForLandedRead(petId, row.generatedAt).catch(() => {});
       }
       byPet.set(petId, row?.findings ?? []);
     } catch {
@@ -1091,6 +1131,7 @@ export function cancelPendingSignalRegens(): void {
   regenTrailingForLog.clear();
   // The kept rows are the signing-out account's findings (CUL-1219).
   lastAnsweredRows.clear();
+  readRebuiltRows.clear();
   keptEpoch += 1;
   useSyncStore.setState({ signalAcknowledging: {} });
 }

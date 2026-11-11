@@ -212,6 +212,7 @@ import {
   pullReadCopyFor,
   readCopies,
   readPetSeamReads,
+  readChangedSince,
   writeCopies,
 } from './readCopy';
 import { newSinceLineOf } from './ruleSeam';
@@ -1140,5 +1141,55 @@ describe('the reasons (CUL-2678): the copy keeps what a chip needs to pick the r
       expect((await readCopies(['k'])).get('k')?.catNoGoodMeal24h).toBe(true);
       warn.mockRestore();
     });
+  });
+});
+
+// ── CUL-1105: a read that landed after the Signal was built ─────────────────────────────
+// Home asks with its Signal row's `generated_at`. The copy holds the server's `+00:00`
+// spelling; the Signal row can carry the `.000Z` one. Same instant, different text (C-40):
+// the test pins both halves so a text compare cannot pass it.
+describe("readChangedSince — a read newer than the pet's Signal (CUL-1105)", () => {
+  function event(id: string, petId: string, deletedAt: string | null = null) {
+    mockDb
+      .prepare('INSERT INTO events (id, pet_id, event_type, occurred_at, deleted_at) VALUES (?, ?, ?, ?, ?)')
+      .run(id, petId, 'vomit', '2026-11-11T02:00:00.000Z', deletedAt);
+  }
+  const verdict = (eventId: string, updatedAt: string, status = 'completed') =>
+    mockDb
+      .prepare('INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES (?, ?, ?, ?)')
+      .run(eventId, status, 'worth_a_call', updatedAt);
+  const BUILT = '2026-11-11T02:00:05.000Z';
+
+  it('a read that landed after the Signal was built is seen; one before it is not', async () => {
+    event('ev', 'nyx');
+    verdict('ev', '2026-11-11T02:00:40+00:00');
+    expect(await readChangedSince('nyx', BUILT)).toBe(true);
+    expect(await readChangedSince('nyx', '2026-11-11T02:01:00.000Z')).toBe(false);
+  });
+
+  it('the same instant in the other spelling counts (a tie rebuilds), though as text it sorts earlier', async () => {
+    event('ev', 'nyx');
+    verdict('ev', '2026-11-11T02:00:05+00:00');
+    // The trap: '+' sorts before '.', so a text >= would call this read older than the Signal.
+    expect('2026-11-11T02:00:05+00:00' >= BUILT).toBe(false);
+    expect(Date.parse('2026-11-11T02:00:05+00:00')).toBe(Date.parse(BUILT));
+    expect(await readChangedSince('nyx', BUILT)).toBe(true);
+  });
+
+  it("only this pet's live events, and never a read still pending", async () => {
+    event('mine-pending', 'nyx');
+    event('mine-deleted', 'nyx', '2026-11-11T03:00:00.000Z');
+    event('milo-ev', 'milo');
+    verdict('mine-pending', '2026-11-11T02:00:40+00:00', 'pending');
+    verdict('mine-deleted', '2026-11-11T02:00:40+00:00');
+    verdict('milo-ev', '2026-11-11T02:00:40+00:00');
+    expect(await readChangedSince('nyx', BUILT)).toBe(false);
+    expect(await readChangedSince('milo', BUILT)).toBe(true);
+  });
+
+  it('an instant it cannot parse reads as changed (the loud side)', async () => {
+    event('ev', 'nyx');
+    verdict('ev', '2026-11-11T02:00:00+00:00');
+    expect(await readChangedSince('nyx', 'not a time')).toBe(true);
   });
 });

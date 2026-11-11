@@ -315,6 +315,33 @@ export async function readPetSeamReads(petId: string): Promise<SeamRead[]> {
   );
 }
 
+/**
+ * Whether a read for one pet's live events changed on this phone's copy at or after an
+ * instant: Home's Signal asks it with its row's `generated_at` (CUL-1105). A read that
+ * landed after the Signal was built (the owner logged at 2am and locked the phone; the
+ * next morning's sync pull brought the read in) is a read that rebuild never saw, so Home
+ * rebuilds. Pending rows do not count: the rebuild waits for the verdict.
+ *
+ * Compared in SQL on PARSED instants (`julianday`), never as text (C-40): the copy holds
+ * the server's `…+00:00` spelling and the Signal row may carry either. At or after, not
+ * strictly after, so a millisecond tie rebuilds (the louder side; the rebuild's own
+ * `generated_at` is later, so it settles). An unparseable instant reads as changed.
+ * Local only; throws on a local read failure, and the caller keeps the cached Signal.
+ */
+export async function readChangedSince(petId: string, sinceIso: string): Promise<boolean> {
+  const rows = await getDb().getAllAsync<{ hit: number }>(
+    `SELECT 1 AS hit
+       FROM event_ai_verdicts v
+       JOIN events e ON e.id = v.event_id
+      WHERE e.pet_id = ? AND e.deleted_at IS NULL AND v.status != 'pending'
+        AND (julianday(?) IS NULL OR julianday(v.updated_at) IS NULL
+             OR julianday(v.updated_at) >= julianday(?))
+      LIMIT 1`,
+    [petId, sinceIso, sinceIso],
+  );
+  return rows.length > 0;
+}
+
 /** The server's hash form of `photo_set_key` (engineStamps.ts): 64 hex, no comma, no
  *  hyphen, so it can never be mistaken for a list of UUIDs. The phone cannot compare it. */
 const PHOTO_SET_HASH = /^[0-9a-f]{64}$/;

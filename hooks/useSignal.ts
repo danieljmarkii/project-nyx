@@ -9,6 +9,8 @@ import {
   isSignalCacheStale,
   readSignalsAndRefresh,
   regenerateSignal,
+  signalMissesLandedRead,
+  regenerateForLandedRead,
   type CachedFinding,
   type CoverageDiagnostic,
 } from '../lib/signal';
@@ -211,9 +213,14 @@ export function useSignal(): SignalState {
           setGeneratedAt(row?.generatedAt ?? null);
           setAnswered(true);
 
-          if (isSignalCacheStale(row)) {
+          // CUL-1105: a read that landed after this row was built is one it never saw; that
+          // rebuild goes as a log (`signalMissesLandedRead`, once per row).
+          const expired = isSignalCacheStale(row);
+          const landedFor = !expired && row?.generatedAt && (await signalMissesLandedRead(petId, row)) ? row.generatedAt : null;
+          if (cancelled) return;
+          if (expired || landedFor) {
             // Daily-expiry regen — off the render path; re-read when it lands.
-            regenerateSignal(petId)
+            (landedFor ? regenerateForLandedRead(petId, landedFor) : regenerateSignal(petId))
               .then(() => readSignalCache(petId))
               .then((fresh) => {
                 if (cancelled || !fresh) return;
