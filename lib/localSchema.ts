@@ -231,6 +231,27 @@ export const BASE_SCHEMA_SQL = `
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- CUL-2704: a food capture's photo whose upload failed (offline), queued so it
+    -- uploads on its own later. One row per photo; slot is front / ingredients /
+    -- barcode. Local only, no server mirror: the drain uploads the object, then adds
+    -- its path to food_items.photo_paths, then marks the row synced. Insert-only (no
+    -- updated_at): written once at save, never edited in place. owner_user_id is the
+    -- account that took it, since a food path ({foodId}/…) carries no account prefix.
+    -- local_uri names the copy in the app's own attachments directory, which is what
+    -- puts the file under the sign-out wipe (clearLocalData walks every local_uri).
+    CREATE TABLE IF NOT EXISTS food_photo_uploads (
+      id             TEXT PRIMARY KEY,
+      food_item_id   TEXT NOT NULL,
+      slot           TEXT NOT NULL,
+      owner_user_id  TEXT NOT NULL,
+      local_uri      TEXT NOT NULL,
+      storage_path   TEXT NOT NULL,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      synced         INTEGER NOT NULL DEFAULT 0,
+      sync_attempts  INTEGER NOT NULL DEFAULT 0,
+      sync_error     TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS event_ai_verdicts (
       -- The per-incident read's copy on the phone (History v2 §5.3, HV-5 / CUL-1162), so
       -- "Worth a call" never waits on the network. FOUR columns of the server's analysis
@@ -965,6 +986,7 @@ export const LOCAL_URI_TABLES_SQL = `
 //     table fails the build here too rather than only being *silently handled*.
 export const KNOWN_LOCAL_URI_TABLES = [
   'event_attachments',
+  'food_photo_uploads',
   'medication_label_uploads',
   'vet_documents',
   'vet_visit_attachments',

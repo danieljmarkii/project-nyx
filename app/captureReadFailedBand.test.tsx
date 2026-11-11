@@ -33,6 +33,11 @@ jest.mock('../lib/supabase', () => ({
     from: jest.fn(() => ({
       insert: jest.fn(async () => ({ error: null })),
       upsert: jest.fn(async () => ({ error: null })),
+      // CUL-2704: the capture's photo_paths write once its uploads settle.
+      update: () => {
+        const chain = { eq: () => chain, select: async () => ({ data: [{ id: 'f' }], error: null }) };
+        return chain;
+      },
       // The read-back of the food's row after a failed read (D-1): what the server wrote.
       select: () => ({ eq: () => ({ maybeSingle: async () => mockRowRead() }) }),
     })),
@@ -64,6 +69,9 @@ const invokeMock = supabase.functions.invoke as jest.Mock;
 const uploadMock = uploadPhoto as jest.Mock;
 
 const FOOD_BAND = "Couldn't read the label. Fill in what you know below.";
+// CUL-2704: a photo that did not upload is queued at save, and the band says so.
+const FOOD_BAND_WAITING =
+  "Couldn't read the label. Fill in what you know below; once you save, your photos will upload on their own.";
 const FOOD_BAND_RETRY =
   "Couldn't read the label. Fill in what you know below; you can try reading it again from the food's page.";
 
@@ -143,11 +151,12 @@ describe('food capture: the failed read band', () => {
     await waitFor(() => expect(view.getByText(FOOD_BAND)).toBeTruthy());
   });
 
-  it('an upload that threw (offline) says the same, and nothing more', async () => {
+  it('an upload that threw (offline) promises the upload after save, and no retry', async () => {
     uploadMock.mockRejectedValue(new Error('Network request failed'));
     mockRowRead = async () => ({ data: { ai_extraction_error: 'stale' }, error: null });
     const view = await failFoodRead();
-    await waitFor(() => expect(view.getByText(FOOD_BAND)).toBeTruthy());
+    await waitFor(() => expect(view.getByText(FOOD_BAND_WAITING)).toBeTruthy());
+    expect(view.queryByText(FOOD_BAND_RETRY)).toBeNull();
     expect(invokeMock).not.toHaveBeenCalled();
   });
 });

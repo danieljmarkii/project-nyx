@@ -324,6 +324,11 @@ export const LOCAL_WIPE_TABLES = [
   // local_uri before this list deletes the row, so neither survives a sign-out.
   'medication_label_uploads',
   'medication_items_cache',
+  // CUL-2704 food_photo_uploads — a food package photographed offline, waiting to
+  // upload. Wiped for the same reason as the label queue above: the file is the
+  // owner's photo and the row names their food. clearLocalData deletes the file
+  // through its local_uri first. No local FK, so its position is free.
+  'food_photo_uploads',
   // B-186 weight_checks — the weight-measurement child, FK→events ON DELETE
   // CASCADE locally, so it MUST precede events (same rule as
   // medication_administrations above). Account-scoped pet-health data that must
