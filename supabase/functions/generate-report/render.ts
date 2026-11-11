@@ -4654,7 +4654,10 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       !partialRefusal &&
       !!refusalFact &&
       refusalFact === t.rangeRefusal &&
-      refusalFact.refusedFeedings * 2 > refusalFact.ratedFeedings
+      refusalFact.refusedFeedings * 2 > refusalFact.ratedFeedings &&
+      // Adversarial pass 2 (LOUD): five refused bowls beside 43 kibble feedings out of 64 are not a
+      // denominator of refused bowls; where off-diet feedings are the majority the ratio stays.
+      t.exposures.offDiet * 2 < t.exposures.totalFeedings
     refusalCaveat = partialRefusal
       ? `${eaten}; only ${num(refusalFact!.ratedFeedings)} ${nouns} carry a rating, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
       : `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`

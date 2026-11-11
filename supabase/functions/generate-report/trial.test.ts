@@ -6087,3 +6087,17 @@ Deno.test('CUL-2707 — where the ratings do not show the diet refused, the off-
   assert.ok(/recorded as stopped because the diet was refused/.test(box), `non-vacuity: the stop-reason sentence leads: ${box}`)
   assert.ok(/1 of \d+ feedings .*so this record shows an elimination that was broken, not a clean one\./.test(box), box)
 })
+
+Deno.test('CUL-2707 — a thin refusal beside off-diet feedings that are the majority keeps the ratio (adversarial pass 2)', () => {
+  // Five refused bowls of the trial diet, then two weeks of chicken kibble twice a day.
+  const input = cul2707RefusalInput()
+  input.events = days('2026-06-01', '2026-06-05').map((d) =>
+    meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }),
+  )
+  for (const d of days('2026-06-06', '2026-06-21')) {
+    for (const time of ['08:00:00', '18:00:00']) input.events.push(meal({ date: d, time, brand: 'Purina', product: 'Chicken Kibble', foodItemId: 'f-kib', proteins: ['chicken'], intakeRating: 'all' }))
+  }
+  const box = interpretingBox(renderReport(assembleReport(input)))
+  assert.ok(/documents a refusal rather than an elimination/.test(box), `non-vacuity: the refusal sentence fires: ${box}`)
+  assert.ok(/The trial diet was not fed exclusively: 32 of 37 feedings/.test(box), box)
+})
