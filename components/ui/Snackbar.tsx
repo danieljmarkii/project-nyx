@@ -3,6 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { colorRoles, shadows, theme } from '../../constants/theme';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { COMPLETION_MOTION, EASE } from '../motion/completionMotion';
 
 // The bar's real height, imported rather than re-derived: this file used to carry
@@ -91,6 +92,17 @@ export function Snackbar() {
 
   useEffect(() => () => live.current?.stop(), []);
 
+  // Every show is spoken (CUL-1709, C-44). The message carries an Android live region
+  // and this is its iOS half, handed the same string. The key is the show's ordinal, not
+  // the words: a second "Removed from your library" over the first is a new confirmation
+  // the string alone cannot see. A new payload object is a new show (`show()` always sets
+  // one); `runAction` and the dwell's hide keep it, so a dismissal never re-speaks.
+  const shows = useRef<{ payload: typeof payload; n: number }>({ payload: null, n: 0 });
+  if (payload && shows.current.payload !== payload) {
+    shows.current = { payload, n: shows.current.n + 1 };
+  }
+  useLiveRegionAnnouncement(visible && payload ? payload.message : null, String(shows.current.n));
+
   // Keep the last payload mounted through the dismiss fade (the store preserves it
   // on hide). Nothing to render before the first show.
   if (!payload) return null;
@@ -100,10 +112,15 @@ export function Snackbar() {
   return (
     <Animated.View
       pointerEvents={visible ? 'box-none' : 'none'}
+      // The payload stays mounted through the fade and after it, at opacity 0: hidden from
+      // a screen reader too, or VoiceOver could still land on an Undo nobody can see.
+      accessibilityElementsHidden={!visible}
+      importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
       style={[styles.wrapper, seat, { opacity, transform: [{ translateY }] }]}
     >
-      <View style={styles.card}>
-        <ThemedText style={styles.message} numberOfLines={2}>
+      {/* Keyed by the show so a repeat of the same words is a new node TalkBack hears. */}
+      <View style={styles.card} key={shows.current.n}>
+        <ThemedText style={styles.message} numberOfLines={2} accessibilityLiveRegion="polite">
           {payload.message}
         </ThemedText>
         {hasAction && (
