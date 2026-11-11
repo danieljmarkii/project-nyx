@@ -6125,8 +6125,9 @@ Deno.test('CUL-2714 — beside a refused trial the headline states the off-diet 
   const snap = assembleReport(cul2707RefusalInput())
   assert.equal(snap.trial?.exposures.offDiet, 1, 'non-vacuity: the treat is the one off-diet feeding')
   assert.ok(snap.trial && trialRefusalDocumented(snap.trial), 'non-vacuity: the gate holds')
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'trial_diet_refusal'), 'non-vacuity: the refusal band leads page 1')
   const line = pageOneHeadline(renderReport(snap))
-  assert.ok(/Also fed off the trial diet: 1 feeding, carrying Chicken \(1\) on Jun 3, 2026 \(a floor\)\./.test(line), `the bare count: ${line}`)
+  assert.ok(/Fed off the trial diet: 1 feeding, carrying Chicken \(1\) on Jun 3, 2026 \(a floor\)\./.test(line), `the bare count: ${line}`)
   assert.ok(!/\d+ of \d+ logged feedings/.test(line), `no ratio counts the refused bowls: ${line}`)
   assert.ok(!/before reading the trial as a result/.test(line), `no compliance framing: ${line}`)
 })
@@ -6160,4 +6161,44 @@ Deno.test('CUL-2714 — beside a refused trial a feeding permitted only later ke
   assert.ok(/documents a refusal rather than an elimination/.test(box), `non-vacuity: the refusal leads: ${box}`)
   assert.ok(/1 feeding .*did not match the trial diet.*cannot establish that the elimination was clean/.test(box), `the uncertainty stays: ${box}`)
   assert.ok(!/\d+ of \d+ feedings/.test(box), `no ratio counts the refused bowls: ${box}`)
+})
+
+Deno.test('CUL-2714 — a refusal no band raises above the headline keeps the ratio and the pointer (adversarial pass 1)', () => {
+  // Three refused bowls in one bout across midnight among 63 unrated, and six chicken treats: the gate
+  // holds, but no refusal band leads page 1, so the bare count would leave the top line with no warning.
+  const events = days('2026-06-01', '2026-06-21').flatMap((d) =>
+    ['08:00:00', '13:00:00', '18:00:00'].map((time) =>
+      meal({ date: d, time, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
+    ),
+  )
+  for (const time of ['03:00:00', '05:00:00', '06:00:00']) {
+    events.push(meal({ date: '2026-06-11', time, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+  }
+  for (const d of ['2026-06-03', '2026-06-05', '2026-06-08', '2026-06-12', '2026-06-15', '2026-06-18']) {
+    events.push(meal({ date: d, time: '19:00:00', brand: 'Jerky Co', product: 'Chicken Jerky', foodItemId: 'f-jerky', foodType: 'treat', proteins: ['chicken'], ingredientsNotes: 'Chicken.' }))
+  }
+  const snap = assembleReport(wellLoggedTrialInput({ events }))
+  assert.ok(snap.trial && trialRefusalDocumented(snap.trial), 'non-vacuity: the gate holds')
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'trial_diet_refusal'), 'non-vacuity: no refusal band above the headline')
+  const line = pageOneHeadline(renderReport(snap))
+  assert.ok(/6 of \d+ logged feedings did not match the trial diet/.test(line), line)
+  assert.ok(/before reading the trial as a result/.test(line), line)
+})
+
+Deno.test('CUL-2714 — a refusal band beside off-diet feedings that are the majority keeps the headline ratio', () => {
+  // Five refused bowls, then two weeks of chicken kibble: the band leads page 1, but the off-diet
+  // feedings are the denominator's bulk, so the gate is off and the ratio is the honest reading.
+  const input = cul2707RefusalInput()
+  input.events = days('2026-06-01', '2026-06-05').map((d) =>
+    meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }),
+  )
+  for (const d of days('2026-06-06', '2026-06-21')) {
+    for (const time of ['08:00:00', '18:00:00']) input.events.push(meal({ date: d, time, brand: 'Purina', product: 'Chicken Kibble', foodItemId: 'f-kib', proteins: ['chicken'], intakeRating: 'all' }))
+  }
+  const snap = assembleReport(input)
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'trial_diet_refusal'), 'non-vacuity: the refusal band fires')
+  assert.ok(snap.trial && !trialRefusalDocumented(snap.trial), 'non-vacuity: the gate is off')
+  const html = renderReport(snap)
+  assert.ok(/32 of 37 logged feedings did not match the trial diet/.test(pageOneHeadline(html)), pageOneHeadline(html))
+  assert.ok(/^32 \/ 37 · Feedings not matched/.test(offDietTile(html)), offDietTile(html))
 })

@@ -3572,11 +3572,15 @@ function headline(snap: ReportSnapshot): string {
     // CUL-2714 (QUIET): beside a documented refusal "1 of 22 … did not match" counted 21 refused bowls
     // as feedings of the diet, and "before reading the trial as a result" framed one treat as the
     // reason the result is in doubt. There the count stands bare, as a fact, with its days.
-    const refused = tb ? trialRefusalDocumented(tb) : false
+    // Adversarial pass 1 (QUIET): only where the refusal band already leads page 1 above this line.
+    // A refusal the band does not raise (one bout of a few rated bowls) has no warning above the
+    // headline, so the ratio and its pointer stay: the louder form, never a line with no warning.
+    const refused =
+      !!tb && trialRefusalDocumented(tb) && snap.safetyFlags.some((f) => f.kind === 'trial_diet_refusal')
     const offDietBit =
       offDiet > 0 && tb
         ? refused
-          ? ` <b>Also fed off the trial diet: ${num(offDiet)} feeding${offDiet === 1 ? '' : 's'}</b>${carriedBit} (a floor).`
+          ? ` <b>Fed off the trial diet: ${num(offDiet)} feeding${offDiet === 1 ? '' : 's'}</b>${carriedBit} (a floor).`
           : ` <b>${num(offDiet)} of ${num(tb.exposures.totalFeedings)} logged feedings did not match the trial diet</b>${carriedBit} (${h(
               fmtRange(tb.evidenceStartDate, tb.evidenceEndDate),
             )}; a floor)${breachBit ? '.' : ' — see the diet section before reading the trial as a result.'}`
@@ -10646,8 +10650,8 @@ function offDietBesideRefusal(snap: ReportSnapshot): string {
 }
 
 /**
- * CUL-2707 / CUL-2714 — the record documents a refusal: the whole-range ratings show most of the trial
- * diet left unfinished, and the off-diet feedings are not the majority. There the refused bowls are not
+ * CUL-2707 / CUL-2714 — the record documents a refusal: over the whole range, most of the trial diet's
+ * RATED feedings were left unfinished (a share of the rated bowls, not of every bowl), and the off-diet feedings are not the majority. There the refused bowls are not
  * feedings of the diet, so no off-diet count on any surface (box, headline, tile) takes them as its
  * denominator. One predicate for all three, so they cannot disagree.
  *
