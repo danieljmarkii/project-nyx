@@ -69,7 +69,7 @@ const redFlagFinding: IncidentRedFlagFinding = {
   priorityClass: 'safety',
   incidentType: 'vomit',
   flags: ['blood'],
-  mostRecentFlaggedIso: '2026-09-01T08:00:00.000Z',
+  mostRecentFlaggedIso: new Date(2026, 8, 1, 8, 0).toISOString(), // local components (C-29, CUL-2232)
   flaggedIncidentCount: 2,
   windowDays: 14,
 };
@@ -448,7 +448,7 @@ describe('FoldedStrip — the safety strip', () => {
     expect(queryByText(/last /)).toBeNull();
   });
 
-  it('the red flag strip carries its own UTC day from the photo record, whatever the context says', () => {
+  it('the red flag strip carries the photo record’s own local day (CUL-2232), whatever the context says', () => {
     const { getByText } = render(<FoldedStrip cached={redFlag} onPress={jest.fn()} lastEpisodeIso={AUG_26_LOCAL_NOON} />);
     expect(getByText('Blood in a vomit photo')).toBeTruthy();
     expect(getByText('Call your vet')).toBeTruthy();

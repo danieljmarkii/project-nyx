@@ -2433,7 +2433,7 @@ describe('phoneScript — the safety phone-call facts (§4/§9)', () => {
   });
 
   it('incident_red_flag: carries what a photo showed + a most-recent date', () => {
-    const facts = phoneScript(incidentRedFlag({ flags: ['blood'], incidentType: 'vomit', flaggedIncidentCount: 2, mostRecentFlaggedIso: '2026-07-16T08:00:00.000Z' }), 'Nyx', false, null, null);
+    const facts = phoneScript(incidentRedFlag({ flags: ['blood'], incidentType: 'vomit', flaggedIncidentCount: 2, mostRecentFlaggedIso: new Date(2026, 6, 16, 8, 0).toISOString() }), 'Nyx', false, null, null);
     expect(facts).toContainEqual({ label: 'What a photo showed', value: "possible blood in Nyx's vomiting" });
     expect(facts).toContainEqual({ label: 'From', value: '2 logged photos' });
     expect(facts).toContainEqual({ label: 'Most recent', value: 'July 16' });

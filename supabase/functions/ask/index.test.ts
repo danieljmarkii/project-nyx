@@ -179,3 +179,24 @@ Deno.test('CUL-2004 wiring — a refused entry declines after consent and before
   // Refused outranks unsent: the unsent deflection is only reachable past this gate.
   assert.ok(handler.indexOf("buildDeflection('unsent_rows'") > gate)
 })
+
+// CUL-2232 (C-29): Ask's safety lead relays the stored red flag sentence word for word, so the
+// sentence's day must be the owner's. Driven from the engine: a 19:40 CDT vomit (00:40 UTC the next
+// day) detected under America/Chicago, phrased by the template, cached, then read back by Ask.
+Deno.test('CUL-2232 — an evening vomit in Chicago leads Ask on the owner\'s day, not the UTC one', async () => {
+  const { detectIncidentRedFlags } = await import('../generate-signal/detection.ts')
+  const { templateIncidentRedFlag } = await import('../generate-signal/phrasing.ts')
+  const [finding] = detectIncidentRedFlags({
+    pet: { name: 'Nyx', species: 'cat', dietTrialActive: false },
+    symptomEvents: [],
+    mealEvents: [],
+    now: '2026-10-28T01:15:00.000Z',
+    timezone: 'America/Chicago',
+    incidentAnalyses: [{ eventId: 'e-1', incidentType: 'vomit', occurredAt: '2026-10-28T00:40:00.000Z', bloodPresent: null, stoolBloodPresent: null, foreignMaterialPresent: null, call: 'call_today' }],
+  })
+  const row = { rank: 0, text: templateIncidentRedFlag(finding, 'Nyx'), finding }
+  const { client } = fakeSignals(() => ({ data: [{ findings: [row] }], error: null }))
+  const body = await consentOffAnswer(client, 'pet-1', 'Nyx')
+  assert.ok(body.safetyLead?.includes("The read of Nyx's vomit on October 27 says to call your vet today."), String(body.safetyLead))
+  assert.doesNotMatch(String(body.safetyLead), /October 28/)
+})

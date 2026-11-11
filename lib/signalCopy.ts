@@ -282,13 +282,13 @@ export function incidentRedFlagSentenceAt(finding: SignalFinding, petName: strin
   }
   const symptom = INCIDENT_NOUN[finding.incidentType];
   const phrase = incidentFlagPhrase(finding.flags);
-  const when = shortDateUTC(finding.mostRecentFlaggedIso);
+  const when = redFlagDay(finding.mostRecentFlaggedIso);
   const lead =
     finding.flaggedIncidentCount === 1 && (finding as { countIsFloor?: unknown }).countIsFloor !== true
       ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}, on ${when}`
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`;
-  // Always the said-at day, in the phone's local day: the lead's photo day is UTC (the shipped
-  // sentence), and a reader must not have to infer when the call was said from it.
+  // Always the said-at day, in the phone's local day like the lead's photo day (CUL-2232), so a
+  // reader never has to infer when the call was said from it.
   const call = `On ${day}, ${callFromOtherRead(finding) ? 'a' : 'the'} read said: ${CALL_NOW_ASK}.`;
   return `${lead}. ${call}${later} ${tail}`;
 }
@@ -2425,6 +2425,12 @@ export type PhoneScriptCounting =
 
 // UTC short date for a recency fact ("August 6") — matches onsetMonth's UTC bucketing
 // (the engine days-bucket in UTC), so it stays pinnable in a fixture per B-514.
+/** A red flag instant's day as the owner lived it ("October 27"); the UTC day only when the
+ *  phone cannot read the instant locally (CUL-2232: the strip, the sentence and the script agree). */
+function redFlagDay(iso: string): string {
+  return localCallDay(iso)?.long ?? shortDateUTC(iso);
+}
+
 function shortDateUTC(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return 'recently';
@@ -2607,14 +2613,14 @@ function phoneScriptFacts(
       return [
         { label: 'What says to call', value: `a read of ${petName}'s ${readNoun}` },
         { label: 'From', value: count(finding.flaggedIncidentCount, `${readNoun} read`, `${readNoun} reads`) },
-        { label: 'Most recent', value: shortDateUTC(finding.tierIso ?? finding.mostRecentFlaggedIso) },
+        { label: 'Most recent', value: redFlagDay(finding.tierIso ?? finding.mostRecentFlaggedIso) },
       ];
     }
     const noun = INCIDENT_NOUN[finding.incidentType];
     return [
       { label: 'What a photo showed', value: `${incidentFlagPhrase(finding.flags)} in ${petName}'s ${noun}` },
       { label: 'From', value: count(finding.flaggedIncidentCount, 'logged photo', 'logged photos') },
-      { label: 'Most recent', value: shortDateUTC(finding.mostRecentFlaggedIso) },
+      { label: 'Most recent', value: redFlagDay(finding.mostRecentFlaggedIso) },
     ];
   }
   if (finding.type === 'intake_decline') {
@@ -3107,11 +3113,10 @@ export function stripDayLocal(iso: string): StripDay | null {
 }
 
 /**
- * The UTC calendar day, year-less — for the red flag's `mostRecentFlaggedIso` ONLY, because
- * the server sentence ("most recently on August 6") and the phone script's "Most recent"
- * row both print that instant's UTC day, and the strip must not disagree with the card it
- * compresses (S10, one source per fact). The standing strips read the local record and
- * take the local day above.
+ * The UTC calendar day, year-less — for a date-only `YYYY-MM-DD` the engine already put on the
+ * owner's calendar (`firstLocalDay`), which parses as UTC midnight. Never for an instant: the red
+ * flag's dates are the owner's local day (`stripDayLocal`), as the server sentence now names them
+ * (CUL-2232; it once printed the UTC day, a day late for an evening west of UTC).
  */
 export function stripDayUTC(iso: string): StripDay | null {
   const d = new Date(iso);
@@ -3303,8 +3308,8 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
       return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`;
     case 'incident_red_flag':
       // "AI read" keeps it an unconfirmed read (the detail-screen register); the date is the
-      // photo record's own, UTC like the sentence and the phone script.
-      return `AI read of ${count(finding.flaggedIncidentCount, 'logged photo', 'logged photos')}${suffix(stripDayUTC(finding.mostRecentFlaggedIso))}`;
+      // photo record's own, the owner's local day like the sentence and the phone script (CUL-2232).
+      return `AI read of ${count(finding.flaggedIncidentCount, 'logged photo', 'logged photos')}${suffix(stripDayLocal(finding.mostRecentFlaggedIso))}`;
     case 'postprandial_timing':
       return `${finding.rapidCount} of ${finding.eligibleCount} timed within ${finding.rapidWindowMinutes} min of eating`;
     case 'empty_stomach_timing':

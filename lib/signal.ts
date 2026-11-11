@@ -256,6 +256,12 @@ export interface IncidentRedFlagFinding {
    *  empty, the count is the CALLED reads', and the date is `tierIso`. The card never says where
    *  the call came from (the row cannot tell). Never present without `tier`. */
   callOnly?: true;
+  /** CUL-2232: the owner's calendar day (YYYY-MM-DD) of each dated instant, stamped by the engine
+   *  from the stored timezone so the server sentence names the owner's day. Absent without a zone
+   *  or on an older cache; the phone dates from the instants in its own zone either way. */
+  mostRecentFlaggedLocalDay?: string;
+  tierLocalDay?: string;
+  laterCallTodayLocalDay?: string;
 }
 
 export interface IntakeDeclineFinding {

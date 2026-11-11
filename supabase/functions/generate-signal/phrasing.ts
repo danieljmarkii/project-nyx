@@ -358,13 +358,27 @@ function onsetMonth(iso: string): string {
   return Number.isNaN(d.getTime()) ? 'then' : MONTH_NAMES[d.getUTCMonth()]
 }
 
-// A concrete "Month Day" anchor (UTC, matching onsetMonth's UTC bucketing) for the red-flag card.
-// UTC here can be off-by-one from the owner's local date at the day boundary; the PR-2 copy pass
-// (with the pet's timezone in hand) localizes it — this template ships the safe, honest UTC day.
+// A concrete "Month Day" anchor (UTC, matching onsetMonth's UTC bucketing). Handed a local
+// YYYY-MM-DD it prints that day as is (a date-only string parses as UTC midnight).
 function onsetDay(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return 'a recent day'
   return `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCDate()}`
+}
+
+// CUL-2232: the red flag card's day is the OWNER'S calendar day (detection stamps it from
+// `user_profiles.timezone`), so an evening vomit west of UTC is not dated tomorrow in the stored
+// sentence that Ask relays word for word. With no stored zone (or a cache from before the stamp)
+// it is the UTC day, as before: nothing new is said.
+function incidentDay(iso: string, localDay: string | undefined): string {
+  return isCalendarDay(localDay) ? onsetDay(localDay) : onsetDay(iso)
+}
+
+/** A real YYYY-MM-DD: the shape AND a day that exists (no 2026-13-01, no 2026-02-30 rolling over). */
+function isCalendarDay(s: string | undefined): s is string {
+  if (s === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false
+  const d = new Date(s)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s
 }
 
 // Plain, calm phrasing for each visible red-flag kind — "possible" because these are AI reads of
@@ -421,7 +435,7 @@ export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: stri
     // cleared, so any source named here could be false (adversarial pass, #1/#2). The record's
     // card says why. Dated by the read whose words the ask is (`tierIso`).
     const noun = INCIDENT_READ_NOUN[f.incidentType]
-    return `The read of ${petName}'s ${noun} on ${onsetDay(f.tierIso ?? f.mostRecentFlaggedIso)} says to ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
+    return `The read of ${petName}'s ${noun} on ${f.tierIso !== undefined ? incidentDay(f.tierIso, f.tierLocalDay) : incidentDay(f.mostRecentFlaggedIso, f.mostRecentFlaggedLocalDay)} says to ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
   }
   return templateIncidentRedFlagPhoto(f, petName, ask)
 }
@@ -439,7 +453,7 @@ function templateIncidentRedFlagPhoto(f: IncidentRedFlagFinding, petName: string
     f.flags.length === 2
       ? `${INCIDENT_FLAG_PHRASE.blood} and ${INCIDENT_FLAG_PHRASE.foreign_material}`
       : INCIDENT_FLAG_PHRASE[f.flags[0]]
-  const when = onsetDay(f.mostRecentFlaggedIso)
+  const when = incidentDay(f.mostRecentFlaggedIso, f.mostRecentFlaggedLocalDay)
   // CUL-989 — over an incomplete read "a photo" may be one of several; the plural lead is true
   // of one flagged photo or many, and it names the most recent date either way.
   const lead =
@@ -450,7 +464,7 @@ function templateIncidentRedFlagPhoto(f: IncidentRedFlagFinding, petName: string
   // and dates it, rather than pinning the call on the older photo (adversarial pass, #3).
   // Instants compared parsed, never as text (C-40).
   if (f.tierIso !== undefined && Date.parse(f.tierIso) !== Date.parse(f.mostRecentFlaggedIso)) {
-    return `${lead}. A read on ${onsetDay(f.tierIso)} says to ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
+    return `${lead}. A read on ${incidentDay(f.tierIso, f.tierLocalDay)} says to ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
   }
   return `${lead} — ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
 }
@@ -459,7 +473,7 @@ function templateIncidentRedFlagPhoto(f: IncidentRedFlagFinding, petName: string
  *  leading space), or nothing. The words are the map's, like the card's own ask. */
 function laterCallTodayClause(f: IncidentRedFlagFinding): string {
   if (f.tier !== 'call_now' || f.laterCallTodayIso === undefined) return ''
-  return ` A later read, on ${onsetDay(f.laterCallTodayIso)}, says to ${FLOOR_ASK.inline}.`
+  return ` A later read, on ${incidentDay(f.laterCallTodayIso, f.laterCallTodayLocalDay)}, says to ${FLOOR_ASK.inline}.`
 }
 
 // The §9 adjacency note opens by naming the sign the card is NOT about, so an owner reading

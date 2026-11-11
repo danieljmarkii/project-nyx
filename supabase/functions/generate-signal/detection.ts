@@ -2085,6 +2085,13 @@ export interface IncidentRedFlagFinding extends FindingBase {
    * without `tier`.
    */
   callOnly?: true
+  /** CUL-2232: the owner's calendar day (YYYY-MM-DD, `user_profiles.timezone`) of
+   *  `mostRecentFlaggedIso`, `tierIso` and `laterCallTodayIso`, so the stored sentence (and every
+   *  reader that relays it: Ask, an export) names the day the owner lived. Present only when the
+   *  zone is valid; absent, the sentence keeps the UTC day it always printed. Words only. */
+  mostRecentFlaggedLocalDay?: string
+  tierLocalDay?: string
+  laterCallTodayLocalDay?: string
 }
 
 export type Finding =
@@ -8196,6 +8203,18 @@ export function detectIncidentRedFlags(
   const tierRead = (acc: FamilyAcc): { tierReadIso?: string } =>
     acc.call !== null && Number.isFinite(acc.saidAt[acc.call].ms) ? { tierReadIso: acc.saidAt[acc.call].iso } : {}
 
+  // CUL-2232: each dated instant's local day, written only under a valid zone (never a guess).
+  const withLocalDays = (f: IncidentRedFlagFinding): IncidentRedFlagFinding => {
+    if (!isValidTimeZone(input.timezone)) return f
+    const tz = input.timezone
+    return {
+      ...f,
+      mostRecentFlaggedLocalDay: localIsoDay(f.mostRecentFlaggedIso, tz),
+      ...(f.tierIso !== undefined ? { tierLocalDay: localIsoDay(f.tierIso, tz) } : {}),
+      ...(f.laterCallTodayIso !== undefined ? { laterCallTodayLocalDay: localIsoDay(f.laterCallTodayIso, tz) } : {}),
+    }
+  }
+
   const out: IncidentRedFlagFinding[] = []
   for (const cat of INCIDENT_CATEGORY_ORDER) {
     const acc = byFamily.get(cat)
@@ -8204,7 +8223,7 @@ export function detectIncidentRedFlags(
     // a call the record raised. Its card counts and dates the CALLED reads (`callOnly`).
     if (acc.flagKinds.size === 0) {
       if (acc.call === null) continue
-      out.push({
+      out.push(withLocalDays({
         type: 'incident_red_flag',
         priorityClass: 'safety',
         incidentType: cat,
@@ -8219,7 +8238,7 @@ export function detectIncidentRedFlags(
         ...tierRead(acc),
         ...callTodaySaid(acc),
         callOnly: true,
-      })
+      }))
       continue
     }
 
@@ -8243,7 +8262,7 @@ export function detectIncidentRedFlags(
     if (acc.flagKinds.has('blood')) flags.push('blood')
     if (acc.flagKinds.has('foreign_material')) flags.push('foreign_material')
 
-    out.push({
+    out.push(withLocalDays({
       type: 'incident_red_flag',
       priorityClass: 'safety',
       incidentType: cat,
@@ -8256,7 +8275,7 @@ export function detectIncidentRedFlags(
       ...laterCallToday(acc),
       ...tierRead(acc),
       ...callTodaySaid(acc),
-    })
+    }))
   }
   return out
 }
