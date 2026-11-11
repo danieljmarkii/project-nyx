@@ -143,6 +143,23 @@ export const MEDICATION_SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_medication_administrations_unsynced
     ON medication_administrations(synced)
     WHERE synced = 0;
+
+  -- CUL-1920: a label photo whose upload failed at capture (offline), queued so it
+  -- uploads on its own later. Keyed by the medication item it belongs to (one label
+  -- slot per drug). Local only, no server mirror: the drain uploads the object, then
+  -- sets medication_items.photo_paths, then marks the row synced. Insert-only (no
+  -- updated_at): a row is written once at save and never edited in place. local_uri
+  -- names the copy in the app's own attachments directory, which is what puts the
+  -- file under the sign-out wipe (clearLocalData walks every local_uri column).
+  CREATE TABLE IF NOT EXISTS medication_label_uploads (
+    id                  TEXT PRIMARY KEY,
+    local_uri           TEXT NOT NULL,
+    storage_path        TEXT NOT NULL,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    synced              INTEGER NOT NULL DEFAULT 0,
+    sync_attempts       INTEGER NOT NULL DEFAULT 0,
+    sync_error          TEXT
+  );
 `;
 
 // ── Local row shapes (the columns the sync push reads via SELECT) ─────────────

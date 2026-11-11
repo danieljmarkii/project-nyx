@@ -74,7 +74,10 @@ let mockRowRead: () => Promise<{ data: unknown; error: unknown }> = async () => 
   error: null,
 });
 const MED_BAND_UPLOADED = "Couldn't read the label. Fill in what you know below; the label photo is saved.";
-const MED_BAND_NOT_UPLOADED = "Couldn't read the label. Fill in what you know below.";
+// CUL-1920: an offline label is queued at save, so the band promises the upload, never a
+// photo that is already saved.
+const MED_BAND_NOT_UPLOADED =
+  "Couldn't read the label. Fill in what you know below; once you save, the label photo will upload on its own.";
 
 // The first render pays the screen's module load, which can pass jest's 5s default.
 jest.setTimeout(20000);

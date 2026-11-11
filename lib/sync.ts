@@ -3,7 +3,7 @@ import { getDb, getWatermark, setWatermark } from './db';
 import { markRecordHydrated } from './coldStart';
 import { isUploadInFlight, markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
-import { uploadPhoto, compressForUpload } from './storage';
+import { uploadPhoto, compressForUpload, MEDICATION_PHOTOS_BUCKET } from './storage';
 import {
   reconcileBatch,
   advanceWatermark,
@@ -137,6 +137,7 @@ type QueueTable =
   | 'feeding_arrangements'
   | 'medications'
   | 'medication_administrations'
+  | 'medication_label_uploads'
   | 'diet_trials'
   | 'diet_trial_foods'
   | 'notification_preferences'
@@ -165,6 +166,7 @@ type QueueTable =
 export const INSERT_ONLY_QUEUE_TABLES = [
   'event_attachments',
   'vet_visit_attachments',
+  'medication_label_uploads',
   'care_acknowledgements',
   'vet_calls',
   'vet_call_follow_ups',
@@ -2615,6 +2617,149 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
     rearmOnlyPushContext('medication_administrations', unsynced, mark));
 }
 
+// CUL-1920: push the label photos that failed to upload at capture (offline).
+//
+// Shaped like the vet-visit attachment loop: the object first, the row second, and
+// the row marked only once both landed. Three things are particular to it:
+//
+//   • The drug row may not be on the server yet (capture's own upsert is fire-and-
+//     forget, and an offline save loses it), so the drain pre-syncs it first, the
+//     same ignoreDuplicates pre-sync the dose push uses. A 0-row update below
+//     means the row still is not there (or RLS hid it): that costs an attempt and
+//     the label stays queued, never marked.
+//   • photo_paths is written by a targeted UPDATE, never an upsert, so it cannot
+//     clobber the owner's confirmed fields. Capture leaves photo_paths out of its
+//     own upsert while the label is queued, so a late capture upsert cannot wipe
+//     what this wrote either.
+//   • A label whose path is not under the signed-in account's {uid}/ prefix is
+//     never sent. The sign-out wipe deletes this table, so the only way to reach
+//     it is a wipe that failed; Storage would refuse it with a 403, which reads as
+//     transient and would retry for ever, so it is parked here as terminal.
+//   • A label the server already holds wins. The detail screen's "replace the
+//     label" fills the same slot, and an older queued photo must never land over
+//     the owner's choice. Each queued label has its own storage key (capture builds
+//     `0-label-<id>`), so its upload can never overwrite another object; and the
+//     photo_paths update applies only while the slot is still EMPTY. Lost to a
+//     replace that landed first (read or update), the row is retired unsent and
+//     the object it uploaded, if any, removed. The detail screen also retires the
+//     row itself for a replace made on this phone. (rls-privacy-reviewer, CUL-1920.)
+//   • The label is re-encoded with compressForUpload, never prepareAttachmentUpload:
+//     that helper uploads the ORIGINAL when compression fails, which would carry the
+//     photo's EXIF into the bucket. Here a failed re-encode throws, and the upload
+//     classifier spends the budget instead.
+//   • A sign-out mid-pass stops it before any further write (the epoch check the
+//     pulls use), so nothing the pass learned lands in the next account's store.
+export function syncPendingMedicationLabels(): Promise<void> {
+  return serializeQueuePush('medication_label_uploads', drainMedicationLabelsQueue);
+}
+
+async function drainMedicationLabelsQueue(): Promise<void> {
+  const epoch = currentSignOutEpoch();
+  const stale = () => currentSignOutEpoch() !== epoch;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const uid = session.user.id;
+
+  const db = getDb();
+  const pending = await db.getAllAsync<{ id: string; local_uri: string; storage_path: string }>(
+    `SELECT id, local_uri, storage_path FROM medication_label_uploads
+      WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} ORDER BY created_at LIMIT 20`,
+  );
+  if (pending.length === 0) return;
+
+  const own = pending.filter((r) => r.storage_path.startsWith(`${uid}/`));
+  for (const r of pending) {
+    if (stale()) return;
+    if (!own.includes(r)) {
+      await applyFailurePolicy(db, 'medication_label_uploads', r, 'terminal',
+        'label belongs to another account');
+    }
+  }
+  if (own.length === 0) return;
+
+  await presyncMedicationItems(db, uid, own.map((r) => r.id));
+
+  for (const row of own) {
+    if (stale()) return;
+
+    const current = await supabase
+      .from('medication_items')
+      .select('photo_paths')
+      .eq('id', row.id)
+      .maybeSingle();
+    if (current.error) {
+      console.warn('[sync] medication label read failed:', current.error.message);
+      await recordPushFailure(db, 'medication_label_uploads', row, current.error);
+      continue;
+    }
+    const held = (current.data as { photo_paths?: string[] | null } | null)?.photo_paths ?? [];
+    if (held.length > 0) {
+      // The slot is filled (a replace on the detail screen, here or on another phone,
+      // or this drain's own earlier pass): retire the row unsent.
+      if (stale()) return;
+      await markSyncedInsertOnly(db, 'medication_label_uploads', [row.id]);
+      continue;
+    }
+
+    try {
+      const compressed = await compressForUpload(row.local_uri);
+      await uploadPhoto(MEDICATION_PHOTOS_BUCKET, row.storage_path, compressed, 'image/jpeg');
+    } catch (e) {
+      // A network throw costs nothing (the offline case); a permanent one, or a
+      // re-encode that failed, spends the budget and quarantines (B-586).
+      console.warn('[sync] medication label upload failed:', e);
+      if (stale()) return;
+      await recordUploadFailure(db, 'medication_label_uploads', row, e);
+      continue;
+    }
+    if (stale()) return;
+
+    const { data, error } = await supabase
+      .from('medication_items')
+      .update({ photo_paths: [row.storage_path] })
+      .eq('id', row.id)
+      .eq('photo_paths', '{}')
+      .select('id');
+    if (stale()) return;
+    if (error) {
+      console.warn('[sync] medication label photo_paths update failed:', error.message);
+      await recordPushFailure(db, 'medication_label_uploads', row, error);
+      continue;
+    }
+    if (!data || data.length === 0) {
+      // No row matched: either a replace filled the slot after the read above (the
+      // label lost; retire it and take back its object), or the row is not visible
+      // to this account (an honest failure that costs an attempt).
+      const after = await supabase
+        .from('medication_items')
+        .select('photo_paths')
+        .eq('id', row.id)
+        .maybeSingle();
+      if (stale()) return;
+      const filled = (after.data as { photo_paths?: string[] | null } | null)?.photo_paths ?? [];
+      if (!after.error && filled.length > 0) {
+        const { error: removeErr } = await supabase.storage
+          .from(MEDICATION_PHOTOS_BUCKET)
+          .remove([row.storage_path]);
+        if (removeErr) console.warn('[sync] superseded medication label not removed:', removeErr.message);
+        await markSyncedInsertOnly(db, 'medication_label_uploads', [row.id]);
+        continue;
+      }
+      await recordPushFailure(db, 'medication_label_uploads', row, RLS_FILTERED_ERROR);
+      continue;
+    }
+
+    // The photo is on the server and the row names it: only now does the cache claim
+    // it. A cache row that is gone (changes 0) is left to refreshMedicationCache, which
+    // pulls the row this update just wrote at the end of the same sync cycle.
+    await db.runAsync(
+      'UPDATE medication_items_cache SET photo_path = ? WHERE id = ?',
+      [row.storage_path, row.id],
+    );
+    await markSyncedInsertOnly(db, 'medication_label_uploads', [row.id]);
+  }
+}
+
 // ── Diet-trial mirror push (B-417 PR 2) ──────────────────────────────────────
 //
 // The diet-trial writers were the FIRST to need `.select('id')` + a set
@@ -4716,6 +4861,8 @@ async function pushAllQueues(): Promise<void> {
   await syncPendingFeedingArrangements();
   await syncPendingMedications();
   await syncPendingMedicationAdministrations();
+  // CUL-1920: after the doses, whose push pre-syncs the drug row the label names.
+  await syncPendingMedicationLabels();
   // B-417: trials before their allowed set — diet_trial_foods.diet_trial_id
   // FKs to diet_trials server-side, and 041's same-pet trigger refuses a child whose
   // trial is not there with a TERMINAL 23514. The foods drain holds such a child
