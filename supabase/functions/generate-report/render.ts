@@ -4551,6 +4551,9 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // moves the rungs next. It still counts toward suppressing the affirmative.
   const caveats: string[] = []
   let refusalCaveat: string | null = null
+  // CUL-2707: set only where the bottom line documents a refusal that the whole-range ratings carry;
+  // the off-diet sentence beside it then drops its denominator and its elimination verdict.
+  let refusalDocumented = false
   // CUL-1978 — A FEEDING OFF THE DIET IS A REASON THE RECORD CANNOT CARRY A CLEAN RESULT, and
   // it was the one this list never named. The demo cold read: four beef feedings in nineteen
   // days, the exposure tile said so, and this callout still opened "covers 19 of 19 days … and
@@ -4568,13 +4571,13 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     caveats.push(
       `${num(t.exposures.offDiet)} of ${num(t.exposures.totalFeedings)} feedings ${countScope} did not match the trial diet${d.when} (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean.${d.timing}`,
     )
-  } else if (t.exposures.offDiet > 0 && !t.allowedSetUnavailable) {
-    // CUL-2516 (QUIET): A BREAK THE RECORD SHOWS IS NOT AN UNCERTAINTY. "Cannot establish that the
-    // elimination was clean" read eleven chicken feedings as a question about the record; they are
-    // a fact in it. The bottom line says the diet was not fed exclusively, with the days, and points
-    // at the timing line when a protein those feedings carried is named there.
-    caveats.push(offDietBottomLine(snap, countScope))
   }
+  // CUL-2516 (QUIET): A BREAK THE RECORD SHOWS IS NOT AN UNCERTAINTY. "Cannot establish that the
+  // elimination was clean" read eleven chicken feedings as a question about the record; they are
+  // a fact in it. The bottom line says the diet was not fed exclusively, with the days, and points
+  // at the timing line when a protein those feedings carried is named there. Composed below, once
+  // the refusal sentence is known (CUL-2707), and put back at the head of the caveats.
+  const offDietBroken = t.exposures.offDiet > 0 && !t.allowedSetUnavailable && !onlyPermittedLater
   if (t.exposures.unclassifiable > 0) {
     caveats.push(
       `${num(t.exposures.unclassifiable)} logged feeding${t.exposures.unclassifiable === 1 ? '' : 's'} ${countScope} name${
@@ -4644,6 +4647,17 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       refusalFact.refusedFeedings * 2 <= refusalFact.ratedFeedings &&
       // Off-diet feedings out of the denominator (pass 2: treats diluted it); stricter, so louder.
       refusalFact.ratedFeedings * 10 < t.exposures.totalFeedings - t.exposures.offDiet
+    // Adversarial pass 1 (QUIET): only where the whole-range ratings show most of the trial diet left.
+    // The owner's stop reason alone, or the 14-day recent-onset fact over weeks of eating, does not
+    // make the refused bowls the denominator's bulk, and there the break stays the record's verdict.
+    refusalDocumented =
+      !partialRefusal &&
+      !!refusalFact &&
+      refusalFact === t.rangeRefusal &&
+      refusalFact.refusedFeedings * 2 > refusalFact.ratedFeedings &&
+      // Adversarial pass 2 (LOUD): five refused bowls beside 43 kibble feedings out of 64 are not a
+      // denominator of refused bowls; where off-diet feedings are the majority the ratio stays.
+      t.exposures.offDiet * 2 < t.exposures.totalFeedings
     refusalCaveat = partialRefusal
       ? `${eaten}; only ${num(refusalFact!.ratedFeedings)} ${nouns} carry a rating, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
       : `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
@@ -4836,6 +4850,16 @@ export function dietTrialSection(snap: ReportSnapshot): string {
           : 'The reduced-intake flag fires over meals inside the trial (above)'
       }, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
     }
+  }
+  // CUL-2707 (QUIET): A REFUSAL IS NOT A BROKEN ELIMINATION. Beside "this record documents a refusal
+  // rather than an elimination", "so this record shows an elimination that was broken" recast three
+  // weeks of partial eating as a compliance slip on the box's last line, and "1 of 22 feedings did
+  // not match it" counted the refused bowls as feedings of the diet. There the off-diet feedings are
+  // a fact (count, days, timing) with no denominator and no elimination verdict. Only there: beside
+  // the thin-ratings sentence or the intake flag (the diet partly eaten), the break is still the
+  // record's verdict and stays loud (Cooper's beef jerky on the vomit days).
+  if (offDietBroken) {
+    caveats.unshift(refusalDocumented ? offDietBesideRefusal(snap) : offDietBottomLine(snap, countScope))
   }
   const suppressStatement =
     (caveats.length > 0 || refusalCaveat !== null) && t.interpretability === 'supports'
@@ -10594,6 +10618,18 @@ function offDietBottomLine(snap: ReportSnapshot, countScope: string): string {
   return `<b>The trial diet was not fed exclusively:</b> ${num(t.exposures.offDiet)} of ${num(
     t.exposures.totalFeedings,
   )} feedings ${countScope} did not match it${when} (appendix&nbsp;C; a floor, not a total), so this record shows an elimination that was broken, not a clean one.${timing}`
+}
+
+/**
+ * CUL-2707 — the off-diet sentence when the refusal sentence leads the box. The refusal is the bottom
+ * line, so this one states the off-diet feedings as a fact: their count (no denominator, which would
+ * count the refused bowls as feedings of the diet), their days and the timing counts, and no verdict
+ * on the elimination.
+ */
+function offDietBesideRefusal(snap: ReportSnapshot): string {
+  const n = snap.trial!.exposures.offDiet
+  const { when, timing } = offDietDetail(snap)
+  return `<b>Also fed off the trial diet:</b> ${num(n)} feeding${n === 1 ? '' : 's'}${when} (appendix&nbsp;C; a floor, not a total).${timing}`
 }
 
 /** The off-diet feedings' days and the timing counts of the proteins they carried, for either sentence. */
