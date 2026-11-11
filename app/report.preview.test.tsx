@@ -277,3 +277,42 @@ it('PR-23b privacy F1: a rebuild that lands on v1 after a photo was left out say
   await waitFor(() => expect(s.getByTestId('report-photos-choice-dropped')).toBeTruthy());
   expect(s.getByText('This version of the report sends every photo, including the ones you left out.')).toBeTruthy();
 });
+
+// CUL-1473: the Send bar says what the vet receives. The server embeds at most 40 photos, and a
+// photo that fails its transform prints as a placeholder, so `photo_embedded` can be lower.
+it('CUL-1473: v1 says both numbers when the server embedded fewer photos than were taken', async () => {
+  mockedGenerate.mockResolvedValue(report({ reportVersion: 'v1', phoneHtml: null, photoCount: 57, photoEmbedded: 40, photos: null }));
+  const s = render(<ReportScreen />);
+  await s.findByText('Send to vet');
+  expect(
+    s.getByText('Includes 40 of 57 photos from logged incidents. The other 17 are noted in the report, without the pictures.'),
+  ).toBeTruthy();
+  expect(s.queryByText('Includes 57 photos from logged incidents.')).toBeNull();
+});
+
+it('CUL-1473: v1 keeps the one-number sentence when every photo is embedded', async () => {
+  mockedGenerate.mockResolvedValue(report({ reportVersion: 'v1', phoneHtml: null, photoCount: 3, photoEmbedded: 3, photos: null }));
+  const s = render(<ReportScreen />);
+  await s.findByText('Send to vet');
+  expect(s.getByText('Includes 3 photos from logged incidents.')).toBeTruthy();
+});
+
+it('CUL-1473: v2 adds the shortfall under the picker row, and nothing when all are embedded', async () => {
+  const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const photos = [
+    { attachmentId: A, eventId: 'e1', type: 'vomit', occurredAt: '2026-07-02T12:00:00Z', safety: null },
+    { attachmentId: B, eventId: 'e2', type: 'vomit', occurredAt: '2026-06-28T12:00:00Z', safety: null },
+  ];
+  mockedGenerate.mockResolvedValue(report({ photoCount: 2, photoEmbedded: 1, photos }));
+  const s = render(<ReportScreen />);
+  await s.findByTestId('report-photos-choose');
+  expect(s.getByTestId('report-photos-shortfall')).toBeTruthy();
+  expect(s.getByText('1 of 2 photos fit in the report. The other one is noted in the report, without the picture.')).toBeTruthy();
+  s.unmount();
+
+  mockedGenerate.mockResolvedValue(report({ photoCount: 2, photoEmbedded: 2, photos }));
+  const t = render(<ReportScreen />);
+  await t.findByTestId('report-photos-choose');
+  expect(t.queryByTestId('report-photos-shortfall')).toBeNull();
+});

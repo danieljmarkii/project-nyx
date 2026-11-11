@@ -20,7 +20,7 @@ import { useBetaOptIn } from '../lib/betaFeatures';
 import { ReportComposer } from '../components/report/ReportComposer';
 import { ReportNotesOption } from '../components/report/ReportNotesOption';
 import { PhotoLeaveOutSheet } from '../components/report/PhotoLeaveOutSheet';
-import { leftOutChanged, normaliseLeftOut, photoRowLabel } from '../lib/reportPhotoPicker';
+import { leftOutChanged, normaliseLeftOut, photoIncludesLine, photoRowLabel, photoShortfallLine } from '../lib/reportPhotoPicker';
 import { useReportComposer } from '../hooks/useReportComposer';
 import { WINDOW_LABEL, composerRange, type ComposerWindow } from '../lib/reportComposer';
 import {
@@ -846,6 +846,7 @@ export default function ReportScreen() {
               // PR-23b (CUL-2454, R-10): on v2 the photo line is the door to the picker. Its count
               // is the photos this report holds against every photo it could hold, computed over
               // the manifest the server sent, never a count the server echoes back (R4).
+              <>
               <TouchableOpacity
                 testID="report-photos-choose"
                 style={styles.barPhotosRow}
@@ -858,13 +859,21 @@ export default function ReportScreen() {
                   {photoRowLabel(report.photos.length, normaliseLeftOut(report.photos, photosLeftOut).length)}
                 </ThemedText>
               </TouchableOpacity>
+              {photoShortfallLine(report.photoCount, report.photoEmbedded ?? report.photoCount) !== null && (
+                // CUL-1473: the row counts the photos this report holds; the server embeds at most
+                // 40 and a photo that fails its transform prints as a placeholder. Both numbers.
+                <ThemedText style={styles.barPhotos} testID="report-photos-shortfall">
+                  {photoShortfallLine(report.photoCount, report.photoEmbedded ?? report.photoCount)}
+                </ThemedText>
+              )}
+              </>
             ) : report.photoCount > 0 ? (
               // Owner visibility (spec §8): before sending, the owner sees how many of their own
               // incident photos this report hands to the vet. v1 has no picker (R-10 is v2's).
               <>
-                <Text style={styles.barPhotos}>
-                  Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
-                </Text>
+                <ThemedText style={styles.barPhotos} testID="report-photos-includes">
+                  {photoIncludesLine(report.photoCount, report.photoEmbedded ?? report.photoCount)}
+                </ThemedText>
                 {photosLeftOut.length > 0 && (
                   // PR-23b privacy pass F1: a rebuild that came back as the older layout (the
                   // layout switch or its flag changed mid-session) sends every photo, the ones the

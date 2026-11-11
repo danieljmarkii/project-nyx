@@ -4,6 +4,8 @@ import {
   normaliseLeftOut,
   parseReportPhotos,
   photoFlagLine,
+  photoIncludesLine,
+  photoShortfallLine,
   photoRowLabel,
   photoRowTitle,
   type ReportPhoto,
@@ -73,5 +75,26 @@ describe('row words', () => {
     expect(photoFlagLine('blood')).toBe('Flagged: blood seen');
     expect(photoFlagLine('foreign')).toBe('Flagged: something not food seen');
     expect(photoFlagLine(null)).toBeNull();
+  });
+});
+
+// CUL-1473: the Send bar says what the vet receives, never only what was taken.
+describe('photoIncludesLine / photoShortfallLine', () => {
+  it('all embedded: one number, and no shortfall line', () => {
+    expect(photoIncludesLine(1, 1)).toBe('Includes 1 photo from logged incidents.');
+    expect(photoIncludesLine(3, 3)).toBe('Includes 3 photos from logged incidents.');
+    expect(photoShortfallLine(3, 3)).toBeNull();
+  });
+  it('some omitted: both numbers, and what became of the rest', () => {
+    expect(photoIncludesLine(57, 40)).toBe(
+      'Includes 40 of 57 photos from logged incidents. The other 17 are noted in the report, without the pictures.',
+    );
+    expect(photoIncludesLine(2, 1)).toBe(
+      'Includes 1 of 2 photos from logged incidents. The other one is noted in the report, without the picture.',
+    );
+    expect(photoShortfallLine(57, 40)).toBe('40 of 57 photos fit in the report. The other 17 are noted in the report, without the pictures.');
+  });
+  it('carries no exclamation mark', () => {
+    for (const l of [photoIncludesLine(57, 40), photoIncludesLine(3, 3), photoShortfallLine(2, 0)]) expect(l).not.toMatch(/!/);
   });
 });

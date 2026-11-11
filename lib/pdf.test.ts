@@ -8,7 +8,7 @@
 // only so importing pdf.ts doesn't drag native code into jest.
 
 import {
-  flushBeforeReport, flushBeforeSend, reportFreshnessLine, reportPdfFilename, reportPdfFilenameFor, reportPdfFilenameV2, generateVetReport,
+  flushBeforeReport, flushBeforeSend, reportFreshnessLine, reportPdfFilename, reportPdfFilenameFor, reportPdfFilenameV2, generateVetReport, photoEmbeddedOf,
   reportVersionFor, shareReportPdf, type VetReport,
 } from './pdf';
 import { useBetaOptInStore } from './betaFeatures';
@@ -274,6 +274,15 @@ describe('generateVetReport', () => {
     });
     const r = await generateVetReport({ petId: 'p1', includeNotes: true });
     expect(r.photoCount).toBe(3);
+  });
+
+  // CUL-1473: the Send bar's photo line reads what the server embedded, not only what was taken.
+  it('maps photo_embedded, and an absent one reads as every photo in', async () => {
+    const base = { html: '<html>Nyx</html>', pet_name: 'Nyx', start_date: '2026-04-04', end_date: '2026-07-03', scope_basis: 'fallback_90d' };
+    mockedInvoke.mockResolvedValue({ data: { ...base, photo_count: 57, photo_embedded: 40, photo_omitted: 17 }, error: null });
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).photoEmbedded).toBe(40);
+    mockedInvoke.mockResolvedValue({ data: { ...base, photo_count: 5 }, error: null });
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).photoEmbedded).toBe(5);
   });
 
   // R-16 (CUL-998 / CUL-861) — the pre-send allowed-list fact is the FUNCTION's verdict.
@@ -795,5 +804,17 @@ describe('generateVetReport — photos left out (PR-23b)', () => {
     const r = await generateVetReport({ petId: 'p1', includeNotes: true, photosLeftOut: [] });
     expect(Object.keys(mockedInvoke.mock.calls[0][1].body)).not.toContain('photosLeftOut');
     expect(r.photos).toBeNull();
+  });
+});
+
+// CUL-1473: what the vet receives, said before Send.
+describe('photoEmbeddedOf', () => {
+  it('clamps to the count and to zero, and reads garbage as every photo in', () => {
+    expect(photoEmbeddedOf({ photo_count: 57, photo_embedded: 40 })).toBe(40);
+    expect(photoEmbeddedOf({ photo_count: 3, photo_embedded: 9 })).toBe(3);
+    expect(photoEmbeddedOf({ photo_count: 3, photo_embedded: -1 })).toBe(0);
+    expect(photoEmbeddedOf({ photo_count: 3, photo_embedded: '2' })).toBe(3);
+    expect(photoEmbeddedOf({ photo_count: 3, photo_embedded: Number.NaN })).toBe(3);
+    expect(photoEmbeddedOf({})).toBe(0);
   });
 });
