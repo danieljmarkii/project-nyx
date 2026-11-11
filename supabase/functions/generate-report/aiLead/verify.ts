@@ -787,7 +787,7 @@ function waiveNotClean(errors: VerifyIssue[], summary: LeadSummary, table: FactT
  *  in a trial reading, so it is still refused. */
 /** The trial reading's bottom-line phrases (facts.ts `BOTTOM_LINE_PHRASES`, mirrored: the same
  *  question, which clause says the trial is not clean). */
-export const BOTTOM_LINE_PHRASES: readonly string[] = ['not fed exclusively', 'cannot be confirmed clean', 'not a clean one', 'cannot establish that the elimination was clean']
+export const BOTTOM_LINE_PHRASES: readonly string[] = ['not fed exclusively', 'cannot be confirmed clean', 'not a clean one', 'cannot establish that the elimination was clean', 'rather than an elimination']
 
 /** The phrases `bottom-line` guards: the bottom lines, and the confounder's scope words. */
 export const PROTECTED_PHRASES: readonly string[] = [...BOTTOM_LINE_PHRASES, 'not a test of the diet', 'not checked with the owner']

@@ -62,11 +62,18 @@ export const SCOPE_PHRASES: readonly string[] = [
   'not fed exclusively',
   'cannot be confirmed clean',
   'not a clean one',
+  'rather than an elimination',
 ]
 
 /** The trial reading's bottom line, in order of preference: the sentence that says the diet was
- *  not fed exclusively, else one that says the elimination cannot be confirmed clean, else its first. */
-const BOTTOM_LINE: readonly RegExp[] = [/\bThe trial diet was not fed exclusively\b/, /\b(?:cannot be confirmed clean|not a clean one|cannot establish that the elimination was clean)\b/]
+ *  not fed exclusively, else one that says the elimination cannot be confirmed clean, else the one
+ *  that says the record documents a refusal (CUL-2707: beside a refusal the off-diet sentence states
+ *  a fact, so the refusal is the clause that says the trial is not clean), else its first. */
+const BOTTOM_LINE: readonly RegExp[] = [
+  /\bThe trial diet was not fed exclusively\b/,
+  /\b(?:cannot be confirmed clean|not a clean one|cannot establish that the elimination was clean)\b/,
+  /\bdocuments a refusal rather than an elimination\b/,
+]
 
 /** A callout's sentences: split after a full stop that a capital letter follows. */
 export function trialReadingSentences(text: string): string[] {

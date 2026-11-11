@@ -17,6 +17,7 @@ import {
 import { renderReport } from './render.ts'
 import { buildDocumentV2 } from './documentV2.ts'
 import { expectedFailure } from './expectedFailure.testutil.ts'
+import { buildLeadFacts, documentForLead } from './aiLead/facts.ts'
 import { MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
 import {
   buildTrialBlock, halfPartition, looksAntibacterial, selectReportTrial, trialAllowedListMissing,
@@ -6056,4 +6057,33 @@ Deno.test('CUL-2707 — without a refusal the same treat still reads as a broken
   const box = interpretingBox(renderReport(assembleReport(input)))
   assert.ok(!/documents a refusal/.test(box), `non-vacuity: no refusal sentence: ${box}`)
   assert.ok(/The trial diet was not fed exclusively: 1 of \d+ feedings .*so this record shows an elimination that was broken, not a clean one\./.test(box), box)
+})
+
+Deno.test('CUL-2707 — the AI lead still requires a "trial is not clean" clause beside a refused trial (adversarial pass 1)', () => {
+  // Only the old off-diet sentence matched the lead's bottom line; with it gone the table fell back
+  // to the refusal sentence with nothing it had to say. The refusal's own clause is now the bottom line.
+  const input = cul2707RefusalInput()
+  // Logged days after the trial on another food, so the record is not thin and the lead is built.
+  for (const d of days('2026-06-22', '2026-07-02')) input.events.push(meal({ date: d, brand: 'Purina', product: 'Chicken Kibble', foodItemId: 'f-after', proteins: ['chicken'], intakeRating: 'all' }))
+  const snap = assembleReport(input)
+  const f = buildLeadFacts(documentForLead(snap), {
+    petName: snap.signalment.name, species: snap.signalment.species,
+    recordStart: snap.scope.startDate, recordEnd: snap.scope.endDate, includeLookNotes: false,
+  })
+  if (!f.eligible) throw new Error(`non-vacuity: the record gets a lead, not ${f.reason}`)
+  const reading = f.table.facts.filter((r) => r.role === 'trial_reading')
+  const bottom = reading.filter((r) => r.required)
+  assert.equal(bottom.length, 1, `one required trial reading: ${JSON.stringify(reading)}`)
+  assert.match(String(bottom[0].text ?? ''), /documents a refusal rather than an elimination/)
+  assert.ok((bottom[0].must_say ?? []).some((g) => g.includes('rather than an elimination')), JSON.stringify(bottom[0].must_say))
+})
+
+Deno.test('CUL-2707 — where the ratings do not show the diet refused, the off-diet break stays the verdict (adversarial pass 1)', () => {
+  // The owner's stop reason says "refused" but every rated bowl was finished: the bowls are feedings
+  // of the diet, so the ratio and "an elimination that was broken" stay.
+  const input = cul2707RefusalInput()
+  for (const e of input.events) if (e.meal?.foodItemId === 'f-hp') e.meal.intakeRating = 'all'
+  const box = interpretingBox(renderReport(assembleReport(input)))
+  assert.ok(/recorded as stopped because the diet was refused/.test(box), `non-vacuity: the stop-reason sentence leads: ${box}`)
+  assert.ok(/1 of \d+ feedings .*so this record shows an elimination that was broken, not a clean one\./.test(box), box)
 })

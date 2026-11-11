@@ -4551,8 +4551,8 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // moves the rungs next. It still counts toward suppressing the affirmative.
   const caveats: string[] = []
   let refusalCaveat: string | null = null
-  // CUL-2707: set only where the bottom line says the record documents a refusal rather than an
-  // elimination; the off-diet sentence beside it then drops its elimination verdict.
+  // CUL-2707: set only where the bottom line documents a refusal that the whole-range ratings carry;
+  // the off-diet sentence beside it then drops its denominator and its elimination verdict.
   let refusalDocumented = false
   // CUL-1978 — A FEEDING OFF THE DIET IS A REASON THE RECORD CANNOT CARRY A CLEAN RESULT, and
   // it was the one this list never named. The demo cold read: four beef feedings in nineteen
@@ -4647,7 +4647,14 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       refusalFact.refusedFeedings * 2 <= refusalFact.ratedFeedings &&
       // Off-diet feedings out of the denominator (pass 2: treats diluted it); stricter, so louder.
       refusalFact.ratedFeedings * 10 < t.exposures.totalFeedings - t.exposures.offDiet
-    refusalDocumented = !partialRefusal
+    // Adversarial pass 1 (QUIET): only where the whole-range ratings show most of the trial diet left.
+    // The owner's stop reason alone, or the 14-day recent-onset fact over weeks of eating, does not
+    // make the refused bowls the denominator's bulk, and there the break stays the record's verdict.
+    refusalDocumented =
+      !partialRefusal &&
+      !!refusalFact &&
+      refusalFact === t.rangeRefusal &&
+      refusalFact.refusedFeedings * 2 > refusalFact.ratedFeedings
     refusalCaveat = partialRefusal
       ? `${eaten}; only ${num(refusalFact!.ratedFeedings)} ${nouns} carry a rating, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
       : `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
