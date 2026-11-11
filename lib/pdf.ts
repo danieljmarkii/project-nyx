@@ -71,6 +71,12 @@ export interface VetReport {
   // they flow into both the in-app WebView and the on-device PDF with no extra client wiring.
   photoCount: number;
   /**
+   * CUL-1473: how many of `photoCount` the server actually embedded. Embedding stops at 40, and a
+   * photo that fails its transform becomes a labelled placeholder, so this can be lower. Absent
+   * (a server older than the field, or a report built elsewhere) reads as `photoCount`.
+   */
+  photoEmbedded?: number;
+  /**
    * PR-23b (CUL-2454): every photo this report held before the owner's choice, for the picker
    * (`lib/reportPhotoPicker.ts`). Null on v1 and from a server older than PR-23b: no picker.
    * Absent reads as null, like `reportId`, so a report built elsewhere offers no picker.
@@ -348,11 +354,20 @@ export async function generateVetReport(params: VetReportParams): Promise<VetRep
     endDate: typeof data.end_date === 'string' ? data.end_date : '',
     scopeBasis: typeof data.scope_basis === 'string' ? data.scope_basis : '',
     photoCount: typeof data.photo_count === 'number' ? data.photo_count : 0,
+    photoEmbedded: photoEmbeddedOf(data),
     photos: version === 'v2' ? parseReportPhotos(data.photos) : null,
     trialAllowedListMissing: data.trial_allowed_list_missing === true,
     petId: params.petId,
     reportId: version === 'v2' && typeof data.report_id === 'string' && data.report_id.length > 0 ? data.report_id : null,
   };
+}
+
+/** `photo_embedded`, clamped to `photo_count`; absent or malformed reads as every photo in. */
+export function photoEmbeddedOf(data: { photo_count?: unknown; photo_embedded?: unknown }): number {
+  const count = typeof data.photo_count === 'number' ? data.photo_count : 0;
+  const raw = data.photo_embedded;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return count;
+  return Math.max(0, Math.min(count, Math.floor(raw)));
 }
 
 // A clinic-friendly, PIMS-filable filename: "Nyx-vet-report-2026-04-04-to-2026-07-03.pdf".

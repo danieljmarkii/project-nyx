@@ -67,6 +67,30 @@ export function photoRowLabel(total: number, leftOut: number): string {
   return leftOut > 0 ? `Photos · ${kept} of ${total} · Choose` : `Photos · ${total} · Choose`;
 }
 
+const photosWord = (n: number): string => `photo${n === 1 ? '' : 's'}`;
+
+/**
+ * CUL-1473: the Send bar's photo line says what the vet receives, never only what was taken.
+ * All in: "Includes 3 photos from logged incidents." Some out: both numbers, and what became of
+ * the rest (the report prints a labelled placeholder for each, never drops it).
+ */
+export function photoIncludesLine(count: number, embedded: number): string {
+  if (embedded >= count) return `Includes ${count} ${photosWord(count)} from logged incidents.`;
+  return `Includes ${embedded} of ${count} photos from logged incidents. ${photoShortfallTail(count - embedded)}`;
+}
+
+/** The v2 bar's line under its picker row: null when every photo it holds is embedded. */
+export function photoShortfallLine(count: number, embedded: number): string | null {
+  if (embedded >= count) return null;
+  return `${embedded} of ${count} photos fit in the report. ${photoShortfallTail(count - embedded)}`;
+}
+
+function photoShortfallTail(missing: number): string {
+  return missing === 1
+    ? 'The other one is noted in the report, without the picture.'
+    : `The other ${missing} are noted in the report, without the pictures.`;
+}
+
 /** The sheet's one line under its title, saying what leaving a photo out does and does not do. */
 export const PHOTO_PICKER_NOTE =
   'A photo you leave out isn’t sent. The report still says it was taken, and any flag on it still prints.';
