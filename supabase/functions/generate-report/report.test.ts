@@ -3270,6 +3270,78 @@ Deno.test('CUL-1779 — a refusal-stopped trial withholds every measured off-die
   assert.ok(html.includes('withholds this trial&rsquo;s clean-record statement'))
 })
 
+// ── CUL-1823 — the trial's three numbers on the vet report, as a vet reads them cold ──────────
+// The vet-report cold read on CUL-1779's fixtures found three sentences whose numbers misread: a
+// refusal bracket that read as delivery, a coverage denominator named as the window when it counted
+// trial days, and Symptoms vs logging halves that did not visibly add up to the coverage line.
+
+function cul1823RefusalSnap() {
+  return assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-05-08', endDate: '2026-05-28' },
+    dietTrials: [cul1779Trial({ status: 'abandoned', stoppedReason: 'refused', endedAt: '2026-05-28' })],
+    events: [
+      ...dailyMeals('2026-05-08', '2026-05-28', 'some'),
+      proteinMeal({ occurredAt: at('2026-05-10', '18:00:00'), foodItemId: 'jerky', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken.', extractionConfidence: { proteins: 0.9 } }),
+    ],
+  }))
+}
+
+function cul1823PreTrialWindowSnap() {
+  // A 52-day window opening two weeks before the trial: 38 trial days inside it, 27 of them
+  // logged, and the trial still running past the window's end.
+  return assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-04-24', endDate: '2026-06-14' },
+    dietTrials: [cul1779Trial()],
+    events: [...dailyMeals('2026-04-24', '2026-05-07'), ...dailyMeals('2026-05-08', '2026-06-03')],
+  }))
+}
+
+/** The "Symptoms vs logging" row's halves and its stated total, from the rendered text. */
+function logHalves(text: string): { first: number; second: number; middle: boolean; total: number | null } {
+  const m = text.match(/Days a meal was logged: (\d+) of \d+ in the first half of [^,]+, \d{4}, (\d+) of \d+ in the second(; the middle day, [A-Z][a-z]{2} \d+, is in neither half and had a meal logged \( (\d+) of \d+ in all\))?/)
+  assert.ok(m, 'the Symptoms vs logging row rendered its halves')
+  return { first: Number(m![1]), second: Number(m![2]), middle: !!m![3], total: m![4] ? Number(m![4]) : null }
+}
+
+Deno.test('CUL-1823 — a refused trial\'s bracket counts what was finished, never reads as delivery', () => {
+  const snap = cul1823RefusalSnap()
+  const text = plainText(renderReport(snap))
+  const callout = text.match(/Interpreting this record ([^.]*)\./)
+  assert.ok(callout, 'the callout rendered')
+  assert.ok(
+    callout![1].startsWith('Not one rated feeding of the trial diet was finished (0 of 21 finished)'),
+    `the bracket names its noun and counts the finished: ${callout![1]}`,
+  )
+  assert.ok(!/was finished \(\s*21 of 21\s*\)/.test(text), 'the bare "(21 of 21)" bracket is gone')
+  // The register stays: the refusal still leads and still documents a refusal.
+  assert.ok(/so this record documents a refusal rather than an elimination/.test(callout![1]))
+})
+
+Deno.test('CUL-1823 — a window wider than the trial names its coverage denominator as trial days', () => {
+  const snap = cul1823PreTrialWindowSnap()
+  assert.equal(snap.scope.windowDays, 52, 'non-vacuity: the window is longer than the trial span inside it')
+  assert.deepEqual(snap.trial?.coverage, { daysLogged: 27, daysElapsed: 38 })
+  assert.ok((snap.trial?.trialDaysOutsideRange.after ?? 0) > 0, 'the trial runs past the window')
+  const text = plainText(renderReport(snap))
+  assert.ok(/This record covers 27 of the 38 trial days in this window/.test(text), 'the 38 are named as trial days')
+  assert.ok(!/days of this report's window/.test(text), 'never "of this report\'s window" over a trial-day count')
+})
+
+Deno.test('CUL-1823 — the Symptoms vs logging halves sum to the coverage line, or say why not', () => {
+  // Even span: the halves cover every trial day in the window, so they sum to the coverage line.
+  const wide = cul1823PreTrialWindowSnap()
+  const w = logHalves(plainText(renderReport(wide)))
+  assert.equal(w.middle, false, 'an even span has no middle day')
+  assert.equal(w.first + w.second, wide.trial!.coverage!.daysLogged, 'the halves sum to the coverage line\'s 27')
+
+  // Odd span: 10 + 10 is 20 against 21; the middle day is the stated difference and the row prints the total.
+  const refused = cul1823RefusalSnap()
+  const r = logHalves(plainText(renderReport(refused)))
+  assert.equal(r.first + r.second, 20)
+  assert.equal(r.middle, true, 'the odd middle day is named, not silently dropped')
+  assert.equal(r.total, refused.trial!.coverage!.daysLogged, 'the stated total matches the coverage line\'s 21')
+})
+
 // ── B-351 slice 5 — END-TO-END, from STORED COLUMN SHAPES to rendered HTML ─────
 //
 // The adversarial pass named a structural blind spot in the tests above: report.test

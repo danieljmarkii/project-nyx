@@ -2622,7 +2622,7 @@ Deno.test('B-600 — eleven days may not certify eighty-four', () => {
   // The one sentence a vet reads for the bottom line no longer vouches for a trial
   // it has seen a fifth of.
   assert.ok(!/supports interpreting it/.test(text))
-  assert.ok(/covers 11 of 31 days of this report’s window/.test(text))
+  assert.ok(/covers 11 of the 31 trial days in this window/.test(text))
 
   // And the block says what slice it is, before any of the numbers it re-scopes.
   assert.ok(/This report shows 31 days of a trial that has run 73/.test(text))
@@ -5685,25 +5685,25 @@ for (const [tz, now] of [
 // now reads "Soy (hydrolysed)" (diffed: the only change in the rendered page).
 const CUL_2094_GOLDEN: Record<string, string> = {
   'endedPast/America/Phoenix': '2ca9d025dc4f7dce',
-  'endedPast/window/America/Phoenix': 'e31eed18a8d69511',
+  'endedPast/window/America/Phoenix': '9fe08376c9624d88',
   'endedToday/America/Phoenix': 'cdff697079358379',
-  'endedToday/window/America/Phoenix': '43900bec3b050697',
+  'endedToday/window/America/Phoenix': '9c4ccab85af3f926',
   'endedOnTarget/America/Phoenix': '9c2e6760f16a6fc4',
-  'endedOnTarget/window/America/Phoenix': '467c35cc0c46a2c5',
+  'endedOnTarget/window/America/Phoenix': '9d63a3361fda8da7',
   'active/America/Phoenix': '27ef27591220c685',
   'endedPast/Pacific/Noumea': '2ca9d025dc4f7dce',
-  'endedPast/window/Pacific/Noumea': 'e31eed18a8d69511',
+  'endedPast/window/Pacific/Noumea': '9fe08376c9624d88',
   'endedToday/Pacific/Noumea': 'cdff697079358379',
-  'endedToday/window/Pacific/Noumea': '43900bec3b050697',
+  'endedToday/window/Pacific/Noumea': '9c4ccab85af3f926',
   'endedOnTarget/Pacific/Noumea': '9c2e6760f16a6fc4',
-  'endedOnTarget/window/Pacific/Noumea': '467c35cc0c46a2c5',
+  'endedOnTarget/window/Pacific/Noumea': '9d63a3361fda8da7',
   'active/Pacific/Noumea': 'e4c89bf6a51923a0',
   'endedPast/UTC': '2ca9d025dc4f7dce',
-  'endedPast/window/UTC': 'e31eed18a8d69511',
+  'endedPast/window/UTC': '9fe08376c9624d88',
   'endedToday/UTC': 'cdff697079358379',
-  'endedToday/window/UTC': '43900bec3b050697',
+  'endedToday/window/UTC': '9c4ccab85af3f926',
   'endedOnTarget/UTC': '9c2e6760f16a6fc4',
-  'endedOnTarget/window/UTC': '467c35cc0c46a2c5',
+  'endedOnTarget/window/UTC': '9d63a3361fda8da7',
   'active/UTC': '27ef27591220c685',
 }
 

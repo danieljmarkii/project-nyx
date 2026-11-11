@@ -759,7 +759,8 @@ describe('B-600 — a truncated view of a trial is not the trial', () => {
 
   it('§7.2 names the window, and the affirmative can never reach past it', () => {
     const s = interpretabilityStatement(facts)!;
-    expect(s).toMatch(/of this report’s window/);
+    expect(s).toMatch(/covers \d+ of the \d+ trial days in this window/);
+    expect(s).not.toMatch(/of this report’s window/);
     expect(s).not.toMatch(/of the trial window/);
     // The verdict is about the window it was measured over — never about "this
     // trial", which is the noun the 84-day header owns.
@@ -814,7 +815,7 @@ describe('B-600 — a truncated view of a trial is not the trial', () => {
     // render's "a trial that has run N" reads — deriving it from a window-bounded
     // counter is what made that sentence say 30.
     expect(early.trialDaysElapsed).toBe(73);
-    expect(interpretabilityStatement(early)).toMatch(/of this report’s window/);
+    expect(interpretabilityStatement(early)).toMatch(/covers \d+ of the 32 trial days in this window/);
   });
 });
 
