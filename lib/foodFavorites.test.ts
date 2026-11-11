@@ -92,4 +92,31 @@ describe('free-fed ratings are set aside by date, not by food', () => {
     // The control: the same rows with no bowl on record do make a favourite, so the span is what decides.
     expect(shelf([...bowlRows, ...watched], [])).toHaveLength(1);
   });
+
+  // A pre-076 take-up: `active_until` names the owner's local date, no instant. Around that date
+  // a rating MAY have been the bowl. Adversarial pass on CUL-1551: the narrow reading counted a
+  // possible bowl's "ate it all" as the latest watched meal and it cleared the recency guard over
+  // a watched refusal. Finished ratings now need to be certainly watched; refusals still count.
+  const pre076 = {
+    foodItemId: 'kibble',
+    createdAt: at(3),
+    activeFrom: null,
+    activeUntil: at(1).slice(0, 10),
+    endedAt: null,
+  };
+  const uncertain = new Date(Date.parse(`${at(1).slice(0, 10)}T00:00:00.000Z`) + 15 * 3_600_000);
+
+  it('a possible bowl\'s "ate it all" never clears the recency guard over a watched refusal', () => {
+    const rows = [10, 9, 8, 7, 6].map((d) => row(d, 'all')).concat([row(4, 'refused')]);
+    rows.push({ ...row(0, 'all'), occurred_at: uncertain.toISOString() });
+    expect(shelf(rows, [pre076])).toEqual([]);
+  });
+
+  it('a possible bowl\'s refusal still suppresses the favourite', () => {
+    const rows = [10, 9, 8, 7, 6].map((d) => row(d, 'all'));
+    rows.push({ ...row(0, 'refused'), occurred_at: uncertain.toISOString() });
+    expect(shelf(rows, [pre076])).toEqual([]);
+    // The control: without the refusal the watched meals still make a favourite.
+    expect(shelf(rows.slice(0, 5), [pre076])).toHaveLength(1);
+  });
 });

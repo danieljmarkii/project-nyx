@@ -13,7 +13,8 @@
 // the pieces are wired to the database.
 import { getDb } from './db';
 import { getIntakeDecline, readFreeFedIntakeSpans, type Species } from './analytics';
-import { isFreeFedIntakeMeal, type FreeFedIntakeSpan } from './freeFedIntake';
+import { isFreeFedIntakeMeal, mayBeFreeFedIntakeMeal, type FreeFedIntakeSpan } from './freeFedIntake';
+import { FINISHED_SCORE, INTAKE_SCORE } from './intakeEvidence';
 import { selectReliableFavorites, shouldSuppressFavorites, type FavoriteMealRow, type ReliableFavorite } from './food';
 
 // One row per non-deleted meal of a CACHED (identifiable) food for this pet — a
@@ -79,13 +80,22 @@ export const FAVORITE_MEALS_SQL = `SELECT f.id AS food_item_id, f.brand, f.produ
  * dropped every meal of a food free-fed TODAY, so a bowl left out last month and since taken
  * up had its "ate it all" counted as a watched meal, and a meal-fed food set down as a bowl
  * this week lost its watched ratings. A non-finite time is kept here and dropped by the core.
+ *
+ * ASYMMETRIC where an instant is missing (a pre-076 take-up day): a FINISHED rating counts only
+ * when it was certainly watched (`mayBeFreeFedIntakeMeal`, the decline detector's own
+ * `certainlyWatchedMeal` rule), and any other rating is set aside only when it was certainly a
+ * bowl (`isFreeFedIntakeMeal`). A possible bowl's "ate it all" must never become the latest
+ * rating that clears the recency guard over a watched refusal; a possible bowl's refusal still
+ * suppresses (adversarial pass on CUL-1551).
  * EXPORTED so the test drives the production filter, not a copy of it.
  */
 export function observedFavoriteRows(rows: readonly FavoriteRow[], spans: readonly FreeFedIntakeSpan[]): FavoriteMealRow[] {
   const out: FavoriteMealRow[] = [];
   for (const r of rows) {
     const ms = Date.parse(r.occurred_at);
-    if (isFreeFedIntakeMeal(r.food_item_id, ms, spans)) continue;
+    const finished = (INTAKE_SCORE[r.intake_rating as string] ?? 0) >= FINISHED_SCORE;
+    const setAside = finished ? mayBeFreeFedIntakeMeal : isFreeFedIntakeMeal;
+    if (setAside(r.food_item_id, ms, spans)) continue;
     out.push({
       foodItemId: r.food_item_id,
       brand: r.brand,
