@@ -1497,6 +1497,22 @@ describe('file-bearing writers charge a thrown upload failure (B-586)', () => {
     await ensureEventAttachmentsSynced('e1');
 
     expect(mockUploadPhoto).not.toHaveBeenCalled();
+    // …and the row stays queued for the drain: no server row pointing at a missing
+    // object, no synced mark, no lifted quarantine (rls-privacy-reviewer, CUL-2708).
+    expect(mockFrom).not.toHaveBeenCalledWith('event_attachments');
+    expect(marks()).toHaveLength(0);
+  });
+
+  it('ensureEventAttachmentsSynced: an already-synced row keeps its row-only recovery when the re-encode fails', async () => {
+    mockGetAllAsync.mockResolvedValue([{ ...EVENT_ATT, synced: 1 }]);
+    mockCompress.mockRejectedValue(new Error('cannot decode'));
+    const upsert = jest.fn().mockResolvedValue({ error: null });
+    mockFrom.mockReturnValue({ upsert });
+
+    await ensureEventAttachmentsSynced('e1');
+
+    expect(mockUploadPhoto).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledTimes(1);
   });
 
   it('vet-visit attachment: a NETWORK throw records NOTHING — the offline case', async () => {

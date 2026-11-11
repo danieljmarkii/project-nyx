@@ -2116,7 +2116,8 @@ function parseQuestionsForPush(raw: string | null): unknown[] | null {
 // report. The queue drains catch the throw into recordUploadFailure, which reads a
 // local (non-Storage) throw as 'rejected': the row spends its retry budget and then
 // quarantines with this message as its reason, and the original never goes up.
-// ensureEventAttachmentsSynced skips the upload on the same throw. Same rule the
+// ensureEventAttachmentsSynced skips the upload on the same throw and, for a row
+// not yet synced, leaves it queued rather than marking it. Same rule the
 // capture paths and the medication label drain already follow. Exported for tests.
 export async function prepareAttachmentUpload(
   localUri: string,
@@ -2244,6 +2245,12 @@ export async function ensureEventAttachmentsSynced(eventId: string): Promise<voi
       await uploadPhoto('nyx-event-attachments', att.storage_path, prep.uri, prep.mimeType);
     } catch (e) {
       console.warn('[sync] attachment re-upload skipped:', e);
+      // CUL-2708 — an unsynced photo has no object on the server yet, so writing
+      // its row and marking it synced would leave a row with no photo behind it
+      // and lift a quarantine the drain set. Leave it to the drain, which charges
+      // the failure. Only a row already synced (its object is up) gets the
+      // row-only recovery below.
+      if (att.synced === 0) continue;
     }
     const { error } = await supabase.from('event_attachments').upsert({
       id: att.id, event_id: att.event_id, pet_id: att.pet_id,
