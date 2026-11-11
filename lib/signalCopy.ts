@@ -2183,15 +2183,17 @@ export function photoCompositionLines(f: TimingStoryLike): string[] {
 }
 
 /** The for-your-vet relay (§4.1 — descriptors, never labels): one plain sentence the owner can
- *  say to the vet. It LEADS with the fact the face hasn't already shown — the early-morning
+ *  say to the vet. It LEADS with the fact the face hasn't already shown — the clock-time
  *  clustering — rather than reprinting the band counts a fourth time (pm-feature-review S10). No
- *  mechanism word, no syndrome — the timing itself is the useful detail. With no clock cluster to
- *  add, the relay ask itself is the content (never a re-count). */
+ *  mechanism word, no syndrome — the timing itself is the useful detail. No daypart word either:
+ *  the band can sit at any hour (a 10pm–2am cluster is not "early-morning", CUL-1191), so the
+ *  band's own hours are the only name the cluster gets. With no clock cluster to add, the relay
+ *  ask itself is the content (never a re-count). */
 export function timingStoryVetLine(f: TimingStoryLike): string {
   const { band, count: inBand } = clockOf(f);
   const photoTail = f.photoComposition ? ' Photos are attached to some of these.' : '';
   if (band && inBand != null) {
-    return `The early-morning timing is worth flagging to your vet — ${inBand} of the ${count(longCountOf(f), 'episode', 'episodes')} ${f.longGapHours}h or more after eating fell ${localHourBand(band.startLocalHour, band.windowHours)}.${photoTail}`;
+    return `The time of day is worth flagging to your vet — ${inBand} of the ${count(longCountOf(f), 'episode', 'episodes')} ${f.longGapHours}h or more after eating fell ${localHourBand(band.startLocalHour, band.windowHours)}.${photoTail}`;
   }
   return `The timing here — how long after eating these come — is the useful detail to mention to your vet.${photoTail}`;
 }

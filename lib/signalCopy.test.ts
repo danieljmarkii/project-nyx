@@ -1581,13 +1581,25 @@ describe('A2 timing card — the control side + L3 composition (S2, G4)', () => 
 });
 
 describe('A2 timing card — the for-your-vet relay (descriptors, never labels)', () => {
-  it('LEADS with the early-morning clustering (the fact the face has not shown), + photo attachment when present', () => {
+  it('LEADS with the clock clustering (the fact the face has not shown), + photo attachment when present', () => {
     const line = timingStoryVetLine(
       emptyStomach({ longCount: 7, clockCount: 6, clockBand: { startLocalHour: 2, windowHours: 6 }, photoComposition: { hair: { count: 2, denominator: 5 } } }),
     );
-    expect(line).toContain('The early-morning timing is worth flagging to your vet');
+    expect(line).toContain('The time of day is worth flagging to your vet');
     expect(line).toContain('6 of the 7 episodes 6h or more after eating fell between 2am and 8am');
     expect(line).toContain('Photos are attached to some of these.');
+  });
+
+  // CUL-1191: the band can sit at any hour, so the line never names a fixed daypart. A cat timed
+  // from her last eaten meal clusters in the evening; the vet relay must repeat those hours only.
+  it.each([
+    [{ startLocalHour: 22, windowHours: 4 }, 'between 10pm and 2am'],
+    [{ startLocalHour: 5, windowHours: 4 }, 'between 5am and 9am'],
+    [{ startLocalHour: 18, windowHours: 4 }, 'between 6pm and 10pm'],
+  ])('names a %o band by its own hours, never a daypart word', (clockBand, hours) => {
+    const line = timingStoryVetLine(emptyStomach({ longCount: 7, clockCount: 5, clockBand, photoComposition: undefined }));
+    expect(line).toBe(`The time of day is worth flagging to your vet — 5 of the 7 episodes 6h or more after eating fell ${hours}.`);
+    expect(line).not.toMatch(/early|morning|evening|night|overnight|afternoon/i);
   });
 
   it('with no clock band, the relay ask is the content — no re-count, no photo tail without photos', () => {
