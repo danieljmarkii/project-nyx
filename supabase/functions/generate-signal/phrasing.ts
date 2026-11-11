@@ -371,7 +371,14 @@ function onsetDay(iso: string): string {
 // sentence that Ask relays word for word. With no stored zone (or a cache from before the stamp)
 // it is the UTC day, as before: nothing new is said.
 function incidentDay(iso: string, localDay: string | undefined): string {
-  return localDay !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(localDay) ? onsetDay(localDay) : onsetDay(iso)
+  return isCalendarDay(localDay) ? onsetDay(localDay) : onsetDay(iso)
+}
+
+/** A real YYYY-MM-DD: the shape AND a day that exists (no 2026-13-01, no 2026-02-30 rolling over). */
+function isCalendarDay(s: string | undefined): s is string {
+  if (s === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false
+  const d = new Date(s)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s
 }
 
 // Plain, calm phrasing for each visible red-flag kind — "possible" because these are AI reads of

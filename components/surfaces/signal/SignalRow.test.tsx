@@ -41,7 +41,7 @@ const SAFETY: SignalFinding[] = [
   { type: 'symptom_worsening', priorityClass: 'safety', symptomType: 'cough', currentCount: 7, priorCount: 2, currentDays: 5, priorDays: 2, trigger: 'more_days', tier: 'firm', windowDays: 7 },
   { type: 'intake_decline', priorityClass: 'safety', trigger: 'consecutive_low', species: 'cat', daysBelowBaseline: 3, refusedFoodLabel: null, ratedMealsConsidered: 9 },
   { type: 'intake_decline', priorityClass: 'safety', trigger: 'refused_normal_food', species: 'cat', daysBelowBaseline: 0, refusedFoodLabel: 'Kibble', ratedMealsConsidered: 9 },
-  { type: 'incident_red_flag', priorityClass: 'safety', incidentType: 'vomit', flags: ['foreign_material'], mostRecentFlaggedIso: '2026-09-22T15:00:00Z', flaggedIncidentCount: 1, windowDays: 14 },
+  { type: 'incident_red_flag', priorityClass: 'safety', incidentType: 'vomit', flags: ['foreign_material'], mostRecentFlaggedIso: new Date(2026, 8, 22, 15, 0).toISOString(), flaggedIncidentCount: 1, windowDays: 14 },
 ];
 
 const timing: SignalFinding = {

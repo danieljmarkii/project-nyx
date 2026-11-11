@@ -1635,4 +1635,8 @@ Deno.test('CUL-2232 — a separate call read and a later call today are dated by
   // A malformed stamp (a row the owner can write) falls back to the UTC instant, never prints junk.
   const junk = templateIncidentRedFlag(incidentRedFlag({ mostRecentFlaggedLocalDay: 'soon' }), 'Nyx')
   assert.ok(junk.includes('on May 28'), junk)
+  for (const bad of ['2026-13-01', '2026-02-30']) {
+    const t = templateIncidentRedFlag(incidentRedFlag({ mostRecentFlaggedLocalDay: bad }), 'Nyx')
+    assert.ok(t.includes('on May 28'), t)
+  }
 })
