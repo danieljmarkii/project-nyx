@@ -18,6 +18,7 @@ import { useSyncStore } from '../store/syncStore';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { countRecordGaps } from './db';
 import { readChangedSince } from './readCopy';
+import { currentSignOutEpoch } from './signOutEpoch';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
 // The jsonb column ai_signals.findings is the contract. These types mirror the
@@ -853,12 +854,14 @@ export function isSignalCacheStale(row: SignalCacheRow | null, nowMs = Date.now(
 }
 
 // ── A read that landed after the Signal was built (CUL-1105) ─────────────────────
-// The owner logs a photographed vomit at 2am and locks the phone; the server writes the
-// read after the log's own rebuild ran, and the next morning's sync pull brings it into
-// the phone's copy. The cached Signal is still inside its expiry, so nothing rebuilds and
-// a red-flag card waits a day. So a fresh row is also stale when a read for its pet
-// changed at or after its `generated_at`. That rebuild is a write to the record and goes
-// as a log, which the per-pet cap never turns away (CUL-2059).
+// The primary path is the copy's writer (`lib/readCopy.ts` `writeCopies`), which rebuilds a
+// pet's Signal whenever a settled read moves the copy, by any caller. This is the BACKSTOP
+// for a read the copy already holds when Home opens but whose rebuild never ran (the app
+// was killed inside the 5s debounce): a fresh row is also stale when a read for its pet
+// changed at or after its `generated_at`. It cannot see a read written during a rebuild's
+// own run (`generated_at` is stamped at the insert, after the load); the writer's trigger
+// covers that one. The rebuild is a write to the record and goes as a log, which the
+// per-pet cap never turns away (CUL-2059).
 //
 // Once per row: the set holds each (pet, generated_at) a landed read is rebuilding or has
 // rebuilt, so a success that somehow leaves the same row (and bumps the signalTick that
@@ -1057,13 +1060,17 @@ export async function readSignalsAndRefresh(
   petIds: string[],
 ): Promise<Map<string, CachedFinding[]>> {
   const byPet = new Map<string, CachedFinding[]>();
+  // CUL-1105 (adversarial pass): each rebuild below is armed after an await, so one armed
+  // after a sign-out would carry the outgoing account's pet id under the next session
+  // (CUL-642's class). The epoch is taken first and checked at each arm.
+  const epoch = currentSignOutEpoch();
   for (const petId of petIds) {
     try {
       const row = await readSignalCache(petId);
       if (isSignalCacheStale(row)) {
-        regenerateSignal(petId).catch(() => {});
+        if (currentSignOutEpoch() === epoch) regenerateSignal(petId).catch(() => {});
       } else if (row?.generatedAt && (await signalMissesLandedRead(petId, row))) {
-        regenerateForLandedRead(petId, row.generatedAt).catch(() => {});
+        if (currentSignOutEpoch() === epoch) regenerateForLandedRead(petId, row.generatedAt).catch(() => {});
       }
       byPet.set(petId, row?.findings ?? []);
     } catch {

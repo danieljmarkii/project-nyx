@@ -543,6 +543,7 @@ export async function writeCopies(
   stale: () => boolean,
 ): Promise<number> {
   let changed = 0;
+  const settled: string[] = [];
   for (const raw of rows) {
     if (stale()) return changed;
     const row = toCopyRow(raw);
@@ -566,8 +567,46 @@ export async function writeCopies(
       row.foreign_material_present ?? null,
     ]);
     changed += result.changes;
+    if (result.changes > 0 && row.status !== 'pending') settled.push(row.event_id);
   }
+  await rebuildSignalsFor(db, settled, stale);
   return changed;
+}
+
+/**
+ * CUL-1105: a settled read that moved the copy rebuilds its pet's Signal, whichever caller
+ * wrote it. `generate-signal` builds the photo red-flag card from the server's read, and the
+ * rebuild the log armed ran before the read existed. Here, at the one writer, every way a
+ * read reaches this phone arms one: the chain and the watch on the logging phone, and the
+ * sync pull that brings in a read that landed while the app was suspended or killed (the
+ * owner who logged at 2am and locked the phone) or on another device. It keys on the copy
+ * MOVING, never on a timestamp, so a read written while a rebuild was already running is
+ * still caught (the trailing rebuild reads it). One debounced rebuild per pet, for the
+ * event's own pet (C-9), never after a sign-out (`stale`, CUL-642's class). Never throws:
+ * the rows are already written, and a rebuild that could not be armed leaves the Signal's
+ * own freshness check (`signalMissesLandedRead`) and its expiry.
+ */
+async function rebuildSignalsFor(db: ReadCopyDb, eventIds: readonly string[], stale: () => boolean): Promise<void> {
+  if (eventIds.length === 0) return;
+  try {
+    const pets = new Set<string>();
+    for (let i = 0; i < eventIds.length; i += READ_CHUNK) {
+      const chunk = eventIds.slice(i, i + READ_CHUNK);
+      const rows = await db.getAllAsync<{ pet_id: string }>(
+        `SELECT DISTINCT pet_id FROM events WHERE id IN (${chunk.map(() => '?').join(',')})`,
+        chunk,
+      );
+      for (const r of rows) if (r.pet_id) pets.add(r.pet_id);
+    }
+    if (stale()) return;
+    // Required lazily: lib/signal.ts imports this module (its freshness check), so a
+    // top-level import would be a cycle. The lib/sync.ts care-answers drain does the same.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { triggerSignalRegenDebounced } = require('./signal') as typeof import('./signal');
+    for (const petId of pets) triggerSignalRegenDebounced(petId);
+  } catch (e) {
+    console.warn('[read-copy] Signal rebuild not armed:', e);
+  }
 }
 
 // ── Pulling ──────────────────────────────────────────────────────────────────

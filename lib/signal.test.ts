@@ -12,6 +12,7 @@ import {
 import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { useSyncStore } from '../store/syncStore';
+import { notifySignedOut } from './signOutEpoch';
 
 // signal.ts imports the real supabase client (fail-fast env check) and the sync
 // queue. Replace both before signal.ts resolves them — same pattern as
@@ -422,5 +423,20 @@ describe('a read newer than the Signal rebuilds it, as a log, once per row (CUL-
     await readSignalsAndRefresh(['landed', 'quiet']);
     await flush();
     expect(reasons()).toEqual([expect.objectContaining({ petId: 'landed', reason: 'log' })]);
+  });
+
+  it('a sign-out while the banner reads arms no rebuild for the outgoing account’s pets (CUL-642’s class)', async () => {
+    const at = (iso: string) => ({ data: { ...row(), generated_at: iso } as SignalSelectRow, error: null });
+    installCaches({
+      landed: at(BUILT),
+      expired: { data: row({ expires_at: new Date(Date.now() - 1_000).toISOString() }), error: null },
+    });
+    mockReadChangedSince.mockImplementation(async () => {
+      notifySignedOut(); // the wipe lands while the copy is being read
+      return true;
+    });
+    await readSignalsAndRefresh(['landed', 'expired']);
+    await flush();
+    expect(mockedInvoke).not.toHaveBeenCalled();
   });
 });
