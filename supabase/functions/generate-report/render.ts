@@ -3569,11 +3569,17 @@ function headline(snap: ReportSnapshot): string {
     // (Oct 18–19) sat on printed pages 3–4. Read off the same items appendix C lists, so the two
     // cannot disagree; a feeding carrying no recorded off-trial protein is counted, never dropped.
     const carriedBit = tb && offDiet > 0 ? headlineOffDietCarried(tb) : ''
+    // CUL-2714 (QUIET): beside a documented refusal "1 of 22 … did not match" counted 21 refused bowls
+    // as feedings of the diet, and "before reading the trial as a result" framed one treat as the
+    // reason the result is in doubt. There the count stands bare, as a fact, with its days.
+    const refused = tb ? trialRefusalDocumented(tb) : false
     const offDietBit =
       offDiet > 0 && tb
-        ? ` <b>${num(offDiet)} of ${num(tb.exposures.totalFeedings)} logged feedings did not match the trial diet</b>${carriedBit} (${h(
-            fmtRange(tb.evidenceStartDate, tb.evidenceEndDate),
-          )}; a floor)${breachBit ? '.' : ' — see the diet section before reading the trial as a result.'}`
+        ? refused
+          ? ` <b>Also fed off the trial diet: ${num(offDiet)} feeding${offDiet === 1 ? '' : 's'}</b>${carriedBit} (a floor).`
+          : ` <b>${num(offDiet)} of ${num(tb.exposures.totalFeedings)} logged feedings did not match the trial diet</b>${carriedBit} (${h(
+              fmtRange(tb.evidenceStartDate, tb.evidenceEndDate),
+            )}; a floor)${breachBit ? '.' : ' — see the diet section before reading the trial as a result.'}`
         : ''
     const medsBit = tb ? headlineMedicationBit(snap, tb) : ''
     return `
@@ -4568,8 +4574,11 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     // Adversarial pass 2 (QUIET): the uncertain sentence keeps the days and the timing counts. A later
     // permission does not stop beef being the protein the timing line names.
     const d = offDietDetail(snap)
+    // CUL-2714: beside a documented refusal the denominator counts the refused bowls as fed; the count
+    // stands bare, and the uncertainty it carries stays.
+    const ofTotal = trialRefusalDocumented(t) ? '' : ` of ${num(t.exposures.totalFeedings)}`
     caveats.push(
-      `${num(t.exposures.offDiet)} of ${num(t.exposures.totalFeedings)} feedings ${countScope} did not match the trial diet${d.when} (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean.${d.timing}`,
+      `${num(t.exposures.offDiet)}${ofTotal} feeding${!ofTotal && t.exposures.offDiet === 1 ? '' : 's'} ${countScope} did not match the trial diet${d.when} (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean.${d.timing}`,
     )
   }
   // CUL-2516 (QUIET): A BREAK THE RECORD SHOWS IS NOT AN UNCERTAINTY. "Cannot establish that the
@@ -4650,14 +4659,7 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     // Adversarial pass 1 (QUIET): only where the whole-range ratings show most of the trial diet left.
     // The owner's stop reason alone, or the 14-day recent-onset fact over weeks of eating, does not
     // make the refused bowls the denominator's bulk, and there the break stays the record's verdict.
-    refusalDocumented =
-      !partialRefusal &&
-      !!refusalFact &&
-      refusalFact === t.rangeRefusal &&
-      refusalFact.refusedFeedings * 2 > refusalFact.ratedFeedings &&
-      // Adversarial pass 2 (LOUD): five refused bowls beside 43 kibble feedings out of 64 are not a
-      // denominator of refused bowls; where off-diet feedings are the majority the ratio stays.
-      t.exposures.offDiet * 2 < t.exposures.totalFeedings
+    refusalDocumented = trialRefusalDocumented(t)
     refusalCaveat = partialRefusal
       ? `${eaten}; only ${num(refusalFact!.ratedFeedings)} ${nouns} carry a rating, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
       : `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
@@ -7414,6 +7416,17 @@ function trialExposureTile(t: NonNullable<ReportSnapshot['trial']>): string {
     // then showed the app cannot establish that claim (see `exposureSentences`). A tile
     // is the worst possible place to put a sentence the record does not support, so
     // until CUL-758 rules, this cell carries its count and its span and nothing else.
+    // CUL-2714 (QUIET): beside a documented refusal "/ 22" counted the refused bowls as feedings of
+    // the diet. The count stands bare, with its days; a scan reads it beside the refusal, not as 21
+    // of 22 adherent.
+    if (trialRefusalDocumented(t)) {
+      const days = t.exposures.items.filter((x) => x.classification.offDiet).map((x) => dayKeyOfIndex(x.dayIndex))
+      return tile(
+        `${t.exposures.offDiet}`,
+        '',
+        `Fed off the trial diet<br/>${dayListText(days)} &middot; a floor, not a total &mdash; appendix&nbsp;C`,
+      )
+    }
     return tile(
       `${t.exposures.offDiet}`,
       `<small>&nbsp;/&nbsp;${t.exposures.totalFeedings}</small>`,
@@ -10630,6 +10643,22 @@ function offDietBesideRefusal(snap: ReportSnapshot): string {
   const n = snap.trial!.exposures.offDiet
   const { when, timing } = offDietDetail(snap)
   return `<b>Also fed off the trial diet:</b> ${num(n)} feeding${n === 1 ? '' : 's'}${when} (appendix&nbsp;C; a floor, not a total).${timing}`
+}
+
+/**
+ * CUL-2707 / CUL-2714 — the record documents a refusal: the whole-range ratings show most of the trial
+ * diet left unfinished, and the off-diet feedings are not the majority. There the refused bowls are not
+ * feedings of the diet, so no off-diet count on any surface (box, headline, tile) takes them as its
+ * denominator. One predicate for all three, so they cannot disagree.
+ *
+ * Adversarial pass 1 (QUIET): only the whole-range fact. The owner's stop reason alone, or the 14-day
+ * recent-onset fact over weeks of eating, does not make the refused bowls the denominator's bulk.
+ * Adversarial pass 2 (LOUD): five refused bowls beside 43 kibble feedings out of 64 are not a
+ * denominator of refused bowls; where off-diet feedings are the majority the ratio stays.
+ */
+export function trialRefusalDocumented(t: NonNullable<ReportSnapshot['trial']>): boolean {
+  const r = t.rangeRefusal
+  return !!r && r.refusedFeedings * 2 > r.ratedFeedings && t.exposures.offDiet * 2 < t.exposures.totalFeedings
 }
 
 /** The off-diet feedings' days and the timing counts of the proteins they carried, for either sentence. */
