@@ -33,9 +33,16 @@ const mockUpsert = jest.fn(async () => ({ error: null }));
 const mockRunAsync = jest.fn(async (_sql?: string, _params?: unknown[]) => ({ changes: 1 }));
 // CUL-2704: the capture's targeted photo_paths write after the uploads settle.
 type UpdateResult = { data: { id: string }[] | null; error: { message: string } | null };
-type UpdateChain = { eq: () => UpdateChain; select: () => Promise<UpdateResult> };
+type UpdateChain = { eq: (col: string, value: unknown) => UpdateChain; select: () => Promise<UpdateResult> };
+// CUL-2712: each update's filters, so a test can read the compare-and-set it sent.
+const mockUpdateFilters: [string, unknown][][] = [];
 const mockUpdate = jest.fn((_patch: Record<string, unknown>): UpdateChain => {
-  const chain: UpdateChain = { eq: () => chain, select: async () => ({ data: [{ id: 'f' }], error: null }) };
+  const filters: [string, unknown][] = [];
+  mockUpdateFilters.push(filters);
+  const chain: UpdateChain = {
+    eq: (col, value) => { filters.push([col, value]); return chain; },
+    select: async () => ({ data: [{ id: 'f' }], error: null }),
+  };
   return chain;
 });
 jest.mock('../lib/supabase', () => ({
@@ -83,6 +90,7 @@ jest.setTimeout(20000);
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockUpdateFilters.length = 0;
   jest.spyOn(console, 'error').mockImplementation(() => {});
   jest.spyOn(console, 'warn').mockImplementation(() => {});
   (consentDoorState as jest.Mock).mockResolvedValue('proceed');
@@ -186,9 +194,14 @@ describe('food capture: the commit records only photos that uploaded', () => {
   it('uploaded: the front is recorded on the row and in the cache', async () => {
     uploadMock.mockResolvedValue(undefined);
     await saveFood(false);
-    const paths = savedRow('food_items').photo_paths as string[];
+    const paths = (listedAfterUpload() as { photo_paths: string[] }).photo_paths;
     expect(paths).toHaveLength(1);
     expect(paths[0]).toMatch(/\/0-front\.jpg$/);
+    // CUL-2712: a compare-and-set on the list the capture read (here, none), never a
+    // blind write; and the late upsert carries no list to wipe anything with.
+    expect(mockUpdateFilters[0]).toContainEqual(['photo_paths', '{}']);
+    expect('photo_paths' in savedRow('food_items')).toBe(false);
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
     expect(cachedPhotoPath('food_items_cache', FOOD_CACHE_PHOTO)).toBe(paths[0]);
     // Nothing failed, so nothing is queued.
     expect(queuedFoodPhotos()).toEqual([]);
@@ -211,7 +224,7 @@ describe('food capture: the commit records only photos that uploaded', () => {
 });
 
 describe('food capture: a queue write that fails loses nothing that uploaded (CUL-2704)', () => {
-  it('falls back to listing every uploaded photo on the row', async () => {
+  it('lists every uploaded photo on the row, by a compare-and-set once the upsert lands', async () => {
     uploadMock.mockImplementation(async (_bucket: string, path: string) => {
       if (path.includes('ingredients')) throw new Error('Network request failed');
     });
@@ -226,9 +239,14 @@ describe('food capture: a queue write that fails loses nothing that uploaded (CU
       return { changes: 1 };
     });
     await saveFood(true);
-    const paths = savedRow('food_items').photo_paths as string[];
-    expect(paths).toHaveLength(1);
-    expect(paths[0]).toMatch(/\/0-front\.jpg$/);
+    // CUL-2712: the upsert never carries the list; the front is added to whatever the
+    // row holds once the upsert lands, so a photo the drain listed is never wiped.
+    expect('photo_paths' in savedRow('food_items')).toBe(false);
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(2));
+    const paths = (mockUpdate.mock.calls[1] as unknown[])[0] as { photo_paths: string[] };
+    expect(paths.photo_paths).toHaveLength(1);
+    expect(paths.photo_paths[0]).toMatch(/\/0-front\.jpg$/);
+    expect(mockUpdateFilters[mockUpdateFilters.length - 1]).toContainEqual(['photo_paths', '{}']);
     mockRunAsync.mockImplementation(async () => ({ changes: 1 }));
   });
 });

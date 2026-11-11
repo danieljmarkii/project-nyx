@@ -53,6 +53,7 @@ import {
   uploadedPhotoPath, uploadedPhotoPaths, queuedFoodPhotoPath, type FoodPhotoSlot,
 } from '../lib/captureUploads';
 import { queueFoodPhotoUpload, foodPhotoQueueId } from '../lib/foodPhotoQueue';
+import { writeFoodPhotoList, foodPathsMerged } from '../lib/foodPhotoList';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 import { seedPickerProteins, pickerProteinsToSet, pickerProteinWrite, proteinsToCacheText } from '../lib/protein';
 import { PENDING_CAPTURE_LABEL, foodIntakeKey } from '../lib/food';
@@ -477,16 +478,14 @@ export default function FoodCaptureScreen() {
       }));
       // CUL-2704: name on the row the photos that did land, before anything else can
       // fail, so a capture whose other photos are queued still lists these. Targeted,
-      // never the upsert, and only what Storage holds (CUL-2170).
+      // never the upsert, and only what Storage holds (CUL-2170). A compare-and-set on
+      // the list it read (CUL-2712), so it adds to whatever the row holds, never over it.
       const landed = photos.filter((p) => uploadedUris.current.has(p.localUri));
       if (landed.length > 0) {
-        const { data: listed, error: listError } = await supabase
-          .from('food_items')
-          .update({ photo_paths: landed.map((p) => p.storagePath) })
-          .eq('id', foodId)
-          .select('id');
-        if (listError || !listed || listed.length === 0) {
-          console.warn('[food-capture] photo_paths write failed:', listError?.message ?? 'no row');
+        const landedPaths = landed.map((p) => p.storagePath);
+        const listed = await writeFoodPhotoList(foodId, null, (held) => foodPathsMerged(held, landedPaths));
+        if (!listed.ok) {
+          console.warn('[food-capture] photo_paths write failed:', listed.message);
         } else {
           for (const p of landed) recordedUris.current.add(p.localUri);
         }
@@ -679,12 +678,14 @@ export default function FoodCaptureScreen() {
     // read) is queued, not dropped. The next sync uploads it under its own key and
     // only then names it on the row and in the cache. When any photo needs the queue,
     // every photo the row does not already list goes with it (an uploaded one the row
-    // lost re-uploads under its own key), and the upsert below leaves photo_paths out,
-    // so that late fire-and-forget write can never wipe what the queue fills.
+    // lost re-uploads under its own key).
     //
-    // A queue write that fails must not lose the food, so the save goes on; and it must
-    // not lose a photo that DID upload either, so if any queue write fails the upsert
-    // falls back to listing every uploaded photo, as it did before the queue existed.
+    // CUL-2712: the upsert below never carries photo_paths, so that late fire-and-forget
+    // write can never wipe a photo the queue's drain (or anyone) listed. An uploaded photo
+    // the row does not list and the queue did not take (the listing write failed with
+    // nothing to queue, or a queue write failed) is added once the upsert lands, by the
+    // same compare-and-set every photo_paths writer uses. A queue write that fails must
+    // not lose the food, so the save goes on.
     // One row per food and slot, so a retried save replaces rather than doubles it.
     const slotPhotos: { slot: FoodPhotoSlot; photo: CapturedPhoto | null }[] = [
       { slot: 'front', photo: frontPhoto },
@@ -695,8 +696,7 @@ export default function FoodCaptureScreen() {
     const toQueue = anyUnuploaded && user?.id
       ? slotPhotos.filter(({ photo }) => photo && !recordedUris.current.has(photo.localUri))
       : [];
-    let queuedCount = 0;
-    let queueFailed = false;
+    const queuedUris = new Set<string>();
     for (const { slot, photo } of toQueue) {
       if (!photo || !user?.id) continue;
       try {
@@ -708,13 +708,17 @@ export default function FoodCaptureScreen() {
           localUri: photo.localUri,
           storagePath: queuedFoodPhotoPath(foodId, slot, uuid().slice(0, 8)),
         }, now);
-        queuedCount += 1;
+        queuedUris.add(photo.localUri);
       } catch (e) {
-        queueFailed = true;
         console.error('[food-capture] photo queue write failed:', e);
       }
     }
-    const photosQueued = queuedCount > 0 && !queueFailed;
+    // Uploaded, not on the row, and not taken by the queue: listed after the upsert.
+    const unlistedPaths = uploadedPhotoPaths(
+      slotPhotos.map(({ photo }) => photo).filter((p): p is CapturedPhoto =>
+        !!p && !recordedUris.current.has(p.localUri) && !queuedUris.has(p.localUri)),
+      uploadedUris.current,
+    );
 
     // If extraction didn't run (manual path), the row may not exist remotely
     // yet — upsert with the user-confirmed values. If it does exist (AI path),
@@ -731,11 +735,8 @@ export default function FoodCaptureScreen() {
       format,
       food_type: type,
       created_by_user_id: user?.id ?? null,
-      // Left out entirely while photos are queued (see above); on insert the column
-      // takes its default, an empty list, and the queue fills it.
-      ...(photosQueued
-        ? {}
-        : { photo_paths: uploadedPhotoPaths([frontPhoto, ingredientsPhoto, barcodePhoto], uploadedUris.current) }),
+      // photo_paths is never here (see above); on insert the column takes its default,
+      // an empty list, and the compare-and-set writers fill it.
       // 'failed' only when a read was asked for and did not land; a food typed in before
       // any read ran (offline, or the camera refused mid-flow) is 'manual', photo or not.
       ai_extraction_status: frontPhoto && readStarted ? (aiRead ? 'completed' : 'failed') : 'manual',
@@ -749,8 +750,18 @@ export default function FoodCaptureScreen() {
       foodUpsert.primary_protein = proteinWrite.primaryProtein;
       foodUpsert.proteins = proteinWrite.proteins;
     }
-    supabase.from('food_items').upsert(foodUpsert, { onConflict: 'id' }).then(({ error }) => {
-      if (error) console.warn('[food-capture] upsert failed:', error.message);
+    supabase.from('food_items').upsert(foodUpsert, { onConflict: 'id' }).then(async ({ error }) => {
+      if (error) {
+        console.warn('[food-capture] upsert failed:', error.message);
+        return;
+      }
+      if (unlistedPaths.length === 0) return;
+      try {
+        const listed = await writeFoodPhotoList(foodId, null, (held) => foodPathsMerged(held, unlistedPaths));
+        if (!listed.ok) console.warn('[food-capture] photo_paths write failed:', listed.message);
+      } catch (e) {
+        console.warn('[food-capture] photo_paths write failed:', e);
+      }
     });
 
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
