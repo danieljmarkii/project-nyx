@@ -2674,6 +2674,9 @@ interface CapturePhotoRow {
 interface CapturePhotoQueue {
   table: 'medication_label_uploads' | 'food_photo_uploads';
   bucket: string;
+  /** The upload itself, written per queue so each call names its bucket constant
+   *  (lib/storagePolicies.test.ts resolves every uploadPhoto bucket to a literal). */
+  send: (storagePath: string, compressedUri: string) => Promise<void>;
   itemTable: 'medication_items' | 'food_items';
   cacheTable: 'medication_items_cache' | 'food_items_cache';
   /** Selects the pending rows as CapturePhotoRow, oldest first. */
@@ -2696,6 +2699,7 @@ interface CapturePhotoQueue {
 const MEDICATION_LABEL_QUEUE: CapturePhotoQueue = {
   table: 'medication_label_uploads',
   bucket: MEDICATION_PHOTOS_BUCKET,
+  send: (path, uri) => uploadPhoto(MEDICATION_PHOTOS_BUCKET, path, uri, 'image/jpeg'),
   itemTable: 'medication_items',
   cacheTable: 'medication_items_cache',
   // Keyed by the drug it labels; the path's {uid}/ prefix is the account.
@@ -2714,6 +2718,7 @@ const MEDICATION_LABEL_QUEUE: CapturePhotoQueue = {
 const FOOD_PHOTO_QUEUE: CapturePhotoQueue = {
   table: 'food_photo_uploads',
   bucket: FOOD_PHOTOS_BUCKET,
+  send: (path, uri) => uploadPhoto(FOOD_PHOTOS_BUCKET, path, uri, 'image/jpeg'),
   itemTable: 'food_items',
   cacheTable: 'food_items_cache',
   // A food path ({foodId}/…) names no account, so the row carries the one that took it.
@@ -2800,7 +2805,7 @@ async function drainCapturePhotoQueue(q: CapturePhotoQueue): Promise<void> {
 
     try {
       const compressed = await compressForUpload(row.local_uri);
-      await uploadPhoto(q.bucket, row.storage_path, compressed, 'image/jpeg');
+      await q.send(row.storage_path, compressed);
     } catch (e) {
       // A network throw costs nothing (the offline case); a permanent one, or a
       // re-encode that failed, spends the budget and quarantines (B-586).
