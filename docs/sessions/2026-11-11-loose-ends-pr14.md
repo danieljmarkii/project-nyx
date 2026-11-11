@@ -14,6 +14,14 @@
 
 Posted on CUL-1920. Recommended: a local `medication_label_uploads` queue (Option 1), with "Read it now" split to its own row once mocked, and food capture's identical gap kept as its own class issue ([CUL-2704](https://linear.app/projectnyx/issue/CUL-2704), filed this session, `Live harm`). Forecast: 1 row.
 
+## The build (PM: `go 1`)
+
+- A label whose upload failed is queued at save in a local `medication_label_uploads` table (copied into app storage, wiped at sign-out with its file), never at the failed upload, so an abandoned capture leaves nothing behind.
+- `syncPendingMedicationLabels` (lib/sync.ts) runs in every sync cycle (reconnect, foreground): object first, then `photo_paths`, then the cache, then the mark. Offline costs nothing; a permanent failure quarantines.
+- Two privacy passes. The first found that a queued older label could overwrite a label the owner replaced on the detail screen (same storage key). The second found the read-then-upload window still open. Closed for good by giving each queued label its own key and applying the update only to an empty slot. Also from the passes: re-encode or fail (no EXIF-bearing original), and a sign-out epoch check before every write.
+- Filed [CUL-2708](https://linear.app/projectnyx/issue/CUL-2708) (the event and vet re-upload drains send the original when re-encoding fails). Added instances to CUL-1477 and CUL-1476.
+- Correction to the brief: the app does read connectivity (`useIsOnline`). The band promises the upload either way, which is true in both cases.
+
 ## Outcome
 
-Waiting on the PM's go.
+Shipped via #1506.
