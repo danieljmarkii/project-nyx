@@ -35,6 +35,7 @@ import { AiConsentSheet } from '../../components/consent/AiConsentSheet';
 import { useAuthStore } from '../../store/authStore';
 import { cachedAiConsent } from '../../store/aiConsentState';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
+import { writeFoodPhotoList, foodPathsWithSlot } from '../../lib/foodPhotoList';
 import { getDb, getMixedBowls } from '../../lib/db';
 import { seedPickerProteins, pickerProteinWrite, proteinsToCacheText } from '../../lib/protein';
 import { foodIntakeKey } from '../../lib/food';
@@ -501,24 +502,16 @@ export default function FoodDetailScreen() {
       await uploadPhoto('nyx-food-photos', storagePath, compressedUri);
 
       // Replace the existing path for this slot if one already exists; else
-      // append. Match by suffix because the canonical names include the slot.
-      const suffix = slot === 'additional' ? null : `-${slot}.jpg`;
-      const existingIdx = suffix
-        ? row.photo_paths.findIndex((p) => p.endsWith(suffix))
-        : -1;
-      const nextPaths = [...row.photo_paths];
-      if (existingIdx >= 0) {
-        nextPaths[existingIdx] = storagePath;
-      } else {
-        nextPaths.push(storagePath);
-      }
-
-      const { error } = await supabase
-        .from('food_items')
-        .update({ photo_paths: nextPaths })
-        .eq('id', row.id);
-      if (error) throw error;
-      setRow({ ...row, photo_paths: nextPaths });
+      // append. CUL-2712: a compare-and-set on the list this page loaded, so a queued
+      // capture photo that landed while the page was open is rebuilt into the write,
+      // never dropped from the list.
+      const written = await writeFoodPhotoList(
+        row.id,
+        row.photo_paths,
+        (held) => foodPathsWithSlot(held, slot, storagePath),
+      );
+      if (!written.ok) throw new Error(`photo list not written (${written.reason}): ${written.message}`);
+      setRow({ ...row, photo_paths: written.paths });
       // CUL-2704: a photo still queued from an offline capture for this slot is older
       // than the one just chosen. Retire it unsent (marked, not deleted, so the sign-out
       // wipe still finds its file through the row). Best-effort: the drain also retires

@@ -122,6 +122,7 @@ import { queuedFoodPhotoPath, type FoodPhotoSlot } from './captureUploads';
 import { queueFoodPhotoUpload } from './foodPhotoQueue';
 import { LOCAL_WIPE_TABLES } from './hydration';
 import { notifySignedOut, pgTextArrayLiteral, syncPendingFoodPhotos } from './sync';
+import { foodPathsMerged, foodPathsWithSlot, writeFoodPhotoList } from './foodPhotoList';
 
 const FOOD = 'food-1';
 const NOW = '2026-11-11T15:00:00.000Z';
@@ -398,5 +399,74 @@ describe('what the queue never claims', () => {
 
   it('the sign-out wipe takes the queue with it', () => {
     expect(LOCAL_WIPE_TABLES).toContain('food_photo_uploads');
+  });
+});
+
+// CUL-2712: the other photo_paths writers (the food page, the capture) write by the same
+// compare-and-set, through lib/foodPhotoList.ts. Driven here against the same emulated
+// server, with the real drain landing a queued photo in the gap.
+describe('the food page and the drain write the same photo list', () => {
+  const ADDED_INGREDIENTS = `${FOOD}/1-ingredients.jpg`;
+
+  it('a page left open while a queued photo lands keeps both photos', async () => {
+    await captureSavedOffline(['front']);
+    mockServer.items.set(FOOD, { id: FOOD, brand: 'Weruva', photo_paths: [] });
+    // The page loaded the row before the queued front landed.
+    const pageRead: string[] = [];
+
+    mockUploadPhoto.mockResolvedValue(undefined);
+    await syncPendingFoodPhotos();
+    expect(serverPaths()).toEqual([PATHS.front]);
+
+    // The owner adds the ingredients photo from the page they had open.
+    const written = await writeFoodPhotoList(
+      FOOD, pageRead, (held) => foodPathsWithSlot(held, 'ingredients', ADDED_INGREDIENTS));
+
+    expect(written).toEqual({ ok: true, paths: [PATHS.front, ADDED_INGREDIENTS] });
+    expect(serverPaths()).toEqual([PATHS.front, ADDED_INGREDIENTS]);
+    // The page's first write compared against what it loaded and matched nothing; it read
+    // again and rebuilt from the list the drain wrote.
+    const pageWrites = mockServer.updates.slice(-2);
+    expect(pageWrites.map((u) => u.expected)).toEqual([pgTextArrayLiteral([]), pgTextArrayLiteral([PATHS.front])]);
+  });
+
+  it('a replace from an open page still takes over the slot a queued photo filled', async () => {
+    await captureSavedOffline(['front']);
+    mockServer.items.set(FOOD, { id: FOOD, brand: 'Weruva', photo_paths: [] });
+    mockUploadPhoto.mockResolvedValue(undefined);
+    await syncPendingFoodPhotos();
+
+    const written = await writeFoodPhotoList(FOOD, [], (held) => foodPathsWithSlot(held, 'front', REPLACED_FRONT));
+    expect(written).toEqual({ ok: true, paths: [REPLACED_FRONT] });
+    expect(serverPaths()).toEqual([REPLACED_FRONT]);
+  });
+
+  it('a page write that lands first is kept when the queued photo lands after it', async () => {
+    await captureSavedOffline(['front']);
+    mockServer.items.set(FOOD, { id: FOOD, brand: 'Weruva', photo_paths: [] });
+    await writeFoodPhotoList(FOOD, [], (held) => foodPathsWithSlot(held, 'ingredients', ADDED_INGREDIENTS));
+    mockUploadPhoto.mockResolvedValue(undefined);
+    await syncPendingFoodPhotos();
+    expect(serverPaths()).toEqual([PATHS.front, ADDED_INGREDIENTS]);
+  });
+
+  it("the capture's late listing adds to what the drain wrote, never over it", async () => {
+    const uploadedFront = `${FOOD}/0-front.jpg`;
+    await captureSavedOffline(['ingredients']);
+    mockServer.items.set(FOOD, { id: FOOD, brand: 'Weruva', photo_paths: [] });
+    mockUploadPhoto.mockResolvedValue(undefined);
+    await syncPendingFoodPhotos();
+    const written = await writeFoodPhotoList(FOOD, null, (held) => foodPathsMerged(held, [uploadedFront]));
+    expect(written).toEqual({ ok: true, paths: [uploadedFront, PATHS.ingredients] });
+    expect(serverPaths()).toEqual([uploadedFront, PATHS.ingredients]);
+  });
+
+  it('a write the server refuses reports it once, and never loops', async () => {
+    mockServer.items.set(FOOD, { id: FOOD, brand: 'Weruva', photo_paths: [] });
+    mockServer.refused.add(FOOD);
+    const written = await writeFoodPhotoList(FOOD, [], (held) => foodPathsWithSlot(held, 'front', REPLACED_FRONT));
+    expect(written).toMatchObject({ ok: false, reason: 'refused' });
+    expect(mockServer.updates).toHaveLength(1);
+    expect(serverPaths()).toEqual([]);
   });
 });
