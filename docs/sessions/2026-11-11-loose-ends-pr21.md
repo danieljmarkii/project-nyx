@@ -31,4 +31,4 @@ PM `go 1`: close on this evidence, remove `Live harm`, and file the general rule
 
 ## Outcome
 
-Shipped via #PRNUM.
+Shipped via #1513.
