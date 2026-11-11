@@ -61,6 +61,7 @@ import { MAX_SYNC_ATTEMPTS, SYNC_QUEUES, pushGuardColumn } from './syncQueue';
 import {
   INSERT_ONLY_QUEUE_TABLES,
   QUEUE_PUSH_WAIT_CEILING_MS,
+  ensureEventAttachmentsSynced,
   markSynced,
   markSyncedInsertOnly,
   prepareAttachmentUpload,
@@ -537,11 +538,19 @@ describe('prepareAttachmentUpload (attachment re-upload compression guard)', () 
     expect(out.uri).toBe('content://media/123');
   });
 
-  it('falls back to the original when compression throws — a re-upload is never blocked', async () => {
+  // CUL-2708 — this case used to assert the fallback: a failed re-encode returned
+  // the ORIGINAL uri, EXIF and GPS intact, for upload. It now throws, so the caller
+  // never holds the original as something to send.
+  it('throws when the re-encode fails — never hands back the original to upload', async () => {
     mockCompress.mockRejectedValue(new Error('manipulator failed'));
-    const out = await prepareAttachmentUpload('file:///orig.jpg', 'image/jpeg');
-    expect(out).toEqual({ uri: 'file:///orig.jpg', mimeType: 'image/jpeg' });
-    expect(warnSpy).toHaveBeenCalled();
+    await expect(prepareAttachmentUpload('file:///orig.jpg', 'image/jpeg'))
+      .rejects.toThrow('attachment re-encode failed: manipulator failed');
+  });
+
+  it('a non-image still passes through even if the re-encoder would fail', async () => {
+    mockCompress.mockRejectedValue(new Error('manipulator failed'));
+    const out = await prepareAttachmentUpload('file:///scan.pdf', 'application/pdf');
+    expect(out).toEqual({ uri: 'file:///scan.pdf', mimeType: 'application/pdf' });
   });
 });
 
@@ -1445,6 +1454,65 @@ describe('file-bearing writers charge a thrown upload failure (B-586)', () => {
     expect(parks()[0][1]).toEqual(['upload-413: Payload too large', 'a1']);
     expect(bumps()).toHaveLength(0); // a terminal failure waits for nothing
     expect(marks()).toHaveLength(0);
+  });
+
+  // CUL-2708 — a failed re-encode on either photo drain must never upload the
+  // original (it carries the photo's GPS). It spends an attempt ('rejected') and,
+  // at the cap, parks with the re-encode as the reason.
+  it('event attachment: a failed re-encode uploads nothing and spends an attempt', async () => {
+    mockGetAllAsync.mockResolvedValue([EVENT_ATT]);
+    mockCompress.mockRejectedValue(new Error('cannot decode'));
+
+    await syncPendingAttachments();
+
+    expect(mockUploadPhoto).not.toHaveBeenCalled();
+    expect(bumps()).toHaveLength(1);
+    expect(String(bumps()[0][0])).toContain('UPDATE event_attachments');
+    // The bump carries the reason the row parks with once the budget is spent.
+    expect(bumps()[0][1]).toContain(
+      `upload: attachment re-encode failed: cannot decode (unsent after ${MAX_SYNC_ATTEMPTS} attempts)`);
+    expect(marks()).toHaveLength(0);
+  });
+
+  it('vet-visit attachment: a failed re-encode uploads nothing and spends an attempt', async () => {
+    mockGetAllAsync.mockImplementation((sql: string) =>
+      Promise.resolve(String(sql).includes('vet_visit_attachments') ? [VISIT_ATT] : []));
+    mockCompress.mockRejectedValue(new Error('cannot decode'));
+
+    await syncPendingVetVisits();
+
+    expect(mockUploadPhoto).not.toHaveBeenCalled();
+    expect(bumps()).toHaveLength(1);
+    expect(String(bumps()[0][0])).toContain('UPDATE vet_visit_attachments');
+    // The bump carries the reason the row parks with once the budget is spent.
+    expect(bumps()[0][1]).toContain(
+      `upload: attachment re-encode failed: cannot decode (unsent after ${MAX_SYNC_ATTEMPTS} attempts)`);
+    expect(marks()).toHaveLength(0);
+  });
+
+  it('ensureEventAttachmentsSynced: a failed re-encode skips the upload — the original never goes up', async () => {
+    mockGetAllAsync.mockResolvedValue([{ ...EVENT_ATT, synced: 0 }]);
+    mockCompress.mockRejectedValue(new Error('cannot decode'));
+
+    await ensureEventAttachmentsSynced('e1');
+
+    expect(mockUploadPhoto).not.toHaveBeenCalled();
+    // …and the row stays queued for the drain: no server row pointing at a missing
+    // object, no synced mark, no lifted quarantine (rls-privacy-reviewer, CUL-2708).
+    expect(mockFrom).not.toHaveBeenCalledWith('event_attachments');
+    expect(marks()).toHaveLength(0);
+  });
+
+  it('ensureEventAttachmentsSynced: an already-synced row keeps its row-only recovery when the re-encode fails', async () => {
+    mockGetAllAsync.mockResolvedValue([{ ...EVENT_ATT, synced: 1 }]);
+    mockCompress.mockRejectedValue(new Error('cannot decode'));
+    const upsert = jest.fn().mockResolvedValue({ error: null });
+    mockFrom.mockReturnValue({ upsert });
+
+    await ensureEventAttachmentsSynced('e1');
+
+    expect(mockUploadPhoto).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledTimes(1);
   });
 
   it('vet-visit attachment: a NETWORK throw records NOTHING — the offline case', async () => {

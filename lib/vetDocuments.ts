@@ -136,13 +136,11 @@ export function buildVetDocumentPath(
 // claim ("EXIF/GPS stripped on every image upload path, NO original-fallback")
 // literally true for this bucket.
 //
-// ⚠ THE DIVERGENCE FROM prepareAttachmentUpload IS DELIBERATE. That helper (used by
-// event and vet-visit attachments) catches a compression failure and uploads the
-// ORIGINAL instead, so an attachment is never blocked. That is an
-// original-with-GPS-intact upload path, and §5.2 names it explicitly as the hazard
-// to verify against at build. Here the priority is inverted: a vet document is a
-// photograph of paperwork carrying the owner's home address and the pet's clinical
-// history, and there is no urgency that beats not leaking the location it was taken.
+// ⚠ NO ORIGINAL FALLBACK. prepareAttachmentUpload (event and vet-visit attachments)
+// used to catch a compression failure and upload the ORIGINAL, GPS intact, the
+// hazard §5.2 names; since CUL-2708 it throws too. A vet document is a photograph
+// of paperwork carrying the owner's home address and the pet's clinical history,
+// and there is no urgency that beats not leaking the location it was taken.
 // So a failed re-encode THROWS. The caller leaves the row synced = 0 and the offline
 // queue retries — the document is safe on the device throughout (AC 9), and the
 // worst case is a delayed backup rather than a leaked coordinate.
