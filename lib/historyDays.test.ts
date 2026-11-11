@@ -262,6 +262,25 @@ describe('buildDayFacts — one day, one population', () => {
     expect(dayFactsOn(facts.days, '2026-09-20').mealsNotFinished).toBe(0);
   });
 
+  it('a refused meal is counted apart, by the month\'s predicate, inside "not finished" (CUL-1559)', () => {
+    // Sep 9: the kibble refused. Sep 3: the refused TREAT is never a qualifying meal.
+    expect(dayFactsOn(facts.days, '2026-09-09')).toMatchObject({ mealsNotFinished: 1, refusedMeals: 1 });
+    expect(dayFactsOn(facts.days, '2026-09-03')).toMatchObject({ mealsNotFinished: 1, refusedMeals: 0 });
+    // Sep 6: a free-fed bowl is out of the intake read altogether.
+    expect(dayFactsOn(facts.days, '2026-09-06').refusedMeals).toBe(0);
+    // Under Meal, the header names the refusal in the month's words, never "not finished".
+    expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-09'), { kind: 'type', type: 'meal' }).filter((p) => p.tone === 'unfinished')).toEqual([
+      { text: '1 meal refused', tone: 'unfinished' },
+    ]);
+  });
+
+  it('the header splits a day of one refused and one picked meal, refused first', () => {
+    const rows = [meal('a', '2026-09-02', '08:00', 'kibble', 'refused'), meal('b', '2026-09-02', '18:00', 'kibble', 'picked')];
+    const f = dayFactsOn(buildDayFacts({ rows, lookDays: [], range: WINDOWS.all.range, freeFedSpans: [], regimens: [] }), '2026-09-02');
+    expect(f).toMatchObject({ mealsNotFinished: 2, refusedMeals: 1 });
+    expect(dayHeaderOf(f, { kind: 'all' }).map((p) => p.text)).toEqual(['2 logged', '1 meal refused', '1 meal not finished']);
+  });
+
   it('doses key by course, count every row whatever its chip, and "not in full" / "unconfirmed" only as recorded', () => {
     expect(dayFactsOn(facts.days, '2026-09-04').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 0, unconfirmed: 0 } });
     expect(dayFactsOn(facts.days, '2026-09-06').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 1, unconfirmed: 0 } });

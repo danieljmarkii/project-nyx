@@ -52,7 +52,9 @@
 //
 // A meal left unfinished is the intake lens's own predicate, already counted into
 // `DayFacts.mealsNotFinished` (a rating below Most on a qualifying meal: rated, never a
-// treat, never free-fed); a dose not given in full is `notInFull` (Partial, Missed or
+// treat, never free-fed). The refused ones among them (`DayFacts.refusedMeals`, the Patterns
+// month's own predicate) are named apart in the month's words, "1 meal refused", never
+// folded into "not finished" (CUL-1559; intake is not preference); a dose not given in full is `notInFull` (Partial, Missed or
 // Refused). A missing meal rating is never counted, so CUL-1118's exception-only ratings
 // cannot change what the line means. A dose is the other way round: a dose logged on its
 // own is recorded Given, so a dose with NO chip is a recorded state too, "unconfirmed" (a
@@ -86,6 +88,8 @@ import {
   type DayFacts,
   type DayRange,
   type HistoryFilter,
+  refusedMealsText,
+  unfinishedMealSplit,
 } from './historyDays';
 import { weekdayOfIndex } from './chartModels';
 import { weekStartOf, type HistoryWindowKey } from './historyWindows';
@@ -191,10 +195,16 @@ function possessive(petName: string): string | null {
 
 // ── The mark ─────────────────────────────────────────────────────────────────────
 
-/** "a meal not finished" / "2 meals not finished": the day header's own words, so a tap
- *  lands on a header that says what the cell said (HV-12). */
-function unfinishedMealsText(n: number): string {
-  return n === 1 ? 'a meal not finished' : `${formatCount(n)} meals not finished`;
+/** The day's unfinished meals, refused first: "1 meal refused" in the Patterns month's own
+ *  words and count (CUL-1559), then "a meal not finished" / "2 meals not finished" for the
+ *  rest, the day header's words, so a tap lands on a header that says what the cell said
+ *  (HV-12). A refused-only day never says "not finished". */
+function unfinishedMealsTexts(f: DayFacts): string[] {
+  const { refused, notFinished: n } = unfinishedMealSplit(f);
+  const out: string[] = [];
+  if (refused > 0) out.push(refusedMealsText(refused));
+  if (n > 0) out.push(n === 1 ? 'a meal not finished' : `${formatCount(n)} meals not finished`);
+  return out;
 }
 
 /** "a dose not given in full" / "2 doses not given in full" (CUL-1193's words). */
@@ -211,7 +221,7 @@ function dosesUnconfirmedText(n: number): string {
  *  is whole. Only a recorded state counts (the header). */
 function brokenOf(f: DayFacts, filter: HistoryFilter): string[] {
   if (filter.kind === 'all' || (filter.kind === 'type' && filter.type === 'meal')) {
-    return f.mealsNotFinished > 0 ? [unfinishedMealsText(f.mealsNotFinished)] : [];
+    return unfinishedMealsTexts(f);
   }
   const out: string[] = [];
   const notInFull = doseSubsetOf([f], filter, 'notInFull') ?? 0;

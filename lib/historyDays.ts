@@ -32,7 +32,7 @@
 // correctly as text; an instant never does (C-40), so every instant is parsed first.
 
 import { EVENT_TYPES, SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
-import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal, type FreeFedExclusion } from './analytics';
+import { isFinishedMeal, isRefusedMeal, qualifyingIntakeMeals, type AnalyticsMeal, type FreeFedExclusion } from './analytics';
 import { mealRowLabel } from './food';
 import { attributeDoses, type AttributableDose, type DoseAdherence, type RegimenWindow } from './medications';
 import type { MedicationCourse } from './medicationHistory';
@@ -188,6 +188,10 @@ export interface DayFacts {
   byType: Partial<Record<EventTypeKey, number>>;
   /** Qualifying meals (rated, never a treat, never free-fed) rated below Most. */
   mealsNotFinished: number;
+  /** Of `mealsNotFinished`, the ones rated Refused (`isRefusedMeal`, the Patterns month's
+   *  own predicate). A subset, never a third count: the strip and the header name it apart
+   *  so a refusal never reads as the lighter "not finished" (CUL-1559). */
+  refusedMeals: number;
   /** Meal events whose food is a treat, by the row's own word (`mealRowLabel`): a subset of
    *  `byType.meal`. Under Meal the header and the count line name meals and treats apart,
    *  so every number matches the rows beneath it (CUL-1243, PM-ruled (a)). */
@@ -206,6 +210,7 @@ export function emptyDayFacts(day: string): DayFacts {
     total: 0,
     byType: {},
     mealsNotFinished: 0,
+    refusedMeals: 0,
     treats: 0,
     doses: {},
     photographed: 0,
@@ -350,7 +355,10 @@ export function buildDayFacts(input: DayFactsInput): Map<string, DayFacts> {
   for (const meal of qualifyingIntakeMeals(meals, freeFedSpans)) {
     if (isFinishedMeal(meal)) continue;
     const day = mealDay.get(meal);
-    if (day !== undefined) factsOf(day).mealsNotFinished += 1;
+    if (day === undefined) continue;
+    const f = factsOf(day);
+    f.mealsNotFinished += 1;
+    if (isRefusedMeal(meal)) f.refusedMeals += 1;
   }
   for (const day of lookDays) {
     if (isDayKey(day) && inRange(day, range)) factsOf(day).looked = true;
@@ -1114,9 +1122,31 @@ export interface DayHeaderPart {
   tone: DayHeaderTone;
 }
 
-function mealsNotFinishedPart(f: DayFacts): DayHeaderPart | null {
-  const n = f.mealsNotFinished;
-  return n > 0 ? { text: `${formatCount(n)} ${n === 1 ? 'meal' : 'meals'} not finished`, tone: 'unfinished' } : null;
+/**
+ * A day's unfinished meals split for naming, refused first: the refused ones (named in the
+ * Patterns month's words, "1 meal refused") and the rest ("not finished"). A meal is one or
+ * the other, so the two partition `mealsNotFinished` and a refusal is never folded into the
+ * lighter word (CUL-1553, CUL-1559). Shared by the day header and the week strip, so a tap
+ * lands on a header that says what the cell said.
+ */
+export function unfinishedMealSplit(f: DayFacts): { refused: number; notFinished: number } {
+  // Never clamped down: a subset larger than its whole is a caller's bug, and the accusing
+  // count is the one that must survive it; only the lighter remainder floors at zero.
+  const refused = Math.max(f.refusedMeals, 0);
+  return { refused, notFinished: Math.max(f.mealsNotFinished - refused, 0) };
+}
+
+/** "1 meal refused" / "2 meals refused": the Patterns month's own words (`dayMarkA11yLabel`). */
+export function refusedMealsText(n: number): string {
+  return `${formatCount(n)} ${n === 1 ? 'meal' : 'meals'} refused`;
+}
+
+function mealsNotFinishedParts(f: DayFacts): DayHeaderPart[] {
+  const { refused, notFinished: n } = unfinishedMealSplit(f);
+  const parts: DayHeaderPart[] = [];
+  if (refused > 0) parts.push({ text: refusedMealsText(refused), tone: 'unfinished' });
+  if (n > 0) parts.push({ text: `${formatCount(n)} ${n === 1 ? 'meal' : 'meals'} not finished`, tone: 'unfinished' });
+  return parts;
 }
 
 /** Under a dose filter, the day's doses recorded Partial, Missed or Refused, then those
@@ -1193,16 +1223,14 @@ export function dayHeaderOf(
             },
           ];
     const parts: DayHeaderPart[] = [...counted, { text: inAllText(f.total), tone: 'dayTotal' }];
-    const unfinished = isMealFilter(filter) ? mealsNotFinishedPart(f) : null;
-    if (unfinished) parts.push(unfinished);
+    if (isMealFilter(filter)) parts.push(...mealsNotFinishedParts(f));
     parts.push(...doseSubsetParts(f, filter));
     return parts;
   }
   const parts: DayHeaderPart[] = [total, ...symptomParts(f)];
   const other = f.byType.other ?? 0;
   if (other > 0) parts.push({ text: `${formatCount(other)} ${typeNoun('other', other)}`, tone: 'neutral' });
-  const unfinished = mealsNotFinishedPart(f);
-  if (unfinished) parts.push(unfinished);
+  parts.push(...mealsNotFinishedParts(f));
   return parts;
 }
 

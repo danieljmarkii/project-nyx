@@ -14,6 +14,7 @@ jest.mock('./sync', () => ({
 }));
 
 import { SYMPTOM_TYPES } from '../constants/eventTypes';
+import { dayMarkA11yLabel } from './chartCopy';
 import {
   HISTORY_TYPE_KEYS,
   buildDayFacts,
@@ -124,6 +125,24 @@ describe('stripMarkOf: every row of the §3.4 table (AC 25)', () => {
       'logged',
       'broken',
       `${SAT_WORD}, 4 meals logged, 5 logged in all, 2 meals not finished`,
+    ],
+    [
+      'a refused meal (All types): named in the month\'s words, never "not finished"',
+      day(SAT, { total: 4, byType: { meal: 4 }, mealsNotFinished: 1, refusedMeals: 1 }),
+      ALL,
+      WIN,
+      'logged',
+      'broken',
+      `${SAT_WORD}, no vomit logged, 4 logged in all, 1 meal refused`,
+    ],
+    [
+      'a refused meal and a picked one (Meal): both counts, refused first',
+      day(SAT, { total: 4, byType: { meal: 4 }, mealsNotFinished: 3, refusedMeals: 2 }),
+      MEAL,
+      WIN,
+      'logged',
+      'broken',
+      `${SAT_WORD}, 4 meals logged, 4 logged in all, 2 meals refused, a meal not finished`,
     ],
     [
       'the filtered kind (a symptom filter)',
@@ -575,5 +594,72 @@ describe('the arrows say they move the strip, and why they stop (WBC-3)', () => 
       const a = stripArrowsOf(weeks, page, ctx());
       expect(`${a.back.label}${a.forward.label}`).not.toContain('·');
     }
+  });
+});
+
+// ── A refusal is named as the month names it (CUL-1559) ──────────────────────────
+
+describe('stripMarkOf: a refused meal reads as the Patterns month reads it (CUL-1559)', () => {
+  /** A LOCAL instant on `key`, so the row lands on that day in every zone (B-514). */
+  const at = (key: string, hour: number): string => {
+    const [y, m, d] = key.split('-').map(Number);
+    return new Date(y, m - 1, d, hour).toISOString();
+  };
+  const mealRow = (id: string, hour: number, rating: string | null): PopulationRow => ({
+    id,
+    eventType: 'meal',
+    occurredAt: at(SAT, hour),
+    foodItemId: 'kibble',
+    foodType: 'meal',
+    intakeRating: rating,
+    isDose: false,
+    medicationId: null,
+    medicationItemId: null,
+    adherence: null,
+    hasPhoto: false,
+    hasNote: false,
+  });
+  const factsOf = (rows: PopulationRow[]): DayFacts =>
+    dayFactsOn(buildDayFacts({ rows, lookDays: [], range: { fromDay: SAT, toDay: SAT }, freeFedSpans: [], regimens: [] }), SAT);
+  /** The month's spoken label for the same day, refused and left-some split as the month's
+   *  read splits them (`lib/monthReads.ts`). */
+  const monthSays = (refused: number, left: number): string =>
+    dayMarkA11yLabel(
+      { dayKey: SAT, count: 0, coverage: 'left_some', answers: true, refusedMeals: refused, leftSomeMeals: left, medication: false, photo: 'none', symptomLayer: false, today: false, selected: false },
+      'vomiting',
+    );
+
+  it('one refused and one picked meal: the strip reads both counts, the refusal in the month\'s words', () => {
+    const f = factsOf([mealRow('r', 8, 'refused'), mealRow('p', 18, 'picked')]);
+    expect(f).toMatchObject({ mealsNotFinished: 2, refusedMeals: 1 });
+    for (const filter of [ALL, MEAL]) {
+      const m = stripMarkOf(f, filter, WIN, TODAY);
+      expect(m.line).toBe('broken');
+      expect(m.label).toMatch(/, 1 meal refused, a meal not finished$/);
+    }
+    // The same words and count the Patterns month speaks for that day.
+    expect(monthSays(1, 1)).toContain('1 meal refused');
+  });
+
+  it('a refused-only day never says "not finished"', () => {
+    const f = factsOf([mealRow('r1', 8, 'refused'), mealRow('r2', 18, 'refused')]);
+    for (const filter of [ALL, MEAL]) {
+      const label = stripMarkOf(f, filter, WIN, TODAY).label ?? '';
+      expect(label).toMatch(/, 2 meals refused$/);
+      expect(label).not.toMatch(/not finished|unfinished/);
+    }
+    expect(monthSays(2, 0)).toContain('2 meals refused');
+    expect(monthSays(2, 0)).not.toMatch(/unfinished/);
+  });
+
+  it('Picked and Some are not refusals: they stay "not finished", as the month\'s left some', () => {
+    const f = factsOf([mealRow('p', 8, 'picked'), mealRow('s', 18, 'some')]);
+    expect(f).toMatchObject({ mealsNotFinished: 2, refusedMeals: 0 });
+    expect(stripMarkOf(f, ALL, WIN, TODAY).label).toMatch(/, 2 meals not finished$/);
+  });
+
+  it('a subset larger than its whole still names every refusal: the accusing count is never clamped', () => {
+    const label = stripMarkOf(day(SAT, { total: 1, byType: { meal: 1 }, mealsNotFinished: 0, refusedMeals: 1 }), ALL, WIN, TODAY).label;
+    expect(label).toMatch(/, 1 meal refused$/);
   });
 });
