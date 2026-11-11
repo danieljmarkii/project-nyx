@@ -562,7 +562,7 @@ describe('InsightCard — CUL-12 A2 timing card', () => {
     expect(view.queryByText('After eating')).toBeNull(); // meal lane omitted (40 > cap)
     expect(view.queryByText('By clock')).toBeTruthy(); // clock lane kept (7 ≤ cap)
     // The clustering fact survives in text even where the lane is dropped — the for-your-vet relay.
-    expect(view.queryByText(/early-morning timing is worth flagging/)).toBeTruthy();
+    expect(view.queryByText(/time of day is worth flagging to your vet/)).toBeTruthy();
   });
 
   it('drops the "When they happen" box entirely when BOTH lanes exceed the cap', () => {
@@ -578,7 +578,7 @@ describe('InsightCard — CUL-12 A2 timing card', () => {
     expect(view.queryByText('After eating')).toBeNull();
     expect(view.queryByText('By clock')).toBeNull();
     // The for-your-vet relay still carries the clustering in words.
-    expect(view.queryByText(/early-morning timing is worth flagging/)).toBeTruthy();
+    expect(view.queryByText(/time of day is worth flagging to your vet/)).toBeTruthy();
   });
 });
 
