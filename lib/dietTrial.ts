@@ -4287,9 +4287,15 @@ export function interpretabilityStatement(facts: TrialFacts): string | null {
   const decidedOver =
     facts.interpretability === printedVerdict ? facts.coverage : (facts.gateCoverage ?? facts.coverage);
   const { daysLogged, daysElapsed } = decidedOver;
-  const days = `${daysLogged} of ${daysElapsed} days`;
   const outside = facts.trialDaysOutsideRange.before + facts.trialDaysOutsideRange.after;
   const truncated = outside > 0;
+  // CUL-1823 — THE DENOMINATOR IS TRIAL DAYS, SO SAY SO. "27 of 38 days of this report's
+  // window" read as a 38-day window on a report whose window ran 52 days and opened two
+  // weeks before the trial: the 38 are the trial days inside it. Under truncation the
+  // noun names that count; the whole-trial wording below is unchanged.
+  const days = truncated
+    ? `${daysLogged} of the ${daysElapsed} trial days`
+    : `${daysLogged} of ${daysElapsed} days`;
   // CUL-1038 — WHICH WINDOW, on the one line a vet lifts for the bottom line.
   // The denominator can be the window the trial was DESIGNED against while the
   // day counter two inches away reads past it ("day 50 of 64"), so naming it
@@ -4305,7 +4311,7 @@ export function interpretabilityStatement(facts: TrialFacts): string | null {
   // carry a result — B-422 exists precisely so a trial logged on all its
   // prescribed days and then silent still reads `supports` over its own window.
   const of = truncated
-    ? 'of this report’s window'
+    ? 'in this window'
     : facts.range.coverageClippedAtWindowEnd && decidedOver === facts.coverage
       ? 'of the trial’s original window'
       : 'of the trial window';

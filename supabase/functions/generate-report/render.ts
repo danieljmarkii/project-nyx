@@ -4620,7 +4620,9 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     const eaten = !refusalFact
       ? 'The trial was recorded as stopped because the diet was refused'
       : total
-        ? `Not one rated ${noun} was finished (${num(refusalFact.refusedFeedings)} of ${num(refusalFact.ratedFeedings)})`
+        ? // CUL-1823: "(21 of 21)" after "not one was finished" read as 21 of 21 finished. The
+          // bracket counts what the sentence counts, and names it.
+          `Not one rated ${noun} was finished (0 of ${num(refusalFact.ratedFeedings)} finished)`
         : `${num(refusalFact.refusedFeedings)} of ${num(refusalFact.ratedFeedings)} rated ${nouns} were not finished`
     // CUL-2443: "DOCUMENTS A REFUSAL" ONLY WHERE THE RATINGS CAN CARRY IT. On 4 rated feedings
     // among ~167 the record cannot document a refusal, but it cannot show the diet was eaten
