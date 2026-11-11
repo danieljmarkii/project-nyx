@@ -3,6 +3,9 @@ import {
   readSignalCacheOrLast,
   readSignalsAndRefresh,
   regenerateSignal,
+  regenerateForLandedRead,
+  landedReadRebuildKey,
+  LANDED_READ_RACE_MS,
   triggerSignalRegenDebounced,
   isSignalCacheStale,
   type SignalCacheRow,
@@ -10,6 +13,7 @@ import {
 import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { useSyncStore } from '../store/syncStore';
+import { notifySignedOut } from './signOutEpoch';
 
 // signal.ts imports the real supabase client (fail-fast env check) and the sync
 // queue. Replace both before signal.ts resolves them — same pattern as
@@ -23,6 +27,15 @@ jest.mock('./supabase', () => ({
 jest.mock('./sync', () => ({
   syncPendingEvents: jest.fn().mockResolvedValue(undefined),
   syncPendingMeals: jest.fn().mockResolvedValue(undefined),
+}));
+
+// CUL-1105: whether a read landed after the Signal was built is a local copy read
+// (`lib/readCopy.ts`, tested on real SQLite there). Stubbed to none, so every older case here
+// runs as before.
+type Near = { updatedAt: string; afterBuild: boolean } | null;
+const mockReadNear = jest.fn(async (_petId: string, _since: string, _margin: number): Promise<Near> => null);
+jest.mock('./readCopy', () => ({
+  readNearBuild: (petId: string, since: string, margin: number) => mockReadNear(petId, since, margin),
 }));
 
 const mockedFrom = supabase.from as jest.Mock;
@@ -327,5 +340,136 @@ describe('triggerSignalRegenDebounced — acknowledgment flag (SR-3 §5.3)', () 
 
     await jest.advanceTimersByTimeAsync(5000); // t=21000, past the renewed ceiling → fail-quiet
     expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(false);
+  });
+});
+
+// ── CUL-1105: a read that landed after the Signal was built ─────────────────────────────
+describe('a read the Signal may not have seen rebuilds it, as a log, under one key (CUL-1105)', () => {
+  const BUILT = '2026-11-11T02:00:05.000Z';
+  const AFTER: Near = { updatedAt: '2026-11-11T02:00:40+00:00', afterBuild: true };
+  // Written while the rebuild ran: before the row's generated_at, inside the margin.
+  const RACE: Near = { updatedAt: '2026-11-11T02:00:03+00:00', afterBuild: false };
+  const fresh = (generatedAt: string | null = BUILT): SignalCacheRow => ({
+    signalText: null,
+    isBuilding: false,
+    findings: [],
+    coverage: [],
+    generatedAt,
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+  });
+  const reasons = () => mockedInvoke.mock.calls.map((c) => (c[1] as { body: { petId: string; reason: string } }).body);
+  const rebuild = async (petId: string, row: SignalCacheRow) => {
+    const key = await landedReadRebuildKey(petId, row);
+    if (key) await regenerateForLandedRead(petId, key);
+    return key;
+  };
+
+  beforeEach(() => {
+    cancelPendingSignalRegens();
+    mockedInvoke.mockReset().mockResolvedValue({ data: {}, error: null });
+    mockReadNear.mockReset().mockResolvedValue(null);
+  });
+  afterEach(() => mockReadNear.mockReset().mockResolvedValue(null));
+
+  it('asks the copy with the row’s own generated_at and the race margin', async () => {
+    mockReadNear.mockResolvedValue(AFTER);
+    expect(await landedReadRebuildKey('nyx', fresh())).not.toBeNull();
+    expect(mockReadNear).toHaveBeenCalledWith('nyx', BUILT, LANDED_READ_RACE_MS);
+    mockReadNear.mockResolvedValue(null);
+    expect(await landedReadRebuildKey('nyx', fresh())).toBeNull();
+  });
+
+  it('the margin covers a rebuild’s load-to-insert span (at least a minute)', () => {
+    expect(LANDED_READ_RACE_MS).toBeGreaterThanOrEqual(60_000);
+  });
+
+  it('an expired or missing row is the expiry’s rebuild, not this one', async () => {
+    mockReadNear.mockResolvedValue(AFTER);
+    expect(await landedReadRebuildKey('nyx', null)).toBeNull();
+    expect(await landedReadRebuildKey('nyx', { ...fresh(), expiresAt: new Date(Date.now() - 1000).toISOString() })).toBeNull();
+    expect(await landedReadRebuildKey('nyx', fresh(null))).toBeNull();
+    expect(mockReadNear).not.toHaveBeenCalled();
+  });
+
+  it('a failed local read keeps the cached Signal and does not throw', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockReadNear.mockRejectedValue(new Error('db gone'));
+      await expect(landedReadRebuildKey('nyx', fresh())).resolves.toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('the rebuild goes as a log, so the cap never turns it away (CUL-2059)', async () => {
+    mockReadNear.mockResolvedValue(AFTER);
+    await rebuild('nyx', fresh());
+    expect(reasons()).toEqual([expect.objectContaining({ petId: 'nyx', reason: 'log' })]);
+  });
+
+  it('after the build: once per row, so the tick its success bumps cannot loop it', async () => {
+    mockReadNear.mockResolvedValue(AFTER);
+    expect(await rebuild('nyx', fresh())).not.toBeNull();
+    expect(await landedReadRebuildKey('nyx', fresh())).toBeNull();
+    // Another pet's row at the same instant is its own key.
+    expect(await landedReadRebuildKey('milo', fresh())).not.toBeNull();
+  });
+
+  it('the race (adversarial pass 2): a read written mid-rebuild, app killed in the debounce, rebuilds on the next open', async () => {
+    // On the next launch the copy already holds the read, so the writer arms nothing; the
+    // read sorts before the row that missed it.
+    mockReadNear.mockResolvedValue(RACE);
+    expect(await rebuild('nyx', fresh())).not.toBeNull();
+    expect(reasons()).toEqual([expect.objectContaining({ petId: 'nyx', reason: 'log' })]);
+  });
+
+  it('the race rebuilds once per READ: the next row, still inside the margin of that read, does not chain', async () => {
+    mockReadNear.mockResolvedValue(RACE);
+    await rebuild('nyx', fresh());
+    // The rebuild's own row, 10s later: the same read is still inside its margin.
+    expect(await landedReadRebuildKey('nyx', fresh('2026-11-11T02:00:15.000Z'))).toBeNull();
+    expect(await landedReadRebuildKey('nyx', fresh('2026-11-11T02:00:25.000Z'))).toBeNull();
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+    // A newer read is a new key.
+    mockReadNear.mockResolvedValue({ updatedAt: '2026-11-11T02:00:20+00:00', afterBuild: false });
+    expect(await landedReadRebuildKey('nyx', fresh('2026-11-11T02:00:25.000Z'))).not.toBeNull();
+  });
+
+  it('a rebuild that FAILED releases its key, so the next open asks again', async () => {
+    mockReadNear.mockResolvedValue(RACE);
+    mockedInvoke.mockResolvedValue({ data: null, error: { message: 'offline' } });
+    await rebuild('nyx', fresh());
+    expect(await landedReadRebuildKey('nyx', fresh())).not.toBeNull();
+  });
+
+  it('a sign-out forgets every key (account state)', async () => {
+    mockReadNear.mockResolvedValue(AFTER);
+    await rebuild('nyx', fresh());
+    cancelPendingSignalRegens();
+    expect(await landedReadRebuildKey('nyx', fresh())).not.toBeNull();
+  });
+
+  it('the cross-pet banner rebuilds a fresh row that missed a read, as a log, and leaves the rest', async () => {
+    const at = (iso: string) => ({ data: { ...row(), generated_at: iso } as SignalSelectRow, error: null });
+    installCaches({ landed: at(BUILT), quiet: at('2026-11-11T02:00:06.000Z') });
+    mockReadNear.mockImplementation(async (petId: string) => (petId === 'landed' ? AFTER : null));
+    await readSignalsAndRefresh(['landed', 'quiet']);
+    await flush();
+    expect(reasons()).toEqual([expect.objectContaining({ petId: 'landed', reason: 'log' })]);
+  });
+
+  it('a sign-out while the banner reads arms no rebuild for the outgoing account’s pets (CUL-642’s class)', async () => {
+    const at = (iso: string) => ({ data: { ...row(), generated_at: iso } as SignalSelectRow, error: null });
+    installCaches({
+      landed: at(BUILT),
+      expired: { data: row({ expires_at: new Date(Date.now() - 1_000).toISOString() }), error: null },
+    });
+    mockReadNear.mockImplementation(async () => {
+      notifySignedOut(); // the wipe lands while the copy is being read
+      return AFTER;
+    });
+    await readSignalsAndRefresh(['landed', 'expired']);
+    await flush();
+    expect(mockedInvoke).not.toHaveBeenCalled();
   });
 });

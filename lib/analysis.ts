@@ -2,6 +2,9 @@ import { supabase } from './supabase';
 import { syncPendingEvents, ensureEventAttachmentsSynced, refreshReadCopyOutcome, type ReadCopyOutcome } from './sync';
 import { analysisChainOutstanding, claimAnalysisChain, onAnalysisChainClaimed, type AnalysisChainClaim } from './analysisChain';
 import { useSyncStore } from '../store/syncStore';
+import { getEventPetId } from './db';
+import { triggerSignalRegenDebounced } from './signal';
+import { currentSignOutEpoch } from './signOutEpoch';
 
 // ── A landed read is saved to the phone's copy (History v2 §5.3, HV-5 / CUL-1162) ──
 //
@@ -54,12 +57,38 @@ function tellHomeTheReadMoved(): void {
 }
 onAnalysisChainClaimed(tellHomeTheReadMoved);
 
+// ── The Signal hears about a read too (CUL-1105) ──
+// `generate-signal` builds the photo red-flag card from the server's analysis row, so the
+// rebuild armed at log time (5s after the save) sees a pending read and no flag. Every
+// landing that moved this phone's copy, and every saved edit, arms one more rebuild for
+// the RECORD's pet (C-9: looked up from the event, never the active pet). No flag
+// predicate (PM go on option A, 2026-11-11): CUL-2059 made a log-reason rebuild run
+// detection even over the cap, so a predicate could only add a way to miss a warning.
+// The rebuild debounces with the log's own, so a read that lands inside 5s costs nothing.
+// A sign-out between the lookup and the arm drops it (CUL-642's class: a pending regen
+// carries a pet id into the next account).
+async function rebuildSignalForRead(eventId: string): Promise<void> {
+  const epoch = currentSignOutEpoch();
+  try {
+    const petId = await getEventPetId(eventId);
+    if (petId && currentSignOutEpoch() === epoch) triggerSignalRegenDebounced(petId);
+  } catch (e) {
+    console.warn('[analysis] Signal rebuild not armed:', e);
+  }
+}
+
+/** A landing that moved the copy: Home rereads it, and the Signal is rebuilt. */
+function readMoved(eventId: string, tellHome: boolean): void {
+  if (tellHome) tellHomeTheReadMoved();
+  void rebuildSignalForRead(eventId);
+}
+
 /** A trigger's landing, saved to the copy before its claim (if it holds one) settles.
  *  With no claim and no chain outstanding, nothing will release Home to reread, so the
  *  landing tells Home itself. */
 async function landChain(eventId: string, claim: AnalysisChainClaim | null, invoked: boolean, threw = false): Promise<void> {
   const outcome = await copyLandedReadOutcome(eventId);
-  if (outcome === 'changed' && claim === null && !analysisChainOutstanding(eventId)) tellHomeTheReadMoved();
+  if (outcome === 'changed') readMoved(eventId, claim === null && !analysisChainOutstanding(eventId));
   claim?.settle(invoked);
   // A read the server wrote that this save could not copy (CUL-1198 item 2). Settled, the
   // chain releases Home to reread a copy that does not hold it, and nothing else brings it
@@ -90,7 +119,7 @@ function watchUntilCopied(eventId: string): void {
     eventId,
     async () => {
       const outcome = await copyLandedReadOutcome(eventId);
-      if (outcome === 'changed') tellHomeTheReadMoved();
+      if (outcome === 'changed') readMoved(eventId, true);
       if (outcome === 'failed') return false;
       release();
       return true;
@@ -290,7 +319,7 @@ export function watchAnalysisRow(
     // the copy, so it can only see a landing this tick has already saved. A save that
     // changed the copy is told to Home whether or not this watch is still wanted: the
     // copy moved either way.
-    if (await copyLandedRead(eventId)) tellHomeTheReadMoved();
+    if (await copyLandedRead(eventId)) readMoved(eventId, true);
     if (done) return; // torn down mid-save
     let resolved = false;
     try {
@@ -515,7 +544,12 @@ export async function saveVomitFieldEdits(
       .from('event_ai_analysis')
       .update(buildVomitEditWrite(edits, new Date().toISOString()))
       .eq('event_id', eventId);
-    if (!error) void refreshReadCopyOutcome(eventId);
+    if (!error) {
+      void refreshReadCopyOutcome(eventId);
+      // An edit can raise or clear the red-flag card the server builds from this row
+      // (CUL-1105), and the copy does not mirror edits, so it rebuilds on every save.
+      void rebuildSignalForRead(eventId);
+    }
     return { error: error ? error.message : null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
@@ -634,7 +668,12 @@ export async function saveStoolFieldEdits(
       .update(buildStoolEditWrite(edits, new Date().toISOString()))
       .eq('event_id', eventId);
     // CUL-2678: the copy mirrors the stool blood sign, so a saved edit refreshes it (above).
-    if (!error) void refreshReadCopyOutcome(eventId);
+    if (!error) {
+      void refreshReadCopyOutcome(eventId);
+      // An edit can raise or clear the red-flag card the server builds from this row
+      // (CUL-1105), and the copy does not mirror edits, so it rebuilds on every save.
+      void rebuildSignalForRead(eventId);
+    }
     return { error: error ? error.message : null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };

@@ -45,6 +45,11 @@ jest.mock('./db', () => ({
   },
 }));
 
+// CUL-1105: the writer arms a Signal rebuild per pet whose settled read moved the copy.
+// Counted here; lib/signal.ts loads the network client and the sync fabric.
+const mockRegen = jest.fn();
+jest.mock('./signal', () => ({ triggerSignalRegenDebounced: (petId: string) => mockRegen(petId) }));
+
 // ── A fake PostgREST over `event_ai_analysis` ─────────────────────────────────
 // It honours the calls a pull can make (select with an exact head count, gte, gt, eq,
 // the keyset `or`, order, limit, range, maybeSingle), compares instants to the
@@ -212,6 +217,7 @@ import {
   pullReadCopyFor,
   readCopies,
   readPetSeamReads,
+  readNearBuild,
   writeCopies,
 } from './readCopy';
 import { newSinceLineOf } from './ruleSeam';
@@ -1140,5 +1146,155 @@ describe('the reasons (CUL-2678): the copy keeps what a chip needs to pick the r
       expect((await readCopies(['k'])).get('k')?.catNoGoodMeal24h).toBe(true);
       warn.mockRestore();
     });
+  });
+});
+
+// ── CUL-1105: a read near the Signal's build ─────────────────────────────────────────────
+// Home asks with its Signal row's `generated_at`. The copy holds the server's `+00:00`
+// spelling; the Signal row can carry the `.000Z` one. Same instant, different text (C-40):
+// the test pins both halves so a text compare cannot pass it.
+describe("readNearBuild — a read the pet's Signal may not have seen (CUL-1105)", () => {
+  function event(id: string, petId: string, deletedAt: string | null = null) {
+    mockDb
+      .prepare('INSERT INTO events (id, pet_id, event_type, occurred_at, deleted_at) VALUES (?, ?, ?, ?, ?)')
+      .run(id, petId, 'vomit', '2026-11-11T02:00:00.000Z', deletedAt);
+  }
+  const verdict = (eventId: string, updatedAt: string, status = 'completed') =>
+    mockDb
+      .prepare('INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES (?, ?, ?, ?)')
+      .run(eventId, status, 'worth_a_call', updatedAt);
+  const BUILT = '2026-11-11T02:00:05.000Z';
+  const MARGIN = 120_000;
+
+  it('a read after the build is after it; one well before the margin is nothing', async () => {
+    event('ev', 'nyx');
+    verdict('ev', '2026-11-11T02:00:40+00:00');
+    expect(await readNearBuild('nyx', BUILT, MARGIN)).toEqual({ updatedAt: '2026-11-11T02:00:40+00:00', afterBuild: true });
+    expect(await readNearBuild('nyx', '2026-11-11T02:10:00.000Z', MARGIN)).toBeNull();
+  });
+
+  it('a read written during the rebuild (before generated_at, inside the margin) is reported, not after', async () => {
+    event('ev', 'nyx');
+    verdict('ev', '2026-11-11T02:00:09+00:00');
+    expect(await readNearBuild('nyx', '2026-11-11T02:00:12.000Z', MARGIN)).toEqual({
+      updatedAt: '2026-11-11T02:00:09+00:00',
+      afterBuild: false,
+    });
+  });
+
+  it('prefers a read after the build over a newer-looking one inside the margin, then the newest', async () => {
+    event('a', 'nyx');
+    event('b', 'nyx');
+    event('c', 'nyx');
+    verdict('a', '2026-11-11T02:00:01+00:00');
+    verdict('b', '2026-11-11T02:00:30+00:00');
+    verdict('c', '2026-11-11T02:00:50+00:00');
+    expect(await readNearBuild('nyx', BUILT, MARGIN)).toEqual({ updatedAt: '2026-11-11T02:00:50+00:00', afterBuild: true });
+  });
+
+  it('the same instant in the other spelling is after (a tie rebuilds), though as text it sorts earlier', async () => {
+    event('ev', 'nyx');
+    verdict('ev', '2026-11-11T02:00:05+00:00');
+    // The trap: '+' sorts before '.', so a text >= would call this read older than the Signal.
+    expect('2026-11-11T02:00:05+00:00' >= BUILT).toBe(false);
+    expect(Date.parse('2026-11-11T02:00:05+00:00')).toBe(Date.parse(BUILT));
+    expect((await readNearBuild('nyx', BUILT, MARGIN))?.afterBuild).toBe(true);
+  });
+
+  it("only this pet's live events, and never a read still pending", async () => {
+    event('mine-pending', 'nyx');
+    event('mine-deleted', 'nyx', '2026-11-11T03:00:00.000Z');
+    event('milo-ev', 'milo');
+    verdict('mine-pending', '2026-11-11T02:00:40+00:00', 'pending');
+    verdict('mine-deleted', '2026-11-11T02:00:40+00:00');
+    verdict('milo-ev', '2026-11-11T02:00:40+00:00');
+    expect(await readNearBuild('nyx', BUILT, MARGIN)).toBeNull();
+    expect(await readNearBuild('milo', BUILT, MARGIN)).not.toBeNull();
+  });
+
+  it('an instant it cannot parse reads as after (the loud side)', async () => {
+    event('ev', 'nyx');
+    verdict('ev', '2026-11-11T01:00:00+00:00');
+    expect((await readNearBuild('nyx', 'not a time', MARGIN))?.afterBuild).toBe(true);
+  });
+});
+
+// ── CUL-1105: the writer rebuilds the Signal of every pet whose settled read moved ──────
+// The adversarial pass's break 1: the owner logs at 2am and locks the phone, the app is
+// killed overnight, and the read reaches this phone only on the next morning's sync pull,
+// after Home's own check ran against a copy that did not hold it yet. The pull itself must
+// arm the rebuild, for the event's pet, keyed on the copy moving (never on a timestamp,
+// so a read written while a rebuild was running is caught too: break 2).
+describe('writeCopies — a settled read that moved the copy rebuilds its pet’s Signal (CUL-1105)', () => {
+  function event(id: string, petId: string) {
+    mockDb
+      .prepare('INSERT INTO events (id, pet_id, event_type, occurred_at) VALUES (?, ?, ?, ?)')
+      .run(id, petId, 'vomit', '2026-11-11T02:00:00.000Z');
+  }
+  beforeEach(() => mockRegen.mockReset());
+
+  it('Home checked first (nothing on the phone), then the pull lands the read: the pull rebuilds', async () => {
+    event('ev', 'nyx');
+    // Home's check, against a copy that does not hold the read yet.
+    expect(await readNearBuild('nyx', '2026-11-11T02:00:05.000Z', 120_000)).toBeNull();
+    mockServer = [row('ev', '2026-11-11T02:00:40+00:00', 'worth_a_call')];
+    await pullReadCopies(mockAdapter, never);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('nyx');
+  });
+
+  it('a read written while a rebuild ran (older than its generated_at) still rebuilds when it moves the copy', async () => {
+    event('ev', 'nyx');
+    // updated_at 02:00:09, a rebuild stamped at 02:00:12: the read sorts before the row…
+    mockServer = [row('ev', '2026-11-11T02:00:09+00:00', 'worth_a_call')];
+    await pullReadCopies(mockAdapter, never);
+    expect((await readNearBuild('nyx', '2026-11-11T02:00:12.000Z', 120_000))?.afterBuild).toBe(false);
+    // …and the writer armed the rebuild on the move itself.
+    expect(mockRegen).toHaveBeenCalledWith('nyx');
+  });
+
+  it('one rebuild per pet, each for its own pet', async () => {
+    event('a1', 'nyx');
+    event('a2', 'nyx');
+    event('b1', 'milo');
+    await writeCopies(
+      mockAdapter,
+      [row('a1', '2026-11-11T02:00:40+00:00'), row('a2', '2026-11-11T02:00:41+00:00'), row('b1', '2026-11-11T02:00:42+00:00')],
+      never,
+    );
+    expect(mockRegen.mock.calls.map((c) => c[0]).sort()).toEqual(['milo', 'nyx']);
+  });
+
+  it('a pending row, a rewrite that moved nothing, and an event with no local row arm nothing', async () => {
+    event('ev', 'nyx');
+    await writeCopies(mockAdapter, [row('ev', '2026-11-11T02:00:10+00:00', null, 'pending')], never);
+    expect(mockRegen).not.toHaveBeenCalled();
+    await writeCopies(mockAdapter, [row('ev', '2026-11-11T02:00:40+00:00')], never);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    mockRegen.mockReset();
+    // The same version again: the last-write-wins rule refuses it, the copy does not move.
+    await writeCopies(mockAdapter, [row('ev', '2026-11-11T02:00:40+00:00')], never);
+    // A verdict whose event this phone does not hold: no pet to name, never a guess.
+    await writeCopies(mockAdapter, [row('orphan', '2026-11-11T02:00:50+00:00')], never);
+    expect(mockRegen).not.toHaveBeenCalled();
+  });
+
+  it('a sign-out during the write arms nothing (CUL-642’s class)', async () => {
+    event('ev', 'nyx');
+    let signedOut = false;
+    const stale = () => signedOut;
+    const original = mockAdapter.getAllAsync;
+    // The sign-out lands while the pet lookup is out.
+    mockAdapter.getAllAsync = (async (sql: string, params: unknown[] = []) => {
+      const out = await original(sql, params);
+      if (/SELECT DISTINCT pet_id FROM events/.test(sql)) signedOut = true;
+      return out;
+    }) as typeof original;
+    try {
+      await writeCopies(mockAdapter, [row('ev', '2026-11-11T02:00:40+00:00')], stale);
+    } finally {
+      mockAdapter.getAllAsync = original;
+    }
+    expect(mockRegen).not.toHaveBeenCalled();
   });
 });

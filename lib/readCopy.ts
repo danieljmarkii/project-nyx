@@ -315,6 +315,46 @@ export async function readPetSeamReads(petId: string): Promise<SeamRead[]> {
   );
 }
 
+/** The newest settled read near a Signal row's build: its `updated_at` as the server wrote
+ *  it, and whether it is at or after the build (`afterBuild`) or inside the race margin
+ *  before it. */
+export interface ReadNearBuild {
+  updatedAt: string;
+  afterBuild: boolean;
+}
+
+/**
+ * The newest settled read for one pet's live events that changed at or after `sinceIso`
+ * less `marginMs`, or null: Home's Signal asks it with its row's `generated_at` (CUL-1105).
+ * A read at or after the build is one that rebuild never saw. A read inside the margin
+ * BEFORE it may not have been seen either: `generated_at` is stamped at the insert, after
+ * the rebuild loaded its data and phrased, so a read written in that span (the adversarial
+ * pass's race) sorts before the row that missed it. A read after the build is preferred,
+ * then the newest. Pending rows never count: the rebuild waits for the verdict.
+ *
+ * Compared in SQL on PARSED instants (`julianday`), never as text (C-40): the copy holds
+ * the server's `…+00:00` spelling and the Signal row may carry either. At or after, not
+ * strictly after, so a millisecond tie counts as after (the louder side). An unparseable
+ * instant on either side reads as after. Local only; throws on a local read failure, and
+ * the caller keeps the cached Signal.
+ */
+export async function readNearBuild(petId: string, sinceIso: string, marginMs: number): Promise<ReadNearBuild | null> {
+  const marginDays = marginMs / 86_400_000;
+  const after = `(julianday(?) IS NULL OR julianday(v.updated_at) IS NULL OR julianday(v.updated_at) >= julianday(?))`;
+  const rows = await getDb().getAllAsync<{ updated_at: string; after_build: number }>(
+    `SELECT v.updated_at AS updated_at, ${after} AS after_build
+       FROM event_ai_verdicts v
+       JOIN events e ON e.id = v.event_id
+      WHERE e.pet_id = ? AND e.deleted_at IS NULL AND v.status != 'pending'
+        AND (${after} OR julianday(v.updated_at) >= julianday(?) - ?)
+      ORDER BY after_build DESC, julianday(v.updated_at) DESC
+      LIMIT 1`,
+    [sinceIso, sinceIso, petId, sinceIso, sinceIso, sinceIso, marginDays],
+  );
+  const r = rows[0];
+  return r ? { updatedAt: r.updated_at, afterBuild: r.after_build === 1 } : null;
+}
+
 /** The server's hash form of `photo_set_key` (engineStamps.ts): 64 hex, no comma, no
  *  hyphen, so it can never be mistaken for a list of UUIDs. The phone cannot compare it. */
 const PHOTO_SET_HASH = /^[0-9a-f]{64}$/;
@@ -516,6 +556,7 @@ export async function writeCopies(
   stale: () => boolean,
 ): Promise<number> {
   let changed = 0;
+  const settled: string[] = [];
   for (const raw of rows) {
     if (stale()) return changed;
     const row = toCopyRow(raw);
@@ -539,8 +580,46 @@ export async function writeCopies(
       row.foreign_material_present ?? null,
     ]);
     changed += result.changes;
+    if (result.changes > 0 && row.status !== 'pending') settled.push(row.event_id);
   }
+  await rebuildSignalsFor(db, settled, stale);
   return changed;
+}
+
+/**
+ * CUL-1105: a settled read that moved the copy rebuilds its pet's Signal, whichever caller
+ * wrote it. `generate-signal` builds the photo red-flag card from the server's read, and the
+ * rebuild the log armed ran before the read existed. Here, at the one writer, every way a
+ * read reaches this phone arms one: the chain and the watch on the logging phone, and the
+ * sync pull that brings in a read that landed while the app was suspended or killed (the
+ * owner who logged at 2am and locked the phone) or on another device. It keys on the copy
+ * MOVING, never on a timestamp, so a read written while a rebuild was already running is
+ * still caught (the trailing rebuild reads it). One debounced rebuild per pet, for the
+ * event's own pet (C-9), never after a sign-out (`stale`, CUL-642's class). Never throws:
+ * the rows are already written, and a rebuild that could not be armed leaves the Signal's
+ * own freshness check (`signalMissesLandedRead`) and its expiry.
+ */
+async function rebuildSignalsFor(db: ReadCopyDb, eventIds: readonly string[], stale: () => boolean): Promise<void> {
+  if (eventIds.length === 0) return;
+  try {
+    const pets = new Set<string>();
+    for (let i = 0; i < eventIds.length; i += READ_CHUNK) {
+      const chunk = eventIds.slice(i, i + READ_CHUNK);
+      const rows = await db.getAllAsync<{ pet_id: string }>(
+        `SELECT DISTINCT pet_id FROM events WHERE id IN (${chunk.map(() => '?').join(',')})`,
+        chunk,
+      );
+      for (const r of rows) if (r.pet_id) pets.add(r.pet_id);
+    }
+    if (stale()) return;
+    // Required lazily: lib/signal.ts imports this module (its freshness check), so a
+    // top-level import would be a cycle. The lib/sync.ts care-answers drain does the same.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { triggerSignalRegenDebounced } = require('./signal') as typeof import('./signal');
+    for (const petId of pets) triggerSignalRegenDebounced(petId);
+  } catch (e) {
+    console.warn('[read-copy] Signal rebuild not armed:', e);
+  }
 }
 
 // ── Pulling ──────────────────────────────────────────────────────────────────
