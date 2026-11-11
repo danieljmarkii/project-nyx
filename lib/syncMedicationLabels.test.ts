@@ -41,17 +41,24 @@ function mockServerFrom(table: string) {
         },
       }),
     }),
-    update: (patch: Row) => ({
-      eq: (_col: string, id: string) => ({
+    // The drain's update: `.eq('id', id)`, optionally `.eq('photo_paths', '{}')`.
+    update: (patch: Row) => {
+      const filters: [string, unknown][] = [];
+      const chain = {
+        eq: (col: string, value: unknown) => { filters.push([col, value]); return chain; },
         select: async () => {
+          const id = String(filters.find(([c]) => c === 'id')?.[1]);
           mockServer.updates.push({ id, patch });
           const row = mockServer.items.get(id);
           if (!row || mockServer.hidden.has(id)) return { data: [], error: null };
+          const onlyEmpty = filters.some(([c, v]) => c === 'photo_paths' && v === '{}');
+          if (onlyEmpty && (row.photo_paths as string[]).length > 0) return { data: [], error: null };
           Object.assign(row, patch);
           return { data: [{ id }], error: null };
         },
-      }),
-    }),
+      };
+      return chain;
+    },
   };
 }
 
@@ -76,12 +83,14 @@ function mockAdapter() {
 
 const mockUploadPhoto = jest.fn();
 const mockCompress = jest.fn();
+const mockRemove = jest.fn(async (_paths: string[]) => ({ error: null }));
 
 jest.mock('expo-sqlite', () => ({ openDatabaseSync: () => mockAdapter() }));
 jest.mock('./supabase', () => ({
   supabase: {
     auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
     from: (table: string) => mockServerFrom(table),
+    storage: { from: () => ({ remove: (paths: string[]) => mockRemove(paths) }) },
   },
 }));
 jest.mock('./storage', () => ({
@@ -102,7 +111,10 @@ import { queueMedicationLabelUpload } from './medicationLabelQueue';
 import { notifySignedOut, syncPendingMedicationLabels } from './sync';
 
 const ITEM = 'item-1';
-const PATH = buildMedicationPhotoPath('user-1', ITEM, '0-label');
+// A queued label has its own key (capture builds `0-label-<id>`); the detail screen's
+// replace writes the slot's fixed key.
+const PATH = buildMedicationPhotoPath('user-1', ITEM, '0-label-q1');
+const REPLACED = buildMedicationPhotoPath('user-1', ITEM, '0-label');
 const NOW = '2026-11-11T15:00:00.000Z';
 
 // storage-js's real error shapes (lib/syncQueue.ts classifyUploadFailure).
@@ -139,6 +151,7 @@ beforeEach(async () => {
   mockServer.updates.length = 0;
   mockUploadPhoto.mockReset();
   mockCompress.mockReset();
+  mockRemove.mockClear();
   mockCompress.mockResolvedValue('file:///compressed.jpg');
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
@@ -242,7 +255,7 @@ describe('what the queue never claims', () => {
     // before the queue drained. Same key, same column: sending the queued photo would
     // put the older capture back over the owner's choice.
     await captureSavedOffline();
-    mockServer.items.set(ITEM, { id: ITEM, generic_name: 'Prednisolone', photo_paths: [PATH] });
+    mockServer.items.set(ITEM, { id: ITEM, generic_name: 'Prednisolone', photo_paths: [REPLACED] });
     mockUploadPhoto.mockResolvedValue(undefined);
     await syncPendingMedicationLabels();
     expect(mockUploadPhoto).not.toHaveBeenCalled();
@@ -277,5 +290,22 @@ describe('what the queue never claims', () => {
     expect(mockServer.updates).toHaveLength(0);
     expect(cachePhoto()).toBeNull();
     expect(queueRow()).toMatchObject({ synced: 0, sync_attempts: 0 });
+  });
+
+  it('a replace that lands DURING the upload still wins, and the queued object is taken back', async () => {
+    // The drain read an empty slot; the owner replaced the label while the queued
+    // upload was in flight. The queued upload has its own key, so it overwrote
+    // nothing, and the update applies only to an empty slot, so it changes nothing.
+    await captureSavedOffline();
+    mockServer.items.set(ITEM, { id: ITEM, generic_name: 'Prednisolone', photo_paths: [] });
+    mockUploadPhoto.mockImplementation(async (_bucket: string, key: string) => {
+      expect(key).not.toBe(REPLACED);
+      mockServer.items.get(ITEM)!.photo_paths = [REPLACED];
+    });
+    await syncPendingMedicationLabels();
+    expect(mockServer.items.get(ITEM)?.photo_paths).toEqual([REPLACED]);
+    expect(mockRemove).toHaveBeenCalledWith([PATH]);
+    expect(queueRow()).toMatchObject({ synced: 1, sync_attempts: 0 });
+    expect(cachePhoto()).toBeNull();
   });
 });

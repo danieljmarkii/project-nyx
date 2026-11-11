@@ -2636,11 +2636,13 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
 //     it is a wipe that failed; Storage would refuse it with a 403, which reads as
 //     transient and would retry for ever, so it is parked here as terminal.
 //   • A label the server already holds wins. The detail screen's "replace the
-//     label" writes the same fixed key (`…/0-label.jpg`) and the same column, so a
-//     queued label sent after it would put the OLDER photo back over the owner's
-//     choice. The drain reads photo_paths first and retires its row unsent when the
-//     slot is already filled (the detail screen also retires the row itself, for
-//     the replace made on this phone). (rls-privacy-reviewer, CUL-1920.)
+//     label" fills the same slot, and an older queued photo must never land over
+//     the owner's choice. Each queued label has its own storage key (capture builds
+//     `0-label-<id>`), so its upload can never overwrite another object; and the
+//     photo_paths update applies only while the slot is still EMPTY. Lost to a
+//     replace that landed first (read or update), the row is retired unsent and
+//     the object it uploaded, if any, removed. The detail screen also retires the
+//     row itself for a replace made on this phone. (rls-privacy-reviewer, CUL-1920.)
 //   • The label is re-encoded with compressForUpload, never prepareAttachmentUpload:
 //     that helper uploads the ORIGINAL when compression fails, which would carry the
 //     photo's EXIF into the bucket. Here a failed re-encode throws, and the upload
@@ -2716,6 +2718,7 @@ async function drainMedicationLabelsQueue(): Promise<void> {
       .from('medication_items')
       .update({ photo_paths: [row.storage_path] })
       .eq('id', row.id)
+      .eq('photo_paths', '{}')
       .select('id');
     if (stale()) return;
     if (error) {
@@ -2724,6 +2727,24 @@ async function drainMedicationLabelsQueue(): Promise<void> {
       continue;
     }
     if (!data || data.length === 0) {
+      // No row matched: either a replace filled the slot after the read above (the
+      // label lost; retire it and take back its object), or the row is not visible
+      // to this account (an honest failure that costs an attempt).
+      const after = await supabase
+        .from('medication_items')
+        .select('photo_paths')
+        .eq('id', row.id)
+        .maybeSingle();
+      if (stale()) return;
+      const filled = (after.data as { photo_paths?: string[] | null } | null)?.photo_paths ?? [];
+      if (!after.error && filled.length > 0) {
+        const { error: removeErr } = await supabase.storage
+          .from(MEDICATION_PHOTOS_BUCKET)
+          .remove([row.storage_path]);
+        if (removeErr) console.warn('[sync] superseded medication label not removed:', removeErr.message);
+        await markSyncedInsertOnly(db, 'medication_label_uploads', [row.id]);
+        continue;
+      }
       await recordPushFailure(db, 'medication_label_uploads', row, RLS_FILTERED_ERROR);
       continue;
     }

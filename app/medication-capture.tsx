@@ -382,13 +382,18 @@ export default function MedicationCaptureScreen() {
     // until then neither claims it. Queued before the dose below, so the push that
     // dose starts already finds it. A queue write that fails must not lose the
     // medicine, so it is logged and the save goes on.
+    //
+    // The queued label gets its OWN storage key, never the slot's fixed `0-label`:
+    // the detail screen's "replace the label" writes that fixed key, so a queued
+    // upload landing on it mid-replace would put the older photo back over the
+    // owner's choice with nothing able to tell (rls-privacy-reviewer, CUL-1920).
     const labelQueued = !!labelPhoto && !labelPath;
-    if (labelQueued) {
+    if (labelQueued && user?.id) {
       try {
         await queueMedicationLabelUpload(db, {
           medicationItemId,
           localUri: labelPhoto.localUri,
-          storagePath: labelPhoto.storagePath,
+          storagePath: buildMedicationPhotoPath(user.id, medicationItemId, `0-label-${uuid().slice(0, 8)}`),
         }, now);
       } catch (e) {
         console.warn('[medication-capture] label queue write failed:', e);
