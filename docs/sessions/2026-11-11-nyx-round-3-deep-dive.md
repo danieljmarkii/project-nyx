@@ -64,6 +64,7 @@ The analysis scripts and data extracts are not committed: they are her raw recor
 - One stratified p value (0.0004) could not be rechecked by the reviewer from the extracts it was given.
 - Two stored vet documents were not read (private storage). Drive and Gmail were not searched.
 - Every clinical judgement that rests on a persona is marked as one. No veterinarian has read any of it.
+- The final proofread of the full report did not finish: the session ran out of model credits mid pass, and its findings were lost with the container. A continuation session (2026-11-12) fitted the vet page to one printed sheet; it did not redo the proofread.
 
 ## Held for the PM
 
