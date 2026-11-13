@@ -1,6 +1,6 @@
 # Nyx Vet Visit Reminders: Requirements
 
-**Version:** 1.1 (round 1 reactions: the pet is always named) | **Last Updated:** 2026-11-13 | **Status:** BUILD-READY for rows 02 and 03; row 04 opens with a build ready mock round (§8).
+**Version:** 1.2 (§6: the local mirror needs no change, PM-confirmed on CUL-2727) | **Last Updated:** 2026-11-13 | **Status:** BUILD-READY for rows 02 and 03; row 04 opens with a build ready mock round (§8).
 **Issue:** [CUL-253](https://linear.app/projectnyx/issue/CUL-253) (parent). **Project:** *Vet visit reminders* (team Culprit; the run order lives on the project page).
 **Read with:** `docs/nyx-notification-foundation-requirements.md` (D1 to D4, G1 to G6, the primitive this extends), `docs/nyx-notifications-v2-requirements.md` §5 (NV-G7, the new category checklist), `docs/nyx-vet-visits-requirements.md` §4.1 (booking, the Home strip, Get ready), `docs/nyx-vet-report-v2-requirements.md` §11.3 (the report line this carries), `docs/research/2026-11-engine-lessons-from-nyx-round-3.md` §4 (why the early reminder exists).
 **Mock:** `docs/culprit-vet-reminder-mockups.html` (round 1, exploratory; published at https://claude.ai/artifact/1SUq7hGD8hmNobbJLtgfr9, and round 2 republishes to the same URL).
@@ -93,7 +93,7 @@ The body is computed at schedule time and recomputed on every reconcile; it stat
 
 ## 6. Data
 
-One additive migration: `notification_preferences.category` CHECK gains `'vet_visit'` (and the local mirror's DDL with it). No new table, no new column, no backfill (absence of a row means off). Rollback: restore the one-value CHECK after deleting `vet_visit` rows. Destructive: **n**.
+One additive migration: `notification_preferences.category` CHECK gains `'vet_visit'` (the local mirror stores `category` as free TEXT, so it needs no change). No new table, no new column, no backfill (absence of a row means off). Rollback: restore the one-value CHECK after deleting `vet_visit` rows. Destructive: **n**.
 
 ---
 

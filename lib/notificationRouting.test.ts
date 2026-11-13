@@ -67,6 +67,35 @@ describe('notificationRouteDecision', () => {
 });
 
 // ── routeDedup (route-exactly-once + the pre-auth re-attempt) ─────────────────
+describe('notificationRouteDecision: the vet visit reminder (CUL-2727)', () => {
+  const ID = '0b6f3c1e-9d2a-4c55-8f0e-1a2b3c4d5e6f';
+
+  it('one visit opens its Get ready, the id carried as a param, never in the path', () => {
+    expect(notificationRouteDecision({ kind: 'vet_visit', appointmentId: ID }, { authed: true })).toEqual({
+      recordCategory: null,
+      routeTo: '/rundown',
+      routeParams: { appointmentId: ID },
+    });
+  });
+
+  it('a collapsed reminder (no id) opens the Vet visits list', () => {
+    expect(notificationRouteDecision({ kind: 'vet_visit', appointmentId: null }, { authed: true })).toEqual({
+      recordCategory: null,
+      routeTo: '/vet-visits',
+    });
+  });
+
+  it('an id not shaped like ours falls back to the list rather than reaching a route', () => {
+    const d = notificationRouteDecision({ kind: 'vet_visit', appointmentId: '../settings' }, { authed: true });
+    expect(d.routeTo).toBe('/vet-visits');
+    expect(d.routeParams).toBeUndefined();
+  });
+
+  it('routes nowhere behind the auth gate', () => {
+    expect(notificationRouteDecision({ kind: 'vet_visit', appointmentId: ID }, { authed: false }).routeTo).toBeNull();
+  });
+});
+
 describe('routeDedup', () => {
   const delivery = { identifier: 'nyx.notif.daily_summary', deliveredAt: 1_700_000_000_000 };
 

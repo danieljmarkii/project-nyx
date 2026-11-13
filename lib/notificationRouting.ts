@@ -32,9 +32,13 @@ export interface NotificationTapData {
    *  (lib/followUpNotifications.ts), never a route string. */
   kind?: unknown;
   callId?: unknown;
+  /** CUL-2727: a vet visit reminder's tap carries `kind: 'vet_visit'` and its appointment
+   *  id, or null for a reminder collapsed over several visits (lib/vetReminderNotifications.ts). */
+  appointmentId?: unknown;
 }
 
-// A call id as this app mints it (`uuid()`): the only shape a follow-up's tap may route on,
+// A call id as this app mints it (`uuid()`): the only shape a follow-up's tap may route on
+// (and, since CUL-2727, a vet visit reminder's appointment id),
 // so a stale or foreign payload can never smuggle a path segment into the route.
 const CALL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -47,6 +51,9 @@ export interface NotificationRouteDecision {
    *  lands behind the auth gate like any deep link, §5.2) or when the route is not
    *  one of ours (G5 fail-safe — never navigate a stale/foreign payload blind). */
   routeTo: string | null;
+  /** Params the route needs beyond the tap marker, built here from validated values only.
+   *  Today only a single-visit reminder's `appointmentId` (Get ready). */
+  routeParams?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -69,6 +76,17 @@ export function notificationRouteDecision(
   if (data?.kind === 'follow_up') {
     const callId = typeof data.callId === 'string' && CALL_ID.test(data.callId) ? data.callId : null;
     return { recordCategory: null, routeTo: opts.authed && callId ? `/vet-call/${callId}` : null };
+  }
+  // CUL-2727: a vet visit reminder. One visit opens its Get ready; a collapsed one (no id,
+  // or an id that is not ours in shape) opens the Vet visits list. Built here, never read
+  // off the payload, so the route set stays closed (G5).
+  if (data?.kind === 'vet_visit') {
+    if (!opts.authed) return { recordCategory: null, routeTo: null };
+    const appointmentId =
+      typeof data.appointmentId === 'string' && CALL_ID.test(data.appointmentId) ? data.appointmentId : null;
+    return appointmentId
+      ? { recordCategory: null, routeTo: '/rundown', routeParams: { appointmentId } }
+      : { recordCategory: null, routeTo: '/vet-visits' };
   }
   const rawRoute = typeof data?.route === 'string' ? data.route : null;
   const routeTo = opts.authed && rawRoute && SAFE_NOTIFICATION_ROUTES.has(rawRoute) ? rawRoute : null;

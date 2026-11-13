@@ -40,6 +40,7 @@ import { AUTH_STORAGE_KEY, supabase } from './supabase';
 import { ChunkedSecureStoreAdapter, hasItem } from './secureStore';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 import { fenceFollowUpNotifications, setFollowUpNotificationsOn } from './followUpNotifications';
+import { fenceVetReminderNotifications } from './vetReminderNotifications';
 
 /**
  * Remove the persisted auth session from the keychain by hand, the storage half of
@@ -278,6 +279,8 @@ export async function wipeLocalSession(): Promise<void> {
   // reading cannot schedule this account's question after it, and drop the device-local
   // switch beside it (the next account starts off, G6). A failure is logged, never thrown.
   fenceFollowUpNotifications();
+  // CUL-2727: the vet visit reminders' fence, for the same reason, before the cancel-all.
+  fenceVetReminderNotifications();
   await setFollowUpNotificationsOn(false).catch((e) =>
     console.warn('[session] follow-up switch clear failed:', e),
   );
