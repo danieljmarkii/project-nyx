@@ -205,26 +205,74 @@
   .appic { display:inline-block; width:14px; height:14px; border-radius:4px; background:#00C2A8; vertical-align:-2px; margin-right:6px; }
 </style>
 
+<style>
+  /* round 2 additions */
+  .dline { display:flex; align-items:center; gap:8px; min-height:44px; padding:0 2px; font-size:13.5px; color:var(--a-text); border-top:1px solid var(--a-border); border-bottom:1px solid var(--a-border); }
+  .dline .tx { flex:1; min-width:0; }
+  .dline .mk { color:var(--a-text3); font-size:16px; }
+  .safety { font-size:12.5px; line-height:1.45; color:var(--a-text); background:var(--a-surface); border:1px solid var(--a-border2); border-radius:12px; padding:9px 11px; }
+  .safety b { font-weight:600; }
+  .safety .lk { display:block; margin-top:4px; color:var(--a-accent-ink); font-weight:500; }
+  .typed { font-size:14px; background:var(--a-subtle); border-radius:10px; padding:8px 10px; }
+  .typed small { display:block; font-size:11px; color:var(--a-text3); letter-spacing:.4px; text-transform:uppercase; margin-bottom:2px; }
+  .s24 { display:grid; grid-template-columns:repeat(24,1fr); gap:2px; margin-top:10px; }
+  .s24 i { height:12px; border-radius:2px; background:#E5E5E5; }
+  .s24 i.c { background:var(--a-symptom); }
+  .s24 i.n { background:transparent; box-shadow:inset 0 0 0 1px #C4C4C4; }
+  .ends { display:flex; justify-content:space-between; font-size:11px; color:var(--a-text3); margin-top:4px; }
+  .legend { display:flex; gap:10px; flex-wrap:wrap; font-size:11px; color:var(--a-text3); margin-top:6px; }
+  .legend i { display:inline-block; width:9px; height:9px; border-radius:2px; vertical-align:-1px; margin-right:4px; background:#E5E5E5; }
+  .legend i.c { background:var(--a-symptom); } .legend i.n { background:transparent; box-shadow:inset 0 0 0 1px #C4C4C4; }
+  .ans { display:flex; flex-direction:column; gap:8px; }
+  .ans .btn, .ans .btn.ghost { min-height:44px; display:flex; align-items:center; justify-content:center; padding:0 12px; }
+  .btn.off { background:#E5E5E5; color:#A3A3A3; }
+  .tabbar { margin:auto -16px -20px; border-top:1px solid var(--a-border); background:var(--a-surface); display:grid; grid-template-columns:repeat(4,1fr); padding:8px 0 14px; font-size:10px; color:var(--a-text3); text-align:center; }
+  .tabbar span.on { color:var(--a-accent-ink); font-weight:600; }
+  .today { font-size:12.5px; }
+  .today .row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--a-border); }
+  .today .row:last-child { border-bottom:0; }
+  .kbd { margin:auto -16px -20px; background:#D1D3D9; padding:8px 4px 16px; display:grid; grid-template-columns:repeat(10,1fr); gap:5px; }
+  .kbd i { height:30px; background:#fff; border-radius:5px; box-shadow:0 1px 0 #898A8D; }
+  .banner { font-size:12px; color:var(--a-text2); background:var(--a-subtle); border-radius:10px; padding:8px 10px; }
+  .confirm { background:var(--a-text); color:#fff; border-radius:14px; padding:12px 14px; font-size:13px; display:flex; justify-content:space-between; gap:10px; align-items:center; }
+  .confirm .u { color:var(--a-accent); font-weight:600; }
+  .sheet { margin:auto -16px -20px; background:var(--a-surface); border-radius:20px 20px 0 0; box-shadow:0 -4px 18px rgba(0,0,0,.12); padding:14px 16px 20px; font-size:13px; display:flex; flex-direction:column; gap:8px; }
+  .sheet .grab { width:36px; height:4px; border-radius:2px; background:#D4D4D4; margin:0 auto 4px; }
+  .sheet li { margin:3px 0; }
+  .sheet ul { margin:0; padding-left:18px; color:var(--a-text); }
+  .scrim { background:rgba(10,10,10,.35); }
+  .switchnote { font-size:12px; background:var(--a-accent-light); color:var(--a-accent-ink); border-radius:10px; padding:7px 10px; }
+  .lane { display:grid; gap:10px; margin-top:22px; }
+  .conf { margin-top:20px; padding:14px 16px; border-radius:12px; border:1.5px dashed var(--amber); background:color-mix(in srgb, var(--amber-tint) 45%, transparent); font-size:14px; color:var(--ink-soft); max-width:80ch; }
+  .conf b { color:var(--ink); }
+  .conf p { margin:6px 0; }
+</style>
 <div class="wrap">
   <p class="eyebrow">Mock round 2 · exploratory · 2026-11-13 · CUL-2731</p>
   <h1 class="title">The vet's "call me if", held and shown on its date</h1>
-  <p class="lede">At Nyx's visit on <b>Sep 16</b> her vet said to call if she was still coughing after the full strength prednisolone. She was, and the app never noticed. Round 2 redraws the feature with your reactions to round 1, which it supersedes (round 1 is commit cab1d63). <b>Every count on these screens is illustrative,</b> not her real record.</p>
+  <p class="lede">At Nyx's visit on <b>Sep 16</b> her vet said to call if she was still coughing after the full strength prednisolone. She was, and the app never noticed. Round 2 redraws the feature with your reactions to round 1 and a design critique on top. It supersedes round 1 (commit cab1d63). <b>Every count on these screens is illustrative,</b> not her real record.</p>
 
-  <div class="ledger" role="table" aria-label="What each reaction changed">
+  <div class="ledger" role="table" aria-label="What changed in round 2">
     <div class="ledger-h">Ledger · your reactions to round 1</div>
-    <div class="ledger-row"><span class="ledger-who">Kept</span><span><b>"Anything to watch for?"</b>, the reminder toggle, the follow up notification and the "Watching" language. No change.</span></div>
-    <div class="ledger-row"><span class="ledger-who">Ruled · §1</span><span><b>Open ended as well as chips.</b> Frame 2 now has a "Something else" field in the owner's own words, beside the chips. Frames 3 and 11 show a typed instruction end to end. Typed text is never counted or read by anything.</span></div>
-    <div class="ledger-row"><span class="ledger-who">Ruled · §2</span><span><b>Where you find it later: Vet visits.</b> The saved moment is the confirmation shown once, right after Save. After that, every open instruction lives in Vet visits under <b>Watching</b>, above Next and Past (frame 6).</span></div>
-    <div class="ledger-row"><span class="ledger-who">Deferred</span><span><b>Pausing "worth booking a visit".</b> Out of v1, filed as CUL-2732 with your lean that it has to pause. Round 1's §6 has left the page.</span></div>
-    <div class="ledger-row"><span class="ledger-who">Ruled</span><span><b>Not gated behind 1.2.0,</b> and the follow up notification is in v1 (round 1).</span></div>
-    <div class="ledger-row"><span class="ledger-who open">Open · §4</span><span><b>Decision 4:</b> what "when the course ends" does if the course stops early or runs long. The team default is drawn as current.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Kept</span><span><b>"Anything to watch for?"</b>, the reminder toggle, the follow up notification and the "Watching" language.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Ruled · §1, §4</span><span><b>Open ended as well as chips.</b> "Something else" is the last chip and opens a field in the owner's words (frame 3). Typed text is never counted or read by anything.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Ruled · §2</span><span><b>Where you find it later: Vet visits.</b> The saved moment is a one time confirmation; its Done opens the visit. After that the Pet tab card's <b>Watching</b> line and the Watching section of Vet visits are the way back in (frames 5 to 8).</span></div>
+    <div class="ledger-row"><span class="ledger-who">Deferred</span><span><b>Pausing "worth booking a visit"</b> is out of v1, filed as CUL-2732 with your lean that it has to pause.</span></div>
+    <div class="ledger-h">Ledger · the design pass (four isolated reviewers, one verifier)</div>
+    <div class="ledger-row"><span class="ledger-who">Safety</span><span><b>Every instruction now says don't wait if it gets worse,</b> with a door to the signs that mean call today. The typed example (a cat straining in the litter box) is on the app's own call now list, which is why it stays in the mock as the worst case.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Counts</span><span><b>The count screen can no longer make an early cough that went quiet look resolved.</b> The strip has dated ends, unlogged days are outlined, the last logged day is named, and the caveat shows on every count, not only on a zero.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Home</span><span><b>The door is a line, not a card,</b> the same register as the shipped "What did the vet say?" line, and the two share one slot. Drawn at real density with Today and the tab bar.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Lifecycle</span><span><b>One rule:</b> the door stays until answered, up to 14 days. On its date an unanswered instruction moves to <b>Waiting on you</b> in Vet visits, the section that already exists. "Not needed" became the owner's observation, "The cough has stopped".</span></div>
+    <div class="ledger-row"><span class="ledger-who open">For you · §6</span><span><b>Decision 4</b>, sharpened: whether the date can move later, and whether an answer given before the course ends can close the question.</span></div>
+    <div class="ledger-row"><span class="ledger-who open">For you · §7</span><span><b>"Decide later"</b>: should the door come back once more? Dr. Chen and Jordan disagree.</span></div>
+    <div class="ledger-row"><span class="ledger-who open">For you · §8</span><span><b>The notification's title,</b> a small better than the rule check against the follow up notification that already ships.</span></div>
   </div>
 
   <!-- ============ 1. CAPTURE ============ -->
   <section>
     <p class="sec-eyebrow">1 · In the parking lot</p>
-    <h2>Four taps on "How did it go?"</h2>
-    <p class="sec-lede">One new row under <b>Next visit</b>. It rests at <b>Later</b> like every plan row, so it never blocks the save. Tapping it opens the row in place: a sign, then what to do, then when. The row reads the sentence back so the owner can check it while the vet's words are fresh.</p>
+    <h2>Four taps, and a sentence to check</h2>
+    <p class="sec-lede">One row under <b>Next visit</b>, resting at <b>Later</b>. Tapping it pushes its own screen: a sign, what to do, and when. Nothing is preselected, and Done stays dim until all three are set. Then the app reads the instruction back as one sentence, with the line that matters most beneath it: <b>don't wait for this date if things get worse.</b></p>
     <div class="rail">
       <div class="opt">
         <div class="phone"><div class="ph">
@@ -236,66 +284,60 @@
             <div class="prow"><span class="l">Prednisolone</span><span class="r ink">Changed</span></div>
             <div class="prow"><span class="l">Started something new?</span><span class="r">Later</span></div>
             <div class="prow"><span class="l">Next visit</span><span class="r">Later</span></div>
-            <div class="prow focus"><span class="l">Anything to watch for?</span><span class="r">Later</span></div>
+            <div class="prow focus"><span class="l">Anything to watch for?</span><span class="r">Later ›</span></div>
             <div class="prow"><span class="l">Paperwork</span><span class="r">Later</span></div>
           </div>
           <div class="ph-sec">Notes</div>
-          <div class="card" style="font-size:13px;color:#525252">Full strength pred for 3 more weeks. Call if the cough hasn't stopped.</div>
+          <div class="card" style="font-size:13px;color:#525252">Lungs sound clear. X-ray if it drags on. Full strength for three more weeks.</div>
           <div class="grow"></div>
           <div class="btn">Save visit</div>
         </div></div>
-        <div class="opt-cap"><span class="k">1 · The row at rest <span class="tag cur">current</span></span><p>Shaded here only to show where it sits. The owner's own note stays a note; nothing reads it.</p></div>
+        <div class="opt-cap"><span class="k">1 · The row at rest <span class="tag cur">current</span></span><p>Shaded only to show where it sits. The owner's notes stay notes; the instruction never reads or rewrites them.</p></div>
       </div>
 
       <div class="opt">
         <div class="phone"><div class="ph">
-          <div class="ph-nav"><span class="ph-back">Cancel</span><span class="ph-navt">Nyx · Sep 16</span><span class="ph-back">Save</span></div>
-          <div class="ph-sec">Anything to watch for?</div>
-          <div class="card">
-            <div class="q">Your vet asked you to watch for</div>
-            <div class="chips"><span class="chip on">Cough</span><span class="chip">Sneezing</span><span class="chip">Vomiting</span><span class="chip">Loose stool</span><span class="chip">Itching</span><span class="chip">Low energy</span></div>
-            <div class="field ph-empty">Something else, in your words</div>
-            <div class="q" style="margin-top:12px">If it's still there</div>
-            <div class="chips"><span class="chip on">Call the vet</span><span class="chip">Book a recheck</span></div>
-            <div class="q" style="margin-top:12px">When</div>
-            <div class="chips"><span class="chip on">When prednisolone ends</span><span class="chip">In 1 week</span><span class="chip">In 2 weeks</span><span class="chip">Pick a date</span></div>
-          </div>
-          <div class="muted">"When prednisolone ends" appears only when a course is linked to this visit. Its date comes from the course: Oct 10.</div>
+          <div class="ph-nav"><span class="ph-back">‹ Visit</span><span class="ph-navt">Anything to watch for?</span><span class="ph-sp"></span></div>
+          <div class="q">Your vet asked you to watch for</div>
+          <div class="chips"><span class="chip on">Cough</span><span class="chip">Sneeze</span><span class="chip">Vomit</span><span class="chip">Loose stool</span><span class="chip">Itch/Scratch</span><span class="chip">Lethargy</span><span class="chip new">Something else…</span></div>
+          <div class="q">If it's still there</div>
+          <div class="chips"><span class="chip on">Call the vet</span><span class="chip">Book a visit</span></div>
+          <div class="q">When</div>
+          <div class="chips"><span class="chip on">When prednisolone ends</span><span class="chip">In 1 week</span><span class="chip">In 2 weeks</span><span class="chip">Pick a date</span></div>
+          <div class="readback">If Nyx's cough is still there on Oct 10, call the vet.<small>Oct 10 · the day after prednisolone's last dose</small></div>
+          <div class="safety"><b>If Nyx gets worse before then, don't wait for this date.</b> Call your vet today.<span class="lk">Signs that mean call today ›</span></div>
+          <div class="card"><div class="toggle"><span>Remind me on Oct 10<small>The notification says "A note about Nyx for today" and nothing more.</small></span><span class="sw on"></span></div></div>
+          <div class="btn">Done</div>
         </div></div>
-        <div class="opt-cap"><span class="k">2 · Sign, action, when <span class="tag cur">current</span></span><p>Chips for the signs the app can count, and a field for anything else the vet said. Action and date stay as choices, so every instruction has a day it comes back.</p></div>
+        <div class="opt-cap"><span class="k">2 · Sign, action, when <span class="tag cur">current</span></span><p>Chip labels are the log's own (Itch/Scratch, Lethargy). "When prednisolone ends" shows only when the linked course has a planned end, and the read back names where the date came from.</p></div>
       </div>
 
       <div class="opt">
         <div class="phone"><div class="ph">
-          <div class="ph-nav"><span class="ph-back">Cancel</span><span class="ph-navt">Pixel · Nov 4</span><span class="ph-back">Save</span></div>
-          <div class="ph-sec">Anything to watch for?</div>
-          <div class="card">
-            <div class="q">Your vet asked you to watch for</div>
-            <div class="chips"><span class="chip">Cough</span><span class="chip">Sneezing</span><span class="chip">Vomiting</span><span class="chip">Loose stool</span><span class="chip">Itching</span><span class="chip">Low energy</span></div>
-            <div class="field on">straining in the litter box<span class="caret"></span></div>
-            <div class="q" style="margin-top:12px">If it's still there</div>
-            <div class="chips"><span class="chip">Call the vet</span><span class="chip on">Book a recheck</span></div>
-            <div class="q" style="margin-top:12px">When</div>
-            <div class="chips"><span class="chip">When Clavamox ends</span><span class="chip on">In 1 week</span><span class="chip">In 2 weeks</span><span class="chip">Pick a date</span></div>
-          </div>
-          <div class="readback">If Pixel is still straining in the litter box, book a recheck.<small>Nov 11 · from this visit · in your words, not counted</small></div>
+          <div class="ph-nav"><span class="ph-back">‹ Visit</span><span class="ph-navt">Anything to watch for?</span><span class="ph-sp"></span></div>
+          <div class="q">Your vet asked you to watch for</div>
+          <div class="chips"><span class="chip">Cough</span><span class="chip">Sneeze</span><span class="chip">Vomit</span><span class="chip">Loose stool</span><span class="chip">Itch/Scratch</span><span class="chip">Lethargy</span><span class="chip on">Something else…</span></div>
+          <div class="field on">straining in the litter box<span class="caret"></span></div>
+          <div class="muted">In your words. Culprit keeps it as you type it and doesn't count it.</div>
+          <div class="kbd" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
         </div></div>
-        <div class="opt-cap"><span class="k">2b · In the owner's own words <span class="tag cur">ruled</span></span><p>Typing in the field clears the chips: one sign per instruction. The read back says plainly that the app won't count this one.</p></div>
+        <div class="opt-cap"><span class="k">3 · Something else, in your words <span class="tag cur">ruled</span></span><p>The last chip in the sign row, so it reads as one more choice rather than a second form. Picking it clears the other chips: one sign per instruction.</p></div>
       </div>
 
       <div class="opt">
         <div class="phone"><div class="ph">
-          <div class="ph-nav"><span class="ph-back">Cancel</span><span class="ph-navt">Nyx · Sep 16</span><span class="ph-back">Save</span></div>
-          <div class="ph-sec">Anything to watch for?</div>
-          <div class="readback">If Nyx's cough is still there when the prednisolone ends, call the vet.<small>Oct 10 · from this visit</small></div>
-          <div class="card">
-            <div class="toggle"><span>Remind me on the day<small>A notification that says "A note about Nyx for today". It never says what the note is.</small></span><span class="sw on"></span></div>
-          </div>
-          <div class="link">+ Add another</div>
+          <div class="ph-nav"><span class="ph-back">‹ Visit</span><span class="ph-navt">Anything to watch for?</span><span class="ph-sp"></span></div>
+          <div class="typed"><small>You noted</small>straining in the litter box</div>
+          <div class="q">If it's still there</div>
+          <div class="chips"><span class="chip">Call the vet</span><span class="chip on">Book a visit</span></div>
+          <div class="q">When</div>
+          <div class="chips"><span class="chip on">In 1 week</span><span class="chip">In 2 weeks</span><span class="chip">Pick a date</span></div>
+          <div class="readback">If it's still there on Nov 11, book a visit.<small>Nov 11 · in your words, not counted</small></div>
+          <div class="safety"><b>If Pixel gets worse before then, don't wait for this date.</b> Straining with little or nothing coming means call today.<span class="lk">Signs that mean call today ›</span></div>
           <div class="grow"></div>
           <div class="btn">Done</div>
         </div></div>
-        <div class="opt-cap"><span class="k">3 · Read back and the reminder <span class="tag cur">current</span></span><p>The read back is the check: the owner sees the vet's instruction as the app will hold it. The reminder is the ruled notification, on by the owner's choice per instruction.</p></div>
+        <div class="opt-cap"><span class="k">4 · A typed instruction, read back <span class="tag cur">ruled</span></span><p>The owner's words sit on their own line, never inside the app's sentence, so nothing reads as the vet's quote. The safety line here is static copy picked by species and sign family, never by reading the typed text.</p></div>
       </div>
     </div>
   </section>
@@ -303,8 +345,8 @@
   <!-- ============ 2. BETWEEN ============ -->
   <section>
     <p class="sec-eyebrow">2 · Between the visit and the date</p>
-    <h2>Quiet, and it lives in Vet visits</h2>
-    <p class="sec-lede">Nothing on Home until the date. The saved moment (frame 4) is the confirmation shown once, right after Save; it isn't a place you go back to. After that, <b>Vet visits is the instruction's home</b>: the Pet tab card says what's being watched, and the Vet visits list opens with a <b>Watching</b> section above Next and Past. From there, each instruction opens its visit, where it can be changed or removed.</p>
+    <h2>Quiet on Home, findable in Vet visits</h2>
+    <p class="sec-lede">Your question from round 1: where would you find it again? The saved moment is shown once, and its Done takes you to the visit you just saved. After that there are two ways back, both one tap from the Pet tab: the <b>Watching</b> line on the Vet visits card, and the <b>Watching</b> section at the top of Vet visits.</p>
     <div class="rail">
       <div class="opt">
         <div class="phone"><div class="ph">
@@ -312,37 +354,34 @@
           <div class="ph-sub">Nyx's visit on Sep 16</div>
           <div class="card">
             <div class="prow"><span class="l">Prednisolone</span><span class="r">Changed</span></div>
-            <div class="prow"><span class="l">Watching for cough</span><span class="r ink">until Oct 10</span></div>
+            <div class="prow"><span class="l">Watching: cough</span><span class="r ink">on Oct 10</span></div>
           </div>
           <div class="muted">Your next vet report starts from this visit.</div>
           <div class="grow"></div>
           <div class="btn">Done</div>
         </div></div>
-        <div class="opt-cap"><span class="k">4 · The saved moment <span class="tag cur">current</span></span><p class="crumb">Shown once, right after Save</p><p>One more line in the list of what the visit linked. Done returns to wherever the visit was opened from.</p></div>
+        <div class="opt-cap"><span class="k">5 · The saved moment <span class="tag cur">current</span></span><p class="crumb">Shown once, right after Save</p><p>Done opens the visit page (frame 8), as it does today.</p></div>
       </div>
       <div class="opt">
         <div class="phone"><div class="ph">
-          <div class="ph-nav"><span class="ph-back">‹ Visits</span><span class="ph-navt"></span><span class="ph-back">⋯</span></div>
-          <div class="ph-h">Sep 16 · Riverside</div>
-          <div class="ph-sub">Cough recheck · Dr. Patel</div>
-          <div class="ph-sec">What your vet asked you to watch</div>
+          <div class="ph-h">Nyx</div>
+          <div class="card dim"><b style="font-size:14px">Vet report</b><div class="muted">A clinical summary to send your vet.</div></div>
           <div class="card">
-            <div class="prow"><span class="l">Cough · call if still there</span><span class="r ink">Oct 10 ›</span></div>
-            <div class="prow"><span class="l" style="font-weight:400;color:#737373;font-size:12.5px">Reminder on · Change or remove</span><span class="r"></span></div>
+            <div style="display:flex;justify-content:space-between"><b style="font-size:14px">Vet visits</b><span class="muted">3 visits</span></div>
+            <div class="dline" style="margin-top:8px;border-bottom:0"><span class="tx" style="color:#0B7B6C;font-weight:500">Watching: cough · on Oct 10</span><span class="mk">›</span></div>
+            <div style="font-size:13px;color:#525252">Last visit Sep 16 · Prednisolone changed</div>
+            <div class="btn ghost" style="margin-top:10px;padding:9px">Open visits</div>
           </div>
-          <div class="ph-sec">The plan</div>
-          <div class="card"><div class="prow"><span class="l">Prednisolone</span><span class="r">Dose 18 of 21</span></div></div>
-          <div class="ph-sec">Notes</div>
-          <div class="card" style="font-size:13px;color:#525252">Full strength pred for 3 more weeks. Call if the cough hasn't stopped.</div>
+          <div class="card dim"><b style="font-size:14px">Vet Files</b><div class="muted">3 documents</div></div>
         </div></div>
-        <div class="opt-cap"><span class="k">5 · The visit's page <span class="tag cur">current</span></span><p class="crumb">Pet › Vet visits › Sep 16</p><p>The instruction sits above the notes, so the vet's words and the owner's version of them are on one screen. ⋯ holds Change date and Remove.</p></div>
+        <div class="opt-cap"><span class="k">6 · Pet tab, the way back in <span class="tag cur">ruled</span></span><p class="crumb">Pet tab</p><p>The Watching line is tappable. One instruction opens it; several read "Watching: cough and 2 more · next on Oct 10" and open the list.</p></div>
       </div>
       <div class="opt">
         <div class="phone"><div class="ph">
           <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-navt">Vet visits</span><span class="ph-back">Add</span></div>
           <div class="ph-sec">Watching</div>
           <div class="card">
-            <div class="watch"><span class="dot"></span><span class="tx">Cough · call if still there<span>From Sep 16 · reminder on</span></span><span class="when">Oct 10</span></div>
+            <div class="watch"><span class="dot"></span><span class="tx">Cough · call if still there<span>From Sep 16 · when prednisolone ends</span></span><span class="when">Oct 10</span></div>
           </div>
           <div class="ph-sec">Next</div>
           <div class="card"><div class="prow"><span class="l">No visit booked</span><span class="r ink">Book</span></div></div>
@@ -351,8 +390,38 @@
             <div class="prow"><span class="l">Sep 16 · Riverside<span class="muted" style="display:block;font-weight:400">Cough recheck · Pred changed</span></span><span class="r">›</span></div>
             <div class="prow"><span class="l">Aug 2 · Riverside<span class="muted" style="display:block;font-weight:400">Vomiting · Diet trial started</span></span><span class="r">›</span></div>
           </div>
+          <div class="ph-sec">Calls</div>
+          <div class="card"><div class="prow"><span class="l">Sep 2 · You called</span><span class="r">›</span></div></div>
         </div></div>
-        <div class="opt-cap"><span class="k">6 · Vet visits, the home <span class="tag cur">ruled</span></span><p class="crumb">Pet › Vet visits</p><p>Watching leads the list while anything is open, and disappears when nothing is. The Pet tab card carries one line: "Watching: cough · until Oct 10".</p></div>
+        <div class="opt-cap"><span class="k">7 · Vet visits, the home <span class="tag cur">ruled</span></span><p class="crumb">Pet › Vet visits</p><p>Watching leads while anything is open and disappears when nothing is. It shows three at most, then "2 more". The shipped sections follow in their usual order.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Visits</span><span class="ph-navt"></span><span class="ph-back">⋯</span></div>
+          <div class="ph-h">Sep 16 · Riverside</div>
+          <div class="ph-sub">Cough recheck · Dr. Patel</div>
+          <div class="ph-sec">What your vet asked you to watch</div>
+          <div class="card">
+            <div class="prow"><span class="l">Cough · call if still there<span class="muted" style="display:block;font-weight:400">on Oct 10 · when prednisolone ends · reminder on</span></span><span class="r">›</span></div>
+          </div>
+          <div class="ph-sec">The plan</div>
+          <div class="card"><div class="prow"><span class="l">Prednisolone</span><span class="r">Dose 18 of 21</span></div></div>
+          <div class="ph-sec">Notes</div>
+          <div class="card" style="font-size:13px;color:#525252">Lungs sound clear. X-ray if it drags on. Full strength for three more weeks.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">8 · The visit's page <span class="tag cur">current</span></span><p class="crumb">Pet › Vet visits › Sep 16</p><p>The instruction leads, above the plan and the notes. Its row opens the instruction (frame 9).</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Sep 16 visit</span><span class="ph-navt"></span><span class="ph-sp"></span></div>
+          <div class="quote">Your vet asked you to call if Nyx's cough was still there when the prednisolone ended.</div>
+          <div class="count"><div class="n">Asks on Oct 10</div><div class="cov">The day after prednisolone's last dose · reminder on</div></div>
+          <div class="safety"><b>If Nyx gets worse before then, don't wait for this date.</b> Call your vet today.<span class="lk">Signs that mean call today ›</span></div>
+          <div class="grow"></div>
+          <div class="btn ghost">Change date</div>
+          <div class="link" style="text-align:center;color:#B3123A">Remove</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">9 · Before its date <span class="tag cur">current</span></span><p>No answers yet and no count; just when it asks, where the date came from, and how to change or remove it.</p></div>
       </div>
     </div>
   </section>
@@ -360,8 +429,8 @@
   <!-- ============ 3. ON THE DATE ============ -->
   <section>
     <p class="sec-eyebrow">3 · Oct 10</p>
-    <h2>One notification, one door, one screen</h2>
-    <p class="sec-lede">On the date the follow up notification arrives (if the owner turned it on) and a door appears on Nyx's Home under the Signal. The door stays until it is opened, up to 14 days, then the instruction stays listed on the visit. <b>It opens whatever the logs say.</b> The answers live one tap away, never on Home.</p>
+    <h2>One notification, one line on Home, one screen</h2>
+    <p class="sec-lede">The follow up notification arrives if the owner turned it on. On Home, a single line sits under the Signal, in the same register as the shipped "What did the vet say?" line. It stays until it is answered, for up to 14 days. <b>It opens whatever the logs say.</b> The answers live one tap away, never on Home.</p>
     <div class="rail">
       <div class="opt">
         <div class="phone lock"><div class="ph">
@@ -369,17 +438,23 @@
           <div class="date">Friday, October 10</div>
           <div class="notif"><div class="top"><span><i class="appic"></i>CULPRIT</span><span>now</span></div><b>Vet visit follow up</b>A note about Nyx for today.</div>
         </div></div>
-        <div class="opt-cap"><span class="k">7 · The follow up notification <span class="tag cur">ruled</span></span><p>Arrives at the owner's usual morning time. Never names the sign, the vet or the action, because a lock screen is public.</p></div>
+        <div class="opt-cap"><span class="k">10 · The follow up notification <span class="tag cur">ruled</span></span><p>Never names the sign, the vet or the action. Tapping it opens the instruction directly, switching to Nyx first if another pet is on screen. Its title is §8's question.</p></div>
       </div>
       <div class="opt">
         <div class="phone"><div class="ph">
           <div class="home-head"><span class="petname">Nyx</span><span class="avatar"></span></div>
-          <div class="look">Friday · Oct 10</div>
+          <div class="look">Friday · Oct 10 · Looks: quiet</div>
           <div class="signal"><div class="kick">This week</div><div class="big">Vomiting is about where it was last week.</div><div class="small">4 times in 7 days</div></div>
-          <div class="door"><span class="ic"></span><span class="tx"><b>A note from Nyx's Sep 16 visit</b><span>For today</span></span><span class="chev">›</span></div>
-          <div class="strip"><b>Prednisolone</b> · dose 21 of 21 today</div>
+          <div class="dline"><span class="tx">A note from Nyx's Sep 16 visit</span><span class="mk">›</span></div>
+          <div class="ph-sec">Today</div>
+          <div class="today">
+            <div class="row"><span>Prednisolone · dose 21 of 21</span><span class="muted">8:05</span></div>
+            <div class="row"><span>Meal · Rabbit wet</span><span class="muted">7:40</span></div>
+            <div class="row"><span>Cough</span><span class="muted">6:52</span></div>
+          </div>
+          <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
         </div></div>
-        <div class="opt-cap"><span class="k">8 · Home on the date <span class="tag cur">current</span></span><p>Below the Signal's lead and any safety card, above the course strip. A door, never a card: it opens a screen and writes nothing on Home.</p></div>
+        <div class="opt-cap"><span class="k">11 · Home on the date, a real day <span class="tag cur">current</span></span><p>A 44pt line directly under the Signal, below every safety card, above Today. No card, no icon box, no badge.</p></div>
       </div>
       <div class="opt">
         <div class="phone"><div class="ph">
@@ -387,16 +462,21 @@
           <div class="quote">Your vet asked you to call if Nyx's cough was <em>still there when the prednisolone ended.</em> Today is that day.</div>
           <div class="count">
             <div class="n">Cough logged on 6 days since Sep 17</div>
-            <div class="cov">Something logged on 22 of 24 days</div>
-            <div class="dots" aria-hidden="true"><i class="l"></i><i class="c"></i><i class="l"></i><i class="l"></i><i class="c"></i><i class="l"></i><i></i><i class="l"></i><i class="c"></i><i class="l"></i><i class="l"></i><i class="l"></i><i class="c"></i><i class="l"></i><i class="l"></i><i></i><i class="l"></i><i class="c"></i><i class="l"></i><i class="l"></i><i class="l"></i><i class="c"></i><i class="l"></i><i class="l"></i></div>
+            <div class="cov">Last logged Oct 8 · nothing logged on 2 of 24 days</div>
+            <div class="s24" aria-hidden="true"><i class="c"></i><i></i><i class="c"></i><i></i><i></i><i class="c"></i><i></i><i></i><i class="n"></i><i></i><i class="c"></i><i></i><i></i><i></i><i class="n"></i><i></i><i class="c"></i><i></i><i></i><i></i><i></i><i class="c"></i><i></i><i></i></div>
+            <div class="ends"><span>Sep 17</span><span>Today</span></div>
+            <div class="legend"><span><i class="c"></i>cough</span><span><i></i>other logs</span><span><i class="n"></i>nothing logged</span></div>
           </div>
-          <div class="muted">You decide if it's still there. Nyx's other alerts keep running.</div>
-          <div class="grow"></div>
-          <div class="btn">I've called</div>
-          <div class="btn-row"><div class="btn ghost">Booked a visit</div><div class="btn ghost">Not needed</div></div>
-          <div class="link" style="text-align:center">Not yet</div>
+          <div class="caveat">Logs only show what someone saw and wrote down. Only you can tell if the cough is still there.</div>
+          <div class="safety">Nyx's other alerts keep running. <b>If she's worse, call today.</b></div>
+          <div class="ans">
+            <div class="btn">I've called</div>
+            <div class="btn ghost">Book a visit</div>
+            <div class="btn ghost">The cough has stopped</div>
+            <div class="link" style="text-align:center;min-height:44px;display:flex;align-items:center;justify-content:center">Decide later</div>
+          </div>
         </div></div>
-        <div class="opt-cap"><span class="k">9 · The instruction screen <span class="tag cur">current</span></span><p>The vet's words lead. The count is second and always has its coverage beside it. Opening this screen is what clears the door.</p></div>
+        <div class="opt-cap"><span class="k">12 · The instruction screen <span class="tag cur">current</span></span><p>The vet's words lead. The strip has dated ends and a legend, and outlines the days nothing was logged. The caveat shows on every count. VoiceOver reads "Cough logged on 6 days, last on Oct 8; nothing logged on 2 of 24 days".</p></div>
       </div>
       <div class="opt">
         <div class="phone"><div class="ph">
@@ -404,94 +484,238 @@
           <div class="quote">Your vet asked you to call if Nyx's cough was <em>still there when the prednisolone ended.</em> Today is that day.</div>
           <div class="count">
             <div class="n">No cough logged since Sep 17</div>
-            <div class="cov">Something logged on 5 of 24 days</div>
+            <div class="cov">Meals and doses logged every day. Those don't tell us about coughing.</div>
+            <div class="s24" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="ends"><span>Sep 17</span><span>Today</span></div>
           </div>
           <div class="caveat">That doesn't tell us the cough has stopped. Only you can tell if it's still there.</div>
-          <div class="grow"></div>
-          <div class="btn">I've called</div>
-          <div class="btn-row"><div class="btn ghost">Booked a visit</div><div class="btn ghost">Not needed</div></div>
-          <div class="link" style="text-align:center">Not yet</div>
+          <div class="safety">Nyx's other alerts keep running. <b>If she's worse, call today.</b></div>
+          <div class="ans">
+            <div class="btn">I've called</div>
+            <div class="btn ghost">Book a visit</div>
+            <div class="btn ghost">The cough has stopped</div>
+            <div class="link" style="text-align:center;min-height:44px;display:flex;align-items:center;justify-content:center">Decide later</div>
+          </div>
         </div></div>
-        <div class="opt-cap"><span class="k">10 · When nothing was logged <span class="tag cur">current</span></span><p>The door still opens. A zero is never written as "no coughing", and a guard in the code holds that wording.</p></div>
+        <div class="opt-cap"><span class="k">13 · Nothing logged, every day busy <span class="tag cur">current</span></span><p>The hardest case: a full log of meals and doses, and no cough. It still opens, still draws the strip, and says plainly that meals don't tell us about coughing.</p></div>
       </div>
-    </div>
-    <div class="note-grid">
-      <div class="note teal"><b>The answers</b><b style="display:inline;font-weight:600">I've called</b> and <b style="display:inline;font-weight:600">Not needed</b> are stored on the instruction. <b style="display:inline;font-weight:600">Booked a visit</b> opens booking. <b style="display:inline;font-weight:600">Not yet</b> writes nothing: the door leaves Home that night and the visit page shows "Open: call about the cough". Never asked again.</div>
-      <div class="note amber"><b>Why "I've called" is new storage</b>The care state's call record needs a logged symptom to hang from, and this call answers the vet, not a log. So the answer lives on the instruction. A team call; reversible.</div>
-      <div class="note rose"><b>What never happens</b>The app never checks the vet's condition against the logs, never says Nyx is better, and never lets the instruction quiet a safety warning. A cough that turns into breathing trouble still gets the direct words, the same day.</div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Sep 16 visit</span><span class="ph-sp"></span></div>
+          <div class="quote">Your vet asked you to call if Nyx's cough was still there when the prednisolone ended.</div>
+          <div class="confirm"><span>Noted: you called on Oct 10.</span><span class="u">Undo</span></div>
+          <div class="q">Did anything change? (optional)</div>
+          <div class="chips"><span class="chip">Changed the medicine</span><span class="chip">Booked a visit</span><span class="chip">Nothing changed</span></div>
+          <div class="muted">In two days Culprit asks once what the vet said, like any call.</div>
+          <div class="grow"></div>
+          <div class="btn ghost">Done</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">14 · After "I've called" <span class="tag cur">current</span></span><p>Undo for a mis-tap, and one optional follow up that opens the existing forms. The line leaves Home; the instruction shows as answered on the visit page.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-navt">Vet visits</span><span class="ph-back">Add</span></div>
+          <div class="ph-sec">Waiting on you</div>
+          <div class="card">
+            <div class="watch"><span class="dot" style="background:#3F35A0"></span><span class="tx">Cough · call if still there<span>Asked Oct 10 · from Sep 16</span></span><span class="when" style="color:#3F35A0">Open ›</span></div>
+          </div>
+          <div class="ph-sec">Watching</div>
+          <div class="card"><div class="watch"><span class="dot"></span><span class="tx">Vomit · book a visit if still there<span>From Sep 16</span></span><span class="when">Oct 24</span></div></div>
+          <div class="ph-sec">Past</div>
+          <div class="card"><div class="prow"><span class="l">Sep 16 · Riverside</span><span class="r">›</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">15 · After "Decide later" <span class="tag cur">current</span></span><p>On its date an unanswered instruction moves from Watching to <b>Waiting on you</b>, the section that already holds visits needing an answer. One tap opens it.</p></div>
+      </div>
     </div>
   </section>
 
-  <!-- ============ 4. TYPED INSTRUCTION ============ -->
+  <!-- ============ 4. TYPED ============ -->
   <section>
-    <p class="sec-eyebrow">4 · Ruled · open ended</p>
+    <p class="sec-eyebrow">4 · Ruled · in the owner's words</p>
     <h2>When the vet's words aren't a chip</h2>
-    <p class="sec-lede">Pixel's vet said to book a recheck if she was still straining in the litter box. The owner typed it (frame 2b). On its date it works like any other instruction, with one difference: <b>there is no count</b>, because the app can't count what it never logged. The owner's words come back exactly as typed.</p>
+    <p class="sec-lede">Pixel's vet said to book a visit if she was still straining in the litter box. On Nov 11 it works like any other instruction, with one difference: <b>no count</b>, because Culprit can't count what it never logged. The owner's words come back as written, in their own box, and the screen still points at the signs that mean call today.</p>
     <div class="rail">
       <div class="opt">
         <div class="phone"><div class="ph">
-          <div class="home-head"><span class="petname">Pixel</span><span class="avatar" style="background:#B9A58C"></span></div>
-          <div class="look">Tuesday · Nov 11</div>
-          <div class="signal"><div class="kick">This week</div><div class="big">Nothing stands out this week.</div><div class="small">Based on 19 logs in 7 days</div></div>
-          <div class="door"><span class="ic"></span><span class="tx"><b>A note from Pixel's Nov 4 visit</b><span>For today</span></span><span class="chev">›</span></div>
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Nov 4 visit</span><span class="ph-sp"></span></div>
+          <div class="typed"><small>You noted</small>straining in the litter box</div>
+          <div class="quote" style="font-size:18px">Your vet asked you to book a visit if it was still there. Today is Nov 11.</div>
+          <div class="caveat">Culprit doesn't count this one, so it can't tell if Pixel is still straining. Only you can.</div>
+          <div class="safety">Pixel's other alerts keep running. <b>Straining with little or nothing coming means call today.</b><span class="lk">Signs that mean call today ›</span></div>
+          <div class="grow"></div>
+          <div class="ans">
+            <div class="btn">Book a visit</div>
+            <div class="btn ghost">I've called</div>
+            <div class="btn ghost">It's stopped</div>
+            <div class="link" style="text-align:center;min-height:44px;display:flex;align-items:center;justify-content:center">Decide later</div>
+          </div>
         </div></div>
-        <div class="opt-cap"><span class="k">11 · Home on the date <span class="tag cur">ruled</span></span><p>The same door as a counted sign. Nothing on Home says what the note is about.</p></div>
+        <div class="opt-cap"><span class="k">16 · The typed instruction on its date <span class="tag cur">ruled</span></span><p>The primary button follows the action the vet chose. "You know how she's been" is gone: it soothed.</p></div>
       </div>
       <div class="opt">
-        <div class="phone"><div class="ph">
-          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Nov 4 visit</span><span class="ph-sp"></span></div>
-          <div class="quote">Your vet asked you to book a recheck if Pixel was still <em>"straining in the litter box"</em>. Today is that day.</div>
-          <div class="caveat">This isn't something Culprit counts. You know how she's been.</div>
-          <div class="grow"></div>
-          <div class="btn">Book a recheck</div>
-          <div class="btn-row"><div class="btn ghost">I've called</div><div class="btn ghost">Not needed</div></div>
-          <div class="link" style="text-align:center">Not yet</div>
+        <div class="phone scrim"><div class="ph">
+          <div class="sheet">
+            <div class="grab"></div>
+            <b style="font-size:15px">Signs that mean call today</b>
+            <div class="muted">For a cat. Call your vet now if you see:</div>
+            <ul>
+              <li>Breathing fast or open mouthed while resting</li>
+              <li>Straining or crying in the tray with little or nothing coming, going in and out (especially a male cat)</li>
+              <li>Can't stand or walk, collapsed, wobbling</li>
+              <li>A fit or seizure</li>
+              <li>Pale, white or blue gums</li>
+            </ul>
+            <div class="muted">And call today if she's subdued and not eating, vomiting or hiding, or hasn't eaten for a day.</div>
+            <div class="btn ghost">Close</div>
+          </div>
         </div></div>
-        <div class="opt-cap"><span class="k">12 · The instruction screen, typed <span class="tag cur">ruled</span></span><p>The owner's words in quotes, so it's clear they are the owner's version of the vet's. The primary button follows the action the vet chose.</p></div>
+        <div class="opt-cap"><span class="k">17 · Signs that mean call today <span class="tag cur">current</span></span><p>The same species list Noticed already carries, reused word for word. Static: it reads nothing and writes nothing.</p></div>
       </div>
-    </div>
-    <div class="note-grid">
-      <div class="note rose"><b>What typed text never does</b>It is never read by the Signal, Ask, the vet report or the notification, and never turned into a count. It deletes like any other record. A privacy review runs on the schema before it ships.</div>
-      <div class="note teal"><b>Why the action and date stay as choices</b>An open text box for the whole instruction would lose the date, and the date is the feature. The flexibility is in what to watch for; the "when" is always a real day.</div>
     </div>
   </section>
 
-  <!-- ============ 5. DECISION 4 ============ -->
+  <!-- ============ 5. EDGES ============ -->
   <section>
-    <p class="sec-eyebrow">5 · Decision 4 · open</p>
+    <p class="sec-eyebrow">5 · The edges</p>
+    <h2>Days that aren't the golden path</h2>
+    <div class="rail">
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:420px">
+          <div class="home-head"><span class="petname">Nyx</span><span class="avatar"></span></div>
+          <div class="signal"><div class="kick">This week</div><div class="big">Cough is about where it was.</div></div>
+          <div class="dline"><span class="tx">You called on Oct 8. What did the vet say?</span><span class="mk">›</span></div>
+          <div class="muted">The Sep 16 note waits in Vet visits under Waiting on you, and takes this line tomorrow.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">18 · Same day as a call follow up <span class="tag cur">current</span></span><p>One line under the Signal, ever. The older question shows first; the other waits a day in Vet visits.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:420px">
+          <div class="home-head"><span class="petname">Nyx</span><span class="avatar"></span></div>
+          <div class="signal"><div class="kick">This week</div><div class="big">Vomiting is about where it was last week.</div></div>
+          <div class="dline"><span class="tx">2 notes from Nyx's Sep 16 visit</span><span class="mk">›</span></div>
+          <div class="muted">One line and one notification for both. The screen lists them in date order.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">19 · Two instructions, one date <span class="tag cur">current</span></span><p>Counts as the day's one nudge, not two.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:420px">
+          <div class="ph-nav"><span class="ph-back">‹ Visit</span><span class="ph-navt">Anything to watch for?</span><span class="ph-sp"></span></div>
+          <div class="readback">If Nyx's cough is still there on Oct 10, call the vet.<small>Oct 10 · the day after prednisolone's last dose</small></div>
+          <div class="card"><div class="toggle"><span>Remind me on Oct 10<small>Notifications are off for Culprit. Turn them on in Settings to get this one.</small></span><span class="sw"></span></div></div>
+          <div class="link">Open Settings</div>
+          <div class="muted">Without the reminder, the line still appears on Home on Oct 10.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">20 · Reminder with notifications off <span class="tag cur">current</span></span><p>The toggle can't lie: it shows off, says why, and says what still happens.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:420px">
+          <div class="ph-nav"><span class="ph-back">‹ Visit</span><span class="ph-navt">Anything to watch for?</span><span class="ph-sp"></span></div>
+          <div class="readback">If Nyx's cough is still there on Sep 30, call the vet.<small>Sep 30 has passed · it shows on Home today</small></div>
+          <div class="muted">Entered a week after the visit. The count still starts the day after the visit, so coughs logged in between are counted.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">21 · A date already passed <span class="tag cur">current</span></span><p>Allowed. The line appears on Home straight away.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:420px">
+          <div class="switchnote">Showing Pixel. Juniper is one tap away.</div>
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Nov 4 visit</span><span class="ph-sp"></span></div>
+          <div class="typed"><small>You noted</small>straining in the litter box</div>
+          <div class="muted">Opened from the notification while Juniper was on screen. The note only ever appears on Pixel's Home and names Pixel.</div>
+          <div class="caveat">In a shared litter box, a pile you find is logged to the cat on screen. Counts for found signs can include the other cat's.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">22 · Two cats <span class="tag cur">current</span></span><p>The notification switches pets with the shipped disclosure. Counted signs that are found rather than seen carry the shared space limit.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 6. DECISION 4 ============ -->
+  <section>
+    <p class="sec-eyebrow">6 · Decision 4 · for you</p>
     <h2>"When the course ends", if the course changes</h2>
-    <p class="sec-lede">The owner picks <b>When prednisolone ends</b> and the app stores Oct 10. Then life happens: the vet stops the course early for side effects, or extends it by phone. Which date should the door use?</p>
-    <div class="explain">
-      <div><h3>Case 1 · stopped early</h3><p>The owner marks prednisolone <b>Stopped on Oct 2</b>. The vet's question ("is the cough still there after the course?") is now due on Oct 3, not Oct 10.</p></div>
-      <div><h3>Case 2 · extended</h3><p>The vet adds two weeks by phone; the course now ends <b>Oct 24</b>. The vet's question is now due Oct 25. But a late door is the risky direction.</p></div>
-    </div>
-    <div class="tl" role="img" aria-label="Timeline comparing when the door opens under each option">
+    <p class="sec-lede">The owner picks <b>When prednisolone ends</b>; the app stores the day after the last dose, Oct 10. Then the vet stops it early (last dose Oct 2) or extends it by phone (last dose Oct 24). The design pass sharpened this: the real risk is not opening early, it's <b>closing early</b>. On Oct 10 a cough can still be hidden by a steroid that's still running.</p>
+    <div class="tl" role="img" aria-label="Timeline comparing when the question opens under each option">
       <div class="tl-inner">
-        <div class="tl-scale"><div></div><div><span style="left:0%">Sep 16</span><span style="left:30%">Oct 2</span><span style="left:45%">Oct 10</span><span style="left:71%">Oct 24</span><span style="left:96%">Nov 1</span></div></div>
-        <div class="tl-row"><div class="tl-label">The course<span>planned to Oct 10</span></div><div class="tl-track"><div class="tl-bar" style="left:0%;width:45%"></div></div></div>
-        <div class="tl-row"><div class="tl-label">A · earlier only<span>recommended by Dr. Chen</span></div><div class="tl-track"><div class="tl-bar stopped" style="left:0%;width:30%"></div><span class="tl-pin door" style="left:31%">Stopped → Oct 3</span><span class="tl-pin door" style="left:46%;top:18px">Extended → Oct 10</span></div></div>
-        <div class="tl-row"><div class="tl-label">B · fixed at save<span>QA</span></div><div class="tl-track"><span class="tl-pin late" style="left:31%">Stopped → still Oct 10</span><span class="tl-pin door" style="left:46%;top:18px">Extended → Oct 10</span></div></div>
-        <div class="tl-row"><div class="tl-label">C · follows the course<span>Designer</span></div><div class="tl-track"><span class="tl-pin door" style="left:31%">Stopped → Oct 3</span><span class="tl-pin dim" style="left:72%;top:18px">Extended → Oct 25</span></div></div>
+        <div class="tl-scale"><div></div><div><span style="left:0%">Sep 16</span><span style="left:30%">Oct 3</span><span style="left:45%">Oct 10</span><span style="left:73%">Oct 25</span><span style="left:96%">Nov 1</span></div></div>
+        <div class="tl-row"><div class="tl-label">The course<span>planned to end Oct 9</span></div><div class="tl-track"><div class="tl-bar" style="left:0%;width:44%"></div></div></div>
+        <div class="tl-row"><div class="tl-label">A + no early close<span>recommended</span></div><div class="tl-track"><span class="tl-pin door" style="left:30%">Stopped → Oct 3</span><span class="tl-pin door" style="left:46%;top:18px">Extended → opens Oct 10, can't close before Oct 25</span></div></div>
+        <div class="tl-row"><div class="tl-label">A as round 1 drew it<span>earlier only</span></div><div class="tl-track"><span class="tl-pin door" style="left:30%">Stopped → Oct 3</span><span class="tl-pin late" style="left:46%;top:18px">Extended → Oct 10, closable while still on pred</span></div></div>
+        <div class="tl-row"><div class="tl-label">C · follows the course<span>both ways</span></div><div class="tl-track"><span class="tl-pin door" style="left:30%">Stopped → Oct 3</span><span class="tl-pin dim" style="left:74%;top:18px">Extended → Oct 25</span></div></div>
+      </div>
+    </div>
+    <div class="rail">
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:440px">
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Sep 16 visit</span><span class="ph-sp"></span></div>
+          <div class="quote" style="font-size:18px">Your vet asked you to call if Nyx's cough was still there when the prednisolone ended. <em>The course now runs to Oct 24.</em></div>
+          <div class="count"><div class="n">Was due Oct 10 · moved later by the course</div><div class="cov">Prednisolone extended on Oct 6</div></div>
+          <div class="safety"><b>If Nyx is worse, don't wait.</b> Call your vet today.</div>
+          <div class="grow"></div>
+          <div class="ans"><div class="btn">Ask me on Oct 25</div><div class="btn ghost">I've called</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">A + no early close, extended <span class="tag rec">recommended</span></span><p>Opens on the planned day, tells the truth about the extension, and offers only answers that don't close the vet's question early.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:440px">
+          <div class="ph-nav"><span class="ph-back">‹ Visits</span><span class="ph-navt"></span><span class="ph-back">⋯</span></div>
+          <div class="ph-h">Sep 16 · Riverside</div>
+          <div class="ph-sec">What your vet asked you to watch</div>
+          <div class="card"><div class="prow"><span class="l">Cough · call if still there<span class="muted" style="display:block;font-weight:400">on Oct 3 · moved from Oct 10, prednisolone stopped Oct 2</span></span><span class="r">›</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">Any option, stopped early <span class="tag cur">current</span></span><p>A moved date always says where it moved from and why, on the visit page, the Watching row and the instruction screen.</p></div>
       </div>
     </div>
     <div class="note-grid">
-      <div class="note teal"><b>A · moves earlier, never later <span class="tag cur">team default · current</span></b>A stop pulls the door forward. An extension leaves it on Oct 10, so the owner may be asked a little early. Early is the safe mistake. The visit page always shows the current date and the owner can change it.</div>
-      <div class="note rose"><b>B · fixed at save</b>Simplest, and matches an existing rule that a link never moves a date. But a course stopped on Oct 2 leaves the vet's question unasked for eight days.</div>
-      <div class="note amber"><b>C · follows both ways</b>Always "right" if the course record is right. An extension logged by mistake, or a course never marked ended, pushes the door late or forever.</div>
+      <div class="note teal"><b>A + no early close · recommended</b>Opens early rather than late. While the course is still running, only "I've called" or "Ask me on {the day after the last dose}" are offered, so nothing closes the vet's question while the steroid could be hiding the cough.</div>
+      <div class="note rose"><b>A as drawn in round 1</b>Opens on Oct 10 for an extended course, and "The cough has stopped" could close it while she's still on full strength pred.</div>
+      <div class="note amber"><b>C · follows both ways</b>Always matches the course record. A wrong extension, or a course never marked ended, makes it late or never.</div>
     </div>
-    <p class="ask"><b>To react to:</b> the team builds A unless you say otherwise. Is asking a little early acceptable to you, or would you rather the date follow the course exactly (C)?</p>
+    <p class="ask"><b>Deciding:</b> A + no early close (recommended), A as round 1 drew it, or C.</p>
+  </section>
+
+  <!-- ============ 7. DECIDE LATER ============ -->
+  <section>
+    <p class="sec-eyebrow">7 · For you · a persona conflict</p>
+    <h2>Should "Decide later" bring the line back once?</h2>
+    <p class="sec-lede">Frame 15 is drawn as Jordan wants it: "Decide later" moves the instruction to Waiting on you, and Home never asks again. Dr. Chen disagrees. An owner who taps it has, in effect, said the sign may still be there.</p>
+    <div class="conf">
+      <p><b>Dr. Chen:</b> on a call instruction, the line should come back once more the next morning, on Home only, then never again. An owner who isn't sure the cough has gone has to be asked once more.</p>
+      <p><b>Jordan:</b> a second ask is a nag. Once is the whole point; I'll find it in Vet visits.</p>
+      <p><b>PM decision needed:</b> one more ask the next morning, or never again? It should match how the shipped "What did the vet say?" follow up behaves (open question Q18, CUL-1597), so the two lines on Home act the same way.</p>
+    </div>
+  </section>
+
+  <!-- ============ 8. TITLE ============ -->
+  <section>
+    <p class="sec-eyebrow">8 · For you · better than the rule</p>
+    <h2>The notification's title</h2>
+    <p class="sec-lede">You ruled "a vet visit follow up notification". The shipped follow up after a call uses the app's name as its title. Two different titles for two follow ups is a small inconsistency on the lock screen.</p>
+    <div class="rail">
+      <div class="opt">
+        <div class="phone lock"><div class="ph" style="min-height:300px">
+          <div class="notif" style="margin-top:40px"><div class="top"><span><i class="appic"></i>CULPRIT</span><span>now</span></div><b>Vet visit follow up</b>A note about Nyx for today.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">As ruled</span><p>Says what kind of note it is before the owner opens it.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone lock"><div class="ph" style="min-height:300px">
+          <div class="notif" style="margin-top:40px"><div class="top"><span><i class="appic"></i>CULPRIT</span><span>now</span></div><b>Culprit</b>A note about Nyx for today.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">Matched to the shipped follow up <span class="tag rec">team lean</span></span><p>One shape for every follow up, and one fewer hint about health on a shared screen.</p></div>
+      </div>
+    </div>
   </section>
 
   <section>
-    <p class="sec-eyebrow">6 · Out of v1</p>
+    <p class="sec-eyebrow">9 · Out of v1</p>
     <h2>What this round deliberately leaves out</h2>
     <div class="note-grid">
-      <div class="note"><b>"If it gets worse" or "more than twice a day"</b>A condition the owner judges every day, not a date. The app's existing safety warnings cover the dangerous end.</div>
-      <div class="note"><b>Reading the discharge sheet</b>No AI or photo reading of the vet's notes in v1. A later version could suggest the row from a photo, with the owner confirming.</div>
-      <div class="note"><b>The vet report</b>The instruction stays off the report and out of Ask for now. "You asked us to watch the cough; here is the log since" is a strong later candidate.</div>
-      <div class="note"><b>Medication or ER instructions</b>"Stop the pred if…" or "go to the ER if…" are never modelled. A dated ER instruction would mean "wait until Tuesday".</div>
+      <div class="note"><b>Pausing "worth booking a visit"</b>Deferred to CUL-2732, with your lean that it has to pause.</div>
+      <div class="note"><b>"If it gets worse" or "more than twice a day"</b>A condition the owner judges every day. The fixed "don't wait" line and the call today signs stand in for it.</div>
+      <div class="note"><b>Reading the discharge sheet</b>No AI or photo reading of the vet's notes in v1.</div>
+      <div class="note"><b>The vet report and Ask</b>Neither reads the instruction or the typed text in v1.</div>
+      <div class="note"><b>Medication or ER instructions</b>"Stop the pred if…" and "go to the ER if…" are never modelled.</div>
     </div>
   </section>
 
-  <p class="foot">Mock round 2, exploratory, supersedes round 1 (commit cab1d63), for <b>CUL-2731</b>. Source of truth: <code>docs/culprit-vet-instructions-mockups.html</code>. The decision briefs are on the issue. Every count shown is illustrative. Pausing the booking ask is deferred to CUL-2732.</p>
+  <p class="foot">Mock round 2, exploratory, supersedes round 1 (commit cab1d63). For <b>CUL-2731</b>. Source of truth: <code>docs/culprit-vet-instructions-mockups.html</code>. The design pass behind it: <code>docs/vet-instructions-critique-2026-11.md</code>. Every count shown is illustrative.</p>
 </div>
