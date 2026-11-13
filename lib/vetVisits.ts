@@ -933,6 +933,72 @@ export async function readVisitPrefill(petId: string): Promise<VisitPrefill> {
   };
 }
 
+// ── The appointments-changed signal (CUL-2727, vet visit reminders §3.4) ─────────
+//
+// Every local write that can move a reminder (book, edit or cancel an appointment, log a
+// visit or edit its date, which moves the report window a reminder names) announces itself here, and `hooks/useVetReminders.ts` re-plans the
+// schedule. A plain listener set rather than an import of the scheduler, so this model
+// file never pulls `expo-notifications` in and the reminder stays a consumer of it.
+// Called only AFTER a write has landed; a listener's throw never reaches the writer.
+
+type AppointmentsChangedListener = () => void;
+const appointmentsChangedListeners = new Set<AppointmentsChangedListener>();
+
+/** Subscribe to local appointment writes. Returns the unsubscribe. */
+export function onAppointmentsChanged(listener: AppointmentsChangedListener): () => void {
+  appointmentsChangedListeners.add(listener);
+  return () => {
+    appointmentsChangedListeners.delete(listener);
+  };
+}
+
+function appointmentsChanged(): void {
+  for (const listener of appointmentsChangedListeners) {
+    try {
+      listener();
+    } catch (e) {
+      console.warn('[vetVisits] appointments-changed listener failed:', e);
+    }
+  }
+}
+
+// ── The reminder planner's read (CUL-2727, §3.1) ─────────────────────────────────
+
+export interface ReminderInputs {
+  /** Every live appointment, every pet: not deleted, not cancelled, not logged. */
+  appointments: LocalVetAppointment[];
+  /** Each pet's live `visited_at` days, for the report window's first day only — a
+   *  BOUNDARY passed to `latestVisitBefore`, never a count (the visitReaders rule). */
+  visitDaysByPet: Map<string, string[]>;
+}
+
+/**
+ * What the vet visit reminder planner (`lib/vetReminders.ts`) needs, read once.
+ * Account-wide by design: the pref is account-wide (§5) and the local database holds
+ * one account. THROWS on a failed read, so a read error is never mistaken for "no
+ * appointments" (the scheduler leaves the schedule as it was and the next trigger retries).
+ */
+export async function readReminderInputs(): Promise<ReminderInputs> {
+  const db = getDb();
+  const appointments = await db.getAllAsync<LocalVetAppointment>(
+    `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments WHERE ${LIVE_APPOINTMENT_SQL}`,
+    [],
+  );
+  const visitDaysByPet = new Map<string, string[]>();
+  if (appointments.length === 0) return { appointments, visitDaysByPet };
+  const visits = await db.getAllAsync<{ pet_id: string; visited_at: string | null }>(
+    'SELECT pet_id, visited_at FROM vet_visits WHERE deleted_at IS NULL',
+    [],
+  );
+  for (const v of visits) {
+    if (typeof v.visited_at !== 'string') continue;
+    const days = visitDaysByPet.get(v.pet_id);
+    if (days) days.push(v.visited_at);
+    else visitDaysByPet.set(v.pet_id, [v.visited_at]);
+  }
+  return { appointments, visitDaysByPet };
+}
+
 // ── Writes (local-first; the queue pushes) ──────────────────────────────────────
 
 export interface BookAppointmentInput {
@@ -972,6 +1038,7 @@ export async function bookVetAppointment(input: BookAppointmentInput): Promise<s
       nowIso,
     ],
   );
+  appointmentsChanged();
   return id;
 }
 
@@ -1016,6 +1083,8 @@ export async function logVetVisit(input: LogVisitInput): Promise<string> {
       nowIso,
     ],
   );
+  // A new visit moves the reminder body's report window start (§4).
+  appointmentsChanged();
   return id;
 }
 
@@ -1377,7 +1446,7 @@ export async function cancelVetAppointment(
   );
   if (res.changes === 0) {
     throw new Error(`vet_appointments ${appointmentId}: cancel matched no row`);
-  }
+  }  appointmentsChanged();
 }
 
 /**
@@ -1557,7 +1626,7 @@ export async function updateAppointmentDetails(
   );
   if (res.changes === 0) {
     throw new Error(`updateAppointmentDetails: no live appointment row matched id ${appointmentId}`);
-  }
+  }  appointmentsChanged();
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -1889,6 +1958,7 @@ export async function logVisitFromAppointment(input: VisitFromAppointmentInput):
     }
   });
 
+  appointmentsChanged();
   return id;
 }
 
@@ -1936,7 +2006,8 @@ export async function updateVisitDetails(visitId: string, patch: VisitDetailsPat
   );
   if (res.changes === 0) {
     throw new Error(`updateVisitDetails: no visit row matched id ${visitId}`);
-  }
+  }  // A visit's date is the reminder body's report window start (§4).
+  appointmentsChanged();
 }
 
 // ── The three link writers (provenance only — a link never moves a number) ──────

@@ -95,7 +95,11 @@ export function useNotificationScheduling(): void {
     // (B-672's anchor) when present. The dedup above still keys on the RAW delivery
     // time; these params are read by the screen's anchor + the offer's classifier.
     router.push(
-      { pathname: decision.routeTo, params: notificationRouteParams(firedAtMs) } as never,
+      {
+        pathname: decision.routeTo,
+        // CUL-2727: a vet visit reminder's validated appointment id rides beside the marker.
+        params: { ...decision.routeParams, ...notificationRouteParams(firedAtMs) },
+      } as never,
     );
   }, []);
 

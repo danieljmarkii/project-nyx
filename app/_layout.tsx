@@ -44,6 +44,7 @@ import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { useWidgetSnapshots } from '../hooks/useWidgetSnapshots';
 import { useNotificationScheduling } from '../hooks/useNotificationScheduling';
 import { useFollowUpNotificationSync } from '../hooks/useFollowUps';
+import { useVetReminderSync } from '../hooks/useVetReminders';
 import { useAppActive } from '../hooks/useAppActive';
 import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { hydrateBetaOptIns } from '../lib/betaFeatures';
@@ -120,6 +121,10 @@ function RootLayoutTree() {
   // Engines v3 PR-36: the follow-up's question after "I've called", reconciled the same way
   // (each foreground and hydration tick). Off unless engines_v3_en14 and the owner's switch.
   useFollowUpNotificationSync();
+  // CUL-2727: the vet visit reminders (three days before at 6pm, and the morning of),
+  // reconciled the same way plus on every local appointment write. Off until the owner
+  // turns the category on (PR-04), so until then it only ever cancels.
+  useVetReminderSync();
 
   // B-329: load the server-flippable app_config flags on start, then refresh on
   // every foreground (a PM flag flip reaches the client without a reinstall). Values

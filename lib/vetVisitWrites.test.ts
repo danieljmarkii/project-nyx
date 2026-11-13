@@ -58,7 +58,12 @@ import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import {
   askedSummary,
+  bookVetAppointment,
+  cancelVetAppointment,
+  logVetVisit,
   logVisitFromAppointment,
+  onAppointmentsChanged,
+  readReminderInputs,
   parseAppointmentQuestions,
   readActiveCourses,
   readAppointmentById,
@@ -770,5 +775,72 @@ describe('linkCourseToVisit / linkTrialToVisit', () => {
     expect(await linkTrialToVisit('t1', 'visit-sep')).toBe(false);
     expect(mockDb.prepare('SELECT * FROM diet_trials WHERE id = ?').all('t1')[0].vet_visit_id)
       .toBe('visit-march');
+  });
+});
+
+// ── CUL-2727 — the reminder's read and the appointments-changed signal ──────────
+
+describe('readReminderInputs (vet visit reminders §3.1)', () => {
+  it('returns live appointments only, with each pet\'s live visit days', async () => {
+    seedAppointment();
+    seedAppointment({ id: 'cancelled', cancelled_at: '2026-09-02T00:00:00.000Z' });
+    seedAppointment({ id: 'deleted', deleted_at: '2026-09-02T00:00:00.000Z' });
+    seedVisit('v-old', { visited_at: '2026-06-01' });
+    seedVisit('v-gone', { visited_at: '2026-08-01', deleted_at: '2026-08-02T00:00:00.000Z' });
+    seedAppointment({ id: 'logged', vet_visit_id: 'v-old' });
+    const out = await readReminderInputs();
+    expect(out.appointments.map((a) => a.id)).toEqual([APPT]);
+    expect(out.visitDaysByPet.get(PET)).toEqual(['2026-06-01']);
+  });
+
+  it('skips the visit read when nothing is booked', async () => {
+    seedVisit('v-old', { visited_at: '2026-06-01' });
+    expect((await readReminderInputs()).visitDaysByPet.size).toBe(0);
+  });
+});
+
+describe('onAppointmentsChanged (vet visit reminders §3.4)', () => {
+  it('fires once after each write that can move a reminder, and never for a failed one', async () => {
+    const heard = jest.fn();
+    const off = onAppointmentsChanged(heard);
+    try {
+      const id = await bookVetAppointment({ petId: PET, scheduledAt: '2026-11-16T15:30:00.000Z' });
+      expect(heard).toHaveBeenCalledTimes(1);
+      await updateAppointmentDetails(id, { scheduledAt: '2026-11-17T15:30:00.000Z' });
+      expect(heard).toHaveBeenCalledTimes(2);
+      await cancelVetAppointment(id);
+      expect(heard).toHaveBeenCalledTimes(3);
+      await expect(updateAppointmentDetails(id, { reason: 'x' })).rejects.toThrow();
+      expect(heard).toHaveBeenCalledTimes(3);
+      seedAppointment();
+      const visitId = await logVisitFromAppointment({
+        appointment: { id: APPT, pet_id: PET, clinic_name: null, vet_name: null, reason: null, notes_draft: null },
+        visitedAt: '2026-09-16',
+      });
+      expect(heard).toHaveBeenCalledTimes(4);
+      await updateVisitDetails(visitId, { visitedAt: '2026-09-15' });
+      expect(heard).toHaveBeenCalledTimes(5);
+      await logVetVisit({ petId: PET, visitedAt: '2026-10-01' });
+      expect(heard).toHaveBeenCalledTimes(6);
+    } finally {
+      off();
+    }
+    await bookVetAppointment({ petId: PET, scheduledAt: '2026-11-18T15:30:00.000Z' });
+    expect(heard).toHaveBeenCalledTimes(6);
+  });
+
+  it('a throwing listener never reaches the writer', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const off = onAppointmentsChanged(() => {
+      throw new Error('listener');
+    });
+    try {
+      await expect(bookVetAppointment({ petId: PET, scheduledAt: '2026-11-16T15:30:00.000Z' })).resolves.toEqual(
+        expect.any(String),
+      );
+    } finally {
+      off();
+      warn.mockRestore();
+    }
   });
 });
