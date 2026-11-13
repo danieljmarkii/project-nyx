@@ -132,10 +132,11 @@
 
   <div class="ledger">
     <div class="ledger-h">Rulings on this page (PM, 2026-11-13)</div>
+    <div class="ledger-row"><span class="k">↻</span><span><b>Round 1 reactions, same day.</b> The evening before slot: kept. The pet's name: always shown in vet reminders, so the "Use Nyx's name" row no longer moves and section 3 drops it. Time zone: a clarification, no change (the phone's own clock; spec §3.2). Remind me only for booked visits: already so.</span></div>
     <div class="ledger-row"><span class="k">R1</span><span>Three days before at 6pm, and 8am the morning of, or two hours before an earlier visit; a visit before 8am moves it to 7pm the evening before. Section 2.</span></div>
     <div class="ledger-row"><span class="k">R2</span><span>A booking inside a window skips the reminder it already missed.</span></div>
     <div class="ledger-row"><span class="k">R3</span><span>Off by default, with a one tap Remind me on the booking sheet. Section 4.</span></div>
-    <div class="ledger-row"><span class="k">R4</span><span>The lock screen shows the day and time; the name only under the existing name choice. Section 1.</span></div>
+    <div class="ledger-row"><span class="k">R4</span><span>The lock screen shows the day, the time and the pet's name, always (PM reaction, below). Section 1.</span></div>
     <div class="ledger-row"><span class="k">R6</span><span>The morning reminder carries the report line and opens Get ready (unseats CUL-2302 1a's day before reminder and its composer link).</span></div>
   </div>
 
@@ -153,7 +154,7 @@
               <div class="t">Nyx sees the vet Monday</div>
               <div class="b">Monday, Nov 16 at 10:30. A few minutes in Get ready now, while there's time to weigh in or call ahead.</div></div></div>
         </div>
-        <div class="cap"><b>Ahead, named.</b> Single pet with the name choice on. Neutral title: <i>Vet visit Monday</i>. No time booked: the body drops "at 10:30". Tap opens Get ready.</div>
+        <div class="cap"><b>Ahead.</b> Always named. No time booked: the body drops "at 10:30". Tap opens Get ready.</div>
       </div>
 
       <div class="frame">
@@ -161,10 +162,10 @@
           <div class="clock">8:00</div><div class="date">Monday, November 16</div>
           <div class="notif"><div class="icon"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5a5.5 5.5 0 1 0 2.5 6.6A4.5 4.5 0 0 1 11 2.5z" fill="#ECEAF6"/></svg></div>
             <div><div class="top"><span>CULPRIT</span><span>now</span></div>
-              <div class="t">Vet visit today at 10:30</div>
+              <div class="t">Nyx sees the vet today at 10:30</div>
               <div class="b">Make a report of Sep 16 to today to take along.</div></div></div>
         </div>
-        <div class="cap"><b>Day of, neutral.</b> Carries CUL-2302's line: it names the window, never a finished file. "Sep 16" is the composer's own default start. No earlier visit: <i>Make a report to take along.</i> Tap opens Get ready, whose one button is Send the vet report.</div>
+        <div class="cap"><b>Day of.</b> Carries CUL-2302's line: it names the window, never a finished file. "Sep 16" is the composer's own default start. No earlier visit: <i>Make a report to take along.</i> Tap opens Get ready, whose one button is Send the vet report.</div>
       </div>
 
       <div class="frame">
@@ -172,7 +173,7 @@
           <div class="clock">7:00</div><div class="date">Sunday, November 15</div>
           <div class="notif"><div class="icon"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5a5.5 5.5 0 1 0 2.5 6.6A4.5 4.5 0 0 1 11 2.5z" fill="#ECEAF6"/></svg></div>
             <div><div class="top"><span>CULPRIT</span><span>now</span></div>
-              <div class="t">Vet visit tomorrow at 7:30</div>
+              <div class="t">Nyx sees the vet tomorrow at 7:30</div>
               <div class="b">Make a report of Sep 16 to today to take along.</div></div></div>
         </div>
         <div class="cap"><b>An early visit.</b> At 7:30, two hours before is 5:30, before the 6:00 floor, so the day-of reminder moves to 7pm the night before.</div>
@@ -183,10 +184,10 @@
           <div class="clock">6:00</div><div class="date">Friday, November 13</div>
           <div class="notif"><div class="icon"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5a5.5 5.5 0 1 0 2.5 6.6A4.5 4.5 0 0 1 11 2.5z" fill="#ECEAF6"/></svg></div>
             <div><div class="top"><span>CULPRIT</span><span>now</span></div>
-              <div class="t">Two vet visits Monday</div>
+              <div class="t">Nyx and Pip see the vet Monday</div>
               <div class="b">Tap to get ready for both.</div></div></div>
         </div>
-        <div class="cap"><b>Two pets, one day.</b> "Also for Pip" books two rows; they collapse to one notification per kind per day. Never names either pet. Tap opens the Vet visits list.</div>
+        <div class="cap"><b>Two pets, one day.</b> "Also for Pip" books two rows; they collapse to one notification per kind per day. Names both. Tap opens the Vet visits list.</div>
       </div>
     </div>
     <div class="never">
@@ -236,7 +237,7 @@
   <section>
     <span class="tag">current</span>
     <h2>3 · Notification Center</h2>
-    <p class="sec-lede">A second row beside the daily summary, off by default, with the same three honest states. The name choice moves to sit below both, and its sublabel stops naming 9pm.</p>
+    <p class="sec-lede">A second row beside the daily summary, off by default, with the same three honest states. The daily summary's name row stays where it is.</p>
     <div class="row">
       <div class="frame">
         <div class="phone">
@@ -244,8 +245,6 @@
           <div class="group-h">What Culprit sends</div>
           <div class="setrow" data-kit="SettingsRow · existing"><div><div class="l">Daily summary</div><div class="s">A calm look back at the day's record, around 9:00 each night</div></div><span class="sw on"></span></div>
           <div class="setrow new" data-kit="SettingsRow · new row"><div><div class="l">Vet visit reminders</div><div class="s">Three days before at 6pm, and the morning of</div></div><span class="sw"></span></div>
-          <div class="group-h">On the lock screen</div>
-          <div class="setrow" data-kit="SettingsRow · moved"><div><div class="l">Use Nyx's name in notifications</div><div class="s">Shows her name on the lock screen. Off keeps them neutral.</div></div><span class="sw"></span></div>
           <div style="height:18px"></div>
         </div>
         <div class="cap"><b>Granted, reminders off.</b> Dashed outline marks what is new. Turning it on here runs the same primer as Remind me.</div>

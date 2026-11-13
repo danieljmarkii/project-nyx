@@ -1,6 +1,6 @@
 # Nyx Vet Visit Reminders: Requirements
 
-**Version:** 1.0 | **Last Updated:** 2026-11-13 | **Status:** BUILD-READY for rows 02 and 03; row 04 opens with a build ready mock round (§8).
+**Version:** 1.1 (round 1 reactions: the pet is always named) | **Last Updated:** 2026-11-13 | **Status:** BUILD-READY for rows 02 and 03; row 04 opens with a build ready mock round (§8).
 **Issue:** [CUL-253](https://linear.app/projectnyx/issue/CUL-253) (parent). **Project:** *Vet visit reminders* (team Culprit; the run order lives on the project page).
 **Read with:** `docs/nyx-notification-foundation-requirements.md` (D1 to D4, G1 to G6, the primitive this extends), `docs/nyx-notifications-v2-requirements.md` §5 (NV-G7, the new category checklist), `docs/nyx-vet-visits-requirements.md` §4.1 (booking, the Home strip, Get ready), `docs/nyx-vet-report-v2-requirements.md` §11.3 (the report line this carries), `docs/research/2026-11-engine-lessons-from-nyx-round-3.md` §4 (why the early reminder exists).
 **Mock:** `docs/culprit-vet-reminder-mockups.html` (round 1, exploratory; published at https://claude.ai/artifact/1SUq7hGD8hmNobbJLtgfr9, and round 2 republishes to the same URL).
@@ -14,11 +14,11 @@
 | **R1** | When reminders fire | **Two per appointment.** *Ahead:* three local days before the appointment's date, at **18:00** device local. *Day of:* **08:00**, or **two hours before** the appointment when that is earlier; an appointment too early for that (before 08:00) moves the day-of reminder to **19:00 the evening before**. A booking with no time takes 08:00. Replaces the spec's earlier T-2d / T-1d (`nyx-vet-visits-requirements.md` §4.1, CUL-253's 2026-09-10 comment). |
 | **R2** | A booking made inside a reminder's window | **The reminder it already missed is skipped**, never fired late. Booked two days out: day-of only. Booked the morning of after its fire time: none. |
 | **R3** | On or off by default | **Off**, like every category (G6). A one-tap **Remind me** on the booking sheet is the owner intent that may spend the primer and the OS prompt. Which categories *should* default on is a portfolio question, filed separately (§10). |
-| **R4** | What the lock screen says | **The day and time only.** The pet's name only when the account's existing name choice is on (single pet, migration 058). **Never** the reason, the clinic, the vet, a question or anything from the record. |
+| **R4** | What the lock screen says | **The day, the time and the pet's name.** The name always (PM reaction, 2026-11-13: a pet's name is not sensitive, and in a two pet home it says which visit). **Never** the reason, the clinic, the vet, a question or anything from the record. |
 | **R5** | Scope | **Reminders only.** The deep dive's prep findings (a weigh-in nudge, re-asking the lifestyle card, the vet's conditional instruction) are later work (§10). |
 | **R6** | Where the report line lives | **The day-of reminder carries it and opens Get ready**, whose one primary is already *Send the vet report*. **Unseats [CUL-2302](https://linear.app/projectnyx/issue/CUL-2302) ruling 1a (2026-11-02)** on two points: the line rode a T-1d reminder (none exists now) and deep-linked to the composer anchored to the visit (no composer anchor is built; Get ready is the door). The line's words and its never-a-finished-file rule carry over unchanged. |
 
-**Team calls inside the rulings (reversible, logged on CUL-253):** two hours as the lead; 06:00 as the earliest a day-of reminder fires before it moves to the evening before; 19:00 for that evening slot; one notification per kind per day per account (§3.3); the name choice shared with the daily summary rather than a second toggle (§4).
+**Team calls inside the rulings (reversible, logged on CUL-253):** two hours as the lead; 06:00 as the earliest a day-of reminder fires before it moves to the evening before; 19:00 for that evening slot; one notification per kind per day per account (§3.3).
 
 ---
 
@@ -38,7 +38,7 @@ No medication reminder and no wording that implies one (G4; "bring her meds" is 
 
 ## 3. Timing: the planner (`lib/vetReminders.ts`, pure)
 
-A pure function from *(now, live appointments, the pref, the name choice, pet count)* to the notifications that should be scheduled. All math in device local wall clock (the foundation's §3 rule: DST and travel are free); `scheduled_at` is parsed, never compared as text (C-40); the no-time sentinel is read through `appointmentTimeKnown` (`lib/vetVisits.ts`), never re-derived.
+A pure function from *(now, live appointments, the pref, pet names)* to the notifications that should be scheduled. All math in device local wall clock (the foundation's §3 rule: DST and travel are free); `scheduled_at` is parsed, never compared as text (C-40); the no-time sentinel is read through `appointmentTimeKnown` (`lib/vetVisits.ts`), never re-derived.
 
 ### 3.1 Which appointments count
 `deleted_at` null, `cancelled_at` null, `vet_visit_id` null (a logged visit is over), and the appointment's local day is today or later.
@@ -52,8 +52,10 @@ A pure function from *(now, live appointments, the pref, the name choice, pet co
 
 Worked: 10:30 → 08:00. 09:30 → 07:30. 08:15 → 06:15. 07:30 → 19:00 the evening before. 18:00 → 08:00. No time → 08:00.
 
+**No stored timezone, by design.** `scheduled_at` is an instant; the phone converts it to its own zone at plan time, and every foreground re-plans, so DST and travel need nothing. The one visible effect: a visit booked in Chicago and checked in New York shows its time in New York's clock, which is the correct local time.
+
 ### 3.3 Collapse: one per kind per day per account
-Two appointments whose instants for the same kind fall on the same local day produce **one** notification (D3's one-per-account lineage; the "Also for {other pet}" booking makes this the common two-pet case). Its tap opens the **Vet visits list**, not a single Get ready. Its copy is the neutral multi-visit shape (§4).
+Two appointments whose instants for the same kind fall on the same local day produce **one** notification (D3's one-per-account lineage; the "Also for {other pet}" booking makes this the common two-pet case). Its tap opens the **Vet visits list**, not a single Get ready. Its copy names both pets (§4).
 
 ### 3.4 When it runs (reconcile)
 The schedule is rebuilt by diffing the planner's output against what the OS holds, through the foundation's `reconcileSchedules` and its content signature, at: app foreground (existing); every local write to `vet_appointments` (book, edit, cancel, delete, link to a logged visit); after a sync pull that touches `vet_appointments`; a pref or name-choice change; a permission change. Sign out already cancels everything (`wipeLocalSession`).
@@ -70,13 +72,13 @@ The body is computed at schedule time and recomputed on every reconcile; it stat
 
 | Kind | Title | Body |
 |---|---|---|
-| ahead, one visit | *Vet visit Monday* · named: *Nyx sees the vet Monday* | *Monday, Nov 16 at 10:30. A few minutes in Get ready now, while there's time to weigh in or call ahead.* (no time: drop "at 10:30") |
-| day of, one visit | *Vet visit today at 10:30* · named: *Nyx sees the vet today at 10:30* | *Make a report of Sep 16 to today to take along.* |
-| day of, evening before | *Vet visit tomorrow at 7:30* · named: *Nyx sees the vet tomorrow at 7:30* | same body |
-| collapsed (two visits) | *Two vet visits Monday* / *today* | *Tap to get ready for both.* |
+| ahead, one visit | *Nyx sees the vet Monday* | *Monday, Nov 16 at 10:30. A few minutes in Get ready now, while there's time to weigh in or call ahead.* (no time: drop "at 10:30") |
+| day of, one visit | *Nyx sees the vet today at 10:30* | *Make a report of Sep 16 to today to take along.* |
+| day of, evening before | *Nyx sees the vet tomorrow at 7:30* | same body |
+| collapsed (two visits) | *Nyx and Pip see the vet Monday* / *today* | *Tap to get ready for both.* |
 
 - **The report window's start** is the date the composer would start from (the report's scope cascade, rung 1: the most recent visit strictly before today). Read it from the composer's own default, never re-derive it. No earlier visit → *Make a report to take along.* Never names a finished file (CUL-2302).
-- **The name** follows the account's existing choice (the `use_pet_name` column on the account-wide row, single pet only). Its settings sublabel stops saying "at 9pm" and the row sits where both categories can see it.
+- **The name** is always the pet's current name, read at plan time, so a rename lands at the next reconcile. The daily summary's name choice (`use_pet_name`, migration 058) is untouched and governs only that notification; whether to retire it is a separate question.
 - **Forbidden:** the reason, the clinic, a question, any count, "don't forget", "bring her meds", an exclamation mark, any urgency that grows as the day nears.
 
 ---
@@ -104,7 +106,7 @@ One additive migration: `notification_preferences.category` CHECK gains `'vet_vi
 5. Editing the time or day moves both; cancelling, deleting or logging the visit removes both; turning the category off removes all; sign out removes all.
 6. Two pets booked the same day produce one ahead and one day-of notification, which open the Vet visits list.
 7. Tapping a single-visit reminder opens that appointment's Get ready, behind the auth gate, from a cold start.
-8. No lock-screen string carries the reason, clinic, vet, a question or a count; the name shows only under the existing choice.
+8. No lock-screen string carries the reason, clinic, vet, a question or a count; the pet's name is the only record detail.
 9. Planner tests pass under the non-UTC CI zones and across a DST change, including a DST day on which local midnight does not exist (the no-time sentinel).
 10. `pm-feature-review`, `nyx-voice` and a device QA pass with a real booked appointment.
 
