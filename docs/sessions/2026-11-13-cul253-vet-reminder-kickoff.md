@@ -16,7 +16,7 @@ The PM picked up an August backlog row (appointment reminders) and asked the pro
 
 ## Rulings (PM)
 
-R1 timing: three days before at 6pm, and 8am the morning of, or two hours before an earlier visit; a visit before 8am moves it to 7pm the evening before. R2: a booking inside a window skips the missed reminder. R3: off by default, with Remind me on the booking sheet; the general question of which notifications default on became CUL-2730. R4: day and time only on the lock screen. R5: reminders only. R6: the morning reminder carries the report line and opens Get ready (unseats CUL-2302 1a; noted there).
+R1 timing: three days before at 6pm, and 8am the morning of, or two hours before an earlier visit; a visit before 8am moves it to 7pm the evening before. R2: a booking inside a window skips the missed reminder. R3: off by default, with Remind me on the booking sheet; the general question of which notifications default on became CUL-2730. R4: day, time and the pet's name on the lock screen (the name always, after the round 1 reaction; the daily summary's name toggle is untouched). R5: reminders only. R6: the morning reminder carries the report line and opens Get ready (unseats CUL-2302 1a; noted there).
 
 ## What shipped
 
