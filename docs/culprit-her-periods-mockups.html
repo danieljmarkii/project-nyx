@@ -1,0 +1,412 @@
+<title>Culprit Her Periods</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="exploratory">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* Layout: one proposal, top to bottom in the order a reader meets it: the idea, the
+     flexible table, the vet report, the owner's path (card, Patterns, a period's sheet),
+     a new pet on months, motion, and the few calls left.
+     Studio layer is theme-aware. Phone and paper frames use FIXED app tokens from
+     constants/theme.ts, so the app looks like the app in either page theme. */
+  :root {
+    --canvas:#F3F6F5; --panel:#FFFFFF; --ink:#15201E; --ink-soft:#4A5754; --ink-faint:#7B8884;
+    --line:#DFE7E4; --line-soft:#ECF1EF; --accent:#067F6F; --accent-tint:#E2F3EF;
+    --amber:#8F6200; --amber-tint:#F5ECD6;
+    --shadow:0 1px 2px rgba(20,40,36,.05), 0 10px 32px rgba(20,40,36,.07);
+    --display:"Newsreader", Georgia, serif;
+    --body:"Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas:#0B1110; --panel:#121A18; --ink:#E8EFEC; --ink-soft:#A6B3AF; --ink-faint:#6E7B77;
+      --line:#24302D; --line-soft:#1A2321; --accent:#3AD6BD; --accent-tint:#11302B;
+      --amber:#E0AA47; --amber-tint:#2D2511;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 36px rgba(0,0,0,.42); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas:#0B1110; --panel:#121A18; --ink:#E8EFEC; --ink-soft:#A6B3AF; --ink-faint:#6E7B77;
+    --line:#24302D; --line-soft:#1A2321; --accent:#3AD6BD; --accent-tint:#11302B;
+    --amber:#E0AA47; --amber-tint:#2D2511;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 36px rgba(0,0,0,.42); color-scheme: dark;
+  }
+  /* App tokens (constants/theme.ts), fixed in every page theme. */
+  .phone, .paper, .sheet {
+    --a-surface:#FFFFFF; --a-subtle:#F5F5F5; --a-text:#0A0A0A; --a-text2:#525252; --a-text3:#737373;
+    --a-border:#EAEAEA; --a-accent:#00C2A8; --a-accent-soft:#86D9CC; --a-accent-ink:#0B7B6C; --a-accent-light:#E0FBF7;
+    --a-action:#3F35A0; --a-night:#13112E; --a-night-el:#251F57; --a-on-night:#ECEAF6; --a-on-night-muted:#A6A2CE;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--canvas); color:var(--ink); font-family:var(--body); line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1180px; margin:0 auto; padding-block:clamp(28px,6vw,72px) 104px;
+    padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+  .eyebrow { font-size:12px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin:0 0 14px; }
+  h1 { font-family:var(--display); font-size:clamp(32px,5.6vw,54px); line-height:1.03; letter-spacing:-.02em; font-weight:500; margin:0 0 18px; text-wrap:balance; max-width:20ch; }
+  .lede { font-size:clamp(16px,2vw,18.5px); color:var(--ink-soft); max-width:66ch; margin:0; }
+  b { color:var(--ink); font-weight:600; }
+
+  .ruled { margin-top:30px; display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+  .ruled div { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; font-size:13.5px; color:var(--ink-soft); min-width:0; }
+  .ruled .k { display:block; font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); margin-bottom:2px; }
+
+  section { margin-top:76px; }
+  .sec-n { font-family:var(--display); font-size:15px; color:var(--ink-faint); margin:0 0 4px; font-variant-numeric:tabular-nums; }
+  h2 { font-family:var(--display); font-size:clamp(25px,3.4vw,34px); font-weight:500; letter-spacing:-.01em; margin:0 0 8px; text-wrap:balance; }
+  .sec-lede { color:var(--ink-soft); max-width:70ch; margin:0 0 28px; }
+  .tag { display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:999px; background:var(--accent-tint); color:var(--accent); }
+  .tag.later { background:var(--amber-tint); color:var(--amber); }
+
+  .row { display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start; }
+  .frame { display:flex; flex-direction:column; gap:12px; width:300px; max-width:100%; min-width:0; }
+  .frame.wide { width:760px; }
+  .frame.mid { width:520px; }
+  .cap { font-size:13px; color:var(--ink-soft); }
+  .design { font-size:12.5px; color:var(--ink-soft); border-left:2px solid var(--line); padding-left:10px; }
+  .design b { font-weight:600; }
+
+  /* Registry diagram */
+  .reg { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; }
+  .regcard { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; min-width:0; box-shadow:var(--shadow); }
+  .regcard h3 { font-size:14px; margin:0 0 8px; font-weight:600; }
+  .regcard ul { margin:0; padding-left:18px; color:var(--ink-soft); font-size:13.5px; display:grid; gap:6px; }
+  .pill { display:inline-block; font-size:12px; padding:2px 9px; border-radius:999px; border:1px solid var(--line); color:var(--ink); margin:2px 4px 2px 0; }
+  .pill.on { background:var(--accent-tint); border-color:transparent; color:var(--accent); font-weight:600; }
+  .pill.off { color:var(--ink-faint); text-decoration:line-through; }
+
+  /* Paper: the vet report */
+  .paper { background:var(--a-surface); color:var(--a-text); border:1px solid var(--line); border-radius:4px; box-shadow:var(--shadow); padding:30px 32px 24px; font-size:12.5px; }
+  .paper .kicker { font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--a-text3); font-weight:600; }
+  .paper h3 { font-family:var(--display); font-weight:500; font-size:23px; letter-spacing:-.01em; margin:4px 0 2px; }
+  .paper .sub { color:var(--a-text2); margin:0 0 16px; }
+  .tbl-scroll { overflow-x:auto; }
+  table.periods { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+  .periods.full { min-width:660px; }
+  .periods.lean { min-width:420px; }
+  .periods th { text-align:left; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--a-text3); font-weight:600; padding:0 10px 8px 0; border-bottom:1px solid var(--a-text); vertical-align:bottom; }
+  .periods th.grp { border-bottom:0; padding-bottom:2px; text-align:center; color:var(--a-text2); }
+  .periods td { padding:10px 10px 10px 0; border-bottom:1px solid var(--a-border); vertical-align:middle; }
+  .periods .num { text-align:right; }
+  .periods .pname { font-weight:500; font-size:13px; }
+  .periods .dates { color:var(--a-text3); font-size:11px; }
+  .periods tr.now td { background:var(--a-accent-light); }
+  .periods tr.now td:first-child { box-shadow:inset 3px 0 0 var(--a-accent-ink); padding-left:8px; }
+  .periods .muted { color:var(--a-text3); font-style:italic; }
+  .periods .sep { border-left:1px solid var(--a-border); padding-left:10px; }
+  .rate { display:flex; align-items:center; gap:8px; }
+  .rate .v { min-width:2.4em; text-align:right; }
+  .scale { display:flex; justify-content:space-between; font-size:9px; color:var(--a-text3); width:96px; }
+  .paper .foot { margin-top:14px; color:var(--a-text2); font-size:11px; display:grid; gap:3px; max-width:78ch; }
+
+  /* Phone */
+  .phone { width:300px; max-width:100%; border-radius:38px; background:var(--a-surface); border:1px solid var(--line); box-shadow:var(--shadow); overflow:hidden; color:var(--a-text); font-size:15px; position:relative; }
+  .status { display:flex; justify-content:space-between; padding:12px 24px 0; font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .ph-head { padding:12px 18px 4px; display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .ph-head .t { font-family:var(--display); font-size:26px; font-weight:500; letter-spacing:-.01em; }
+  .ph-head .pet { font-size:13px; color:var(--a-text3); }
+  .ph-sec { padding:16px 18px 6px; font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--a-text3); font-weight:600; display:flex; justify-content:space-between; align-items:baseline; }
+  .ph-sec span { text-transform:none; letter-spacing:0; font-weight:400; }
+  .ghost { margin:4px 18px; height:52px; border-radius:14px; background:var(--a-subtle); display:grid; place-items:center; color:var(--a-text3); font-size:11.5px; }
+  .chips { display:flex; gap:6px; padding:2px 18px 4px; flex-wrap:wrap; }
+  .chip { font-size:12.5px; padding:5px 11px; border-radius:999px; border:1px solid var(--a-border); color:var(--a-text2); }
+  .chip.sel { background:var(--a-accent-light); color:var(--a-accent-ink); border-color:transparent; font-weight:600; }
+  .panel { margin:4px 14px 14px; border:1px solid var(--a-border); border-radius:18px; padding:4px 14px 10px; }
+  .prow { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:6px; padding:11px 0; border-top:1px solid var(--a-border); align-items:baseline; }
+  .prow:first-child { border-top:0; }
+  .prow .n { font-size:14px; font-weight:500; min-width:0; }
+  .prow .n small { display:block; font-weight:400; font-size:11.5px; color:var(--a-text3); margin-top:1px; }
+  .prow .r { font-size:14px; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; font-weight:500; }
+  .prow .r small { display:block; font-size:11px; color:var(--a-text3); font-weight:400; }
+  .prow .b { grid-column:1 / -1; }
+  .prow.now .n .now { margin-left:6px; font-size:9.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--a-accent-ink); background:var(--a-accent-light); padding:2px 6px; border-radius:999px; vertical-align:2px; }
+  .more { display:flex; justify-content:space-between; align-items:center; color:var(--a-action); font-size:13.5px; font-weight:500; padding:10px 0 2px; border-top:1px solid var(--a-border); }
+  .tabbar { display:flex; justify-content:space-around; border-top:1px solid var(--a-border); padding:9px 0 18px; font-size:10px; color:var(--a-text3); }
+  .tabbar .on { color:var(--a-accent-ink); font-weight:600; }
+
+  .signal { margin:10px 14px; border-radius:20px; background:radial-gradient(130% 90% at 20% 0%, var(--a-night-el), var(--a-night) 70%); color:var(--a-on-night); padding:16px 16px 6px; }
+  .signal .k { font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--a-on-night-muted); }
+  .signal .h { font-family:var(--display); font-size:21px; line-height:1.22; margin:6px 0 6px; }
+  .signal .b { font-size:13px; color:var(--a-on-night-muted); }
+  .signal .door { margin-top:14px; display:flex; justify-content:space-between; font-size:13.5px; font-weight:500; color:#fff; border-top:1px solid rgba(255,255,255,.14); padding:11px 0 10px; }
+
+  /* Sheet over a dimmed screen */
+  .sheetwrap { width:300px; max-width:100%; border-radius:38px; overflow:hidden; background:rgba(10,10,10,.38); border:1px solid var(--line); box-shadow:var(--shadow); padding-top:150px; }
+  .sheet { background:var(--a-surface); color:var(--a-text); border-radius:22px 22px 0 0; padding:8px 20px 26px; }
+  .grab { width:36px; height:5px; border-radius:3px; background:var(--a-border); margin:0 auto 14px; }
+  .sheet h4 { font-family:var(--display); font-weight:500; font-size:22px; margin:0; }
+  .sheet .d { color:var(--a-text3); font-size:12.5px; margin:2px 0 14px; }
+  .big { display:flex; align-items:baseline; gap:8px; font-variant-numeric:tabular-nums; }
+  .big .x { font-size:34px; font-weight:500; letter-spacing:-.02em; }
+  .big .u { color:var(--a-text2); font-size:14px; }
+  .sline { font-size:13.5px; color:var(--a-text2); padding:10px 0; border-top:1px solid var(--a-border); }
+  .sline b { color:var(--a-text); }
+  .sheet .fine { font-size:11.5px; color:var(--a-text3); margin-top:8px; }
+
+  /* Motion demo */
+  .demo { display:flex; flex-wrap:wrap; gap:28px; align-items:center; }
+  button.play { font:inherit; font-size:14px; font-weight:600; color:var(--accent); background:var(--accent-tint); border:0; border-radius:999px; padding:9px 16px; cursor:pointer; }
+  .tick { display:inline-block; }
+  .fill { transition:width 420ms cubic-bezier(.2,.8,.2,1); }
+  .tick.bump { animation:bump 420ms cubic-bezier(.2,.8,.2,1); }
+  @keyframes bump { 0% { transform:translateY(0); } 35% { transform:translateY(-3px); } 100% { transform:translateY(0); } }
+  @media (prefers-reduced-motion: reduce) { .fill { transition:none; } .tick.bump { animation:none; } }
+  .mrules { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin-top:22px; }
+  .mrules div { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 14px; font-size:13.5px; color:var(--ink-soft); min-width:0; }
+
+  .rq { margin-top:14px; border:1px solid var(--line); border-radius:14px; background:var(--panel); padding:16px 18px; display:grid; gap:6px; }
+  .rq .q { font-weight:600; }
+  .rq .o { color:var(--ink-soft); font-size:14px; }
+  .rq .o b { color:var(--accent); }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Her periods · v3 · CUL-2734</p>
+  <h1>How often, across the stretches of her life</h1>
+  <p class="lede">A table of episodes by period. A period starts and ends on something the app recorded: a diet trial, a medicine course, a change of main food, or the calendar month when nothing else has happened yet. It is a baseline the owner and the vet come back to, never an alarm. Nyx's rows are her real record; Cooper's are example data.</p>
+
+  <div class="ruled" aria-label="Already ruled">
+    <div><span class="k">Ruled</span>Describe before detecting. Slow creep is separate research (CUL-2735).</div>
+    <div><span class="k">Ruled</span>The owner's view lives on Patterns, with a door from the vomiting card.</div>
+    <div><span class="k">Ruled</span>Columns fit the pet. Nothing past the core four is fixed.</div>
+    <div><span class="k">Ruled</span>Vomiting first; every other sign follows through the same lens (CUL-2738).</div>
+    <div><span class="k">Ruled</span>No trial, course or food change yet: calendar months.</div>
+  </div>
+
+  <!-- 01 -->
+  <section>
+    <p class="sec-n">01</p>
+    <h2>Four columns always; the rest earn their place</h2>
+    <p class="sec-lede">Every table opens with the same four: <b>period, days, episodes, a week</b>. After them come <b>breakdowns</b>, each with a rule for when it can be read. A breakdown shows when the pet's record can answer it, and only then. It is never chosen because its numbers look interesting, so the table can't go fishing.</p>
+    <div class="reg">
+      <div class="regcard">
+        <h3>Vomiting's breakdowns</h3>
+        <ul>
+          <li><b>After a meal.</b> Within 30 minutes of a meal, or later. Shows when at least one period has meals logged that can time it. A period with food down all day says "unreadable".</li>
+          <li><b>Seen or found.</b> Shows when any episode in the range was found rather than seen. Found ones stay inside the total.</li>
+          <li>Each sign brings its own list (CUL-2738): stool might break down by consistency, cough by time of day.</li>
+        </ul>
+      </div>
+      <div class="regcard">
+        <h3>Nyx: a cat, meal fed, two cat home</h3>
+        <p class="cap" style="margin:0 0 8px">Both breakdowns can be read, so both show.</p>
+        <span class="pill on">After a meal</span><span class="pill on">Seen or found</span>
+      </div>
+      <div class="regcard">
+        <h3>Cooper: a dog, food down all day, only pet</h3>
+        <p class="cap" style="margin:0 0 8px">Timing can't be read and every episode was seen, so the table stays at four columns.</p>
+        <span class="pill off">After a meal</span><span class="pill off">Seen or found</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 -->
+  <section>
+    <p class="sec-n">02</p>
+    <h2>On the vet report</h2>
+    <p class="sec-lede">Oldest first, the way a history is read. The current period is marked by a rule and a tint. A period under 14 days draws an <b>open bar</b>: its rate is real and its days are shown, but it rests on less.</p>
+    <div class="row">
+      <div class="frame wide" data-kit="new: PeriodsTable (report)">
+        <div class="paper">
+          <div class="kicker">Vomiting by period</div>
+          <h3>Nyx, May 16 to Nov 11</h3>
+          <p class="sub">Each period starts and ends on the diet trial, a medicine course or a food change on record.</p>
+          <div class="tbl-scroll">
+            <table class="periods full">
+              <thead>
+                <tr><th></th><th></th><th></th><th></th><th class="grp sep" colspan="2">After a meal</th><th class="grp sep">Seen or found</th></tr>
+                <tr><th>Period</th><th class="num">Days</th><th class="num">Episodes</th><th><div>A week</div><div class="scale"><span>0</span><span>2</span><span>4</span></div></th><th class="num sep">Within 30 min</th><th class="num">Later</th><th class="num sep">Found</th></tr>
+              </thead>
+              <tbody id="nyx-report"></tbody>
+            </table>
+          </div>
+          <div class="foot">
+            <span>A week: episodes ÷ days × 7. Open bar: a period under 14 days. Found episodes were discovered, not seen, and are inside the total.</span>
+            <span>Before the trial, dry food was down all day, so timing after meals cannot be read for that period.</span>
+          </div>
+        </div>
+        <p class="design"><b>Design pass.</b> A ruled header and a heavier top rule, as in a lab table. Breakdown groups get a label and a hairline divider so they read as optional additions to the core four. The scale prints once in the header; each bar keeps its number beside it (Principle 8). No sentence interprets the table.</p>
+      </div>
+
+      <div class="frame mid">
+        <div class="paper">
+          <div class="kicker">Vomiting by period</div>
+          <h3>Cooper, Sep 1 to Nov 13</h3>
+          <p class="sub">No diet trial, medicine course or food change on record, so periods are calendar months.</p>
+          <div class="tbl-scroll">
+            <table class="periods lean">
+              <thead><tr><th>Period</th><th class="num">Days</th><th class="num">Episodes</th><th><div>A week</div><div class="scale"><span>0</span><span>2</span><span>4</span></div></th></tr></thead>
+              <tbody id="cooper-report"></tbody>
+            </table>
+          </div>
+        </div>
+        <p class="cap"><b>Cooper, example data.</b> The same table with no breakdowns. The month in progress is an open bar until it reaches 14 days.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 -->
+  <section>
+    <p class="sec-n">03</p>
+    <h2>The owner's path</h2>
+    <p class="sec-lede">A quiet Home shows nothing new. When the vomiting card is up, it has a door. The door lands on Patterns, scrolled to the periods. The panel follows the month's symptom chips, so changing the sign changes both. Tapping a period opens its sheet, which is where the breakdowns live for the owner.</p>
+    <div class="row">
+      <div class="frame">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span>●●●</span></div>
+          <div class="ph-head"><span class="t">Today</span><span class="pet">Nyx</span></div>
+          <div class="signal">
+            <div class="k">Signal</div>
+            <div class="h">Vomiting, 6 times in the last two weeks</div>
+            <div class="b">A sketch of the vomiting card; its wording does not change.</div>
+            <div class="door" data-kit="new: CardDoor · colorOnNight"><span>See Nyx's periods</span><span aria-hidden="true">›</span></div>
+          </div>
+          <div class="ghost">the rest of Home, unchanged</div>
+          <div class="tabbar"><span class="on">Today</span><span>History</span><span>Foods</span><span>Profile</span></div>
+        </div>
+        <p class="cap"><b>The door.</b> It shows only on a vomiting card that has already fired.</p>
+        <p class="design"><b>Design pass.</b> One row inside the card, divided by a hairline, set in the card's own ink. It is a way through, so it gets a chevron and no button chrome.</p>
+      </div>
+
+      <div class="frame">
+        <div class="phone" data-kit="new: PeriodsPanel · Card, colorSurface">
+          <div class="status"><span>9:41</span><span>●●●</span></div>
+          <div class="ph-head"><span class="t">Patterns</span><span class="pet">Nyx</span></div>
+          <div class="chips" aria-label="Symptom"><span class="chip sel">Vomiting</span><span class="chip">Cough</span></div>
+          <div class="ph-sec">November</div>
+          <div class="ghost">the month, as today</div>
+          <div class="ph-sec">Periods <span>a week</span></div>
+          <div class="panel"><div id="owner-rows"></div><div class="more"><span>Every period</span><span aria-hidden="true">›</span></div></div>
+        </div>
+        <p class="cap"><b>Patterns.</b> Newest first, the last four periods, then "Every period". The chips are the month's existing lens: they only offer signs this pet has had.</p>
+        <p class="design"><b>Design pass.</b> Rate is the row's headline; "6 in 14 days" sits under it so the denominator is never hidden. The bar spans the row on a shared 0 to 4 scale. "Now" is a small tag in accent ink, not a colour change for the whole row.</p>
+      </div>
+
+      <div class="frame">
+        <div class="sheetwrap">
+          <div class="sheet" data-kit="Sheet · colorSurface">
+            <div class="grab"></div>
+            <h4>Rabbit again</h4>
+            <p class="d">Oct 29 to Nov 11 · 13.5 days · now</p>
+            <div class="big"><span class="x">3.1</span><span class="u">a week · 6 episodes</span></div>
+            <div class="sline"><b>4</b> within 30 minutes of a meal, <b>2</b> later.</div>
+            <div class="sline"><b>1</b> found rather than seen.</div>
+            <div class="sline">Rabbit trial, Jul 26 to Sep 20: <b>1.5</b> a week.</div>
+            <p class="fine">A period under 14 days rests on fewer days.</p>
+          </div>
+        </div>
+        <p class="cap"><b>A period's sheet.</b> The breakdowns as sentences, only the ones this pet has.</p>
+        <p class="design"><b>Design pass.</b> The comparison line names the last period on the same food. It is chosen by rule (same main food, most recent), never by whichever contrast is largest. Open question R-2.</p>
+      </div>
+
+      <div class="frame">
+        <div class="phone">
+          <div class="status"><span>9:41</span><span>●●●</span></div>
+          <div class="ph-head"><span class="t">Patterns</span><span class="pet">Cooper</span></div>
+          <div class="ph-sec">November</div>
+          <div class="ghost">the month, as today</div>
+          <div class="ph-sec">Periods <span>a week</span></div>
+          <div class="panel"><div id="cooper-rows"></div></div>
+        </div>
+        <p class="cap"><b>A new pet, on months.</b> Example data. When Cooper starts a trial, the next period begins there and the months before it stay as they are.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 -->
+  <section>
+    <p class="sec-n">04</p>
+    <h2>Motion: the record moving, and nothing else</h2>
+    <p class="sec-lede">The table holds still. The one thing that moves is the record itself: log a vomit, come back, and the current period's count ticks and its bar extends. Press play to see it.</p>
+    <div class="demo">
+      <div class="phone" style="width:300px">
+        <div class="ph-sec">Periods <span>a week</span></div>
+        <div class="panel"><div class="prow now">
+          <div class="n">Rabbit again <span class="now">Now</span><small>Oct 29 to Nov 11</small></div>
+          <div class="r"><span class="tick" id="m-rate">3.1</span> a week<small><span class="tick" id="m-count">6</span> in 13.5 days</small></div>
+          <div class="b"><svg width="244" height="6" viewBox="0 0 244 6" aria-hidden="true"><rect width="244" height="6" rx="3" fill="#F5F5F5"/><rect id="m-bar" class="fill" width="0" height="6" rx="3" fill="#0B7B6C" stroke="#0B7B6C" stroke-width="1.2" fill-opacity="0"/></svg></div>
+        </div></div>
+      </div>
+      <button class="play" id="play" type="button">Play: one more vomit logged</button>
+    </div>
+    <div class="mrules">
+      <div><b>Still on open.</b> Bars don't grow in when the page loads. The data didn't change; drawing it as if it did would be noise.</div>
+      <div><b>The tick.</b> A new episode bumps the count and extends the current bar once, 420 ms, the app's one curve. Older periods never move.</div>
+      <div><b>Changing the sign.</b> A 160 ms crossfade of the rows, no slide. The chips stay put.</div>
+      <div><b>Reduce Motion.</b> Every change is instant. Nothing is lost by it.</div>
+    </div>
+  </section>
+
+  <!-- 05 -->
+  <section>
+    <p class="sec-n">05</p>
+    <h2>Calls left</h2>
+    <div class="rq"><div class="q">R-1 · Short periods (team call, yours to reverse)</div><div class="o">Count always. Under 7 days, no rate. From 7 to 14 days, the rate prints with an open bar. <b>Why:</b> Dr. Chen needs the current period readable early, and the Data Scientist needs a reader to see that it rests on fewer days. Hiding the rate under 14 days, as round 1 drew it, hid the row that mattered most.</div></div>
+    <div class="rq"><div class="q">R-2 · The comparison line on a period's sheet</div><div class="o">Name the last period on the same main food · no comparison line at all. <b>Recommend naming it</b>, chosen by that fixed rule only. The Designer flags the risk: it's the one sentence in the feature that sets two numbers side by side for the owner.</div></div>
+    <div class="rq"><div class="q">R-3 · How many periods on Patterns before "Every period"</div><div class="o">Four · all of them. <b>Recommend four</b>: about one screen on a 390 pt phone, keeping the panel inside the fold.</div></div>
+  </section>
+</div>
+
+<script>
+  // Nyx: her real record from the round 3 deep dive (PR #1512). Oldest first; the last is current.
+  const NYX = [
+    { n:"Before the trial", d:"May 16 to Jul 25", days:71.0, e:28, w:"at least 9", l:"unreadable", f:12 },
+    { n:"Rabbit trial", d:"Jul 26 to Sep 20", days:57.0, e:12, w:9, l:3, f:4 },
+    { n:"Rabbit, on prednisolone", d:"Sep 21 to Oct 10", days:20.0, e:4, w:3, l:1, f:0 },
+    { n:"Rabbit, off prednisolone", d:"Oct 11 to Oct 18", days:7.6, e:2, w:2, l:0, f:0 },
+    { n:"Chicken", d:"Oct 18 to Oct 28", days:10.4, e:5, w:1, l:4, f:0 },
+    { n:"Rabbit again", d:"Oct 29 to Nov 11", days:13.5, e:6, w:4, l:2, f:1, now:true },
+  ];
+  // Cooper: example data, months.
+  const COOPER = [
+    { n:"September", d:"Sep 1 to 30", days:30, e:3 },
+    { n:"October", d:"Oct 1 to 31", days:31, e:5 },
+    { n:"November", d:"Nov 1 to 13", days:13, e:4, now:true },
+  ];
+  const MAX = 4, SHORT = 14, NONE = 7;
+  const rate = p => p.e / p.days * 7;
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const bar = (p, wid, h) => {
+    if (p.days < NONE) return "";
+    const w = Math.max(3, Math.round(rate(p) / MAX * wid));
+    const open = p.days < SHORT;
+    const col = p.now ? "#0B7B6C" : "#86D9CC";
+    return `<svg width="${wid}" height="${h}" viewBox="0 0 ${wid} ${h}" aria-hidden="true"><rect width="${wid}" height="${h}" rx="${h/2}" fill="#F5F5F5"/><rect x=".6" y=".6" width="${w-1.2}" height="${h-1.2}" rx="${(h-1.2)/2}" fill="${col}" fill-opacity="${open ? 0 : 1}" stroke="${col}" stroke-width="1.2"/></svg>`;
+  };
+  const rateCell = p => p.days < NONE ? `<span class="muted">too short</span>` : `<div class="rate">${bar(p, 96, 7)}<span class="v">${rate(p).toFixed(1)}</span></div>`;
+
+  document.getElementById("nyx-report").innerHTML = NYX.map(p => `
+    <tr class="${p.now ? "now" : ""}">
+      <td><div class="pname">${esc(p.n)}</div><div class="dates">${esc(p.d)}</div></td>
+      <td class="num">${p.days.toFixed(1)}</td><td class="num">${p.e}</td><td>${rateCell(p)}</td>
+      <td class="num sep">${esc(p.w)}</td><td class="num ${p.l === "unreadable" ? "muted" : ""}">${esc(p.l)}</td>
+      <td class="num sep">${p.f}</td>
+    </tr>`).join("");
+  document.getElementById("cooper-report").innerHTML = COOPER.map(p => `
+    <tr class="${p.now ? "now" : ""}">
+      <td><div class="pname">${esc(p.n)}</div><div class="dates">${esc(p.d)}</div></td>
+      <td class="num">${p.days}</td><td class="num">${p.e}</td><td>${rateCell(p)}</td>
+    </tr>`).join("");
+
+  const ownerRow = p => {
+    const r = p.days < NONE ? `${p.e} episodes<small>too short for a rate</small>`
+                            : `${rate(p).toFixed(1)} a week<small>${p.e} in ${Number.isInteger(p.days) ? p.days : p.days.toFixed(1)} days</small>`;
+    return `<div class="prow ${p.now ? "now" : ""}"><div class="n">${esc(p.n)}${p.now ? '<span class="now">Now</span>' : ""}<small>${esc(p.d)}</small></div><div class="r">${r}</div><div class="b">${bar(p, 244, 6)}</div></div>`;
+  };
+  document.getElementById("owner-rows").innerHTML = NYX.slice(-4).reverse().map(ownerRow).join("");
+  document.getElementById("cooper-rows").innerHTML = COOPER.slice().reverse().map(ownerRow).join("");
+
+  // Motion demo: 6 → 7 episodes in the current period.
+  const mBar = document.getElementById("m-bar"), mRate = document.getElementById("m-rate"), mCount = document.getElementById("m-count");
+  const setBar = e => { const w = Math.round((e / 13.5 * 7) / MAX * 244); mBar.setAttribute("width", String(w)); mBar.style.width = w + "px"; };
+  setBar(6);
+  let state = 6;
+  document.getElementById("play").addEventListener("click", () => {
+    state = state === 6 ? 7 : 6;
+    mCount.textContent = String(state);
+    mRate.textContent = (state / 13.5 * 7).toFixed(1);
+    [mCount, mRate].forEach(el => { el.classList.remove("bump"); void el.getBoundingClientRect(); el.classList.add("bump"); });
+    setBar(state);
+    document.getElementById("play").textContent = state === 7 ? "Reset" : "Play: one more vomit logged";
+  });
+</script>
