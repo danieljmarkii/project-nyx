@@ -1,0 +1,322 @@
+<title>Culprit Vet Reminders</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="exploratory">
+<style>
+  /* Studio layer: theme-aware tokens (lifted from culprit-vet-visits-mockups.html so the
+     vet surfaces read as one system). Phone screens use FIXED app tokens from
+     constants/theme.ts, never these: the app looks like the app in any theme.
+     Layout: a ledger, then frames in rows of phones, each row with its rule beside it. */
+  :root {
+    --canvas:#F4F7F6; --panel:#FFFFFF; --ink:#16211F; --ink-soft:#4A5754; --ink-faint:#7B8884;
+    --line:#E2E9E6; --line-soft:#EDF2F0; --accent:#068A78; --accent-tint:#E4F4F1;
+    --amber:#9A6A00; --amber-tint:#F6EED9; --rose:#B8433B; --rose-tint:#F7E4E2;
+    --shadow:0 1px 2px rgba(20,40,36,.04), 0 8px 30px rgba(20,40,36,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+      --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+      --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+    --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+    --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4); color-scheme: dark;
+  }
+  /* App tokens (constants/theme.ts), fixed in every page theme. */
+  .phone, .lock {
+    --a-surface:#FFFFFF; --a-subtle:#F5F5F5; --a-text:#0A0A0A; --a-text2:#525252; --a-text3:#737373;
+    --a-border:#EAEAEA; --a-accent:#00C2A8; --a-accent-ink:#0B7B6C; --a-accent-light:#E0FBF7;
+    --a-action:#3F35A0; --a-night:#13112E; --a-night-el:#251F57; --a-on-night:#ECEAF6; --a-on-night-muted:#A6A2CE;
+    --a-disabled:#A3A3A3;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--canvas); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1120px; margin:0 auto; padding-block:clamp(28px,6vw,64px) 96px;
+    padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+  .eyebrow { font-size:12px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin:0 0 14px; }
+  h1 { font-family:"Newsreader",Georgia,serif; font-size:clamp(30px,5.4vw,48px); line-height:1.05; letter-spacing:-.02em; font-weight:500; margin:0 0 18px; text-wrap:balance; max-width:22ch; }
+  .lede { font-size:clamp(16px,2vw,18px); color:var(--ink-soft); max-width:68ch; margin:0; }
+  .lede b, .note b, .rule b { color:var(--ink); font-weight:600; }
+
+  .ledger { margin-top:28px; border:1px solid var(--line); border-radius:14px; background:var(--panel); box-shadow:var(--shadow); overflow:hidden; }
+  .ledger-h { padding:12px 18px; font-size:12px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-faint); border-bottom:1px solid var(--line-soft); }
+  .ledger-row { display:grid; grid-template-columns:44px minmax(0,1fr); gap:12px; padding:11px 18px; font-size:14px; color:var(--ink-soft); border-bottom:1px solid var(--line-soft); }
+  .ledger-row:last-child { border-bottom:0; }
+  .ledger-row .k { font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; }
+
+  section { margin-top:64px; }
+  h2 { font-family:"Newsreader",Georgia,serif; font-size:clamp(24px,3.4vw,32px); font-weight:500; letter-spacing:-.01em; margin:0 0 8px; text-wrap:balance; }
+  .sec-lede { color:var(--ink-soft); max-width:70ch; margin:0 0 26px; }
+  .tag { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:999px; background:var(--accent-tint); color:var(--accent); }
+  .tag.opt { background:var(--amber-tint); color:var(--amber); }
+
+  .row { display:flex; flex-wrap:wrap; gap:28px; align-items:flex-start; }
+  .frame { display:flex; flex-direction:column; gap:10px; width:300px; max-width:100%; }
+  .cap { font-size:13px; color:var(--ink-soft); }
+  .cap b { color:var(--ink); }
+
+  /* Lock screen */
+  .lock { width:300px; max-width:100%; border-radius:34px; padding:22px 12px 26px; color:var(--a-on-night);
+    background:radial-gradient(120% 70% at 30% 0%, var(--a-night-el), var(--a-night) 70%); box-shadow:var(--shadow); }
+  .lock .clock { text-align:center; font-size:58px; font-weight:300; letter-spacing:-.02em; line-height:1; margin:6px 0 2px; font-variant-numeric:tabular-nums; }
+  .lock .date { text-align:center; font-size:14px; color:var(--a-on-night-muted); margin-bottom:26px; }
+  .notif { background:rgba(255,255,255,.14); backdrop-filter:blur(12px); border-radius:18px; padding:11px 13px; display:grid; grid-template-columns:28px minmax(0,1fr); gap:10px; }
+  .notif + .notif { margin-top:8px; }
+  .notif .icon { width:28px; height:28px; border-radius:7px; background:var(--a-night-el); display:grid; place-items:center; }
+  .notif .top { display:flex; justify-content:space-between; gap:8px; font-size:11.5px; color:var(--a-on-night-muted); }
+  .notif .t { font-size:14px; font-weight:600; color:#fff; margin-top:1px; }
+  .notif .b { font-size:13.5px; color:var(--a-on-night); line-height:1.35; }
+
+  /* Phone (app screens) */
+  .phone { width:300px; max-width:100%; border-radius:34px; background:var(--a-surface); border:1px solid var(--line); box-shadow:var(--shadow); overflow:hidden; color:var(--a-text); font-size:15px; }
+  .ph-head { padding:16px 18px 10px; font-weight:600; font-size:17px; display:flex; align-items:center; gap:10px; }
+  .ph-head .back { color:var(--a-text3); font-weight:400; }
+  .group-h { padding:14px 18px 6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--a-text3); font-weight:600; }
+  .setrow { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:center; padding:12px 18px; border-top:1px solid var(--a-border); }
+  .setrow .l { font-size:15px; }
+  .setrow .s { font-size:13px; color:var(--a-text2); line-height:1.35; }
+  .sw { width:44px; height:26px; border-radius:13px; background:#E5E5E5; position:relative; flex:none; }
+  .sw::after { content:""; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+  .sw.on { background:var(--a-accent); }
+  .sw.on::after { left:21px; }
+  .sw.inert { opacity:.4; }
+  .new { outline:2px dashed var(--accent); outline-offset:-2px; border-radius:8px; }
+
+  .sheet { background:var(--a-subtle); padding-top:40px; }
+  .sheet-in { background:var(--a-surface); border-radius:18px 18px 0 0; padding:10px 18px 20px; box-shadow:0 -4px 20px rgba(0,0,0,.06); }
+  .grab { width:36px; height:5px; border-radius:3px; background:#D4D4D4; margin:0 auto 12px; }
+  .sh-t { font-family:"Newsreader",Georgia,serif; font-size:22px; margin:0 0 12px; }
+  .seg { display:grid; grid-template-columns:1fr 1fr; background:var(--a-subtle); border-radius:10px; padding:3px; font-size:13px; text-align:center; margin-bottom:12px; }
+  .seg span { padding:6px; border-radius:8px; color:var(--a-text2); }
+  .seg .on { background:var(--a-surface); color:var(--a-text); font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .field { border-bottom:1px solid var(--a-border); padding:10px 0; display:flex; justify-content:space-between; gap:12px; font-size:14px; }
+  .field .v { color:var(--a-text2); text-align:right; }
+  .remind { margin-top:14px; display:grid; grid-template-columns:22px minmax(0,1fr); gap:10px; align-items:start; padding:12px; border-radius:12px; border:1px solid var(--a-border); }
+  .remind .rt { font-weight:600; font-size:14.5px; color:var(--a-action); }
+  .remind .rs { font-size:13px; color:var(--a-text2); line-height:1.35; }
+  .remind.quiet { border-color:transparent; background:var(--a-accent-light); }
+  .remind.quiet .rt { color:var(--a-accent-ink); font-weight:500; font-size:13.5px; }
+  .remind.inert .rt { color:var(--a-disabled); }
+  .btn { margin-top:16px; background:var(--a-text); color:#fff; border-radius:12px; text-align:center; padding:13px; font-weight:600; font-size:15px; }
+  .link { color:var(--a-action); font-size:13px; font-weight:500; }
+
+  /* Timing diagram */
+  .timing { background:var(--panel); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); padding:18px; overflow-x:auto; }
+  .timing svg { display:block; min-width:640px; width:100%; height:auto; }
+  .timing text { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; fill:var(--ink-soft); font-size:12px; }
+  .timing .lab { fill:var(--ink); font-weight:600; font-size:12.5px; }
+  .timing .axis { stroke:var(--line); stroke-width:1; }
+  .timing .appt { fill:var(--ink); }
+  .timing .ahead { fill:var(--accent); }
+  .timing .dayof { fill:var(--amber); }
+  .timing .mv { fill:var(--rose); }
+  .legend { display:flex; flex-wrap:wrap; gap:16px; margin-top:12px; font-size:13px; color:var(--ink-soft); }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:-1px; }
+
+  .note { margin-top:18px; max-width:72ch; font-size:14.5px; color:var(--ink-soft); padding:14px 16px; border-left:3px solid var(--amber); background:var(--amber-tint); border-radius:0 10px 10px 0; }
+  .never { margin-top:18px; display:grid; gap:6px; font-size:14px; color:var(--ink-soft); max-width:72ch; }
+  .never div::before { content:"Never on the lock screen: "; color:var(--rose); font-weight:600; }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">CUL-253 · Round 1 · exploratory · 2026-11-13</p>
+  <h1>Vet visit reminders</h1>
+  <p class="lede">Two calm reminders per booked visit: one <b>three days before at 6pm</b>, while there is time to weigh her, log and call ahead, and one <b>the morning of</b>, carrying the report to take along. Off until the owner asks for them. Spec: <code>docs/nyx-vet-reminder-requirements.md</code>. Round 2 is the build ready round that row 04 opens with.</p>
+
+  <div class="ledger">
+    <div class="ledger-h">Rulings on this page (PM, 2026-11-13)</div>
+    <div class="ledger-row"><span class="k">↻</span><span><b>Round 1 reactions, same day.</b> The evening before slot: kept. The pet's name: always shown in vet reminders, so the "Use Nyx's name" row no longer moves and section 3 drops it. Time zone: a clarification, no change (the phone's own clock; spec §3.2). Remind me only for booked visits: already so.</span></div>
+    <div class="ledger-row"><span class="k">R1</span><span>Three days before at 6pm, and 8am the morning of, or two hours before an earlier visit; a visit before 8am moves it to 7pm the evening before. Section 2.</span></div>
+    <div class="ledger-row"><span class="k">R2</span><span>A booking inside a window skips the reminder it already missed.</span></div>
+    <div class="ledger-row"><span class="k">R3</span><span>Off by default, with a one tap Remind me on the booking sheet. Section 4.</span></div>
+    <div class="ledger-row"><span class="k">R4</span><span>The lock screen shows the day, the time and the pet's name, always (PM reaction, below). Section 1.</span></div>
+    <div class="ledger-row"><span class="k">R6</span><span>The morning reminder carries the report line and opens Get ready (unseats CUL-2302 1a's day before reminder and its composer link).</span></div>
+  </div>
+
+  <!-- 1. Lock screen -->
+  <section>
+    <span class="tag">current</span>
+    <h2>1 · On the lock screen</h2>
+    <p class="sec-lede">The owner's own booking and nothing from the record. Strings are direction for the round 2 <code>nyx-voice</code> pass.</p>
+    <div class="row">
+      <div class="frame">
+        <div class="lock" data-kit="new: VetReminder · ahead">
+          <div class="clock">6:00</div><div class="date">Friday, November 13</div>
+          <div class="notif"><div class="icon"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5a5.5 5.5 0 1 0 2.5 6.6A4.5 4.5 0 0 1 11 2.5z" fill="#ECEAF6"/></svg></div>
+            <div><div class="top"><span>CULPRIT</span><span>now</span></div>
+              <div class="t">Nyx sees the vet Monday</div>
+              <div class="b">Monday, Nov 16 at 10:30. A few minutes in Get ready now, while there's time to weigh in or call ahead.</div></div></div>
+        </div>
+        <div class="cap"><b>Ahead.</b> Always named. No time booked: the body drops "at 10:30". Tap opens Get ready.</div>
+      </div>
+
+      <div class="frame">
+        <div class="lock" data-kit="new: VetReminder · day of">
+          <div class="clock">8:00</div><div class="date">Monday, November 16</div>
+          <div class="notif"><div class="icon"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5a5.5 5.5 0 1 0 2.5 6.6A4.5 4.5 0 0 1 11 2.5z" fill="#ECEAF6"/></svg></div>
+            <div><div class="top"><span>CULPRIT</span><span>now</span></div>
+              <div class="t">Nyx sees the vet today at 10:30</div>
+              <div class="b">Make a report of Sep 16 to today to take along.</div></div></div>
+        </div>
+        <div class="cap"><b>Day of.</b> Carries CUL-2302's line: it names the window, never a finished file. "Sep 16" is the composer's own default start. No earlier visit: <i>Make a report to take along.</i> Tap opens Get ready, whose one button is Send the vet report.</div>
+      </div>
+
+      <div class="frame">
+        <div class="lock" data-kit="new: VetReminder · evening before">
+          <div class="clock">7:00</div><div class="date">Sunday, November 15</div>
+          <div class="notif"><div class="icon"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5a5.5 5.5 0 1 0 2.5 6.6A4.5 4.5 0 0 1 11 2.5z" fill="#ECEAF6"/></svg></div>
+            <div><div class="top"><span>CULPRIT</span><span>now</span></div>
+              <div class="t">Nyx sees the vet tomorrow at 7:30</div>
+              <div class="b">Make a report of Sep 16 to today to take along.</div></div></div>
+        </div>
+        <div class="cap"><b>An early visit.</b> At 7:30, two hours before is 5:30, before the 6:00 floor, so the day-of reminder moves to 7pm the night before.</div>
+      </div>
+
+      <div class="frame">
+        <div class="lock" data-kit="new: VetReminder · collapsed">
+          <div class="clock">6:00</div><div class="date">Friday, November 13</div>
+          <div class="notif"><div class="icon"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5a5.5 5.5 0 1 0 2.5 6.6A4.5 4.5 0 0 1 11 2.5z" fill="#ECEAF6"/></svg></div>
+            <div><div class="top"><span>CULPRIT</span><span>now</span></div>
+              <div class="t">Nyx and Pip see the vet Monday</div>
+              <div class="b">Tap to get ready for both.</div></div></div>
+        </div>
+        <div class="cap"><b>Two pets, one day.</b> "Also for Pip" books two rows; they collapse to one notification per kind per day. Names both. Tap opens the Vet visits list.</div>
+      </div>
+    </div>
+    <div class="never">
+      <div>the reason ("vomiting &amp; congestion"), the clinic, the vet, a question.</div>
+      <div>a count, "don't forget", "bring her meds", an exclamation mark.</div>
+    </div>
+  </section>
+
+  <!-- 2. Timing -->
+  <section>
+    <span class="tag">current</span>
+    <h2>2 · When each one fires</h2>
+    <p class="sec-lede">Device local wall clock, so daylight saving and travel cost nothing. Any instant already past when the visit is booked is skipped, never fired late.</p>
+    <div class="timing">
+      <svg viewBox="0 0 760 250" role="img" aria-label="Reminder times for four example appointments across the three days before and the day of">
+        <!-- x: day -3 18:00 at 150; day -1 00:00 at 300; day 0 00:00 at 440, 24h = 260px on day 0 (x = 440 + h*260/24) -->
+        <line class="axis" x1="120" y1="215" x2="740" y2="215"/>
+        <text x="150" y="234" text-anchor="middle">3 days before</text>
+        <text x="370" y="234" text-anchor="middle">evening before</text>
+        <text x="590" y="234" text-anchor="middle">the day</text>
+        <line class="axis" x1="300" y1="20" x2="300" y2="215" stroke-dasharray="3 4"/>
+        <line class="axis" x1="440" y1="20" x2="440" y2="215" stroke-dasharray="3 4"/>
+        <!-- rows -->
+        <text class="lab" x="0" y="44">Visit 10:30</text>
+        <circle class="ahead" cx="150" cy="40" r="6"/><circle class="dayof" cx="526.7" cy="40" r="6"/><rect class="appt" x="547.75" y="34" width="12" height="12" rx="2"/>
+        <text x="526.7" y="24" text-anchor="middle">8:00</text>
+
+        <text class="lab" x="0" y="94">Visit 9:30</text>
+        <circle class="ahead" cx="150" cy="90" r="6"/><circle class="dayof" cx="521.2" cy="90" r="6"/><rect class="appt" x="536.9" y="84" width="12" height="12" rx="2"/>
+        <text x="510" y="74" text-anchor="middle">7:30 (2h before)</text>
+
+        <text class="lab" x="0" y="144">Visit 7:30</text>
+        <circle class="ahead" cx="150" cy="140" r="6"/><circle class="mv" cx="410.8" cy="140" r="6"/><rect class="appt" x="515.2" y="134" width="12" height="12" rx="2"/>
+        <text x="410.8" y="124" text-anchor="middle">7pm the night before</text>
+
+        <text class="lab" x="0" y="194">No time</text>
+        <circle class="ahead" cx="150" cy="190" r="6"/><circle class="dayof" cx="526.7" cy="190" r="6"/>
+        <text x="150" y="174" text-anchor="middle">6pm</text>
+        <text x="526.7" y="174" text-anchor="middle">8:00</text>
+      </svg>
+      <div class="legend"><span><i style="background:var(--accent)"></i>Ahead, 6pm</span><span><i style="background:var(--amber)"></i>Day of</span><span><i style="background:var(--rose)"></i>Moved to the evening before</span><span><i style="background:var(--ink);border-radius:2px"></i>The visit</span></div>
+    </div>
+    <div class="note"><b>Team calls, reversible:</b> two hours as the lead, 6:00 as the earliest a morning reminder fires, 7pm for the evening slot. A visit booked two days out gets only the day-of reminder.</div>
+  </section>
+
+  <!-- 3. Notification Center -->
+  <section>
+    <span class="tag">current</span>
+    <h2>3 · Notification Center</h2>
+    <p class="sec-lede">A second row beside the daily summary, off by default, with the same three honest states. The daily summary's name row stays where it is.</p>
+    <div class="row">
+      <div class="frame">
+        <div class="phone">
+          <div class="ph-head"><span class="back">‹</span>Notifications</div>
+          <div class="group-h">What Culprit sends</div>
+          <div class="setrow" data-kit="SettingsRow · existing"><div><div class="l">Daily summary</div><div class="s">A calm look back at the day's record, around 9:00 each night</div></div><span class="sw on"></span></div>
+          <div class="setrow new" data-kit="SettingsRow · new row"><div><div class="l">Vet visit reminders</div><div class="s">Three days before at 6pm, and the morning of</div></div><span class="sw"></span></div>
+          <div style="height:18px"></div>
+        </div>
+        <div class="cap"><b>Granted, reminders off.</b> Dashed outline marks what is new. Turning it on here runs the same primer as Remind me.</div>
+      </div>
+      <div class="frame">
+        <div class="phone">
+          <div class="ph-head"><span class="back">‹</span>Notifications</div>
+          <div class="setrow" style="border-top:0;background:var(--a-subtle)"><div><div class="s">Culprit can't send them until you allow notifications in Settings, then these switches come to life.</div><div class="link" style="margin-top:6px">Open Settings</div></div><span></span></div>
+          <div class="group-h">What Culprit sends</div>
+          <div class="setrow"><div><div class="l" style="color:var(--a-disabled)">Daily summary</div><div class="s">A calm look back at the day's record, around 9:00 each night</div></div><span class="sw inert"></span></div>
+          <div class="setrow"><div><div class="l" style="color:var(--a-disabled)">Vet visit reminders</div><div class="s">Three days before at 6pm, and the morning of</div></div><span class="sw inert"></span></div>
+          <div style="height:18px"></div>
+        </div>
+        <div class="cap"><b>Denied in iOS.</b> Both rows inert, one explanation, the deep link. Never a live looking switch.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Booking sheet -->
+  <section>
+    <span class="tag">current</span>
+    <h2>4 · Remind me, on the booking sheet</h2>
+    <p class="sec-lede">The owner intent that may spend the primer and the one iOS prompt. It sits under the details, never between the owner and Save, and the booking saves whatever the answer.</p>
+    <div class="row">
+      <div class="frame">
+        <div class="phone sheet"><div class="sheet-in">
+          <div class="grab"></div>
+          <p class="sh-t">Add a visit</p>
+          <div class="seg"><span>Already happened</span><span class="on">Booked</span></div>
+          <div class="field"><span>Date</span><span class="v">Mon, Nov 16</span></div>
+          <div class="field"><span>Time</span><span class="v">10:30</span></div>
+          <div class="field"><span>Clinic</span><span class="v">Riverside Animal Clinic</span></div>
+          <div class="remind new" data-kit="new: RemindMeRow">
+            <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3a5 5 0 0 0-5 5v3l-1.5 2.5h13L15 11V8a5 5 0 0 0-5-5zM8 15.5a2 2 0 0 0 4 0" fill="none" stroke="#3F35A0" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <div><div class="rt">Remind me</div><div class="rs">Three days before at 6pm, and the morning of</div></div>
+          </div>
+          <div class="btn">Save</div>
+        </div></div>
+        <div class="cap"><b>Category off.</b> Tap → primer → iOS prompt if never asked → reminders on for every pet. Saving without tapping it books exactly as today.</div>
+      </div>
+      <div class="frame">
+        <div class="phone sheet"><div class="sheet-in">
+          <div class="grab"></div>
+          <p class="sh-t">Add a visit</p>
+          <div class="seg"><span>Already happened</span><span class="on">Booked</span></div>
+          <div class="field"><span>Date</span><span class="v">Mon, Nov 16</span></div>
+          <div class="field"><span>Time</span><span class="v">10:30</span></div>
+          <div class="field"><span>Clinic</span><span class="v">Riverside Animal Clinic</span></div>
+          <div class="remind quiet" data-kit="new: RemindMeRow · on">
+            <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10.5l3 3 7-7" fill="none" stroke="#0B7B6C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div><div class="rt">You'll get a reminder Friday at 6pm and Monday at 8:00.</div></div>
+          </div>
+          <div class="btn">Save</div>
+        </div></div>
+        <div class="cap"><b>Category on.</b> No control, one line naming the two real times for this booking. Inside a window it names only what is left ("Monday at 8:00").</div>
+      </div>
+      <div class="frame">
+        <div class="phone sheet"><div class="sheet-in">
+          <div class="grab"></div>
+          <p class="sh-t">Add a visit</p>
+          <div class="seg"><span>Already happened</span><span class="on">Booked</span></div>
+          <div class="field"><span>Date</span><span class="v">Mon, Nov 16</span></div>
+          <div class="field"><span>Time</span><span class="v">10:30</span></div>
+          <div class="remind inert" data-kit="new: RemindMeRow · denied">
+            <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3a5 5 0 0 0-5 5v3l-1.5 2.5h13L15 11V8a5 5 0 0 0-5-5zM8 15.5a2 2 0 0 0 4 0" fill="none" stroke="#A3A3A3" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <div><div class="rt">Remind me</div><div class="rs">Notifications are off for Culprit in Settings.</div><div class="link" style="margin-top:4px">Open Settings</div></div>
+          </div>
+          <div class="btn">Save</div>
+        </div></div>
+        <div class="cap"><b>Denied in iOS.</b> Inert, honest, one door out. Never a control that looks like it worked.</div>
+      </div>
+    </div>
+    <div class="note"><b>For round 2 to settle:</b> whether the on line names the times (shown) or stays generic. Naming them is the more honest promise and also the more fragile one when the visit is edited later; reconcile keeps the schedule right, but this line is only true at save.</div>
+  </section>
+</div>
