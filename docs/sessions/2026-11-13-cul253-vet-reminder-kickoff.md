@@ -1,8 +1,9 @@
 # Vet visit reminders: the requirements kickoff
 
 **Date:** 2026-11-13
+**One thing:** S5 L2 — The phone is the scheduler: a local notification runs on the phone's own clock, so no time zone is stored, and a visit edited on another phone is fixed only when this one next opens · check: pending
 **Issue:** [CUL-253](https://linear.app/projectnyx/issue/CUL-253) (parent; this PR finishes [CUL-2725](https://linear.app/projectnyx/issue/CUL-2725), PR-01) (DISCOVERY)
-**Outcome:** shipped via the session's PR. The project *Vet visit reminders* is ready for `/dispatch`.
+**Outcome:** shipped via [#1523](https://github.com/danieljmarkii/project-nyx/pull/1523). The project *Vet visit reminders* is ready for `/dispatch`.
 
 ## Why this session exists
 
