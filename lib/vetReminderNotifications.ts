@@ -83,15 +83,19 @@ export interface LiveVetReminder {
 }
 
 export interface VetReminderReconcileActions {
+  /** New or changed reminders. A changed one keeps its identifier, and scheduling under
+   *  an identifier the OS already holds REPLACES it, so it is never cancelled first: a
+   *  cancel followed by a failed schedule would lose the reminder until the next trigger. */
   schedule: PlannedVetReminder[];
-  /** Identifiers to cancel. A changed reminder appears here AND in `schedule`. */
+  /** Identifiers the plan no longer holds. */
   cancel: string[];
 }
 
 /**
  * PURE: what the live schedule should become. Not allowed (switch off, permission not
  * granted) → cancel every live reminder. Otherwise schedule each planned reminder that
- * is not live with the same signature, and cancel each live one the plan does not keep.
+ * is not live with the same signature (new or changed), and cancel each live one the
+ * plan does not hold.
  */
 export function computeVetReminderActions(input: {
   allowed: boolean;
@@ -104,8 +108,8 @@ export function computeVetReminderActions(input: {
   const keep = new Set<string>();
   for (const l of input.live) {
     const p = wanted.get(l.identifier);
-    if (p && l.sig === vetReminderSignature(p)) keep.add(l.identifier);
-    else cancel.push(l.identifier);
+    if (!p) cancel.push(l.identifier);
+    else if (l.sig === vetReminderSignature(p)) keep.add(l.identifier);
   }
   const schedule = input.planned.filter((p) => !keep.has(vetReminderIdentifier(p.kind, p.dayKey)));
   return { schedule, cancel };
@@ -147,14 +151,52 @@ async function ensureChannel(): Promise<void> {
  * trigger calls (foreground, hydration tick, an appointment write, PR-04's switch).
  * Never asks for permission and never rejects; a failure leaves the schedule as it was.
  *
- * `petNames` is every current pet's name, read at call time. An empty map means the pet
- * store has not loaded yet, so nothing is touched: planning against it would cancel every
- * reminder and reschedule them a moment later.
+ * ONE RUN AT A TIME, with one trailing re-run (code-reviewer). Launch fires the
+ * foreground and the hydration tick together, and a write can land mid-run; two
+ * overlapping runs could let the older one, holding a read from before a cancel,
+ * schedule that appointment's reminder after the newer one had already reconciled. So a
+ * call that arrives while a run is in flight marks the schedule dirty and gets one fresh
+ * run when the current one ends; every caller waiting meanwhile shares that run. The
+ * inputs are read at RUN time through `readInput`, never captured at call time.
+ *
+ * `petsLoaded` false means the pet list has not answered yet (`petStore.petsLoaded`), so
+ * nothing is touched: planning against an empty list would cancel every reminder and
+ * reschedule them a moment later. Once it has answered, an empty list is the fact "no
+ * active pets" (every pet archived), and the plan is empty, so everything is cancelled:
+ * no lock screen keeps naming a pet the owner put away.
+ *
+ * RESIDUAL, stated: the sign-out fence is checked before each schedule call, but one
+ * `scheduleNotificationAsync` already in flight when `wipeLocalSession` cancels
+ * everything can still land after it. The follow-up module carries the same
+ * milliseconds-wide window.
  */
-export async function syncVetReminderNotifications(input: {
+export interface VetReminderSyncInput {
   petNames: ReadonlyMap<string, string>;
+  petsLoaded: boolean;
   now?: Date;
-}): Promise<void> {
+}
+
+let inFlight: Promise<void> | null = null;
+let trailing: Promise<void> | null = null;
+
+export function syncVetReminderNotifications(readInput: () => VetReminderSyncInput): Promise<void> {
+  if (!inFlight) {
+    inFlight = runVetReminderSync(readInput).finally(() => {
+      inFlight = null;
+    });
+    return inFlight;
+  }
+  if (!trailing) {
+    const current = inFlight;
+    trailing = current.then(() => {
+      trailing = null;
+      return syncVetReminderNotifications(readInput);
+    });
+  }
+  return trailing;
+}
+
+async function runVetReminderSync(readInput: () => VetReminderSyncInput): Promise<void> {
   const epoch = vetReminderEpoch;
   try {
     const [on, permission, live] = await Promise.all([
@@ -165,7 +207,8 @@ export async function syncVetReminderNotifications(input: {
     const allowed = on && permission === 'granted';
     let planned: PlannedVetReminder[] = [];
     if (allowed) {
-      if (input.petNames.size === 0) return;
+      const input = readInput();
+      if (!input.petsLoaded) return;
       const { appointments, visitDaysByPet } = await readReminderInputs();
       planned = planVetReminders({
         now: input.now ?? new Date(),

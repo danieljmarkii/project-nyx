@@ -16,18 +16,22 @@ import { syncVetReminderNotifications } from '../lib/vetReminderNotifications';
  *  a closure. The name is always used (R4): it is not gated on the daily summary's
  *  `use_pet_name`, which governs that notification alone. PR-04's switch calls this. */
 export function refreshVetReminders(): Promise<void> {
-  const names = new Map(usePetStore.getState().pets.map((p) => [p.id, p.name] as const));
-  return syncVetReminderNotifications({ petNames: names });
+  return syncVetReminderNotifications(() => {
+    const { pets, petsLoaded } = usePetStore.getState();
+    return { petNames: new Map(pets.map((p) => [p.id, p.name] as const)), petsLoaded };
+  });
 }
 
 export function useVetReminderSync(): void {
   const appActive = useAppActive();
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
+  // The pet list answering is its own trigger: until it has, a run touches nothing.
+  const petsLoaded = usePetStore((s) => s.petsLoaded);
 
   useEffect(() => {
     if (!appActive) return;
     void refreshVetReminders();
-  }, [appActive, hydrationTick]);
+  }, [appActive, hydrationTick, petsLoaded]);
 
   useEffect(
     () =>

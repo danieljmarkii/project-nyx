@@ -12,6 +12,7 @@
 //             that is before 06:00, 19:00 the evening before. No time → 08:00 on the day.
 // A reminder whose instant is not in the future at plan time is SKIPPED, never fired late
 // (R2): booked two days out → day-of only; booked the morning of, after 08:00 → none.
+// R2 is judged on the collapsed group's earliest instant (see planVetReminders).
 //
 // ── ALL MATH IN DEVICE LOCAL WALL CLOCK ───────────────────────────────────────
 // `new Date(y, m, d, h)` is the device zone's wall clock, so DST and travel cost nothing:
@@ -133,10 +134,11 @@ export function planVetReminders(input: PlanInput): PlannedVetReminder[] {
     if (!appointmentCounts(appt, input.now)) continue;
     const petName = input.petNames.get(appt.pet_id);
     if (!petName) continue;
+    // EVERY slot, past ones included: R2 is applied to the GROUP below, not here.
     const ahead = aheadInstant(appt.scheduled_at);
-    if (ahead && ahead.getTime() > nowMs) slots.push({ kind: 'ahead', fire: ahead, appt, petName });
+    if (ahead) slots.push({ kind: 'ahead', fire: ahead, appt, petName });
     const dayOf = dayOfInstant(appt.scheduled_at);
-    if (dayOf && dayOf.getTime() > nowMs) slots.push({ kind: 'day_of', fire: dayOf, appt, petName });
+    if (dayOf) slots.push({ kind: 'day_of', fire: dayOf, appt, petName });
   }
 
   const groups = new Map<string, Slot[]>();
@@ -156,6 +158,14 @@ export function planVetReminders(input: PlanInput): PlannedVetReminder[] {
         a.appt.id.localeCompare(b.appt.id),
     );
     const first = group[0];
+    // R2, per group. A day's notification fires at its group's EARLIEST instant, so once
+    // that has passed the day's one notification has fired (or was missed): the group is
+    // done. Filtering slots before grouping instead let a re-plan after the first fire
+    // rebuild the group from its later members under the same identifier, which the OS no
+    // longer held, and schedule a SECOND notification that day (code-reviewer, §3.3).
+    // The cost, stated: a visit booked for a day whose notification already fired gets
+    // none of that kind that day; one per kind per day is the ruling.
+    if (first.fire.getTime() <= nowMs) continue;
     const dayKey = localDateKey(first.fire);
     const single = group.length === 1;
     const copy = single

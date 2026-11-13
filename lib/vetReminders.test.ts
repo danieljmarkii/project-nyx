@@ -182,6 +182,15 @@ describe('planVetReminders', () => {
     expect(out[0].title).toBe('Pip and Nyx have vet visits coming up');
   });
 
+  it('a collapsed day fires once: a re-plan after its first member fired schedules nothing more (§3.3)', () => {
+    // Nyx 08:15 → 06:15, Pip 10:30 → 08:00; one day_of on the 16th at 06:15.
+    const appts = [appt('a', at(Y, NOV, 16, 8, 15)), appt('b', at(Y, NOV, 16, 10, 30), { pet_id: PET_B })];
+    const before = plan(new Date(Y, NOV, 16, 5), appts).filter((p) => p.kind === 'day_of');
+    expect(before.map((p) => [p.dayKey, hm(new Date(p.fireAt))])).toEqual([['2026-11-16', '2026-11-16 06:15']]);
+    // 06:20: the 06:15 has fired. Pip's 08:00 slot must not come back as its own reminder.
+    expect(plan(new Date(Y, NOV, 16, 6, 20), appts).filter((p) => p.kind === 'day_of')).toEqual([]);
+  });
+
   it('distinct days stay distinct notifications', () => {
     const out = plan(new Date(Y, NOV, 1, 12), [appt('a', at(Y, NOV, 16, 10)), appt('b', at(Y, NOV, 20, 10))]);
     expect(out.map((p) => `${p.kind}.${p.dayKey}`)).toEqual([

@@ -1446,7 +1446,8 @@ export async function cancelVetAppointment(
   );
   if (res.changes === 0) {
     throw new Error(`vet_appointments ${appointmentId}: cancel matched no row`);
-  }  appointmentsChanged();
+  }
+  appointmentsChanged();
 }
 
 /**
@@ -1626,7 +1627,8 @@ export async function updateAppointmentDetails(
   );
   if (res.changes === 0) {
     throw new Error(`updateAppointmentDetails: no live appointment row matched id ${appointmentId}`);
-  }  appointmentsChanged();
+  }
+  appointmentsChanged();
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -2006,7 +2008,8 @@ export async function updateVisitDetails(visitId: string, patch: VisitDetailsPat
   );
   if (res.changes === 0) {
     throw new Error(`updateVisitDetails: no visit row matched id ${visitId}`);
-  }  // A visit's date is the reminder body's report window start (§4).
+  }
+  // A visit's date is the reminder body's report window start (§4).
   appointmentsChanged();
 }
 
