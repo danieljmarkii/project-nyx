@@ -249,18 +249,39 @@ function collapsedCopy(group: readonly Slot[], fireDay: string): { title: string
 // ── The booking sheet's line (mock round 2, D2) ────────────────────────────────
 
 /**
- * PURE: the reminders a booking at `scheduledAt` would still get, judged at `now`, in
- * fire order. The same two instant functions and the same R2 rule the planner uses, so
- * the sheet can never promise a reminder the schedule would skip. Per booking, without
- * the collapse: a visit that shares a day with another pet's still gets a notification
- * that day, which is what the sheet's line claims.
+ * PURE: when the owner will be reminded about a new booking at `scheduledAt`, judged at
+ * `now`, in fire order. Answered by the PLANNER itself, run over every live booking plus
+ * this one, never re-derived, so the sheet can never promise what the schedule would do
+ * differently (code-reviewer, CUL-2728):
+ *   • another pet's visit the same day → the one collapsed notification's time, which may
+ *     be earlier than this booking's own instant;
+ *   • that day's notification already fired → none (R2 judges the group, §3.3).
+ * Pet ids only steer the collapse, which is account-wide, so names are placeholders.
  */
-export function upcomingReminderInstants(scheduledAt: string, now: Date): Date[] {
+export function upcomingReminderInstants(
+  scheduledAt: string,
+  now: Date,
+  existing: readonly ReminderAppointment[] = [],
+): Date[] {
+  const NEW_ID = '__new_booking__';
+  const appointments: ReminderAppointment[] = [
+    ...existing,
+    { id: NEW_ID, pet_id: NEW_ID, scheduled_at: scheduledAt },
+  ];
+  const petNames = new Map(appointments.map((a) => [a.pet_id, a.pet_id] as const));
+  const plan = planVetReminders({ now, appointments, petNames });
   const out: Date[] = [];
-  for (const at of [aheadInstant(scheduledAt), dayOfInstant(scheduledAt)]) {
-    if (at && at.getTime() > now.getTime()) out.push(at);
+  const own: [VetReminderKind, Date | null][] = [
+    ['ahead', aheadInstant(scheduledAt)],
+    ['day_of', dayOfInstant(scheduledAt)],
+  ];
+  for (const [kind, at] of own) {
+    if (!at) continue;
+    const day = localDateKey(at);
+    const reminder = plan.find((p) => p.kind === kind && p.dayKey === day);
+    if (reminder) out.push(new Date(reminder.fireAt));
   }
-  return out;
+  return out.sort((x, y) => x.getTime() - y.getTime());
 }
 
 /** 'Friday at 6:00 pm', said from `now`: 'today' / 'tomorrow', the weekday inside the
@@ -279,8 +300,12 @@ export function describeReminderInstant(at: Date, now: Date): string {
 }
 
 /** 'Friday at 6:00 pm and Monday at 8:00 am', or null when nothing is left to fire. */
-export function upcomingReminderPhrase(scheduledAt: string, now: Date): string | null {
-  const parts = upcomingReminderInstants(scheduledAt, now).map((at) => describeReminderInstant(at, now));
+export function upcomingReminderPhrase(
+  scheduledAt: string,
+  now: Date,
+  existing: readonly ReminderAppointment[] = [],
+): string | null {
+  const parts = upcomingReminderInstants(scheduledAt, now, existing).map((at) => describeReminderInstant(at, now));
   if (parts.length === 0) return null;
   return parts.join(' and ');
 }

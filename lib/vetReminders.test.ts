@@ -314,6 +314,28 @@ describe("the booking sheet's line (D2)", () => {
     expect(planned.map((p) => hm(new Date(p.fireAt)))).toEqual(['2026-11-16 08:00']);
   });
 
+  it('another pet booked the same day: the collapsed time, never this booking own (code-reviewer B)', () => {
+    const now = new Date(Y, NOV, 14, 12);
+    // Pip at 09:30 fires the day-of at 07:30. The new booking at 11:30 would alone fire
+    // at 08:00, but the day's one notification fires at the group's earliest, 07:30.
+    const pip = appt('p', at(Y, NOV, 16, 9, 30), { pet_id: PET_B });
+    expect(upcomingReminderInstants(at(Y, NOV, 16, 11, 30), now).map(hm)).toEqual(['2026-11-16 08:00']);
+    expect(upcomingReminderInstants(at(Y, NOV, 16, 11, 30), now, [pip]).map(hm)).toEqual(['2026-11-16 07:30']);
+  });
+
+  it("that day's notification already fired: nothing is promised, as the planner sends nothing (code-reviewer A)", () => {
+    // 07:45 on the 16th: Pip's day-of (07:30) has fired. A booking for 12:00 that day
+    // would alone fire at 08:00, still ahead, but its group's notification is spent.
+    const now = new Date(Y, NOV, 16, 7, 45);
+    const pip = appt('p', at(Y, NOV, 16, 9, 30), { pet_id: PET_B });
+    expect(upcomingReminderInstants(at(Y, NOV, 16, 12), now).map(hm)).toEqual(['2026-11-16 08:00']);
+    expect(upcomingReminderInstants(at(Y, NOV, 16, 12), now, [pip])).toEqual([]);
+    expect(upcomingReminderPhrase(at(Y, NOV, 16, 12), now, [pip])).toBeNull();
+    // And the planner agrees: no day-of for the 16th.
+    const planned = planVetReminders({ now, appointments: [pip, appt('n', at(Y, NOV, 16, 12))], petNames: NAMES });
+    expect(planned.filter((p) => p.kind === 'day_of' && p.dayKey === '2026-11-16')).toEqual([]);
+  });
+
   it('nothing left: null', () => {
     expect(upcomingReminderPhrase(at(Y, NOV, 16, 10, 30), new Date(Y, NOV, 16, 9))).toBeNull();
   });

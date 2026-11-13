@@ -28,7 +28,7 @@
 // and this reconcile touches only its own; the follow-up's `nyx.followup.` likewise.
 //
 // CHANGE DETECTION. One identifier per kind per day, so a moved time, a renamed pet or a
-// new report window keeps the identifier and changes the content. Each scheduled request
+// new pet keeps the identifier and changes the content. Each scheduled request
 // carries a signature of what it says and when it fires (`data.sig`); a live one whose
 // signature differs is cancelled and rescheduled, a matching one is left alone.
 //

@@ -17,6 +17,9 @@ import { BookVisitSheet, type BookVisitSubmit, type VisitMode } from '../../comp
 import { NotificationPrimer } from '../../components/notifications/NotificationPrimer';
 import { readVetReminderStatus, useRemindMeAfterSave, type VetReminderStatus } from '../../hooks/useVetReminders';
 import { VET_VISIT_PRIMER } from '../../lib/vetReminderNotifications';
+import type { ReminderAppointment } from '../../lib/vetReminders';
+import { readReminderInputs } from '../../lib/vetVisits';
+import { useAppActive } from '../../hooks/useAppActive';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
 import {
@@ -98,12 +101,15 @@ export default function VetVisitsScreen() {
   const [saving, setSaving] = useState(false);
   // CUL-2728: the reminders' switch on this phone, read each time the sheet opens, and
   // Remind me applied after Save has closed it (the sheet is a modal; the primer is one).
+  // Re-read on return to the app too: an owner who allowed notifications in Settings
+  // from the sheet's denied row comes back to a live one (code-reviewer).
   const [reminderStatus, setReminderStatus] = useState<VetReminderStatus>('loading');
+  const [liveBookings, setLiveBookings] = useState<ReminderAppointment[]>([]);
   const remindMe = useRemindMeAfterSave();
+  const appActive = useAppActive();
   useEffect(() => {
-    if (sheetMode !== 'booked') return;
+    if (sheetMode !== 'booked' || !appActive) return;
     let cancelled = false;
-    setReminderStatus('loading');
     readVetReminderStatus()
       .then((st) => {
         if (!cancelled) setReminderStatus(st);
@@ -113,10 +119,15 @@ export default function VetVisitsScreen() {
         console.warn('[vet-visits] reminder status read failed:', e);
         if (!cancelled) setReminderStatus('off');
       });
+    readReminderInputs()
+      .then(({ appointments }) => {
+        if (!cancelled) setLiveBookings(appointments);
+      })
+      .catch((e) => console.warn('[vet-visits] live bookings read failed:', e));
     return () => {
       cancelled = true;
     };
-  }, [sheetMode]);
+  }, [sheetMode, appActive]);
 
   // E2's two doors on the Pet-tab card route here with an intent. Held in a REF
   // and cleared BEFORE the effect it triggers: in state, an already-scheduled
@@ -568,6 +579,7 @@ export default function VetVisitsScreen() {
           initialReason={sheetMode === 'booked' ? carriedReason : null}
           busy={saving}
           reminderStatus={reminderStatus}
+          liveBookings={liveBookings}
           onClose={() => setSheetMode(null)}
           onSubmit={handleSubmit}
         />

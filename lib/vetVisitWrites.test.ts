@@ -814,15 +814,15 @@ describe('onAppointmentsChanged (vet visit reminders §3.4)', () => {
         visitedAt: '2026-09-16',
       });
       expect(heard).toHaveBeenCalledTimes(4);
+      // A visit's own writes move no reminder since CUL-2728 D1 (no date from the record).
       await updateVisitDetails(visitId, { visitedAt: '2026-09-15' });
-      expect(heard).toHaveBeenCalledTimes(5);
       await logVetVisit({ petId: PET, visitedAt: '2026-10-01' });
-      expect(heard).toHaveBeenCalledTimes(6);
+      expect(heard).toHaveBeenCalledTimes(4);
     } finally {
       off();
     }
     await bookVetAppointment({ petId: PET, scheduledAt: '2026-11-18T15:30:00.000Z' });
-    expect(heard).toHaveBeenCalledTimes(6);
+    expect(heard).toHaveBeenCalledTimes(4);
   });
 
   it('a throwing listener never reaches the writer', async () => {

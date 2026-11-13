@@ -320,7 +320,7 @@ describe('the sheet asks its question, and requires only a date', () => {
 describe('Remind me', () => {
   it('is off by default, and a booking saved without it carries no reminder intent', () => {
     const onSubmit = renderSheet({ reminderStatus: 'off' });
-    const row = screen.getByLabelText('Remind me');
+    const row = screen.getByRole('checkbox');
     expect(row.props.accessibilityState).toEqual({ checked: false });
     fireEvent.press(screen.getByText('Add the appointment'));
     expect(onSubmit.mock.calls[0][0].remindMe).toBe(false);
@@ -328,8 +328,8 @@ describe('Remind me', () => {
 
   it('a tap picks it, the sub line names the times, and Save carries the choice', () => {
     const onSubmit = renderSheet({ reminderStatus: 'off' });
-    fireEvent.press(screen.getByLabelText('Remind me'));
-    expect(screen.getByLabelText('Remind me').props.accessibilityState).toEqual({ checked: true });
+    fireEvent.press(screen.getByRole('checkbox'));
+    expect(screen.getByRole('checkbox').props.accessibilityState).toEqual({ checked: true });
     // Booked for today with no time: the 8:00 am day-of may already be past, so the line
     // is whichever the planner still holds; it always says the switch is account-wide.
     expect(screen.getByText(/for every pet’s visits/)).toBeTruthy();
@@ -353,6 +353,6 @@ describe('Remind me', () => {
 
   it('is not offered on a visit that already happened', () => {
     renderSheet({ reminderStatus: 'off', initialMode: 'happened' });
-    expect(screen.queryByLabelText('Remind me')).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
   });
 });

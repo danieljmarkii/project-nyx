@@ -8,7 +8,11 @@ import { SettingsRow } from './SettingsRow';
 import { NotificationPrimer } from '../notifications/NotificationPrimer';
 import { ensurePermission, type NotificationPermission } from '../../lib/notifications';
 import { VET_VISIT_PRIMER, vetRemindersOn } from '../../lib/vetReminderNotifications';
-import { setVetReminders, VET_REMINDERS_ON_MESSAGE } from '../../hooks/useVetReminders';
+import {
+  setVetReminders,
+  VET_REMINDERS_FAILED_MESSAGE,
+  VET_REMINDERS_ON_MESSAGE,
+} from '../../hooks/useVetReminders';
 import { useSnackbarStore } from '../../store/snackbarStore';
 
 // The vet visit reminders' switch (CUL-2728; docs/nyx-vet-reminder-requirements.md §5,
@@ -84,23 +88,34 @@ export function VetReminderNotificationRow({ permission, onPermissionChange, pet
     setPrimerVisible(true);
   };
 
+  // The primer closes BEFORE anything is said, and what is said is a snackbar with the
+  // store's delay: an Alert raised over a visible or dismissing Modal is often swallowed
+  // on iOS (code-reviewer). A refused prompt says nothing; the banner explains it.
   const confirm = async () => {
     setRequesting(true);
+    let message: string | null = null;
     try {
       const result = await ensurePermission(true);
       onPermissionChange(result);
       if (result === 'granted') {
-        await setVetReminders(true);
-        setOn(true);
-        useSnackbarStore.getState().show({ message: VET_REMINDERS_ON_MESSAGE }, { delayMs: 300 });
+        try {
+          await setVetReminders(true);
+          setOn(true);
+          message = VET_REMINDERS_ON_MESSAGE;
+        } catch (e) {
+          // Allowed, but the switch did not save: say that, not that notifications failed.
+          console.warn('[vet reminders] turning on after the prompt failed:', e);
+          message = VET_REMINDERS_FAILED_MESSAGE;
+        }
       }
     } catch (e) {
       console.warn('[vet reminders] permission request failed:', e);
-      Alert.alert('Couldn’t turn on notifications', 'Try again in a moment.');
+      message = VET_REMINDERS_FAILED_MESSAGE;
     } finally {
       setRequesting(false);
       setPrimerVisible(false);
     }
+    if (message) useSnackbarStore.getState().show({ message }, { delayMs: 300 });
   };
 
   const dismiss = () => {
@@ -122,7 +137,10 @@ export function VetReminderNotificationRow({ permission, onPermissionChange, pet
               disabled={denied || busy}
               trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
               ios_backgroundColor={theme.colorBorderStrong}
-              accessibilityLabel={VET_REMINDER_ROW_LABEL}
+              // `disabled` is a claim (C-7): when denied, the label says why.
+              accessibilityLabel={
+                denied ? `${VET_REMINDER_ROW_LABEL}, off. Notifications are off for Culprit in Settings.` : VET_REMINDER_ROW_LABEL
+              }
             />
           }
         />

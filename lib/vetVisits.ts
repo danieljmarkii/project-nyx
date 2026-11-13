@@ -935,8 +935,9 @@ export async function readVisitPrefill(petId: string): Promise<VisitPrefill> {
 
 // ── The appointments-changed signal (CUL-2727, vet visit reminders §3.4) ─────────
 //
-// Every local write that can move a reminder (book, edit or cancel an appointment, log a
-// visit or edit its date, which moves the report window a reminder names) announces itself here, and `hooks/useVetReminders.ts` re-plans the
+// Every local write that can move a reminder (book, edit or cancel an appointment, or log
+// a visit FROM an appointment, which takes that booking out of the live set) announces
+// itself here, and `hooks/useVetReminders.ts` re-plans the
 // schedule. A plain listener set rather than an import of the scheduler, so this model
 // file never pulls `expo-notifications` in and the reminder stays a consumer of it.
 // Called only AFTER a write has landed; a listener's throw never reaches the writer.
@@ -1070,8 +1071,8 @@ export async function logVetVisit(input: LogVisitInput): Promise<string> {
       nowIso,
     ],
   );
-  // A new visit moves the reminder body's report window start (§4).
-  appointmentsChanged();
+  // No reminder signal: a visit logged on its own links no booking, and since CUL-2728
+  // (D1) no reminder names a visit's date.
   return id;
 }
 
@@ -1996,8 +1997,7 @@ export async function updateVisitDetails(visitId: string, patch: VisitDetailsPat
   if (res.changes === 0) {
     throw new Error(`updateVisitDetails: no visit row matched id ${visitId}`);
   }
-  // A visit's date is the reminder body's report window start (§4).
-  appointmentsChanged();
+  // No reminder signal: since CUL-2728 (D1) no reminder names a visit's date.
 }
 
 // ── The three link writers (provenance only — a link never moves a number) ──────

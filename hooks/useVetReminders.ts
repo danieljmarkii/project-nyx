@@ -3,7 +3,8 @@
 // Mounted once in the root layout beside `useFollowUpNotificationSync`. Re-plans the
 // schedule on each foreground (which also catches a permission change), each hydration
 // tick (a sync pull touching `vet_appointments` or the pref, and a pet rename) and each
-// local appointment or visit write (`onAppointmentsChanged` in `lib/vetVisits.ts`).
+// local appointment write, a visit logged from a booking included (`onAppointmentsChanged`
+// in `lib/vetVisits.ts`).
 // Sign-out is `wipeLocalSession`'s: it fences the module and cancels everything.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppActive } from './useAppActive';
@@ -96,13 +97,17 @@ export function useRemindMeAfterSave(): {
   const [visible, setVisible] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // `apply` awaits before it arms the timer, so a host that unmounts in between (a back
+  // swipe right after Save) must stop it arming at all (code-reviewer).
+  const mounted = useRef(true);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
+    };
+  }, []);
 
   const turnOn = useCallback(async () => {
     try {
@@ -115,23 +120,18 @@ export function useRemindMeAfterSave(): {
   }, []);
 
   const apply = useCallback(async () => {
-    let permission: NotificationPermission;
-    try {
-      permission = await ensurePermission(false);
-    } catch (e) {
-      console.warn('[vet reminders] permission read failed:', e);
-      useSnackbarStore.getState().show({ message: VET_REMINDERS_FAILED_MESSAGE }, { delayMs: 300 });
-      return;
-    }
+    // `ensurePermission` never throws (a failed read answers 'undetermined').
+    const permission: NotificationPermission = await ensurePermission(false);
     if (permission === 'granted') {
       await turnOn();
       return;
     }
-    if (permission === 'undetermined') {
+    // Denied cannot reach here: the sheet's denied row is inert and carries no choice.
+    if (permission === 'undetermined' && mounted.current) {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         timer.current = null;
-        setVisible(true);
+        if (mounted.current) setVisible(true);
       }, PRIMER_AFTER_SHEET_MS);
     }
   }, [turnOn]);
@@ -141,12 +141,16 @@ export function useRemindMeAfterSave(): {
       setRequesting(true);
       try {
         const result = await ensurePermission(true);
+        // Close first, then turn on: its snackbar waits for the primer to leave.
+        setVisible(false);
         if (result === 'granted') await turnOn();
       } catch (e) {
         console.warn('[vet reminders] permission request failed:', e);
       } finally {
-        setRequesting(false);
-        setVisible(false);
+        if (mounted.current) {
+          setRequesting(false);
+          setVisible(false);
+        }
       }
     })();
   }, [turnOn]);

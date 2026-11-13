@@ -84,8 +84,9 @@ export function RemindMeRow({ status, picked, onToggle, onOpenSettings, times }:
       activeOpacity={0.7}
       accessibilityRole="checkbox"
       accessibilityState={{ checked: picked }}
-      accessibilityLabel={REMIND_ME_LABEL}
-      accessibilityHint={sub}
+      // The sub line is content (the times this booking gets), so it is read with the
+      // label, never as a hint a reader may have switched off.
+      accessibilityLabel={`${REMIND_ME_LABEL}. ${sub}`}
       style={[styles.box, picked && styles.pickedBox]}
     >
       <View style={[styles.check, picked && styles.checkOn]}>

@@ -27,7 +27,11 @@ import {
 } from '../../lib/vetVisits';
 import { useSheetCap } from '../../hooks/useLayoutClass';
 import type { VetReminderStatus } from '../../hooks/useVetReminders';
-import { describeReminderInstant, upcomingReminderInstants } from '../../lib/vetReminders';
+import {
+  describeReminderInstant,
+  upcomingReminderInstants,
+  type ReminderAppointment,
+} from '../../lib/vetReminders';
 import { RemindMeRow } from './RemindMeRow';
 
 /** Which arm of the sheet is open — the one question "Add" asks first. */
@@ -65,9 +69,14 @@ interface Props {
   /** The vet visit reminders' switch on this phone (CUL-2728). Absent reads as loading,
    *  which renders the row off: a pick survives the answer. */
   reminderStatus?: VetReminderStatus;
+  /** Every live booking on the account, every pet, so the reminder line answers through
+   *  the planner's own collapse (two visits one day share one notification). */
+  liveBookings?: readonly ReminderAppointment[];
   onClose: () => void;
   onSubmit: (input: BookVisitSubmit) => void;
 }
+
+const NO_BOOKINGS: readonly ReminderAppointment[] = [];
 
 const MODE_OPTIONS = [
   { value: 'booked', label: 'Booked' },
@@ -92,6 +101,7 @@ export function BookVisitSheet({
   initialReason = null,
   busy = false,
   reminderStatus = 'loading',
+  liveBookings = NO_BOOKINGS,
   onClose,
   onSubmit,
 }: Props) {
@@ -149,15 +159,18 @@ export function BookVisitSheet({
   const dayLabel = useMemo(() => formatVisitWeekday(localDateKey(day)), [day]);
   const isBooked = mode === 'booked';
 
-  // The reminders this booking would still get, said from now (D2): the planner's own
-  // instants and R2 rule, so the line never promises one the schedule would skip.
-  const reminderTimes = useMemo(() => {
-    if (!isBooked) return [];
-    const now = new Date();
-    return upcomingReminderInstants(composeScheduledAt(day, time), now).map((at) =>
-      describeReminderInstant(at, now),
-    );
-  }, [isBooked, day, time]);
+  // When the owner will be reminded about this booking, said from now (D2), answered by
+  // the planner over every live booking: never a time the schedule would skip or move.
+  // Computed each render, not memoised, so a sheet left open past 6pm or 8am drops the
+  // reminder that has gone.
+  const reminderTimes = isBooked
+    ? (() => {
+        const now = new Date();
+        return upcomingReminderInstants(composeScheduledAt(day, time), now, liveBookings).map((at) =>
+          describeReminderInstant(at, now),
+        );
+      })()
+    : [];
   const remindMeApplies = reminderStatus === 'off' || reminderStatus === 'loading';
 
   /**
