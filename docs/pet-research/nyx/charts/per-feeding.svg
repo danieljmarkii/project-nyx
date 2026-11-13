@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="792pt" height="388.8pt" viewBox="0 0 792 388.8" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-11-11T21:02:03.980921</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 388.8 
+L 792 388.8 
+L 792 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 229.68 158.6304 
+L 784.08 158.6304 
+L 784.08 46.656 
+L 229.68 46.656 
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 229.68 76.74912 
+L 565.187586 76.74912 
+L 565.187586 58.55328 
+L 229.68 58.55328 
+z
+" clip-path="url(#ped3e0860e1)" style="fill: #ffffff; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 229.68 76.74912 
+L 246.885517 76.74912 
+L 246.885517 58.55328 
+L 229.68 58.55328 
+z
+" clip-path="url(#ped3e0860e1)" style="fill: #1f2933; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 229.68 111.74112 
+L 388.353103 111.74112 
+L 388.353103 93.54528 
+L 229.68 93.54528 
+z
+" clip-path="url(#ped3e0860e1)" style="fill: #ffffff; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 229.68 146.73312 
+L 477.248276 146.73312 
+L 477.248276 128.53728 
+L 229.68 128.53728 
+z
+" clip-path="url(#ped3e0860e1)" style="fill: #ffffff; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="matplotlib.axis_1"/>
+   <g id="matplotlib.axis_2"/>
+   <g id="text_1">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #1f2933" x="570.922759" y="69.88552" transform="rotate(-0 570.922759 69.88552)">18 of 351 feedings  (5.1%)</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #1f2933" x="223.944828" y="69.88552" transform="rotate(-0 223.944828 69.88552)">Dry kibble, since 26 Jul</text>
+   </g>
+   <g id="text_3">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #1f2933" x="394.088276" y="104.87752" transform="rotate(-0 394.088276 104.87752)">0 of 166 feedings  (0.0%)</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #1f2933" x="223.944828" y="104.87752" transform="rotate(-0 223.944828 104.87752)">Wet food, since 26 Jul</text>
+   </g>
+   <g id="text_5">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #1f2933" x="482.983448" y="139.86952" transform="rotate(-0 482.983448 139.86952)">0 of 259 feedings  (0.0%)</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #1f2933" x="223.944828" y="139.86952" transform="rotate(-0 223.944828 139.86952)">Wet food, whole record from 16 May</text>
+   </g>
+   <g id="text_7">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #1f2933" x="19.008" y="40.656" transform="rotate(-0 19.008 40.656)">By what was fed</text>
+   </g>
+  </g>
+  <g id="axes_2">
+   <g id="patch_7">
+    <path d="M 229.68 326.592 
+L 784.08 326.592 
+L 784.08 214.6176 
+L 229.68 214.6176 
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 229.68 237.545691 
+L 442.837241 237.545691 
+L 442.837241 223.682194 
+L 229.68 223.682194 
+z
+" clip-path="url(#p70e9650b66)" style="fill: #ffffff; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 229.68 237.545691 
+L 238.282759 237.545691 
+L 238.282759 223.682194 
+L 229.68 223.682194 
+z
+" clip-path="url(#p70e9650b66)" style="fill: #1f2933; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 229.68 264.206263 
+L 299.457931 264.206263 
+L 299.457931 250.342766 
+L 229.68 250.342766 
+z
+" clip-path="url(#p70e9650b66)" style="fill: #ffffff; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 229.68 264.206263 
+L 233.503448 264.206263 
+L 233.503448 250.342766 
+L 229.68 250.342766 
+z
+" clip-path="url(#p70e9650b66)" style="fill: #1f2933; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_12">
+    <path d="M 229.68 290.866834 
+L 246.885517 290.866834 
+L 246.885517 277.003337 
+L 229.68 277.003337 
+z
+" clip-path="url(#p70e9650b66)" style="fill: #ffffff; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_13">
+    <path d="M 229.68 290.866834 
+L 230.635862 290.866834 
+L 230.635862 277.003337 
+L 229.68 277.003337 
+z
+" clip-path="url(#p70e9650b66)" style="fill: #1f2933; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_14">
+    <path d="M 229.68 317.527406 
+L 265.046897 317.527406 
+L 265.046897 303.663909 
+L 229.68 303.663909 
+z
+" clip-path="url(#p70e9650b66)" style="fill: #ffffff; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_15">
+    <path d="M 229.68 317.527406 
+L 233.503448 317.527406 
+L 233.503448 303.663909 
+L 229.68 303.663909 
+z
+" clip-path="url(#p70e9650b66)" style="fill: #1f2933; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="matplotlib.axis_3"/>
+   <g id="matplotlib.axis_4"/>
+   <g id="text_8">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #1f2933" x="448.572414" y="232.848263" transform="rotate(-0 448.572414 232.848263)">9 of 223 feedings  (4.0%)</text>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #1f2933" x="223.944828" y="232.848263" transform="rotate(-0 223.944828 232.848263)">Dry kibble, 26 Jul to 21 Sep</text>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #1f2933" x="305.193103" y="259.508835" transform="rotate(-0 305.193103 259.508835)">4 of 73 feedings  (5.5%)</text>
+   </g>
+   <g id="text_11">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #1f2933" x="223.944828" y="259.508835" transform="rotate(-0 223.944828 259.508835)">Dry kibble, 21 Sep to 18 Oct (slow feeder in use)</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #1f2933" x="252.62069" y="286.169406" transform="rotate(-0 252.62069 286.169406)">1 of 18 feedings  (5.6%)</text>
+   </g>
+   <g id="text_13">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #1f2933" x="223.944828" y="286.169406" transform="rotate(-0 223.944828 286.169406)">Dry kibble, 18 to 28 Oct (chicken phase)</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #1f2933" x="270.782069" y="312.829977" transform="rotate(-0 270.782069 312.829977)">4 of 37 feedings  (10.8%)</text>
+   </g>
+   <g id="text_15">
+    <text style="font-size: 8.6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #1f2933" x="223.944828" y="312.829977" transform="rotate(-0 223.944828 312.829977)">Dry kibble, 29 Oct to 11 Nov</text>
+   </g>
+   <g id="text_16">
+    <text style="font-size: 9.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #1f2933" x="19.008" y="208.6176" transform="rotate(-0 19.008 208.6176)">Dry kibble only, by period</text>
+   </g>
+  </g>
+  <g id="text_17">
+   <text style="font-size: 11.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #1f2933" x="7.92" y="10.682203" transform="rotate(-0 7.92 10.682203)">Feedings followed by a vomiting episode within 30 minutes, 16 May to 11 Nov 2026</text>
+  </g>
+  <g id="text_18">
+   <text style="font-size: 7.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #6b7280" transform="translate(7.92 363.577808)">Outlined bar: every logged feeding of that kind, drawn to one scale. Filled part: feedings followed by a vomiting episode within 30 minutes (an episode is counted once).</text>
+   <text style="font-size: 7.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #6b7280" transform="translate(7.92 372.579859)">Portions were never logged, so a feeding is one log of any size. For 10 of the 18 episodes the kibble meal was logged in the same sitting as the vomit.</text>
+   <text style="font-size: 7.5px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #6b7280" transform="translate(7.92 381.58191)">Left out: everything fed before 26 Jul except wet food (a bowl of dry food was down all day, unlogged), lickable treats (1 of 25 since 26 Jul), jerky (1 of 38), mixed bowls (0 of 8).</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="ped3e0860e1">
+   <rect x="229.68" y="46.656" width="554.4" height="111.9744"/>
+  </clipPath>
+  <clipPath id="p70e9650b66">
+   <rect x="229.68" y="214.6176" width="554.4" height="111.9744"/>
+  </clipPath>
+ </defs>
+</svg>
