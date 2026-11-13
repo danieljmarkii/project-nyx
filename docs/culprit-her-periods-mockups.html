@@ -1,0 +1,272 @@
+<title>Culprit Her Periods</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="exploratory">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* Layout: a ledger of what the PM ruled, then the table itself, then the vet report page,
+     then the in-app options side by side, then the reaction prompts.
+     Studio layer is theme-aware (same tokens as the vet surfaces' mocks). Phone and paper
+     frames use FIXED app tokens from constants/theme.ts: the app looks like the app in any theme. */
+  :root {
+    --canvas:#F4F7F6; --panel:#FFFFFF; --ink:#16211F; --ink-soft:#4A5754; --ink-faint:#7B8884;
+    --line:#E2E9E6; --line-soft:#EDF2F0; --accent:#068A78; --accent-tint:#E4F4F1;
+    --amber:#9A6A00; --amber-tint:#F6EED9;
+    --shadow:0 1px 2px rgba(20,40,36,.04), 0 8px 30px rgba(20,40,36,.06);
+    --display:"Newsreader", Georgia, serif;
+    --body:"Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+      --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+      --amber:#E2AC49; --amber-tint:#2E2612;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+    --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+    --amber:#E2AC49; --amber-tint:#2E2612;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4); color-scheme: dark;
+  }
+  /* App tokens (constants/theme.ts), fixed in every page theme. */
+  .phone, .paper {
+    --a-surface:#FFFFFF; --a-subtle:#F5F5F5; --a-text:#0A0A0A; --a-text2:#525252; --a-text3:#737373;
+    --a-border:#EAEAEA; --a-accent:#00C2A8; --a-accent-ink:#0B7B6C; --a-accent-light:#E0FBF7;
+    --a-action:#3F35A0; --a-bar:#86D9CC; --a-bar-now:#0B7B6C; --a-night:#13112E;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--canvas); color:var(--ink); font-family:var(--body); line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1160px; margin:0 auto; padding-block:clamp(28px,6vw,64px) 96px;
+    padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+  .eyebrow { font-size:12px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin:0 0 14px; }
+  h1 { font-family:var(--display); font-size:clamp(30px,5.4vw,48px); line-height:1.05; letter-spacing:-.02em; font-weight:500; margin:0 0 18px; text-wrap:balance; max-width:22ch; }
+  .lede { font-size:clamp(16px,2vw,18px); color:var(--ink-soft); max-width:68ch; margin:0; }
+  .lede b, .rule b, .cap b, .note b { color:var(--ink); font-weight:600; }
+
+  .ledger { margin-top:28px; border:1px solid var(--line); border-radius:14px; background:var(--panel); box-shadow:var(--shadow); overflow:hidden; }
+  .ledger-h { padding:12px 18px; font-size:12px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-faint); border-bottom:1px solid var(--line-soft); }
+  .ledger-row { display:grid; grid-template-columns:44px minmax(0,1fr); gap:12px; padding:11px 18px; font-size:14px; color:var(--ink-soft); border-bottom:1px solid var(--line-soft); }
+  .ledger-row:last-child { border-bottom:0; }
+  .ledger-row .k { font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums; }
+
+  section { margin-top:64px; }
+  h2 { font-family:var(--display); font-size:clamp(24px,3.4vw,32px); font-weight:500; letter-spacing:-.01em; margin:0 0 8px; text-wrap:balance; }
+  .sec-lede { color:var(--ink-soft); max-width:70ch; margin:0 0 26px; }
+  .tag { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:999px; background:var(--accent-tint); color:var(--accent); }
+  .tag.opt { background:var(--amber-tint); color:var(--amber); }
+
+  .row { display:flex; flex-wrap:wrap; gap:28px; align-items:flex-start; }
+  .frame { display:flex; flex-direction:column; gap:10px; width:300px; max-width:100%; min-width:0; }
+  .frame.wide { width:720px; }
+  .cap { font-size:13px; color:var(--ink-soft); }
+  .optbox { border:1.5px dashed var(--amber); border-radius:20px; padding:14px; display:flex; flex-direction:column; gap:10px; }
+
+  .rules { margin-top:18px; display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+  .rule { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; font-size:14px; color:var(--ink-soft); min-width:0; }
+
+  /* Paper: a vet report section */
+  .paper { background:var(--a-surface); color:var(--a-text); border:1px solid var(--line); border-radius:6px; box-shadow:var(--shadow); padding:26px 28px 22px; font-size:13px; }
+  .paper .kicker { font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--a-text3); font-weight:600; }
+  .paper h3 { font-family:var(--display); font-weight:500; font-size:22px; margin:4px 0 2px; }
+  .paper .sub { color:var(--a-text2); margin:0 0 14px; }
+  .tbl-scroll { overflow-x:auto; }
+  table.periods { border-collapse:collapse; width:100%; min-width:620px; font-variant-numeric:tabular-nums; }
+  .periods th { text-align:left; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--a-text3); font-weight:600; padding:0 8px 8px 0; border-bottom:1px solid var(--a-border); vertical-align:bottom; }
+  .periods td { padding:9px 8px 9px 0; border-bottom:1px solid var(--a-border); vertical-align:middle; }
+  .periods td.num, .periods th.num { text-align:right; }
+  .periods .pname { font-weight:500; }
+  .periods .dates { color:var(--a-text3); font-size:11.5px; }
+  .periods tr.now td { background:var(--a-accent-light); }
+  .periods .muted { color:var(--a-text3); font-style:italic; }
+  .bar { display:flex; align-items:center; gap:8px; }
+  .bar svg { flex:0 0 auto; }
+  .paper .foot { margin-top:12px; color:var(--a-text2); font-size:11.5px; display:grid; gap:3px; }
+
+  /* Phone */
+  .phone { width:300px; max-width:100%; border-radius:34px; background:var(--a-surface); border:1px solid var(--line); box-shadow:var(--shadow); overflow:hidden; color:var(--a-text); font-size:15px; }
+  .ph-head { padding:16px 18px 6px; display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .ph-head .t { font-family:var(--display); font-size:24px; font-weight:500; }
+  .ph-head .pet { font-size:13px; color:var(--a-text3); }
+  .ph-sec { padding:12px 18px 4px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--a-text3); font-weight:600; }
+  .ghost { margin:6px 18px; height:58px; border-radius:14px; background:var(--a-subtle); display:grid; place-items:center; color:var(--a-text3); font-size:12px; }
+  .card { margin:6px 14px 12px; border:1px solid var(--a-border); border-radius:16px; padding:14px; }
+  .card h4 { margin:0 0 2px; font-size:15px; font-weight:600; }
+  .card .s { margin:0 0 10px; font-size:12.5px; color:var(--a-text2); line-height:1.4; }
+  .prow { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 10px; padding:8px 0; border-top:1px solid var(--a-border); }
+  .prow:first-of-type { border-top:0; }
+  .prow .n { font-size:13.5px; font-weight:500; min-width:0; }
+  .prow .n small { display:block; font-weight:400; font-size:11.5px; color:var(--a-text3); }
+  .prow .r { font-size:13px; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  .prow .r small { display:block; font-size:11px; color:var(--a-text3); }
+  .prow .b { grid-column:1 / -1; }
+  .prow.now .n::after { content:"Now"; margin-left:6px; font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--a-accent-ink); background:var(--a-accent-light); padding:1px 6px; border-radius:999px; }
+  .link { color:var(--a-action); font-size:13.5px; font-weight:500; padding-top:8px; }
+  .signal { margin:8px 14px; border-radius:18px; background:var(--a-night); color:#ECEAF6; padding:16px; }
+  .signal .k { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#A6A2CE; }
+  .signal .h { font-family:var(--display); font-size:20px; line-height:1.25; margin:6px 0 8px; }
+  .signal .b { font-size:13px; color:#CFCBEA; }
+  .signal .door { margin-top:12px; font-size:13px; font-weight:500; color:#fff; border-top:1px solid rgba(255,255,255,.15); padding-top:10px; }
+  .strip { margin:6px 14px 10px; padding:12px 14px; border-radius:14px; background:var(--a-subtle); font-size:13px; color:var(--a-text2); }
+  .strip b { color:var(--a-text); font-weight:600; }
+
+  .rq { margin-top:16px; border:1px solid var(--line); border-radius:14px; background:var(--panel); padding:16px 18px; display:grid; gap:6px; }
+  .rq .q { font-weight:600; }
+  .rq .o { color:var(--ink-soft); font-size:14px; }
+  .rq .o b { color:var(--accent); }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Her periods · mock round 1 · exploratory · CUL-2734</p>
+  <h1>How often, across the stretches of her life</h1>
+  <p class="lede">One table: each row is a period the app already knows about (before a trial, the trial, a medication course, a food change), with the episodes and the rate per week. <b>The periods come from her life, not the calendar.</b> It is a baseline to come back to, not an alarm. Every number below is Nyx's real record from the round 3 deep dive.</p>
+
+  <div class="ledger">
+    <div class="ledger-h">What is already ruled (PM, 2026-11-13)</div>
+    <div class="ledger-row"><span class="k">1</span><span><b>Describe before detecting.</b> The table ships before any new Signal lane. Slow creep detection is separate research (CUL-2735).</span></div>
+    <div class="ledger-row"><span class="k">2</span><span><b>Not a Signal card.</b> The owner's view lives in Home or Patterns; section 3 draws both.</span></div>
+    <div class="ledger-row"><span class="k">3</span><span><b>The vet report carries it.</b> Section 2.</span></div>
+  </div>
+
+  <!-- 1 -->
+  <section>
+    <span class="tag">current</span>
+    <h2>1 · The table, and the rules it keeps</h2>
+    <p class="sec-lede">The same rows feed the vet report and the app. Bars share one scale (0 to 4 a week) so every rate owns a shape a reader can check without a legend.</p>
+    <div class="rules">
+      <div class="rule"><b>A period starts and ends on a recorded event.</b> Trial start and end, a medication course's first and last dose, a change of main food. A course inside a trial splits it: "Rabbit, on prednisolone".</div>
+      <div class="rule"><b>Unreadable says so.</b> When dry food was down all day, timing after meals can't be told, so the cell reads "unreadable", never a number.</div>
+      <div class="rule"><b>Found is its own column.</b> A found pile nobody saw counts in the total and is shown apart, never hidden.</div>
+      <div class="rule"><b>No verdict words.</b> A low row is a number, never "better" or "improved". A quiet stretch is not proof she was well.</div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <span class="tag">current</span>
+    <h2>2 · On the vet report</h2>
+    <p class="sec-lede">A section of its own, after the flags. The full split, because the vet is the reader who uses it. The current period is shaded.</p>
+    <div class="row">
+      <div class="frame wide" data-kit="new: PeriodsTable (report)">
+        <div class="paper">
+          <div class="kicker">Vomiting by period</div>
+          <h3>Nyx, May 16 to Nov 11</h3>
+          <p class="sub">Periods are set by the diet trial, medication courses and food changes on record.</p>
+          <div class="tbl-scroll">
+            <table class="periods">
+              <thead><tr><th>Period</th><th class="num">Days</th><th class="num">Episodes</th><th>A week</th><th class="num">Within 30 min of a meal</th><th class="num">Later</th><th class="num">Found</th></tr></thead>
+              <tbody id="report-rows"></tbody>
+            </table>
+          </div>
+          <div class="foot">
+            <span>"A week" is episodes divided by days, times 7. "Found" episodes were discovered, not seen, and are inside the total.</span>
+            <span>Before the trial, dry food was down all day, so timing after meals cannot be read for that period.</span>
+          </div>
+        </div>
+        <p class="cap"><b>No sentence reads the table for the vet.</b> Dr. Chen: "Rabbit again at 3.1 against 1.5 on the first rabbit trial is the question I'd bring to the recheck. Let me draw that conclusion; don't print it."</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <span class="tag opt">decision · R-1</span>
+    <h2>3 · Where the owner finds it</h2>
+    <p class="sec-lede">Count and rate only for the owner; the timing split stays on the report (R-2). Three placements, drawn for the decision.</p>
+    <div class="row">
+      <div class="frame">
+        <span class="tag">recommended · A</span>
+        <div class="phone" data-kit="new: PeriodsPanel · Card, colorSurface">
+          <div class="ph-head"><span class="t">Patterns</span><span class="pet">Nyx</span></div>
+          <div class="ph-sec">This month</div>
+          <div class="ghost">the month, as today</div>
+          <div class="ph-sec">Her periods</div>
+          <div class="card">
+            <h4>Vomiting, period by period</h4>
+            <p class="s">Each stretch starts with a trial, a medicine or a food change.</p>
+            <div id="owner-rows"></div>
+            <div class="link">See every period</div>
+          </div>
+          <div class="ph-sec">What Nyx ate</div>
+          <div class="ghost">top food, as today</div>
+        </div>
+        <p class="cap"><b>Patterns, after the month.</b> Patterns is already "the full story on demand". Home stays the alarm (Principle 3).</p>
+      </div>
+
+      <div class="optbox">
+        <span class="tag opt">option, drawn for the decision · B</span>
+        <div class="frame">
+          <div class="phone">
+            <div class="ph-head"><span class="t">Today</span><span class="pet">Nyx</span></div>
+            <div class="signal"><div class="k">Signal</div><div class="h">Vomiting is still going on</div><div class="b">6 in the last 2 weeks</div></div>
+            <div class="strip" data-kit="new: PeriodsStrip · colorSurfaceSubtle">Since rabbit again (Oct 29): <b>3.1 a week</b>. On the rabbit trial: <b>1.5 a week</b>.</div>
+            <div class="ghost">the rest of Home</div>
+          </div>
+          <p class="cap"><b>Home, a strip under the Signal.</b> Designer against: choosing which two periods to compare is a reading, and a reading on Home is a card by another name.</p>
+        </div>
+      </div>
+
+      <div class="optbox">
+        <span class="tag opt">option, drawn for the decision · C</span>
+        <div class="frame">
+          <div class="phone">
+            <div class="ph-head"><span class="t">Today</span><span class="pet">Nyx</span></div>
+            <div class="signal"><div class="k">Signal</div><div class="h">Vomiting is still going on</div><div class="b">6 in the last 2 weeks</div><div class="door">Her periods →</div></div>
+            <div class="ghost">the rest of Home</div>
+          </div>
+          <p class="cap"><b>A plus a door.</b> The panel lives in Patterns; a vomiting card that has already fired links straight to it. Nothing new shows on a quiet Home.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <span class="tag opt">decisions</span>
+    <h2>4 · Reaction prompts</h2>
+    <div class="rq"><div class="q">R-1 · Where does the owner's view live?</div><div class="o">A Patterns panel · B a Home strip · C Patterns plus a door from the vomiting card. <b>Recommend C:</b> it is found exactly when it matters and adds nothing to a quiet Home.</div></div>
+    <div class="rq"><div class="q">R-2 · Which columns does the owner see?</div><div class="o">Count and rate only · the full split as on the report. <b>Recommend count and rate:</b> "within 30 min" and "unreadable" need the footnotes a vet reads and an owner skips.</div></div>
+    <div class="rq"><div class="q">R-3 · What starts a period?</div><div class="o">Trial start and end, medication courses, a change of main food · also vet visits. <b>Recommend the first three:</b> a visit changes nothing about her by itself. Open to the build: the app has no "challenge" record, so "Chicken challenge" would read as a food change unless the trial records a reintroduction (CUL-1821, unruled).</div></div>
+    <div class="rq"><div class="q">R-4 · A short period, like 7.6 days off prednisolone?</div><div class="o">Print the rate · print the count and "too short for a rate". <b>Data Scientist recommends the count always and a rate from 14 days</b>, the same coverage idea as CUL-747. Both drawn: section 2 prints every rate, section 3 holds back the short ones. <b>The cost, visible in section 3:</b> "Rabbit again" is 13.5 days old, so at a 14 day floor the one row Dr. Chen cares about shows only its count today. Half a day later it shows 3.1.</div></div>
+    <div class="rq"><div class="q">R-5 · A pet with no trial, course or food change yet?</div><div class="o">Calendar months, labelled as months · a designed empty state until the first event. <b>Recommend months:</b> slow creep shows in months too, and an empty table helps no one. Drawn next round.</div></div>
+    <div class="rq"><div class="q">R-6 · Which signs?</div><div class="o">Vomiting first · every sign at once. <b>Recommend vomiting first</b>; stool, cough and itch reuse the same table once the counting rules for each are checked (a cough log is not a cough).</div></div>
+  </section>
+</div>
+
+<script>
+  // Nyx's record, from the round 3 deep dive (PR #1512). The current period is last.
+  const P = [
+    { n:"Before the trial", d:"May 16 to Jul 25", days:71.0, e:28, w:"at least 9", l:"unreadable", f:12 },
+    { n:"Rabbit trial", d:"Jul 26 to Sep 20", days:57.0, e:12, w:9, l:3, f:4 },
+    { n:"Rabbit, on prednisolone", d:"Sep 21 to Oct 10", days:20.0, e:4, w:3, l:1, f:0 },
+    { n:"Rabbit, off prednisolone", d:"Oct 11 to Oct 18", days:7.6, e:2, w:2, l:0, f:0 },
+    { n:"Chicken challenge", d:"Oct 18 to Oct 28", days:10.4, e:5, w:1, l:4, f:0 },
+    { n:"Rabbit again", d:"Oct 29 to Nov 11", days:13.5, e:6, w:4, l:2, f:1, now:true },
+  ];
+  const rate = p => p.e / p.days * 7;
+  const MAX = 4, W = 110;
+  const bar = (p, wid) => {
+    const w = Math.max(2, Math.round(rate(p) / MAX * wid));
+    const fill = p.now ? "var(--a-bar-now)" : "var(--a-bar)";
+    return `<svg width="${wid}" height="8" viewBox="0 0 ${wid} 8" aria-hidden="true"><rect x="0" y="0" width="${wid}" height="8" rx="4" fill="var(--a-subtle)"/><rect x="0" y="0" width="${w}" height="8" rx="4" fill="${fill}"/></svg>`;
+  };
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  document.getElementById("report-rows").innerHTML = P.map(p => `
+    <tr class="${p.now ? "now" : ""}">
+      <td><div class="pname">${esc(p.n)}</div><div class="dates">${esc(p.d)}</div></td>
+      <td class="num">${p.days.toFixed(1)}</td>
+      <td class="num">${p.e}</td>
+      <td><div class="bar">${bar(p, W)}<span>${rate(p).toFixed(1)}</span></div></td>
+      <td class="num">${esc(p.w)}</td>
+      <td class="num ${p.l === "unreadable" ? "muted" : ""}">${esc(p.l)}</td>
+      <td class="num">${p.f}</td>
+    </tr>`).join("");
+  // Owner panel: newest first, rate held back under 14 days (R-4's recommended side).
+  document.getElementById("owner-rows").innerHTML = P.slice().reverse().map(p => {
+    const short = p.days < 14;
+    const r = short ? `${p.e} episodes<small>too short for a rate</small>` : `${rate(p).toFixed(1)} a week<small>${p.e} in ${Math.round(p.days)} days</small>`;
+    return `<div class="prow ${p.now ? "now" : ""}"><div class="n">${esc(p.n)}<small>${esc(p.d)}</small></div><div class="r">${r}</div>${short ? "" : `<div class="b">${bar(p, 236)}</div>`}</div>`;
+  }).join("");
+</script>
