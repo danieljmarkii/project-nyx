@@ -9,6 +9,7 @@ import { colorRoles, theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { SettingsRow } from '../../components/settings/SettingsRow';
 import { FollowUpNotificationRow } from '../../components/settings/FollowUpNotificationRow';
+import { VetReminderNotificationRow } from '../../components/settings/VetReminderNotificationRow';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { NotificationPrimer } from '../../components/notifications/NotificationPrimer';
 import { ensurePermission, type NotificationPermission } from '../../lib/notifications';
@@ -375,14 +376,23 @@ export default function NotificationsScreen() {
             engines_v3_en14 (the row renders nothing flag-off). */}
         {!loading ? <FollowUpNotificationRow denied={denied} /> : null}
 
+        {/* CUL-2728: the vet visit reminders. Off by default, account-wide, its own
+            primer; it renders nothing until the permission read answers. */}
+        <VetReminderNotificationRow
+          permission={permission}
+          onPermissionChange={setPermission}
+          petName={primerPetName}
+        />
+
         {/* The lock-screen privacy promise, RELOCATED here from the primer (DR-4,
             spec §5): stated where an owner examines the feature, no longer part of
             the pitch. Shown where the live feature is (states a/b), not over the
-            denied banner. */}
+            denied banner. Widened for the vet visit reminders (CUL-2728 T6): their
+            lock screen carries the visit's day and time, still nothing from the record. */}
         {!loading && !denied && (
           // Same tertiary register as the intro line (reused, not duplicated).
           <Text style={styles.intro}>
-            On your lock screen, the notification only says the day’s ready to read — never what’s in the record.
+            On your lock screen, Culprit says only that the day’s ready to read, or when a vet visit is. Never what’s in the record.
           </Text>
         )}
 

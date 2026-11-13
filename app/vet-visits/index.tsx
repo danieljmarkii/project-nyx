@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -14,6 +14,9 @@ import { callListRowOf, readCallsForPet, type CallView } from '../../lib/vetCall
 import { petPronouns } from '../../lib/utils';
 import { VetVisitsEmptyState } from '../../components/vetvisits/VetVisitsEmptyState';
 import { BookVisitSheet, type BookVisitSubmit, type VisitMode } from '../../components/vetvisits/BookVisitSheet';
+import { NotificationPrimer } from '../../components/notifications/NotificationPrimer';
+import { readVetReminderStatus, useRemindMeAfterSave, type VetReminderStatus } from '../../hooks/useVetReminders';
+import { VET_VISIT_PRIMER } from '../../lib/vetReminderNotifications';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
 import {
@@ -93,6 +96,27 @@ export default function VetVisitsScreen() {
   const [failed, setFailed] = useState(false);
   const [sheetMode, setSheetMode] = useState<VisitMode | null>(null);
   const [saving, setSaving] = useState(false);
+  // CUL-2728: the reminders' switch on this phone, read each time the sheet opens, and
+  // Remind me applied after Save has closed it (the sheet is a modal; the primer is one).
+  const [reminderStatus, setReminderStatus] = useState<VetReminderStatus>('loading');
+  const remindMe = useRemindMeAfterSave();
+  useEffect(() => {
+    if (sheetMode !== 'booked') return;
+    let cancelled = false;
+    setReminderStatus('loading');
+    readVetReminderStatus()
+      .then((st) => {
+        if (!cancelled) setReminderStatus(st);
+      })
+      .catch((e) => {
+        // Unreadable reads as off: the row stays a choice, and applying it re-reads.
+        console.warn('[vet-visits] reminder status read failed:', e);
+        if (!cancelled) setReminderStatus('off');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sheetMode]);
 
   // E2's two doors on the Pet-tab card route here with an intent. Held in a REF
   // and cleared BEFORE the effect it triggers: in state, an already-scheduled
@@ -197,12 +221,19 @@ export default function VetVisitsScreen() {
         syncPendingVetAppointments().catch(console.error);
         setSheetMode(null);
         await load();
+        // Remind me runs once the sheet is gone (CUL-2728 T3). Where an Alert follows,
+        // it runs from the Alert's OK, so the primer never rises under a dialog.
+        const afterSave = () => {
+          if (input.remindMe) void remindMe.apply();
+        };
+        const ok = [{ text: 'OK', onPress: afterSave }];
         if (failedFor.length > 0) {
           // Names who did NOT get one, and says plainly that the rest did — the
           // owner needs to know exactly what to redo.
           Alert.alert(
             'Saved, apart from one',
             `${listNames(failedFor)} did not get an appointment. Add it again from their profile.`,
+            ok,
           );
         } else if (input.alsoForPetIds.length > 0) {
           // The success half, and it needs saying out loud for a reason particular
@@ -220,7 +251,10 @@ export default function VetVisitsScreen() {
             alsoNames.length === 1
               ? `${alsoNames[0]} has one too — it shows on their own visits.`
               : `${listNames(alsoNames)} have one too — each shows on their own visits.`,
+            ok,
           );
+        } else {
+          afterSave();
         }
         return;
       }
@@ -533,10 +567,22 @@ export default function VetVisitsScreen() {
           prefill={prefill}
           initialReason={sheetMode === 'booked' ? carriedReason : null}
           busy={saving}
+          reminderStatus={reminderStatus}
           onClose={() => setSheetMode(null)}
           onSubmit={handleSubmit}
         />
       ) : null}
+
+      {/* CUL-2728: Remind me's primer, never asked on this phone. Rendered by the screen,
+          after the sheet has closed, never by the sheet (C-14). */}
+      <NotificationPrimer
+        visible={remindMe.primer.visible}
+        descriptor={VET_VISIT_PRIMER}
+        petName={pets.length === 1 ? pets[0].name : null}
+        onConfirm={remindMe.primer.onConfirm}
+        onDismiss={remindMe.primer.onDismiss}
+        requesting={remindMe.primer.requesting}
+      />
     </SafeAreaView>
   );
 }

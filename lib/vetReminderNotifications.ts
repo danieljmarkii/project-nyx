@@ -6,8 +6,8 @@
 // live appointments, the pet names and the account's switch, plan, and diff the plan
 // against what the OS holds. Two one-shot reminders per booked visit, three days before
 // at 6pm and the morning of. Nothing here asks for permission or renders anything: the
-// switch and the Remind me control are PR-04's (CUL-2728), so until then the category
-// cannot be turned on and this module only ever cancels.
+// switch (`components/settings/VetReminderNotificationRow.tsx`) and Remind me on the
+// booking sheet (CUL-2728) own the one prompt, through `hooks/useVetReminders.ts`.
 //
 // THE RULES IT KEEPS.
 //   • G6, default off: the switch is `notification_preferences` (category `vet_visit`,
@@ -42,7 +42,12 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { getDb } from './db';
 import { ensurePermission } from './notifications';
-import { CATEGORY_PREFERENCE_READ_SQL, type LocalCategoryPreferenceRow } from './notificationSettings';
+import type { NotificationPrimerDescriptor } from './notifications';
+import {
+  CATEGORY_PREFERENCE_READ_SQL,
+  setCategoryEnabled,
+  type LocalCategoryPreferenceRow,
+} from './notificationSettings';
 import { readReminderInputs } from './vetVisits';
 import { planVetReminders, type PlannedVetReminder, type VetReminderKind } from './vetReminders';
 
@@ -74,7 +79,7 @@ export function isVetReminderIdentifier(identifier: string): boolean {
 /** What a scheduled reminder says and when it fires. Two plans with one signature
  *  produce the same notification. */
 export function vetReminderSignature(p: PlannedVetReminder): string {
-  return JSON.stringify([p.fireAt, p.appointmentId, p.title, p.body]);
+  return JSON.stringify([p.fireAt, p.appointmentId, p.petId, p.title, p.body]);
 }
 
 export interface LiveVetReminder {
@@ -127,6 +132,34 @@ export async function vetRemindersOn(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Write the account's switch (the `vet_visit` row, account-wide, get-or-create through
+ * the split-brain-safe read; the preference queue pushes it). The PREFERENCE only: the
+ * caller re-plans the schedule after (`refreshVetReminders`), and for an ON confirms OS
+ * permission first, as `applyCategoryPreference`'s contract says.
+ */
+export async function setVetRemindersOn(on: boolean): Promise<void> {
+  await setCategoryEnabled(VET_VISIT_CATEGORY, on);
+}
+
+/**
+ * The primer's copy for this category (mock round 2 §5, T5). The hero is a GENERIC
+ * spine of the two reminders and the visit, never the owner's booking, so it reads the
+ * same before a visit exists. A reminder by nature, and only about the owner's own
+ * booking: no medication, no record (G4).
+ */
+export const VET_VISIT_PRIMER: NotificationPrimerDescriptor = {
+  heroLabel: 'Vet visit reminders',
+  heroLead: (petName) => (petName ? `Ready for ${petName}’s visit.` : 'Ready for the visit.'),
+  headline: 'Walk in with the record ready.',
+  body: 'Two calm reminders for each booked visit. Your phone will ask once — change it any time.',
+  miniSpine: [
+    { kind: 'other', title: 'Three days before', detail: 'time to weigh, log or call ahead', time: '6:00 PM' },
+    { kind: 'other', title: 'The morning of', detail: 'the report to take along', time: '8:00 AM' },
+    { kind: 'other', title: 'The visit', time: '10:30 AM' },
+  ],
+};
 
 async function liveVetReminders(): Promise<LiveVetReminder[]> {
   const all = await Notifications.getAllScheduledNotificationsAsync();
@@ -209,12 +242,11 @@ async function runVetReminderSync(readInput: () => VetReminderSyncInput): Promis
     if (allowed) {
       const input = readInput();
       if (!input.petsLoaded) return;
-      const { appointments, visitDaysByPet } = await readReminderInputs();
+      const { appointments } = await readReminderInputs();
       planned = planVetReminders({
         now: input.now ?? new Date(),
         appointments,
         petNames: input.petNames,
-        visitDaysByPet,
       });
     }
     const actions = computeVetReminderActions({ allowed, planned, live });
@@ -230,7 +262,12 @@ async function runVetReminderSync(readInput: () => VetReminderSyncInput): Promis
         content: {
           title: p.title,
           body: p.body,
-          data: { kind: VET_REMINDER_TAP_KIND, appointmentId: p.appointmentId, sig: vetReminderSignature(p) },
+          data: {
+            kind: VET_REMINDER_TAP_KIND,
+            appointmentId: p.appointmentId,
+            petId: p.petId,
+            sig: vetReminderSignature(p),
+          },
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,

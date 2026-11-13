@@ -27,17 +27,14 @@
 // The fire day is also the identifier's day (`nyx.vetreminder.<kind>.<day>`), so the
 // collapse rule and the identifier can never disagree about what "the same day" means.
 //
-// ── THE COPY IS PROVISIONAL ───────────────────────────────────────────────────
-// §4's direction, not its final strings: PR-04's mock round (CUL-2728) owns the words
-// under `nyx-voice` and `clinical-guardrails`. What is final already is what the copy
-// may carry (R4): the day, the time and the pet's name, never the reason, the clinic,
-// the vet, a question, a count or anything from the record. The one record-derived
-// value, the report window's first day, comes from the shared visit bound
-// (`latestVisitBefore`, the report's own rung 1), read on the day the reminder fires;
-// it is a date, never a duration (C-19).
+// ── THE COPY (final, mock round 2, CUL-2728) ──────────────────────────────────
+// What the lock screen may carry (R4): the day, the time and the pet's name. Never the
+// reason, the clinic, the vet, a question, a count or anything from the record. Round 2
+// D1 (PM, 2026-11-13) dropped the report window's start date from the day-of body for
+// that reason: the last visit's date is a record fact, and Get ready shows the window
+// live one tap away. So the planner reads nothing from `vet_visits`.
 
-import { appointmentTimeKnown, formatClockTime, formatVisitDate, formatVisitWeekday, localDateKey } from './vetVisits';
-import { latestVisitBefore } from './visitWindow';
+import { appointmentTimeKnown, formatClockTime, formatVisitDate, localDateKey } from './vetVisits';
 import { dayKeyToLocalDate } from './utils';
 
 export type VetReminderKind = 'ahead' | 'day_of';
@@ -73,6 +70,10 @@ export interface PlannedVetReminder {
   /** The fire instant, ISO. */
   fireAt: string;
   appointmentId: string | null;
+  /** The pet the tap opens on: the single visit's, or a collapsed group's first (the
+   *  earliest instant, then the earliest appointment). Round 2 T4: a collapsed tap opens
+   *  the Vet visits list on this pet, the list's existing pet door. */
+  petId: string;
   title: string;
   body: string;
 }
@@ -82,8 +83,6 @@ export interface PlanInput {
   appointments: readonly ReminderAppointment[];
   /** Current pet names by id. An appointment whose pet is absent is not planned. */
   petNames: ReadonlyMap<string, string>;
-  /** Each pet's live `visited_at` days, any order. Absent → no visit. */
-  visitDaysByPet: ReadonlyMap<string, readonly string[]>;
 }
 
 /** Is this live appointment's local day today or later (§3.1)? */
@@ -168,21 +167,20 @@ export function planVetReminders(input: PlanInput): PlannedVetReminder[] {
     if (first.fire.getTime() <= nowMs) continue;
     const dayKey = localDateKey(first.fire);
     const single = group.length === 1;
-    const copy = single
-      ? singleCopy(first, dayKey, input.visitDaysByPet.get(first.appt.pet_id) ?? [])
-      : collapsedCopy(group, dayKey);
+    const copy = single ? singleCopy(first, dayKey) : collapsedCopy(group, dayKey);
     out.push({
       kind: first.kind,
       dayKey,
       fireAt: first.fire.toISOString(),
       appointmentId: single ? first.appt.id : null,
+      petId: first.appt.pet_id,
       ...copy,
     });
   }
   return out.sort((a, b) => Date.parse(a.fireAt) - Date.parse(b.fireAt) || a.kind.localeCompare(b.kind));
 }
 
-// ── The copy (provisional; see the header) ─────────────────────────────────────
+// ── The copy (final; see the header) ──────────────────────────────────────────
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -196,30 +194,35 @@ function dayWord(apptDay: string, fireDay: string, appt: Date): string {
   return WEEKDAYS[appt.getDay()];
 }
 
-function singleCopy(s: Slot, fireDay: string, visitDays: readonly string[]): { title: string; body: string } {
+function singleCopy(s: Slot, fireDay: string): { title: string; body: string } {
   const appt = new Date(s.appt.scheduled_at);
   const apptDay = localDateKey(appt);
   const timed = appointmentTimeKnown(s.appt.scheduled_at);
   const clock = timed ? formatClockTime(appt) : null;
   const word = dayWord(apptDay, fireDay, appt);
   if (s.kind === 'ahead') {
-    const when = formatVisitWeekday(apptDay);
+    // The title already says the weekday, so the body opens on the date (T2), and the
+    // ask names what three days leave room for. Never "weigh in", which reads as giving
+    // an opinion. The fire day stands in for "now" so the year is stamped only when the
+    // visit falls in another year than the reminder (C-19).
+    const fire = dayKeyToLocalDate(fireDay) ?? appt;
+    const date = formatVisitDate(apptDay, fire);
     return {
       title: `${s.petName} sees the vet ${word}`,
-      body: `${when}${clock ? ` at ${clock}` : ''}. A few minutes in Get ready now, while there's time to weigh in or call ahead.`,
+      body: `${date}${clock ? ` at ${clock}` : ''}. ${AHEAD_ASK}`,
     };
   }
-  // The report window's first day, as the composer would start it on the fire day: the
-  // shared rung-1 bound, never re-derived.
-  const start = latestVisitBefore(visitDays, fireDay);
-  const fire = dayKeyToLocalDate(fireDay);
   return {
     title: `${s.petName} sees the vet ${word}${clock ? ` at ${clock}` : ''}`,
-    body: start
-      ? `Make a report of ${formatVisitDate(start, fire ?? appt)} to today to take along.`
-      : 'Make a report to take along.',
+    body: DAY_OF_BODY,
   };
 }
+
+/** The ahead reminder's ask (mock round 2, T2). */
+export const AHEAD_ASK = 'A few minutes in Get ready now leaves time to weigh, log or call ahead.';
+/** The day-of body: CUL-2302's line, never naming a finished file, and since round 2 D1
+ *  never a date from the record. */
+export const DAY_OF_BODY = 'Make a report to take along.';
 
 function joinNames(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? '';
@@ -241,4 +244,43 @@ function collapsedCopy(group: readonly Slot[], fireDay: string): { title: string
       : `${joinNames(names)} ${names.length === 1 ? 'has vet visits' : 'have vet visits'} coming up`;
   const body = names.length === 1 ? 'Tap to get ready.' : names.length === 2 ? 'Tap to get ready for both.' : 'Tap to get ready for each.';
   return { title, body };
+}
+
+// ── The booking sheet's line (mock round 2, D2) ────────────────────────────────
+
+/**
+ * PURE: the reminders a booking at `scheduledAt` would still get, judged at `now`, in
+ * fire order. The same two instant functions and the same R2 rule the planner uses, so
+ * the sheet can never promise a reminder the schedule would skip. Per booking, without
+ * the collapse: a visit that shares a day with another pet's still gets a notification
+ * that day, which is what the sheet's line claims.
+ */
+export function upcomingReminderInstants(scheduledAt: string, now: Date): Date[] {
+  const out: Date[] = [];
+  for (const at of [aheadInstant(scheduledAt), dayOfInstant(scheduledAt)]) {
+    if (at && at.getTime() > now.getTime()) out.push(at);
+  }
+  return out;
+}
+
+/** 'Friday at 6:00 pm', said from `now`: 'today' / 'tomorrow', the weekday inside the
+ *  coming week, else the date ('Dec 11 at 6:00 pm'), since a bare weekday a month out
+ *  names the wrong Friday. */
+export function describeReminderInstant(at: Date, now: Date): string {
+  const atDay = localDateKey(at);
+  const dayAt = (offset: number) =>
+    localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset));
+  let day: string;
+  if (atDay === dayAt(0)) day = 'today';
+  else if (atDay === dayAt(1)) day = 'tomorrow';
+  else if (atDay <= dayAt(6)) day = WEEKDAYS[at.getDay()];
+  else day = formatVisitDate(atDay, now);
+  return `${day} at ${formatClockTime(at)}`;
+}
+
+/** 'Friday at 6:00 pm and Monday at 8:00 am', or null when nothing is left to fire. */
+export function upcomingReminderPhrase(scheduledAt: string, now: Date): string | null {
+  const parts = upcomingReminderInstants(scheduledAt, now).map((at) => describeReminderInstant(at, now));
+  if (parts.length === 0) return null;
+  return parts.join(' and ');
 }

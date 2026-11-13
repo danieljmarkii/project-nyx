@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -25,6 +26,9 @@ import {
   type VisitPrefill,
 } from '../../lib/vetVisits';
 import { useSheetCap } from '../../hooks/useLayoutClass';
+import type { VetReminderStatus } from '../../hooks/useVetReminders';
+import { describeReminderInstant, upcomingReminderInstants } from '../../lib/vetReminders';
+import { RemindMeRow } from './RemindMeRow';
 
 /** Which arm of the sheet is open — the one question "Add" asks first. */
 export type VisitMode = 'booked' | 'happened';
@@ -40,6 +44,9 @@ export interface BookVisitSubmit {
   reason: string;
   /** Other pets to book the same appointment for (`booked` only). */
   alsoForPetIds: string[];
+  /** Remind me was picked (`booked` only, and only while the switch is off on this
+   *  phone). The host applies it AFTER the sheet closes (CUL-2728 T3, C-14). */
+  remindMe: boolean;
 }
 
 interface Props {
@@ -55,6 +62,9 @@ interface Props {
    *  round 2 §03 frame 2). Seeded on each open like the prefill, and the owner may edit it. */
   initialReason?: string | null;
   busy?: boolean;
+  /** The vet visit reminders' switch on this phone (CUL-2728). Absent reads as loading,
+   *  which renders the row off: a pick survives the answer. */
+  reminderStatus?: VetReminderStatus;
   onClose: () => void;
   onSubmit: (input: BookVisitSubmit) => void;
 }
@@ -81,6 +91,7 @@ export function BookVisitSheet({
   prefill,
   initialReason = null,
   busy = false,
+  reminderStatus = 'loading',
   onClose,
   onSubmit,
 }: Props) {
@@ -95,6 +106,7 @@ export function BookVisitSheet({
   const [vetName, setVetName] = useState('');
   const [reason, setReason] = useState('');
   const [alsoFor, setAlsoFor] = useState<Set<string>>(new Set());
+  const [remindMe, setRemindMe] = useState(false);
 
   // Re-seed on each OPEN rather than on mount. The only caller today unmounts this
   // sheet between openings (`{sheetMode ? <BookVisitSheet …/> : null}`), so a
@@ -111,6 +123,7 @@ export function BookVisitSheet({
     setReason(initialReason ?? '');
     setTime(null);
     setAlsoFor(new Set());
+    setRemindMe(false);
     setShowDayPicker(false);
     setShowTimePicker(false);
     // The last visit's own "come back on" date seeds the day, but ONLY on the arm
@@ -135,6 +148,17 @@ export function BookVisitSheet({
 
   const dayLabel = useMemo(() => formatVisitWeekday(localDateKey(day)), [day]);
   const isBooked = mode === 'booked';
+
+  // The reminders this booking would still get, said from now (D2): the planner's own
+  // instants and R2 rule, so the line never promises one the schedule would skip.
+  const reminderTimes = useMemo(() => {
+    if (!isBooked) return [];
+    const now = new Date();
+    return upcomingReminderInstants(composeScheduledAt(day, time), now).map((at) =>
+      describeReminderInstant(at, now),
+    );
+  }, [isBooked, day, time]);
+  const remindMeApplies = reminderStatus === 'off' || reminderStatus === 'loading';
 
   /**
    * Flip the arm, and bring the date with it.
@@ -203,6 +227,7 @@ export function BookVisitSheet({
       vetName,
       reason,
       alsoForPetIds: isBooked ? [...alsoFor] : [],
+      remindMe: isBooked && remindMe && remindMeApplies,
     });
   }
 
@@ -387,6 +412,18 @@ export function BookVisitSheet({
               </View>
             ) : null}
 
+            {isBooked ? (
+              <RemindMeRow
+                status={reminderStatus}
+                picked={remindMe}
+                onToggle={() => setRemindMe((v) => !v)}
+                onOpenSettings={() => {
+                  Linking.openSettings().catch((e) => console.warn('[book visit] open settings failed:', e));
+                }}
+                times={reminderTimes}
+              />
+            ) : null}
+
             <PrimaryButton
               label={isBooked ? 'Add the appointment' : `Save ${petName}’s visit`}
               onPress={submit}
@@ -415,10 +452,13 @@ export function BookVisitSheet({
                 The `happened` half is unchanged — true then, true now, and the one
                 consequence of this save the owner cannot see: a logged visit moves
                 the vet report's window. Never "from today" — the report's rung 1 is
-                strictly before today (§4.1 D2, AC 9). */}
+                strictly before today (§4.1 D2, AC 9).
+
+                "No reminder yet" left with CUL-2728: Remind me sits just above, and it
+                says exactly what a reminder will be, so the footnote no longer has to. */}
             <ThemedText style={styles.footnote}>
               {isBooked
-                ? 'Shows on Home five days before. No reminder yet.'
+                ? 'Shows on Home five days before.'
                 : 'Your next vet report starts from this visit.'}
             </ThemedText>
           </ScrollView>

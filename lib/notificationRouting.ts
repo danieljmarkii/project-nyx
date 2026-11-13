@@ -35,6 +35,8 @@ export interface NotificationTapData {
   /** CUL-2727: a vet visit reminder's tap carries `kind: 'vet_visit'` and its appointment
    *  id, or null for a reminder collapsed over several visits (lib/vetReminderNotifications.ts). */
   appointmentId?: unknown;
+  /** CUL-2728: the pet a collapsed vet visit reminder opens the list on (T4). */
+  petId?: unknown;
 }
 
 // A call id as this app mints it (`uuid()`): the only shape a follow-up's tap may route on
@@ -52,7 +54,8 @@ export interface NotificationRouteDecision {
    *  one of ours (G5 fail-safe — never navigate a stale/foreign payload blind). */
   routeTo: string | null;
   /** Params the route needs beyond the tap marker, built here from validated values only.
-   *  Today only a single-visit reminder's `appointmentId` (Get ready). */
+   *  Today a single-visit reminder's `appointmentId` (Get ready) and a collapsed one's
+   *  `pet` (the Vet visits list). */
   routeParams?: Readonly<Record<string, string>>;
 }
 
@@ -78,14 +81,18 @@ export function notificationRouteDecision(
     return { recordCategory: null, routeTo: opts.authed && callId ? `/vet-call/${callId}` : null };
   }
   // CUL-2727: a vet visit reminder. One visit opens its Get ready; a collapsed one (no id,
-  // or an id that is not ours in shape) opens the Vet visits list. Built here, never read
-  // off the payload, so the route set stays closed (G5).
+  // or an id that is not ours in shape) opens the Vet visits list, on the first visit's
+  // pet when the payload carries one in our shape (CUL-2728 T4; the list's own `pet`
+  // param, which falls back to the active pet for an id the account does not hold).
+  // Built here, never read off the payload, so the route set stays closed (G5).
   if (data?.kind === 'vet_visit') {
     if (!opts.authed) return { recordCategory: null, routeTo: null };
     const appointmentId =
       typeof data.appointmentId === 'string' && CALL_ID.test(data.appointmentId) ? data.appointmentId : null;
-    return appointmentId
-      ? { recordCategory: null, routeTo: '/rundown', routeParams: { appointmentId } }
+    if (appointmentId) return { recordCategory: null, routeTo: '/rundown', routeParams: { appointmentId } };
+    const petId = typeof data.petId === 'string' && CALL_ID.test(data.petId) ? data.petId : null;
+    return petId
+      ? { recordCategory: null, routeTo: '/vet-visits', routeParams: { pet: petId } }
       : { recordCategory: null, routeTo: '/vet-visits' };
   }
   const rawRoute = typeof data?.route === 'string' ? data.route : null;

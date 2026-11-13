@@ -967,9 +967,6 @@ function appointmentsChanged(): void {
 export interface ReminderInputs {
   /** Every live appointment, every pet: not deleted, not cancelled, not logged. */
   appointments: LocalVetAppointment[];
-  /** Each pet's live `visited_at` days, for the report window's first day only — a
-   *  BOUNDARY passed to `latestVisitBefore`, never a count (the visitReaders rule). */
-  visitDaysByPet: Map<string, string[]>;
 }
 
 /**
@@ -984,19 +981,9 @@ export async function readReminderInputs(): Promise<ReminderInputs> {
     `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments WHERE ${LIVE_APPOINTMENT_SQL}`,
     [],
   );
-  const visitDaysByPet = new Map<string, string[]>();
-  if (appointments.length === 0) return { appointments, visitDaysByPet };
-  const visits = await db.getAllAsync<{ pet_id: string; visited_at: string | null }>(
-    'SELECT pet_id, visited_at FROM vet_visits WHERE deleted_at IS NULL',
-    [],
-  );
-  for (const v of visits) {
-    if (typeof v.visited_at !== 'string') continue;
-    const days = visitDaysByPet.get(v.pet_id);
-    if (days) days.push(v.visited_at);
-    else visitDaysByPet.set(v.pet_id, [v.visited_at]);
-  }
-  return { appointments, visitDaysByPet };
+  // No visit read since mock round 2 D1 (CUL-2728): the lock screen names no date
+  // from the record, so the planner needs the bookings alone.
+  return { appointments };
 }
 
 // ── Writes (local-first; the queue pushes) ──────────────────────────────────────

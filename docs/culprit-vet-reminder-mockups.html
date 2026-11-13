@@ -110,14 +110,14 @@
   .remind { margin-top:14px; display:grid; grid-template-columns:22px minmax(0,1fr) auto; gap:10px; align-items:center; padding:12px; border-radius:var(--radiusMedium); border:1px solid var(--colorBorder); }
   .remind .rt { font-weight:var(--weightSemibold); font-size:var(--textMD); color:var(--colorAction); }
   .remind .rs { font-size:var(--textSM); color:var(--colorTextSecondary); line-height:var(--lineHeightSM); }
-  .remind.picked { border-color:var(--colorAccentSoft); background:var(--colorAccentLight); }
-  .remind.picked .rt { color:var(--colorAccentInk); }
+  .remind.picked { border-color:var(--colorAction); background:var(--colorTextOnNight); }
+  .remind.picked .rt { color:var(--colorAction); }
   .remind.on { border-color:transparent; background:var(--colorAccentLight); grid-template-columns:22px minmax(0,1fr); }
   .remind.on .rt { color:var(--colorAccentInk); font-weight:var(--weightMedium); font-size:var(--textSM); }
   .remind.inert { grid-template-columns:22px minmax(0,1fr); }
   .remind.inert .rt { color:var(--colorTextDisabled); }
   .check { width:22px; height:22px; border-radius:6px; border:1.5px solid var(--colorBorderStrong); }
-  .check.on { background:var(--colorAccentInk); border-color:var(--colorAccentInk); position:relative; }
+  .check.on { background:var(--colorAction); border-color:var(--colorAction); position:relative; }
   .check.on::after { content:""; position:absolute; left:6px; top:2px; width:6px; height:11px; border:solid var(--colorSurface); border-width:0 2px 2px 0; transform:rotate(45deg); }
   .btn { margin-top:16px; background:var(--colorNeutralDark); color:var(--colorSurface); border-radius:var(--radiusMedium); text-align:center; padding:13px; font-weight:var(--weightSemibold); font-size:var(--textMD); }
 
@@ -127,8 +127,7 @@
   .primer .lead { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textXL); color:var(--colorTextOnDark); }
   .spine { display:flex; flex-direction:column; gap:12px; border-left:1px solid var(--colorBorderOnNight); padding-left:14px; margin-left:4px; }
   .node { position:relative; font-size:var(--textSM); }
-  .node::before { content:""; position:absolute; left:-19px; top:6px; width:9px; height:9px; border-radius:50%; background:var(--colorMoonlitTeal); }
-  .node.visit::before { background:var(--colorTextOnNight); border-radius:2px; }
+  .node::before { content:""; position:absolute; left:-19px; top:6px; width:9px; height:9px; border-radius:50%; background:var(--colorTextOnNightMuted); }
   .node .nt { color:var(--colorTextOnDark); }
   .node .nd { color:var(--colorTextOnNightMuted); font-size:var(--textXS); }
   .primer .h { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--text2XL); line-height:1.15; color:var(--colorTextOnDark); margin-top:auto; }
@@ -158,20 +157,21 @@
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">CUL-2728 · Round 2 · build ready · 2026-11-13</p>
+  <p class="eyebrow">CUL-2728 · Round 2 · build ready · ruled 2026-11-13</p>
   <h1>Vet visit reminders</h1>
-  <p class="lede">The round row 04 builds from. Round 1 (exploratory, the same day) is superseded and lives in git at <code>29f6a76</code>. Everything tagged <b>current</b> is the proposal; the two boxes tagged <b>option</b> are drawn for a PM decision and are not the proposal. Spec: <code>docs/nyx-vet-reminder-requirements.md</code> §4, §5.</p>
+  <p class="lede">The round row 04 builds from. Round 1 (exploratory, the same day) is superseded and lives in git at <code>29f6a76</code>. Everything on the page is current: the PM ruled D1 and D2 the same day, and the two option boxes left the page (git keeps them at <code>2c77ea3</code>). Spec: <code>docs/nyx-vet-reminder-requirements.md</code> §4, §5.</p>
 
   <div class="ledger">
     <div class="ledger-h">What moved since round 1, and why</div>
     <div class="ledger-row"><span class="k">↻</span><span><b>Round 1 reactions (PM, 2026-11-13)</b>, carried unchanged: evening slot kept; the pet's name always shows; time zone is the phone's own clock (a clarification, no change); Remind me only on booked visits.</span></div>
-    <div class="ledger-row"><span class="k pm">D1</span><span><b>For the PM.</b> Whether the morning reminder names the report's start date. The proposal drops it; the box beside it keeps it. Section 1.</span></div>
-    <div class="ledger-row"><span class="k pm">D2</span><span><b>For the PM.</b> Whether the booking sheet's on line names the two times. The proposal names them; the box beside it stays general. Section 4.</span></div>
+    <div class="ledger-row"><span class="k pm">D1</span><span><b>Ruled (PM, 2026-11-13): drop the date.</b> The morning reminder says <i>Make a report to take along</i>, never a date from the record. Section 1.</span></div>
+    <div class="ledger-row"><span class="k pm">D2</span><span><b>Ruled (PM, 2026-11-13): name the times.</b> The on line and the picked line name the reminders this booking will get. Section 4.</span></div>
     <div class="ledger-row"><span class="k">T1</span><span><b>Team call (nyx-voice).</b> The clock reads <i>10:30 am</i>, the app's one format, on the lock screen and the sheet. Round 1 drew <i>10:30</i>.</span></div>
     <div class="ledger-row"><span class="k">T2</span><span><b>Team call (nyx-voice).</b> The ahead body loses its repeated weekday and the idiom <i>weigh in</i>, which reads as giving an opinion: <i>Nov 16 at 10:30 am. A few minutes in Get ready now leaves time to weigh, log or call ahead.</i></span></div>
     <div class="ledger-row"><span class="k">T3</span><span><b>Team call (Engineer).</b> Remind me is a choice the booking carries, applied when Save closes the sheet. The sheet is already a modal and a modal never presents another (C-14), so the primer opens on the Vet visits screen after the sheet is gone. Booking still never waits on it. Sections 4 and 5.</span></div>
     <div class="ledger-row"><span class="k">T4</span><span><b>Team call (Designer).</b> A reminder for two pets opens the Vet visits list on the first visit's pet, through the list's existing pet door. Section 6.</span></div>
-    <div class="ledger-row"><span class="k">T5</span><span><b>Team call (Designer).</b> The primer's mini spine shows the two reminders and the visit, not a day of logs. Section 5.</span></div>
+    <div class="ledger-row"><span class="k">T5</span><span><b>Team call (Designer).</b> The primer's mini spine shows the two reminders and the visit, not a day of logs, in the muted neutral. Section 5.</span></div>
+    <div class="ledger-row"><span class="k">T7</span><span><b>Team call (Designer, at build).</b> A picked Remind me takes the selected role's indigo (choosing is acting); the on line keeps the positive teal (a fact). The sheet names a reminder more than a week out by date, so <i>Monday</i> never reads as today's weekday.</span></div>
     <div class="ledger-row"><span class="k">T6</span><span><b>Team call (T&amp;S).</b> The lock screen promise under the switches widens to cover both rows. Section 3.</span></div>
   </div>
 
@@ -200,20 +200,9 @@
               <div class="t">Nyx sees the vet today at 10:30 am</div>
               <div class="b">Make a report to take along.</div></div></div>
         </div>
-        <div class="cap"><b>Day of.</b> CUL-2302's line, without the date (D1). Tap opens Get ready, whose one button is Send the vet report, and Get ready shows the window live.</div>
+        <div class="cap"><b>Day of.</b> CUL-2302's line, without a date (D1, ruled). Tap opens Get ready, whose one button is Send the vet report, and Get ready shows the window live.</div>
       </div>
 
-      <div class="frame option">
-        <span class="tag opt">option D1 · not the proposal</span>
-        <div class="lock" data-kit="new: VetReminder · day of, dated · colorBrandNight">
-          <div class="clock">8:00</div><div class="date">Monday, November 16</div>
-          <div class="notif"><div class="icon" aria-hidden="true"></div>
-            <div><div class="top"><span>CULPRIT</span><span>now</span></div>
-              <div class="t">Nyx sees the vet today at 10:30 am</div>
-              <div class="b">Make a report of Sep 16 to today to take along.</div></div></div>
-        </div>
-        <div class="cap"><b>As PR-03 built it.</b> Sep 16 is the last visit, the composer's own start. More specific, and it puts a fact from Nyx's record on the lock screen.</div>
-      </div>
 
       <div class="frame">
         <div class="lock" data-kit="new: VetReminder · evening before">
@@ -344,7 +333,7 @@
           <div class="field"><span>Date</span><span class="v">Mon, Nov 16</span></div>
           <div class="field"><span>Time</span><span class="v">10:30 am</span></div>
           <div class="field"><span>Clinic</span><span class="v">Riverside Animal Clinic</span></div>
-          <div class="remind picked" data-kit="RemindMeRow · picked · colorAccentLight, colorAccentInk">
+          <div class="remind picked" data-kit="RemindMeRow · picked · colorRoles.selected (ground, edge, ink), action.fill">
             <span class="check on"></span>
             <div><div class="rt">Remind me</div><div class="rs">Friday at 6:00 pm and Monday at 8:00 am, for every pet’s visits</div></div>
           </div>
@@ -367,26 +356,9 @@
           </div>
           <div class="btn">Save</div>
         </div></div>
-        <div class="cap"><b>Already on (D2 proposal).</b> No control, one line naming the two times this booking will get. Inside a window it names only what is left; none left: <i>Reminders are on.</i></div>
+        <div class="cap"><b>Already on (D2, ruled).</b> No control, one line naming the two times this booking will get. Inside a window it names only what is left; none left: <i>Reminders are on.</i></div>
       </div>
 
-      <div class="frame option">
-        <span class="tag opt">option D2 · not the proposal</span>
-        <div class="phone sheet"><div class="sheet-in">
-          <div class="grab"></div>
-          <p class="sh-t">Add a visit</p>
-          <div class="seg"><span>Already happened</span><span class="on">Booked</span></div>
-          <div class="field"><span>Date</span><span class="v">Mon, Nov 16</span></div>
-          <div class="field"><span>Time</span><span class="v">10:30 am</span></div>
-          <div class="field"><span>Clinic</span><span class="v">Riverside Animal Clinic</span></div>
-          <div class="remind on" data-kit="RemindMeRow · on, general">
-            <span aria-hidden="true">✓</span>
-            <div><div class="rt">Vet visit reminders are on.</div></div>
-          </div>
-          <div class="btn">Save</div>
-        </div></div>
-        <div class="cap"><b>General.</b> Never stale, and says less: the owner can't see a booked-too-late visit lose its 6pm reminder.</div>
-      </div>
     </div>
 
     <div class="row" style="margin-top:28px">
@@ -452,10 +424,10 @@
           <div class="primer">
             <div class="hl">Vet visit reminders</div>
             <div class="lead">Ready for Nyx’s visit.</div>
-            <div class="spine" data-kit="new: primer node kind 'visit' · colorMoonlitTeal, colorTextOnNight">
+            <div class="spine" data-kit="NotificationPrimer spine · node kind 'other' (NODE_TINT_NIGHT.other)">
               <div class="node"><div class="nt">Three days before</div><div class="nd">6:00 pm · time to weigh, log or call ahead</div></div>
               <div class="node"><div class="nt">The morning of</div><div class="nd">8:00 am · the report to take along</div></div>
-              <div class="node visit"><div class="nt">The visit</div><div class="nd">10:30 am</div></div>
+              <div class="node"><div class="nt">The visit</div><div class="nd">10:30 am</div></div>
             </div>
             <div class="h">Walk in with the record ready.</div>
             <div class="p">Two calm reminders for each booked visit. Your phone will ask once — change it any time.</div>
@@ -555,8 +527,9 @@
 
   <!-- 8. Briefs -->
   <section>
-    <span class="tag opt">for the PM</span>
-    <h2>8 · Two decisions</h2>
+    <span class="tag">ruled</span>
+    <h2>8 · Two decisions, ruled</h2>
+    <p class="sec-lede">The PM took both recommendations on 2026-11-13. The briefs stay for the record.</p>
     <div class="brief">
       <div><b>D1 · The date on the morning reminder.</b> Deciding: whether the lock screen says <i>Make a report of Sep 16 to today</i> or <i>Make a report to take along</i>.</div>
       <div><b>Options:</b> (a) drop the date <b>(recommended:</b> R4 lists day, time and name, and the last visit's date is a fact from Nyx's record; Get ready shows the window live one tap away) · (b) keep it, as PR-03 built it.</div>

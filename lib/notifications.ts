@@ -59,7 +59,9 @@ export type NotificationCategory = 'daily_summary';
  *  never the owner's record. `kind` maps to a night-ground category tint in the
  *  component, so the descriptor itself stays theme-free. */
 export interface NotificationPrimerNode {
-  readonly kind: 'meal' | 'medication' | 'symptom';
+  /** `other` is the muted neutral, for a spine that is not a day of logs (the vet
+   *  visit reminders' two reminders and the visit). */
+  readonly kind: 'meal' | 'medication' | 'symptom' | 'other';
   readonly title: string;
   /** Intake/adherence detail beside the title (e.g. "all eaten", "given"). */
   readonly detail?: string;
