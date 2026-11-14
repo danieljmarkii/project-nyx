@@ -379,9 +379,192 @@
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">Culprit · design review · CUL-878 Vet visits · round 7 — the current proposal</p>
+  <p class="eyebrow">Culprit · design review · CUL-878 Vet visits · round 8 — the current proposal</p>
   <h1 class="title serif">The vet visit — one page, three faces</h1>
-  <p class="lede"><b>Round 7 (2026-11-14)</b> adds one fix on the screens that ship today, drawn first below (R7). <b>Round 6 (2026-09-17)</b> is still the <b>current proposal</b> for the redesign. Rounds 1–5 moved to the archive (<code>docs/culprit-vet-visits-mockups-archive.html</code>), because after five rounds the live proposal and the superseded frames had stopped being tellable apart. Every frame here is current unless it sits in a dashed box marked <i>option</i>. Real content throughout: <b>Nyx's Sep 16 visit</b> at Completely Cat Clinic as the record holds it. The research behind the shape is <code>docs/research/2026-09-vet-visit-lifecycle-design-inspiration.md</code> (frozen, twenty-eight products, verified at source the same day).</p>
+  <p class="lede"><b>Rounds 7 and 8 (2026-11-14)</b> fix the after-visit half on the screens that ship today, drawn first below (R8, then R7). <b>Round 6 (2026-09-17)</b> is still the <b>current proposal</b> for the redesign. Rounds 1–5 moved to the archive (<code>docs/culprit-vet-visits-mockups-archive.html</code>), because after five rounds the live proposal and the superseded frames had stopped being tellable apart. Every frame here is current unless it sits in a dashed box marked <i>option</i>. Real content throughout: <b>Nyx's Sep 16 visit</b> at Completely Cat Clinic as the record holds it. The research behind the shape is <code>docs/research/2026-09-vet-visit-lifecycle-design-inspiration.md</code> (frozen, twenty-eight products, verified at source the same day).</p>
+
+  <!-- ═══════════════ R8 · CUL-2755 · THE JORDAN + SAM REVIEW, DRAWN ═══════════════ -->
+  <div class="ledger">
+    <div class="ledger-h">Round 8 · CUL-2755 (2026-11-14) — the Jordan + Sam review, drawn</div>
+    <div class="ledger-row"><span class="ledger-who">PM · ask</span><div><b>"Can you mock these suggested changes."</b> Two isolated owner reviews walked the shipped flow. Both called booking, Get ready and the room ship-shaped, and the after-visit half a one-shot form. <span class="moved">R8·1 to R8·8 below, in the review's ranked order.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Supersedes</span><div><b>R7·2's <i>Cancel</i> and its pre-selected <i>Keep</i>.</b> Plan rows write on tap, so Cancel could only ever discard the typing, and nothing stores a per-visit verdict to pre-select. <span class="moved">R7·2 redrawn: Motozol reads <i>linked to this visit</i> with no chip lit; the nav is a back chevron, because R8·1 saves as you type.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Decision</span><div><b>Does "Set a date" book an appointment?</b> Both owners hit the app inventing a booking and then asking whether it happened. <span class="moved">Drawn side by side: R8·2 (recommended, "around Dec 26 · not booked yet") against R8·opt (what ships).</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Clinical gate</span><div><b>Quoting the vet's "call us if" beside Home's eating signal.</b> It may only add urgency; it may never lengthen or quiet the app's own window. <span class="moved">R8·5b in a dashed box. Not buildable until clinical-guardrails and adversarial-reviewer have tried to break it.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Not drawn</span><div><b>Two cats, one trip.</b> A real gap (one paperwork capture, a quick switch between each cat's notes), but it changes the appointment model, not a row. <span class="moved">Nothing. Held on CUL-2755 for its own round.</span></div></div>
+  </div>
+
+  <section>
+    <p class="sec-eyebrow">R8 · CUL-2755 · drawn on the screens that ship today</p>
+    <h2 class="serif">Nothing typed is lost. Every outcome a vet hands you has a row.</h2>
+    <p class="sec-lede">R7 gave the plan its door back. Round 8 fixes what is behind it: the screen saves as you type, the recheck says only what is true, and the four outcomes vets give most (an extended trial, a food change, a "call us if", results later) each get a place on the visit.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx's visit</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+          <div><div class="ph-eyebrow">Fri, Nov 14</div><div class="ph-pagetitle" style="font-size:21px">How did it go?</div></div>
+          <div class="field tall"><div class="lab">What the vet said</div><div class="val" style="min-height:58px">Left ear still a little red. Keep cleaning it. She'll call tomorrow with the culture.</div><div class="face-note" style="margin-top:6px">Saved as you type · kept with this visit</div></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>linked to this visit</span></span></div>
+            <div class="plan"><span class="ico med">+</span><span class="t"><b>Started something new?</b><span>Opens the medication setup, linked to this visit</span></span><span class="go">Add</span></div>
+          </div>
+          <div class="btn-stack"><div class="btn primary">Done</div><div class="barhint">Leave any time. What you typed stays on the visit.</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">R8·1 · Saved as you type <span class="tag cur">current</span></span><p>Once the visit exists, its fields save as they are typed, the way the in-room notes already do. Back never drops a sentence, so the screen needs no Cancel and no "are you sure". <i>Done</i> replaces <i>Save</i>: it closes the screen and plays the saved moment the first time only.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx's visit</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico next">→</span><span class="t"><b>Next visit</b><span>When does the vet want to see Nyx?</span><span class="chips"><span class="chip">2 weeks</span><span class="chip on">6 weeks</span><span class="chip">Pick a date</span></span><span class="why">Around Dec 26</span></span></div>
+          </div>
+          <div class="rowcard"><div class="row"><span class="v">Set Dec 26<small>a reminder to book it, not a booking</small></span></div></div>
+          <div class="sec-label" style="margin-top:8px">After Set</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico next">→</span><span class="t"><b>Recheck around Dec 26</b><span>not booked yet</span></span><span class="go">Book it</span></div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">R8·2 · The recheck says only what is true <span class="tag cur">recommended</span></span><p>The vet says "in six weeks", not a time slot. Chips set the date with one tap; the wheel only opens behind <i>Pick a date</i>, and nothing writes until <i>Set</i> (the iOS first-spin bug, CUL-1150, can't happen). The row then says <i>not booked yet</i> and offers <i>Book it</i>, which opens the booking sheet seeded with the date. No appointment exists until the owner makes one, so Home never asks whether an imaginary visit happened.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx's visit</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Royal Canin Selected Protein</b><span>day 53 of 56</span><span class="chips"><span class="chip">Keep</span><span class="chip on">Extended</span><span class="chip">Ended</span><span class="chip">Switched</span></span></span></div>
+          </div>
+          <div class="rowcard">
+            <div class="plan"><span class="t"><b>Extend to</b><span class="chips"><span class="chip">10 weeks</span><span class="chip on">12 weeks</span><span class="chip">Pick a date</span></span><span class="why">Ends Dec 12 instead of Nov 17 · the vet's call</span></span></div>
+          </div>
+          <div class="btn-stack"><div class="btn accent">Extend the trial</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">R8·3 · <i>Extended</i>, the recheck's likeliest answer <span class="tag cur">current</span></span><p>The verb the trial row was missing. It calls the existing <code>extendTrial</code> write, with this visit as its provenance and "the vet's call" recorded, so the trial stops counting down to the old end and the milestone never asks the owner to end a trial the vet just extended. Weeks, not days, because that is how vets say it. Round 6's A2 drew the same verb.</p></div>
+      </div>
+    </div>
+
+    <div class="rail rail-3" style="margin-top:34px">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx's visit</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Did the vet change the food?</b><span>Starts on a date. A trial is optional.</span></span><span class="go">Yes</span></div>
+          </div>
+          <div class="sec-label" style="margin-top:8px">After Yes</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Hill's k/d</b><span>from Sat, Nov 15 · linked to this visit</span><span class="chips"><span class="chip on">Just a change</span><span class="chip">Make it a trial</span></span></span></div>
+          </div>
+          <div class="barhint" style="text-align:left">If Nyx eats less of it, the record reads that against Nov 15.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">R8·4 · A food change, dated <span class="tag cur">current</span></span><p>Sam's case: the vet switched the food but it isn't a formal trial. Today <i>Add the food</i> leaves no trace on the visit. Here the switch is a dated fact linked to the visit, so a dip in eating next week is read against the switch and never softened to "picky". The row asks the clinical question ("did the vet change it?"), not the preference one ("a new food to try?").</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx's visit</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico next">!</span><span class="t"><b>When to call the vet</b><span>In the vet's words</span></span><span class="go">Add</span></div>
+          </div>
+          <div class="field"><div class="lab">Call the clinic if</div><div class="val">She stops eating for 24 hours, or the ear starts to smell.</div></div>
+          <div class="sec-label" style="margin-top:8px">On the visit afterwards</div>
+          <div class="rowcard"><div class="plan"><span class="ico next">!</span><span class="t"><b>Call the clinic if</b><span>she stops eating for 24 hours, or the ear starts to smell</span></span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">R8·5 · "Call us if", kept where it can be found <span class="tag cur">current</span></span><p>The vet's instruction as its own row, in the vet's words, never parsed into a rule. It shows on the visit's plan rather than in the middle of the notes. This is the plain half; the question of showing it on Home belongs to CUL-2731 and the gated option beside it.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="optbox">
+          <div class="optbox-h">Option · clinically gated · not buildable before review</div>
+          <div class="phone"><div class="ph-screen" style="min-height:auto">
+            <div class="home-hd"><div class="l"><div class="avatar"></div><div class="home-name">Nyx<i>▾</i></div></div><div class="r"><span class="ask-pill">Ask</span><div class="you"></div></div></div>
+            <div class="insight"><span class="rail sym"></span><div><div class="it"><b>Nyx hasn't eaten since yesterday morning</b></div><div class="is" style="font-size:12px;color:var(--a-text2);margin-top:4px">No meals logged for 26 hours.</div><div style="margin-top:8px;font-size:12px;border-left:2px solid var(--a-border-strong);padding-left:8px;color:var(--a-text2)">Your vet said on Nov 14: <i>"Call the clinic if she stops eating for 24 hours."</i></div></div></div>
+          </div></div>
+        </div>
+        <div class="opt-cap"><span class="k">R8·5b · The vet's words beside the eating signal <span class="tag open">option · gated</span></span><p>The card is the app's own, unchanged and leading. The vet's sentence is quoted under it, dated, only when the app's signal has already fired. It can add urgency and can never quiet, delay or replace the card. Needs clinical-guardrails and adversarial-reviewer before it is designed further.</p></div>
+      </div>
+    </div>
+
+    <div class="rail rail-3" style="margin-top:34px">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title"></span><span class="ph-back">Share</span></div>
+          <div><div class="ph-pagetitle" style="font-size:21px">Nyx's visit</div><div class="ph-sub">Fri, Nov 14 · Completely Cat Clinic · Dr Miller</div></div>
+          <div class="sheet-scrim" style="position:absolute;inset:0;border-radius:inherit">
+            <div class="sheet">
+              <div class="sheet-grab"></div>
+              <div class="sheet-h">Share Nyx's visit</div>
+              <div class="field" style="background:var(--a-subtle)"><div class="val" style="font-weight:400;font-size:11.5px;line-height:1.5">Nyx · vet visit Fri, Nov 14 · Dr Miller<br><br>What the vet said: Left ear still a little red. Keep cleaning it.<br><br>The plan: Motozol, once a day, left ear. Prednisolone from Nov 15. Trial extended to Dec 12.<br><br>Call the clinic if she stops eating for 24 hours, or the ear starts to smell.<br><br>Recheck around Dec 26 · not booked yet</div></div>
+              <div class="btn-stack" style="margin-top:12px"><div class="btn primary">Share as text</div></div>
+            </div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">R8·6 · Share this visit <span class="tag cur">current</span></span><p>For the partner who feeds the dog too. Plain text through the system share sheet: what the vet said, the plan, when to call, the recheck. Addressed to no one, like Get ready's <i>Copy as text</i>. The vet's artifact is still the report. Free, always.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="home-hd"><div class="l"><div class="avatar"></div><div class="home-name">Nyx<i>▾</i></div></div><div class="r"><span class="ask-pill">Ask</span><div class="you"></div></div></div>
+          <div class="sec-label">Home · the day, before the appointment</div>
+          <div class="appt"><div class="date"><b>14</b><span>Nov</span></div><div class="main"><div class="t">Today, 10:30 · Completely Cat Clinic</div><div class="doors"><span class="door">Get ready</span><span class="door ghost">Add a question</span></div></div></div>
+          <div class="sec-label" style="margin-top:6px">Home · the day, after 10:30</div>
+          <div class="appt"><div class="date"><b>14</b><span>Nov</span></div><div class="main"><div class="t">Back from Completely Cat Clinic?</div><div class="doors"><span class="door">How did it go?</span></div></div></div>
+          <div class="sec-label" style="margin-top:6px">In the room</div>
+          <div class="rowcard"><div class="row"><span class="v">Finish Nyx's visit<small>replaces the header word "Done"</small></span><span class="chev">›</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">R8·7 · One tap to finish, on the day <span class="tag cur">current</span></span><p>The spec's moment is "done before the car warms up", and today it takes four taps through a header word. Once the appointment time has passed, the Home strip's door becomes <i>How did it go?</i>. In the room, the finish step is a labelled row in the body. Home still writes nothing; the strip only navigates.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title"></span><span class="ph-back">Edit</span></div>
+          <div><div class="ph-pagetitle" style="font-size:21px">Nyx's visit</div><div class="ph-sub">Fri, Nov 14 · Completely Cat Clinic · Dr Miller</div></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>day 1 of 14 · linked to this visit</span></span><span class="go">›</span></div>
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Selected Protein trial</b><span>extended · ends Dec 12</span></span><span class="go">›</span></div>
+            <div class="plan"><span class="ico diet">+</span><span class="t"><b>Add to the plan</b><span>a med, a food, when to call, a recheck</span></span><span class="go">Add</span></div>
+          </div>
+          <div class="sec-label">Not asked · 1 of 3</div>
+          <div class="rowcard"><div class="q"><span class="tk"></span><span class="t">When she's had ear infections before, which ear?</span></div></div>
+          <div class="sec-label">Paperwork and results</div>
+          <div class="rowcard">
+            <div class="row"><span class="v">Photo · Nov 14<small>added at the visit</small></span><span class="chev">›</span></div>
+            <div class="plan"><span class="ico doc">▤</span><span class="t"><b>Results arrived?</b><span>Bloodwork, a culture, a portal PDF</span></span><span class="go">Add</span></div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">R8·8 · The visit, afterwards, with live rows <span class="tag cur">current</span></span><p>Plan rows open the course and the trial they name, instead of dead-ending. The question that wasn't asked is named, not hidden inside "asked 2 of 3", so the owner can raise it on the phone. <i>Results arrived?</i> files the culture that comes back on Monday under this visit, in Vet Files.</p></div>
+      </div>
+    </div>
+
+    <div class="rail rail-2" style="margin-top:34px">
+      <div class="opt">
+        <div class="optbox">
+          <div class="optbox-h">Option · what ships today · drawn for the decision</div>
+          <div class="phone"><div class="ph-screen" style="min-height:auto">
+            <div class="sec-label">The plan · tap Set a date</div>
+            <div class="rowcard"><div class="plan"><span class="ico next">→</span><span class="t"><b>Next visit</b><span>A recheck, if the vet named one</span></span><span class="go">Set a date</span></div></div>
+            <div class="field" style="text-align:center;color:var(--a-text3);font-size:12px">[ iOS wheel · Dec ▸ Jan · 26 ]<br>the first stop books it</div>
+            <div class="rowcard"><div class="plan"><span class="ico next">→</span><span class="t"><b>Next visit</b><span>Jan 26 · booked</span></span></div></div>
+          </div></div>
+        </div>
+        <div class="opt-cap"><span class="k">R8·opt · "Set a date" books an appointment <span class="tag open">option · ships today</span></span><p>The first wheel stop writes the visit's recheck and books a no-time appointment, and the row settles with no control. Keeping the booking means keeping a reminder the owner never asked for and a "Did it happen?" about it later.</p></div>
+      </div>
+      <div class="opt">
+        <div class="note r7note">
+          <p><b>Decision · does "Set a date" book an appointment?</b></p>
+          <p><b>Recommended: R8·2.</b> Record "around Dec 26 · not booked yet" with a <i>Book it</i> door. The app never invents an appointment.</p>
+          <p><b>Option: R8·opt.</b> Keep booking on Set, with only the picker fixed.</p>
+          <p><b>Consequence:</b> R8·2 changes what the Pet-tab card and Home read for a recheck (a date, not an appointment) until the owner books.</p>
+          <p><b>Forecast:</b> round 8 is 4 PRs after R7: autosave + recheck (R8·1–2); Extended (R8·3); food change + when to call (R8·4–5); share, finish door, live rows, results (R8·6–8). R8·5b waits on clinical review.</p>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- ═══════════════ R7 · CUL-2754 · A SAVED VISIT REOPENS ═══════════════ -->
   <div class="ledger">
@@ -414,21 +597,21 @@
       </div>
       <div class="opt">
         <div class="phone"><div class="ph-screen">
-          <div class="ph-nav"><span class="ph-back">Cancel</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+          <div class="ph-nav"><span class="ph-back">‹ Nyx's visit</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
           <div><div class="ph-eyebrow">Fri, Nov 14 · saved</div><div class="ph-pagetitle" style="font-size:21px">Nyx's visit</div></div>
           <div class="field"><div class="lab">Where</div><div class="val">Completely Cat Clinic · Dr Miller</div></div>
           <div class="field tall"><div class="lab">What the vet said</div><div class="val" style="min-height:52px">Left ear still a little red. Keep cleaning it. She'll call tomorrow with the culture…</div></div>
           <div class="sec-label">The plan</div>
           <div class="rowcard">
-            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>started Nov 14 · linked to this visit</span><span class="chips"><span class="chip on">Keep</span><span class="chip">Changed</span><span class="chip">Stopped</span></span></span></div>
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>started Nov 14 · linked to this visit</span></span></div>
             <div class="plan"><span class="ico med">+</span><span class="t"><b>Started something new?</b><span>Opens the medication setup, linked to this visit</span></span><span class="go">Add</span></div>
             <div class="plan"><span class="ico diet">◐</span><span class="t"><b>A new food to try?</b><span>Starts a trial, or just adds the food</span></span><span class="go">Start a trial</span></div>
             <div class="plan"><span class="ico next">→</span><span class="t"><b>Next visit</b><span>A recheck, if the vet named one</span></span><span class="go">Set a date</span></div>
             <div class="plan"><span class="ico doc">▤</span><span class="t"><b>Paperwork</b><span>1 photo</span></span><span class="go">Add</span></div>
           </div>
-          <div class="btn-stack"><div class="btn primary">Save changes</div></div>
+          <div class="btn-stack"><div class="btn primary">Done</div></div>
         </div></div>
-        <div class="opt-cap"><span class="k">R7·2 · The visit, reopened <span class="tag cur">current</span></span><p>The same <i>How did it go?</i> screen, holding the saved visit instead of making one. Everything the record holds is already there: the fields, the course this visit started, the paperwork. Rows read the record first, as they always have, so a recheck already booked shows as <i>Dec 26 · booked</i> and can't be booked twice. A med added the next day starts on its own date; the visit is where it came from, not when it began. <i>Cancel</i> leaves the visit as it was.</p></div>
+        <div class="opt-cap"><span class="k">R7·2 · The visit, reopened <span class="tag cur">current</span></span><p>The same <i>How did it go?</i> screen, holding the saved visit instead of making one. Everything the record holds is already there: the fields, the course this visit started, the paperwork. Rows read the record first, as they always have, so a recheck already booked shows as <i>Dec 26 · booked</i> and can't be booked twice. A med added the next day starts on its own date; the visit is where it came from, not when it began. <b>Round 8:</b> no <i>Cancel</i>; the screen saves as you type (R8·1), and the course shows as linked with no chip lit, since nothing stores a per-visit verdict.</p></div>
       </div>
       <div class="opt">
         <div class="phone"><div class="ph-screen">
