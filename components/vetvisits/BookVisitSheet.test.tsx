@@ -294,8 +294,8 @@ describe('the sheet asks its question, and requires only a date', () => {
     // the app won't do (CUL-953 item 2).
     renderSheet();
     expect(screen.getByText(/Shows on Home five days before/)).toBeTruthy();
-    // The other half stays true and stays said: there is still no reminder.
-    expect(screen.getByText(/No reminder yet/)).toBeTruthy();
+    // The other half left with CUL-2728: Remind me now says what a reminder will be.
+    expect(screen.queryByText(/No reminder yet/)).toBeNull();
   });
 
   it('claims the window the strip actually carries', () => {
@@ -312,5 +312,47 @@ describe('the sheet asks its question, and requires only a date', () => {
     renderSheet({ initialMode: 'happened' });
     expect(screen.getByText('Your next vet report starts from this visit.')).toBeTruthy();
     expect(screen.queryByText(/from today/)).toBeNull();
+  });
+});
+
+// ── CUL-2728: Remind me (mock round 2 §4) ───────────────────────────────────────
+
+describe('Remind me', () => {
+  it('is off by default, and a booking saved without it carries no reminder intent', () => {
+    const onSubmit = renderSheet({ reminderStatus: 'off' });
+    const row = screen.getByRole('checkbox');
+    expect(row.props.accessibilityState).toEqual({ checked: false });
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].remindMe).toBe(false);
+  });
+
+  it('a tap picks it, the sub line names the times, and Save carries the choice', () => {
+    const onSubmit = renderSheet({ reminderStatus: 'off' });
+    fireEvent.press(screen.getByRole('checkbox'));
+    expect(screen.getByRole('checkbox').props.accessibilityState).toEqual({ checked: true });
+    // Booked for today with no time: the 8:00 am day-of may already be past, so the line
+    // is whichever the planner still holds; it always says the switch is account-wide.
+    expect(screen.getByText(/for every pet’s visits/)).toBeTruthy();
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].remindMe).toBe(true);
+  });
+
+  it('already on: no control, and no intent is carried', () => {
+    const onSubmit = renderSheet({ reminderStatus: 'on' });
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0].remindMe).toBe(false);
+  });
+
+  it('denied: inert with one door out, never a control marked disabled (C-7)', () => {
+    renderSheet({ reminderStatus: 'denied' });
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.getByText('Notifications are off for Culprit in Settings.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open Settings' })).toBeTruthy();
+  });
+
+  it('is not offered on a visit that already happened', () => {
+    renderSheet({ reminderStatus: 'off', initialMode: 'happened' });
+    expect(screen.queryByRole('checkbox')).toBeNull();
   });
 });

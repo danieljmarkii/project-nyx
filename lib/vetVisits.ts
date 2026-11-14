@@ -935,8 +935,9 @@ export async function readVisitPrefill(petId: string): Promise<VisitPrefill> {
 
 // ── The appointments-changed signal (CUL-2727, vet visit reminders §3.4) ─────────
 //
-// Every local write that can move a reminder (book, edit or cancel an appointment, log a
-// visit or edit its date, which moves the report window a reminder names) announces itself here, and `hooks/useVetReminders.ts` re-plans the
+// Every local write that can move a reminder (book, edit or cancel an appointment, or log
+// a visit FROM an appointment, which takes that booking out of the live set) announces
+// itself here, and `hooks/useVetReminders.ts` re-plans the
 // schedule. A plain listener set rather than an import of the scheduler, so this model
 // file never pulls `expo-notifications` in and the reminder stays a consumer of it.
 // Called only AFTER a write has landed; a listener's throw never reaches the writer.
@@ -967,9 +968,6 @@ function appointmentsChanged(): void {
 export interface ReminderInputs {
   /** Every live appointment, every pet: not deleted, not cancelled, not logged. */
   appointments: LocalVetAppointment[];
-  /** Each pet's live `visited_at` days, for the report window's first day only — a
-   *  BOUNDARY passed to `latestVisitBefore`, never a count (the visitReaders rule). */
-  visitDaysByPet: Map<string, string[]>;
 }
 
 /**
@@ -984,19 +982,9 @@ export async function readReminderInputs(): Promise<ReminderInputs> {
     `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments WHERE ${LIVE_APPOINTMENT_SQL}`,
     [],
   );
-  const visitDaysByPet = new Map<string, string[]>();
-  if (appointments.length === 0) return { appointments, visitDaysByPet };
-  const visits = await db.getAllAsync<{ pet_id: string; visited_at: string | null }>(
-    'SELECT pet_id, visited_at FROM vet_visits WHERE deleted_at IS NULL',
-    [],
-  );
-  for (const v of visits) {
-    if (typeof v.visited_at !== 'string') continue;
-    const days = visitDaysByPet.get(v.pet_id);
-    if (days) days.push(v.visited_at);
-    else visitDaysByPet.set(v.pet_id, [v.visited_at]);
-  }
-  return { appointments, visitDaysByPet };
+  // No visit read since mock round 2 D1 (CUL-2728): the lock screen names no date
+  // from the record, so the planner needs the bookings alone.
+  return { appointments };
 }
 
 // ── Writes (local-first; the queue pushes) ──────────────────────────────────────
@@ -1083,8 +1071,8 @@ export async function logVetVisit(input: LogVisitInput): Promise<string> {
       nowIso,
     ],
   );
-  // A new visit moves the reminder body's report window start (§4).
-  appointmentsChanged();
+  // No reminder signal: a visit logged on its own links no booking, and since CUL-2728
+  // (D1) no reminder names a visit's date.
   return id;
 }
 
@@ -2009,8 +1997,7 @@ export async function updateVisitDetails(visitId: string, patch: VisitDetailsPat
   if (res.changes === 0) {
     throw new Error(`updateVisitDetails: no visit row matched id ${visitId}`);
   }
-  // A visit's date is the reminder body's report window start (§4).
-  appointmentsChanged();
+  // No reminder signal: since CUL-2728 (D1) no reminder names a visit's date.
 }
 
 // ── The three link writers (provenance only — a link never moves a number) ──────

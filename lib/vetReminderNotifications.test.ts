@@ -12,7 +12,7 @@ jest.mock('./notifications', () => ({ ensurePermission: jest.fn(async () => 'gra
 // The READ is stubbed; the date helpers the planner uses stay real (C-34).
 jest.mock('./vetVisits', () => ({
   ...jest.requireActual('./vetVisits'),
-  readReminderInputs: jest.fn(async () => ({ appointments: [], visitDaysByPet: new Map() })),
+  readReminderInputs: jest.fn(async () => ({ appointments: [] })),
 }));
 jest.mock('./notificationSettings', () => ({
   CATEGORY_PREFERENCE_READ_SQL: 'SELECT …',
@@ -38,6 +38,7 @@ function planned(over: Partial<PlannedVetReminder> = {}): PlannedVetReminder {
     dayKey: '2026-11-16',
     fireAt: new Date(2026, 10, 16, 8).toISOString(),
     appointmentId: 'a',
+    petId: 'p',
     title: 'Nyx sees the vet today at 10:30 am',
     body: 'Make a report to take along.',
     ...over,
@@ -73,8 +74,9 @@ describe('computeVetReminderActions', () => {
     for (const after of [
       planned({ fireAt: new Date(2026, 10, 16, 7, 30).toISOString() }),
       planned({ title: 'Mo sees the vet today at 10:30 am' }),
-      planned({ body: 'Make a report of Sep 16 to today to take along.' }),
+      planned({ body: 'Tap to get ready for both.' }),
       planned({ appointmentId: null }),
+      planned({ petId: 'q' }),
     ]) {
       expect(computeVetReminderActions({ allowed: true, planned: [after], live: [live(before)] })).toEqual({
         schedule: [after],
@@ -136,7 +138,7 @@ describe('syncVetReminderNotifications (the run)', () => {
     for (const fn of Object.values(N)) if (typeof fn === 'function' && 'mockClear' in fn) fn.mockClear();
     read.mockReset();
     (getDb as jest.Mock).mockReturnValue({ getFirstAsync: jest.fn(async () => ({ id: 'p', enabled: 1 })) });
-    read.mockResolvedValue({ appointments: [booking], visitDaysByPet: new Map() });
+    read.mockResolvedValue({ appointments: [booking] });
     N.getAllScheduledNotificationsAsync.mockResolvedValue([]);
   });
 
@@ -146,7 +148,11 @@ describe('syncVetReminderNotifications (the run)', () => {
       'nyx.vetreminder.ahead.2026-11-13',
       'nyx.vetreminder.day_of.2026-11-16',
     ]);
-    expect(N.scheduleNotificationAsync.mock.calls[1][0].content.data).toMatchObject({ kind: 'vet_visit', appointmentId: 'a' });
+    expect(N.scheduleNotificationAsync.mock.calls[1][0].content.data).toMatchObject({
+      kind: 'vet_visit',
+      appointmentId: 'a',
+      petId: 'p',
+    });
     expect(N.scheduleNotificationAsync.mock.calls[0][0].trigger.channelId).toBe('vet_visit');
   });
 
@@ -179,7 +185,7 @@ describe('syncVetReminderNotifications (the run)', () => {
       maxActive = Math.max(maxActive, active);
       await new Promise((r) => setTimeout(r, 5));
       active -= 1;
-      return { appointments: [booking], visitDaysByPet: new Map() };
+      return { appointments: [booking] };
     });
     await Promise.all([1, 2, 3, 4].map(() => syncVetReminderNotifications(input())));
     expect(maxActive).toBe(1);

@@ -9,6 +9,7 @@ import { LayoutColumn } from '../ui/LayoutColumn';
 import {
   NOTIFICATION_CATEGORIES,
   type NotificationCategory,
+  type NotificationPrimerDescriptor,
   type NotificationPrimerNode,
 } from '../../lib/notifications';
 
@@ -30,6 +31,10 @@ import {
 // no medication reminder, armed or otherwise. Part 1 ships no reminder; nothing
 // here may read like one.
 //
+// The one exception is the vet visit reminders' descriptor (CUL-2728): a reminder by
+// nature, but only of the owner's OWN booking (a day and a time), never a medication,
+// never the record. Its hero spine is generic, like the daily summary's.
+//
 // COPY LIVES IN THE REGISTRY (§5): every string is read from the category's primer
 // descriptor (lib/notifications.ts), so the component is copy-free and a future
 // category ships its pitch by adding a descriptor, not by branching this file.
@@ -48,6 +53,7 @@ const NODE_DOT_COLOR: Record<NotificationPrimerNode['kind'], string> = {
   meal: NODE_TINT_NIGHT.meal,
   medication: NODE_TINT_NIGHT.medication,
   symptom: NODE_TINT_NIGHT.symptom,
+  other: NODE_TINT_NIGHT.other,
 };
 
 interface NotificationPrimerProps {
@@ -56,6 +62,9 @@ interface NotificationPrimerProps {
    *  the existing caller (the settings toggle) needs no change; a future category
    *  passes its own id and gets its own pitch from the registry descriptor. */
   category?: NotificationCategory;
+  /** A descriptor for a category outside the daily registry (the vet visit reminders,
+   *  `VET_VISIT_PRIMER`, CUL-2728). Wins over `category` when given. */
+  descriptor?: NotificationPrimerDescriptor;
   /** The single pet's name for the warmer hero lead; null on a multi-pet or
    *  nameless account, where the lead stays neutral (D3 — one notification per
    *  account across all pets). */
@@ -72,13 +81,14 @@ interface NotificationPrimerProps {
 export function NotificationPrimer({
   visible,
   category = 'daily_summary',
+  descriptor,
   petName,
   onConfirm,
   onDismiss,
   requesting = false,
 }: NotificationPrimerProps) {
   const insets = useSafeAreaInsets();
-  const primer = NOTIFICATION_CATEGORIES[category].primer;
+  const primer = descriptor ?? NOTIFICATION_CATEGORIES[category].primer;
   const nodes = primer.miniSpine;
 
   return (

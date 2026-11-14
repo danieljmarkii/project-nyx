@@ -781,7 +781,7 @@ describe('linkCourseToVisit / linkTrialToVisit', () => {
 // ── CUL-2727 — the reminder's read and the appointments-changed signal ──────────
 
 describe('readReminderInputs (vet visit reminders §3.1)', () => {
-  it('returns live appointments only, with each pet\'s live visit days', async () => {
+  it('returns live appointments only', async () => {
     seedAppointment();
     seedAppointment({ id: 'cancelled', cancelled_at: '2026-09-02T00:00:00.000Z' });
     seedAppointment({ id: 'deleted', deleted_at: '2026-09-02T00:00:00.000Z' });
@@ -790,12 +790,8 @@ describe('readReminderInputs (vet visit reminders §3.1)', () => {
     seedAppointment({ id: 'logged', vet_visit_id: 'v-old' });
     const out = await readReminderInputs();
     expect(out.appointments.map((a) => a.id)).toEqual([APPT]);
-    expect(out.visitDaysByPet.get(PET)).toEqual(['2026-06-01']);
-  });
-
-  it('skips the visit read when nothing is booked', async () => {
-    seedVisit('v-old', { visited_at: '2026-06-01' });
-    expect((await readReminderInputs()).visitDaysByPet.size).toBe(0);
+    // Round 2 D1: no record date reaches a reminder, so nothing else is read.
+    expect(Object.keys(out)).toEqual(['appointments']);
   });
 });
 
@@ -818,15 +814,15 @@ describe('onAppointmentsChanged (vet visit reminders §3.4)', () => {
         visitedAt: '2026-09-16',
       });
       expect(heard).toHaveBeenCalledTimes(4);
+      // A visit's own writes move no reminder since CUL-2728 D1 (no date from the record).
       await updateVisitDetails(visitId, { visitedAt: '2026-09-15' });
-      expect(heard).toHaveBeenCalledTimes(5);
       await logVetVisit({ petId: PET, visitedAt: '2026-10-01' });
-      expect(heard).toHaveBeenCalledTimes(6);
+      expect(heard).toHaveBeenCalledTimes(4);
     } finally {
       off();
     }
     await bookVetAppointment({ petId: PET, scheduledAt: '2026-11-18T15:30:00.000Z' });
-    expect(heard).toHaveBeenCalledTimes(6);
+    expect(heard).toHaveBeenCalledTimes(4);
   });
 
   it('a throwing listener never reaches the writer', async () => {

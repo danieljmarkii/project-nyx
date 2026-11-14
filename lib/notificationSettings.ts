@@ -34,6 +34,12 @@ import {
 } from './notifications';
 import { usePetStore } from '../store/petStore';
 
+/** A `notification_preferences.category` this module may read or write. The daily
+ *  registry's categories plus `vet_visit` (migration 121), whose standalone scheduler
+ *  (`lib/vetReminderNotifications.ts`) deliberately stays out of that registry (§3.5),
+ *  so it is named here rather than by widening `NotificationCategory`. */
+export type PreferenceCategory = NotificationCategory | 'vet_visit';
+
 // ── The split-brain-safe read (§4 mirror header, "CARRY-FORWARD FOR PR 3") ──────
 //
 // Reads the WINNING local row for an account-wide (pet_id IS NULL) category. The
@@ -107,7 +113,7 @@ export interface LocalCategoryPreferenceRow {
 /** Is this account-wide category currently opted in (product opt-in — the PR 2
  *  pref)? Absence of a row is OFF (G6, everything defaults off). */
 export async function readCategoryEnabled(
-  category: NotificationCategory,
+  category: PreferenceCategory,
 ): Promise<boolean> {
   const db = getDb();
   const row = await db.getFirstAsync<LocalCategoryPreferenceRow>(
@@ -139,7 +145,7 @@ export async function readEnabledCategories(): Promise<NotificationCategory[]> {
  * (applyCategoryPreference) so the two concerns stay independently testable.
  */
 export async function setCategoryEnabled(
-  category: NotificationCategory,
+  category: PreferenceCategory,
   enabled: boolean,
 ): Promise<void> {
   const db = getDb();

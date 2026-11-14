@@ -10,8 +10,13 @@ import { composeScheduledAt, localDateKey } from './vetVisits';
 import {
   aheadInstant,
   appointmentCounts,
+  AHEAD_ASK,
+  DAY_OF_BODY,
   dayOfInstant,
+  describeReminderInstant,
   planVetReminders,
+  upcomingReminderInstants,
+  upcomingReminderPhrase,
   type ReminderAppointment,
 } from './vetReminders';
 
@@ -120,8 +125,8 @@ describe('which appointments count (§3.1)', () => {
 });
 
 describe('planVetReminders', () => {
-  function plan(now: Date, appointments: ReminderAppointment[], visitDays: [string, string[]][] = []) {
-    return planVetReminders({ now, appointments, petNames: NAMES, visitDaysByPet: new Map(visitDays) });
+  function plan(now: Date, appointments: ReminderAppointment[]) {
+    return planVetReminders({ now, appointments, petNames: NAMES });
   }
 
   it('booked 5+ days out at 10:30: an ahead at 18:00 three days before, a day-of at 08:00 (AC 3)', () => {
@@ -202,46 +207,65 @@ describe('planVetReminders', () => {
   });
 });
 
-describe('the words (R4; provisional strings, final at PR-04)', () => {
+describe('the words (R4; final at mock round 2, CUL-2728)', () => {
   const now = new Date(Y, NOV, 9, 12);
-  const visitDays: [string, string[]][] = [[PET_A, ['2026-09-16', '2026-11-16', '2026-06-01']]];
 
-  it('ahead names the pet, the day and the time', () => {
+  it('ahead: the weekday in the title, the date and time in the body, then the ask (T2)', () => {
     const [ahead] = planVetReminders({
       now,
       appointments: [appt('a', at(Y, NOV, 16, 10, 30))],
       petNames: NAMES,
-      visitDaysByPet: new Map(visitDays),
     });
     expect(ahead.title).toBe('Nyx sees the vet Monday');
-    expect(ahead.body).toBe(
-      "Monday, Nov 16 at 10:30 am. A few minutes in Get ready now, while there's time to weigh in or call ahead.",
-    );
+    expect(ahead.body).toBe('Nov 16 at 10:30 am. A few minutes in Get ready now leaves time to weigh, log or call ahead.');
+    expect(ahead.body).not.toMatch(/weigh in/);
   });
 
-  it('day of: the report window starts at the last visit STRICTLY before the fire day (rung 1)', () => {
+  it('day of: no date from the record (D1), only the line to take a report along', () => {
     const out = planVetReminders({
       now,
       appointments: [appt('a', at(Y, NOV, 16, 10, 30))],
       petNames: NAMES,
-      visitDaysByPet: new Map(visitDays),
     });
     const dayOf = out.find((p) => p.kind === 'day_of')!;
     expect(dayOf.title).toBe('Nyx sees the vet today at 10:30 am');
-    // 2026-11-16 is the fire day itself, so it anchors nothing (the shared bound).
-    expect(dayOf.body).toBe('Make a report of Sep 16 to today to take along.');
+    expect(dayOf.body).toBe('Make a report to take along.');
+    expect(dayOf.body).not.toMatch(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/);
   });
 
-  it('day of, evening before, says tomorrow; no earlier visit drops the window', () => {
+  it('day of, evening before, says tomorrow', () => {
     const out = planVetReminders({
       now,
       appointments: [appt('a', at(Y, NOV, 16, 7, 30))],
       petNames: NAMES,
-      visitDaysByPet: new Map(),
     });
     const dayOf = out.find((p) => p.kind === 'day_of')!;
     expect(dayOf.title).toBe('Nyx sees the vet tomorrow at 7:30 am');
-    expect(dayOf.body).toBe('Make a report to take along.');
+    expect(dayOf.body).toBe(DAY_OF_BODY);
+  });
+
+  it('an ahead reminder for a visit in the next year stamps the year (C-19)', () => {
+    const [ahead] = planVetReminders({
+      now: new Date(Y, 11, 20, 12),
+      appointments: [appt('a', at(Y + 1, 0, 2, 9))],
+      petNames: NAMES,
+    });
+    // Fires Dec 30 2026, the visit is Jan 2 2027.
+    expect(ahead.body).toBe(`Jan 2, ${Y + 1} at 9:00 am. ${AHEAD_ASK}`);
+  });
+
+  it('every reminder carries the pet the tap opens on; a collapsed one carries the first (T4)', () => {
+    const out = planVetReminders({
+      now,
+      appointments: [appt('b', at(Y, NOV, 16, 11), { pet_id: PET_B }), appt('a', at(Y, NOV, 16, 10, 30))],
+      petNames: NAMES,
+    });
+    const dayOf = out.find((p) => p.kind === 'day_of')!;
+    expect(dayOf.appointmentId).toBeNull();
+    // Both day-of instants are 08:00; the earlier appointment (Nyx, 10:30) leads.
+    expect(dayOf.petId).toBe(PET_A);
+    const single = planVetReminders({ now, appointments: [appt('b', at(Y, NOV, 16, 11), { pet_id: PET_B })], petNames: NAMES });
+    expect(single.every((p) => p.petId === PET_B)).toBe(true);
   });
 
   it('no time: no clock in either string', () => {
@@ -249,10 +273,9 @@ describe('the words (R4; provisional strings, final at PR-04)', () => {
       now,
       appointments: [appt('a', at(Y, NOV, 16))],
       petNames: NAMES,
-      visitDaysByPet: new Map(),
     });
     expect(out.map((p) => p.title)).toEqual(['Nyx sees the vet Monday', 'Nyx sees the vet today']);
-    expect(out[0].body.startsWith('Monday, Nov 16. ')).toBe(true);
+    expect(out[0].body).toBe(`Nov 16. ${AHEAD_ASK}`);
   });
 
   it('nothing from the record beyond the name reaches a string: no reason, clinic, vet, question or count', () => {
@@ -261,7 +284,6 @@ describe('the words (R4; provisional strings, final at PR-04)', () => {
       now,
       appointments: [appt('a', at(Y, NOV, 16, 10, 30)), appt('b', at(Y, NOV, 16, 11), { pet_id: PET_B })],
       petNames: NAMES,
-      visitDaysByPet: new Map(visitDays),
     });
     // The planner's input type carries no reason, clinic or vet at all; the strings are
     // checked anyway, so a future field threaded through cannot reach a lock screen quietly.
@@ -269,5 +291,60 @@ describe('the words (R4; provisional strings, final at PR-04)', () => {
       expect(r.title).not.toMatch(SECRET);
       expect(r.body).not.toMatch(SECRET);
     }
+  });
+});
+
+describe("the booking sheet's line (D2)", () => {
+  it('names both reminders a booking 5+ days out will get', () => {
+    const now = new Date(Y, NOV, 10, 12);
+    expect(upcomingReminderPhrase(at(Y, NOV, 16, 10, 30), now)).toBe('Friday at 6:00 pm and Monday at 8:00 am');
+    // A week out, a bare "Monday" would read as today's weekday: the date is named.
+    expect(upcomingReminderPhrase(at(Y, NOV, 16, 10, 30), new Date(Y, NOV, 9, 12))).toBe(
+      'Friday at 6:00 pm and Nov 16 at 8:00 am',
+    );
+  });
+
+  it('inside a window names only what is left, judged by the planner own R2 rule', () => {
+    const scheduled = at(Y, NOV, 16, 10, 30);
+    const now = new Date(Y, NOV, 14, 9);
+    expect(upcomingReminderInstants(scheduled, now).map(hm)).toEqual(['2026-11-16 08:00']);
+    expect(upcomingReminderPhrase(scheduled, now)).toBe('Monday at 8:00 am');
+    // The same answer the planner gives for the same booking at the same moment.
+    const planned = planVetReminders({ now, appointments: [appt('a', scheduled)], petNames: NAMES });
+    expect(planned.map((p) => hm(new Date(p.fireAt)))).toEqual(['2026-11-16 08:00']);
+  });
+
+  it('another pet booked the same day: the collapsed time, never this booking own (code-reviewer B)', () => {
+    const now = new Date(Y, NOV, 14, 12);
+    // Pip at 09:30 fires the day-of at 07:30. The new booking at 11:30 would alone fire
+    // at 08:00, but the day's one notification fires at the group's earliest, 07:30.
+    const pip = appt('p', at(Y, NOV, 16, 9, 30), { pet_id: PET_B });
+    expect(upcomingReminderInstants(at(Y, NOV, 16, 11, 30), now).map(hm)).toEqual(['2026-11-16 08:00']);
+    expect(upcomingReminderInstants(at(Y, NOV, 16, 11, 30), now, [pip]).map(hm)).toEqual(['2026-11-16 07:30']);
+  });
+
+  it("that day's notification already fired: nothing is promised, as the planner sends nothing (code-reviewer A)", () => {
+    // 07:45 on the 16th: Pip's day-of (07:30) has fired. A booking for 12:00 that day
+    // would alone fire at 08:00, still ahead, but its group's notification is spent.
+    const now = new Date(Y, NOV, 16, 7, 45);
+    const pip = appt('p', at(Y, NOV, 16, 9, 30), { pet_id: PET_B });
+    expect(upcomingReminderInstants(at(Y, NOV, 16, 12), now).map(hm)).toEqual(['2026-11-16 08:00']);
+    expect(upcomingReminderInstants(at(Y, NOV, 16, 12), now, [pip])).toEqual([]);
+    expect(upcomingReminderPhrase(at(Y, NOV, 16, 12), now, [pip])).toBeNull();
+    // And the planner agrees: no day-of for the 16th.
+    const planned = planVetReminders({ now, appointments: [pip, appt('n', at(Y, NOV, 16, 12))], petNames: NAMES });
+    expect(planned.filter((p) => p.kind === 'day_of' && p.dayKey === '2026-11-16')).toEqual([]);
+  });
+
+  it('nothing left: null', () => {
+    expect(upcomingReminderPhrase(at(Y, NOV, 16, 10, 30), new Date(Y, NOV, 16, 9))).toBeNull();
+  });
+
+  it('says today and tomorrow, and a date past the coming week', () => {
+    const now = new Date(Y, NOV, 9, 7);
+    expect(describeReminderInstant(new Date(Y, NOV, 9, 8), now)).toBe('today at 8:00 am');
+    expect(describeReminderInstant(new Date(Y, NOV, 10, 19), now)).toBe('tomorrow at 7:00 pm');
+    expect(describeReminderInstant(new Date(Y, NOV, 15, 18), now)).toBe('Sunday at 6:00 pm');
+    expect(describeReminderInstant(new Date(Y, NOV, 16, 18), now)).toBe('Nov 16 at 6:00 pm');
   });
 });

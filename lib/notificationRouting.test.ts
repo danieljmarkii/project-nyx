@@ -94,6 +94,22 @@ describe('notificationRouteDecision: the vet visit reminder (CUL-2727)', () => {
   it('routes nowhere behind the auth gate', () => {
     expect(notificationRouteDecision({ kind: 'vet_visit', appointmentId: ID }, { authed: false }).routeTo).toBeNull();
   });
+
+  it('a collapsed reminder opens the list on the first visit pet (CUL-2728 T4)', () => {
+    const PET = '7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f';
+    expect(notificationRouteDecision({ kind: 'vet_visit', appointmentId: null, petId: PET }, { authed: true })).toEqual({
+      recordCategory: null,
+      routeTo: '/vet-visits',
+      routeParams: { pet: PET },
+    });
+    // A single visit's Get ready wins over the pet; a pet not shaped like ours is dropped.
+    expect(notificationRouteDecision({ kind: 'vet_visit', appointmentId: ID, petId: PET }, { authed: true }).routeTo).toBe(
+      '/rundown',
+    );
+    expect(
+      notificationRouteDecision({ kind: 'vet_visit', appointmentId: null, petId: '../settings' }, { authed: true }).routeParams,
+    ).toBeUndefined();
+  });
 });
 
 describe('routeDedup', () => {
