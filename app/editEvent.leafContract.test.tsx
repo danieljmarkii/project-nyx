@@ -283,3 +283,39 @@ describe('moving the point is not a claim about how well the time is known', () 
     expect(fields.occurred_at_source).toBe('manual');            // the one thing it asserts
   });
 });
+
+describe('a window that lands while the editor is open (CUL-2199)', () => {
+  // The mount read saw a witnessed cough, so the plain point is on screen. A sync then
+  // lands a window (an older build's Found it) before Save. The save re-reads the row;
+  // writing the moved point would leave it outside the window the untouched
+  // confidence keeps, so it refuses and redraws the control from the fresh row.
+  it('refuses the point write and re-opens Saw it / Found it', async () => {
+    mockMovedTo.current = new Date('2026-03-15T21:30:00.000Z');
+    const utils = await open('cough');
+    fireEvent.press(utils.getByTestId('time-when'));
+    await act(async () => { fireEvent.press(utils.getByText('move-the-point')); });
+    mockStoredTime.current = WINDOWED; // the hydrate, mid-edit
+    await act(async () => { fireEvent.press(utils.getByText('Save')); });
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('This time was just updated', expect.any(String)));
+    expect(mockUpdateEvent).not.toHaveBeenCalled();
+    expect(await utils.findByText('Found it')).toBeTruthy();
+
+    // The next save writes a point inside the window the row keeps.
+    const fields = await save(utils);
+    const at = Date.parse(fields.occurred_at as string);
+    expect(at).toBeGreaterThanOrEqual(Date.parse(WINDOWED.earliest));
+    expect(at).toBeLessThanOrEqual(Date.parse(WINDOWED.latest));
+    expect('confidence' in fields).toBe(false);
+  });
+
+  it('a point moved inside the window that landed still saves', async () => {
+    // Non-vacuity: the refusal is about leaving the window, not about any hydrate.
+    mockMovedTo.current = new Date('2026-03-15T05:00:00.000Z');
+    const utils = await open('cough');
+    fireEvent.press(utils.getByTestId('time-when'));
+    await act(async () => { fireEvent.press(utils.getByText('move-the-point')); });
+    mockStoredTime.current = WINDOWED;
+    const fields = await save(utils);
+    expect(fields.occurred_at).toBe('2026-03-15T05:00:00.000Z');
+  });
+});

@@ -269,3 +269,41 @@ export function refreshedNowPoint(
 ): Date {
   return source === 'now' ? now : point;
 }
+
+// ── A window that landed while the editor was open (CUL-2199) ────────────────
+//
+// The editor reads the row's confidence once, at mount, and draws its time control
+// from that read. A sync can land a window on the row while the screen is open (on
+// a cough or sneeze, only from an older build; on any other leaf, from any device).
+// The screen keeps showing what it read, so the plain point picker, or a found panel
+// seeded from older bounds, is still the control on screen. Saving then writes the
+// point the screen holds while the untouched confidence keeps the REMOTE bounds
+// (B-448's touched-only rule), and nothing rejects a point outside its own window:
+// migration 012's CHECKs order the bounds against each other, never against the
+// point. Detector ⑦ reads the point with the confidence and never the bounds, so the
+// drift moves its span and onset, either way.
+//
+// The save re-reads the row and asks this. True means the write would leave the
+// point outside the window the row will keep, so the screen refuses it and redraws
+// the control from the fresh row instead. It is narrow on purpose:
+//   · an owner who touched the control restates the bounds from the form (B-448),
+//     so the window the row keeps is the one the point was derived from;
+//   · a point the save does not move is not this screen's to judge (a legacy row
+//     whose point already sat outside its window must still save its notes);
+//   · an open window is bounded on one side only.
+export function pointLeavesStoredWindow(input: {
+  ownerAsserted: boolean;
+  stored: { confidence: 'witnessed' | 'estimated' | 'window' | null; earliest: string | null; latest: string | null };
+  /** The occurred_at this save would write. */
+  point: Date;
+  /** The occurred_at the screen was opened with. */
+  openedAt: Date;
+}): boolean {
+  const { ownerAsserted, stored, point, openedAt } = input;
+  if (ownerAsserted || stored.confidence !== 'window') return false;
+  if (point.getTime() === openedAt.getTime()) return false;
+  const t = point.getTime();
+  if (stored.earliest && t < Date.parse(stored.earliest)) return true;
+  if (stored.latest && t > Date.parse(stored.latest)) return true;
+  return false;
+}
