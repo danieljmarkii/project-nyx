@@ -3301,9 +3301,13 @@ export function safetyFlagRow(
       // A window-end row says "not today" only when no row from today stands beside it; when one
       // does, that row is today's reading and says so itself.
       const todayRow = snap.safetyFlags.some((x) => x.kind === 'weight_loss' && x.asOf === 'now')
+      // CUL-2274: "The owner was told" is a claim about a surface, and Home draws no weight_loss row
+      // yet (`HOME_DRAWS_WEIGHT_ROW`), so today's finding is the app's read, stated as the record's.
       const told =
         f.asOf === 'now'
-          ? `The owner was told it is ${ask}.`
+          ? HOME_DRAWS_WEIGHT_ROW
+            ? `The owner was told it is ${ask}.`
+            : `The app's weight check reads it as ${ask}.`
           : `As of this window's end the app's weight check reads it as ${ask}${todayRow ? '' : '; it does not read so today'}.`
       return row(
         'Weight',
@@ -3747,6 +3751,14 @@ export function weightRecencyBit(
     ? ` <b>No weigh-in is recorded after it:</b> it is ${span}.`
     : ` <b>This reading is ${span}</b>; a later weigh-in is on record.`
 }
+
+/**
+ * CUL-2274 — does Home draw the weight_loss finding as a row the owner reads? Not yet: SignalZone has
+ * no title rule for it until PR-37 (CUL-1414), so the set stays live without being drawn. The weight
+ * row says "The owner was told" only when this is true; PR-37 flips it in the PR that draws the row.
+ * A vet reads "the owner was told" as a warning the owner had and acted on, or declined to.
+ */
+export const HOME_DRAWS_WEIGHT_ROW = false
 
 function weightFlagRecency(f: Extract<SafetyFlag, { kind: 'weight_loss' }>, snap: ReportSnapshot): string {
   const generated = localDayKeyOf(snap.generatedAt, snap.timezone)
@@ -4638,7 +4650,7 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       : total
         ? // CUL-1823: "(21 of 21)" after "not one was finished" read as 21 of 21 finished. The
           // bracket counts what the sentence counts, and names it.
-          `Not one rated ${noun} was finished (0 of ${num(refusalFact.ratedFeedings)} finished)`
+          `Not one rated ${noun} was finished (0 of ${num(refusalFact.ratedFeedings)} finished)${refusalGradeBit(snap, refusalFact)}`
         : `${num(refusalFact.refusedFeedings)} of ${num(refusalFact.ratedFeedings)} rated ${nouns} were not finished`
     // CUL-2443: "DOCUMENTS A REFUSAL" ONLY WHERE THE RATINGS CAN CARRY IT. On 4 rated feedings
     // among ~167 the record cannot document a refusal, but it cannot show the diet was eaten
@@ -4667,6 +4679,17 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     refusalCaveat = partialRefusal
       ? `${eaten}; only ${num(refusalFact!.ratedFeedings)} ${nouns} carry a rating, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
       : `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
+    // CUL-2715 (Dr. Chen cold read): beside a refusal, a missing weigh-in is the fact that sizes it, and
+    // a box silent on weight reads as weight not being a concern. Stated only where the record holds
+    // no reading at all, or none since the trial began (the latest predates it).
+    const noWeight = snap.weight.isEmpty
+      ? 'No weigh-in is recorded, so any weight change during the refusal is unknown here.'
+      : snap.weight.latest && snap.weight.latest.date < t.evidenceStartDate
+        ? `No weigh-in is recorded since the trial began (the latest is from ${h(
+            fmtDayYear(snap.weight.latest.date),
+          )}), so any weight change during the refusal is unknown here.`
+        : null
+    if (noWeight) refusalCaveat = `${refusalCaveat} ${noWeight}`
   }
   if (t.arrangementExposures.length > 0) {
     caveats.push(
@@ -10646,7 +10669,71 @@ function offDietBottomLine(snap: ReportSnapshot, countScope: string): string {
 function offDietBesideRefusal(snap: ReportSnapshot): string {
   const n = snap.trial!.exposures.offDiet
   const { when, timing } = offDietDetail(snap)
-  return `<b>Also fed off the trial diet:</b> ${num(n)} feeding${n === 1 ? '' : 's'}${when} (appendix&nbsp;C; a floor, not a total).${timing}`
+  return `<b>Also fed off the trial diet:</b> ${num(n)} feeding${n === 1 ? '' : 's'}${offDietFoodsBit(snap)}${when} (appendix&nbsp;C; a floor, not a total).${timing}`
+}
+
+/**
+ * CUL-2715 — WHAT the off-diet feedings were, beside the refusal: "1 feeding on May 10" left the vet to
+ * guess whether it was a treat or a second diet. Each food by its label with the proteins the record
+ * read from it, or "ingredient list not read" where none was. Named only when the listed feedings are
+ * the whole count, so a name never stands for feedings it does not cover; three foods, then a count.
+ */
+function offDietFoodsBit(snap: ReportSnapshot): string {
+  const t = snap.trial!
+  const off = t.exposures.items.filter((x) => x.classification.offDiet)
+  if (off.length === 0 || off.length !== t.exposures.offDiet) return ''
+  const groups = new Map<string, { label: string | null; count: number; proteins: Set<string>; unread: boolean }>()
+  for (const x of off) {
+    const key = x.label ?? ''
+    const g = groups.get(key) ?? { label: x.label, count: 0, proteins: new Set<string>(), unread: false }
+    g.count += 1
+    for (const a of x.classification.antigens) g.proteins.add(a.toLowerCase())
+    if (!x.panelWasRead) g.unread = true
+    groups.set(key, g)
+  }
+  const ordered = [...groups.values()].sort((a, b) => b.count - a.count)
+  const food = (g: (typeof ordered)[number], times: boolean): string => {
+    const what = g.label ? h(g.label) : 'a food with no name logged'
+    const carried =
+      g.proteins.size > 0
+        ? `, carrying ${h(proteinList([...g.proteins].sort()))}`
+        : g.unread
+          ? ', ingredient list not read'
+          : ''
+    return `${what}${times ? ` &times;${num(g.count)}` : ''}${carried}`
+  }
+  // One food reads as a phrase; several as a list beside the count, each with its own count.
+  if (ordered.length === 1) {
+    const one = food(ordered[0], false)
+    // The closing comma pairs the carrying clause's opening one; a bare name takes none.
+    return ` of ${one}${one.includes(', ') ? ',' : ''}`
+  }
+  const named = ordered.slice(0, 3).map((g) => food(g, true))
+  const rest = ordered.length - named.length
+  return ` (${named.join('; ')}${rest > 0 ? `; and ${num(rest)} other food${rest === 1 ? '' : 's'}` : ''})`
+}
+
+/**
+ * CUL-2715 (Dr. Chen cold read) — on a total refusal, HOW MUCH was eaten. "0 of 21 finished" reads as
+ * starvation or as nothing logged, and partial intake against none changes the lipidosis urgency. The
+ * owner's grades are stated only where they are exactly the refusal's population: one food carries
+ * every rating in this window, over the trial diet, and its rated count is the fact's. Otherwise the
+ * sentence stands as it was; the ratings stay in appendix E.
+ */
+function refusalGradeBit(
+  snap: ReportSnapshot,
+  fact: NonNullable<NonNullable<ReportSnapshot['trial']>['rangeRefusal']>,
+): string {
+  if (fact.population !== 'trial_diet') return ''
+  const rated = snap.diet.mealItems.filter((i) => ratedCountOf(i) > 0)
+  if (rated.length !== 1 || rated[0].mix) return ''
+  const food = rated[0]
+  if (ratedCountOf(food) !== fact.ratedFeedings) return ''
+  const grades = [...food.intakeBreakdown].sort((a, b) => RATING_ORDER.indexOf(a.rating) - RATING_ORDER.indexOf(b.rating))
+  if (grades.length === 1) {
+    return `; the owner rated every one &ldquo;${h(intakeLabel(grades[0].rating).toLowerCase())}&rdquo;`
+  }
+  return `; the owner rated them ${intakeRatingList(grades)}`
 }
 
 /**

@@ -51,7 +51,7 @@ import { templateBurden, templateWeightLoss } from '../generate-signal/phrasing.
 // The CUL-976 cross-surface guards drive the REAL renderer and assert over its output, not over
 // the intermediate snapshot: "one adherence claim per drug per document" is a property of the
 // document, and a snapshot-level assertion cannot see a second claim a renderer prints.
-import { renderReport } from './render.ts'
+import { HOME_DRAWS_WEIGHT_ROW, renderReport } from './render.ts'
 import type { FoodFormat } from '../generate-signal/detection.ts'
 // The Class-A key, imported so the parity assertion below compares against the REAL
 // read-path keying rather than a string literal that could drift from it.
@@ -3281,7 +3281,7 @@ function cul1823RefusalSnap() {
     dietTrials: [cul1779Trial({ status: 'abandoned', stoppedReason: 'refused', endedAt: '2026-05-28' })],
     events: [
       ...dailyMeals('2026-05-08', '2026-05-28', 'some'),
-      proteinMeal({ occurredAt: at('2026-05-10', '18:00:00'), foodItemId: 'jerky', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken.', extractionConfidence: { proteins: 0.9 } }),
+      proteinMeal({ occurredAt: at('2026-05-10', '18:00:00'), foodItemId: 'jerky', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken.', extractionConfidence: { proteins: 0.9 }, brand: 'Hearth', productName: 'Chicken Jerky' }),
     ],
   }))
 }
@@ -6253,8 +6253,10 @@ Deno.test('CUL-2026 — Home\'s weight card leads the band, in the card\'s own r
   // CUL-2357 (ruling W, spec v2 §5.8): the report states the change as a whole percent; WG-4's
   // "no percentage" binds the app screens, never the report. 5.00 → 4.40 kg is 12%.
   assert.ok(/Weighed 4\.40 kg \(9\.7 lb\) on Jun 27, 2026 on a home scale(, a single reading)?, down from 5\.00 kg \(11\.0 lb\) on Mar \d+, 2026 on a home scale(, a single reading)? — about 12 ?% of body weight\./.test(row), row)
-  const ask = home[0].tier === 'firm' ? 'it is worth booking a vet visit' : 'it is worth raising with the vet'
-  assert.ok(row.includes(`The owner was told ${ask}.`), row)
+  const ask = home[0].tier === 'firm' ? 'worth booking a vet visit' : 'worth raising with the vet'
+  // CUL-2274: Home draws no weight_loss row yet, so the ask is the app's read, never what the owner was told.
+  assert.ok(row.includes(`The app's weight check reads it as ${ask}.`), row)
+  assert.ok(!/The owner was told/.test(row), row)
   assert.equal((row.match(/% of body weight/g) ?? []).length, 1, 'the percent prints once on the flag')
 })
 
@@ -6370,7 +6372,7 @@ Deno.test('CUL-2026 adv — a past window ending before the loss still flags the
   const w = snap.safetyFlags.find((f) => f.kind === 'weight_loss')
   assert.ok(w && w.kind === 'weight_loss' && w.asOf === 'now' && w.latest.day === '2026-06-27', JSON.stringify(snap.safetyFlags))
   const p = readAs(renderReport(snap))
-  assert.ok(/The latest reading is after this window\. The owner was told it is worth booking a vet visit\./.test(p), p.slice(p.indexOf('Weight Weighed'), p.indexOf('Weight Weighed') + 500))
+  assert.ok(/The latest reading is after this window\. The app's weight check reads it as worth booking a vet visit\./.test(p), p.slice(p.indexOf('Weight Weighed'), p.indexOf('Weight Weighed') + 500))
 })
 
 Deno.test('CUL-2026 adv — a loss as of a past window\'s end that has since recovered is flagged, never as what the owner was told', () => {
@@ -6439,7 +6441,7 @@ Deno.test('CUL-2026 adv 2 — a partial recovery after a past window never softe
   assert.deepEqual(flags.map((f) => f.kind === 'weight_loss' && [f.tier, f.asOf]), [['firm', 'window_end'], ['soft', 'now']])
   const p = readAs(renderReport(snap))
   assert.ok(/As of this window's end the app's weight check reads it as worth booking a vet visit\./.test(p))
-  assert.ok(/The owner was told it is worth raising with the vet\./.test(p))
+  assert.ok(/The app's weight check reads it as worth raising with the vet\./.test(p))
   assert.ok(/-0\.70 kg Weight since Mar 8, 2026|-0\.70 kg Weight since Mar 1, 2026/.test(p), 'the tile states the firmer row')
 })
 
@@ -6914,4 +6916,91 @@ Deno.test('CUL-2529 adversarial 1 (QUIET) — a dose paired to the unrated twin 
   const v = snap.medications.find((x) => x.drugName === 'Prednisolone')!.partialDoseVehicles!
   assert.deepEqual(v.rated, [{ rating: 'refused', n: 1 }], 'the twin pair is one refused meal, never "not recorded"')
   assert.equal(v.unrated, 0)
+})
+
+// ── CUL-2274 — the weight row never claims the owner was told what Home cannot show ────────────
+
+Deno.test('CUL-2274 — a current weight finding with no Home weight row reads as the app\'s check, never "The owner was told"', () => {
+  idSeq = 0
+  // The gate this test rests on: Home draws no weight_loss row until PR-37 (CUL-1414) flips it.
+  assert.equal(HOME_DRAWS_WEIGHT_ROW, false)
+  const weighIns = losingWeighIns()
+  const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: weighIns, weightHistory: weighIns, engineFlags: EN8 }))
+  const w = snap.safetyFlags.find((f) => f.kind === 'weight_loss')
+  assert.ok(w && w.kind === 'weight_loss' && w.asOf === 'now', JSON.stringify(snap.safetyFlags))
+  const html = renderReport(snap)
+  const p = readAs(html)
+  const row = p.slice(p.indexOf('Weight Weighed'), p.indexOf('Weight Weighed') + 600)
+  const ask = w.tier === 'firm' ? 'worth booking a vet visit' : 'worth raising with the vet'
+  // The row and its ask print unchanged; only the claim about the owner goes.
+  assert.ok(row.includes(`The app's weight check reads it as ${ask}.`), row)
+  assert.ok(!/owner was told/i.test(p.slice(p.indexOf('Weight Weighed'))), 'no weight sentence anywhere claims the owner was told')
+  assert.ok(!/The owner was told it is worth (booking a vet visit|raising with the vet)/.test(html))
+})
+
+// ── CUL-2715 — a refused trial's bottom line says how much was eaten, the weight, and what was fed ──
+
+function refusalCallout(snap: ReturnType<typeof assembleReport>): string {
+  const text = plainText(renderReport(snap))
+  const i = text.indexOf('Interpreting this record')
+  assert.ok(i >= 0, 'the callout rendered')
+  return text.slice(i, text.indexOf('Symptom frequency', i))
+}
+
+Deno.test('CUL-2715 — the CUL-1823 refusal box states the eaten grade, the missing weigh-in and the off-diet food', () => {
+  idSeq = 0
+  const box = refusalCallout(cul1823RefusalSnap())
+  // The refusal register leads, unchanged, with one clause added: the owner's grade.
+  assert.ok(box.includes('Not one rated feeding of the trial diet was finished (0 of 21 finished); the owner rated every one "ate some", so this record documents a refusal rather than an elimination'), box)
+  assert.ok(box.includes('No weigh-in is recorded, so any weight change during the refusal is unknown here.'), box)
+  assert.ok(box.includes('Also fed off the trial diet: 1 feeding of Hearth Chicken Jerky, carrying chicken, on May 10, 2026 (appendix C; a floor, not a total).'), box)
+  // Order: refusal, then the weight gap, then the off-diet fact.
+  assert.ok(box.indexOf('finished') < box.indexOf('No weigh-in') && box.indexOf('No weigh-in') < box.indexOf('Also fed'), box)
+})
+
+Deno.test('CUL-2715 — mixed grades are listed, never collapsed to one word', () => {
+  idSeq = 0
+  const events = [
+    ...dailyMeals('2026-05-08', '2026-05-24', 'some'),
+    ...dailyMeals('2026-05-25', '2026-05-28', null).map((e) => ({ ...e, meal: { ...e.meal!, intakeRating: 'refused' } })),
+  ] as ReportEventInput[]
+  const snap = assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-05-08', endDate: '2026-05-28' },
+    dietTrials: [cul1779Trial({ status: 'abandoned', stoppedReason: 'refused', endedAt: '2026-05-28' })],
+    events,
+  }))
+  const box = refusalCallout(snap)
+  assert.ok(/0 of 21 finished\); the owner rated them "ate some" × 17 · "refused" × 4 ,/.test(box), box)
+})
+
+Deno.test('CUL-2715 — a weigh-in during the trial: no missing-weight clause', () => {
+  idSeq = 0
+  const weighIns: ReportWeightCheckInput[] = [
+    { eventId: 'w-1', weightKg: 4.0, occurredAt: at('2026-05-09'), source: 'home_scale' },
+    { eventId: 'w-2', weightKg: 4.0, occurredAt: at('2026-05-20'), source: 'home_scale' },
+  ]
+  const snap = assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-05-08', endDate: '2026-05-28' },
+    dietTrials: [cul1779Trial({ status: 'abandoned', stoppedReason: 'refused', endedAt: '2026-05-28' })],
+    events: dailyMeals('2026-05-08', '2026-05-28', 'some'),
+    weightChecks: weighIns,
+    weightHistory: weighIns,
+  }))
+  const box = refusalCallout(snap)
+  assert.ok(box.includes('the owner rated every one "ate some"'), box)
+  assert.ok(!/No weigh-in is recorded/.test(box), box)
+})
+
+Deno.test('CUL-2715 — the latest weigh-in predates the trial: the gap is stated with its date', () => {
+  idSeq = 0
+  const weighIns: ReportWeightCheckInput[] = [{ eventId: 'w-1', weightKg: 4.0, occurredAt: at('2026-04-20'), source: 'clinic' }]
+  const snap = assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-05-08', endDate: '2026-05-28' },
+    dietTrials: [cul1779Trial({ status: 'abandoned', stoppedReason: 'refused', endedAt: '2026-05-28' })],
+    events: dailyMeals('2026-05-08', '2026-05-28', 'some'),
+    weightChecks: weighIns,
+    weightHistory: weighIns,
+  }))
+  const box = refusalCallout(snap)
+  assert.ok(box.includes('No weigh-in is recorded since the trial began (the latest is from Apr 20, 2026), so any weight change during the refusal is unknown here.'), box)
 })
