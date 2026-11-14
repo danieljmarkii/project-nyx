@@ -329,6 +329,10 @@
   .prov b { color: var(--a-text); font-weight: 600; }
   .prov .go { margin-left: auto; color: var(--a-accent-ink); font-weight: 600; font-size: 12px; flex: none; }
 
+  .thumbs { display: flex; gap: 6px; margin-top: 7px; }
+  .shot { width: 34px; height: 52px; border-radius: 5px; border: 1px solid var(--a-border-strong); background: var(--a-subtle); display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 4px; }
+  .shot i { display: block; height: 7px; width: 70%; border-radius: 4px; background: #D9D9D9; }
+  .shot i.me { align-self: flex-end; background: #9FC3F5; }
   /* vet report fragment: paper, clinical, not the phone */
   .paper { width: 340px; max-width: 100%; background: #FFFFFF; color: #111; border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); padding: 18px 20px 20px; font-size: 12px; line-height: 1.45; flex: none; }
   .paper .ph { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1.5px solid #111; padding-bottom: 6px; }
@@ -348,12 +352,18 @@
 <body>
 <div class="wrap">
 
-  <p class="eyebrow">Culprit · Vet contact · Round 1 · exploratory</p>
+  <p class="eyebrow">Culprit · Vet contact · Round 2 · exploratory</p>
   <h1 class="title">When the vet answered by phone</h1>
   <p class="lede">On Nov 9 Nyx's vet recommended an ear medication after a phone call and a few texts. There was no exam, so it could not be logged as a visit, and the course landed in the record with no source. This round draws <b>one entry for any vet contact</b>, a <b>channel choice</b> on it, and how a phone or text contact reads in the record and on the vet report, without ever counting as an exam. Issue: <a href="https://linear.app/projectnyx/issue/CUL-2749">CUL-2749</a>.</p>
 
   <div class="ledger">
-    <div class="ledger-h">What this round carries</div>
+    <div class="ledger-h">Round 2 · what moved</div>
+    <div class="ledger-row"><span class="ledger-who">PM</span><span><b>"If there's potential to attach something, like a text, we should provide that option."</b><span class="moved">C1 and C2: every contact gains <b>What the vet sent</b>, the shipped Paperwork row renamed and moved to the top on a remote contact, filing screenshots or a PDF into Vet Files linked to the contact. D2 shows them; the vet report names that they exist (E1) but does not print them, as Vet Files ruled (D14). Round 1's "never import texts or screenshots" note is narrowed: the owner's own screenshots are in; reading the phone's message history and any model reading them stay out.</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">PM</span><span><b>"Another type of comm could be email too."</b><span class="moved">B: the chip row is now At the clinic · Phone · Text · Email, with B3 drawn for Email. Text absorbs clinic app and portal messages.</span></span></div>
+    <div class="ledger-row"><span class="ledger-who team">Still open</span><span><b>A (one entry or two) and E (does a phone consult move the report's start) are not yet ruled</b>, so both option boxes stay.<span class="moved">Round 1's ledger follows.</span></span></div>
+  </div>
+  <div class="ledger">
+    <div class="ledger-h">Round 1 · what it carried</div>
     <div class="ledger-row"><span class="ledger-who">PM</span><span><b>"I don't really have a way to add a vet contact."</b> Phone and text on Nov 9, ear medication recommended.<span class="moved">Drawn with the real payload: Nyx, Nov 9, left ear, a course started from the call. The drug name is a placeholder (ear drops) until the PM confirms it; the Sep 18 visit is illustrative.</span></span></div>
     <div class="ledger-row"><span class="ledger-who team">Team</span><span><b>Convened 2026-11-13:</b> 8 for, Product Owner "after App Store 1.2.0", none against.<span class="moved">Conditions drawn here: one entry not two (Designer), "phone consult, no exam" said plainly (Dr. Chen), nothing required but the day and how (Jordan), the note's report line visible (Trust and Safety).</span></span></div>
     <div class="ledger-row"><span class="ledger-who team">Open</span><span><b>Two calls drawn side by side:</b> one entry vs a second door (A), and whether a phone consult moves the report's start date (E).<span class="moved">The schema call (a channel on visits vs its own table) has no pixels; it sits in the notes at the foot.</span></span></div>
@@ -404,9 +414,9 @@
   <section>
     <p class="sec-eyebrow">B · The sheet</p>
     <h2>"How did you hear from the vet?"</h2>
-    <p class="sec-lede">The shipped sheet asks <b>Has this visit happened?</b> first. On <b>Already happened</b> it gains one more chip row: <b>At the clinic · Phone · Text or message</b>, defaulting to the clinic so today's path is unchanged. The footnote under Save tells the owner what the choice does to the report, in the tense it is true in.</p>
+    <p class="sec-lede">The shipped sheet asks <b>Has this visit happened?</b> first. On <b>Already happened</b> it gains one more chip row: <b>At the clinic · Phone · Text · Email</b> <span class="tag cur">round 2: Email added</span>, defaulting to the clinic so today's path is unchanged. The footnote under Save tells the owner what the choice does to the report, in the tense it is true in.</p>
 
-    <div class="rail rail-3">
+    <div class="rail rail-2">
       <div class="opt">
         <div class="phone"><div class="ph-screen">
           <div class="behind"><div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div></div></div></div>
@@ -417,7 +427,7 @@
             <div class="lab-q">Has this happened?</div>
             <div class="chips"><span class="chip">Booked</span><span class="chip on">Already happened</span></div>
             <div class="lab-q">How did you hear from the vet?</div>
-            <div class="chips"><span class="chip">At the clinic</span><span class="chip on">Phone</span><span class="chip">Text or message</span></div>
+            <div class="chips"><span class="chip">At the clinic</span><span class="chip on">Phone</span><span class="chip">Text</span><span class="chip">Email</span></div>
             <div class="field-row">
               <div class="field"><div class="lab">Day</div><div class="val">Sun, Nov 9</div></div>
               <div class="field"><div class="lab">Clinic</div><div class="val ph">Optional</div></div>
@@ -429,30 +439,50 @@
         </div></div>
         <div class="opt-cap"><span class="k">B1 · Phone <span class="tag cur">current</span></span><p>The title, the Save label and the footnote follow the chip. Only the day is required; the reason is optional, as on a visit.</p></div>
       </div>
-
       <div class="opt">
         <div class="phone"><div class="ph-screen">
           <div class="behind"><div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div></div></div></div>
           <div class="sheet-static">
             <div class="sheet-grab"></div>
-            <div class="sheet-h">A message from the vet</div>
+            <div class="sheet-h">Texts from the vet</div>
             <div class="sheet-sub">For Nyx</div>
             <div class="lab-q">Has this happened?</div>
             <div class="chips"><span class="chip">Booked</span><span class="chip on">Already happened</span></div>
             <div class="lab-q">How did you hear from the vet?</div>
-            <div class="chips"><span class="chip">At the clinic</span><span class="chip">Phone</span><span class="chip on">Text or message</span></div>
+            <div class="chips"><span class="chip">At the clinic</span><span class="chip">Phone</span><span class="chip on">Text</span><span class="chip">Email</span></div>
             <div class="field-row">
               <div class="field"><div class="lab">Day</div><div class="val">Sun, Nov 9</div></div>
               <div class="field"><div class="lab">Clinic</div><div class="val ph">Optional</div></div>
             </div>
             <div class="field"><div class="lab">What it was about</div><div class="val">Left ear, head shaking</div></div>
-            <div class="btn primary">Save Nyx's message</div>
-            <div class="footnote">Shows on the vet report as a <b>message, no exam</b>. The report still starts from the Sep 18 visit.</div>
+            <div class="btn primary">Save Nyx's texts</div>
+            <div class="footnote">Shows on the vet report as <b>texts with the vet, no exam</b>. The report still starts from the Sep 18 visit.</div>
           </div>
         </div></div>
-        <div class="opt-cap"><span class="k">B2 · Text or message <span class="tag cur">current</span></span><p>Covers texts, a clinic app and a portal message. A call that turned into texts is one contact: the owner picks either, and the report wording is the same weight.</p></div>
+        <div class="opt-cap"><span class="k">B2 · Text <span class="tag cur">current</span></span><p>Covers texts and a clinic app or portal message. The next screen asks for the screenshots (C).</p></div>
       </div>
-
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="behind"><div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div></div></div></div>
+          <div class="sheet-static">
+            <div class="sheet-grab"></div>
+            <div class="sheet-h">An email from the vet</div>
+            <div class="sheet-sub">For Nyx</div>
+            <div class="lab-q">Has this happened?</div>
+            <div class="chips"><span class="chip">Booked</span><span class="chip on">Already happened</span></div>
+            <div class="lab-q">How did you hear from the vet?</div>
+            <div class="chips"><span class="chip">At the clinic</span><span class="chip">Phone</span><span class="chip">Text</span><span class="chip on">Email</span></div>
+            <div class="field-row">
+              <div class="field"><div class="lab">Day</div><div class="val">Sun, Nov 9</div></div>
+              <div class="field"><div class="lab">Clinic</div><div class="val ph">Optional</div></div>
+            </div>
+            <div class="field"><div class="lab">What it was about</div><div class="val">Left ear, head shaking</div></div>
+            <div class="btn primary">Save Nyx's email</div>
+            <div class="footnote">Shows on the vet report as <b>an email from the vet, no exam</b>. The report still starts from the Sep 18 visit.</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">B3 · Email <span class="tag cur">new in round 2</span></span><p>The PM's reaction. Same sheet; the next screen takes a screenshot of the email or the PDF it carried.</p></div>
+      </div>
       <div class="opt">
         <div class="phone"><div class="ph-screen">
           <div class="behind"><div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div></div></div></div>
@@ -463,7 +493,7 @@
             <div class="lab-q">Has this happened?</div>
             <div class="chips"><span class="chip">Booked</span><span class="chip on">Already happened</span></div>
             <div class="lab-q">How did you hear from the vet?</div>
-            <div class="chips"><span class="chip on">At the clinic</span><span class="chip">Phone</span><span class="chip">Text or message</span></div>
+            <div class="chips"><span class="chip on">At the clinic</span><span class="chip">Phone</span><span class="chip">Text</span><span class="chip">Email</span></div>
             <div class="field-row">
               <div class="field"><div class="lab">Day</div><div class="val">Thu, Sep 18</div></div>
               <div class="field"><div class="lab">Clinic</div><div class="val ph">Optional</div></div>
@@ -473,7 +503,7 @@
             <div class="footnote">Your next vet report starts from this visit.</div>
           </div>
         </div></div>
-        <div class="opt-cap"><span class="k">B3 · At the clinic <span class="tag cur">current</span></span><p>Today's sheet, word for word, plus the one chip row. Booking stays clinic only: an appointment is a visit by definition.</p></div>
+        <div class="opt-cap"><span class="k">B4 · At the clinic <span class="tag cur">current</span></span><p>Today's sheet, word for word, plus the one chip row. Booking stays clinic only: an appointment is a visit by definition.</p></div>
       </div>
     </div>
   </section>
@@ -481,25 +511,49 @@
   <!-- ===================== C. WHAT THE VET SAID ===================== -->
   <section>
     <p class="sec-eyebrow">C · After the save</p>
-    <h2>"What did the vet say?"</h2>
-    <p class="sec-lede">A remote contact reuses the shipped after-visit screen and its plan rows, so starting the course here links it to the call. Only the title changes: <b>How did it go?</b> suits a visit, not a phone call. Paperwork stays (a vet can email a sheet); the prepared-questions block only appears when there were questions.</p>
+    <h2>"What did the vet say?" and what the vet sent</h2>
+    <p class="sec-lede">A remote contact reuses the shipped after-visit screen and its plan rows, so starting the course here links it to the call. <b>Round 2:</b> every contact can carry what the vet sent. The shipped <b>Paperwork</b> row becomes <b>What the vet sent</b> on a remote contact and moves to the top, since for a text or an email the screenshot <i>is</i> the record. It files into Vet Files, linked to this contact, exactly as visit paperwork does today.</p>
 
-    <div class="rail rail-2">
+    <div class="rail rail-3">
       <div class="opt">
         <div class="phone"><div class="ph-screen">
           <div class="ph-nav"><span class="ph-back">‹ Back</span><span class="ph-spacer"></span></div>
           <div><div class="ph-pagetitle">What did the vet say?</div><div class="ph-sub">Phone · Sun, Nov 9 · Left ear</div></div>
+          <div class="rowcard">
+            <div class="plan"><div class="ico doc">⎙</div><div class="t"><b>What the vet sent</b><span>2 screenshots · in Vet Files</span><div class="thumbs"><span class="shot"><i></i><i class="me"></i><i></i></span><span class="shot"><i class="me"></i><i></i><i></i></span></div></div><span class="go">Add more</span></div>
+          </div>
           <div class="sec-label">The plan</div>
           <div class="rowcard">
             <div class="plan"><div class="ico med">Rx</div><div class="t"><b>Ear drops</b><span>Started · twice daily · 7 days</span></div><span class="done">Added</span></div>
             <div class="plan"><div class="ico med">Rx</div><div class="t"><b>Start a medication</b><span>Anything else the vet started</span></div><span class="go">Add</span></div>
-            <div class="plan"><div class="ico diet">D</div><div class="t"><b>Start a diet trial</b><span>If the vet changed the food</span></div><span class="go">Add</span></div>
             <div class="plan"><div class="ico next">↻</div><div class="t"><b>A recheck</b><span>Book it if the vet asked to see Nyx</span></div><span class="go">Add</span></div>
           </div>
           <div class="field tall"><div class="lab">Notes</div><div class="val">Call back if still shaking after 3 days. Keep the ear dry.</div></div>
-          <div class="btn-stack"><div class="btn primary">Done</div><div class="btn quiet">Later</div></div>
+          <div class="btn-stack"><div class="btn primary">Done</div></div>
         </div></div>
-        <div class="opt-cap"><span class="k">C1 · The plan, from a phone call <span class="tag cur">current</span></span><p>The course row opens the shipped medication setup with the call already linked. "Call back if…" is the opening for the vet instruction track (CUL-2731), not built here.</p></div>
+        <div class="opt-cap"><span class="k">C1 · Nov 9, as it happened <span class="tag cur">current</span></span><p>A call that turned into texts stays one contact: Phone, with the texts attached. The diet trial row is still there below the fold; trimmed here for space.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Back</span><span class="ph-spacer"></span></div>
+          <div class="behind">
+            <div><div class="ph-pagetitle">What did the vet say?</div><div class="ph-sub">Phone · Sun, Nov 9 · Left ear</div></div>
+            <div class="rowcard"><div class="plan"><div class="ico doc">⎙</div><div class="t"><b>What the vet sent</b><span>A screenshot of the texts, or the email</span></div><span class="go">Add</span></div></div>
+          </div>
+          <div class="sheet-static">
+            <div class="sheet-grab"></div>
+            <div class="sheet-h">Add what the vet sent</div>
+            <div class="rowcard">
+              <div class="row"><span class="v">Screenshots<small>From Photos. Pick several, they stay together</small></span><span class="chev">›</span></div>
+              <div class="row"><span class="v">A file<small>A PDF the clinic emailed</small></span><span class="chev">›</span></div>
+              <div class="row"><span class="v">Take a photo<small>A printed sheet</small></span><span class="chev">›</span></div>
+            </div>
+            <div class="footnote">Kept in Nyx's Vet Files, linked to this call. Location data is removed from photos.</div>
+            <div class="btn quiet">Cancel</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">C2 · Adding it <span class="tag cur">current</span></span><p>The shipped Vet Files picker. Several screenshots of one thread save as one document, the way Vet Files already groups pages.</p></div>
       </div>
 
       <div class="opt">
@@ -507,16 +561,17 @@
           <div class="saved-wrap">
             <div class="saved-check"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#0B7B6C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
             <div class="saved-h">Nyx's call is saved</div>
-            <div class="saved-p">Ear drops are on the Pet tab, linked to this call. The vet report lists it as a phone consult.</div>
+            <div class="saved-p">Ear drops are on the Pet tab and the texts are in Vet Files, both linked to this call. The vet report lists it as a phone consult.</div>
           </div>
           <div class="btn-stack"><div class="btn ghost">See the call</div></div>
         </div></div>
-        <div class="opt-cap"><span class="k">C2 · The saved moment <span class="tag cur">current</span></span><p>Says what the save did elsewhere, and only what is true. It never says the report "starts from" a call.</p></div>
+        <div class="opt-cap"><span class="k">C3 · The saved moment <span class="tag cur">current</span></span><p>Says what the save did elsewhere, and only what is true. It never says the report "starts from" a call.</p></div>
       </div>
     </div>
   </section>
 
-  <!-- ===================== D. THE RECORD ===================== -->
+  
+<!-- ===================== D. THE RECORD ===================== -->
   <section>
     <p class="sec-eyebrow">D · In the record</p>
     <h2>A call sits beside visits, and the course knows where it came from</h2>
@@ -528,7 +583,7 @@
           <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-spacer"></span></div>
           <div class="ph-pagetitle">Vet visits</div>
           <div class="rowcard">
-            <div class="visit"><div class="d"><b>9</b><span>Nov</span></div><div class="m"><b>Left ear, head shaking</b><span><span class="via remote">Phone</span> No exam</span><div class="pillrow"><span class="mini med">Ear drops</span></div></div><span class="chev">›</span></div>
+            <div class="visit"><div class="d"><b>9</b><span>Nov</span></div><div class="m"><b>Left ear, head shaking</b><span><span class="via remote">Phone</span> No exam</span><div class="pillrow"><span class="mini med">Ear drops</span><span class="mini">2 screenshots</span></div></div><span class="chev">›</span></div>
             <div class="visit"><div class="d"><b>18</b><span>Sep</span></div><div class="m"><b>Annual</b><span><span class="via">Visit</span></span></div><span class="chev">›</span></div>
             <div class="visit"><div class="d"><b>2</b><span>Jun</span></div><div class="m"><b>Vomiting, 2 days</b><span><span class="via">Visit</span></span><div class="pillrow"><span class="mini diet">Diet trial</span></div></div><span class="chev">›</span></div>
           </div>
@@ -545,11 +600,13 @@
           <div class="rowcard">
             <div class="plan"><div class="ico med">Rx</div><div class="t"><b>Ear drops</b><span>Twice daily · Still on it</span></div><span class="go">›</span></div>
           </div>
+          <div class="sec-label">What the vet sent</div>
+          <div class="rowcard"><div class="plan"><div class="ico doc">⎙</div><div class="t"><b>Texts, Nov 9</b><span>2 screenshots · in Vet Files</span><div class="thumbs"><span class="shot"><i></i><i class="me"></i><i></i></span><span class="shot"><i class="me"></i><i></i><i></i></span></div></div><span class="go">›</span></div></div>
           <div class="sec-label">Your notes</div>
           <div class="field tall"><div class="val">Call back if still shaking after 3 days. Keep the ear dry.</div></div>
-          <div class="footnote">These notes print on the vet report, under this call.</div>
+          <div class="footnote">Your notes print on the vet report, under this call. The screenshots don't; share them from Vet Files.</div>
         </div></div>
-        <div class="opt-cap"><span class="k">D2 · The call, as written <span class="tag cur">current</span></span><p>The shipped visit detail, with the channel in the subtitle. Trust and Safety's condition: the owner sees where the notes go.</p></div>
+        <div class="opt-cap"><span class="k">D2 · The call, as written <span class="tag cur">current</span></span><p>The shipped visit detail, with the channel in the subtitle and what the vet sent. Trust and Safety's condition: the owner sees what reaches the report and what doesn't.</p></div>
       </div>
 
       <div class="opt">
@@ -580,7 +637,7 @@
           <div class="win">Covers <b>Sep 18 (last exam) to Nov 14</b></div>
           <h5>Vet contacts in this period</h5>
           <table>
-            <tr class="hl"><td class="d">Nov 9</td><td><span class="k">Phone</span>Consult, no exam. Left ear, head shaking.<small>Started: ear drops, twice daily, 7 days. Owner notes: call back if still shaking after 3 days.</small></td></tr>
+            <tr class="hl"><td class="d">Nov 9</td><td><span class="k">Phone</span>Consult, no exam. Left ear, head shaking.<small>Started: ear drops, twice daily, 7 days. Owner notes: call back if still shaking after 3 days. Owner holds the vet's texts (2 screenshots).</small></td></tr>
           </table>
           <h5>Medications</h5>
           <table>
@@ -617,13 +674,14 @@
       <div class="note teal"><b>Unchanged</b>Booking (an appointment is always a visit), Get ready, At the vet, Home's appointment strip, and every existing visit (they read as At the clinic).</div>
       <div class="note amber"><b>The schema call (PM)</b>A channel on the visit record plus a check that makes every reader say "exams only" or "any contact" (Data Scientist), or a contacts table of its own (Dir. of Engineering). The frames look the same either way.</div>
       <div class="note amber"><b>Care state</b>Does a logged call count as "my vet knows" for a concern Home is watching? Dr. Chen: yes for awareness, never as an exam. Not drawn this round.</div>
-      <div class="note rose"><b>Not in scope</b>Importing texts, reading screenshots of them, or any model reading the notes. A vet's emailed sheet still goes to Vet Files through Paperwork.</div>
+      <div class="note rose"><b>Not in scope</b>Reading the phone's message history or inbox, and any model reading the screenshots or the notes (Vet Files keeps AI out until its own Phase 2 gate). The screenshots are the owner's own files in a private store, location stripped.</div>
+      <div class="note"><b>Later: share into Culprit</b>Sharing a screenshot straight from Messages or Mail into a new contact is the fastest path, but share-sheet import is parked in the Vet Files spec. Worth its own round once this lands.</div>
       <div class="note"><b>History</b>The call gets a row on Nov 9 in History, in the visit row's shape with the Phone tag. Not drawn: it is the shipped row plus the tag.</div>
       <div class="note"><b>Sequencing</b>Team view: build after App Store 1.2.0, alongside the "call me if" instruction track, which wants this same record to hang its instructions on.</div>
     </div>
   </section>
 
-  <div class="foot"><b>Round 1, exploratory, 2026-11-14.</b> Source of truth: <code>docs/culprit-vet-contact-mockups.html</code>. Later rounds republish to this same page. Phone frames use the app's fixed tokens from the vet visits mock; the report fragment is schematic, not the report v2 layout.</div>
+  <div class="foot"><b>Round 2, exploratory, 2026-11-14</b> (supersedes round 1 on this page; round 1 is in git). Source of truth: <code>docs/culprit-vet-contact-mockups.html</code>. Later rounds republish to this same page. Phone frames use the app's fixed tokens from the vet visits mock; the report fragment is schematic, not the report v2 layout.</div>
 </div>
 </body>
 </html>
