@@ -1084,8 +1084,8 @@ function trimOrNull(v: string | null | undefined): string | null {
 /**
  * A visit that HAPPENED cannot be in the future, so a seeded date never is.
  *
- * THE SEED IS THE HOLE, not the picker. `AfterVisitBody` and `VisitEditBody` both
- * carry `maximumDate={new Date()}`, and `maximumDate` constrains a PICK — a date
+ * THE SEED IS THE HOLE, not the picker. `AfterVisitBody` carries
+ * `maximumDate={new Date()}`, and `maximumDate` constrains a PICK — a date
  * already in state when the screen opens is not re-validated by anything, so an
  * owner who books a six-week recheck, taps *How did it go?* under *Next* and just
  * saves writes `visited_at` 42 days out without ever opening the picker. The report
@@ -1757,7 +1757,19 @@ export async function readActiveCourses(petId: string): Promise<ActiveCourse[]> 
       ORDER BY started_at DESC, created_at DESC`,
     [petId],
   );
-  return rows.map((r) => ({
+  return rows.map(toActiveCourse);
+}
+
+type CourseRow = {
+  id: string; pet_id: string; medication_item_id: string | null; drug_name: string;
+  dose_amount: string | null; route: string | null; doses_per_day: number | null;
+  schedule_notes: string | null; indication: string | null; prescribed_by: string | null;
+  started_at: string; target_duration_days: number | null; target_duration_doses: number | null;
+  vet_visit_id: string | null;
+};
+
+function toActiveCourse(r: CourseRow): ActiveCourse {
+  return {
     id: r.id,
     petId: r.pet_id,
     medicationItemId: r.medication_item_id,
@@ -1776,7 +1788,92 @@ export async function readActiveCourses(petId: string): Promise<ActiveCourse[]> 
     targetDurationDays: r.target_duration_days == null ? null : Number(r.target_duration_days),
     targetDurationDoses: r.target_duration_doses == null ? null : Number(r.target_duration_doses),
     vetVisitId: r.vet_visit_id,
-  }));
+  };
+}
+
+/** A course or trial this visit is the provenance of, with where it stands now. */
+export interface VisitLinkedCourse extends ActiveCourse {
+  status: string;
+  /** 'YYYY-MM-DD' once ended, else null. */
+  endedAt: string | null;
+}
+export interface VisitLinkedTrial {
+  id: string;
+  label: string;
+  status: string;
+  endedAt: string | null;
+}
+
+/**
+ * What a REOPENED visit's plan is built from (CUL-2754, §4.4 R1/R3): the courses and the
+ * trials whose `vet_visit_id` is this visit, active or ended, from the local mirror.
+ *
+ * Only these. The pet's other active courses are deliberately absent: *Keep* links
+ * first-wins, so a chip on a course this visit never started would let an old visit claim
+ * a prescription that came from somewhere else (R3). And nothing here says what was
+ * DECIDED at the visit, because nothing stores that: a course stopped here that started
+ * elsewhere carries no link to this visit and cannot be rebuilt (R3: no per-visit verdict).
+ */
+export async function readVisitPlanRecord(
+  visitId: string,
+): Promise<{ courses: VisitLinkedCourse[]; trials: VisitLinkedTrial[] }> {
+  const db = getDb();
+  const [courseRows, trialRows] = await Promise.all([
+    db.getAllAsync<CourseRow & { status: string; ended_at: string | null }>(
+      `SELECT id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day,
+              schedule_notes, indication, prescribed_by, started_at,
+              target_duration_days, target_duration_doses, vet_visit_id, status, ended_at
+         FROM medications
+        WHERE vet_visit_id = ?
+        ORDER BY started_at DESC, created_at DESC`,
+      [visitId],
+    ),
+    db.getAllAsync<{ id: string; food_label: string | null; status: string; ended_at: string | null }>(
+      `SELECT id, food_label, status, ended_at FROM diet_trials
+        WHERE vet_visit_id = ?
+        ORDER BY created_at DESC`,
+      [visitId],
+    ),
+  ]);
+  return {
+    courses: courseRows.map((r) => ({
+      ...toActiveCourse(r),
+      status: r.status,
+      endedAt: dayKeyOrNull(r.ended_at),
+    })),
+    trials: trialRows.map((t) => ({
+      id: t.id,
+      label: t.food_label?.trim() || 'Diet trial',
+      status: t.status,
+      endedAt: dayKeyOrNull(t.ended_at),
+    })),
+  };
+}
+
+/** A DATE column's day, whichever spelling hydration handed back; null when unreadable. */
+function dayKeyOrNull(v: string | null): string | null {
+  const day = v?.slice(0, 10) ?? '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+}
+
+/**
+ * The fields a reopened visit's *Done* (or leaving it) must write: only those that differ
+ * from what the record holds, normalised the way `updateVisitDetails` writes them. An
+ * empty patch writes nothing, so a reopen with no change leaves `updated_at` alone and
+ * cannot win an LWW race against a real edit from another device (§4.4 AC 16).
+ */
+export function visitFieldsPatch(
+  record: Pick<LocalVetVisit, 'visited_at' | 'clinic_name' | 'vet_name' | 'reason' | 'notes'>,
+  fields: { visitedAt: Date; clinicName: string; vetName: string; reason: string; notes: string },
+): VisitDetailsPatch {
+  const patch: VisitDetailsPatch = {};
+  const visitedAt = localDateKey(fields.visitedAt);
+  if (visitedAt !== record.visited_at) patch.visitedAt = visitedAt;
+  if (trimOrNull(fields.clinicName) !== trimOrNull(record.clinic_name)) patch.clinicName = fields.clinicName;
+  if (trimOrNull(fields.vetName) !== trimOrNull(record.vet_name)) patch.vetName = fields.vetName;
+  if (trimOrNull(fields.reason) !== trimOrNull(record.reason)) patch.reason = fields.reason;
+  if (trimOrNull(fields.notes) !== trimOrNull(record.notes)) patch.notes = fields.notes;
+  return patch;
 }
 
 // ── The CUL-945 guard: a link is refused on the device, not 25 cycles later ─────
@@ -2071,8 +2168,8 @@ export async function linkTrialToVisit(trialId: string, visitId: string): Promis
  * against the real `resolveScope`, a visit dated six weeks out made the moment
  * promise a window the report returned `fallback_90d` for, for 47 days.
  *
- * The seeds that could produce one are clamped (`app/vet-visits/after.tsx`,
- * `app/vet-visits/edit.tsx`), so the after-visit screen can no longer write a future
+ * The seeds that could produce one are clamped (`app/vet-visits/after.tsx`, both its
+ * appointment seed and its reopen seed), so the after-visit screen can no longer write a future
  * visit. This type is the second half of that fix rather than a belt on it: a future
  * row can still arrive by sync from a device that wrote one, and the copy must be
  * unable to make the claim when it does.

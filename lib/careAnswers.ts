@@ -106,6 +106,22 @@ export async function retractCareAnswer(answerId: string, newId: () => string = 
   return id;
 }
 
+/**
+ * The signs this visit already answered *Talked about it* for, and still stands by: a row
+ * naming the visit that no later row retracts (CUL-2754). A reopened visit seeds from it,
+ * so a second *Done* never writes the same answer twice and the chip shows what the record
+ * holds rather than *Later*.
+ */
+export async function readVisitCareAnswers(vetVisitId: string): Promise<Set<string>> {
+  const rows = await getDb().getAllAsync<{ symptom_type: string }>(
+    `SELECT a.symptom_type FROM care_acknowledgements a
+      WHERE a.vet_visit_id = ? AND a.retracts IS NULL
+        AND NOT EXISTS (SELECT 1 FROM care_acknowledgements r WHERE r.retracts = a.id)`,
+    [vetVisitId],
+  );
+  return new Set(rows.map((r) => r.symptom_type));
+}
+
 /** Has this answer reached the server? False while it waits (offline, or behind a parent). */
 export async function careAnswerLanded(answerId: string): Promise<boolean> {
   const row = await getDb().getFirstAsync<{ synced: number }>(

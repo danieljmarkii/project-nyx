@@ -1,5 +1,5 @@
-import { useCallback, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, type ScrollViewInstance, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { colorRoles, theme } from '../../constants/theme';
@@ -10,11 +10,12 @@ import {
   AfterVisitBody,
   type AfterVisitFields,
   type EndedTrialRow,
+  type SettledCourse,
   type TrialRow,
 } from '../../components/vetvisits/AfterVisitBody';
 import { VisitSavedMoment } from '../../components/vetvisits/VisitSavedMoment';
 import type { HomeConcernAnswer } from '../../components/vetvisits/AfterVisitBody';
-import { pushCareAnswers, recordCareAnswer } from '../../lib/careAnswers';
+import { pushCareAnswers, readVisitCareAnswers, recordCareAnswer } from '../../lib/careAnswers';
 import {
   clearCareVisitTicksFor,
   readCareVisitTicks,
@@ -30,6 +31,8 @@ import { commitVisit, destructiveConfirm } from '../../lib/haptics';
 import { syncPendingMedications, syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
 import { linkVetDocumentVisit } from '../../lib/vetDocumentLibrary';
 import { endRegimen } from '../../lib/medicationSetup';
+import { dayKeyToLocalDate } from '../../lib/utils';
+import { reducedMotionNow } from '../../store/reducedMotionStore';
 import {
   describeActiveTrial,
   endActiveTrial,
@@ -49,6 +52,7 @@ import {
   stopCourseCopy,
   trialMomentTitle,
   trialVerdictLabel,
+  visitAnchorsAnything,
   type CourseVerdict,
   type EndConfirmCopy,
   type LinkedLine,
@@ -59,6 +63,7 @@ import {
   bookVetAppointment,
   clampVisitDate,
   formatVisitDate,
+  formatVisitWeekday,
   linkCourseToVisit,
   linkTrialToVisit,
   localDateKey,
@@ -66,15 +71,20 @@ import {
   logVisitFromAppointment,
   readActiveCourses,
   readAppointmentById,
+  readAppointmentForVisit,
+  readVetVisitDetail,
+  readVisitPlanRecord,
   readVisitConsequence,
   readVisitPrefill,
   readTrialVisitLink,
   repairRefusedVisitLinks,
   updateVisitDetails,
   VetVisitLinkRefused,
+  visitFieldsPatch,
   visitLoggedFrom,
   type ActiveCourse,
   type AppointmentDetail,
+  type LocalVetVisit,
 } from '../../lib/vetVisits';
 
 /**
@@ -115,8 +125,16 @@ type Sheet =
 // `pet_id` COMES FROM THE APPOINTMENT (AC 11). The retired `app/vet-visit.tsx` read
 // `activePet` at save time; a hydration pull can move the active pet under a
 // half-filled screen, and the row would be written under a pet nobody chose.
+//
+// A SAVED VISIT REOPENS HERE (CUL-2754, §4.4 R1): `?visit=<id>` for any saved visit, with
+// or without a booking. The id is seeded into `visitIdRef` before the form renders, so
+// `ensureVisit` returns it and never creates a second row; the fields, the recheck, the
+// paperwork (by visit) and the care answers rebuild from the record; and the plan offers
+// only this visit's own items (R3). `&at=plan` lands on The plan (*Add to the plan*).
 export default function AfterVisitScreen() {
-  const { appointment: appointmentId } = useLocalSearchParams<{ appointment?: string }>();
+  const { appointment: appointmentId, visit: reopenId, at } =
+    useLocalSearchParams<{ appointment?: string; visit?: string; at?: string }>();
+  const reopened = !!reopenId;
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
 
@@ -126,8 +144,10 @@ export default function AfterVisitScreen() {
   // active pet captured ONCE on the first non-null value and frozen after — never
   // re-read at save.
   const [screenPetId, setScreenPetId] = useState<string | null>(null);
-  if (screenPetId === null && !appointmentId && activePet) setScreenPetId(activePet.id);
-  const petId = appointment?.pet_id ?? screenPetId;
+  if (screenPetId === null && !appointmentId && !reopenId && activePet) setScreenPetId(activePet.id);
+  // A reopened visit is about the VISIT's pet, from the row (AC 21), whatever is active.
+  const [reopenPetId, setReopenPetId] = useState<string | null>(null);
+  const petId = reopenPetId ?? appointment?.pet_id ?? screenPetId;
 
   const [fields, setFields] = useState<AfterVisitFields>({
     visitedAt: new Date(),
@@ -139,6 +159,12 @@ export default function AfterVisitScreen() {
   const [courses, setCourses] = useState<ActiveCourse[]>([]);
   const [trial, setTrial] = useState<ActiveTrialSummary | null>(null);
   const [courseVerdicts, setCourseVerdicts] = useState<Record<string, CourseVerdict>>({});
+  // A reopened visit only (R3): the active courses and the running trial that name it, and
+  // whether a trial this visit did not start is running (it gets no chips and no door).
+  const [linkedCourseIds, setLinkedCourseIds] = useState<ReadonlySet<string>>(new Set());
+  const [trialLinkedHere, setTrialLinkedHere] = useState(false);
+  const [trialHeldElsewhere, setTrialHeldElsewhere] = useState(false);
+  const [heldTrialLabel, setHeldTrialLabel] = useState<string | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
   // CUL-951: what *Stopped* and *Ended* settled, so the row can SAY so rather than
   // vanish. The course re-read filters `status = 'active'` and the trial read returns
@@ -149,7 +175,7 @@ export default function AfterVisitScreen() {
   // callback that merges every re-read against them and must see an id the instant it
   // is added, not a render later (C-22's reasoning, as for `visitIdRef`).
   const settledCourseIds = useRef<Set<string>>(new Set());
-  const [settledCourses, setSettledCourses] = useState<Record<string, string>>({});
+  const [settledCourses, setSettledCourses] = useState<Record<string, SettledCourse>>({});
   const [endedTrial, setEndedTrial] = useState<EndedTrialRow | null>(null);
   // The answer *Switched* replaced, put back if the trial sheet closes with no trial
   // started (CUL-1092): the old trial is still running, so nothing was switched.
@@ -172,6 +198,9 @@ export default function AfterVisitScreen() {
   const tickedSigns = useRef<Set<string>>(new Set());
   // Signs whose answer this screen already wrote, so a second Save writes nothing twice.
   const answeredSigns = useRef<Set<string>>(new Set());
+  // A reopen only: the signs this visit's record already answers, which render settled (an
+  // answer is taken back by a retraction, which this screen does not offer).
+  const [answeredOnRecord, setAnsweredOnRecord] = useState<ReadonlySet<string>>(new Set());
 
   // The visit, once it exists. A REF as well as state: `ensureVisit` is awaited from
   // several handlers and each needs the id the instant it is written, not a render
@@ -194,17 +223,182 @@ export default function AfterVisitScreen() {
   // effect re-enters with the pre-clear closure and fires twice (C-22, CUL-170).
   const resumeTrialSheet = useRef(false);
 
+  // A reopened visit's fields AS THE RECORD HOLDS THEM, moved forward on every write this
+  // screen makes. `visitFieldsPatch` diffs the form against it, so leaving or *Done* with no
+  // change writes nothing (AC 16) and a change is written once.
+  const recordRef = useRef<LocalVetVisit | null>(null);
+  const fieldsRef = useRef<AfterVisitFields | null>(null);
+  const flushing = useRef<Promise<void>>(Promise.resolve());
+  // `&at=plan`: the one-shot scroll to The plan, consumed in a ref on the first layout (C-22).
+  const scrollToPlan = useRef(at === 'plan');
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  // Whether this visit, at the date in the picker, anchors the report window and Home.
+  // `null` until the record answers: an unanswered read makes no claim (C-12).
+  const [anchors, setAnchors] = useState<boolean | null>(null);
+  // A reopen names the visit it is editing, from the record (mock A3's eyebrow).
+  const [visitLabel, setVisitLabel] = useState<string | null>(null);
+
+  /** The pet's active courses as THIS screen may offer them: on a reopen, only the ones
+   *  naming this visit (R3, AC 15), so *Keep*'s first-wins link cannot claim another's. */
+  const ownCourses = useCallback(
+    (active: ActiveCourse[]) =>
+      reopenId ? active.filter((c) => c.vetVisitId === reopenId) : active,
+    [reopenId],
+  );
+
   const loadPlan = useCallback(async (forPetId: string) => {
-    const [nextCourses, activeTrial] = await Promise.all([
+    const [nextCourses, activeTrial, record] = await Promise.all([
       readActiveCourses(forPetId),
       getActiveTrialForPet(forPetId),
+      reopenId ? readVisitPlanRecord(reopenId) : Promise.resolve(null),
     ]);
-    setCourses((prev) => mergePlanCourses(prev, nextCourses, settledCourseIds.current));
-    setTrial(activeTrial);
-  }, []);
+    if (!reopenId || !record) {
+      setCourses((prev) => mergePlanCourses(prev, nextCourses, settledCourseIds.current));
+      setTrial(activeTrial);
+      return;
+    }
+    // Ended courses this visit started rebuild as settled rows from the record (CUL-951
+    // class). *Ended*, not *Stopped*: the record says the course is over, not who ended it.
+    // A course stopped on this screen keeps its own *Stopped* line.
+    const ended = record.courses.filter((c) => c.status !== 'active');
+    for (const c of ended) settledCourseIds.current.add(c.id);
+    setSettledCourses((prev) => {
+      const next = { ...prev };
+      for (const c of ended) next[c.id] ??= { verdict: 'ended', endedOn: c.endedAt };
+      return next;
+    });
+    const own = ownCourses(nextCourses);
+    setLinkedCourseIds(new Set(own.map((c) => c.id)));
+    setCourses((prev) => mergePlanCourses(prev, [...own, ...ended], settledCourseIds.current));
+
+    const linked = activeTrial ? (await readTrialVisitLink(activeTrial.id)) === reopenId : false;
+    setTrial(linked ? activeTrial : null);
+    setTrialLinkedHere(linked);
+    setTrialHeldElsewhere(!!activeTrial && !linked);
+    setHeldTrialLabel(activeTrial && !linked ? activeTrial.foodLabel?.trim() || 'Diet trial' : null);
+    const endedHere = record.trials.find((t) => t.status !== 'active');
+    if (endedHere) setEndedTrial((prev) => prev ?? { label: endedHere.label, endedOn: endedHere.endedAt });
+  }, [reopenId, ownCourses]);
+
+  /**
+   * Write what the owner changed on a reopened visit, and nothing else. Serialised, so a
+   * blur landing during *Done* cannot write the same change twice. Until PR-03's autosave,
+   * this runs whenever the screen loses focus (back, a swipe, a pushed route), which is
+   * what keeps back from dropping typing (§4.4 condition 5).
+   */
+  const flushFields = useCallback((): Promise<void> => {
+    const run = flushing.current.then(async () => {
+      const record = recordRef.current;
+      const form = fieldsRef.current;
+      const id = visitIdRef.current;
+      if (!reopenId || !record || !form || !id) return;
+      const patch = visitFieldsPatch(record, form);
+      if (Object.keys(patch).length === 0) return;
+      await updateVisitDetails(id, patch);
+      recordRef.current = {
+        ...record,
+        visited_at: patch.visitedAt ?? record.visited_at,
+        clinic_name: patch.clinicName !== undefined ? patch.clinicName ?? null : record.clinic_name,
+        vet_name: patch.vetName !== undefined ? patch.vetName ?? null : record.vet_name,
+        reason: patch.reason !== undefined ? patch.reason ?? null : record.reason,
+        notes: patch.notes !== undefined ? patch.notes ?? null : record.notes,
+      };
+      syncPendingVetVisits().catch(console.error);
+    });
+    // The chain survives a failure; the caller still hears about it.
+    flushing.current = run.catch(() => undefined);
+    return run;
+  }, [reopenId]);
+
+  /** The reopen's read: the visit, its booking, its plan, its paperwork and its answers. */
+  const loadReopen = useCallback(async (id: string): Promise<void> => {
+    const [detail, booking] = await Promise.all([
+      readVetVisitDetail(id),
+      readAppointmentForVisit(id).catch((e) => {
+        // The booking only carries the in-room ticks; its failure never blanks the visit.
+        console.warn('[after-visit] booking read failed:', e);
+        return null;
+      }),
+    ]);
+    if (!detail) {
+      setLoaded(true);
+      return;
+    }
+    const forPetId = detail.visit.pet_id;
+    visitIdRef.current = id;
+    setVisitId(id);
+    setReopenPetId(forPetId);
+    setAppointment(booking);
+    await loadPlan(forPetId);
+    // By visit, not by appointment: a document filed under the visit from anywhere counts.
+    setPaperwork(detail.documents.map((d) => d.groupId));
+    if (!seeded.current) {
+      seeded.current = true;
+      const seed: AfterVisitFields = {
+        // A DATE column, read back through `dayKeyToLocalDate` (B-441), and clamped: the
+        // picker never shows a future visit day.
+        visitedAt: clampVisitDate(dayKeyToLocalDate(detail.visit.visited_at) ?? new Date()),
+        clinicName: detail.visit.clinic_name ?? '',
+        vetName: detail.visit.vet_name ?? '',
+        reason: detail.visit.reason ?? '',
+        notes: detail.visit.notes ?? '',
+      };
+      // The diff's baseline is the record AS SEEDED, clamp included, so only an owner's edit
+      // counts as a change: a future-dated row synced from another phone is not rewritten by
+      // a reopen that touched nothing (AC 16).
+      recordRef.current = { ...detail.visit, visited_at: localDateKey(seed.visitedAt) };
+      // Set in the same block, not on the next render: a blur landing before that render
+      // would otherwise diff the blank defaults against the record and clear every field.
+      fieldsRef.current = seed;
+      setNextVisitAt(detail.visit.next_visit_at);
+      setVisitLabel(
+        [formatVisitWeekday(detail.visit.visited_at), detail.visit.clinic_name?.trim()].filter(Boolean).join(' · '),
+      );
+      setFields(seed);
+      // Awaited, unlike the fresh screen's: "What Home was raising" sits above The plan, and
+      // *Add to the plan*'s scroll measures The plan on its first layout.
+      await Promise.all([
+        readHomeConcerns(forPetId),
+        booking ? readCareVisitTicks(booking.id) : Promise.resolve(new Set<string>()),
+        readVisitCareAnswers(id),
+      ])
+        .then(([rows, ticks, answered]) => {
+          tickedSigns.current = ticks;
+          // Answered already: a second *Done* never writes it again, and the chip says so.
+          answeredSigns.current = new Set(answered);
+          setAnsweredOnRecord(answered);
+          setHomeConcerns(rows ?? []);
+          setConcernAnswers(
+            Object.fromEntries(
+              (rows ?? [])
+                .filter((r) => ticks.has(r.sign) || answered.has(r.sign))
+                .map((r) => [r.sign, 'talked' as const]),
+            ),
+          );
+        })
+        .catch((e) => console.warn('[after-visit] Home concerns read failed:', e));
+    }
+    setFailed(false);
+    setLoaded(true);
+  }, [loadPlan]);
+
+  /** Leaving a reopened visit: the write, and if it fails a sentence that is true once the
+   *  form is gone. "Try that again" would point at a screen the owner has already left. */
+  const flushOnLeave = useCallback(async (): Promise<void> => {
+    try {
+      await flushFields();
+    } catch (err) {
+      console.warn('[after-visit] leave save failed:', err);
+      Alert.alert('That didn’t save', 'The changes to this visit weren’t kept. Tap Edit on the visit to add them again.');
+    }
+  }, [flushFields]);
 
   const load = useCallback(async () => {
     try {
+      if (reopenId) {
+        await loadReopen(reopenId);
+        return;
+      }
       const appt = appointmentId ? await readAppointmentById(appointmentId) : null;
       // A booking that is ALREADY a visit, opened fresh, goes to that visit (F4). This
       // screen's save would otherwise log it again: a second `vet_visits` row, with the
@@ -281,7 +475,7 @@ export default function AfterVisitScreen() {
     } finally {
       setLoading(false);
     }
-  }, [appointmentId, screenPetId, loadPlan]);
+  }, [appointmentId, reopenId, screenPetId, loadPlan, loadReopen]);
 
   useFocusEffect(
     useCallback(() => {
@@ -294,9 +488,31 @@ export default function AfterVisitScreen() {
       });
       return () => {
         cancelled = true;
+        // Leaving a reopened visit keeps what was typed (§4.4 condition 5).
+        if (reopenId) void flushOnLeave();
       };
-    }, [load]),
+    }, [load, reopenId, flushOnLeave]),
   );
+
+  fieldsRef.current = fields;
+
+  // The report-window note (VisitEditBody's, moved here): re-asked whenever the date in the
+  // picker moves, because the answer is about the date being saved, and cleared before the
+  // ask so an answer about the old date never shows beside the new one (C-12).
+  const candidateDay = localDateKey(fields.visitedAt);
+  useEffect(() => {
+    if (!reopenId || !reopenPetId || !loaded) return;
+    let live = true;
+    setAnchors(null);
+    readVisitConsequence({ id: reopenId, pet_id: reopenPetId, visited_at: candidateDay })
+      .then((c) => {
+        if (live) setAnchors(visitAnchorsAnything(c));
+      })
+      .catch((err) => console.warn('[after-visit] consequence read failed:', err));
+    return () => {
+      live = false;
+    };
+  }, [reopenId, reopenPetId, loaded, candidateDay]);
 
   /**
    * The visit row, created the first time something needs it.
@@ -454,7 +670,7 @@ export default function AfterVisitScreen() {
         // read filters `status = 'active'`, and the merge keeps only ids it can see
         // in this set (CUL-951 — the row says what happened instead of vanishing).
         settledCourseIds.current.add(course.id);
-        setSettledCourses((prev) => ({ ...prev, [course.id]: endOn }));
+        setSettledCourses((prev) => ({ ...prev, [course.id]: { verdict: 'stopped', endedOn: endOn } }));
       } else {
         // The RETURN says whether the link landed: it is first-wins, so a course
         // prescribed at an earlier visit keeps saying so, and the line below must not
@@ -480,7 +696,9 @@ export default function AfterVisitScreen() {
           : {
               key: `course:${course.id}`,
               title: `${course.drugName} ${courseVerdictLabel(verdict)}`,
-              note: linkedNow ? 'linked to this visit' : 'still on it',
+              // A course already naming this visit (a reopen) is linked here, though the
+              // first-wins write had nothing to do.
+              note: linkedNow || course.vetVisitId === id ? 'linked to this visit' : 'still on it',
             },
       );
       if (petId) await loadPlan(petId);
@@ -627,7 +845,7 @@ export default function AfterVisitScreen() {
           : {
               key: 'trial',
               title: `${trialMomentTitle(trial.foodLabel)} ${trialVerdictLabel(verdict)}`,
-              note: linkedNow ? 'linked to this visit' : 'still running',
+              note: linkedNow || trialLinkedHere ? 'linked to this visit' : 'still running',
             },
       );
       if (petId) await loadPlan(petId);
@@ -735,7 +953,10 @@ export default function AfterVisitScreen() {
       // owner typed between the two.
       const existed = visitIdRef.current !== null || creatingVisit.current !== null;
       const id = await ensureVisit();
-      if (existed) {
+      if (reopenId) {
+        // Only what changed, against the record: a *Done* with no change writes nothing.
+        await flushFields();
+      } else if (existed) {
         await updateVisitDetails(id, {
           visitedAt: localDateKey(fields.visitedAt),
           clinicName: fields.clinicName,
@@ -776,6 +997,14 @@ export default function AfterVisitScreen() {
       if (appointment && answeredSigns.current.size > 0) void clearCareVisitTicksFor(appointment.id);
       syncPendingVetVisits().catch(console.error);
       if (answeredSigns.current.size > 0) void pushCareAnswers();
+
+      // A reopen goes back to the visit with no saved moment (R5: the moment plays on the
+      // first save only). The date note above the field already said what a moved date does.
+      if (reopenId) {
+        if (router.canGoBack()) router.back();
+        else router.replace(`/vet-visits/${id}`);
+        return;
+      }
 
       // The moment's consequence lines are DERIVED from what the record now says,
       // not asserted: a visit logged behind one already on file changes neither the
@@ -825,6 +1054,18 @@ export default function AfterVisitScreen() {
     if (!petId) return;
     const courses = await readActiveCourses(petId);
     const written = courses.find((c) => c.id === regimen.id);
+    if (reopenId) {
+      // The new course names this visit, so it joins the reopened plan; nothing else does.
+      const own = ownCourses(courses);
+      setLinkedCourseIds(new Set(own.map((c) => c.id)));
+      setCourses((prev) => mergePlanCourses(prev, own, settledCourseIds.current));
+      note({
+        key: `course:${regimen.id}`,
+        title: `${regimen.drug_name} started`,
+        note: written?.vetVisitId ? 'linked to this visit' : 'started',
+      });
+      return;
+    }
     note({
       key: `course:${regimen.id}`,
       title: `${regimen.drug_name} started`,
@@ -859,6 +1100,7 @@ export default function AfterVisitScreen() {
         label: trial.foodLabel?.trim() || 'Diet trial',
         // Day math through the ONE shared helper (B-421) — never re-derived here.
         dayLine: describeActiveTrial(trial).dayLine,
+        linkedHere: trialLinkedHere,
       }
     : null;
 
@@ -881,7 +1123,13 @@ export default function AfterVisitScreen() {
         <>
           <Header
             leading="back"
-            onLeadingPress={() => (router.canGoBack() ? router.back() : router.replace('/vet-visits'))}
+            onLeadingPress={async () => {
+              // A reopen writes before it leaves, so the visit it returns to reads the new text
+              // (the blur's flush then finds nothing left to write).
+              if (reopenId) await flushOnLeave();
+              if (router.canGoBack()) router.back();
+              else router.replace(reopenId ? `/vet-visits/${reopenId}` : '/vet-visits');
+            }}
           />
           {loading ? (
             <View style={styles.centre}>
@@ -907,7 +1155,11 @@ export default function AfterVisitScreen() {
               style={styles.fill}
               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             >
-              <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+              <ScrollView
+                ref={scrollRef}
+                contentContainerStyle={styles.scroll}
+                showsVerticalScrollIndicator={false}
+              >
                 <AfterVisitBody
                   petName={petName}
                   fields={fields}
@@ -936,13 +1188,29 @@ export default function AfterVisitScreen() {
                   homeConcerns={answerableConcerns(homeConcerns, localDateKey(fields.visitedAt))}
                   concernAnswers={concernAnswers}
                   onConcernAnswer={(c, answer) => setConcernAnswers((prev) => ({ ...prev, [c.sign]: answer }))}
+                  answeredOnRecord={answeredOnRecord}
+                  reopened={reopened}
+                  visitLabel={reopened ? visitLabel : null}
+                  linkedCourseIds={reopened ? linkedCourseIds : undefined}
+                  trialHeldElsewhere={trialHeldElsewhere}
+                  heldTrialLabel={heldTrialLabel}
+                  dateNote={
+                    reopened && anchors === true
+                      ? `Moving this date moves where ${petName}’s vet report starts.`
+                      : null
+                  }
+                  onPlanLayout={(y) => {
+                    if (!scrollToPlan.current) return;
+                    scrollToPlan.current = false;
+                    scrollRef.current?.scrollTo({ y: Math.max(0, y - theme.space2), animated: !reducedMotionNow() });
+                  }}
                 />
               </ScrollView>
             </KeyboardAvoidingView>
           ) : loaded ? (
             <View style={styles.centre}>
               <ThemedText style={styles.missing}>
-                This appointment is no longer on the record.
+                {reopened ? 'This visit is no longer on the record.' : 'This appointment is no longer on the record.'}
               </ThemedText>
             </View>
           ) : null}

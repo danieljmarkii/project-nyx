@@ -1,8 +1,9 @@
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight, Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
+import { PlanActionRow } from './PlanRows';
 import {
   askedSummary,
   formatVisitDate,
@@ -16,6 +17,8 @@ interface Props {
   /** The RECORD's pet, via `resolveRecordPetName(pets, visit.pet_id)` — CUL-574. */
   petName: string;
   onOpenDocument: (groupId: string) => void;
+  /** *Add to the plan*: opens How did it go? for this visit, at The plan (§4.4 R1). */
+  onAddToPlan: () => void;
 }
 
 // One visit as written (mock D3, read-only).
@@ -32,7 +35,10 @@ interface Props {
 // course). So a course and a trial render as what the record says about them and
 // carry no chevron; a document, which does have a route, carries one. A row that
 // cannot open does not pretend it can.
-export function VisitDetailBody({ detail, petName, onOpenDocument }: Props) {
+//
+// *ADD TO THE PLAN* IS ALWAYS HERE (CUL-2754, §4.4 R1), on a visit with no plan above all:
+// the visit saved in a car park with nothing typed is the one that most needs the door.
+export function VisitDetailBody({ detail, petName, onOpenDocument, onAddToPlan }: Props) {
   const { visit } = detail;
   const where = formatWhereLine({ clinicName: visit.clinic_name, vetName: visit.vet_name });
   const hasPlan =
@@ -40,6 +46,7 @@ export function VisitDetailBody({ detail, petName, onOpenDocument }: Props) {
   // 'Asked 3 of 4' — absent when the visit had no prepared questions, where a "0 of
   // 0" would be a score for something the owner never set out to do.
   const asked = askedSummary(detail.questions);
+  const bare = !visit.notes?.trim() && !hasPlan && detail.documents.length === 0;
 
   return (
     <View>
@@ -56,34 +63,48 @@ export function VisitDetailBody({ detail, petName, onOpenDocument }: Props) {
         </View>
       ) : null}
 
-      {hasPlan ? (
-        <View style={styles.block}>
-          <SectionLabel label="The plan" header style={styles.sectionLabel} />
-          <View style={styles.rows}>
-            {detail.medications.map((med) => (
-              <PlanRow
-                key={med.id}
-                title={med.drugName}
-                // The course's own numbers stay the course's (CUL-746): this row
-                // says what the visit STARTED, never how many doses it has seen.
-                sub={[med.doseAmount, med.status === 'active' ? 'Still on it' : 'Ended']
-                  .filter(Boolean)
-                  .join(' · ')}
-              />
-            ))}
-            {detail.trials.map((trial) => (
-              <PlanRow
-                key={trial.id}
-                title={trial.label}
-                sub={trial.status === 'active' ? 'Trial running' : 'Trial ended'}
-              />
-            ))}
-            {visit.next_visit_at ? (
-              <PlanRow title="Next visit" sub={formatVisitDate(visit.next_visit_at)} />
-            ) : null}
-          </View>
-        </View>
+      {bare ? (
+        // Not a failure, and not "no data": most visits logged before this track existed
+        // are a date, a clinic and nothing else. It says what the record holds and points
+        // forward, and the door it points at is right below it (Principle 5).
+        <ThemedText style={styles.bare}>
+          This visit has a date and a place so far. Add what the vet decided whenever you have it.
+        </ThemedText>
       ) : null}
+
+      <View style={styles.block}>
+        {hasPlan ? <SectionLabel label="The plan" header style={styles.sectionLabel} /> : null}
+        <View style={styles.rows}>
+          {detail.medications.map((med) => (
+            <PlanRow
+              key={med.id}
+              title={med.drugName}
+              // The course's own numbers stay the course's (CUL-746): this row
+              // says what the visit STARTED, never how many doses it has seen.
+              sub={[med.doseAmount, med.status === 'active' ? 'Still on it' : 'Ended']
+                .filter(Boolean)
+                .join(' · ')}
+            />
+          ))}
+          {detail.trials.map((trial) => (
+            <PlanRow
+              key={trial.id}
+              title={trial.label}
+              sub={trial.status === 'active' ? 'Trial running' : 'Trial ended'}
+            />
+          ))}
+          {visit.next_visit_at ? (
+            <PlanRow title="Next visit" sub={formatVisitDate(visit.next_visit_at)} />
+          ) : null}
+          <PlanActionRow
+            glyph={<Plus size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+            title="Add to the plan"
+            subtitle="A med, a trial, a recheck, paperwork"
+            actionLabel="Add"
+            onPress={onAddToPlan}
+          />
+        </View>
+      </View>
 
       {detail.documents.length > 0 ? (
         <View style={styles.block}>
@@ -114,21 +135,6 @@ export function VisitDetailBody({ detail, petName, onOpenDocument }: Props) {
         <ThemedText style={styles.asked}>{asked} questions</ThemedText>
       ) : null}
 
-      {!visit.notes?.trim() && !hasPlan && detail.documents.length === 0 ? (
-        // Not a failure, and not "no data": most visits logged before this track
-        // existed are a date, a clinic and nothing else, and saying so plainly
-        // beats an empty screen that reads as a load error (Principle 5).
-        //
-        // It states what the record HOLDS and stops. The first draft ended "…are
-        // saved here when you add them", which is an instruction pointing at an
-        // affordance this screen does not have — Edit is VV-4's — so it sent the
-        // owner hunting for a button on a read-only screen. An empty state may be
-        // forward-looking; it may not ask for an action there is no door for.
-        <ThemedText style={styles.bare}>
-          This visit is on the record as a date and a place — nothing else was written
-          down at the time.
-        </ThemedText>
-      ) : null}
     </View>
   );
 }
