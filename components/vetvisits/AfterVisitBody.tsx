@@ -96,6 +96,8 @@ export interface AfterVisitBodyProps {
    * from) and no *Start a trial* (a second trial cannot run beside it); the food door stays.
    */
   trialHeldElsewhere?: boolean;
+  /** That trial's name, so the screen says it is running rather than hiding it. */
+  heldTrialLabel?: string | null;
 
   /** 'YYYY-MM-DD' once set — the date the vet said to come back on. */
   nextVisitAt: string | null;
@@ -121,6 +123,8 @@ export interface AfterVisitBodyProps {
 
   /** A saved visit, reopened (§4.4 R1): the button reads *Done* and nothing celebrates. */
   reopened?: boolean;
+  /** A reopen's 'Tue, Sep 16 · Completely Cat Clinic', so the owner knows which visit. */
+  visitLabel?: string | null;
   /** The report-window line under the date, when moving it would move the window. */
   dateNote?: string | null;
   /** Where The plan starts, for *Add to the plan*'s scroll (y within this body). */
@@ -158,7 +162,7 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
     nextVisitAt, onPickNextVisit, paperworkCount, onAddPaperwork,
     busyRow, saving, onSave,
     homeConcerns = [], concernAnswers = {}, onConcernAnswer,
-    linkedCourseIds, answeredOnRecord, trialHeldElsewhere = false, reopened = false, dateNote = null, onPlanLayout,
+    linkedCourseIds, answeredOnRecord, trialHeldElsewhere = false, heldTrialLabel = null, reopened = false, visitLabel = null, dateNote = null, onPlanLayout,
   } = props;
   const [showDayPicker, setShowDayPicker] = useState(false);
   const [showNextPicker, setShowNextPicker] = useState(false);
@@ -173,6 +177,7 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
 
   return (
     <View>
+      {visitLabel ? <ThemedText style={styles.eyebrow}>{visitLabel}</ThemedText> : null}
       <ThemedText style={styles.pageTitle}>How did it go?</ThemedText>
       <ThemedText style={styles.pageSub}>{petName}</ThemedText>
 
@@ -328,32 +333,49 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
               onChange={(next) => onTrialVerdict(next as TrialVerdict)}
               busy={busyRow === 'trial'}
             />
-          ) : endedTrial ? (
-            <PlanSettledRow
-              glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-              title={endedTrial.label}
-              subtitle={settledLine('ended', endedTrial.endedOn)}
-            />
-          ) : trialHeldElsewhere ? (
-            <PlanActionRow
-              glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-              title="A new food to try?"
-              subtitle={`Adds the food to ${petName}’s library`}
-              actionLabel="Add the food"
-              onPress={onAddFood}
-              busy={busyRow === 'trial'}
-            />
           ) : (
-            <PlanActionRow
-              glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-              title="A new food to try?"
-              subtitle={`Starts a trial, or just adds the food to ${petName}’s library`}
-              actionLabel="Start a trial"
-              onPress={onStartTrial}
-              secondaryLabel="Add the food"
-              onSecondaryPress={onAddFood}
-              busy={busyRow === 'trial'}
-            />
+            <>
+              {endedTrial ? (
+                <PlanSettledRow
+                  glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+                  title={endedTrial.label}
+                  subtitle={settledLine('ended', endedTrial.endedOn)}
+                />
+              ) : null}
+              {trialHeldElsewhere ? (
+                <>
+                  {heldTrialLabel ? (
+                    // Named, so the owner is not left wondering where the trial went. No chips:
+                    // *Ended* or *Switched* from a visit it did not come from would rewrite its
+                    // provenance (R3). It is changed on the trial screen.
+                    <PlanSettledRow
+                      glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+                      title={heldTrialLabel}
+                      subtitle="Trial running · not linked to this visit"
+                    />
+                  ) : null}
+                  <PlanActionRow
+                    glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+                    title="A new food to try?"
+                    subtitle={`Adds the food to ${petName}’s library`}
+                    actionLabel="Add the food"
+                    onPress={onAddFood}
+                    busy={busyRow === 'trial'}
+                  />
+                </>
+              ) : !endedTrial ? (
+                <PlanActionRow
+                  glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+                  title="A new food to try?"
+                  subtitle={`Starts a trial, or just adds the food to ${petName}’s library`}
+                  actionLabel="Start a trial"
+                  onPress={onStartTrial}
+                  secondaryLabel="Add the food"
+                  onSecondaryPress={onAddFood}
+                  busy={busyRow === 'trial'}
+                />
+              ) : null}
+            </>
           )}
 
           {nextVisitAt ? (
@@ -428,6 +450,14 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
 }
 
 const styles = StyleSheet.create({
+  eyebrow: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightMedium,
+    textTransform: 'uppercase',
+    letterSpacing: theme.trackingWidest,
+    color: theme.colorTextTertiary,
+    marginBottom: theme.space0_5,
+  },
   pageTitle: {
     fontSize: theme.textXL,
     fontWeight: theme.weightSemibold,

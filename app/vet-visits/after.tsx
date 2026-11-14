@@ -63,6 +63,7 @@ import {
   bookVetAppointment,
   clampVisitDate,
   formatVisitDate,
+  formatVisitWeekday,
   linkCourseToVisit,
   linkTrialToVisit,
   localDateKey,
@@ -126,7 +127,7 @@ type Sheet =
 // half-filled screen, and the row would be written under a pet nobody chose.
 //
 // A SAVED VISIT REOPENS HERE (CUL-2754, §4.4 R1): `?visit=<id>` for any saved visit, with
-// or without a booking. The id is seeded into `visitIdRef` before anything renders, so
+// or without a booking. The id is seeded into `visitIdRef` before the form renders, so
 // `ensureVisit` returns it and never creates a second row; the fields, the recheck, the
 // paperwork (by visit) and the care answers rebuild from the record; and the plan offers
 // only this visit's own items (R3). `&at=plan` lands on The plan (*Add to the plan*).
@@ -163,6 +164,7 @@ export default function AfterVisitScreen() {
   const [linkedCourseIds, setLinkedCourseIds] = useState<ReadonlySet<string>>(new Set());
   const [trialLinkedHere, setTrialLinkedHere] = useState(false);
   const [trialHeldElsewhere, setTrialHeldElsewhere] = useState(false);
+  const [heldTrialLabel, setHeldTrialLabel] = useState<string | null>(null);
   const [trialVerdict, setTrialVerdict] = useState<TrialVerdict | null>(null);
   // CUL-951: what *Stopped* and *Ended* settled, so the row can SAY so rather than
   // vanish. The course re-read filters `status = 'active'` and the trial read returns
@@ -233,6 +235,8 @@ export default function AfterVisitScreen() {
   // Whether this visit, at the date in the picker, anchors the report window and Home.
   // `null` until the record answers: an unanswered read makes no claim (C-12).
   const [anchors, setAnchors] = useState<boolean | null>(null);
+  // A reopen names the visit it is editing, from the record (mock A3's eyebrow).
+  const [visitLabel, setVisitLabel] = useState<string | null>(null);
 
   /** The pet's active courses as THIS screen may offer them: on a reopen, only the ones
    *  naming this visit (R3, AC 15), so *Keep*'s first-wins link cannot claim another's. */
@@ -271,6 +275,7 @@ export default function AfterVisitScreen() {
     setTrial(linked ? activeTrial : null);
     setTrialLinkedHere(linked);
     setTrialHeldElsewhere(!!activeTrial && !linked);
+    setHeldTrialLabel(activeTrial && !linked ? activeTrial.foodLabel?.trim() || 'Diet trial' : null);
     const endedHere = record.trials.find((t) => t.status !== 'active');
     if (endedHere) setEndedTrial((prev) => prev ?? { label: endedHere.label, endedOn: endedHere.endedAt });
   }, [reopenId, ownCourses]);
@@ -329,18 +334,30 @@ export default function AfterVisitScreen() {
     setPaperwork(detail.documents.map((d) => d.groupId));
     if (!seeded.current) {
       seeded.current = true;
-      recordRef.current = detail.visit;
-      setNextVisitAt(detail.visit.next_visit_at);
-      setFields({
-        // A DATE column, read back through `dayKeyToLocalDate` (B-441), and clamped: a
-        // future-dated row synced from another device is not written back unchanged.
+      const seed: AfterVisitFields = {
+        // A DATE column, read back through `dayKeyToLocalDate` (B-441), and clamped: the
+        // picker never shows a future visit day.
         visitedAt: clampVisitDate(dayKeyToLocalDate(detail.visit.visited_at) ?? new Date()),
         clinicName: detail.visit.clinic_name ?? '',
         vetName: detail.visit.vet_name ?? '',
         reason: detail.visit.reason ?? '',
         notes: detail.visit.notes ?? '',
-      });
-      void Promise.all([
+      };
+      // The diff's baseline is the record AS SEEDED, clamp included, so only an owner's edit
+      // counts as a change: a future-dated row synced from another phone is not rewritten by
+      // a reopen that touched nothing (AC 16).
+      recordRef.current = { ...detail.visit, visited_at: localDateKey(seed.visitedAt) };
+      // Set in the same block, not on the next render: a blur landing before that render
+      // would otherwise diff the blank defaults against the record and clear every field.
+      fieldsRef.current = seed;
+      setNextVisitAt(detail.visit.next_visit_at);
+      setVisitLabel(
+        [formatVisitWeekday(detail.visit.visited_at), detail.visit.clinic_name?.trim()].filter(Boolean).join(' · '),
+      );
+      setFields(seed);
+      // Awaited, unlike the fresh screen's: "What Home was raising" sits above The plan, and
+      // *Add to the plan*'s scroll measures The plan on its first layout.
+      await Promise.all([
         readHomeConcerns(forPetId),
         booking ? readCareVisitTicks(booking.id) : Promise.resolve(new Set<string>()),
         readVisitCareAnswers(id),
@@ -364,6 +381,17 @@ export default function AfterVisitScreen() {
     setFailed(false);
     setLoaded(true);
   }, [loadPlan]);
+
+  /** Leaving a reopened visit: the write, and if it fails a sentence that is true once the
+   *  form is gone. "Try that again" would point at a screen the owner has already left. */
+  const flushOnLeave = useCallback(async (): Promise<void> => {
+    try {
+      await flushFields();
+    } catch (err) {
+      console.warn('[after-visit] leave save failed:', err);
+      Alert.alert('That didn’t save', 'The changes to this visit weren’t kept. Tap Edit on the visit to add them again.');
+    }
+  }, [flushFields]);
 
   const load = useCallback(async () => {
     try {
@@ -461,9 +489,9 @@ export default function AfterVisitScreen() {
       return () => {
         cancelled = true;
         // Leaving a reopened visit keeps what was typed (§4.4 condition 5).
-        if (reopenId) flushFields().catch((err) => sayFailed(err, 'leave'));
+        if (reopenId) void flushOnLeave();
       };
-    }, [load, reopenId, flushFields]),
+    }, [load, reopenId, flushOnLeave]),
   );
 
   fieldsRef.current = fields;
@@ -1095,7 +1123,13 @@ export default function AfterVisitScreen() {
         <>
           <Header
             leading="back"
-            onLeadingPress={() => (router.canGoBack() ? router.back() : router.replace('/vet-visits'))}
+            onLeadingPress={async () => {
+              // A reopen writes before it leaves, so the visit it returns to reads the new text
+              // (the blur's flush then finds nothing left to write).
+              if (reopenId) await flushOnLeave();
+              if (router.canGoBack()) router.back();
+              else router.replace(reopenId ? `/vet-visits/${reopenId}` : '/vet-visits');
+            }}
           />
           {loading ? (
             <View style={styles.centre}>
@@ -1156,8 +1190,10 @@ export default function AfterVisitScreen() {
                   onConcernAnswer={(c, answer) => setConcernAnswers((prev) => ({ ...prev, [c.sign]: answer }))}
                   answeredOnRecord={answeredOnRecord}
                   reopened={reopened}
+                  visitLabel={reopened ? visitLabel : null}
                   linkedCourseIds={reopened ? linkedCourseIds : undefined}
                   trialHeldElsewhere={trialHeldElsewhere}
+                  heldTrialLabel={heldTrialLabel}
                   dateNote={
                     reopened && anchors === true
                       ? `Moving this date moves where ${petName}’s vet report starts.`

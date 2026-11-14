@@ -217,6 +217,8 @@ describe('AC 14 — a saved visit reopens, and never makes a second row', () => 
   it('a visit logged with NO booking opens How did it go?, seeded from the record', async () => {
     await openReopen();
     expect(screen.getByText('How did it go?')).toBeTruthy();
+    // Which visit this is, from the record (mock A3's eyebrow).
+    expect(screen.getByText(/· Completely Cat Clinic$/)).toBeTruthy();
     expect(screen.getByDisplayValue('Left ear has dirt in it.')).toBeTruthy();
     expect(screen.getByDisplayValue('Completely Cat Clinic')).toBeTruthy();
     // Paperwork by VISIT: the document filed under it counts, with no booking to read from.
@@ -286,7 +288,8 @@ describe('AC 15 — only this visit’s own items carry chips (R3)', () => {
     mockActiveTrial = { id: 't-now', startedAt: dayKeyBack(20), targetDurationDays: 56, foodLabel: 'Selected Protein' };
     mockTrialLink = 'v-oct';
     await openReopen();
-    expect(screen.queryByText('Selected Protein')).toBeNull();
+    // Named, so it has not vanished, but with nothing to press.
+    expect(screen.getByLabelText('Selected Protein, Trial running · not linked to this visit')).toBeTruthy();
     expect(screen.queryByText('Switched')).toBeNull();
     expect(screen.queryByLabelText('Start a trial — A new food to try?')).toBeNull();
     expect(screen.getByLabelText('Add the food — A new food to try?')).toBeTruthy();
@@ -316,6 +319,43 @@ describe('AC 16 — nothing typed is lost, and nothing unchanged is written', ()
     await waitFor(() => expect(router.back).toHaveBeenCalled());
     expect(mockUpdateVisit).toHaveBeenCalledTimes(1);
     expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { notes: 'Left ear has dirt in it. Recheck in six weeks.' });
+  });
+
+  it('a future-dated visit synced from another phone is not rewritten by a reopen that touched nothing', async () => {
+    const ahead = new Date();
+    ahead.setDate(ahead.getDate() + 20);
+    mockVisit = savedVisit({
+      visited_at: `${ahead.getFullYear()}-${String(ahead.getMonth() + 1).padStart(2, '0')}-${String(ahead.getDate()).padStart(2, '0')}`,
+    });
+    await openReopen();
+    fireEvent.press(screen.getByText('Done'));
+    await waitFor(() => expect(router.back).toHaveBeenCalled());
+    expect(mockUpdateVisit).not.toHaveBeenCalled();
+  });
+
+  it('header back writes before it leaves, so the visit it returns to reads the new text', async () => {
+    let release!: () => void;
+    mockUpdateVisit.mockImplementationOnce(() => new Promise<undefined>((r) => { release = () => r(undefined); }));
+    await openReopen();
+    fireEvent.changeText(screen.getByLabelText('Notes from Nyx’s visit'), 'Motozol once a day.');
+    fireEvent.press(screen.getByLabelText('Back'));
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { notes: 'Motozol once a day.' }));
+    expect(router.back).not.toHaveBeenCalled();
+    await act(async () => release());
+    await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
+  });
+
+  it('a failed save on the way out says the change was not kept, never "try again"', async () => {
+    const { Alert } = require('react-native');
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockUpdateVisit.mockImplementationOnce(async () => { throw new Error('disk full'); });
+    await openReopen();
+    fireEvent.changeText(screen.getByLabelText('Clinic'), 'Elm St');
+    screen.unmount();
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(alert.mock.calls[0][1]).toMatch(/weren’t kept/);
+    expect(alert.mock.calls[0][1]).not.toMatch(/again in a moment/);
   });
 
   it('leaving without Done keeps what was typed', async () => {
