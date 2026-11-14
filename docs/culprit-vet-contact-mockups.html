@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vet contact mock</title>
+<style>
+  /* ============================================================
+     PAGE (studio presentation layer) — theme-aware tokens.
+     Phone screens use FIXED app tokens (constants/theme.ts),
+     never these — the app looks like the app in any theme.
+     Lifted from docs/culprit-vet-files-mockups.html so the two
+     vet-facing surfaces read as one system.
+     ============================================================ */
+  :root {
+    --canvas:      #F4F7F6;
+    --panel:       #FFFFFF;
+    --ink:         #16211F;
+    --ink-soft:    #4A5754;
+    --ink-faint:   #7B8884;
+    --line:        #E2E9E6;
+    --line-soft:   #EDF2F0;
+    --accent:      #068A78;
+    --accent-tint: #E4F4F1;
+    --amber:       #9A6A00;
+    --amber-tint:  #F6EED9;
+    --rose:        #B8433B;
+    --rose-tint:   #F7E4E2;
+    --shadow:      0 1px 2px rgba(20,40,36,.04), 0 8px 30px rgba(20,40,36,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+      --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+      --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+    --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+    --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--canvas); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .serif { font-family: "Newsreader", Georgia, "Times New Roman", serif; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding-block: clamp(28px, 6vw, 72px) 96px; padding-inline: clamp(18px, 5vw, 44px); }
+
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1.title { font-size: clamp(30px, 5.4vw, 50px); line-height: 1.05; letter-spacing: -.02em; font-weight: 500; margin: 0 0 20px; text-wrap: balance; max-width: 22ch; }
+  .lede { font-size: clamp(16px, 2vw, 18.5px); color: var(--ink-soft); max-width: 68ch; margin: 0; }
+  .lede b, .sec-lede b, .opt-cap b, .note b, .ledger-row b { color: var(--ink); font-weight: 600; }
+
+  .ledger { margin-top: 28px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+  .ledger-h { padding: 12px 18px; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); border-bottom: 1px solid var(--line-soft); }
+  .ledger-row { display: flex; gap: 14px; padding: 11px 18px; font-size: 13.5px; color: var(--ink-soft); border-bottom: 1px solid var(--line-soft); align-items: baseline; }
+  .ledger-row:last-child { border-bottom: 0; }
+  .ledger-who { flex: none; width: 92px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+  .ledger-who.team { color: var(--amber); }
+  .ledger-row .moved { display: block; margin-top: 3px; font-size: 12.5px; color: var(--ink-faint); }
+
+  section { margin-top: clamp(52px, 8vw, 88px); }
+  .sec-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; }
+  h2 { font-size: clamp(22px, 3.4vw, 30px); font-weight: 500; letter-spacing: -.015em; margin: 0 0 12px; line-height: 1.12; text-wrap: balance; }
+  .sec-lede { font-size: 16px; color: var(--ink-soft); max-width: 68ch; margin: 0; }
+
+  .rail { display: grid; gap: clamp(22px, 4vw, 40px); margin-top: 30px; }
+  .rail-3 { grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); align-items: start; }
+  .rail-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
+  .opt { display: flex; flex-direction: column; align-items: center; gap: 16px; min-width: 0; }
+  .opt-cap { text-align: center; max-width: 38ch; }
+  .opt-cap .k { font-weight: 600; font-size: 15px; color: var(--ink); display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .opt-cap p { margin: 7px 0 0; font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; }
+  .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; vertical-align: middle; white-space: nowrap; }
+  .tag.cur { background: var(--accent-tint); color: var(--accent); }
+  .tag.open { background: var(--amber-tint); color: var(--amber); }
+  .tag.guard { background: var(--rose-tint); color: var(--rose); }
+
+  .optbox { border: 1.5px dashed var(--amber); border-radius: 20px; padding: 14px 14px 10px; background: color-mix(in srgb, var(--amber-tint) 40%, transparent); }
+  .optbox-h { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); margin-bottom: 10px; text-align: center; }
+
+  .note-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 26px; }
+  .note { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 14px 16px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.55; }
+  .note b { display: block; margin-bottom: 4px; font-size: 13px; }
+  .note.amber { border-left: 3px solid var(--amber); }
+  .note.rose { border-left: 3px solid var(--rose); }
+  .note.teal { border-left: 3px solid var(--accent); }
+
+  .foot { margin-top: clamp(56px, 8vw, 90px); border-top: 1px solid var(--line); padding-top: 26px; font-size: 13.5px; color: var(--ink-faint); max-width: 74ch; }
+  .foot b { color: var(--ink-soft); }
+
+  /* ============================================================
+     PHONE FRAME — fixed Culprit app tokens (constants/theme.ts).
+     ============================================================ */
+  .phone {
+    --a-bg:#FAFAFA; --a-surface:#FFFFFF; --a-subtle:#F5F5F5;
+    --a-text:#0A0A0A; --a-text2:#525252; --a-text3:#737373; --a-text-dis:#A3A3A3;
+    --a-border:#EAEAEA; --a-border-strong:#D4D4D4;
+    --a-accent:#00C2A8; --a-accent-soft:#86D9CC; --a-accent-light:#E0FBF7; --a-accent-ink:#0B7B6C;
+    --a-symptom:#F43F5E; --a-symptom-light:#FFE4E6; --a-symptom-ink:#B3123A;
+    --a-med:#5B7A9E; --a-med-light:#E8EEF5;
+    --a-dark:#0A0A0A;
+    --a-scrim: rgba(10,10,10,.35);
+    --a-shadow: 0 1px 3px rgba(0,0,0,.05), 0 1px 2px rgba(0,0,0,.04);
+    width: 300px; max-width: 100%; background: var(--a-bg);
+    border-radius: 36px; border: 1px solid var(--line);
+    box-shadow: var(--shadow); overflow: hidden; flex: none;
+    font-size: 14px; color: var(--a-text); text-align: left;
+  }
+  .ph-screen { padding: 18px 16px 20px; min-height: 520px; display: flex; flex-direction: column; gap: 12px; position: relative; }
+
+  .ph-nav { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
+  .ph-back { color: var(--a-accent-ink); font-size: 13.5px; font-weight: 500; }
+  .ph-title { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
+  .ph-x { width: 30px; text-align: right; color: var(--a-text3); font-size: 16px; }
+  .ph-spacer { width: 30px; }
+  .ph-pagetitle { font-size: 24px; font-weight: 600; letter-spacing: -.3px; margin: 2px 0 0; line-height: 1.15; }
+  .ph-sub { font-size: 12.5px; color: var(--a-text3); margin-top: 2px; }
+  .ph-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); }
+
+  /* home header (DP-2 one-row) */
+  .home-hd { display: flex; align-items: center; justify-content: space-between; }
+  .home-hd .l { display: flex; align-items: center; gap: 8px; }
+  .avatar { width: 34px; height: 34px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #E8E4F5, #A79ACB); border: 1px solid var(--a-border); }
+  .home-name { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
+  .home-name i { font-style: normal; color: var(--a-text3); font-size: 11px; margin-left: 4px; }
+  .home-hd .r { display: flex; align-items: center; gap: 8px; }
+  .ask-pill { font-size: 11.5px; font-weight: 600; color: var(--a-text2); border: 1px solid var(--a-border-strong); border-radius: 999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 5px; }
+  .ask-pill::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--a-accent); }
+  .you { width: 26px; height: 26px; border-radius: 999px; background: #DDD; }
+
+  /* pet tab hero */
+  .pet-hero { display: flex; align-items: center; gap: 12px; }
+  .pet-avatar { width: 52px; height: 52px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #E8E4F5, #A79ACB); border: 1px solid var(--a-border); }
+  .pet-name { font-size: 22px; font-weight: 600; letter-spacing: -.3px; }
+  .pet-sub { font-size: 12px; color: var(--a-text3); margin-top: 1px; }
+
+  /* cards */
+  .card { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); padding: 14px; }
+  .card h4 { margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -.15px; }
+  .card .blurb { font-size: 12px; color: var(--a-text2); line-height: 1.5; margin-top: 4px; }
+  .cardbtn { margin-top: 11px; border-radius: 10px; padding: 10px; text-align: center; font-size: 13px; font-weight: 600; background: var(--a-accent); color: #fff; }
+  .cardbtn.ghost { background: var(--a-surface); border: 1px solid var(--a-border-strong); color: var(--a-text); font-weight: 500; }
+  .dim { opacity: .45; }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .card-count { font-size: 11px; color: var(--a-text3); flex: none; }
+
+  /* the appointment strip (Home, inside the window) — a context strip under the Signal, the TrialStrip's register */
+  .appt { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); padding: 13px 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .appt .date { flex: none; width: 44px; border-radius: 10px; background: var(--a-subtle); border: 1px solid var(--a-border); text-align: center; padding: 5px 0 6px; }
+  .appt .date b { display: block; font-size: 17px; font-weight: 600; line-height: 1.1; }
+  .appt .date span { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); margin-top: 2px; }
+  .appt .main { flex: 1; min-width: 0; }
+  .appt .t { font-size: 14px; font-weight: 600; letter-spacing: -.15px; }
+  .appt .s { font-size: 11.5px; color: var(--a-text3); margin-top: 2px; }
+  .appt .doors { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+  .door { font-size: 11px; font-weight: 600; color: var(--a-accent-ink); background: var(--a-accent-light); border-radius: 999px; padding: 5px 10px; }
+  .door.ghost { color: var(--a-text2); background: var(--a-surface); border: 1px solid var(--a-border-strong); font-weight: 500; }
+
+  /* insight card (Signal) — schematic, rail-led */
+  .insight { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); padding: 12px 14px 12px 12px; display: flex; gap: 10px; }
+  .insight .rail { display: block; width: 3px; border-radius: 3px; background: var(--a-accent); flex: none; margin: 0; }
+  .insight .rail.sym { background: var(--a-symptom); }
+  .insight .body { flex: 1; min-width: 0; }
+  .insight .clause { font-size: 13.5px; line-height: 1.4; letter-spacing: -.1px; }
+  .insight .count { font-size: 11.5px; color: var(--a-text3); margin-top: 4px; }
+  .insight .ask { font-size: 12px; font-weight: 600; color: var(--a-symptom-ink); margin-top: 4px; }
+
+  /* today band + trend (schematic) */
+  .today { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; padding: 11px 14px; font-size: 12.5px; color: var(--a-text2); display: flex; justify-content: space-between; align-items: center; }
+  .today .pips { display: flex; gap: 5px; }
+  .today .pips i { width: 8px; height: 8px; border-radius: 999px; background: var(--a-accent); display: block; }
+  .today .pips i.sym { background: var(--a-symptom); }
+  .trend { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; padding: 12px 14px; }
+  .trend .t { font-size: 12.5px; font-weight: 600; }
+  .trend .bars { display: flex; align-items: flex-end; gap: 4px; height: 36px; margin-top: 8px; }
+  .trend .bars i { display: block; flex: 1; background: var(--a-accent-soft); border-radius: 3px 3px 0 0; }
+  .strip { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; padding: 10px 14px; font-size: 12.5px; color: var(--a-text2); }
+  .strip b { color: var(--a-text); font-weight: 600; }
+
+  /* tab bar */
+  .tabbar { margin: auto -16px -20px; padding: 10px 14px 14px; border-top: 1px solid var(--a-border); background: var(--a-surface); display: flex; justify-content: space-around; font-size: 10.5px; color: var(--a-text3); }
+  .tabbar span { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .tabbar span::before { content: ""; width: 18px; height: 18px; border-radius: 6px; background: var(--a-border); }
+  .tabbar span.on { color: var(--a-accent-ink); font-weight: 600; }
+  .tabbar span.on::before { background: var(--a-accent); }
+  .tabbar .fab { width: 40px; height: 40px; border-radius: 999px; background: var(--a-dark); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; line-height: 1; margin-top: -18px; box-shadow: 0 4px 12px rgba(0,0,0,.18); }
+  .tabbar .fab::before { display: none; }
+
+  /* generic rows */
+  .rowcard { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; }
+  .row + .row { border-top: 1px solid var(--a-border); }
+  .row .v { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; }
+  .row .v small { display: block; font-size: 11px; color: var(--a-text3); font-weight: 400; margin-top: 2px; }
+  .row .chev { color: var(--a-text-dis); font-size: 16px; flex: none; }
+  .row .tick { width: 20px; height: 20px; border-radius: 999px; border: 1.5px solid var(--a-border-strong); flex: none; }
+  .row .tick.on { background: var(--a-accent); border-color: var(--a-accent); position: relative; }
+  .row .tick.on::after { content: ""; position: absolute; left: 6px; top: 2.5px; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .sec-label { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); margin: 4px 0 -4px 2px; }
+
+  /* rundown tiles */
+  .tile { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 10px 14px; }
+  .tile + .tile { border-top: 1px solid var(--a-border); }
+  .tile .lab { font-size: 11px; color: var(--a-text3); width: 84px; flex: none; }
+  .tile .val { flex: 1; font-size: 13px; font-weight: 500; letter-spacing: -.1px; }
+  .tile .val small { display: block; font-size: 11px; color: var(--a-text3); font-weight: 400; margin-top: 1px; }
+
+  /* question rows */
+  .q { display: flex; gap: 10px; padding: 10px 14px; align-items: flex-start; }
+  .q + .q { border-top: 1px solid var(--a-border); }
+  .q .n { flex: none; width: 20px; height: 20px; border-radius: 999px; background: var(--a-subtle); border: 1px solid var(--a-border); font-size: 10.5px; font-weight: 700; color: var(--a-text2); display: flex; align-items: center; justify-content: center; }
+  .q .t { font-size: 13px; line-height: 1.4; flex: 1; }
+  .q .t small { display: block; font-size: 11px; color: var(--a-text3); margin-top: 2px; }
+  .q.add .t { color: var(--a-accent-ink); font-weight: 600; }
+  .q.add .n { background: var(--a-accent-light); border-color: var(--a-accent-soft); color: var(--a-accent-ink); }
+
+  /* fields */
+  .field { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 12px; padding: 10px 12px; }
+  .field .lab { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--a-text3); }
+  .field .val { font-size: 13.5px; margin-top: 3px; font-weight: 500; }
+  .field .val.ph { color: var(--a-text-dis); font-weight: 400; }
+  .field.tall .val { min-height: 74px; line-height: 1.45; font-weight: 400; }
+  .field-row { display: flex; gap: 8px; }
+  .field-row .field { flex: 1; min-width: 0; }
+
+  /* plan hand-off rows (record-aware) */
+  .plan { display: flex; align-items: flex-start; gap: 11px; padding: 11px 14px; }
+  .plan + .plan { border-top: 1px solid var(--a-border); }
+  .plan .ico { width: 30px; height: 30px; border-radius: 9px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+  .plan .ico.med { background: var(--a-med-light); color: var(--a-med); }
+  .plan .ico.diet { background: var(--a-accent-light); color: var(--a-accent-ink); }
+  .plan .ico.next { background: var(--a-subtle); color: var(--a-text2); }
+  .plan .ico.doc { background: #F3EEFB; color: #6B4FA0; }
+  .plan .t { flex: 1; min-width: 0; }
+  .plan .t b { display: block; font-size: 13px; font-weight: 600; }
+  .plan .t span { display: block; font-size: 11px; color: var(--a-text3); margin-top: 1px; }
+  .plan .go { font-size: 11.5px; font-weight: 600; color: var(--a-accent-ink); flex: none; padding-top: 6px; }
+  .plan .done { font-size: 11px; color: var(--a-text3); flex: none; padding-top: 6px; }
+  .chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+  .chip { font-size: 11px; font-weight: 500; color: var(--a-text2); background: var(--a-surface); border: 1px solid var(--a-border-strong); border-radius: 999px; padding: 4px 10px; }
+  .chip.on { background: var(--a-accent-light); border-color: var(--a-accent); color: var(--a-accent-ink); font-weight: 600; }
+  .chip.quiet { border-style: dashed; color: var(--a-text3); }
+
+  /* buttons */
+  .btn { border-radius: 12px; padding: 13px 16px; font-size: 14px; font-weight: 600; text-align: center; }
+  .btn.primary { background: var(--a-dark); color: #fff; }
+  .btn.accent { background: var(--a-accent); color: #fff; }
+  .btn.ghost { background: var(--a-surface); border: 1px solid var(--a-border-strong); color: var(--a-text); font-weight: 500; }
+  .btn.quiet { color: var(--a-text2); font-weight: 500; padding: 8px; }
+  .btn-stack { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+  .barhint { font-size: 11px; color: var(--a-text3); text-align: center; }
+
+  /* overflow menu */
+  .menu-pop { position: absolute; top: 44px; right: 14px; background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.14); overflow: hidden; width: 176px; z-index: 2; }
+  .menu-item { padding: 12px 15px; font-size: 13.5px; font-weight: 500; }
+  .menu-item + .menu-item { border-top: 1px solid var(--a-border); }
+  .menu-item small { display: block; font-weight: 400; font-size: 10.5px; color: var(--a-text3); margin-top: 1px; }
+
+  /* consent sheet + recording state (v1.x options) */
+  .sheet-scrim { position: absolute; inset: 0; background: var(--a-scrim); display: flex; align-items: flex-end; }
+  .sheet { background: var(--a-surface); border-radius: 24px 24px 0 0; width: 100%; padding: 10px 16px 22px; }
+  .sheet-grab { width: 36px; height: 4px; border-radius: 999px; background: var(--a-border-strong); margin: 4px auto 12px; }
+  .sheet-h { font-size: 17px; font-weight: 600; letter-spacing: -.2px; margin-bottom: 6px; }
+  .sheet-p { font-size: 12.5px; color: var(--a-text2); line-height: 1.55; }
+  .sheet-facts { margin: 12px 0; border: 1px solid var(--a-border); border-radius: 12px; overflow: hidden; }
+  .sheet-facts div { padding: 8px 12px; font-size: 11.5px; color: var(--a-text2); display: flex; gap: 8px; align-items: flex-start; }
+  .sheet-facts div + div { border-top: 1px solid var(--a-border); }
+  .sheet-facts div::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--a-accent); flex: none; margin-top: 5px; }
+  .rec-bar { background: var(--a-dark); color: #fff; border-radius: 14px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+  .rec-dot { width: 10px; height: 10px; border-radius: 999px; background: #F43F5E; flex: none; box-shadow: 0 0 0 4px rgba(244,63,94,.25); }
+  .rec-bar .t { flex: 1; font-size: 12.5px; font-weight: 600; }
+  .rec-bar .t small { display: block; font-size: 10.5px; font-weight: 400; color: rgba(255,255,255,.7); margin-top: 1px; }
+  .rec-stop { font-size: 11.5px; font-weight: 700; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.14); }
+  .transcript { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 12px; padding: 10px 12px; font-size: 12px; color: var(--a-text2); line-height: 1.5; }
+  .transcript .live { color: var(--a-text-dis); }
+
+  /* booking sheet rows */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; font-size: 13px; }
+  .toggle-row + .toggle-row { border-top: 1px solid var(--a-border); }
+  .toggle-row small { display: block; font-size: 11px; color: var(--a-text3); margin-top: 1px; }
+  .sw { width: 38px; height: 22px; border-radius: 999px; background: var(--a-border-strong); position: relative; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .sw.on { background: var(--a-accent); }
+  .sw.on::after { left: 18px; }
+
+  /* saved moment */
+  .saved-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+  .saved-check { width: 56px; height: 56px; border-radius: 999px; background: var(--a-accent-light); display: flex; align-items: center; justify-content: center; }
+  .saved-h { font-size: 18px; font-weight: 600; letter-spacing: -.2px; }
+  .saved-p { font-size: 12.5px; color: var(--a-text2); line-height: 1.5; max-width: 26ch; }
+  .saved-offline { font-size: 11px; color: var(--a-text3); }
+
+  /* visits list */
+  .visit { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; }
+  .visit + .visit { border-top: 1px solid var(--a-border); }
+  .visit .d { flex: none; width: 44px; text-align: center; }
+  .visit .d b { display: block; font-size: 16px; font-weight: 600; line-height: 1.1; }
+  .visit .d span { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); margin-top: 2px; }
+  .visit .m { flex: 1; min-width: 0; }
+  .visit .m b { display: block; font-size: 13.5px; font-weight: 600; letter-spacing: -.1px; }
+  .visit .m span { display: block; font-size: 11.5px; color: var(--a-text3); margin-top: 2px; line-height: 1.4; }
+  .visit .chev { color: var(--a-text-dis); font-size: 16px; }
+  .pillrow { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+  .mini { font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 4px; padding: 2px 5px; background: var(--a-subtle); color: var(--a-text2); }
+  .mini.med { background: var(--a-med-light); color: var(--a-med); }
+  .mini.diet { background: var(--a-accent-light); color: var(--a-accent-ink); }
+  /* ---- this page only ---- */
+  .via { display: inline-flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 4px; padding: 2px 6px; background: var(--a-subtle); color: var(--a-text2); }
+  .visit .m span.via { display: inline-flex; margin: 0 4px 0 0; color: var(--a-text2); font-size: 9.5px; }
+  .visit .m span.via.remote { color: var(--a-med); }
+  .via.remote { background: var(--a-med-light); color: var(--a-med); }
+  .sheet-static { background: var(--a-surface); border-radius: 24px 24px 0 0; margin: auto -16px -20px; padding: 10px 16px 20px; box-shadow: 0 -6px 24px rgba(0,0,0,.08); display: flex; flex-direction: column; gap: 10px; }
+  .sheet-sub { font-size: 12px; color: var(--a-text3); margin-top: -8px; }
+  .lab-q { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--a-text3); margin-bottom: -4px; }
+  .footnote { font-size: 11.5px; color: var(--a-text2); line-height: 1.45; background: var(--a-subtle); border-radius: 10px; padding: 9px 11px; }
+  .footnote b { color: var(--a-text); font-weight: 600; }
+  .behind { opacity: .35; filter: saturate(.6); }
+  .prov { display: flex; align-items: center; gap: 10px; padding: 11px 14px; font-size: 12.5px; color: var(--a-text2); }
+  .prov b { color: var(--a-text); font-weight: 600; }
+  .prov .go { margin-left: auto; color: var(--a-accent-ink); font-weight: 600; font-size: 12px; flex: none; }
+
+  .thumbs { display: flex; gap: 6px; margin-top: 7px; }
+  .shot { width: 34px; height: 52px; border-radius: 5px; border: 1px solid var(--a-border-strong); background: var(--a-subtle); display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 4px; }
+  .shot i { display: block; height: 7px; width: 70%; border-radius: 4px; background: #D9D9D9; }
+  .shot i.me { align-self: flex-end; background: #9FC3F5; }
+  /* vet report fragment: paper, clinical, not the phone */
+  .paper { width: 340px; max-width: 100%; background: #FFFFFF; color: #111; border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); padding: 18px 20px 20px; font-size: 12px; line-height: 1.45; flex: none; }
+  .paper .ph { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1.5px solid #111; padding-bottom: 6px; }
+  .paper .ph b { font-size: 14px; letter-spacing: -.1px; }
+  .paper .ph span { font-size: 10.5px; color: #555; }
+  .paper .win { font-size: 10.5px; color: #444; margin-top: 6px; }
+  .paper .win b { color: #111; }
+  .paper h5 { margin: 14px 0 6px; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #555; }
+  .paper table { width: 100%; border-collapse: collapse; }
+  .paper td { padding: 6px 0; vertical-align: top; border-top: 1px solid #E5E5E5; font-size: 11.5px; }
+  .paper td.d { width: 62px; color: #333; font-variant-numeric: tabular-nums; }
+  .paper td .k { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border: 1px solid #999; border-radius: 3px; padding: 0 4px; margin-right: 4px; color: #333; }
+  .paper td small { display: block; color: #555; font-size: 10.5px; margin-top: 1px; }
+  .paper .hl { background: #FFF6D6; }
+  /* round 3 */
+  .q3 { font-size: 12.5px; color: var(--a-text2); margin: 2px 0 -4px; font-weight: 500; }
+  .readback { background: var(--a-subtle); border-radius: 12px; padding: 10px 12px; font-size: 12.5px; color: var(--a-text); line-height: 1.45; }
+  .readback small { display: block; color: var(--a-text3); font-size: 11px; margin-top: 3px; }
+  .safety { font-size: 12px; line-height: 1.45; color: var(--a-text); background: var(--a-surface); border: 1px solid var(--a-border-strong); border-radius: 12px; padding: 9px 11px; }
+  .safety b { font-weight: 600; }
+  .safety .lk { display: block; margin-top: 4px; color: var(--a-accent-ink); font-weight: 500; }
+  .typed { font-size: 13px; background: var(--a-subtle); border-radius: 10px; padding: 8px 10px; }
+  .typed small { display: block; font-size: 10px; color: var(--a-text3); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 2px; font-weight: 700; }
+  .watch { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; }
+  .watch .eye { width: 30px; height: 30px; border-radius: 9px; background: #FFF4E0; color: #9A6A00; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex: none; }
+  .watch .t { flex: 1; min-width: 0; }
+  .watch .t b { display: block; font-size: 13px; font-weight: 600; }
+  .watch .t span { display: block; font-size: 11px; color: var(--a-text3); margin-top: 1px; }
+  .watch .go { font-size: 11.5px; font-weight: 600; color: var(--a-accent-ink); flex: none; padding-top: 6px; }
+  .sent { display: flex; gap: 10px; align-items: center; padding: 9px 14px; }
+  .sent + .sent { border-top: 1px solid var(--a-border); }
+  .sent .shot { width: 26px; height: 40px; flex: none; }
+  .sent .t { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 500; }
+  .sent .t small { display: block; font-size: 11px; color: var(--a-text3); font-weight: 400; margin-top: 1px; }
+  .trial-row { padding: 11px 14px; }
+  .trial-row b { display: block; font-size: 13px; font-weight: 600; }
+  .trial-row span.s { display: block; font-size: 11px; color: var(--a-text3); margin-top: 1px; }
+  .until { display: inline-flex; gap: 6px; align-items: center; margin-top: 8px; font-size: 11.5px; color: var(--a-text2); background: var(--a-subtle); border-radius: 8px; padding: 6px 9px; }
+  .until b { display: inline; font-size: 11.5px; color: var(--a-text); }
+  .neutral-mark { width: 52px; height: 52px; border-radius: 999px; background: var(--a-subtle); border: 1px solid var(--a-border); display: flex; align-items: center; justify-content: center; }
+  .ios-share { margin: auto -16px -20px; background: #F2F2F7; border-radius: 22px 22px 0 0; padding: 12px 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .ios-share .apps { display: flex; gap: 14px; }
+  .ios-share .app { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: #333; width: 52px; }
+  .ios-share .app i { display: block; width: 46px; height: 46px; border-radius: 12px; background: #D9D9DE; }
+  .ios-share .app.us i { background: #0A0A0A; position: relative; }
+  .ios-share .app.us i::after { content: ""; position: absolute; inset: 14px; border-radius: 999px; border: 2.5px solid #00C2A8; }
+  .ios-share .app.us { font-weight: 600; color: #0A0A0A; }
+  .msg { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .bub { font-size: 11.5px; line-height: 1.35; border-radius: 14px; padding: 6px 10px; max-width: 80%; background: #E9E9EB; color: #111; }
+  .bub.me { align-self: flex-end; background: #1E7CF2; color: #fff; }
+  .home-card { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); padding: 12px 14px 12px 12px; display: flex; gap: 10px; }
+  .home-card .rl { width: 3px; border-radius: 3px; background: var(--a-symptom); flex: none; }
+  .home-card .b { flex: 1; }
+  .home-card .c { font-size: 13.5px; line-height: 1.4; }
+  .home-card .n { font-size: 11.5px; color: var(--a-text3); margin-top: 4px; }
+  .home-card .a { font-size: 12px; font-weight: 600; color: var(--a-symptom-ink); margin-top: 4px; }
+  .home-card .ctx { font-size: 11.5px; color: var(--a-text2); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--a-border); }
+  .doorline { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--a-text2); padding: 10px 2px; border-top: 1px solid var(--a-border); border-bottom: 1px solid var(--a-border); }
+  .doorline b { color: var(--a-text); font-weight: 600; }
+  .doorline .go { margin-left: auto; color: var(--a-accent-ink); font-weight: 600; }
+  .rail-4 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); align-items: start; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">Culprit · Vet contact · Round 3.1 · exploratory</p>
+  <h1 class="title">When the vet answered by phone, text or email</h1>
+  <p class="lede">An owner logs a vet contact that wasn't an exam, attaches what the vet sent, starts what the vet started, and notes what the vet said to watch for. The contact reads as <b>"no exam"</b> everywhere, never moves the report's start date, and never quiets a warning. Round 3 applies the PM's three rulings and the owner persona review. Issue: <a href="https://linear.app/projectnyx/issue/CUL-2749">CUL-2749</a>.</p>
+
+  <div class="ledger">
+    <div class="ledger-h">Round 3 · what moved</div>
+    <div class="ledger-row"><span class="ledger-who">PM ruling</span><span><b>The vet's "call me if" ships with this, not after.</b><span class="moved">C1 and C3: "What did the vet say?" gains the ruled <b>Anything to watch for?</b> row and its capture screen, reused from the Vet instructions mock round 3 unchanged. D2 shows it as Watching. The saved moment (C4) keeps the date in view.</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">PM ruling</span><span><b>A logged contact is awareness only.</b><span class="moved">E1: Pixel's eating card on Home keeps its words and its ask after Sam's email; it gains one context line, the shape the care state spec already uses for "I've called". No card is softened, delayed, reordered or removed.</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">PM ruling</span><span><b>Share from Messages, Mail or a clinic app, pulled forward.</b><span class="moved">A3: Culprit in the share sheet opens a new contact with the screenshot attached and the channel picked from where it came. Drawn as the follow up row it was ruled as.</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">Jordan, Sam</span><span><b>"Has this happened?" is pointless from the logging door.</b><span class="moved">B: removed on this path; Day says Today; an optional time sits beside it (Sam's "by tomorrow morning").</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">Jordan, Sam</span><span><b>"The report still starts from Sep 18" is jargon.</b><span class="moved">B: every footnote is now "Goes on Nyx's vet report as a phone call. No exam." The vet facing report keeps "Phone consult, no exam"; that is Dr. Chen's language and the vet is its reader.</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">Jordan, Sam</span><span><b>One contact spans days.</b><span class="moved">C1 and D2: each thing the vet sent carries its own date (texts Nov 9, the drug name Nov 10).</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">Jordan</span><span><b>The trial is why I have the app, and it was below the fold.</b><span class="moved">C2: on a pet with a running trial, the trial row leads and offers <b>Keep going until</b> a date. A supplement started during the trial is recorded on the trial with its date. "Start a medication" is now <b>Start a medicine or supplement</b>.</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">Jordan</span><span><b>"Owner holds the vet's texts" made me think the vet can see them.</b><span class="moved">F1: now "Texts on the owner's phone, not attached".</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">Sam</span><span><b>The green check after "she's barely eaten" felt like it was handled.</b><span class="moved">C4: no check mark when a warning is live or something is being watched; the saved moment names the date and the don't-wait line.</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">Sam</span><span><b>One call covered both cats.</b><span class="moved">B2: <b>Also about Juniper</b> on a past contact, in multi pet homes only; each cat gets its own copy, as Booked already does.</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">Sam</span><span><b>"Try warming the food" must not turn a decline into a preference question.</b><span class="moved">Not a frame: a rule in the notes. Nothing started from a contact changes how intake is read.</span></span></div>
+    <div class="ledger-row"><span class="ledger-who">PM ruling</span><span><b>Round 3.1: one entry; the report window stays at the last exam; contacts are a channel field on the visit record.</b><span class="moved">The second door (A2) and the moved window (F2) leave the page; git keeps them. The channel field ruling has no pixels: every reader of visits says whether it means exams only, enforced by a guard.</span></span></div>
+  </div>
+
+  <!-- ===================== A. THE ENTRY ===================== -->
+  <section>
+    <p class="sec-eyebrow">A · The way in</p>
+    <h2>From the Pet tab, or straight from the message</h2>
+    <p class="sec-lede">The renamed button now names every channel. The share sheet path skips the Pet tab entirely: the owner is already looking at the vet's text.</p>
+
+    <div class="rail rail-4">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div><div class="pet-sub">Dog · 6 yrs</div></div></div>
+          <div class="card">
+            <div class="card-head"><h4>Vet visits</h4><span class="card-count">Last visit Sep 18</span></div>
+            <div class="blurb">Keep the next appointment here, and what the vet said after.</div>
+            <div class="cardbtn ghost">Add the next visit</div>
+            <div class="cardbtn ghost" style="margin-top:8px; border-color: var(--a-accent); color: var(--a-accent-ink); font-weight:600">Log a visit, call, text or email</div>
+          </div>
+          <div class="card dim"><h4>Medications</h4><div class="blurb">1 active course</div></div>
+          <div class="tabbar"><span>Home</span><span>History</span><span class="fab">+</span><span>Foods</span><span class="on">Pet</span></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">A1 · One entry <span class="tag cur">current</span></span><p>Names email (Jordan, Sam). Opens the sheet straight on a past contact.</p></div>
+      </div>
+
+      
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Riverside Vets</span><span class="ph-spacer"></span></div>
+          <div class="msg">
+            <div class="bub">Hi, it's Dr. Patel. Start the ear drops tonight, twice a day for 7 days.</div>
+            <div class="bub">If she's still shaking her head in 3 days, call us.</div>
+            <div class="bub me">Will do, thanks</div>
+          </div>
+          <div class="ios-share">
+            <div style="font-size:12px;font-weight:600;color:#333">Screenshot · Nov 9</div>
+            <div class="apps"><span class="app"><i></i>Messages</span><span class="app"><i></i>Mail</span><span class="app us"><i></i>Culprit</span><span class="app"><i></i>Notes</span></div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">A3 · Share into Culprit <span class="tag open">follow up row</span></span><p>Ruled forward by the PM. Works from any app that can share an image or PDF; Culprit never reads the conversation itself.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="behind"><div class="msg"><div class="bub">Hi, it's Dr. Patel. Start the ear drops tonight…</div></div></div>
+          <div class="sheet-static">
+            <div class="sheet-grab"></div>
+            <div class="sheet-h">Texts from the vet</div>
+            <div class="sheet-sub">For Nyx · <span style="color:var(--a-accent-ink);font-weight:600">change</span></div>
+            <div class="rowcard"><div class="sent"><span class="shot"><i></i><i class="me"></i><i></i></span><span class="t">1 screenshot<small>Nov 9 · goes to Vet Files</small></span></div></div>
+            <div class="lab-q">How did you hear from the vet?</div>
+            <div class="chips"><span class="chip">At the clinic</span><span class="chip">Phone</span><span class="chip on">Text</span><span class="chip">Email</span></div>
+            <div class="field"><div class="lab">What it was about</div><div class="val ph">Optional</div></div>
+            <div class="btn primary">Save Nyx's texts</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">A4 · Where the share lands <span class="tag open">follow up row</span></span><p>Text is picked because it came from Messages (Email from Mail); the owner can change it. The day is the screenshot's. Multi pet homes ask which pet first.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== B. THE SHEET ===================== -->
+  <section>
+    <p class="sec-eyebrow">B · The sheet</p>
+    <h2>Three questions, one of them required</h2>
+    <p class="sec-lede">From the logging door the sheet opens on a past contact: no "Has this happened?". Day defaults to <b>Today</b>, with an optional time beside it. Only the day is required. The footnote says the one consequence in plain words.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="behind"><div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div></div></div></div>
+          <div class="sheet-static">
+            <div class="sheet-grab"></div>
+            <div class="sheet-h">A call with the vet</div>
+            <div class="sheet-sub">For Nyx</div>
+            <div class="lab-q">How did you hear from the vet?</div>
+            <div class="chips"><span class="chip">At the clinic</span><span class="chip on">Phone</span><span class="chip">Text</span><span class="chip">Email</span></div>
+            <div class="field-row">
+              <div class="field"><div class="lab">Day</div><div class="val">Today</div></div>
+              <div class="field"><div class="lab">Time</div><div class="val ph">Optional</div></div>
+            </div>
+            <div class="field"><div class="lab">What it was about</div><div class="val">Left ear, head shaking</div></div>
+            <div class="btn primary">Save Nyx's call</div>
+            <div class="footnote">Goes on Nyx's vet report as a phone call. No exam.</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">B1 · Phone, logged the same day <span class="tag cur">current</span></span><p>Clinic moves under "What it was about" as an optional field (not drawn). Text's chip carries "or clinic app" in its spoken label.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="behind"><div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Pixel</div></div></div></div>
+          <div class="sheet-static">
+            <div class="sheet-grab"></div>
+            <div class="sheet-h">An email from the vet</div>
+            <div class="sheet-sub">For Pixel</div>
+            <div class="lab-q">How did you hear from the vet?</div>
+            <div class="chips"><span class="chip">At the clinic</span><span class="chip">Phone</span><span class="chip">Text</span><span class="chip on">Email</span></div>
+            <div class="field-row">
+              <div class="field"><div class="lab">Day</div><div class="val">Today</div></div>
+              <div class="field"><div class="lab">Time</div><div class="val">4:10 pm</div></div>
+            </div>
+            <div class="field"><div class="lab">What it was about</div><div class="val">Barely eating since Thursday</div></div>
+            <div class="lab-q">Also about</div>
+            <div class="chips"><span class="chip">Juniper</span></div>
+            <div class="btn primary">Save Pixel's email</div>
+            <div class="footnote">Goes on Pixel's vet report as an email. No exam.</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">B2 · Email, two cats <span class="tag cur">current</span></span><p>"Also about" shows only in multi pet homes. Tapping Juniper saves her own copy, which Sam can edit ("Juniper's fine") without touching Pixel's.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="behind"><div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div></div></div></div>
+          <div class="sheet-static">
+            <div class="sheet-grab"></div>
+            <div class="sheet-h">A visit that happened</div>
+            <div class="sheet-sub">For Nyx</div>
+            <div class="lab-q">How did you hear from the vet?</div>
+            <div class="chips"><span class="chip on">At the clinic</span><span class="chip">Phone</span><span class="chip">Text</span><span class="chip">Email</span></div>
+            <div class="field-row">
+              <div class="field"><div class="lab">Day</div><div class="val">Thu, Sep 18</div></div>
+              <div class="field"><div class="lab">Time</div><div class="val ph">Optional</div></div>
+            </div>
+            <div class="field"><div class="lab">What it was about</div><div class="val">Annual</div></div>
+            <div class="btn primary">Save Nyx's visit</div>
+            <div class="footnote">Your next vet report starts from this visit.</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">B3 · At the clinic <span class="tag cur">current</span></span><p>The shipped wording, kept: here the visit really does move the report. Booking ahead keeps its own door, "Add the next visit".</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== C. WHAT THE VET SAID ===================== -->
+  <section>
+    <p class="sec-eyebrow">C · After the save</p>
+    <h2>What the vet sent, started, and asked you to watch</h2>
+    <p class="sec-lede">"What did the vet say?" holds four things in a fixed order: what the vet sent, a running trial when there is one, what the vet started, and <b>Anything to watch for?</b>. That last row and its screen are the Vet instructions capture, reused as ruled.</p>
+
+    <div class="rail rail-4">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Back</span><span class="ph-spacer"></span></div>
+          <div><div class="ph-pagetitle">What did the vet say?</div><div class="ph-sub">Phone · Sun, Nov 9 · Left ear</div></div>
+          <div class="sec-label">What the vet sent</div>
+          <div class="rowcard">
+            <div class="sent"><span class="shot"><i></i><i class="me"></i><i></i></span><span class="t">Texts<small>Nov 9 · 2 screenshots</small></span></div>
+            <div class="sent"><span class="shot"><i class="me"></i><i></i><i></i></span><span class="t">Text with the drug name<small>Nov 10 · 1 screenshot</small></span></div>
+            <div class="sent"><span class="t" style="color:var(--a-accent-ink);font-weight:600">Add more</span></div>
+          </div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><div class="ico med">Rx</div><div class="t"><b>Ear drops</b><span>Started · twice daily · 7 days</span></div><span class="done">Added</span></div>
+            <div class="plan"><div class="ico med">Rx</div><div class="t"><b>Start a medicine or supplement</b><span>Anything else the vet started</span></div><span class="go">Add</span></div>
+            <div class="watch"><div class="eye">!</div><div class="t"><b>Anything to watch for?</b><span>Shaking her head · asks you on Nov 12</span></div><span class="go">Edit</span></div>
+          </div>
+          <div class="btn-stack"><div class="btn primary">Done</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">C1 · Nov 9, as it happened <span class="tag cur">current</span></span><p>Each thing the vet sent has its own date, so the call Monday and the text Tuesday stay one contact. Food and recheck rows sit below (not drawn).</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Back</span><span class="ph-spacer"></span></div>
+          <div><div class="ph-pagetitle">What did the vet say?</div><div class="ph-sub">Phone · Tue, Nov 4 · Trial check in</div></div>
+          <div class="sec-label">The diet trial</div>
+          <div class="rowcard">
+            <div class="trial-row"><b>Hydrolyzed salmon</b><span class="s">Day 23 of 42</span>
+              <div class="chips"><span class="chip on">Keep going</span><span class="chip">Changed</span><span class="chip">Stopped</span></div>
+              <div class="until">Until <b>Dec 1</b> · was Nov 16 <span style="color:var(--a-accent-ink);font-weight:600">Change</span></div>
+            </div>
+          </div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><div class="ico med">Rx</div><div class="t"><b>Probiotic</b><span>Started Nov 4 · noted on the trial</span></div><span class="done">Added</span></div>
+            <div class="plan"><div class="ico med">Rx</div><div class="t"><b>Start a medicine or supplement</b><span>Anything else the vet started</span></div><span class="go">Add</span></div>
+            <div class="watch"><div class="eye">!</div><div class="t"><b>Anything to watch for?</b><span>Later</span></div><span class="go">›</span></div>
+          </div>
+          <div class="btn-stack"><div class="btn primary">Done</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">C2 · Jordan, mid trial <span class="tag cur">current</span></span><p>The trial leads. "Keep going" asks until when, seeded from the vet's "two more weeks". A supplement started now is marked on the trial's timeline, so the trial read can tell when it began.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Call</span><span class="ph-title" style="font-size:14px">Anything to watch for?</span><span class="ph-spacer"></span></div>
+          <div class="ph-sub" style="margin-top:-6px">For Nyx · from the Nov 9 call</div>
+          <div class="chips"><span class="chip">Cough</span><span class="chip">Vomit</span><span class="chip">Itch/Scratch</span><span class="chip on">Something else…</span></div>
+          <div class="typed"><small>In your words</small>still shaking her head</div>
+          <div class="q3">Then</div>
+          <div class="chips"><span class="chip on">Call the vet</span><span class="chip">Book a visit</span></div>
+          <div class="q3">When</div>
+          <div class="chips"><span class="chip">When ear drops end</span><span class="chip">In 1 week</span><span class="chip on">Nov 12</span></div>
+          <div class="readback">Back on Wed, Nov 12, so you can decide whether to call the vet.<small>Nov 12 · in your words, not tracked</small></div>
+          <div class="safety"><b>If Nyx gets worse before then, don't wait for this date.</b> Call your vet now.<span class="lk">Signs that mean call now ›</span></div>
+          <div class="card" style="padding:10px 12px"><div class="toggle-row" style="padding:0"><span>Remind me on Nov 12<small>Says "A note about Nyx for today".</small></span><span class="sw on"></span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">C3 · The capture, reused <span class="tag cur">ruled elsewhere</span></span><p>The Vet instructions screen as ruled (R2, R3), opened from a call instead of a visit. Only its back label and subline change.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="saved-wrap">
+            <div class="neutral-mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 4h10v16l-5-3.5L7 20V4z" stroke="#525252" stroke-width="2" stroke-linejoin="round"/></svg></div>
+            <div class="saved-h">Pixel's email is saved</div>
+            <div class="saved-p">Culprit will ask you about her eating on <b>Sat, Nov 15</b>. Nothing on Home changes because you emailed.</div>
+          </div>
+          <div class="safety"><b>If Pixel stops eating entirely, hides, or you're worried, don't wait.</b> Call your vet today.</div>
+          <div class="btn-stack"><div class="btn ghost">See the email</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">C4 · Saved, not settled <span class="tag cur">current</span></span><p>Sam's blocking finding. With a live warning or a watched sign there is no check mark, and the page says what is still open. A contact with neither keeps the shipped check.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== D. THE RECORD ===================== -->
+  <section>
+    <p class="sec-eyebrow">D · In the record</p>
+    <h2>The contact, as written</h2>
+    <p class="sec-lede">One list with the channel on each row; the contact's page leads with what the vet asked you to watch, as the Vet instructions spec rules for visits; the course knows where it came from.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-spacer"></span></div>
+          <div class="ph-pagetitle">Vet visits</div>
+          <div class="sec-label">Watching</div>
+          <div class="rowcard"><div class="watch"><div class="eye">!</div><div class="t"><b>Shaking her head</b><span>Asks on Wed, Nov 12 · from the Nov 9 call</span></div><span class="go">›</span></div></div>
+          <div class="sec-label">Past</div>
+          <div class="rowcard">
+            <div class="visit"><div class="d"><b>9</b><span>Nov</span></div><div class="m"><b>Left ear, head shaking</b><span><span class="via remote">Phone</span> No exam</span><div class="pillrow"><span class="mini med">Ear drops</span><span class="mini">3 screenshots</span></div></div><span class="chev">›</span></div>
+            <div class="visit"><div class="d"><b>18</b><span>Sep</span></div><div class="m"><b>Annual</b><span><span class="via">Visit</span></span></div><span class="chev">›</span></div>
+          </div>
+          <div class="tabbar"><span>Home</span><span>History</span><span class="fab">+</span><span>Foods</span><span class="on">Pet</span></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">D1 · The list <span class="tag cur">current</span></span><p>Watching sits above the past, as Vet instructions R4 rules.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Vet visits</span><span class="ph-back">Edit</span></div>
+          <div><div class="ph-pagetitle">Left ear, head shaking</div><div class="ph-sub">Phone · Sun, Nov 9 · no exam</div></div>
+          <div class="sec-label">What your vet asked you to watch</div>
+          <div class="rowcard"><div class="watch"><div class="eye">!</div><div class="t"><b>Shaking her head</b><span>Asks on Wed, Nov 12 · then call the vet</span></div><span class="go">›</span></div></div>
+          <div class="sec-label">What the vet sent</div>
+          <div class="rowcard">
+            <div class="sent"><span class="shot"><i></i><i class="me"></i><i></i></span><span class="t">Texts<small>Nov 9 · 2 screenshots</small></span></div>
+            <div class="sent"><span class="shot"><i class="me"></i><i></i><i></i></span><span class="t">Text with the drug name<small>Nov 10</small></span></div>
+          </div>
+          <div class="sec-label">What the vet started</div>
+          <div class="rowcard"><div class="plan"><div class="ico med">Rx</div><div class="t"><b>Ear drops</b><span>Twice daily · Still on it</span></div><span class="go">›</span></div></div>
+          <div class="footnote">Your vet report shows this call and the ear drops. Screenshots stay in Vet Files; share them from there.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">D2 · The call <span class="tag cur">current</span></span><p>The footnote names both halves, what reaches the report and what doesn't, in the order Jordan reads.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Pet</span><span class="ph-spacer"></span></div>
+          <div><div class="ph-pagetitle">Ear drops</div><div class="ph-sub">Twice daily · day 5 of 7</div></div>
+          <div class="rowcard">
+            <div class="prov"><span class="via remote">Phone</span><span>Started after <b>a call with the vet, Nov 9</b></span><span class="go">›</span></div>
+          </div>
+          <div class="card"><h4>Doses</h4><div class="blurb">9 of 14 given</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">D3 · The course's source <span class="tag cur">current</span></span><p>Unchanged from round 2.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== E. HOME ===================== -->
+  <section>
+    <p class="sec-eyebrow">E · Home</p>
+    <h2>A logged contact never quiets a warning</h2>
+    <p class="sec-lede">The PM's ruling, drawn. After Sam emails the vet, Pixel's eating card keeps its sentence, its count and its ask word for word, and keeps its place. It gains one context line. The watched date arrives as the Vet instructions Home line, below every safety and intake card.</p>
+
+    <div class="rail rail-2">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="home-hd"><div class="l"><div class="avatar"></div><span class="home-name">Pixel <i>▾</i></span></div><div class="r"><span class="ask-pill">Ask</span><span class="you"></span></div></div>
+          <div class="home-card"><span class="rl"></span><div class="b">
+            <div class="c">Pixel has eaten much less than usual for 2 days.</div>
+            <div class="n">3 of 7 meals left untouched since Thursday</div>
+            <div class="a">Worth a call to your vet today</div>
+            <div class="ctx">You emailed the vet today, 4:10 pm.</div>
+          </div></div>
+          <div class="today"><span>Today · 2 logged</span><span class="pips"><i></i><i class="sym"></i></span></div>
+          <div class="tabbar"><span class="on">Home</span><span>History</span><span class="fab">+</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">E1 · Same day <span class="tag cur">current</span></span><p>The ask stays: emailing is not the vet seeing her. The context line uses the care state spec's "You called on" shape (its mock 4b), and never replaces the ask.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="home-hd"><div class="l"><div class="avatar"></div><span class="home-name">Pixel <i>▾</i></span></div><div class="r"><span class="ask-pill">Ask</span><span class="you"></span></div></div>
+          <div class="home-card"><span class="rl"></span><div class="b">
+            <div class="c">Pixel has eaten much less than usual for 3 days.</div>
+            <div class="n">5 of 10 meals left untouched since Thursday</div>
+            <div class="a">Worth a call to your vet today</div>
+            <div class="ctx">You emailed the vet on Fri, Nov 14.</div>
+          </div></div>
+          <div class="doorline"><span>A note about Pixel for today</span><span class="go">Open ›</span></div>
+          <div class="today"><span>Today · 1 logged</span><span class="pips"><i class="sym"></i></span></div>
+          <div class="tabbar"><span class="on">Home</span><span>History</span><span class="fab">+</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">E2 · The watched day <span class="tag cur">current</span></span><p>The card still leads and still asks; the count grew. The vet's instruction comes back as its own line under it, whatever the logs say (Vet instructions R7).</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== F. THE VET REPORT ===================== -->
+  <section>
+    <p class="sec-eyebrow">F · On the vet report</p>
+    <h2>Listed as a consult, never as the last exam</h2>
+    <p class="sec-lede">The report is the vet's, so it keeps clinical words. Ruled: the default start date stays at the last exam.</p>
+
+    <div class="rail rail-2">
+      <div class="opt">
+        <div class="paper">
+          <div class="ph"><b>Nyx · Canine, 6 y</b><span>Report · Nov 14</span></div>
+          <div class="win">Covers <b>Sep 18 (last exam) to Nov 14</b></div>
+          <h5>Vet contacts in this period</h5>
+          <table>
+            <tr class="hl"><td class="d">Nov 9</td><td><span class="k">Phone</span>Consult, no exam. Left ear, head shaking.<small>Started: ear drops, twice daily, 7 days. Texts on the owner's phone, not attached.</small></td></tr>
+          </table>
+          <h5>Medications</h5>
+          <table>
+            <tr><td class="d">Nov 9</td><td>Ear drops, twice daily<small>Started after the Nov 9 phone consult · 9 of 14 doses logged</small></td></tr>
+          </table>
+        </div>
+        <div class="opt-cap"><span class="k">F1 · Window stays at the exam <span class="tag cur">ruled</span></span><p>"Texts on the owner's phone, not attached" replaces "Owner holds" (Jordan). The vet's instruction is not on the report in v1 (Vet instructions R8).</p></div>
+      </div>
+
+      
+    </div>
+  </section>
+
+  <!-- ===================== NOTES ===================== -->
+  <section>
+    <p class="sec-eyebrow">Notes</p>
+    <h2>Rules under the frames</h2>
+    <div class="note-grid">
+      <div class="note rose"><b>Intake is never preference</b>Nothing started from a contact changes how eating is read. "Try warming the food" can be noted or started as a food change, but a decline keeps its full weight on Home and in the report (Sam).</div>
+      <div class="note rose"><b>Awareness only (PM ruling)</b>A contact may add a context line to a warning. It never removes, softens, delays, reorders or rewords one, and it is never an exam for the care state.</div>
+      <div class="note amber"><b>The schema (ruled)</b>A channel field on the visit record, defaulting to At the clinic. Every reader of visits declares exams only or any contact, held by a guard, so a new reader can't silently count a phone call as an exam. Vet instructions keep keying on the visit row unchanged.</div>
+      <div class="note amber"><b>Lab results by email</b>A results PDF is clinical. Whether a document marked results is listed on the report is a Vet Files question (its D14), not drawn here (Sam).</div>
+      <div class="note teal"><b>Free, always</b>Contacts, attachments, instructions and the report line are core logging: Pets &gt; $.</div>
+      <div class="note"><b>Unchanged</b>Booking, Get ready, At the vet, Home's appointment strip, every existing visit (read as At the clinic). No model reads screenshots, notes or typed instructions. Culprit never reads Messages or an inbox.</div>
+    </div>
+  </section>
+
+  <div class="foot"><b>Round 3.1, exploratory, 2026-11-14</b> (supersedes rounds 1 and 2 on this page; they are in git). Source of truth: <code>docs/culprit-vet-contact-mockups.html</code>. The Anything to watch for? capture and Home line come from <code>docs/culprit-vet-instructions-mockups.html</code> round 3, which wins on divergence. Phone frames use the app's fixed tokens; the report fragment is schematic.</div>
+</div>
+</body>
+</html>
