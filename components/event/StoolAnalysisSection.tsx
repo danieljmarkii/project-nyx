@@ -565,12 +565,25 @@ export function StoolAnalysisSection(
     }
     setSaving(true);
     const norm = normalizeStoolEdits(next);
-    const { error } = await saveStoolFieldEdits(eventId, norm);
-    setSaving(false);
-    if (error) {
+    // CUL-1356 — the edit writes back every field, so it writes only over the read the
+    // editor opened on. A newer read underneath (a replaced photo, a second device) is
+    // shown and said; the old observations never land on it as the owner's.
+    const seen = shownRead(row, STOOL_DISMISSAL_COLUMNS);
+    const { outcome } = await saveStoolFieldEdits(eventId, norm, seen);
+    if (outcome !== 'written') {
+      const latest = outcome === 'read_changed' ? await fetchRow() : null;
+      setSaving(false);
+      if (cancelled.current) return;
+      if (latest && !sameShown(latest, seen)) {
+        setRow(latest);
+        setEditing(false);
+        Alert.alert(READ_CHANGED_TITLE, READ_CHANGED_BODY);
+        return;
+      }
       Alert.alert('Could not save', 'Try again in a moment.');
       return;
     }
+    setSaving(false);
     // Optimistic local commit — mirror the DB write (fields + provenance stamp).
     setRow({ ...row, ...norm, edited_at: new Date().toISOString() });
     setEditing(false);

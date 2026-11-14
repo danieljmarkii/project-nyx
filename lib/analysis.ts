@@ -5,6 +5,7 @@ import { useSyncStore } from '../store/syncStore';
 import { getEventPetId } from './db';
 import { triggerSignalRegenDebounced } from './signal';
 import { currentSignOutEpoch } from './signOutEpoch';
+import { matchShown, type DismissalOutcome, type ShownRead } from './analysisDismissal';
 
 // ── A landed read is saved to the phone's copy (History v2 §5.3, HV-5 / CUL-1162) ──
 //
@@ -535,25 +536,50 @@ export function buildVomitEditWrite(edits: VomitEditableFields, nowIso: string):
 // columns, which an owner edit DOES change (blood corrected to fresh red raises every list
 // chip to the floor), so a saved edit re-pulls this event's copy at once rather than at the
 // next sync. Fire-and-forget: the refresh never throws, and the edit has already landed.
-export async function saveVomitFieldEdits(
+//
+// CUL-1356 — the edit writes only over the read the owner was looking at. It writes back
+// EVERY editable column, not only the one changed, so on a stale screen (a replaced photo
+// whose new read landed unseen) it used to put the old read's "Blood: none visible" over a
+// new fresh-red finding and stamp `edited_at`: Home lost the blood flag, the vet report
+// printed "none visible" as owner-confirmed, and the never-clobber guard kept it through
+// every later read. So the update carries Hide's compare-and-set (`matchShown`, the same
+// columns: the read, its words and every observation the grid draws, which holds every
+// editable column's pre-edit value). No row matched → `read_changed`, nothing written,
+// nothing refreshed: the caller re-reads and says "This note changed".
+export interface FieldEditResult {
+  outcome: DismissalOutcome;
+  error: string | null;
+}
+
+async function writeFieldEdit(
+  eventId: string,
+  write: VomitEditWrite | StoolEditWrite,
+  shown: ShownRead,
+): Promise<FieldEditResult> {
+  try {
+    const { data, error } = await matchShown(
+      supabase.from('event_ai_analysis').update(write).eq('event_id', eventId),
+      shown,
+    ).select('event_id');
+    if (error) return { outcome: 'failed', error: error.message };
+    if (!data || data.length === 0) return { outcome: 'read_changed', error: null };
+    void refreshReadCopyOutcome(eventId);
+    // An edit can raise or clear the red-flag card the server builds from this row
+    // (CUL-1105), and the copy does not mirror edits, so it rebuilds on every save.
+    void rebuildSignalForRead(eventId);
+    return { outcome: 'written', error: null };
+  } catch (e) {
+    return { outcome: 'failed', error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** `shown` is `shownRead(row, VOMIT_DISMISSAL_COLUMNS)` over the row the editor opened on. */
+export function saveVomitFieldEdits(
   eventId: string,
   edits: VomitEditableFields,
-): Promise<{ error: string | null }> {
-  try {
-    const { error } = await supabase
-      .from('event_ai_analysis')
-      .update(buildVomitEditWrite(edits, new Date().toISOString()))
-      .eq('event_id', eventId);
-    if (!error) {
-      void refreshReadCopyOutcome(eventId);
-      // An edit can raise or clear the red-flag card the server builds from this row
-      // (CUL-1105), and the copy does not mirror edits, so it rebuilds on every save.
-      void rebuildSignalForRead(eventId);
-    }
-    return { error: error ? error.message : null };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : String(e) };
-  }
+  shown: ShownRead,
+): Promise<FieldEditResult> {
+  return writeFieldEdit(eventId, buildVomitEditWrite(edits, new Date().toISOString()), shown);
 }
 
 // ── Owner edits to the STOOL structured fields (B-247 PR 6, B-028) ─────────────
@@ -657,25 +683,14 @@ export function buildStoolEditWrite(edits: StoolEditableFields, nowIso: string):
 }
 
 // Persist an owner's edits to the stool structured fields. Direct Supabase write
-// (RLS scopes it to the owner via pet_id), mirroring saveVomitFieldEdits.
-export async function saveStoolFieldEdits(
+// (RLS scopes it to the owner via pet_id), mirroring saveVomitFieldEdits, the
+// compare-and-set included (CUL-1356). CUL-2678: the copy mirrors the stool blood sign,
+// so a saved edit refreshes it (above).
+/** `shown` is `shownRead(row, STOOL_DISMISSAL_COLUMNS)` over the row the editor opened on. */
+export function saveStoolFieldEdits(
   eventId: string,
   edits: StoolEditableFields,
-): Promise<{ error: string | null }> {
-  try {
-    const { error } = await supabase
-      .from('event_ai_analysis')
-      .update(buildStoolEditWrite(edits, new Date().toISOString()))
-      .eq('event_id', eventId);
-    // CUL-2678: the copy mirrors the stool blood sign, so a saved edit refreshes it (above).
-    if (!error) {
-      void refreshReadCopyOutcome(eventId);
-      // An edit can raise or clear the red-flag card the server builds from this row
-      // (CUL-1105), and the copy does not mirror edits, so it rebuilds on every save.
-      void rebuildSignalForRead(eventId);
-    }
-    return { error: error ? error.message : null };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : String(e) };
-  }
+  shown: ShownRead,
+): Promise<FieldEditResult> {
+  return writeFieldEdit(eventId, buildStoolEditWrite(edits, new Date().toISOString()), shown);
 }
