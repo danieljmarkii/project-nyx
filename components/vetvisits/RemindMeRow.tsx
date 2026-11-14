@@ -12,8 +12,8 @@ import type { VetReminderStatus } from '../../hooks/useVetReminders';
 // Four faces, one per state of the account's switch on THIS phone:
 //   • off (or still loading) → a checkbox. Picked, its sub line names the reminders this
 //     booking will actually get (D2), from the planner's own instants and R2 rule.
-//   • on → no control: one line naming the times (D2), or that reminders are on when
-//     none is left to fire.
+//   • on → no control: one line naming the times (D2), or that this visit is too soon
+//     for one when none is left to fire (CUL-2729 D3).
 //   • denied → inert, with the one door out. The inert half is a plain view, never a
 //     control marked disabled (C-7); Open Settings is the only button.
 
@@ -29,25 +29,34 @@ interface Props {
   /** The reminders this booking would still get, described ('Friday at 6:00 pm'), in
    *  fire order. Empty when none is left (booked after the day's last one). */
   times: readonly string[];
+  /** The account holds one pet, so the picked line never says "every pet" (CUL-2729). */
+  onePet?: boolean;
 }
 
 function capitalise(s: string): string {
   return s.length > 0 ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
-/** 'Friday at 6:00 pm and Monday at 8:00 am, for every pet’s visits' (the picked line). */
-export function pickedLine(times: readonly string[]): string {
-  if (times.length === 0) return 'Turns on reminders for every pet’s visits';
-  return `${capitalise(times.join(' and '))}, for every pet’s visits`;
+/** What a booking too close for any reminder says (CUL-2729 D3, PM 2026-11-14). Without
+ *  it the row's check read as "this visit is covered" on a visit nothing will fire for. */
+export const REMIND_ME_TOO_SOON_PICKED = 'Too soon for this visit. Turns on reminders for later ones.';
+export const REMIND_ME_TOO_SOON_ON = 'Reminders are on. This visit is too soon for one.';
+
+/** 'Friday at 6:00 pm and Monday at 8:00 am, for every pet’s visits' (the picked line).
+ *  The switch is account-wide, so the tail says what else it covers; a one-pet account
+ *  has no "every pet". */
+export function pickedLine(times: readonly string[], onePet = false): string {
+  if (times.length === 0) return REMIND_ME_TOO_SOON_PICKED;
+  return `${capitalise(times.join(' and '))}, ${onePet ? 'for every visit you book' : 'for every pet’s visits'}`;
 }
 
-/** The on line (D2): the times this booking gets, or the switch's state when none is left. */
+/** The on line (D2): the times this booking gets, or that it is too soon for any. */
 export function onLine(times: readonly string[]): string {
-  if (times.length === 0) return 'Reminders are on.';
+  if (times.length === 0) return REMIND_ME_TOO_SOON_ON;
   return `You’ll get ${times.length === 1 ? 'a reminder' : 'reminders'} ${times.join(' and ')}.`;
 }
 
-export function RemindMeRow({ status, picked, onToggle, onOpenSettings, times }: Props) {
+export function RemindMeRow({ status, picked, onToggle, onOpenSettings, times, onePet = false }: Props) {
   if (status === 'on') {
     const line = onLine(times);
     return (
@@ -77,7 +86,7 @@ export function RemindMeRow({ status, picked, onToggle, onOpenSettings, times }:
     );
   }
 
-  const sub = picked ? pickedLine(times) : REMIND_ME_SUB;
+  const sub = picked ? pickedLine(times, onePet) : REMIND_ME_SUB;
   return (
     <TouchableOpacity
       onPress={onToggle}

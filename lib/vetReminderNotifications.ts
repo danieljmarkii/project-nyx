@@ -18,7 +18,8 @@
 //     so it reads its own literal rather than widening the daily registry (§3.5).
 //   • G5, fail-safe silence: reconcile cancels anything it cannot justify; a cancelled,
 //     deleted or logged appointment, a switch turned off, a permission withdrawn: each
-//     cancels. A failed READ changes nothing (the schedule stays as it was until the next
+//     cancels, and withdraws a reminder already delivered for that visit (CUL-2729).
+//     A failed READ changes nothing (the schedule stays as it was until the next
 //     trigger), because a read error is not the fact "no appointments".
 //   • R4 / G1: the lock screen carries the day, the time and the pet's name, nothing else.
 //   • Sign-out: `wipeLocalSession` fences this module, then cancels every notification.
@@ -157,7 +158,9 @@ export const VET_VISIT_PRIMER: NotificationPrimerDescriptor = {
   miniSpine: [
     { kind: 'other', title: 'Three days before', detail: 'time to weigh, log or call ahead', time: '6:00 PM' },
     { kind: 'other', title: 'The morning of', detail: 'the report to take along', time: '8:00 AM' },
-    { kind: 'other', title: 'The visit', time: '10:30 AM' },
+    // No time on the visit: the primer rises right after a booking, under the pet's
+    // name, and an example time there read as the time that had saved (CUL-2729).
+    { kind: 'other', title: 'The visit', time: '' },
   ],
 };
 
@@ -169,6 +172,29 @@ async function liveVetReminders(): Promise<LiveVetReminder[]> {
       const sig = (n.content?.data as { sig?: unknown } | undefined)?.sig;
       return { identifier: n.identifier, sig: typeof sig === 'string' ? sig : null };
     });
+}
+
+/**
+ * Withdraw DELIVERED reminders whose visit is gone (CUL-2729). Reconcile's cancel only
+ * reaches what is still scheduled; a reminder already in Notification Center kept naming
+ * a visit the owner had since cancelled, deleted or logged. `liveIds` null withdraws
+ * every one of ours (the switch went off). A collapsed reminder carries no appointment
+ * id, so it is left alone: it cannot be tied to one visit. Best-effort and never throws:
+ * a failure here must not stop the schedule being right.
+ */
+async function withdrawDeliveredReminders(liveIds: ReadonlySet<string> | null): Promise<void> {
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    for (const n of presented) {
+      const identifier = n.request.identifier;
+      if (!isVetReminderIdentifier(identifier)) continue;
+      const apptId = (n.request.content?.data as { appointmentId?: unknown } | undefined)?.appointmentId;
+      const gone = liveIds === null || (typeof apptId === 'string' && !liveIds.has(apptId));
+      if (gone) await Notifications.dismissNotificationAsync(identifier);
+    }
+  } catch (e) {
+    console.warn('[vet reminders] withdrawing delivered reminders failed:', e);
+  }
 }
 
 async function ensureChannel(): Promise<void> {
@@ -239,10 +265,12 @@ async function runVetReminderSync(readInput: () => VetReminderSyncInput): Promis
     ]);
     const allowed = on && permission === 'granted';
     let planned: PlannedVetReminder[] = [];
+    let liveIds: Set<string> | null = null;
     if (allowed) {
       const input = readInput();
       if (!input.petsLoaded) return;
       const { appointments } = await readReminderInputs();
+      liveIds = new Set(appointments.map((a) => a.id));
       planned = planVetReminders({
         now: input.now ?? new Date(),
         appointments,
@@ -276,6 +304,8 @@ async function runVetReminderSync(readInput: () => VetReminderSyncInput): Promis
         },
       });
     }
+    if (epoch !== vetReminderEpoch) return;
+    await withdrawDeliveredReminders(liveIds);
   } catch (e) {
     console.warn('[vet reminders] reconcile failed:', e);
   }

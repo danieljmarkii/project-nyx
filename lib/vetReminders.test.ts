@@ -12,6 +12,7 @@ import {
   appointmentCounts,
   AHEAD_ASK,
   DAY_OF_BODY,
+  DAY_OF_BODY_EACH,
   dayOfInstant,
   describeReminderInstant,
   planVetReminders,
@@ -172,6 +173,29 @@ describe('planVetReminders', () => {
     expect(dayOf!.title).toBe('Pip and Nyx see the vet today');
     expect(dayOf!.body).toBe('Tap to get ready for both.');
     expect(out.find((p) => p.kind === 'ahead')!.title).toBe('Pip and Nyx see the vet Monday'); // same instant: the earlier appointment leads
+  });
+
+  it('two pets booked at ONE time keep the time, the ask and the report line (CUL-2729 D1)', () => {
+    const out = plan(new Date(Y, NOV, 9, 12), [
+      appt('a', at(Y, NOV, 16, 10, 30)),
+      appt('b', at(Y, NOV, 16, 10, 30), { pet_id: PET_B }),
+    ]);
+    expect(out).toHaveLength(2);
+    for (const p of out) expect(p.appointmentId).toBeNull();
+    const ahead = out.find((p) => p.kind === 'ahead')!;
+    const dayOf = out.find((p) => p.kind === 'day_of')!;
+    const names = ahead.title.replace(' see the vet Monday', '');
+    expect(names).toMatch(/^(Nyx and Pip|Pip and Nyx)$/);
+    expect(ahead.body).toBe(`Nov 16 at 10:30 am. ${AHEAD_ASK}`);
+    expect(dayOf.title).toBe(`${names} see the vet today at 10:30 am`);
+    expect(dayOf.body).toBe(DAY_OF_BODY_EACH);
+    // No time on either booking is still one instant: the date alone, no clock.
+    const untimed = plan(new Date(Y, NOV, 9, 12), [
+      appt('a', at(Y, NOV, 16)),
+      appt('b', at(Y, NOV, 16), { pet_id: PET_B }),
+    ]);
+    expect(untimed.find((p) => p.kind === 'ahead')!.body).toBe(`Nov 16. ${AHEAD_ASK}`);
+    expect(untimed.find((p) => p.kind === 'day_of')!.title).toMatch(/ see the vet today$/);
   });
 
   it('collapse is by FIRE day: an evening-before slot and a same-day slot share one notification', () => {

@@ -19,7 +19,7 @@ jest.mock('react-native-safe-area-context', () => {
 
 const params: { current: Record<string, string> } = { current: {} };
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn(), setParams: jest.fn() },
+  router: { push: jest.fn(), back: jest.fn(), setParams: jest.fn(), replace: jest.fn() },
   useLocalSearchParams: () => params.current,
   // The screen re-reads on FOCUS (CUL-952), so the mock has to provide the hook.
   // The registered callback is kept so a test can fire a re-focus explicitly —
@@ -171,6 +171,8 @@ import { router } from 'expo-router';
 import { buildRundown } from '../lib/rundown';
 import { supabase } from '../lib/supabase';
 import RundownScreen from './rundown';
+import { useSnackbarStore } from '../store/snackbarStore';
+import { VISIT_NO_LONGER_BOOKED } from '../lib/vetReminders';
 
 /** The Edge-Function door, i.e. every model call. */
 const invoke = supabase.functions.invoke as unknown as jest.Mock;
@@ -623,6 +625,60 @@ describe('re-reading after the edit this screen launches (CUL-952)', () => {
     expect(r.queryByText('Take notes')).toBeNull();
     // The plain rundown, as for a cancelled booking.
     expect(r.getByTestId('rundown-block')).toBeTruthy();
+  });
+});
+
+// CUL-2729 — a vet visit reminder tapped after its visit stopped being booked. The tap
+// carries the reminder's pet; without the redirect the page fell back to the ACTIVE pet's
+// plain rundown, which in a two-pet home is not the pet the lock screen named.
+describe('a stale reminder tap opens its own pet’s Vet visits list (CUL-2729)', () => {
+  const replace = router.replace as jest.Mock;
+  beforeEach(() => {
+    replace.mockClear();
+    useSnackbarStore.setState({ visible: false, payload: null });
+  });
+  afterEach(() => {
+    delete mockAppointments['appt-gone'];
+  });
+
+  it('the visit is gone on arrival: the list for the reminder’s pet, and one line saying why', async () => {
+    jest.useFakeTimers();
+    try {
+      mockAppointments['appt-gone'] = null;
+      params.current = { appointmentId: 'appt-gone', pet: 'p1', source: 'notification' };
+      render(<RundownScreen />);
+      await waitFor(() =>
+        expect(replace.mock.calls).toEqual([[{ pathname: '/vet-visits', params: { pet: 'p1' } }]]),
+      );
+      act(() => {
+        jest.advanceTimersByTime(400);
+      });
+      expect(useSnackbarStore.getState().payload?.message).toBe(VISIT_NO_LONGER_BOOKED);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a pet this account does not hold is never routed on: the plain rundown, as before', async () => {
+    mockAppointments['appt-gone'] = null;
+    params.current = { appointmentId: 'appt-gone', pet: 'someone-else' };
+    const r = render(<RundownScreen />);
+    expect(await r.findByTestId('rundown-block')).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('a live visit opens Get ready, and logging it from here later never redirects (F4 stands)', async () => {
+    params.current = { appointmentId: 'appt-1', pet: 'p1' };
+    const r = render(<RundownScreen />);
+    await waitFor(() => expect(r.getByText(/Get ready for/)).toBeTruthy());
+    mockAppointments['appt-1'] = null;
+    await act(async () => {
+      focusCb.current?.();
+    });
+    await waitFor(() => expect(r.queryByText(/Get ready for/)).toBeNull());
+    expect(r.getByTestId('rundown-block')).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
+    delete mockAppointments['appt-1'];
   });
 });
 

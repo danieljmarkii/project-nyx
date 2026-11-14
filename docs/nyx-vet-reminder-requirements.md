@@ -1,6 +1,6 @@
 # Nyx Vet Visit Reminders: Requirements
 
-**Version:** 1.3 (§4, §5: the final copy and the two entry points, mock round 2, PM-ruled D1 and D2 on CUL-2728) | **Last Updated:** 2026-11-13 | **Status:** BUILD-READY; rows 02 to 04 built, row 05 is the finish pass (§8).
+**Version:** 1.4 (the finish pass, CUL-2729: R9 to R12; §3.4, §4 and §5 amended; row 06 added) | **Last Updated:** 2026-11-14 | **Status:** rows 02 to 05 built; row 06 (the two-pet landing) and the PM device pass remain (§8).
 **Issue:** [CUL-253](https://linear.app/projectnyx/issue/CUL-253) (parent). **Project:** *Vet visit reminders* (team Culprit; the run order lives on the project page).
 **Read with:** `docs/nyx-notification-foundation-requirements.md` (D1 to D4, G1 to G6, the primitive this extends), `docs/nyx-notifications-v2-requirements.md` §5 (NV-G7, the new category checklist), `docs/nyx-vet-visits-requirements.md` §4.1 (booking, the Home strip, Get ready), `docs/nyx-vet-report-v2-requirements.md` §11.3 (the report line this carries), `docs/research/2026-11-engine-lessons-from-nyx-round-3.md` §4 (why the early reminder exists).
 **Mock:** `docs/culprit-vet-reminder-mockups.html` (round 2, build ready and ruled; published at https://claude.ai/artifact/1SUq7hGD8hmNobbJLtgfr9; round 1 is in git).
@@ -19,6 +19,10 @@
 | **R6** | Where the report line lives | **The day-of reminder carries it and opens Get ready**, whose one primary is already *Send the vet report*. **Unseats [CUL-2302](https://linear.app/projectnyx/issue/CUL-2302) ruling 1a (2026-11-02)** on two points: the line rode a T-1d reminder (none exists now) and deep-linked to the composer anchored to the visit (no composer anchor is built; Get ready is the door). The line's words and its never-a-finished-file rule carry over unchanged. |
 | **R7** | The date on the day-of reminder (round 2 D1, PM 2026-11-13) | **Dropped.** The body names no date from the record; Get ready shows the window (§4). |
 | **R8** | The booking sheet's line when reminders are on (round 2 D2, PM 2026-11-13) | **Names this booking's times**, from the planner's own instants and R2 rule (§5). |
+| **R9** | Two pets at one time (finish pass D1, PM 2026-11-14) | **A collapsed reminder whose visits share one instant takes the single visit's copy** with the names joined: the date and time, the ask, and *Make a report for each to take along.* Mixed times keep the general copy (§4). |
+| **R10** | Where a collapsed tap lands (finish pass D2, PM 2026-11-14) | **That day's visits for every pet.** Its own row, [CUL-2750](https://linear.app/projectnyx/issue/CUL-2750); until it ships the tap opens the first visit's pet's list. |
+| **R11** | A booking too close for any reminder (finish pass D3, PM 2026-11-14) | **The sheet says so**: *Reminders are on. This visit is too soon for one.* and, picked, *Too soon for this visit. Turns on reminders for later ones.* Unseats round 2's none-left caption (*Reminders are on.*); R8 stands. |
+| **R12** | The name and the lock-screen promise (finish pass D4, PM 2026-11-14) | **R4's name-always stands; the promise line says the name shows** (§5). |
 
 **Team calls inside the rulings (reversible, logged on CUL-253):** two hours as the lead; 06:00 as the earliest a day-of reminder fires before it moves to the evening before; 19:00 for that evening slot; one notification per kind per day per account (§3.3).
 
@@ -61,6 +65,7 @@ Two appointments whose instants for the same kind fall on the same local day pro
 
 ### 3.4 When it runs (reconcile)
 The schedule is rebuilt by diffing the planner's output against what the OS holds, through the foundation's `reconcileSchedules` and its content signature, at: app foreground (existing); every local write to `vet_appointments` (book, edit, cancel, delete, link to a logged visit); after a sync pull that touches `vet_appointments`; a pref or name-choice change; a permission change. Sign out already cancels everything (`wipeLocalSession`).
+**Delivered reminders (CUL-2729).** The same run withdraws a reminder already in Notification Center whose visit is no longer live (cancelled, deleted, logged), and every one of ours when the switch is off. A collapsed reminder carries no appointment id and is left alone.
 **Residual, stated:** an appointment edited on another device is repaired here only when this phone next hydrates or foregrounds. The copy carries no detail that can mislead dangerously if stale (R4), which is why that residual is acceptable.
 
 ### 3.5 The scheduler (`lib/vetReminderNotifications.ts`, modelled on `lib/followUpNotifications.ts`)
@@ -77,19 +82,20 @@ The body is computed at schedule time and recomputed on every reconcile; it stat
 | ahead, one visit | *Nyx sees the vet Monday* | *Nov 16 at 10:30 am. A few minutes in Get ready now leaves time to weigh, log or call ahead.* (no time: *Nov 16. A few minutes…*; another year: *Jan 2, 2027 at…*) |
 | day of, one visit | *Nyx sees the vet today at 10:30 am* | *Make a report to take along.* |
 | day of, evening before | *Nyx sees the vet tomorrow at 7:30 am* | same body |
-| collapsed (two visits) | *Nyx and Pip see the vet Monday* / *today* | *Tap to get ready for both.* |
+| collapsed, one time (R9) | *Nyx and Pip see the vet Monday* / *today at 10:30 am* | ahead: *Nov 16 at 10:30 am. A few minutes…*; day of: *Make a report for each to take along.* |
+| collapsed, mixed times | *Nyx and Pip see the vet Monday* / *today*; mixed days: *…have vet visits coming up* | *Tap to get ready for both.* |
 
 - **No date from the record (D1, PM 2026-11-13).** The day-of body once named the report window's start (*Make a report of Sep 16 to today*). R4 lists the day, the time and the name, and the last visit's date is a record fact, so it was dropped; Get ready shows the window live one tap away. The planner reads no `vet_visits` row. Never names a finished file (CUL-2302).
 - **The name** is always the pet's current name, read at plan time, so a rename lands at the next reconcile. The daily summary's name choice (`use_pet_name`, migration 058) is untouched and governs only that notification; whether to retire it is a separate question.
-- **The tap.** One visit opens its Get ready. A collapsed reminder opens the Vet visits list on the first visit's pet (`/vet-visits?pet=`, the list's existing pet door).
+- **The tap.** One visit opens its Get ready. A collapsed reminder opens the Vet visits list on the first visit's pet (`/vet-visits?pet=`, the list's existing pet door) until R10's landing ships. **A stale tap (CUL-2729):** a single-visit reminder carries its pet, and when its visit is no longer booked the tap opens that pet's Vet visits list with *That visit isn’t booked any more.*, never the active pet's rundown.
 - **Forbidden:** the reason, the clinic, a question, any count, a date from the record, "don't forget", "bring her meds", an exclamation mark, any urgency that grows as the day nears.
 
 ---
 
 ## 5. Consent and the two entry points
 
-- **Notification Center** (`app/settings/notifications.tsx`): a row of its own, *Vet visit reminders* · *Three days before at 6pm, and the morning of* (`components/settings/VetReminderNotificationRow.tsx`), with the three honest states the other rows render and the daily summary's fourth: on for the account while this phone was never asked reads off, with a hint, and a tap walks the primer rather than turning the account off. Off by default. The screen's lock-screen promise is widened to cover both rows: *On your lock screen, Culprit says only that the day's ready to read, or when a vet visit is. Never what's in the record.*
-- **The booking sheet** (`BookVisitSheet`, booked branch only, `components/vetvisits/RemindMeRow.tsx`): when the category is off on this phone, one quiet checkbox, **Remind me** (*Three days before at 6pm, and the morning of*). Picked, its line names the reminders this booking will get (*Friday at 6:00 pm and Monday at 8:00 am, for every pet's visits*) from the planner's own instants and R2 rule. **The choice is applied after Save closes the sheet** (the sheet is a modal and never presents another, C-14): permission granted → the pref on and a snackbar (*Vet visit reminders are on.*); never asked → the primer (a `vet_visit` descriptor) over the Vet visits screen → the OS prompt → the pref on if granted. When the category is already on, the control is replaced by one line naming this booking's times (D2: *You'll get reminders Friday at 6:00 pm and Monday at 8:00 am.*; none left: *Reminders are on.*). When OS permission is denied, the row renders inert with the settings deep link. It never blocks or delays saving the booking.
+- **Notification Center** (`app/settings/notifications.tsx`): a row of its own, *Vet visit reminders* · *Three days before at 6pm, and the morning of* (`components/settings/VetReminderNotificationRow.tsx`), with the three honest states the other rows render and the daily summary's fourth: on for the account while this phone was never asked reads off, with a hint, and a tap walks the primer rather than turning the account off. Off by default. The screen's lock-screen promise is widened to cover both rows: *On your lock screen, Culprit says only that the day's ready to read, or when your pet sees the vet, by name. Never what's in the record.* (R12)
+- **The booking sheet** (`BookVisitSheet`, booked branch only, `components/vetvisits/RemindMeRow.tsx`): when the category is off on this phone, one quiet checkbox, **Remind me** (*Three days before at 6pm, and the morning of*). Picked, its line names the reminders this booking will get (*Friday at 6:00 pm and Monday at 8:00 am, for every pet's visits*) from the planner's own instants and R2 rule (a one-pet account reads *for every visit you book*; a booking too close for any reminder reads *Too soon for this visit. Turns on reminders for later ones.*, R11). **The choice is applied after Save closes the sheet** (the sheet is a modal and never presents another, C-14): permission granted → the pref on and a snackbar (*Vet visit reminders are on.*); never asked → the primer (a `vet_visit` descriptor) over the Vet visits screen → the OS prompt → the pref on if granted. When the category is already on, the control is replaced by one line naming this booking's times (D2: *You'll get reminders Friday at 6:00 pm and Monday at 8:00 am.*; none left: *Reminders are on. This visit is too soon for one.*, R11). When OS permission is denied, the row renders inert with the settings deep link. It never blocks or delays saving the booking.
 - The pref is **account-wide** (`pet_id` null), like the daily summary: turning it on covers every pet's appointments.
 
 ---
@@ -123,7 +129,8 @@ One additive migration: `notification_preferences.category` CHECK gains `'vet_vi
 | 02 | Migration: the `vet_visit` category in the CHECK and the local mirror | Migration pre-flight; applied only on the PM's typed `apply <NNN>`; `rls-privacy-reviewer` not required (no policy change), Engineer confirms |
 | 03 | The planner and the scheduler module (§3.5), with reconcile hooks on every appointment write and sync pull; no UI | `code-reviewer`; timezone-honest tests (C-29); `adversarial-reviewer` not required (no clinical logic) |
 | 04 | Build ready mock round 2 (D1, D2 ruled), then the settings row, the primer descriptor, Remind me on the booking sheet, the copy and the tap routing | `nyx-voice`; `clinical-guardrails` (G1, G4); Designer |
-| 05 | Finish: `pm-feature-review`, device QA, AC sweep | PM device pass |
+| 05 | Finish: `pm-feature-review`, `nyx-voice`, the AC sweep, and the fixes the read ruled (R9, R11, R12, the stale tap, delivered reminders) | PM device pass |
+| 06 | The two-pet landing (R10, [CUL-2750](https://linear.app/projectnyx/issue/CUL-2750)): frames first, then the day's visits for every pet | Designer; device check |
 
 Ships over the air: `expo-notifications` is already in the binary, and no native config changes.
 
