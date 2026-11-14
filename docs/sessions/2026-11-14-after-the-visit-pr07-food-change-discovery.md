@@ -3,7 +3,7 @@
 **Date:** 2026-11-14
 **One thing:** none — dispatched session, not this round's teach row
 
-**Issue:** [CUL-2761](https://linear.app/projectnyx/issue/CUL-2761) (DISCOVERY) · **Branch:** `claude/after-the-visit-pr07-11142312` · **Outcome:** brief posted on the issue; this record shipped via #1536
+**Issue:** [CUL-2761](https://linear.app/projectnyx/issue/CUL-2761) (DISCOVERY) · **Branch:** `claude/after-the-visit-pr07-11142312` · **Outcome:** brief posted on the issue; this record shipped via #1535
 
 ## What happened
 
