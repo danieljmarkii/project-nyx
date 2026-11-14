@@ -398,6 +398,10 @@ describe('pointLeavesStoredWindow (CUL-2199)', () => {
     expect(ask({ stored: legacy })).toBe(false);
   });
 
+  it('a bound that will not parse refuses rather than vouching for any point', () => {
+    expect(ask({ stored: { ...WIN, latest: 'not a time' }, point: new Date('2026-03-15T05:00:00.000Z') })).toBe(true);
+  });
+
   it('an unknown stored point reads as moved', () => {
     expect(ask({ stored: { ...WIN, occurredAt: undefined } })).toBe(true);
   });

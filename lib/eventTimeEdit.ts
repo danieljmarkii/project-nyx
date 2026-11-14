@@ -312,7 +312,12 @@ export function pointLeavesStoredWindow(input: {
   const t = point.getTime();
   // Instants, never strings: a synced row holds PostgREST's `+00:00` spelling.
   if (stored.occurredAt && Date.parse(stored.occurredAt) === t) return false;
-  if (stored.earliest && t < Date.parse(stored.earliest)) return true;
-  if (stored.latest && t > Date.parse(stored.latest)) return true;
+  // A bound that will not parse cannot vouch for the point, so it refuses: NaN
+  // compares false both ways and would otherwise let any point through.
+  const e = stored.earliest ? Date.parse(stored.earliest) : null;
+  const l = stored.latest ? Date.parse(stored.latest) : null;
+  if (Number.isNaN(e) || Number.isNaN(l)) return true;
+  if (e !== null && t < e) return true;
+  if (l !== null && t > l) return true;
   return false;
 }
