@@ -398,7 +398,7 @@
 <body>
 <div class="wrap">
 
-  <p class="eyebrow">Culprit · Vet contact · Round 3 · exploratory</p>
+  <p class="eyebrow">Culprit · Vet contact · Round 3.1 · exploratory</p>
   <h1 class="title">When the vet answered by phone, text or email</h1>
   <p class="lede">An owner logs a vet contact that wasn't an exam, attaches what the vet sent, starts what the vet started, and notes what the vet said to watch for. The contact reads as <b>"no exam"</b> everywhere, never moves the report's start date, and never quiets a warning. Round 3 applies the PM's three rulings and the owner persona review. Issue: <a href="https://linear.app/projectnyx/issue/CUL-2749">CUL-2749</a>.</p>
 
@@ -415,7 +415,7 @@
     <div class="ledger-row"><span class="ledger-who">Sam</span><span><b>The green check after "she's barely eaten" felt like it was handled.</b><span class="moved">C4: no check mark when a warning is live or something is being watched; the saved moment names the date and the don't-wait line.</span></span></div>
     <div class="ledger-row"><span class="ledger-who">Sam</span><span><b>One call covered both cats.</b><span class="moved">B2: <b>Also about Juniper</b> on a past contact, in multi pet homes only; each cat gets its own copy, as Booked already does.</span></span></div>
     <div class="ledger-row"><span class="ledger-who">Sam</span><span><b>"Try warming the food" must not turn a decline into a preference question.</b><span class="moved">Not a frame: a rule in the notes. Nothing started from a contact changes how intake is read.</span></span></div>
-    <div class="ledger-row"><span class="ledger-who team">Still open</span><span><b>One entry or two (A), and whether a call moves the report's start (F)</b> are unruled, so both option boxes stay. Retired round 2 frames are in git.</span></div>
+    <div class="ledger-row"><span class="ledger-who">PM ruling</span><span><b>Round 3.1: one entry; the report window stays at the last exam; contacts are a channel field on the visit record.</b><span class="moved">The second door (A2) and the moved window (F2) leave the page; git keeps them. The channel field ruling has no pixels: every reader of visits says whether it means exams only, enforced by a guard.</span></span></div>
   </div>
 
   <!-- ===================== A. THE ENTRY ===================== -->
@@ -440,21 +440,7 @@
         <div class="opt-cap"><span class="k">A1 · One entry <span class="tag cur">current</span></span><p>Names email (Jordan, Sam). Opens the sheet straight on a past contact.</p></div>
       </div>
 
-      <div class="opt optbox">
-        <div class="optbox-h">Option, not the current proposal</div>
-        <div class="phone"><div class="ph-screen">
-          <div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div><div class="pet-sub">Dog · 6 yrs</div></div></div>
-          <div class="card">
-            <div class="card-head"><h4>Vet visits</h4><span class="card-count">Last visit Sep 18</span></div>
-            <div class="blurb">Keep the next appointment here, and what the vet said after.</div>
-            <div class="cardbtn ghost">Add the next visit</div>
-            <div class="cardbtn ghost" style="margin-top:8px">Log a visit that already happened</div>
-            <div class="cardbtn ghost" style="margin-top:8px">Add a call, text or email</div>
-          </div>
-          <div class="tabbar"><span>Home</span><span>History</span><span class="fab">+</span><span>Foods</span><span class="on">Pet</span></div>
-        </div></div>
-        <div class="opt-cap"><span class="k">A2 · A second door <span class="tag open">option</span></span><p>Unruled. Three stacked buttons; the Designer's condition rules against it.</p></div>
-      </div>
+      
 
       <div class="opt">
         <div class="phone"><div class="ph-screen">
@@ -746,7 +732,7 @@
   <section>
     <p class="sec-eyebrow">F · On the vet report</p>
     <h2>Listed as a consult, never as the last exam</h2>
-    <p class="sec-lede">The report is the vet's, so it keeps clinical words. The open call is still whether the default start date moves to the call; the team recommends it stays at the last exam.</p>
+    <p class="sec-lede">The report is the vet's, so it keeps clinical words. Ruled: the default start date stays at the last exam.</p>
 
     <div class="rail rail-2">
       <div class="opt">
@@ -762,21 +748,10 @@
             <tr><td class="d">Nov 9</td><td>Ear drops, twice daily<small>Started after the Nov 9 phone consult · 9 of 14 doses logged</small></td></tr>
           </table>
         </div>
-        <div class="opt-cap"><span class="k">F1 · Window stays at the exam <span class="tag cur">recommended</span></span><p>"Texts on the owner's phone, not attached" replaces "Owner holds" (Jordan). The vet's instruction is not on the report in v1 (Vet instructions R8).</p></div>
+        <div class="opt-cap"><span class="k">F1 · Window stays at the exam <span class="tag cur">ruled</span></span><p>"Texts on the owner's phone, not attached" replaces "Owner holds" (Jordan). The vet's instruction is not on the report in v1 (Vet instructions R8).</p></div>
       </div>
 
-      <div class="opt optbox">
-        <div class="optbox-h">Option, not the current proposal</div>
-        <div class="paper">
-          <div class="ph"><b>Nyx · Canine, 6 y</b><span>Report · Nov 14</span></div>
-          <div class="win">Covers <b>Nov 9 (phone consult) to Nov 14</b></div>
-          <h5>Vet contacts in this period</h5>
-          <table>
-            <tr><td class="d">Nov 9</td><td><span class="k">Phone</span>Consult, no exam. Left ear, head shaking.</td></tr>
-          </table>
-        </div>
-        <div class="opt-cap"><span class="k">F2 · Window moves to the call <span class="tag open">option</span></span><p>Unruled. Five days of record; everything since the September exam drops off.</p></div>
-      </div>
+      
     </div>
   </section>
 
@@ -787,14 +762,14 @@
     <div class="note-grid">
       <div class="note rose"><b>Intake is never preference</b>Nothing started from a contact changes how eating is read. "Try warming the food" can be noted or started as a food change, but a decline keeps its full weight on Home and in the report (Sam).</div>
       <div class="note rose"><b>Awareness only (PM ruling)</b>A contact may add a context line to a warning. It never removes, softens, delays, reorders or rewords one, and it is never an exam for the care state.</div>
-      <div class="note amber"><b>The schema call, nudged</b>Ruling 1 ties instructions to contacts, and the instructions table keys on a visit row. A channel on the visit record lets that key work unchanged; a separate contacts table means instructions need a second parent. This tilts toward the channel field with a reader guard. Still the PM's call.</div>
+      <div class="note amber"><b>The schema (ruled)</b>A channel field on the visit record, defaulting to At the clinic. Every reader of visits declares exams only or any contact, held by a guard, so a new reader can't silently count a phone call as an exam. Vet instructions keep keying on the visit row unchanged.</div>
       <div class="note amber"><b>Lab results by email</b>A results PDF is clinical. Whether a document marked results is listed on the report is a Vet Files question (its D14), not drawn here (Sam).</div>
       <div class="note teal"><b>Free, always</b>Contacts, attachments, instructions and the report line are core logging: Pets &gt; $.</div>
       <div class="note"><b>Unchanged</b>Booking, Get ready, At the vet, Home's appointment strip, every existing visit (read as At the clinic). No model reads screenshots, notes or typed instructions. Culprit never reads Messages or an inbox.</div>
     </div>
   </section>
 
-  <div class="foot"><b>Round 3, exploratory, 2026-11-14</b> (supersedes rounds 1 and 2 on this page; they are in git). Source of truth: <code>docs/culprit-vet-contact-mockups.html</code>. The Anything to watch for? capture and Home line come from <code>docs/culprit-vet-instructions-mockups.html</code> round 3, which wins on divergence. Phone frames use the app's fixed tokens; the report fragment is schematic.</div>
+  <div class="foot"><b>Round 3.1, exploratory, 2026-11-14</b> (supersedes rounds 1 and 2 on this page; they are in git). Source of truth: <code>docs/culprit-vet-contact-mockups.html</code>. The Anything to watch for? capture and Home line come from <code>docs/culprit-vet-instructions-mockups.html</code> round 3, which wins on divergence. Phone frames use the app's fixed tokens; the report fragment is schematic.</div>
 </div>
 </body>
 </html>
