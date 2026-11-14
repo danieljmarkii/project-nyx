@@ -508,7 +508,7 @@
         <tbody>
           <tr><td><b>Empty</b> (no visits booked)</td><td>Renders as usual; on schedules nothing until a visit is booked.</td><td>Not shown: the sheet is the only place it lives, and it is always about a booking.</td></tr>
           <tr><td><b>Loading</b></td><td>The screen's own wait before the switch renders, as the daily summary row.</td><td>The sheet opens before the preference read answers: the row renders off until it does, and a picked state survives the answer.</td></tr>
-          <tr><td><b>Failed or offline</b></td><td>The preference writes locally and syncs later (last write wins). A failed local write: <i>Couldn’t update. Try again in a moment.</i> and the switch returns.</td><td>A failed write after Save: the booking still stands; the snackbar says <i>Couldn’t turn on reminders. Try again in Notifications.</i></td></tr>
+          <tr><td><b>Failed or offline</b></td><td>The preference writes locally and syncs later (last write wins). A failed local write: <i>Couldn’t update. Try again in a moment.</i> and the switch returns.</td><td>A failed write after Save: the booking still stands; the snackbar says <i>Couldn’t turn on reminders. Try again in Settings › Notifications.</i></td></tr>
           <tr><td><b>320pt</b></td><td>Sublabel wraps to two lines; switch keeps its 44pt hit area.</td><td>Sub line wraps; the check stays top aligned.</td></tr>
           <tr><td><b>Largest text</b></td><td>Label and sublabel wrap; nothing truncates.</td><td>The times line wraps to three lines; Save stays below it, never overlapped.</td></tr>
           <tr><td><b>Two pets</b></td><td>One account switch covers both.</td><td>The sub line says <i>for every pet’s visits</i>; the notifications collapse (section 1).</td></tr>
