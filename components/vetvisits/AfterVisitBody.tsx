@@ -382,7 +382,10 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
             <PlanSettledRow
               glyph={<CalendarPlus size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
               title="Next visit"
-              subtitle={`${formatVisitDate(nextVisitAt)} · booked`}
+              // On a reopen the date comes off the visit, and a booking for it may never have
+              // been made or may have been cancelled since, so only the date is claimed (PR-03
+              // gives this row its honest booked / not-booked read, §4.4 R2).
+              subtitle={reopened ? formatVisitDate(nextVisitAt) : `${formatVisitDate(nextVisitAt)} · booked`}
             />
           ) : (
             <PlanActionRow

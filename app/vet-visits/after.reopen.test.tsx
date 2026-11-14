@@ -247,6 +247,13 @@ describe('AC 14 — a saved visit reopens, and never makes a second row', () => 
     expect(mockLogFromAppointment).not.toHaveBeenCalled();
   });
 
+  it('a recheck date read off the visit claims no booking', async () => {
+    mockVisit = savedVisit({ next_visit_at: '2026-10-28' });
+    await openReopen();
+    expect(screen.getByLabelText(/^Next visit, /)).toBeTruthy();
+    expect(screen.queryByText(/· booked/)).toBeNull();
+  });
+
   it('a visit that is gone says so, in the visit’s words', async () => {
     mockVisit = null;
     render(<AfterVisitScreen />);
