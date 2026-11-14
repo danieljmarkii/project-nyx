@@ -393,7 +393,7 @@ export default function NotificationsScreen() {
         {!loading && !denied && (
           // Same tertiary register as the intro line (reused, not duplicated).
           <Text style={styles.intro}>
-            On your lock screen, Culprit says only that the day’s ready to read, or when your pet sees the vet, by name. Never what’s in the record.
+            On your lock screen, Culprit says only that the day’s ready to read, or when a vet visit is, with your pet’s name. Never what’s in the record.
           </Text>
         )}
 

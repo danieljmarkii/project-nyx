@@ -19,7 +19,7 @@
 //   • G5, fail-safe silence: reconcile cancels anything it cannot justify; a cancelled,
 //     deleted or logged appointment, a switch turned off, a permission withdrawn: each
 //     cancels, and withdraws a reminder already delivered for that visit (CUL-2729).
-//     A failed READ changes nothing (the schedule stays as it was until the next
+//     A failed read of the APPOINTMENTS changes nothing (the schedule stays as it was until the next
 //     trigger), because a read error is not the fact "no appointments".
 //   • R4 / G1: the lock screen carries the day, the time and the pet's name, nothing else.
 //   • Sign-out: `wipeLocalSession` fences this module, then cancels every notification.
@@ -178,9 +178,11 @@ async function liveVetReminders(): Promise<LiveVetReminder[]> {
  * Withdraw DELIVERED reminders whose visit is gone (CUL-2729). Reconcile's cancel only
  * reaches what is still scheduled; a reminder already in Notification Center kept naming
  * a visit the owner had since cancelled, deleted or logged. `liveIds` null withdraws
- * every one of ours (the switch went off). A collapsed reminder carries no appointment
- * id, so it is left alone: it cannot be tied to one visit. Best-effort and never throws:
- * a failure here must not stop the schedule being right.
+ * every one of ours (the switch is off or unreadable, the same rule the schedule
+ * follows). A reminder names every visit it stands for (`appointmentIds`; a collapsed
+ * one has several) and goes only when NONE is still live. One scheduled before that
+ * field existed falls back to its single `appointmentId`, or is left alone. Best-effort
+ * and never throws: a failure here must not stop the schedule being right.
  */
 async function withdrawDeliveredReminders(liveIds: ReadonlySet<string> | null): Promise<void> {
   try {
@@ -188,8 +190,13 @@ async function withdrawDeliveredReminders(liveIds: ReadonlySet<string> | null): 
     for (const n of presented) {
       const identifier = n.request.identifier;
       if (!isVetReminderIdentifier(identifier)) continue;
-      const apptId = (n.request.content?.data as { appointmentId?: unknown } | undefined)?.appointmentId;
-      const gone = liveIds === null || (typeof apptId === 'string' && !liveIds.has(apptId));
+      const data = n.request.content?.data as { appointmentId?: unknown; appointmentIds?: unknown } | undefined;
+      const ids = Array.isArray(data?.appointmentIds)
+        ? data.appointmentIds.filter((x): x is string => typeof x === 'string')
+        : typeof data?.appointmentId === 'string'
+          ? [data.appointmentId]
+          : [];
+      const gone = liveIds === null || (ids.length > 0 && !ids.some((id) => liveIds.has(id)));
       if (gone) await Notifications.dismissNotificationAsync(identifier);
     }
   } catch (e) {
@@ -293,6 +300,7 @@ async function runVetReminderSync(readInput: () => VetReminderSyncInput): Promis
           data: {
             kind: VET_REMINDER_TAP_KIND,
             appointmentId: p.appointmentId,
+            appointmentIds: p.appointmentIds,
             petId: p.petId,
             sig: vetReminderSignature(p),
           },

@@ -41,7 +41,7 @@ jest.mock('../lib/signalScreen', () => {
 });
 jest.mock('../store/petStore', () => {
   const pet = { id: 'p1', name: 'Mochi', species: 'cat', sex: 'female' };
-  const state = { activePet: pet, pets: [pet] };
+  const state = { activePet: pet, pets: [pet], petsLoaded: true };
   return {
     usePetStore: Object.assign(
       (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
@@ -172,6 +172,7 @@ import { buildRundown } from '../lib/rundown';
 import { supabase } from '../lib/supabase';
 import RundownScreen from './rundown';
 import { useSnackbarStore } from '../store/snackbarStore';
+import { usePetStore } from '../store/petStore';
 import { VISIT_NO_LONGER_BOOKED } from '../lib/vetReminders';
 
 /** The Edge-Function door, i.e. every model call. */
@@ -657,6 +658,39 @@ describe('a stale reminder tap opens its own pet’s Vet visits list (CUL-2729)'
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('a cold start: nothing is decided until the pet list has loaded, then the redirect fires', async () => {
+    const store = usePetStore.getState() as unknown as { petsLoaded: boolean };
+    store.petsLoaded = false;
+    try {
+      mockAppointments['appt-gone'] = null;
+      params.current = { appointmentId: 'appt-gone', pet: 'p1' };
+      const r = render(<RundownScreen />);
+      await r.findByTestId('rundown-block');
+      expect(replace).not.toHaveBeenCalled();
+      // The pet list answers and the screen loads again (here, a re-focus).
+      store.petsLoaded = true;
+      await act(async () => {
+        focusCb.current?.();
+      });
+      await waitFor(() =>
+        expect(replace.mock.calls).toEqual([[{ pathname: '/vet-visits', params: { pet: 'p1' } }]]),
+      );
+    } finally {
+      store.petsLoaded = true;
+    }
+  });
+
+  it('an owner who backed out during the read is never navigated', async () => {
+    mockAppointments['appt-gone'] = null;
+    params.current = { appointmentId: 'appt-gone', pet: 'p1' };
+    const r = render(<RundownScreen />);
+    r.unmount();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it('a pet this account does not hold is never routed on: the plain rundown, as before', async () => {

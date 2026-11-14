@@ -40,6 +40,7 @@ function planned(over: Partial<PlannedVetReminder> = {}): PlannedVetReminder {
     dayKey: '2026-11-16',
     fireAt: new Date(2026, 10, 16, 8).toISOString(),
     appointmentId: 'a',
+    appointmentIds: ['a'],
     petId: 'p',
     title: 'Nyx sees the vet today at 10:30 am',
     body: 'Make a report to take along.',
@@ -180,8 +181,22 @@ describe('syncVetReminderNotifications (the run)', () => {
   });
 
   describe('delivered reminders (CUL-2729)', () => {
-    const delivered = (identifier: string, appointmentId: string | null) => ({
-      request: { identifier, content: { data: { kind: 'vet_visit', appointmentId } } },
+    const delivered = (identifier: string, appointmentId: string | null, appointmentIds?: string[]) => ({
+      request: { identifier, content: { data: { kind: 'vet_visit', appointmentId, appointmentIds } } },
+    });
+
+    it('a collapsed one goes only when NONE of its visits is still booked', async () => {
+      N.getPresentedNotificationsAsync.mockResolvedValue([
+        delivered('nyx.vetreminder.ahead.2026-11-05', null, ['gone-1', 'gone-2']),
+        delivered('nyx.vetreminder.ahead.2026-11-06', null, ['gone-1', 'a']),
+      ]);
+      await syncVetReminderNotifications(input());
+      expect(N.dismissNotificationAsync.mock.calls).toEqual([['nyx.vetreminder.ahead.2026-11-05']]);
+    });
+
+    it('a scheduled reminder carries every visit it stands for', async () => {
+      await syncVetReminderNotifications(input());
+      expect(N.scheduleNotificationAsync.mock.calls[0][0].content.data.appointmentIds).toEqual(['a']);
     });
 
     it('withdraws one whose visit is no longer live, and leaves live, collapsed and foreign ones', async () => {

@@ -190,6 +190,14 @@ export default function RundownScreen() {
   // owner to that pet's Vet visits list and says why. Later loads keep F4's fallback:
   // Back from a visit logged out of this very screen is not a stale reminder.
   const staleTapArmed = useRef(typeof reminderPet === 'string' && reminderPet.length > 0);
+  // The load awaits a read; an owner who backed out meanwhile is never navigated.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Monotonic load id so a slow load can never commit over a newer one (pet
   // switch / retry) — the insights / report pattern.
@@ -212,13 +220,23 @@ export default function RundownScreen() {
       // from the saved visit landed on a Get ready that still offered *Take notes* —
       // whose Done → Save logged the same visit a second time.
       const appointment = wantsGetReady ? await readEditableAppointment(appointmentId) : null;
-      const staleTap = staleTapArmed.current && wantsGetReady && !appointment;
-      staleTapArmed.current = false;
-      if (staleTap && usePetStore.getState().pets.some((p) => p.id === reminderPet)) {
-        if (loadIdRef.current !== myId) return;
-        useSnackbarStore.getState().show({ message: VISIT_NO_LONGER_BOOKED }, { delayMs: 300 });
-        router.replace({ pathname: '/vet-visits', params: { pet: reminderPet } });
-        return;
+      // A superseded load decides nothing, and must not spend the one-shot below.
+      if (loadIdRef.current !== myId) return;
+      if (staleTapArmed.current && wantsGetReady) {
+        const { pets, petsLoaded } = usePetStore.getState();
+        if (appointment) {
+          staleTapArmed.current = false;
+        } else if (petsLoaded) {
+          // Spent only once the question can be answered. On a cold start from the tap
+          // the pet list has not loaded yet: the ref stays armed, and the load the
+          // hydrated pet triggers decides (code-reviewer).
+          staleTapArmed.current = false;
+          if (mountedRef.current && pets.some((p) => p.id === reminderPet)) {
+            useSnackbarStore.getState().show({ message: VISIT_NO_LONGER_BOOKED }, { delayMs: 300 });
+            router.replace({ pathname: '/vet-visits', params: { pet: reminderPet } });
+            return;
+          }
+        }
       }
       const subjectId = appointment?.pet_id ?? usePetStore.getState().activePet?.id ?? null;
       if (!subjectId) {

@@ -70,6 +70,9 @@ export interface PlannedVetReminder {
   /** The fire instant, ISO. */
   fireAt: string;
   appointmentId: string | null;
+  /** Every visit this reminder stands for (one, or a collapsed group's), so a delivered
+   *  reminder can be withdrawn once none of them is still booked (CUL-2729). */
+  appointmentIds: string[];
   /** The pet the tap opens on: the single visit's, or a collapsed group's first (the
    *  earliest instant, then the earliest appointment). Round 2 T4: a collapsed tap opens
    *  the Vet visits list on this pet, the list's existing pet door. */
@@ -173,6 +176,7 @@ export function planVetReminders(input: PlanInput): PlannedVetReminder[] {
       dayKey,
       fireAt: first.fire.toISOString(),
       appointmentId: single ? first.appt.id : null,
+      appointmentIds: group.map((s) => s.appt.id),
       petId: first.appt.pet_id,
       ...copy,
     });
