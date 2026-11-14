@@ -1,5 +1,8 @@
 # 2026-11-14 · Vet contacts discovery: a call, text or email that wasn't an exam
 
+**Date:** 2026-11-14
+**One thing:** D4 L2 — A guard is a test that reads the code, so "every reader declares exam or any contact" holds for code nobody has written yet · check: pending
+
 **Issue:** [CUL-2749](https://linear.app/projectnyx/issue/CUL-2749) (DISCOVERY) · **Branch:** `claude/sleepy-gauss-v6xxu1` · **Outcome:** shipped via #1529 · **Project created:** Vet contacts (P-CUL-40), rows [CUL-2763](https://linear.app/projectnyx/issue/CUL-2763) to [CUL-2770](https://linear.app/projectnyx/issue/CUL-2770), PM step [CUL-2771](https://linear.app/projectnyx/issue/CUL-2771); follow-up [CUL-2762](https://linear.app/projectnyx/issue/CUL-2762)
 
 ## What happened
