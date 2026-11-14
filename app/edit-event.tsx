@@ -741,7 +741,6 @@ export default function EditEventModal() {
         ownerAsserted: confidenceTouched.current,
         stored,
         point: tf.occurredAt,
-        openedAt: new Date(occurredAtParam),
       })) {
         seedTimeControl(stored);
         Alert.alert(

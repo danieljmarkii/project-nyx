@@ -45,7 +45,7 @@ jest.mock('../lib/sync', () => ({
 }));
 
 // What the row holds. Read on mount AND re-read by the save, as in production.
-const mockStoredTime: { current: { confidence: string | null; earliest: string | null; latest: string | null } } = {
+const mockStoredTime: { current: { confidence: string | null; earliest: string | null; latest: string | null; occurredAt?: string | null } } = {
   current: { confidence: 'witnessed', earliest: null, latest: null },
 };
 const mockUpdateEvent = jest.fn().mockResolvedValue(undefined);
@@ -306,6 +306,22 @@ describe('a window that lands while the editor is open (CUL-2199)', () => {
     expect(at).toBeGreaterThanOrEqual(Date.parse(WINDOWED.earliest));
     expect(at).toBeLessThanOrEqual(Date.parse(WINDOWED.latest));
     expect('confidence' in fields).toBe(false);
+  });
+
+  it('an untouched save does not write the opening point back over a window that moved it', async () => {
+    // The adversarial pass on fec6dce: the remote save moved the point to its window's
+    // latest edge, and the screen still holds the 09:58 it opened with. Judged against
+    // the opening point that read as "unmoved" and wrote 09:58 outside [10:00, 12:00].
+    const utils = await open('cough');
+    mockStoredTime.current = {
+      confidence: 'window', earliest: '2026-03-15T10:00:00.000Z',
+      latest: '2026-03-15T12:00:00.000Z', occurredAt: '2026-03-15T12:00:00+00:00',
+    };
+    await act(async () => { fireEvent.press(utils.getByText('Save')); });
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('This time was just updated', expect.any(String)));
+    expect(mockUpdateEvent).not.toHaveBeenCalled();
+    const fields = await save(utils);
+    expect(fields.occurred_at).toBe('2026-03-15T12:00:00.000Z');
   });
 
   it('a point moved inside the window that landed still saves', async () => {

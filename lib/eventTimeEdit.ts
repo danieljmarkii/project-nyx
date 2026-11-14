@@ -288,21 +288,30 @@ export function refreshedNowPoint(
 // the control from the fresh row instead. It is narrow on purpose:
 //   · an owner who touched the control restates the bounds from the form (B-448),
 //     so the window the row keeps is the one the point was derived from;
-//   · a point the save does not move is not this screen's to judge (a legacy row
-//     whose point already sat outside its window must still save its notes);
+//   · a point the ROW already holds is not this screen's to judge (a legacy row
+//     whose point already sat outside its window must still save its notes). The
+//     comparison is against the row's CURRENT point, never the one the screen opened
+//     with: a sync that moves the window moves the point to its latest edge, and an
+//     untouched save would otherwise write the stale opening point back over it
+//     (the adversarial pass on fec6dce broke the first cut exactly there);
 //   · an open window is bounded on one side only.
 export function pointLeavesStoredWindow(input: {
   ownerAsserted: boolean;
-  stored: { confidence: 'witnessed' | 'estimated' | 'window' | null; earliest: string | null; latest: string | null };
+  stored: {
+    confidence: 'witnessed' | 'estimated' | 'window' | null;
+    earliest: string | null;
+    latest: string | null;
+    /** The row's current occurred_at. Unknown reads as moved: the check runs. */
+    occurredAt?: string | null;
+  };
   /** The occurred_at this save would write. */
   point: Date;
-  /** The occurred_at the screen was opened with. */
-  openedAt: Date;
 }): boolean {
-  const { ownerAsserted, stored, point, openedAt } = input;
+  const { ownerAsserted, stored, point } = input;
   if (ownerAsserted || stored.confidence !== 'window') return false;
-  if (point.getTime() === openedAt.getTime()) return false;
   const t = point.getTime();
+  // Instants, never strings: a synced row holds PostgREST's `+00:00` spelling.
+  if (stored.occurredAt && Date.parse(stored.occurredAt) === t) return false;
   if (stored.earliest && t < Date.parse(stored.earliest)) return true;
   if (stored.latest && t > Date.parse(stored.latest)) return true;
   return false;
