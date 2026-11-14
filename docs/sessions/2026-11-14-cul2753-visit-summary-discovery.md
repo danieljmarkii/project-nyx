@@ -3,7 +3,7 @@
 **Date:** 2026-11-14
 **One thing:** none: a discovery session with no code; the concept it turns on (a confirm tap checks that a value is plausible, not that it is right) is the synthesis itself
 
-**Issue:** [CUL-2753](https://linear.app/projectnyx/issue/CUL-2753) (DISCOVERY) · **Branch:** `claude/gifted-curie-2k7r5a` · **Outcome:** shipped via the session's PR (number on the issue's outcome comment) · **Mock:** https://claude.ai/artifact/BNFhhLWe6jdWgXXsnTUEPs (round 1)
+**Issue:** [CUL-2753](https://linear.app/projectnyx/issue/CUL-2753) (DISCOVERY) · **Branch:** `claude/gifted-curie-2k7r5a` · **Outcome:** shipped via #1537 · **Mock:** https://claude.ai/artifact/BNFhhLWe6jdWgXXsnTUEPs (round 1)
 
 ## What happened
 
@@ -28,12 +28,12 @@ The idea as pitched had the model fill each fact in and the owner tap yes. After
 
 - **Path traversal on privileged photo reads.** Re-found independently by the privacy red-team; already on file. Commented there that it is now a prerequisite of any document read. Not named here so this PR does not close it.
 - **A clinic label can soften the weight card** through the mixed-scale band. Carried as brief D7; it also bears on CUL-1390.
-- **Today's Signal still read "A vet visit is booked for Nov 14"** five hours after that visit was saved. Noted on the issue for the care state's owner; not investigated.
+- **Today's Signal still read "A vet visit is booked for Nov 14"** five hours after that visit was saved. Filed as a parked finding; not investigated.
 - **Three claims in earlier briefs did not survive re-verification** (a named competitor that cannot be found; "exactly one" visit recorder; a pricing table). Recorded in the competitive brief §8, not edited into the old briefs.
 
 ## Rulings
 
-None. The PM rules D1 to D8 and conflicts 1 to 3 on the issue.
+None. The PM rules D1 to D8 and conflicts 1 to 3; the round's open home is its own issue with the `Waiting on PM` label, linked from the discovery issue, since that one closes on merge.
 
 ## Team calls made (reversible; reverse any by comment)
 
