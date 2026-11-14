@@ -4682,10 +4682,13 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     // CUL-2715 (Dr. Chen cold read): beside a refusal, a missing weigh-in is the fact that sizes it, and
     // a box silent on weight reads as weight not being a concern. Stated only where the record holds
     // no reading at all, or none since the trial began (the latest predates it).
+    // Adversarial pass 1 (LOUD): against the trial's own start, never the window-clipped span's, and
+    // "scale" when the only weights are owner estimates (listed beside the Weight block, never counted).
+    const scale = snap.weight.notCounted.length > 0 ? 'scale ' : ''
     const noWeight = snap.weight.isEmpty
-      ? 'No weigh-in is recorded, so any weight change during the refusal is unknown here.'
-      : snap.weight.latest && snap.weight.latest.date < t.evidenceStartDate
-        ? `No weigh-in is recorded since the trial began (the latest is from ${h(
+      ? `No ${scale}weigh-in is recorded, so any weight change during the refusal is unknown here.`
+      : snap.weight.latest && snap.weight.latest.date < t.startedAt.slice(0, 10)
+        ? `No ${scale}weigh-in is recorded since the trial began (the latest is from ${h(
             fmtDayYear(snap.weight.latest.date),
           )}), so any weight change during the refusal is unknown here.`
         : null
@@ -10716,24 +10719,26 @@ function offDietFoodsBit(snap: ReportSnapshot): string {
 /**
  * CUL-2715 (Dr. Chen cold read) — on a total refusal, HOW MUCH was eaten. "0 of 21 finished" reads as
  * starvation or as nothing logged, and partial intake against none changes the lipidosis urgency. The
- * owner's grades are stated only where they are exactly the refusal's population: one food carries
- * every rating in this window, over the trial diet, and its rated count is the fact's. Otherwise the
- * sentence stands as it was; the ratings stay in appendix E.
+ * grades are the trial diet's own feedings' (`trialDietIntakeGrades`, by classification, never a label
+ * or a count match against another food), stated only where they are exactly the refusal fact: over
+ * the trial diet, adding up to its rated count, and holding no finished grade (adversarial pass 1,
+ * QUIET: a rival food's "ate it all" matched by count alone stood beside a total refusal). Otherwise
+ * the sentence stands as it was; the ratings stay in appendix E.
  */
 function refusalGradeBit(
   snap: ReportSnapshot,
   fact: NonNullable<NonNullable<ReportSnapshot['trial']>['rangeRefusal']>,
 ): string {
-  if (fact.population !== 'trial_diet') return ''
-  const rated = snap.diet.mealItems.filter((i) => ratedCountOf(i) > 0)
-  if (rated.length !== 1 || rated[0].mix) return ''
-  const food = rated[0]
-  if (ratedCountOf(food) !== fact.ratedFeedings) return ''
-  const grades = [...food.intakeBreakdown].sort((a, b) => RATING_ORDER.indexOf(a.rating) - RATING_ORDER.indexOf(b.rating))
+  const grades = snap.trial?.trialDietIntakeGrades
+  if (fact.population !== 'trial_diet' || !grades || grades.length === 0) return ''
+  if (grades.reduce((a, g) => a + g.count, 0) !== fact.ratedFeedings) return ''
+  if (grades.some((g) => g.rating === 'all' || g.rating === 'most')) return ''
   if (grades.length === 1) {
     return `; the owner rated every one &ldquo;${h(intakeLabel(grades[0].rating).toLowerCase())}&rdquo;`
   }
-  return `; the owner rated them ${intakeRatingList(grades)}`
+  return `; the owner rated them ${grades
+    .map((g) => `&ldquo;${h(intakeLabel(g.rating).toLowerCase())}&rdquo; &times;${num(g.count)}`)
+    .join(' &middot; ')}`
 }
 
 /**

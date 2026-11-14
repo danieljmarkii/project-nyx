@@ -7004,3 +7004,36 @@ Deno.test('CUL-2715 — the latest weigh-in predates the trial: the gap is state
   const box = refusalCallout(snap)
   assert.ok(box.includes('No weigh-in is recorded since the trial began (the latest is from Apr 20, 2026), so any weight change during the refusal is unknown here.'), box)
 })
+
+Deno.test('CUL-2715 adv — a rival food rated "ate it all" never lends its grades to the trial diet\'s total refusal', () => {
+  idSeq = 0
+  // The adversarial pass's counterexample: the trial diet logged with no food type (in the refusal
+  // fact, outside the meal rows) and refused 21 times, beside another meal food finished 21 times.
+  const trialDiet = dailyMeals('2026-05-08', '2026-05-28', null).map((e) => ({ ...e, meal: { ...e.meal!, foodType: null, intakeRating: 'refused' } }))
+  const rival = dailyMeals('2026-05-08', '2026-05-28', 'all').map((e) => ({ ...e, occurredAt: e.occurredAt.replace('T14:', 'T19:'), meal: { ...e.meal!, foodItemId: 'rival', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken.' } }))
+  const snap = assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-05-08', endDate: '2026-05-28' },
+    dietTrials: [cul1779Trial({ status: 'abandoned', stoppedReason: 'refused', endedAt: '2026-05-28' })],
+    events: [...trialDiet, ...rival] as ReportEventInput[],
+  }))
+  const box = refusalCallout(snap)
+  assert.ok(/Not one rated feeding of the trial diet was finished \(0 of \d+ finished\)/.test(box), box)
+  assert.ok(!/ate it all/.test(box), box)
+  // The grades named are the trial diet's own, or none.
+  assert.ok(!/the owner rated/.test(box) || /the owner rated every one "refused"/.test(box), box)
+})
+
+Deno.test('CUL-2715 adv — a trial that began before the window: a weigh-in inside the trial is never "before the trial began"', () => {
+  idSeq = 0
+  const weighIns: ReportWeightCheckInput[] = [{ eventId: 'w-1', weightKg: 4.0, occurredAt: at('2026-04-15'), source: 'clinic' }]
+  const snap = assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-05-08', endDate: '2026-05-28' },
+    dietTrials: [cul1779Trial({ startedAt: '2026-04-01', status: 'abandoned', stoppedReason: 'refused', endedAt: '2026-05-28' })],
+    events: dailyMeals('2026-04-01', '2026-05-28', 'some'),
+    weightChecks: weighIns,
+    weightHistory: weighIns,
+  }))
+  const box = refusalCallout(snap)
+  assert.ok(/documents a refusal/.test(box), `non-vacuity: the refusal sentence rendered: ${box}`)
+  assert.ok(!/since the trial began/.test(box), box)
+})
