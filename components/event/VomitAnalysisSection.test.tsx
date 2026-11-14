@@ -1271,6 +1271,69 @@ describe('VomitAnalysisSection — an Edit on a stale screen (CUL-1356)', () => 
   });
 });
 
+// CUL-1356, adversarial round 1 — the swap can come with the editor OPEN. The wait line's
+// re-read (a `call_today` that may wait) puts a newer row on screen without remounting the
+// editor, whose draft still holds the old read. The save must compare against the read the
+// editor opened on: a compare built from the swapped row matches the record and lands the
+// stale "None visible" over fresh red, owner-stamped. Reproduced by the reviewer before the fix.
+describe('VomitAnalysisSection — an Edit left open while a newer read swaps in (CUL-1356)', () => {
+  const STAMP = ['engines_v3_en3', 'engines_v3_en4'];
+  const PHOTO = '6f1c0d2e-1111-4a5b-9c3d-000000000001';
+  const AT = new Date(2026, 6, 15, 21, 0);
+  const iso = (d: Date) => d.toISOString();
+  let nowSpy: jest.SpyInstance;
+  const waitRow = (over: Record<string, unknown> = {}) => row({
+    recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'], visual_flags: [],
+    colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible', foreign_material_present: 'no',
+    read_text: 'Repeated vomiting.',
+    may_wait: true, photo_set_key: PHOTO, updated_at: iso(new Date(2026, 6, 15, 21, 30)),
+    ai_raw_payload: { appears_to_show_vomit: true, recommendation: 'monitor', read_photo_set_key: PHOTO }, ...over,
+  });
+  beforeEach(() => {
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(new Date(2026, 6, 15, 22, 0).getTime());
+    usePetStore.setState({
+      pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
+    });
+    mockMayWaitFacts = {
+      readAt: new Date(2026, 6, 15, 22, 0).getTime(),
+      anchorAt: iso(AT), serverAttachmentIds: [PHOTO], localAttachmentIds: [PHOTO], unsynced: false,
+      vomits: [{ at: iso(new Date(2026, 6, 15, 15, 0)), confidence: 'witnessed' }, { at: iso(AT), confidence: 'witnessed' }],
+      stoolAt: [], lethargyAt: [], meals: [],
+    };
+  });
+  afterEach(() => {
+    nowSpy.mockRestore();
+    mockRow = null; mockMayWaitFacts = null; mockEditorSave = null;
+    act(() => { useMomentStore.setState({ payload: null }); });
+    usePetStore.setState({ pets: [] });
+    jest.restoreAllMocks();
+  });
+
+  it('the save carries the read the editor opened on, so the record refuses the stale draft', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const lib = jest.requireMock('../../lib/analysis') as { saveVomitFieldEdits: jest.Mock; deriveEditedFields: jest.Mock };
+    mockRow = waitRow();
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(/^Worth a call first thing tomorrow/);
+    fireEvent.press(view.getByText('Edit'));
+    await waitFor(() => expect(mockEditorSave).not.toBeNull());
+    const staleDraft = { colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible', foreign_material_present: 'no', foreign_material_note: null, description: null };
+    // A replaced photo's read lands (fresh red, `updated_at` moves) and the wait line's re-read
+    // puts it on screen while the editor stays open.
+    mockRow = waitRow({ blood_present: 'fresh_red', visual_flags: ['fresh_blood'], read_text: 'Fresh red blood.', updated_at: iso(new Date(2026, 6, 15, 21, 55)) });
+    act(() => { useMomentStore.setState({ payload: { kind: 'named' } as never }); });
+    await waitFor(() => expect(view.queryByText(/Fresh red blood/)).toBeTruthy());
+    lib.deriveEditedFields.mockReturnValueOnce(['blood_present']);
+    lib.saveVomitFieldEdits.mockClear().mockResolvedValueOnce({ outcome: 'read_changed', error: null });
+    await act(async () => { mockEditorSave?.(staleDraft); });
+    expect(lib.saveVomitFieldEdits).toHaveBeenCalledTimes(1);
+    const [, , shown] = lib.saveVomitFieldEdits.mock.calls[0];
+    expect(shown).toEqual(expect.objectContaining({ blood_present: 'none_visible', read_text: 'Repeated vomiting.', visual_flags: [] }));
+    expect(alert).toHaveBeenCalledWith('This note changed', expect.any(String));
+    expect(view.getByText('Fresh red')).toBeTruthy();
+  });
+});
+
 describe('VomitAnalysisSection — the RECORD re-opens a fold (§5.3)', () => {
   afterEach(async () => {
     mockRow = null;

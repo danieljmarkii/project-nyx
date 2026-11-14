@@ -22,6 +22,7 @@ import {
   writeAnalysisDismissal,
   shownRead,
   sameShown,
+  type ShownRead,
   VOMIT_DISMISSAL_COLUMNS,
   READ_CHANGED_TITLE,
   READ_CHANGED_BODY,
@@ -222,6 +223,11 @@ export function VomitAnalysisSection(
   const [working, setWorking] = useState(false); // analysis in flight (triggered or awaiting realtime)
   const [retrying, setRetrying] = useState(false);
   const [editing, setEditing] = useState(false);
+  // CUL-1356 (adversarial round 1) — the read the editor OPENED on. The editor seeds its draft
+  // once, but a re-read (the wait line's tick) can swap the row underneath while it is open, so
+  // the save compares against what the draft came from, never the row at save time: a compare
+  // built from the swapped row would match the record and land the stale draft over it.
+  const editBase = useRef<{ shown: ShownRead; editable: VomitEditableFields } | null>(null);
   const [saving, setSaving] = useState(false);
   const cancelled = useRef(false);
   // The row as the screen holds it NOW, for a handler that awaits across a render. A re-run
@@ -604,8 +610,9 @@ export function VomitAnalysisSection(
   // edited_at, so the never-clobber guard stays armed only by a real edit.
   async function handleSaveEdits(next: VomitEditableFields) {
     if (!row) return;
-    const current = currentEditable(row);
-    if (deriveEditedFields(next, current).length === 0) {
+    const base = editBase.current ?? { shown: shownRead(row, VOMIT_DISMISSAL_COLUMNS), editable: currentEditable(row) };
+    if (deriveEditedFields(next, base.editable).length === 0) {
+      editBase.current = null;
       setEditing(false);
       return;
     }
@@ -614,7 +621,7 @@ export function VomitAnalysisSection(
     // CUL-1356 — the edit writes back every field, so it writes only over the read the
     // editor opened on. A newer read underneath (a replaced photo, a second device) is
     // shown and said; the old observations never land on it as the owner's.
-    const seen = shownRead(row, VOMIT_DISMISSAL_COLUMNS);
+    const seen = base.shown;
     const { outcome } = await saveVomitFieldEdits(eventId, norm, seen);
     if (outcome !== 'written') {
       const latest = outcome === 'read_changed' ? await fetchRow() : null;
@@ -622,6 +629,7 @@ export function VomitAnalysisSection(
       if (cancelled.current) return;
       if (latest && !sameShown(latest, seen)) {
         setRow(latest);
+        editBase.current = null;
         setEditing(false);
         Alert.alert(READ_CHANGED_TITLE, READ_CHANGED_BODY);
         return;
@@ -632,6 +640,7 @@ export function VomitAnalysisSection(
     setSaving(false);
     // Optimistic local commit — mirror the DB write (fields + provenance stamp).
     setRow({ ...row, ...norm, edited_at: new Date().toISOString() });
+    editBase.current = null;
     setEditing(false);
   }
 
@@ -1105,14 +1114,20 @@ export function VomitAnalysisSection(
             description={row.description}
             descriptionEdited={editedSet.has('description')}
             editedAtLabel={row.edited_at ? `Edited ${formatEditedDate(row.edited_at)}` : null}
-            onEdit={!editing && canEdit ? () => setEditing(true) : null}
+            onEdit={!editing && canEdit ? () => {
+              editBase.current = { shown: shownRead(row, VOMIT_DISMISSAL_COLUMNS), editable: currentEditable(row) };
+              setEditing(true);
+            } : null}
             editLabel={observations.length > 0 ? 'Edit' : 'Add details'}
             editor={editing ? (
               <VomitFieldsEditor
                 initial={currentEditable(row)}
                 saving={saving}
                 onSave={handleSaveEdits}
-                onCancel={() => setEditing(false)}
+                onCancel={() => {
+                  editBase.current = null;
+                  setEditing(false);
+                }}
               />
             ) : undefined}
             // Any verdict off the quiet list, one this build does not know included: its
