@@ -60,7 +60,7 @@ Read the rows that match your surface before writing code. If a referenced doc d
 | `docs/nyx-app-polish-requirements.md` 🌱 | The tab bar, `HomeHeader`, a completion beat, `lib/haptics.ts`, app-wide type (§R-12) |
 | `docs/nyx-incident-screen-requirements.md` 🌱 | What follows a vomit or stool log, `app/event/[id].tsx`, the per-incident read's placement |
 | `docs/nyx-daily-look-requirements.md` 🌱 GA | Noticed, `constants/lookWords.ts`, the `looks` child, any coverage line over looks (§R-13) |
-| `docs/nyx-vet-visits-requirements.md` 🌱 | `vet_visits`, `vet_appointments`, `app/vet-visit.tsx`, `/rundown`, `AddMedicationModal`'s write path |
+| `docs/nyx-vet-visits-requirements.md` 🌱 · `nyx-vet-contacts-requirements.md` | `vet_visits`, `vet_appointments`, `/rundown`, `AddMedicationModal` writes |
 | `docs/nyx-history-v2-requirements.md` 🌱 GA | `app/(tabs)/history.tsx`, `components/historyV2/`, the shared row, `lib/dayNodes.ts`, any link into History |
 | `docs/nyx-care-state-requirements.md` 🌱 | `care_acknowledgements`, `vet_calls`, a finding's `careState`, any "I've called" surface |
 | `docs/engineering-lessons.md` | Only when a rule's pointer sends you there, or when adding a lesson |
@@ -140,7 +140,7 @@ The original build sequence (steps 1–10) and the food-library track both finis
 
 ## Code Conventions
 
-Establish these from session one. Do not drift from them. The general rules sit here; every surface rule lives in a path-scoped file under `.claude/rules/`, which Claude Code loads when a session reads a file its `paths:` match (retro 4 D5, CUL-1874). A rule there has the same standing as one here, keeps its guard, and fails CI wherever its text lives. When a new convention is established mid-project, add it to the file for its surface immediately.
+Do not drift from them. The general rules sit here; every surface rule lives in a path-scoped file under `.claude/rules/`, which Claude Code loads when a session reads a file its `paths:` match (retro 4 D5, CUL-1874). A rule there has the same standing as one here, keeps its guard, and fails CI wherever its text lives. When a new convention is established mid-project, add it to the file for its surface immediately.
 
 - **Language:** TypeScript strict mode throughout. No `any`. No implicit returns.
 - **Naming:** Components PascalCase. Hooks `useCamelCase`. Store files `camelCaseStore.ts`. Constants `SCREAMING_SNAKE_CASE`.
