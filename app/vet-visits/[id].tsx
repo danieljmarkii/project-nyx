@@ -11,7 +11,8 @@ import { VisitReports } from '../../components/vetvisits/VisitReports';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { readAppointmentForVisit, readVetVisitDetail, type VetVisitDetail } from '../../lib/vetVisits';
 
-// One visit as written (CUL-900 VV-2; mock D3). *Edit* landed in VV-4 (CUL-902).
+// One visit as written (CUL-900 VV-2; mock D3). *Edit* and *Add to the plan* both open
+// How did it go? for this visit (CUL-2754, §4.4 R1); the five-field edit screen retired.
 //
 // *Delete* is still VV-6's, gated on CUL-19 deploying the reader that honours
 // `deleted_at` — a control that soft-deletes a visit the live report still counts
@@ -93,7 +94,7 @@ export default function VetVisitScreen() {
           // unavailable, and here no control exists at all (C-7).
           detail ? (
             <TouchableOpacity
-              onPress={() => router.push(`/vet-visits/edit?visit=${detail.visit.id}`)}
+              onPress={() => router.push(`/vet-visits/after?visit=${detail.visit.id}`)}
               activeOpacity={0.7}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               accessibilityRole="button"
@@ -114,6 +115,7 @@ export default function VetVisitScreen() {
             detail={detail}
             petName={petName}
             onOpenDocument={(groupId) => router.push(`/vet-document/${groupId}`)}
+            onAddToPlan={() => router.push(`/vet-visits/after?visit=${detail.visit.id}&at=plan`)}
           />
           <VisitReports
             petId={detail.visit.pet_id}

@@ -51,7 +51,7 @@ jest.mock('./dietTrialSetup', () => ({ getActiveTrialForPet: jest.fn(async () =>
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
-import { careAnswerLanded, pushCareAnswers, recordCareAnswer, retractCareAnswer } from './careAnswers';
+import { careAnswerLanded, pushCareAnswers, readVisitCareAnswers, recordCareAnswer, retractCareAnswer } from './careAnswers';
 import { notifySignedOut } from './sync';
 
 const PET = 'pet-a';
@@ -202,3 +202,14 @@ describe('the push (drainCareAcknowledgementsQueue)', () => {
   });
 });
 
+
+describe('readVisitCareAnswers — what a reopened visit already answered (CUL-2754)', () => {
+  it('returns the signs this visit answered, minus any taken back, and none from another visit', async () => {
+    await recordCareAnswer({ petId: PET, sign: 'vomit', source: 'visit_answer', anchorOn: '2026-09-16', vetVisitId: 'v1' }, nextId);
+    const cough = await recordCareAnswer({ petId: PET, sign: 'cough', source: 'at_vet_tick', anchorOn: '2026-09-16', vetVisitId: 'v1' }, nextId);
+    await retractCareAnswer(cough, nextId);
+    await recordCareAnswer({ petId: PET, sign: 'itch', source: 'visit_answer', anchorOn: '2026-10-02', vetVisitId: 'v2' }, nextId);
+    expect([...(await readVisitCareAnswers('v1'))]).toEqual(['vomit']);
+    expect([...(await readVisitCareAnswers('v3'))]).toEqual([]);
+  });
+});

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { type LayoutChangeEvent, Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { CalendarPlus, FileText, Pill, Stethoscope, Utensils } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
@@ -34,6 +34,8 @@ export interface TrialRow {
   label: string;
   /** 'Day 23 of 56', from the ONE shared day helper — never re-derived here (B-421). */
   dayLine: string | null;
+  /** A reopened visit only: this trial names this visit (§4.4 R3). */
+  linkedHere?: boolean;
 }
 
 /**
@@ -42,8 +44,15 @@ export interface TrialRow {
  */
 export interface EndedTrialRow {
   label: string;
-  /** 'YYYY-MM-DD' — the day the end was written. */
-  endedOn: string;
+  /** 'YYYY-MM-DD' — the day the end was written; null when the record holds no readable day. */
+  endedOn: string | null;
+}
+
+/** How a settled course row speaks: *Stopped* when this screen stopped it, *Ended* when a
+ *  reopened visit rebuilds an ended course from the record, which cannot say who ended it. */
+export interface SettledCourse {
+  verdict: 'stopped' | 'ended';
+  endedOn: string | null;
 }
 
 export interface AfterVisitFields {
@@ -63,11 +72,14 @@ export interface AfterVisitBodyProps {
   courses: ActiveCourse[];
   courseVerdicts: Readonly<Record<string, CourseVerdict>>;
   /**
-   * Courses *Stopped* on this screen, id → the 'YYYY-MM-DD' written (CUL-951). Such a
-   * course is still in `courses` (the route keeps it in place) and renders as a
-   * settled row with no control: it has been answered, and there is no un-stopping.
+   * Courses *Stopped* on this screen, or ended courses a reopened visit rebuilt from the
+   * record (CUL-951, CUL-2754). Such a course is still in `courses` (the route keeps it in
+   * place) and renders as a settled row with no control: it has been answered, and there is
+   * no un-stopping.
    */
-  settledCourses: Readonly<Record<string, string>>;
+  settledCourses: Readonly<Record<string, SettledCourse>>;
+  /** A reopened visit only: the active courses that name this visit (§4.4 R3). */
+  linkedCourseIds?: ReadonlySet<string>;
   onCourseVerdict: (course: ActiveCourse, verdict: CourseVerdict) => void;
   onAddCourse: () => void;
 
@@ -78,6 +90,12 @@ export interface AfterVisitBodyProps {
   onTrialVerdict: (verdict: TrialVerdict) => void;
   onStartTrial: () => void;
   onAddFood: () => void;
+  /**
+   * A reopened visit, with a trial running that this visit did not start or link (§4.4 R3).
+   * No chips (*Ended* or *Switched* there would end a trial from a visit it never came
+   * from) and no *Start a trial* (a second trial cannot run beside it); the food door stays.
+   */
+  trialHeldElsewhere?: boolean;
 
   /** 'YYYY-MM-DD' once set — the date the vet said to come back on. */
   nextVisitAt: string | null;
@@ -91,11 +109,22 @@ export interface AfterVisitBodyProps {
   homeConcerns?: ReadonlyArray<HomeConcernRow>;
   concernAnswers?: Readonly<Record<string, HomeConcernAnswer>>;
   onConcernAnswer?: (row: HomeConcernRow, answer: HomeConcernAnswer) => void;
+  /** A reopened visit: the signs its record already answers *Talked about it* for. They
+   *  render settled, because a chip moved off it would write nothing and the record would
+   *  still say it (an answer is taken back by a retraction, not here). */
+  answeredOnRecord?: ReadonlySet<string>;
 
   /** The row whose write is in flight, so only that row goes inert. */
   busyRow: string | null;
   saving: boolean;
   onSave: () => void;
+
+  /** A saved visit, reopened (§4.4 R1): the button reads *Done* and nothing celebrates. */
+  reopened?: boolean;
+  /** The report-window line under the date, when moving it would move the window. */
+  dateNote?: string | null;
+  /** Where The plan starts, for *Add to the plan*'s scroll (y within this body). */
+  onPlanLayout?: (y: number) => void;
 }
 
 const COURSE_OPTIONS = [
@@ -129,12 +158,18 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
     nextVisitAt, onPickNextVisit, paperworkCount, onAddPaperwork,
     busyRow, saving, onSave,
     homeConcerns = [], concernAnswers = {}, onConcernAnswer,
+    linkedCourseIds, answeredOnRecord, trialHeldElsewhere = false, reopened = false, dateNote = null, onPlanLayout,
   } = props;
   const [showDayPicker, setShowDayPicker] = useState(false);
   const [showNextPicker, setShowNextPicker] = useState(false);
   const today = localDateKey(new Date());
-  const settledLine = (verdict: 'stopped' | 'ended', endedOn: string) =>
-    settledVerdictLine({ verdict, endedOn, today, endLabel: formatVisitDate(endedOn) });
+  // No readable day says the verb alone: a date the record does not hold is not printed.
+  const settledLine = (verdict: 'stopped' | 'ended', endedOn: string | null) =>
+    endedOn
+      ? settledVerdictLine({ verdict, endedOn, today, endLabel: formatVisitDate(endedOn) })
+      : verdict === 'stopped' ? 'Stopped' : 'Ended';
+  const linkedHere = (line: string | undefined, yes: boolean | undefined) =>
+    yes ? [line, 'linked to this visit'].filter(Boolean).join(' · ') : line;
 
   return (
     <View>
@@ -173,6 +208,7 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
           }}
         />
       )}
+      {dateNote ? <ThemedText style={styles.dateNote}>{dateNote}</ThemedText> : null}
 
       <SectionLabel label="Where" style={styles.label} />
       <TextField
@@ -216,7 +252,14 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
         <>
           <SectionLabel label="What Home was raising" header style={styles.planLabel} />
           <View style={styles.plan} testID="after-visit-home-concerns">
-            {homeConcerns.map((c) => (
+            {homeConcerns.map((c) => answeredOnRecord?.has(c.sign) ? (
+              <PlanSettledRow
+                key={c.sign}
+                glyph={<Stethoscope size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+                title={c.title}
+                subtitle="Talked about it at this visit"
+              />
+            ) : (
               <PlanChipRow
                 key={c.sign}
                 glyph={<Stethoscope size={16} color={theme.colorEventSymptomInk} strokeWidth={2} />}
@@ -231,128 +274,144 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
         </>
       ) : null}
 
-      <SectionLabel label="The plan" header style={styles.planLabel} />
-      <View style={styles.plan}>
-        {courses.map((course) =>
-          settledCourses[course.id] ? (
-            // Where the chips were, so the owner's eye finds the answer in the place
-            // they gave it. The glyph goes quiet: the course is no longer running.
+      <View
+        onLayout={onPlanLayout ? (e: LayoutChangeEvent) => onPlanLayout(e.nativeEvent.layout.y) : undefined}
+      >
+        <SectionLabel label="The plan" header style={styles.planLabel} />
+        <View style={styles.plan}>
+          {courses.map((course) =>
+            settledCourses[course.id] ? (
+              // Where the chips were, so the owner's eye finds the answer in the place
+              // they gave it. The glyph goes quiet: the course is no longer running.
+              <PlanSettledRow
+                key={course.id}
+                glyph={<Pill size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+                title={course.drugName}
+                subtitle={settledLine(settledCourses[course.id].verdict, settledCourses[course.id].endedOn)}
+              />
+            ) : (
+              <PlanChipRow
+                key={course.id}
+                glyph={<Pill size={16} color={theme.colorEventMedication} strokeWidth={2} />}
+                title={course.drugName}
+                subtitle={linkedHere(
+                  courseRowSubtitle({
+                    doseAmount: course.doseAmount,
+                    sinceLabel: course.startedAt ? formatVisitDate(course.startedAt) : null,
+                  }),
+                  linkedCourseIds?.has(course.id),
+                )}
+                options={COURSE_OPTIONS}
+                value={courseVerdicts[course.id] ?? null}
+                onChange={(next) => onCourseVerdict(course, next as CourseVerdict)}
+                busy={busyRow === course.id}
+              />
+            ),
+          )}
+
+          <PlanActionRow
+            glyph={<Pill size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+            title="Started something new?"
+            subtitle="Opens the medication setup, linked to this visit"
+            actionLabel="Add"
+            onPress={onAddCourse}
+            busy={busyRow === 'add-course'}
+          />
+
+          {trial ? (
+            <PlanChipRow
+              glyph={<Utensils size={16} color={colorRoles.positive.textOnLight} strokeWidth={2} />}
+              title={trial.label}
+              subtitle={linkedHere(trial.dayLine ?? undefined, trial.linkedHere)}
+              options={TRIAL_OPTIONS}
+              value={trialVerdict}
+              onChange={(next) => onTrialVerdict(next as TrialVerdict)}
+              busy={busyRow === 'trial'}
+            />
+          ) : endedTrial ? (
             <PlanSettledRow
-              key={course.id}
-              glyph={<Pill size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-              title={course.drugName}
-              subtitle={settledLine('stopped', settledCourses[course.id])}
+              glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+              title={endedTrial.label}
+              subtitle={settledLine('ended', endedTrial.endedOn)}
+            />
+          ) : trialHeldElsewhere ? (
+            <PlanActionRow
+              glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+              title="A new food to try?"
+              subtitle={`Adds the food to ${petName}’s library`}
+              actionLabel="Add the food"
+              onPress={onAddFood}
+              busy={busyRow === 'trial'}
             />
           ) : (
-            <PlanChipRow
-              key={course.id}
-              glyph={<Pill size={16} color={theme.colorEventMedication} strokeWidth={2} />}
-              title={course.drugName}
-              subtitle={courseRowSubtitle({
-                doseAmount: course.doseAmount,
-                sinceLabel: course.startedAt ? formatVisitDate(course.startedAt) : null,
-              })}
-              options={COURSE_OPTIONS}
-              value={courseVerdicts[course.id] ?? null}
-              onChange={(next) => onCourseVerdict(course, next as CourseVerdict)}
-              busy={busyRow === course.id}
+            <PlanActionRow
+              glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+              title="A new food to try?"
+              subtitle={`Starts a trial, or just adds the food to ${petName}’s library`}
+              actionLabel="Start a trial"
+              onPress={onStartTrial}
+              secondaryLabel="Add the food"
+              onSecondaryPress={onAddFood}
+              busy={busyRow === 'trial'}
             />
-          ),
-        )}
+          )}
 
-        <PlanActionRow
-          glyph={<Pill size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-          title="Started something new?"
-          subtitle="Opens the medication setup, linked to this visit"
-          actionLabel="Add"
-          onPress={onAddCourse}
-          busy={busyRow === 'add-course'}
-        />
+          {nextVisitAt ? (
+            <PlanSettledRow
+              glyph={<CalendarPlus size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+              title="Next visit"
+              subtitle={`${formatVisitDate(nextVisitAt)} · booked`}
+            />
+          ) : (
+            <PlanActionRow
+              glyph={<CalendarPlus size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+              title="Next visit"
+              subtitle="A recheck, if the vet named one"
+              actionLabel="Set a date"
+              onPress={() => setShowNextPicker((s) => !s)}
+              busy={busyRow === 'next-visit'}
+            />
+          )}
+          {showNextPicker && !nextVisitAt && (
+            <DateTimePicker
+              // Seeded at +6 weeks (§8's default), which is a SEED and not a claim —
+              // "in six weeks" is the sentence a vet says, and the owner moves the
+              // picker rather than the app parsing free text.
+              value={defaultRecheckDate()}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              themeVariant="light"
+              accentColor={colorRoles.action.onLight}
+              minimumDate={new Date()}
+              onChange={(_, picked) => {
+                if (Platform.OS !== 'ios') setShowNextPicker(false);
+                if (picked) {
+                  setShowNextPicker(false);
+                  onPickNextVisit(picked);
+                }
+              }}
+            />
+          )}
 
-        {trial ? (
-          <PlanChipRow
-            glyph={<Utensils size={16} color={colorRoles.positive.textOnLight} strokeWidth={2} />}
-            title={trial.label}
-            subtitle={trial.dayLine ?? undefined}
-            options={TRIAL_OPTIONS}
-            value={trialVerdict}
-            onChange={(next) => onTrialVerdict(next as TrialVerdict)}
-            busy={busyRow === 'trial'}
-          />
-        ) : endedTrial ? (
-          <PlanSettledRow
-            glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-            title={endedTrial.label}
-            subtitle={settledLine('ended', endedTrial.endedOn)}
-          />
-        ) : (
           <PlanActionRow
-            glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-            title="A new food to try?"
-            subtitle={`Starts a trial, or just adds the food to ${petName}’s library`}
-            actionLabel="Start a trial"
-            onPress={onStartTrial}
-            secondaryLabel="Add the food"
-            onSecondaryPress={onAddFood}
-            busy={busyRow === 'trial'}
+            glyph={<FileText size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+            title="Paperwork"
+            subtitle={
+              paperworkCount === 0
+                ? 'A discharge sheet, or the clinic’s own summary'
+                : paperworkCount === 1
+                  ? '1 document · in Vet Files'
+                  : `${paperworkCount} documents · in Vet Files`
+            }
+            actionLabel={paperworkCount === 0 ? 'Add' : 'Add more'}
+            onPress={onAddPaperwork}
+            busy={busyRow === 'paperwork'}
           />
-        )}
-
-        {nextVisitAt ? (
-          <PlanSettledRow
-            glyph={<CalendarPlus size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-            title="Next visit"
-            subtitle={`${formatVisitDate(nextVisitAt)} · booked`}
-          />
-        ) : (
-          <PlanActionRow
-            glyph={<CalendarPlus size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-            title="Next visit"
-            subtitle="A recheck, if the vet named one"
-            actionLabel="Set a date"
-            onPress={() => setShowNextPicker((s) => !s)}
-            busy={busyRow === 'next-visit'}
-          />
-        )}
-        {showNextPicker && !nextVisitAt && (
-          <DateTimePicker
-            // Seeded at +6 weeks (§8's default), which is a SEED and not a claim —
-            // "in six weeks" is the sentence a vet says, and the owner moves the
-            // picker rather than the app parsing free text.
-            value={defaultRecheckDate()}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            themeVariant="light"
-            accentColor={colorRoles.action.onLight}
-            minimumDate={new Date()}
-            onChange={(_, picked) => {
-              if (Platform.OS !== 'ios') setShowNextPicker(false);
-              if (picked) {
-                setShowNextPicker(false);
-                onPickNextVisit(picked);
-              }
-            }}
-          />
-        )}
-
-        <PlanActionRow
-          glyph={<FileText size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-          title="Paperwork"
-          subtitle={
-            paperworkCount === 0
-              ? 'A discharge sheet, or the clinic’s own summary'
-              : paperworkCount === 1
-                ? '1 document · in Vet Files'
-                : `${paperworkCount} documents · in Vet Files`
-          }
-          actionLabel={paperworkCount === 0 ? 'Add' : 'Add more'}
-          onPress={onAddPaperwork}
-          busy={busyRow === 'paperwork'}
-        />
+        </View>
       </View>
 
       <PrimaryButton
-        label={`Save ${petName}’s visit`}
+        label={reopened ? 'Done' : `Save ${petName}’s visit`}
         onPress={onSave}
         loading={saving}
         // Inert while a plan row's write is in flight. A control that refuses behind
@@ -402,6 +461,11 @@ const styles = StyleSheet.create({
   valueText: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
+  },
+  dateNote: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    marginTop: theme.space1,
   },
   notes: {
     // The C-2 carve-out: a TextInput is outside ThemedText's reach, so it names its

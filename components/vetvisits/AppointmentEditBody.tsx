@@ -49,7 +49,7 @@ interface Props {
 
 // Changing a booked appointment (CUL-952; mock E4).
 //
-// THE SHAPE IS `VisitEditBody`'S, NOT `BookVisitSheet`'S, and the choice is the
+// THE SHAPE IS THE RETIRED `VisitEditBody`'S (a five-field form), NOT `BookVisitSheet`'S, and the choice is the
 // design rather than convenience. Two things the booking sheet does are wrong here:
 //
 //   • the *happened or booked?* chips — an appointment IS a booking, and offering
@@ -61,7 +61,7 @@ interface Props {
 //     On an edit it would turn "change this" into "and book another", which is the
 //     exact confusion this whole issue exists to remove.
 //
-// THE PLAN IS NOT HERE EITHER, for `VisitEditBody`'s reason: the owner's prepared
+// THE PLAN IS NOT HERE EITHER: the owner's prepared
 // questions and the in-room draft live on this same row and are edited on their own
 // surfaces (Get ready, "At the vet"). A second editor for them would be a second
 // source of truth — which is also why the footnote below says they survive the edit
