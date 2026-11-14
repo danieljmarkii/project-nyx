@@ -7037,3 +7037,22 @@ Deno.test('CUL-2715 adv — a trial that began before the window: a weigh-in ins
   assert.ok(/documents a refusal/.test(box), `non-vacuity: the refusal sentence rendered: ${box}`)
   assert.ok(!/since the trial began/.test(box), box)
 })
+
+Deno.test('CUL-2715 adv 2 — a trial-diet treat logged before the first meal day is never graded beside the refusal', () => {
+  idSeq = 0
+  // Adversarial pass 2: a feeding outside the refusal fact's range (before the first logged meal day)
+  // must not lend its grade, even when the counts coincide.
+  const early = proteinMeal({ occurredAt: at('2026-05-08', '09:00:00'), foodItemId: 'f-trial', foodType: 'treat', format: 'treat', primaryProtein: 'duck', proteins: ['duck'], ingredientsNotes: 'Duck, duck meal, brewers rice.', extractionConfidence: { proteins: 0.9 }, intakeRating: 'some' })
+  const snap = assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-05-08', endDate: '2026-05-28' },
+    dietTrials: [cul1779Trial({ status: 'abandoned', stoppedReason: 'refused', endedAt: '2026-05-28' })],
+    events: [
+      early,
+      ...dailyMeals('2026-05-10', '2026-05-28', null).map((e) => ({ ...e, meal: { ...e.meal!, intakeRating: 'refused' } })),
+    ] as ReportEventInput[],
+  }))
+  const grades = snap.trial?.trialDietIntakeGrades ?? []
+  assert.ok(!grades.some((g) => g.rating === 'some'), `the early treat is outside the fact's range: ${JSON.stringify(grades)}`)
+  const box = refusalCallout(snap)
+  assert.ok(!/ate some/.test(box), box)
+})

@@ -1308,9 +1308,17 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     ) {
       trialDietFeedingEventIds.push(e.id)
     }
-    // CUL-2715: the grades on the trial diet's own feedings, by the same classification. A rating
-    // the shared predicate cannot score is no grade, as it is no rating to the refusal fact.
-    if (classification.verdict === 'permitted' && classification.role === 'primary_diet' && !classification.components) {
+    // CUL-2715: the grades on the trial diet's own feedings, by the same classification and over the
+    // refusal fact's own range (`facts.range`, not the wider evidence window: adversarial pass 2, a
+    // treat-typed trial-diet feeding before the first logged day was graded and not counted). A
+    // rating the shared predicate cannot score is no grade, as it is no rating to the refusal fact.
+    if (
+      classification.verdict === 'permitted' &&
+      classification.role === 'primary_diet' &&
+      !classification.components &&
+      dn >= startDayIndex &&
+      dn <= endDayIndex
+    ) {
       const r = e.meal.intakeRating
       if (feedingWasFinished(r) !== null) {
         const key = r!.trim().toLowerCase()
@@ -1535,7 +1543,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   // report had the right question and the client had no way to ask it.
   //
   // `computeTrialFacts` now returns `rangeRefusal` over the same range this loop
-  // walked (`facts.range.startDayIndex … endDayIndex`, i.e. `inRange`), so the
+  // walked (`facts.range.startDayIndex … endDayIndex`; `inRange` above is the wider evidence window), so the
   // loop is deleted rather than duplicated. Behaviour here is unchanged; what
   // changes is that there is one implementation for both surfaces to be wrong or
   // right together.
