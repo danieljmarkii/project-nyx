@@ -812,14 +812,18 @@ export async function getEventTimeFields(eventId: string): Promise<{
   confidence: 'witnessed' | 'estimated' | 'window' | null;
   earliest: string | null;
   latest: string | null;
+  /** The row's current occurred_at, so a save can tell a point it moves from one
+   *  a sync moved under it (CUL-2199). Absent on a missing row. */
+  occurredAt?: string | null;
 }> {
   const db = getDb();
   const row = await db.getFirstAsync<{
     occurred_at_confidence: string | null;
     occurred_at_earliest: string | null;
     occurred_at_latest: string | null;
+    occurred_at: string | null;
   }>(
-    'SELECT occurred_at_confidence, occurred_at_earliest, occurred_at_latest FROM events WHERE id = ?',
+    'SELECT occurred_at_confidence, occurred_at_earliest, occurred_at_latest, occurred_at FROM events WHERE id = ?',
     [eventId],
   );
   const c = row?.occurred_at_confidence;
@@ -828,6 +832,7 @@ export async function getEventTimeFields(eventId: string): Promise<{
     confidence,
     earliest: row?.occurred_at_earliest ?? null,
     latest: row?.occurred_at_latest ?? null,
+    occurredAt: row?.occurred_at ?? null,
   };
 }
 

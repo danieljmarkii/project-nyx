@@ -12,6 +12,7 @@ import {
   reconstructTimeControl,
   sourceAfterPointEdit,
   refreshedNowPoint,
+  pointLeavesStoredWindow,
   buildTimeFields,
   DEFAULT_WINDOW_SPAN_MS,
 } from './eventTimeEdit';
@@ -338,5 +339,70 @@ describe('refreshedNowPoint (CUL-576)', () => {
       expect(out.getTime()).toBeGreaterThanOrEqual(opened.getTime());
       expect(out.getTime()).toBeLessThanOrEqual(reentered.getTime());
     }
+  });
+});
+
+describe('pointLeavesStoredWindow (CUL-2199)', () => {
+  // The row as a sync left it: a window, its point on the latest edge (deriveOccurredAt).
+  const WIN = {
+    confidence: 'window' as const,
+    earliest: '2026-03-15T02:00:00.000Z',
+    latest: '2026-03-15T09:00:00.000Z',
+    occurredAt: '2026-03-15T09:00:00+00:00',
+  };
+  const ask = (over: Partial<Parameters<typeof pointLeavesStoredWindow>[0]>) =>
+    pointLeavesStoredWindow({ ownerAsserted: false, stored: WIN, point: new Date('2026-03-15T21:30:00.000Z'), ...over });
+
+  it('refuses a moved point past the latest edge of a window that landed mid-edit', () => {
+    expect(ask({})).toBe(true);
+  });
+
+  it('refuses a moved point before the earliest edge', () => {
+    expect(ask({ point: new Date('2026-03-15T01:00:00.000Z') })).toBe(true);
+  });
+
+  it('refuses the stale OPENING point an untouched save would write back', () => {
+    // The adversarial pass on fec6dce: opened witnessed at 08:00 (or as a window at
+    // an older edge), a remote window [10:00, 12:00] moved the point to 12:00, and the
+    // owner only edited the note. The screen still holds 08:00. Judged against the
+    // point it opened with, that is "unmoved" and was let through.
+    const moved = { confidence: 'window' as const, earliest: '2026-03-15T10:00:00.000Z', latest: '2026-03-15T12:00:00.000Z', occurredAt: '2026-03-15T12:00:00.000Z' };
+    expect(ask({ stored: moved, point: new Date('2026-03-15T08:00:00.000Z') })).toBe(true);
+  });
+
+  it('passes a moved point inside the window, edges included', () => {
+    expect(ask({ point: new Date('2026-03-15T05:00:00.000Z') })).toBe(false);
+    expect(ask({ point: new Date(WIN.latest) })).toBe(false);
+    expect(ask({ point: new Date(WIN.earliest) })).toBe(false);
+  });
+
+  it('bounds an open window on its latest side only', () => {
+    const open = { ...WIN, earliest: null };
+    expect(ask({ stored: open, point: new Date('2026-03-01T00:00:00.000Z') })).toBe(false);
+    expect(ask({ stored: open })).toBe(true);
+  });
+
+  it('leaves an owner-asserted save alone: it restates the bounds from the form', () => {
+    expect(ask({ ownerAsserted: true })).toBe(false);
+  });
+
+  it('judges only windows', () => {
+    for (const confidence of ['witnessed', 'estimated', null] as const) {
+      expect(ask({ stored: { confidence, earliest: null, latest: null, occurredAt: null } })).toBe(false);
+    }
+  });
+
+  it('does not judge the point the row already holds, in either spelling', () => {
+    // A legacy point already outside its window must still let the notes save.
+    const legacy = { ...WIN, occurredAt: '2026-03-15T21:30:00+00:00' };
+    expect(ask({ stored: legacy })).toBe(false);
+  });
+
+  it('a bound that will not parse refuses rather than vouching for any point', () => {
+    expect(ask({ stored: { ...WIN, latest: 'not a time' }, point: new Date('2026-03-15T05:00:00.000Z') })).toBe(true);
+  });
+
+  it('an unknown stored point reads as moved', () => {
+    expect(ask({ stored: { ...WIN, occurredAt: undefined } })).toBe(true);
   });
 });

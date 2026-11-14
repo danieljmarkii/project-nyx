@@ -269,3 +269,55 @@ export function refreshedNowPoint(
 ): Date {
   return source === 'now' ? now : point;
 }
+
+// ── A window that landed while the editor was open (CUL-2199) ────────────────
+//
+// The editor reads the row's confidence once, at mount, and draws its time control
+// from that read. A sync can land a window on the row while the screen is open (on
+// a cough or sneeze, only from an older build; on any other leaf, from any device).
+// The screen keeps showing what it read, so the plain point picker, or a found panel
+// seeded from older bounds, is still the control on screen. Saving then writes the
+// point the screen holds while the untouched confidence keeps the REMOTE bounds
+// (B-448's touched-only rule), and nothing rejects a point outside its own window:
+// migration 012's CHECKs order the bounds against each other, never against the
+// point. Detector ⑦ reads the point with the confidence and never the bounds, so the
+// drift moves its span and onset, either way.
+//
+// The save re-reads the row and asks this. True means the write would leave the
+// point outside the window the row will keep, so the screen refuses it and redraws
+// the control from the fresh row instead. It is narrow on purpose:
+//   · an owner who touched the control restates the bounds from the form (B-448),
+//     so the window the row keeps is the one the point was derived from;
+//   · a point the ROW already holds is not this screen's to judge (a legacy row
+//     whose point already sat outside its window must still save its notes). The
+//     comparison is against the row's CURRENT point, never the one the screen opened
+//     with: a sync that moves the window moves the point to its latest edge, and an
+//     untouched save would otherwise write the stale opening point back over it
+//     (the adversarial pass on fec6dce broke the first cut exactly there);
+//   · an open window is bounded on one side only.
+export function pointLeavesStoredWindow(input: {
+  ownerAsserted: boolean;
+  stored: {
+    confidence: 'witnessed' | 'estimated' | 'window' | null;
+    earliest: string | null;
+    latest: string | null;
+    /** The row's current occurred_at. Unknown reads as moved: the check runs. */
+    occurredAt?: string | null;
+  };
+  /** The occurred_at this save would write. */
+  point: Date;
+}): boolean {
+  const { ownerAsserted, stored, point } = input;
+  if (ownerAsserted || stored.confidence !== 'window') return false;
+  const t = point.getTime();
+  // Instants, never strings: a synced row holds PostgREST's `+00:00` spelling.
+  if (stored.occurredAt && Date.parse(stored.occurredAt) === t) return false;
+  // A bound that will not parse cannot vouch for the point, so it refuses: NaN
+  // compares false both ways and would otherwise let any point through.
+  const e = stored.earliest ? Date.parse(stored.earliest) : null;
+  const l = stored.latest ? Date.parse(stored.latest) : null;
+  if (Number.isNaN(e) || Number.isNaN(l)) return true;
+  if (e !== null && t < e) return true;
+  if (l !== null && t > l) return true;
+  return false;
+}

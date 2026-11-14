@@ -53,7 +53,7 @@ import { gridSectionsFor, gridChipLabel } from '../lib/lookDisplay';
 import { toggleLookWord } from '../lib/lookSelection';
 import { lookSpeciesOf, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, notHerselfLabel } from '../constants/lookWords';
 import { LOOK_NOTE_MAX, LOOK_NOTE_PLACEHOLDER, LOOK_NOTE_CUE } from '../components/event/LookRecordSection';
-import { resolveTimeModeChange, resolveFoundModeChange, reconstructTimeControl, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
+import { resolveTimeModeChange, resolveFoundModeChange, reconstructTimeControl, sourceAfterPointEdit, pointLeavesStoredWindow, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { PhotoViewer, TextField, NumberField, TimeEditSheet, QuietBand, PrimaryButton, SkeletonRows } from '../components/ui';
 import { EditBlock, EditCard, EditRow } from '../components/ui/EditCard';
 import { FoodPicker } from '../components/log/FoodPicker';
@@ -129,8 +129,9 @@ export default function EditEventModal() {
   // the mount read below. The seed is never seen: the form renders skeleton rows, and
   // Save waits, until that read answers (`reads === 'answered'` waits on it), so the
   // time card never paints the leaf's answer over a row that contradicts it (C-12).
-  // What this does NOT cover is a sync landing a window while the editor is open; the
-  // plain point stays on screen for that row, as it always has on a meal or a dose.
+  // A sync landing a window while the editor is open is caught at save instead
+  // (CUL-2199): `pointLeavesStoredWindow` refuses a point outside the fresh row's
+  // window and `seedTimeControl` redraws the control from that row.
   const [storedContradictsLeaf, setStoredContradictsLeaf] = useState(false);
 
   // B-010 — editable witnessed/found confidence (QA Note 1: confidence wasn't
@@ -449,21 +450,7 @@ export default function EditEventModal() {
     // unclassified (NULL) row seeds NEITHER segment — mode stays null — so it
     // renders as the absence it is, never a borrowed "Saw it happen" (B-527).
     // The pure mapping lives in reconstructTimeControl so it is pinned by a test.
-    core.push(getEventTimeFields(id).then((stored) => {
-      storedTimeRef.current = { confidence: stored.confidence };
-      const seed = reconstructTimeControl(stored);
-      setTimeMode(seed.mode);
-      if (seed.foundMode) setFoundMode(seed.foundMode);
-      if (seed.mode === 'found' && seed.foundMode === 'around') {
-        setEstimatedAt(occurredAtParam ? new Date(occurredAtParam) : new Date());
-      }
-      if (seed.earliest) setEarliest(new Date(seed.earliest));
-      if (seed.latest) setFoundLatest(new Date(seed.latest));
-      // A NULL confidence is not a contradiction — it is the absence of a claim, and
-      // 012's backfill is the PM's to make, not this screen's. Only a row that
-      // positively asserts a non-witnessed confidence re-opens the control.
-      if (stored.confidence && stored.confidence !== 'witnessed') setStoredContradictsLeaf(true);
-    }));
+    core.push(getEventTimeFields(id).then(seedTimeControl));
 
     Promise.all([Promise.all(core), attachmentsSettled])
       .then(() => { if (live) setReads('answered'); })
@@ -582,6 +569,24 @@ export default function EditEventModal() {
       setNewAttachmentUri(asset.uri);
       setNewAttachmentDims({ width: asset.width, height: asset.height });
     }
+  }
+
+  // Draw the time control from what the row holds. Run on mount, and again by a
+  // save that finds a window landed on the row after mount (CUL-2199).
+  function seedTimeControl(stored: Awaited<ReturnType<typeof getEventTimeFields>>) {
+    storedTimeRef.current = { confidence: stored.confidence };
+    const seed = reconstructTimeControl(stored);
+    setTimeMode(seed.mode);
+    if (seed.foundMode) setFoundMode(seed.foundMode);
+    if (seed.mode === 'found' && seed.foundMode === 'around') {
+      setEstimatedAt(occurredAtParam ? new Date(occurredAtParam) : new Date());
+    }
+    if (seed.earliest) setEarliest(new Date(seed.earliest));
+    if (seed.latest) setFoundLatest(new Date(seed.latest));
+    // A NULL confidence is not a contradiction — it is the absence of a claim, and
+    // 012's backfill is the PM's to make, not this screen's. Only a row that
+    // positively asserts a non-witnessed confidence re-opens the control.
+    if (stored.confidence && stored.confidence !== 'witnessed') setStoredContradictsLeaf(true);
   }
 
   // Point picker (TimeConfidenceField 'saw'/unclassified mode, and the plain
@@ -729,6 +734,21 @@ export default function EditEventModal() {
       // what it had, read back here rather than from the mount-time state so a
       // save that beats the async reconstruct can't flatten it either.
       const stored = await getEventTimeFields(id);
+      // CUL-2199 — the row may have taken a window since mount (a sync from another
+      // device). Writing this point would leave it outside the window the row keeps,
+      // so refuse, redraw the control from the fresh row, and let the owner look.
+      if (pointLeavesStoredWindow({
+        ownerAsserted: confidenceTouched.current,
+        stored,
+        point: tf.occurredAt,
+      })) {
+        seedTimeControl(stored);
+        Alert.alert(
+          'This time was just updated',
+          'Another device saved a time range for this record while it was open. Check the time and save again.',
+        );
+        return;
+      }
       const confidence = confidenceUpdateForEdit({
         ownerAsserted: confidenceTouched.current,
         form: { confidence: tf.confidence, earliest: tf.earliest, latest: tf.latest },
