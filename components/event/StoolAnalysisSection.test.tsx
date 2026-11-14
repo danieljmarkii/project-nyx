@@ -1641,6 +1641,66 @@ describe('StoolAnalysisSection — an Edit on a stale screen (CUL-1356)', () => 
   });
 });
 
+// CUL-1356, adversarial round 2 — the stool half of the open-editor swap (the vomit suite's
+// "Edit left open while a newer read swaps in"). Without it, reverting the stool section to a
+// save-time compare left every stool test green.
+describe('StoolAnalysisSection — an Edit left open while a newer read swaps in (CUL-1356)', () => {
+  const STAMP = ['engines_v3_en3', 'engines_v3_en4'];
+  const PHOTO = '6f1c0d2e-1111-4a5b-9c3d-000000000001';
+  const AT = new Date(2026, 6, 15, 21, 0);
+  const iso = (d: Date) => d.toISOString();
+  let nowSpy: jest.SpyInstance;
+  const waitRow = (over: Record<string, unknown> = {}) => row({
+    recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_loose_stool'], visual_flags: [],
+    stool_consistency: 'type_6_mushy', stool_colour: 'brown', stool_blood_present: 'no', read_text: 'Repeated loose stool.',
+    may_wait: true, photo_set_key: PHOTO, updated_at: iso(new Date(2026, 6, 15, 21, 30)),
+    ai_raw_payload: { appears_to_show_stool: true, recommendation: 'monitor', read_photo_set_key: PHOTO }, ...over,
+  });
+  beforeEach(() => {
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(new Date(2026, 6, 15, 22, 0).getTime());
+    usePetStore.setState({
+      pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
+    });
+    mockMayWaitFacts = {
+      readAt: new Date(2026, 6, 15, 22, 0).getTime(),
+      anchorAt: iso(AT), serverAttachmentIds: [PHOTO], localAttachmentIds: [PHOTO], unsynced: false,
+      vomits: [], stoolAt: [], lethargyAt: [], meals: [],
+    };
+  });
+  afterEach(() => {
+    nowSpy.mockRestore();
+    mockRow = null; mockMayWaitFacts = null; mockEditorProps = null;
+    act(() => { useMomentStore.setState({ payload: null }); });
+    usePetStore.setState({ pets: [] });
+    jest.restoreAllMocks();
+  });
+
+  it('the save carries the read the editor opened on, so the record refuses the stale draft', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const save = jest.requireMock('../../lib/analysis').saveStoolFieldEdits as jest.Mock;
+    mockRow = waitRow();
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(/^Worth a call first thing tomorrow/);
+    fireEvent.press(view.getByText('Edit'));
+    await waitFor(() => expect(mockEditorProps).not.toBeNull());
+    mockRow = waitRow({
+      stool_blood_present: 'yes', stool_blood_type: 'fresh_red', visual_flags: ['fresh_blood'],
+      read_text: 'Fresh red blood.', updated_at: iso(new Date(2026, 6, 15, 21, 55)),
+    });
+    act(() => { useMomentStore.setState({ payload: { kind: 'named' } as never }); });
+    await waitFor(() => expect(view.queryByText(/Fresh red blood/)).toBeTruthy());
+    (deriveEditedStoolFields as jest.Mock).mockReturnValueOnce(['stool_blood_present']);
+    save.mockClear().mockResolvedValueOnce({ outcome: 'read_changed', error: null });
+    await act(async () => {
+      await mockEditorProps!.onSave({ stool_consistency: 'type_6_mushy', stool_colour: 'brown', stool_blood_present: 'no' });
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+    const [, , shown] = save.mock.calls[0];
+    expect(shown).toEqual(expect.objectContaining({ stool_blood_present: 'no', read_text: 'Repeated loose stool.', visual_flags: [] }));
+    expect(alert).toHaveBeenCalledWith('This note changed', expect.any(String));
+  });
+});
+
 describe('StoolAnalysisSection — the go-live day (CUL-1513)', () => {
   afterEach(() => {
     mockRow = null;
