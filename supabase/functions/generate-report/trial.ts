@@ -949,6 +949,14 @@ export interface TrialBlock {
    * copy assembled before it existed reads as unknown, never as "not the trial diet".
    */
   trialDietFeedingEventIds?: string[]
+  /**
+   * CUL-2715 — the owner's intake grades on the in-range feedings rung 1 permitted as the trial
+   * diet (a `primary_diet` row; mixed bowls are left out, their ratings are the bowl's), in scale
+   * order. The refusal box states them beside a total refusal only when they add up to the
+   * refusal fact's rated count, so a grade never speaks for feedings it does not cover. Optional:
+   * a stored copy assembled before it existed prints no grades.
+   */
+  trialDietIntakeGrades?: Array<{ rating: string; count: number }>
   /** PR 3's token. `refused` is load-bearing: §4.3 routes it to the intake-decline
    *  HEALTH lane and forbids rendering it as a compliance outcome. */
   stoppedReason: string | null
@@ -1285,6 +1293,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   const symptomDays = [...new Set(args.symptomDayIndices)]
   const exposures: TrialExposure[] = []
   const trialDietFeedingEventIds: string[] = []
+  const trialDietGrades = new Map<string, number>()
   for (const e of args.meals) {
     if (!e.meal) continue
     const dn = dayIndexOf(ctx, e.occurredAt)
@@ -1298,6 +1307,23 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       (classification.components && carriesTrialDiet(classification))
     ) {
       trialDietFeedingEventIds.push(e.id)
+    }
+    // CUL-2715: the grades on the trial diet's own feedings, by the same classification and over the
+    // refusal fact's own range (`facts.range`, not the wider evidence window: adversarial pass 2, a
+    // treat-typed trial-diet feeding before the first logged day was graded and not counted). A
+    // rating the shared predicate cannot score is no grade, as it is no rating to the refusal fact.
+    if (
+      classification.verdict === 'permitted' &&
+      classification.role === 'primary_diet' &&
+      !classification.components &&
+      dn >= startDayIndex &&
+      dn <= endDayIndex
+    ) {
+      const r = e.meal.intakeRating
+      if (feedingWasFinished(r) !== null) {
+        const key = r!.trim().toLowerCase()
+        trialDietGrades.set(key, (trialDietGrades.get(key) ?? 0) + 1)
+      }
     }
     if (classification.verdict === 'permitted' && classification.permittedBy) {
       const key = allowedRowKey(classification.permittedBy)
@@ -1517,7 +1543,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   // report had the right question and the client had no way to ask it.
   //
   // `computeTrialFacts` now returns `rangeRefusal` over the same range this loop
-  // walked (`facts.range.startDayIndex … endDayIndex`, i.e. `inRange`), so the
+  // walked (`facts.range.startDayIndex … endDayIndex`; `inRange` above is the wider evidence window), so the
   // loop is deleted rather than duplicated. Behaviour here is unchanged; what
   // changes is that there is one implementation for both surfaces to be wrong or
   // right together.
@@ -1723,6 +1749,9 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     refusalCheck: facts.refusalCheck,
     rangeRefusalSpansEpisodes: facts.rangeRefusalSpansEpisodes,
     trialDietFeedingEventIds,
+    trialDietIntakeGrades: (['all', 'most', 'some', 'picked', 'refused'] as const)
+      .filter((r) => trialDietGrades.has(r))
+      .map((r) => ({ rating: r, count: trialDietGrades.get(r)! })),
     stoppedReason: trial.stoppedReason ?? null,
     outcome: trial.outcome ?? null,
     outcomeNotes: trial.outcomeNotes ?? null,
