@@ -77,7 +77,7 @@ jest.mock('../../lib/analysis', () => ({
   // The realtime watch (CUL-171) is exercised on its own in lib/analysis.test.ts;
   // here it's a jest.fn so a test can grab the re-read callback it was handed.
   watchAnalysisRow: jest.fn(() => () => {}),
-  saveVomitFieldEdits: jest.fn(() => Promise.resolve({ error: null })),
+  saveVomitFieldEdits: jest.fn(() => Promise.resolve({ outcome: 'written', error: null })),
   deriveEditedFields: jest.fn(() => []),
   extractEditableFromPayload: jest.fn(() => null),
   normalizeVomitEdits: jest.fn((x: unknown) => x),
@@ -1190,6 +1190,147 @@ describe('VomitAnalysisSection — a red flag under a quiet verdict never folds 
     // The stored verdict is the owner's to keep (CUL-2141 rules on it); the facts stay open.
     expect(getByText('Keep an eye out')).toBeTruthy();
     expect(queryByText('Keep it compact')).toBeNull();
+  });
+});
+
+// ── CUL-1356 — an Edit on a stale screen never writes the old read over a newer one ─────
+//
+// The counterexample: the screen shows W0 (calm, no blood); the photo is replaced and R1
+// lands underneath (Worth a call, fresh red) without the section re-reading. The owner taps
+// Edit on the stale grid, changes Colour and saves. The save must carry what the screen
+// showed, so the compare-and-set (lib/analysis, proven against a fake PostgREST in
+// lib/analysis.test.ts) matches nothing; the section then re-reads, shows R1 and says so.
+describe('VomitAnalysisSection — an Edit on a stale screen (CUL-1356)', () => {
+  const W0 = {
+    status: 'completed', recommendation: 'monitor', read_text: 'Yellow, foamy, mostly bile.',
+    colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible',
+    foreign_material_present: 'no',
+  };
+  const R1 = {
+    ...W0, recommendation: 'worth_a_call', read_text: 'Fresh red blood is worth a call to your vet.',
+    blood_present: 'fresh_red', visual_flags: ['fresh_blood'],
+  };
+  const lib = () => jest.requireMock('../../lib/analysis') as { saveVomitFieldEdits: jest.Mock; deriveEditedFields: jest.Mock };
+  afterEach(() => {
+    mockRow = null;
+    mockEditorSave = null;
+    jest.restoreAllMocks();
+  });
+
+  async function editOnStaleGrid(answer: { outcome: string; error: string | null }) {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockRow = row(W0);
+    const tree = render(<VomitAnalysisSection eventId="ev-1" petId="pet-A" petName="Biscuit" hasPhoto />);
+    await tree.findByText('Keep an eye out');
+    expect(tree.getByText('None visible')).toBeTruthy();
+    // R1 lands in the record; nothing tells this screen.
+    mockRow = row(R1);
+    fireEvent.press(tree.getByText('Edit'));
+    await waitFor(() => expect(mockEditorSave).not.toBeNull());
+    lib().deriveEditedFields.mockReturnValueOnce(['colour']);
+    lib().saveVomitFieldEdits.mockClear().mockResolvedValueOnce(answer);
+    await act(async () => {
+      mockEditorSave?.({
+        colour: 'clear', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible',
+        foreign_material_present: 'no', foreign_material_note: null, description: null,
+      });
+    });
+    return { tree, alert };
+  }
+
+  it('the save carries the read on screen, and a refusal shows the newer read and says so', async () => {
+    const { tree, alert } = await editOnStaleGrid({ outcome: 'read_changed', error: null });
+    // The write was conditioned on W0: its verdict, its words and its no-blood finding.
+    expect(lib().saveVomitFieldEdits).toHaveBeenCalledTimes(1);
+    const [, , shown] = lib().saveVomitFieldEdits.mock.calls[0];
+    expect(shown).toEqual(expect.objectContaining({
+      recommendation: 'monitor', read_text: W0.read_text, blood_present: 'none_visible', colour: 'yellow',
+    }));
+    expect(alert).toHaveBeenCalledWith('This note changed', expect.any(String));
+    // R1 is on screen, and the owner's stale "None visible" never replaced it locally either.
+    expect(await tree.findByText('Fresh red')).toBeTruthy();
+    expect(tree.getByText('Call your vet today')).toBeTruthy();
+    // The owner's Colour change is not on screen as if it saved.
+    expect(tree.getByText('Yellow')).toBeTruthy();
+    expect(tree.queryByText('None visible')).toBeNull();
+    expect(tree.queryByText('Keep an eye out')).toBeNull();
+  });
+
+  it('a save that failed outright is said as a failure, and the screen is left as it was', async () => {
+    const { tree, alert } = await editOnStaleGrid({ outcome: 'failed', error: 'network' });
+    expect(alert).toHaveBeenCalledWith('Could not save', 'Try again in a moment.');
+    expect(alert).not.toHaveBeenCalledWith('This note changed', expect.any(String));
+    expect(tree.getByText('Keep an eye out')).toBeTruthy();
+  });
+
+  it('control: a save over the read still in the record commits the edit, and says nothing', async () => {
+    const { tree, alert } = await editOnStaleGrid({ outcome: 'written', error: null });
+    expect(alert).not.toHaveBeenCalled();
+    expect(await tree.findByText('Clear')).toBeTruthy();
+    expect(tree.getByText('Keep an eye out')).toBeTruthy();
+  });
+});
+
+// CUL-1356, adversarial round 1 — the swap can come with the editor OPEN. The wait line's
+// re-read (a `call_today` that may wait) puts a newer row on screen without remounting the
+// editor, whose draft still holds the old read. The save must compare against the read the
+// editor opened on: a compare built from the swapped row matches the record and lands the
+// stale "None visible" over fresh red, owner-stamped. Reproduced by the reviewer before the fix.
+describe('VomitAnalysisSection — an Edit left open while a newer read swaps in (CUL-1356)', () => {
+  const STAMP = ['engines_v3_en3', 'engines_v3_en4'];
+  const PHOTO = '6f1c0d2e-1111-4a5b-9c3d-000000000001';
+  const AT = new Date(2026, 6, 15, 21, 0);
+  const iso = (d: Date) => d.toISOString();
+  let nowSpy: jest.SpyInstance;
+  const waitRow = (over: Record<string, unknown> = {}) => row({
+    recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'], visual_flags: [],
+    colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible', foreign_material_present: 'no',
+    read_text: 'Repeated vomiting.',
+    may_wait: true, photo_set_key: PHOTO, updated_at: iso(new Date(2026, 6, 15, 21, 30)),
+    ai_raw_payload: { appears_to_show_vomit: true, recommendation: 'monitor', read_photo_set_key: PHOTO }, ...over,
+  });
+  beforeEach(() => {
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(new Date(2026, 6, 15, 22, 0).getTime());
+    usePetStore.setState({
+      pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
+    });
+    mockMayWaitFacts = {
+      readAt: new Date(2026, 6, 15, 22, 0).getTime(),
+      anchorAt: iso(AT), serverAttachmentIds: [PHOTO], localAttachmentIds: [PHOTO], unsynced: false,
+      vomits: [{ at: iso(new Date(2026, 6, 15, 15, 0)), confidence: 'witnessed' }, { at: iso(AT), confidence: 'witnessed' }],
+      stoolAt: [], lethargyAt: [], meals: [],
+    };
+  });
+  afterEach(() => {
+    nowSpy.mockRestore();
+    mockRow = null; mockMayWaitFacts = null; mockEditorSave = null;
+    act(() => { useMomentStore.setState({ payload: null }); });
+    usePetStore.setState({ pets: [] });
+    jest.restoreAllMocks();
+  });
+
+  it('the save carries the read the editor opened on, so the record refuses the stale draft', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const lib = jest.requireMock('../../lib/analysis') as { saveVomitFieldEdits: jest.Mock; deriveEditedFields: jest.Mock };
+    mockRow = waitRow();
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(/^Worth a call first thing tomorrow/);
+    fireEvent.press(view.getByText('Edit'));
+    await waitFor(() => expect(mockEditorSave).not.toBeNull());
+    const staleDraft = { colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible', foreign_material_present: 'no', foreign_material_note: null, description: null };
+    // A replaced photo's read lands (fresh red, `updated_at` moves) and the wait line's re-read
+    // puts it on screen while the editor stays open.
+    mockRow = waitRow({ blood_present: 'fresh_red', visual_flags: ['fresh_blood'], read_text: 'Fresh red blood.', updated_at: iso(new Date(2026, 6, 15, 21, 55)) });
+    act(() => { useMomentStore.setState({ payload: { kind: 'named' } as never }); });
+    await waitFor(() => expect(view.queryByText(/Fresh red blood/)).toBeTruthy());
+    lib.deriveEditedFields.mockReturnValueOnce(['blood_present']);
+    lib.saveVomitFieldEdits.mockClear().mockResolvedValueOnce({ outcome: 'read_changed', error: null });
+    await act(async () => { mockEditorSave?.(staleDraft); });
+    expect(lib.saveVomitFieldEdits).toHaveBeenCalledTimes(1);
+    const [, , shown] = lib.saveVomitFieldEdits.mock.calls[0];
+    expect(shown).toEqual(expect.objectContaining({ blood_present: 'none_visible', read_text: 'Repeated vomiting.', visual_flags: [] }));
+    expect(alert).toHaveBeenCalledWith('This note changed', expect.any(String));
+    expect(view.getByText('Fresh red')).toBeTruthy();
   });
 });
 

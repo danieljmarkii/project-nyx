@@ -95,30 +95,45 @@ export function sameShown(row: object, shown: ShownRead): boolean {
   return Object.entries(shown).every(([column, value]) => sameValue(columnValue(row, column), value));
 }
 
+// The filter half of the compare-and-set, shared by every write the record screen makes
+// over a read it is showing: Hide / Show here, and the owner's field edit
+// (`saveVomitFieldEdits` / `saveStoolFieldEdits`, CUL-1356). One loop, so a column added to
+// what the owner saw is compared by both writes at once.
+interface ShownFilter<Q> {
+  eq(column: string, value: string): Q;
+  is(column: string, value: null): Q;
+  filter(column: string, operator: string, value: string): Q;
+}
+
+export function matchShown<Q extends ShownFilter<Q>>(query: Q, shown: ShownRead): Q {
+  let q = query;
+  // `eq` never matches NULL in SQL, so a null column needs `is` or the compare
+  // could never pass on a row whose read is still blank.
+  for (const [column, value] of Object.entries(shown)) {
+    if (value === null) q = q.is(column, null);
+    else if (typeof value === 'string') q = q.eq(column, value);
+    else q = q.filter(column, 'eq', pgTextArray(value));
+  }
+  return q;
+}
+
 export async function writeAnalysisDismissal(
   eventId: string,
   shown: ShownRead,
   dismissedAt: string | null,
 ): Promise<DismissalOutcome> {
-  let query = supabase
-    .from('event_ai_analysis')
-    .update({ dismissed_at: dismissedAt })
-    .eq('event_id', eventId);
-  // `eq` never matches NULL in SQL, so a null column needs `is` or the compare
-  // could never pass on a row whose read is still blank.
-  for (const [column, value] of Object.entries(shown)) {
-    if (value === null) query = query.is(column, null);
-    else if (typeof value === 'string') query = query.eq(column, value);
-    else query = query.filter(column, 'eq', pgTextArray(value));
-  }
+  const query = matchShown(
+    supabase.from('event_ai_analysis').update({ dismissed_at: dismissedAt }).eq('event_id', eventId),
+    shown,
+  );
   const { data, error } = await query.select('event_id');
   if (error) return 'failed';
   return data && data.length > 0 ? 'written' : 'read_changed';
 }
 
-// Said when a Hide or Show found a different read in the record than the one on
-// screen. Direction-neutral, because both controls can meet it, and true whether the
-// change was a new read or an edit on another device, and whether it is now shown or
+// Said when a Hide, a Show or a field edit found a different read in the record than the
+// one on screen. Direction-neutral, because every control can meet it, and true whether
+// the change was a new read or an edit on another device, and whether it is now shown or
 // hidden.
 export const READ_CHANGED_TITLE = 'This note changed';
 export const READ_CHANGED_BODY = 'It was updated while this was open. Have a look, then try again.';

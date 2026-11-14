@@ -127,6 +127,10 @@ const WRITE_CALLS = [
   // which silences its own mutations, and these names are what survive that.
   'saveVomitFieldEdits',
   'saveStoolFieldEdits',
+  // CUL-1356 — the owner edits above share Hide's compare-and-set, so `lib/analysis.ts`
+  // imports `lib/analysisDismissal.ts` and Hide / Show joins Home's closure with it. Named
+  // so the WRITE_PATH entry below silences its update and never the reach.
+  'writeAnalysisDismissal',
 ];
 
 /**
@@ -333,6 +337,14 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
       'Home reaches this module for the read\u2019s state (TodayCard) and writes ' +
       'nothing through it; both helpers are in WRITE_CALLS, so a Home card that calls ' +
       'one is still caught BY NAME.',
+  },
+  'lib/analysisDismissal.ts': {
+    helpers: ['writeAnalysisDismissal'],
+    why:
+      'declares Hide / Show on the per-incident read (CUL-1323) and the compare-and-set ' +
+      'filter the owner edits share (CUL-1356). It reaches Home only through ' +
+      'lib/analysis.ts, which imports the filter; Home calls nothing in it. The helper is ' +
+      'in WRITE_CALLS, so a Home card that calls it is still caught BY NAME.',
   },
   // Engines v3 PR-28b (CUL-1436) \u2014 registered the PR they SHIP (C-32). The completion
   // register types its payload's floor line from the preview module and reaches the

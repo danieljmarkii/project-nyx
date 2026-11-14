@@ -82,6 +82,17 @@ import { supabase } from './supabase';
 import { refreshReadCopy, refreshReadCopyOutcome } from './sync';
 import { useSyncStore } from '../store/syncStore';
 import { notifySignedOut } from './signOutEpoch';
+import { shownRead, VOMIT_DISMISSAL_COLUMNS, STOOL_DISMISSAL_COLUMNS, pgTextArray } from './analysisDismissal';
+
+// The owner-edit write is a compare-and-set since CUL-1356: `.update().eq().eq|is|filter()
+// .select()`. This answers it as a row that matched (or a refused write), for the suites
+// that only care what follows a save.
+function editChain(error: { message: string } | null): void {
+  const chain: Record<string, unknown> = {};
+  for (const m of ['update', 'eq', 'is', 'filter']) chain[m] = jest.fn(() => chain);
+  chain.select = jest.fn(() => Promise.resolve(error ? { data: null, error } : { data: [{ event_id: 'e' }], error: null }));
+  (supabase.from as jest.Mock).mockReturnValue(chain);
+}
 
 // Grab a typed handle to the mocked invoke AFTER import (referencing it inside
 // the jest.mock factory hits a TDZ/hoisting trap).
@@ -1131,22 +1142,19 @@ describe('a landed read that failed to copy is watched until it lands (CUL-1198 
 // CUL-2678: the copy now mirrors the read's sign columns, so an owner's edit to one refreshes
 // it at once; a list chip never waits a sync cycle to say the floor over blood the owner added.
 describe('an owner edit refreshes the read copy (CUL-2678)', () => {
-  const update = (error: { message: string } | null) => {
-    const eq = jest.fn().mockResolvedValue({ error });
-    (supabase.from as jest.Mock).mockReturnValue({ update: jest.fn(() => ({ eq })) });
-  };
+  const update = (error: { message: string } | null) => editChain(error);
   beforeEach(() => (refreshReadCopyOutcome as jest.Mock).mockClear());
 
   it.each([
-    ['vomit', () => saveVomitFieldEdits('ev-1', { blood_present: 'fresh_red' } as VomitEditableFields)],
-    ['stool', () => saveStoolFieldEdits('ev-1', { stool_blood_present: 'yes' } as StoolEditableFields)],
+    ['vomit', () => saveVomitFieldEdits('ev-1', { blood_present: 'fresh_red' } as VomitEditableFields, {})],
+    ['stool', () => saveStoolFieldEdits('ev-1', { stool_blood_present: 'yes' } as StoolEditableFields, {})],
   ])('a saved %s edit re-pulls that event, and a refused one does not', async (_kind, save) => {
     update(null);
-    expect(await save()).toEqual({ error: null });
+    expect(await save()).toEqual({ outcome: 'written', error: null });
     expect(refreshReadCopyOutcome).toHaveBeenCalledWith('ev-1');
     (refreshReadCopyOutcome as jest.Mock).mockClear();
     update({ message: 'denied' });
-    expect(await save()).toEqual({ error: 'denied' });
+    expect(await save()).toEqual({ outcome: 'failed', error: 'denied' });
     expect(refreshReadCopyOutcome).not.toHaveBeenCalled();
   });
 });
@@ -1160,10 +1168,7 @@ describe('a landed read rebuilds the Signal for its record’s pet (CUL-1105)', 
   const flush = () => new Promise((r) => setTimeout(r, 0));
   // Each call answers the next queued outcome; once the queue is empty, `unchanged`.
   const answers = (...queue: string[]) => outcome.mockImplementation(async () => queue.shift() ?? 'unchanged');
-  const update = (error: { message: string } | null) => {
-    const eq = jest.fn().mockResolvedValue({ error });
-    (supabase.from as jest.Mock).mockReturnValue({ update: jest.fn(() => ({ eq })) });
-  };
+  const update = (error: { message: string } | null) => editChain(error);
 
   beforeEach(() => {
     mockRegen.mockReset();
@@ -1233,19 +1238,150 @@ describe('a landed read rebuilds the Signal for its record’s pet (CUL-1105)', 
   });
 
   it.each([
-    ['vomit', () => saveVomitFieldEdits('ev-edit', { blood_present: 'none' } as VomitEditableFields)],
-    ['stool', () => saveStoolFieldEdits('ev-edit', { stool_blood_present: 'no' } as StoolEditableFields)],
+    ['vomit', () => saveVomitFieldEdits('ev-edit', { blood_present: 'none' } as VomitEditableFields, {})],
+    ['stool', () => saveStoolFieldEdits('ev-edit', { stool_blood_present: 'no' } as StoolEditableFields, {})],
   ])('a saved %s edit rebuilds (it can clear the card), a refused one does not', async (_kind, save) => {
     update(null);
-    expect(await save()).toEqual({ error: null });
+    expect(await save()).toEqual({ outcome: 'written', error: null });
     await flush();
     expect(mockEventPetId).toHaveBeenCalledWith('ev-edit');
     expect(mockRegen).toHaveBeenCalledTimes(1);
     expect(mockRegen).toHaveBeenCalledWith('pet-of-record');
     mockRegen.mockReset();
     update({ message: 'denied' });
-    expect(await save()).toEqual({ error: 'denied' });
+    expect(await save()).toEqual({ outcome: 'failed', error: 'denied' });
     await flush();
     expect(mockRegen).not.toHaveBeenCalled();
+  });
+});
+
+// ── CUL-1356: an edit on a stale screen never writes the old read over a newer one ──────
+// A fake PostgREST over ONE stored row that really applies the filters the write sends,
+// so the test is about what lands in the record, not which methods were called.
+describe('an owner edit writes only over the read the owner saw (CUL-1356)', () => {
+  type Row = Record<string, unknown>;
+  let stored: Row;
+  let writes: Row[];
+
+  function serve(): void {
+    (supabase.from as jest.Mock).mockImplementation(() => {
+      let patch: Row = {};
+      const conds: ((r: Row) => boolean)[] = [];
+      const chain: Record<string, unknown> = {
+        update: (p: Row) => { patch = p; return chain; },
+        eq: (c: string, v: string) => { conds.push((r) => r[c] === v); return chain; },
+        is: (c: string) => { conds.push((r) => r[c] === null || r[c] === undefined); return chain; },
+        filter: (c: string, op: string, v: string) => {
+          expect(op).toBe('eq');
+          conds.push((r) => Array.isArray(r[c]) && pgTextArray(r[c] as string[]) === v);
+          return chain;
+        },
+        select: () => {
+          if (!conds.every((f) => f(stored))) return Promise.resolve({ data: [], error: null });
+          stored = { ...stored, ...patch };
+          writes.push(patch);
+          return Promise.resolve({ data: [{ event_id: stored.event_id }], error: null });
+        },
+      };
+      return chain;
+    });
+  }
+
+  // W0: what the screen shows. R1: what landed underneath after the photo was replaced.
+  const W0: Row = {
+    event_id: 'ev-stale', recommendation: 'monitor', read_text: 'Nothing obviously concerning on its own.',
+    tier: null, description: 'Yellow foam.', colour: 'yellow', consistency: 'foamy', contents: ['foam'],
+    blood_present: 'none_visible', foreign_material_present: 'no', foreign_material_note: null,
+    contextual_flags: null, visual_flags: null, edited_at: null,
+  };
+  const R1: Row = {
+    ...W0, recommendation: 'worth_a_call', read_text: 'Fresh red blood is worth a call to your vet.',
+    description: 'Foam streaked with fresh red blood.', blood_present: 'fresh_red', visual_flags: ['fresh_blood'],
+  };
+  const S0: Row = {
+    event_id: 'ev-stale', recommendation: 'monitor', read_text: 'Nothing obviously concerning on its own.',
+    tier: null, description: 'Formed brown stool.', stool_consistency: 'formed', stool_colour: 'brown',
+    stool_content: null, stool_blood_present: 'no', stool_blood_type: null, stool_mucus_present: 'no',
+    foreign_material_present: 'no', foreign_material_note: null, contextual_flags: null, visual_flags: null, edited_at: null,
+  };
+  const S1: Row = {
+    ...S0, recommendation: 'worth_a_call', read_text: 'Fresh red blood is worth a call to your vet.',
+    stool_blood_present: 'yes', stool_blood_type: 'fresh_red', visual_flags: ['fresh_blood'],
+  };
+  const vomitEdits = (r: Row): VomitEditableFields => ({
+    colour: r.colour as string, consistency: r.consistency as string, contents: r.contents as string[],
+    blood_present: r.blood_present as string, foreign_material_present: r.foreign_material_present as string,
+    foreign_material_note: r.foreign_material_note as string | null, description: r.description as string,
+  });
+  const stoolEdits = (r: Row): StoolEditableFields => ({
+    stool_consistency: r.stool_consistency as string, stool_colour: r.stool_colour as string,
+    stool_content: r.stool_content as string[] | null, stool_blood_present: r.stool_blood_present as string,
+    stool_blood_type: r.stool_blood_type as string | null, stool_mucus_present: r.stool_mucus_present as string,
+    foreign_material_present: r.foreign_material_present as string,
+    foreign_material_note: r.foreign_material_note as string | null, description: r.description as string,
+  });
+
+  beforeEach(() => {
+    writes = [];
+    (refreshReadCopyOutcome as jest.Mock).mockClear();
+    mockRegen.mockReset();
+    serve();
+  });
+  afterEach(() => (supabase.from as jest.Mock).mockReset());
+
+  it('vomit: a Colour edit made on W0 matches nothing once R1 landed, and fresh red survives unedited', async () => {
+    stored = { ...R1 };
+    const result = await saveVomitFieldEdits('ev-stale', { ...vomitEdits(W0), colour: 'clear' }, shownRead(W0, VOMIT_DISMISSAL_COLUMNS));
+    expect(result).toEqual({ outcome: 'read_changed', error: null });
+    expect(writes).toEqual([]);
+    expect(stored.blood_present).toBe('fresh_red');
+    expect(stored.edited_at).toBeNull();
+    expect(stored.recommendation).toBe('worth_a_call');
+    // Nothing changed, so nothing is refreshed or rebuilt over the record.
+    expect(refreshReadCopyOutcome).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockRegen).not.toHaveBeenCalled();
+  });
+
+  it('stool: the same sequence leaves the new fresh-red finding and its type alone', async () => {
+    stored = { ...S1 };
+    const result = await saveStoolFieldEdits('ev-stale', { ...stoolEdits(S0), stool_colour: 'yellow' }, shownRead(S0, STOOL_DISMISSAL_COLUMNS));
+    expect(result).toEqual({ outcome: 'read_changed', error: null });
+    expect(writes).toEqual([]);
+    expect(stored.stool_blood_present).toBe('yes');
+    expect(stored.stool_blood_type).toBe('fresh_red');
+    expect(stored.edited_at).toBeNull();
+  });
+
+  it('the same edit over the read still on screen writes, and stamps it as the owner’s', async () => {
+    stored = { ...W0 };
+    const result = await saveVomitFieldEdits('ev-stale', { ...vomitEdits(W0), colour: 'clear' }, shownRead(W0, VOMIT_DISMISSAL_COLUMNS));
+    expect(result).toEqual({ outcome: 'written', error: null });
+    expect(stored.colour).toBe('clear');
+    expect(typeof stored.edited_at).toBe('string');
+    expect(refreshReadCopyOutcome).toHaveBeenCalledWith('ev-stale');
+    stored = { ...S0 };
+    expect((await saveStoolFieldEdits('ev-stale', { ...stoolEdits(S0), stool_colour: 'yellow' }, shownRead(S0, STOOL_DISMISSAL_COLUMNS))).outcome).toBe('written');
+    expect(stored.stool_colour).toBe('yellow');
+  });
+
+  it.each([
+    ['blood only', { blood_present: 'fresh_red' }],
+    ['the words only', { read_text: 'Worth a call: there is blood in it.' }],
+    ['the contents only', { contents: ['foam', 'blood'] }],
+    ['an edit from another device', { colour: 'green', edited_at: '2026-11-14T10:00:00.000Z' }],
+  ])('a read that moved %s under the screen refuses the edit', async (_label, moved) => {
+    stored = { ...W0, ...moved };
+    const result = await saveVomitFieldEdits('ev-stale', { ...vomitEdits(W0), consistency: 'liquid' }, shownRead(W0, VOMIT_DISMISSAL_COLUMNS));
+    expect(result.outcome).toBe('read_changed');
+    expect(writes).toEqual([]);
+  });
+
+  // The compare holds every pre-edit value only because the shown columns contain every
+  // editable one. A field added to the editor and not to the compare would be written
+  // blind again, so the subset is pinned in both kinds.
+  it('every editable column is compared before the edit writes it', () => {
+    expect(EDITABLE_VOMIT_FIELDS.filter((f) => !(VOMIT_DISMISSAL_COLUMNS as readonly string[]).includes(f))).toEqual([]);
+    expect(EDITABLE_STOOL_FIELDS.filter((f) => !(STOOL_DISMISSAL_COLUMNS as readonly string[]).includes(f))).toEqual([]);
   });
 });
