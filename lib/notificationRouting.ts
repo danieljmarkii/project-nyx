@@ -54,8 +54,8 @@ export interface NotificationRouteDecision {
    *  one of ours (G5 fail-safe — never navigate a stale/foreign payload blind). */
   routeTo: string | null;
   /** Params the route needs beyond the tap marker, built here from validated values only.
-   *  Today a single-visit reminder's `appointmentId` (Get ready) and a collapsed one's
-   *  `pet` (the Vet visits list). */
+   *  Today a single-visit reminder's `appointmentId` and its `pet` (Get ready, and where a
+   *  stale tap falls back to) and a collapsed one's `pet` (the Vet visits list). */
   routeParams?: Readonly<Record<string, string>>;
 }
 
@@ -89,8 +89,16 @@ export function notificationRouteDecision(
     if (!opts.authed) return { recordCategory: null, routeTo: null };
     const appointmentId =
       typeof data.appointmentId === 'string' && CALL_ID.test(data.appointmentId) ? data.appointmentId : null;
-    if (appointmentId) return { recordCategory: null, routeTo: '/rundown', routeParams: { appointmentId } };
     const petId = typeof data.petId === 'string' && CALL_ID.test(data.petId) ? data.petId : null;
+    // CUL-2729: the single visit's pet rides along, so a reminder tapped after its visit
+    // was cancelled or logged can open THAT pet's list, never the active pet's rundown.
+    if (appointmentId) {
+      return {
+        recordCategory: null,
+        routeTo: '/rundown',
+        routeParams: petId ? { appointmentId, pet: petId } : { appointmentId },
+      };
+    }
     return petId
       ? { recordCategory: null, routeTo: '/vet-visits', routeParams: { pet: petId } }
       : { recordCategory: null, routeTo: '/vet-visits' };

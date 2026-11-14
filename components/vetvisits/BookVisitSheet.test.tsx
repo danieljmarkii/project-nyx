@@ -331,8 +331,9 @@ describe('Remind me', () => {
     fireEvent.press(screen.getByRole('checkbox'));
     expect(screen.getByRole('checkbox').props.accessibilityState).toEqual({ checked: true });
     // Booked for today with no time: the 8:00 am day-of may already be past, so the line
-    // is whichever the planner still holds; it always says the switch is account-wide.
-    expect(screen.getByText(/for every pet’s visits/)).toBeTruthy();
+    // is whichever the planner still holds: its times and that the switch is account-wide,
+    // or (CUL-2729 D3) that this visit is too soon for one.
+    expect(screen.getByText(/for every pet’s visits|for every visit you book|Too soon for this visit/)).toBeTruthy();
     fireEvent.press(screen.getByText('Add the appointment'));
     expect(onSubmit.mock.calls[0][0].remindMe).toBe(true);
   });

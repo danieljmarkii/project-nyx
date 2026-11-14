@@ -388,11 +388,12 @@ export default function NotificationsScreen() {
             spec §5): stated where an owner examines the feature, no longer part of
             the pitch. Shown where the live feature is (states a/b), not over the
             denied banner. Widened for the vet visit reminders (CUL-2728 T6): their
-            lock screen carries the visit's day and time, still nothing from the record. */}
+            lock screen carries the visit's day and time, still nothing from the record.
+            CUL-2729 D4: it also carries the pet's name, always (R4), so the promise says so. */}
         {!loading && !denied && (
           // Same tertiary register as the intro line (reused, not duplicated).
           <Text style={styles.intro}>
-            On your lock screen, Culprit says only that the day’s ready to read, or when a vet visit is. Never what’s in the record.
+            On your lock screen, Culprit says only that the day’s ready to read, or when a vet visit is, with your pet’s name. Never what’s in the record.
           </Text>
         )}
 

@@ -54,7 +54,7 @@ export function useVetReminderSync(): void {
 /** The snackbar after reminders turn on (mock round 2 §5). */
 export const VET_REMINDERS_ON_MESSAGE = 'Vet visit reminders are on.';
 /** The snackbar when the write after a booking fails: the booking itself stands. */
-export const VET_REMINDERS_FAILED_MESSAGE = 'Couldn’t turn on reminders. Try again in Notifications.';
+export const VET_REMINDERS_FAILED_MESSAGE = 'Couldn’t turn on reminders. Try again in Settings › Notifications.';
 
 /** Write the account's switch, then re-plan. For an ON the caller has already
  *  confirmed OS permission (the settings row, Remind me). Throws on a failed write so

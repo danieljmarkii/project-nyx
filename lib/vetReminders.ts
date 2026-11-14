@@ -70,6 +70,9 @@ export interface PlannedVetReminder {
   /** The fire instant, ISO. */
   fireAt: string;
   appointmentId: string | null;
+  /** Every visit this reminder stands for (one, or a collapsed group's), so a delivered
+   *  reminder can be withdrawn once none of them is still booked (CUL-2729). */
+  appointmentIds: string[];
   /** The pet the tap opens on: the single visit's, or a collapsed group's first (the
    *  earliest instant, then the earliest appointment). Round 2 T4: a collapsed tap opens
    *  the Vet visits list on this pet, the list's existing pet door. */
@@ -173,6 +176,7 @@ export function planVetReminders(input: PlanInput): PlannedVetReminder[] {
       dayKey,
       fireAt: first.fire.toISOString(),
       appointmentId: single ? first.appt.id : null,
+      appointmentIds: group.map((s) => s.appt.id),
       petId: first.appt.pet_id,
       ...copy,
     });
@@ -195,6 +199,19 @@ function dayWord(apptDay: string, fireDay: string, appt: Date): string {
 }
 
 function singleCopy(s: Slot, fireDay: string): { title: string; body: string } {
+  return visitCopy(s, fireDay, s.petName, 'sees', DAY_OF_BODY);
+}
+
+/** One visit's words, or (CUL-2729 D1) several pets' visits that share one instant: the
+ *  same shape with the names joined, so a two-pet home keeps the time, the ask and the
+ *  report line a one-pet home gets. */
+function visitCopy(
+  s: Slot,
+  fireDay: string,
+  who: string,
+  verb: 'sees' | 'see',
+  dayOfBody: string,
+): { title: string; body: string } {
   const appt = new Date(s.appt.scheduled_at);
   const apptDay = localDateKey(appt);
   const timed = appointmentTimeKnown(s.appt.scheduled_at);
@@ -208,21 +225,27 @@ function singleCopy(s: Slot, fireDay: string): { title: string; body: string } {
     const fire = dayKeyToLocalDate(fireDay) ?? appt;
     const date = formatVisitDate(apptDay, fire);
     return {
-      title: `${s.petName} sees the vet ${word}`,
+      title: `${who} ${verb} the vet ${word}`,
       body: `${date}${clock ? ` at ${clock}` : ''}. ${AHEAD_ASK}`,
     };
   }
   return {
-    title: `${s.petName} sees the vet ${word}${clock ? ` at ${clock}` : ''}`,
-    body: DAY_OF_BODY,
+    title: `${who} ${verb} the vet ${word}${clock ? ` at ${clock}` : ''}`,
+    body: dayOfBody,
   };
 }
+
+/** Said when a reminder's tap finds its visit no longer booked (cancelled, deleted or
+ *  logged since it was delivered), over that pet's Vet visits list (CUL-2729). */
+export const VISIT_NO_LONGER_BOOKED = 'That visit isn’t booked any more.';
 
 /** The ahead reminder's ask (mock round 2, T2). */
 export const AHEAD_ASK = 'A few minutes in Get ready now leaves time to weigh, log or call ahead.';
 /** The day-of body: CUL-2302's line, never naming a finished file, and since round 2 D1
  *  never a date from the record. */
 export const DAY_OF_BODY = 'Make a report to take along.';
+/** The same line when one reminder stands for several pets' visits (CUL-2729 D1). */
+export const DAY_OF_BODY_EACH = 'Make a report for each to take along.';
 
 function joinNames(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? '';
@@ -233,11 +256,19 @@ function joinNames(names: readonly string[]): string {
 function collapsedCopy(group: readonly Slot[], fireDay: string): { title: string; body: string } {
   const names: string[] = [];
   for (const s of group) if (!names.includes(s.petName)) names.push(s.petName);
+  const verb = names.length === 1 ? 'sees' : 'see';
+  // ONE INSTANT across the group (CUL-2729 D1, PM 2026-11-14): "Also for" books every
+  // pet at the same time, so this is the common two-pet case, and it can honestly say
+  // everything a single visit says. Compared as parsed instants, never as text (C-40).
+  const instants = new Set(group.map((s) => new Date(s.appt.scheduled_at).getTime()));
+  if (instants.size === 1) {
+    return visitCopy(group[0], fireDay, joinNames(names), verb, names.length === 1 ? DAY_OF_BODY : DAY_OF_BODY_EACH);
+  }
   const apptDays = new Set(group.map((s) => localDateKey(new Date(s.appt.scheduled_at))));
   const first = new Date(group[0].appt.scheduled_at);
-  const verb = names.length === 1 ? 'sees' : 'see';
-  // One appointment day across the group names it; mixed days (an evening-before slot
-  // sharing a day with a same-day one) cannot honestly name one, so the title stays general.
+  // Mixed times cannot name one clock. One appointment day across the group names the
+  // day; mixed days (an evening-before slot sharing a day with a same-day one) cannot
+  // honestly name one either, so the title stays general.
   const title =
     apptDays.size === 1
       ? `${joinNames(names)} ${verb} the vet ${dayWord(localDateKey(first), fireDay, first)}`

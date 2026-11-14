@@ -102,10 +102,16 @@ describe('notificationRouteDecision: the vet visit reminder (CUL-2727)', () => {
       routeTo: '/vet-visits',
       routeParams: { pet: PET },
     });
-    // A single visit's Get ready wins over the pet; a pet not shaped like ours is dropped.
-    expect(notificationRouteDecision({ kind: 'vet_visit', appointmentId: ID, petId: PET }, { authed: true }).routeTo).toBe(
-      '/rundown',
-    );
+    // A single visit's Get ready wins over the list, and carries its pet for a stale tap
+    // (CUL-2729); a pet not shaped like ours is dropped.
+    expect(notificationRouteDecision({ kind: 'vet_visit', appointmentId: ID, petId: PET }, { authed: true })).toEqual({
+      recordCategory: null,
+      routeTo: '/rundown',
+      routeParams: { appointmentId: ID, pet: PET },
+    });
+    expect(
+      notificationRouteDecision({ kind: 'vet_visit', appointmentId: ID, petId: '../settings' }, { authed: true }).routeParams,
+    ).toEqual({ appointmentId: ID });
     expect(
       notificationRouteDecision({ kind: 'vet_visit', appointmentId: null, petId: '../settings' }, { authed: true }).routeParams,
     ).toBeUndefined();

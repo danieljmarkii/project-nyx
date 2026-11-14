@@ -5,6 +5,8 @@ jest.mock('expo-notifications', () => ({
   cancelScheduledNotificationAsync: jest.fn(async () => undefined),
   scheduleNotificationAsync: jest.fn(async () => 'id'),
   setNotificationChannelAsync: jest.fn(async () => undefined),
+  getPresentedNotificationsAsync: jest.fn(async () => []),
+  dismissNotificationAsync: jest.fn(async () => undefined),
   SchedulableTriggerInputTypes: { DATE: 'date' },
   AndroidImportance: { DEFAULT: 3 },
 }));
@@ -38,6 +40,7 @@ function planned(over: Partial<PlannedVetReminder> = {}): PlannedVetReminder {
     dayKey: '2026-11-16',
     fireAt: new Date(2026, 10, 16, 8).toISOString(),
     appointmentId: 'a',
+    appointmentIds: ['a'],
     petId: 'p',
     title: 'Nyx sees the vet today at 10:30 am',
     body: 'Make a report to take along.',
@@ -175,6 +178,60 @@ describe('syncVetReminderNotifications (the run)', () => {
     await syncVetReminderNotifications(input({ names: [] }));
     expect(N.cancelScheduledNotificationAsync.mock.calls).toEqual([['nyx.vetreminder.ahead.2026-11-13']]);
     expect(N.scheduleNotificationAsync).not.toHaveBeenCalled();
+  });
+
+  describe('delivered reminders (CUL-2729)', () => {
+    const delivered = (identifier: string, appointmentId: string | null, appointmentIds?: string[]) => ({
+      request: { identifier, content: { data: { kind: 'vet_visit', appointmentId, appointmentIds } } },
+    });
+
+    it('a collapsed one goes only when NONE of its visits is still booked', async () => {
+      N.getPresentedNotificationsAsync.mockResolvedValue([
+        delivered('nyx.vetreminder.ahead.2026-11-05', null, ['gone-1', 'gone-2']),
+        delivered('nyx.vetreminder.ahead.2026-11-06', null, ['gone-1', 'a']),
+      ]);
+      await syncVetReminderNotifications(input());
+      expect(N.dismissNotificationAsync.mock.calls).toEqual([['nyx.vetreminder.ahead.2026-11-05']]);
+    });
+
+    it('a scheduled reminder carries every visit it stands for', async () => {
+      await syncVetReminderNotifications(input());
+      expect(N.scheduleNotificationAsync.mock.calls[0][0].content.data.appointmentIds).toEqual(['a']);
+    });
+
+    it('withdraws one whose visit is no longer live, and leaves live, collapsed and foreign ones', async () => {
+      N.getPresentedNotificationsAsync.mockResolvedValue([
+        delivered('nyx.vetreminder.ahead.2026-11-06', 'gone'),
+        delivered('nyx.vetreminder.ahead.2026-11-07', 'a'),
+        delivered('nyx.vetreminder.day_of.2026-11-08', null),
+        delivered('nyx.notif.daily_summary', 'gone'),
+      ]);
+      await syncVetReminderNotifications(input());
+      expect(N.dismissNotificationAsync.mock.calls).toEqual([['nyx.vetreminder.ahead.2026-11-06']]);
+    });
+
+    it('the switch off withdraws every one of ours, and only ours', async () => {
+      (getDb as jest.Mock).mockReturnValue({ getFirstAsync: jest.fn(async () => ({ id: 'p', enabled: 0 })) });
+      N.getPresentedNotificationsAsync.mockResolvedValue([
+        delivered('nyx.vetreminder.ahead.2026-11-07', 'a'),
+        delivered('nyx.vetreminder.day_of.2026-11-08', null),
+        delivered('nyx.followup.c-1', null),
+      ]);
+      await syncVetReminderNotifications(input());
+      expect(N.dismissNotificationAsync.mock.calls).toEqual([
+        ['nyx.vetreminder.ahead.2026-11-07'],
+        ['nyx.vetreminder.day_of.2026-11-08'],
+      ]);
+    });
+
+    it('touches none while the pet list has not answered, and a failed read never blocks the schedule', async () => {
+      N.getPresentedNotificationsAsync.mockResolvedValue([delivered('nyx.vetreminder.ahead.2026-11-06', 'gone')]);
+      await syncVetReminderNotifications(input({ petsLoaded: false, names: [] }));
+      expect(N.dismissNotificationAsync).not.toHaveBeenCalled();
+      N.getPresentedNotificationsAsync.mockRejectedValue(new Error('no'));
+      await syncVetReminderNotifications(input());
+      expect(N.scheduleNotificationAsync).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('overlapping calls run one at a time, and the calls arriving mid-run share ONE fresh run', async () => {

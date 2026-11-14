@@ -14,6 +14,8 @@ import {
 } from '../components/vetvisits/GetReadyHeader';
 import { WorthRaisingList } from '../components/vetvisits/WorthRaisingList';
 import { resolveRecordPetName, usePetStore, type Pet } from '../store/petStore';
+import { useSnackbarStore } from '../store/snackbarStore';
+import { VISIT_NO_LONGER_BOOKED } from '../lib/vetReminders';
 import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
 import { rundownHistoryHref } from '../lib/historyDoors';
 import { buildWorthRaising, getReadyIntakeDeclines, type WorthRaising } from '../lib/getReady';
@@ -165,7 +167,11 @@ export default function RundownScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const { appointmentId, ask } = useLocalSearchParams<{ appointmentId?: string; ask?: string }>();
+  const { appointmentId, ask, pet: reminderPet } = useLocalSearchParams<{
+    appointmentId?: string;
+    ask?: string;
+    pet?: string;
+  }>();
   // An appointment on the route makes this Get ready; without one it is the plain
   // rundown Ask opens.
   const wantsGetReady = typeof appointmentId === 'string' && appointmentId.length > 0;
@@ -176,6 +182,22 @@ export default function RundownScreen() {
   // re-arms it on every render and the sheet re-opens each time the owner dismisses
   // it (C-22, and the exact defect VV-2's list screen shipped and fixed).
   const pendingAsk = useRef(ask === '1');
+
+  // CUL-2729: a vet visit reminder's tap names its pet. If the visit it was for is no
+  // longer booked (cancelled, deleted or logged since the reminder was delivered), the
+  // fallback below would show the ACTIVE pet's plain rundown, which in a two-pet home
+  // can be the other animal. So the FIRST load only, held in a ref (C-22), sends the
+  // owner to that pet's Vet visits list and says why. Later loads keep F4's fallback:
+  // Back from a visit logged out of this very screen is not a stale reminder.
+  const staleTapArmed = useRef(typeof reminderPet === 'string' && reminderPet.length > 0);
+  // The load awaits a read; an owner who backed out meanwhile is never navigated.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Monotonic load id so a slow load can never commit over a newer one (pet
   // switch / retry) — the insights / report pattern.
@@ -198,6 +220,24 @@ export default function RundownScreen() {
       // from the saved visit landed on a Get ready that still offered *Take notes* —
       // whose Done → Save logged the same visit a second time.
       const appointment = wantsGetReady ? await readEditableAppointment(appointmentId) : null;
+      // A superseded load decides nothing, and must not spend the one-shot below.
+      if (loadIdRef.current !== myId) return;
+      if (staleTapArmed.current && wantsGetReady) {
+        const { pets, petsLoaded } = usePetStore.getState();
+        if (appointment) {
+          staleTapArmed.current = false;
+        } else if (petsLoaded) {
+          // Spent only once the question can be answered. On a cold start from the tap
+          // the pet list has not loaded yet: the ref stays armed, and the load the
+          // hydrated pet triggers decides (code-reviewer).
+          staleTapArmed.current = false;
+          if (mountedRef.current && pets.some((p) => p.id === reminderPet)) {
+            useSnackbarStore.getState().show({ message: VISIT_NO_LONGER_BOOKED }, { delayMs: 300 });
+            router.replace({ pathname: '/vet-visits', params: { pet: reminderPet } });
+            return;
+          }
+        }
+      }
       const subjectId = appointment?.pet_id ?? usePetStore.getState().activePet?.id ?? null;
       if (!subjectId) {
         if (loadIdRef.current === myId) setStatus('error');

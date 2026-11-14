@@ -157,9 +157,9 @@
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">CUL-2728 · Round 2 · build ready · ruled 2026-11-13</p>
+  <p class="eyebrow">CUL-2728 · Round 2 · build ready · ruled 2026-11-13 · finish pass CUL-2729, ruled 2026-11-14</p>
   <h1>Vet visit reminders</h1>
-  <p class="lede">The round row 04 builds from. Round 1 (exploratory, the same day) is superseded and lives in git at <code>29f6a76</code>. Everything on the page is current: the PM ruled D1 and D2 the same day, and the two option boxes left the page (git keeps them at <code>2c77ea3</code>). Spec: <code>docs/nyx-vet-reminder-requirements.md</code> §4, §5.</p>
+  <p class="lede">The round row 04 builds from. Round 1 (exploratory, the same day) is superseded and lives in git at <code>29f6a76</code>. Everything on the page is current: the PM ruled D1 and D2 the same day, and the two option boxes left the page (git keeps them at <code>2c77ea3</code>). Spec: <code>docs/nyx-vet-reminder-requirements.md</code> §4, §5. <b>Finish pass (CUL-2729, 2026-11-14):</b> the product read moved five frames in place; the ledger rows marked F say which. No new round: the frames below are what ships.</p>
 
   <div class="ledger">
     <div class="ledger-h">What moved since round 1, and why</div>
@@ -172,6 +172,11 @@
     <div class="ledger-row"><span class="k">T4</span><span><b>Team call (Designer).</b> A reminder for two pets opens the Vet visits list on the first visit's pet, through the list's existing pet door. Section 6.</span></div>
     <div class="ledger-row"><span class="k">T5</span><span><b>Team call (Designer).</b> The primer's mini spine shows the two reminders and the visit, not a day of logs, in the muted neutral. Section 5.</span></div>
     <div class="ledger-row"><span class="k">T7</span><span><b>Team call (Designer, at build).</b> A picked Remind me takes the selected role's indigo (choosing is acting); the on line keeps the positive teal (a fact). The sheet names a reminder more than a week out by date, so <i>Monday</i> never reads as today's weekday.</span></div>
+    <div class="ledger-row"><span class="k pm">F1</span><span><b>Finish pass, ruled (PM, 2026-11-14): two pets at one time keep the single visit's words.</b> The date and time, the ask and <i>Make a report for each to take along.</i> Mixed times keep the general line. Section 1.</span></div>
+    <div class="ledger-row"><span class="k pm">F2</span><span><b>Finish pass, ruled: a two pet tap lands on that day's visits for every pet.</b> Its own row, CUL-2750, with its own frames. Until then the tap opens the first visit's pet, and the caption in section 6 no longer claims a pet switch that screen does not have.</span></div>
+    <div class="ledger-row"><span class="k pm">F3</span><span><b>Finish pass, ruled: a booking too close for any reminder says so.</b> <i>Reminders are on. This visit is too soon for one.</i> Unseats this round's <i>Reminders are on.</i> Section 4.</span></div>
+    <div class="ledger-row"><span class="k pm">F4</span><span><b>Finish pass, ruled: the promise says the name shows.</b> R4's name always stands. Section 3.</span></div>
+    <div class="ledger-row"><span class="k">F5</span><span><b>Finish pass, team calls.</b> The primer's visit row carries no time (an example time under the pet's name read as the time that saved). A one pet account reads <i>for every visit you book</i>. A reminder tapped after its visit stopped being booked opens that pet's Vet visits list with <i>That visit isn’t booked any more.</i>, and a delivered reminder is withdrawn when its visit is cancelled, deleted or logged.</span></div>
     <div class="ledger-row"><span class="k">T6</span><span><b>Team call (T&amp;S).</b> The lock screen promise under the switches widens to cover both rows. Section 3.</span></div>
   </div>
 
@@ -221,9 +226,20 @@
           <div class="notif"><div class="icon" aria-hidden="true"></div>
             <div><div class="top"><span>CULPRIT</span><span>now</span></div>
               <div class="t">Nyx and Pip see the vet Monday</div>
-              <div class="b">Tap to get ready for both.</div></div></div>
+              <div class="b">Nov 16 at 10:30 am. A few minutes in Get ready now leaves time to weigh, log or call ahead.</div></div></div>
         </div>
-        <div class="cap"><b>Two pets, one day.</b> One per kind per day (§3.3). Tap: section 6.</div>
+        <div class="cap"><b>Two pets, one time (F1, ruled).</b> One per kind per day (§3.3). Booked together through Also for, so the single visit's words hold. Tap: section 6.</div>
+      </div>
+
+      <div class="frame">
+        <div class="lock" data-kit="new: VetReminder · collapsed, day of">
+          <div class="clock">8:00</div><div class="date">Monday, November 16</div>
+          <div class="notif"><div class="icon" aria-hidden="true"></div>
+            <div><div class="top"><span>CULPRIT</span><span>now</span></div>
+              <div class="t">Nyx and Pip see the vet today at 10:30 am</div>
+              <div class="b">Make a report for each to take along.</div></div></div>
+        </div>
+        <div class="cap"><b>Two pets, the morning of (F1).</b> Different times that day cannot name one clock: <i>Nyx and Pip see the vet today</i> · <i>Tap to get ready for both.</i></div>
       </div>
     </div>
     <div class="never">
@@ -256,7 +272,7 @@
             <div class="card new" data-kit="new: VetReminderNotificationRow (Card + SettingsRow + Switch · colorAction)">
               <div class="setrow"><div><div class="l">Vet visit reminders</div><div class="s">Three days before at 6pm, and the morning of</div></div><span class="sw"></span></div>
             </div>
-            <div class="intro" data-kit="ThemedText · textSM, colorTextTertiary">On your lock screen, Culprit says only that the day’s ready to read, or when a vet visit is. Never what’s in the record.</div>
+            <div class="intro" data-kit="ThemedText · textSM, colorTextTertiary">On your lock screen, Culprit says only that the day’s ready to read, or when a vet visit is, with your pet’s name. Never what’s in the record.</div>
           </div>
         </div>
         <div class="cap"><b>Allowed, reminders off.</b> On from here: allowed already, it writes straight through; never asked, the primer (section 5) first. The last line is T6's widened promise.</div>
@@ -356,7 +372,7 @@
           </div>
           <div class="btn">Save</div>
         </div></div>
-        <div class="cap"><b>Already on (D2, ruled).</b> No control, one line naming the two times this booking will get. Inside a window it names only what is left; none left: <i>Reminders are on.</i></div>
+        <div class="cap"><b>Already on (D2, ruled).</b> No control, one line naming the two times this booking will get. Inside a window it names only what is left; none left (F3, ruled): <i>Reminders are on. This visit is too soon for one.</i></div>
       </div>
 
     </div>
@@ -392,7 +408,7 @@
           </div>
           <div class="btn">Save</div>
         </div></div>
-        <div class="cap"><b>Booked two days out (R2).</b> The 6pm reminder already passed, so only the morning one is named. Booked after the day's last one: <i>Turns on reminders for every pet’s visits.</i></div>
+        <div class="cap"><b>Booked two days out (R2).</b> The 6pm reminder already passed, so only the morning one is named. Booked after the day's last one (F3, ruled): <i>Too soon for this visit. Turns on reminders for later ones.</i> A one pet account reads <i>for every visit you book</i>.</div>
       </div>
 
       <div class="frame">
@@ -427,7 +443,7 @@
             <div class="spine" data-kit="NotificationPrimer spine · node kind 'other' (NODE_TINT_NIGHT.other)">
               <div class="node"><div class="nt">Three days before</div><div class="nd">6:00 pm · time to weigh, log or call ahead</div></div>
               <div class="node"><div class="nt">The morning of</div><div class="nd">8:00 am · the report to take along</div></div>
-              <div class="node"><div class="nt">The visit</div><div class="nd">10:30 am</div></div>
+              <div class="node"><div class="nt">The visit</div></div>
             </div>
             <div class="h">Walk in with the record ready.</div>
             <div class="p">Two calm reminders for each booked visit. Your phone will ask once — change it any time.</div>
@@ -476,7 +492,7 @@
             <div class="listrow"><div class="e">Booked</div><div class="t">Monday · 10:30 am</div><div class="s">Riverside Animal Clinic</div></div>
           </div>
         </div>
-        <div class="cap"><b>Two pets (T4).</b> Opens the list on the first visit's pet (<code>/vet-visits?pet=</code>, the door the Signal's Book a visit already uses). Pip's visit is one pet switch away.</div>
+        <div class="cap"><b>Two pets (T4).</b> Opens the list on the first visit's pet (<code>/vet-visits?pet=</code>, the door the Signal's Book a visit already uses). The landing on that day's visits for every pet is ruled (F2) and is its own row, CUL-2750.</div>
       </div>
     </div>
   </section>
@@ -492,7 +508,7 @@
         <tbody>
           <tr><td><b>Empty</b> (no visits booked)</td><td>Renders as usual; on schedules nothing until a visit is booked.</td><td>Not shown: the sheet is the only place it lives, and it is always about a booking.</td></tr>
           <tr><td><b>Loading</b></td><td>The screen's own wait before the switch renders, as the daily summary row.</td><td>The sheet opens before the preference read answers: the row renders off until it does, and a picked state survives the answer.</td></tr>
-          <tr><td><b>Failed or offline</b></td><td>The preference writes locally and syncs later (last write wins). A failed local write: <i>Couldn’t update. Try again in a moment.</i> and the switch returns.</td><td>A failed write after Save: the booking still stands; the snackbar says <i>Couldn’t turn on reminders. Try again in Notifications.</i></td></tr>
+          <tr><td><b>Failed or offline</b></td><td>The preference writes locally and syncs later (last write wins). A failed local write: <i>Couldn’t update. Try again in a moment.</i> and the switch returns.</td><td>A failed write after Save: the booking still stands; the snackbar says <i>Couldn’t turn on reminders. Try again in Settings › Notifications.</i></td></tr>
           <tr><td><b>320pt</b></td><td>Sublabel wraps to two lines; switch keeps its 44pt hit area.</td><td>Sub line wraps; the check stays top aligned.</td></tr>
           <tr><td><b>Largest text</b></td><td>Label and sublabel wrap; nothing truncates.</td><td>The times line wraps to three lines; Save stays below it, never overlapped.</td></tr>
           <tr><td><b>Two pets</b></td><td>One account switch covers both.</td><td>The sub line says <i>for every pet’s visits</i>; the notifications collapse (section 1).</td></tr>

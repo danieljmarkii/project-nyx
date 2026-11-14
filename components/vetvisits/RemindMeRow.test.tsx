@@ -1,7 +1,14 @@
 // CUL-2728: Remind me's words (mock round 2 §4, D2). The sheet-level behaviour is in
 // BookVisitSheet.test.tsx; this pins the lines for each count of reminders left.
 import { render, screen } from '@testing-library/react-native';
-import { RemindMeRow, onLine, pickedLine, REMIND_ME_SUB } from './RemindMeRow';
+import {
+  RemindMeRow,
+  onLine,
+  pickedLine,
+  REMIND_ME_SUB,
+  REMIND_ME_TOO_SOON_ON,
+  REMIND_ME_TOO_SOON_PICKED,
+} from './RemindMeRow';
 
 const TWO = ['Friday at 6:00 pm', 'Monday at 8:00 am'];
 
@@ -9,13 +16,21 @@ describe('the lines', () => {
   it('picked: the times, capitalised, and that the switch covers every pet', () => {
     expect(pickedLine(TWO)).toBe('Friday at 6:00 pm and Monday at 8:00 am, for every pet’s visits');
     expect(pickedLine(['today at 8:00 am'])).toBe('Today at 8:00 am, for every pet’s visits');
-    expect(pickedLine([])).toBe('Turns on reminders for every pet’s visits');
+    expect(pickedLine(TWO, true)).toBe('Friday at 6:00 pm and Monday at 8:00 am, for every visit you book');
   });
 
   it('on: names what this booking gets, in the right number', () => {
     expect(onLine(TWO)).toBe('You’ll get reminders Friday at 6:00 pm and Monday at 8:00 am.');
     expect(onLine(['Monday at 8:00 am'])).toBe('You’ll get a reminder Monday at 8:00 am.');
-    expect(onLine([])).toBe('Reminders are on.');
+  });
+
+  it('a booking too close for any reminder says so, and never reads as covered (CUL-2729 D3)', () => {
+    expect(pickedLine([])).toBe(REMIND_ME_TOO_SOON_PICKED);
+    expect(pickedLine([], true)).toBe(REMIND_ME_TOO_SOON_PICKED);
+    expect(onLine([])).toBe(REMIND_ME_TOO_SOON_ON);
+    for (const l of [pickedLine([]), onLine([])]) expect(l).toMatch(/too soon/i);
+    render(<RemindMeRow status="on" picked={false} onToggle={jest.fn()} onOpenSettings={jest.fn()} times={[]} />);
+    expect(screen.getByLabelText(REMIND_ME_TOO_SOON_ON)).toBeTruthy();
   });
 
   it('no line carries an exclamation mark or a nag', () => {

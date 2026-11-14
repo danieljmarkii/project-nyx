@@ -434,6 +434,7 @@ export function BookVisitSheet({
                   Linking.openSettings().catch((e) => console.warn('[book visit] open settings failed:', e));
                 }}
                 times={reminderTimes}
+                onePet={otherPets.length === 0}
               />
             ) : null}
 
