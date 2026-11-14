@@ -1,0 +1,741 @@
+<title>Culprit Vet Instructions</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="exploratory">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* Layout: studio presentation page (theme aware) holding fixed-token phone frames.
+     Phone screens use the app's own tokens (constants/theme.ts), never the page's,
+     so the app looks like the app in either theme. Lifted from culprit-vet-visits-mockups.html. */
+  :root {
+    --canvas:#F4F7F6; --panel:#FFFFFF; --ink:#16211F; --ink-soft:#4A5754; --ink-faint:#7B8884;
+    --line:#E2E9E6; --line-soft:#EDF2F0; --accent:#068A78; --accent-tint:#E4F4F1;
+    --amber:#9A6A00; --amber-tint:#F6EED9; --rose:#B8433B; --rose-tint:#F7E4E2;
+    --shadow:0 1px 2px rgba(20,40,36,.04), 0 8px 30px rgba(20,40,36,.06);
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+    --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+    --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4); color-scheme:dark } }
+  :root[data-theme="dark"] {
+    --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+    --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+    --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4); color-scheme:dark }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--canvas); color:var(--ink); font-family:"Geist", -apple-system, "Segoe UI", system-ui, sans-serif; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1120px; margin:0 auto; padding-block:clamp(28px,6vw,72px) 96px; padding-left:max(16px, env(safe-area-inset-left,0px)); padding-right:max(16px, env(safe-area-inset-right,0px)); }
+  @media (min-width:700px){ .wrap { padding-left:max(44px, env(safe-area-inset-left,0px)); padding-right:max(44px, env(safe-area-inset-right,0px)); } }
+  .serif { font-family:"Newsreader", Georgia, "Times New Roman", serif; }
+  .eyebrow { font-size:12px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin:0 0 14px; }
+  h1.title { font-family:"Newsreader", Georgia, serif; font-size:clamp(30px,5.4vw,50px); line-height:1.05; letter-spacing:-.02em; font-weight:500; margin:0 0 20px; text-wrap:balance; max-width:22ch; }
+  .lede { font-size:clamp(16px,2vw,18px); color:var(--ink-soft); max-width:68ch; margin:0; }
+  .lede b, .sec-lede b, .opt-cap b, .note b, .ledger-row b, .explain b { color:var(--ink); font-weight:600; }
+
+  .ledger { margin-top:28px; border:1px solid var(--line); border-radius:14px; background:var(--panel); box-shadow:var(--shadow); overflow:hidden; }
+  .ledger-h { padding:12px 18px; font-size:12px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-faint); border-bottom:1px solid var(--line-soft); }
+  .ledger-row { display:flex; gap:14px; padding:11px 18px; font-size:14px; color:var(--ink-soft); border-bottom:1px solid var(--line-soft); align-items:baseline; }
+  .ledger-row:last-child { border-bottom:0; }
+  .ledger-who { flex:none; width:96px; font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); }
+  .ledger-who.open { color:var(--amber); }
+  @media (max-width:520px){ .ledger-row { flex-direction:column; gap:2px; } }
+
+  section { margin-top:clamp(52px,8vw,88px); }
+  .sec-eyebrow { font-size:12px; font-weight:600; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 10px; }
+  h2 { font-family:"Newsreader", Georgia, serif; font-size:clamp(24px,3.4vw,32px); font-weight:500; letter-spacing:-.015em; margin:0 0 12px; line-height:1.12; text-wrap:balance; }
+  .sec-lede { font-size:16px; color:var(--ink-soft); max-width:68ch; margin:0; }
+
+  .explain { margin-top:22px; display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; }
+  .explain > div { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; font-size:14px; color:var(--ink-soft); }
+  .explain h3 { margin:0 0 6px; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); font-weight:600; }
+  .explain p { margin:0; }
+
+  .rail { display:grid; gap:clamp(22px,4vw,36px); margin-top:30px; grid-template-columns:repeat(auto-fit,minmax(272px,1fr)); align-items:start; }
+  .opt { display:flex; flex-direction:column; align-items:center; gap:14px; min-width:0; }
+  .opt-cap { text-align:center; max-width:38ch; }
+  .opt-cap .k { font-weight:600; font-size:15px; color:var(--ink); display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center; }
+  .opt-cap p { margin:7px 0 0; font-size:13.5px; color:var(--ink-soft); line-height:1.5; }
+  .tag { font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .tag.cur { background:var(--accent-tint); color:var(--accent); }
+  .tag.open { background:var(--amber-tint); color:var(--amber); }
+  .tag.rec { background:var(--accent); color:var(--panel); }
+  .optbox { border:1.5px dashed var(--amber); border-radius:22px; padding:14px 12px 12px; background:color-mix(in srgb, var(--amber-tint) 45%, transparent); display:flex; flex-direction:column; align-items:center; gap:12px; min-width:0; }
+  .optbox-h { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--amber); text-align:center; }
+
+  .who { margin-top:20px; display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
+  .who blockquote { margin:0; padding:12px 14px; border-radius:10px; background:var(--panel); border:1px solid var(--line); font-size:13.5px; color:var(--ink-soft); }
+  .who blockquote b { display:block; color:var(--ink); font-size:12px; letter-spacing:.06em; text-transform:uppercase; margin-bottom:3px; }
+  .ask { margin-top:18px; padding:14px 16px; border-radius:12px; background:var(--accent-tint); color:var(--ink); font-size:14.5px; max-width:80ch; }
+
+  /* timeline for decision 4 */
+  .tl { margin-top:26px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; overflow-x:auto; }
+  .tl-inner { min-width:620px; }
+  .tl-row { display:grid; grid-template-columns:150px 1fr; gap:14px; align-items:center; padding:10px 0; border-bottom:1px solid var(--line-soft); }
+  .tl-row:last-child { border-bottom:0; }
+  .tl-label { font-size:13px; color:var(--ink); font-weight:600; }
+  .tl-label span { display:block; font-weight:400; color:var(--ink-faint); font-size:12px; }
+  .tl-track { position:relative; height:34px; }
+  .tl-track::before { content:""; position:absolute; left:0; right:0; top:16px; height:2px; background:var(--line); }
+  .tl-bar { position:absolute; top:12px; height:10px; border-radius:5px; background:var(--accent-tint); border:1px solid var(--accent); }
+  .tl-bar.stopped { background:repeating-linear-gradient(90deg, var(--line) 0 4px, transparent 4px 8px); border-color:var(--ink-faint); }
+  .tl-pin { position:absolute; top:0; transform:translateX(-50%); font-size:11px; font-weight:700; color:var(--panel); background:var(--ink); border-radius:6px; padding:1px 6px; white-space:nowrap; }
+  .tl-pin.door { background:var(--accent); }
+  .tl-pin.late { background:var(--rose); }
+  .tl-pin.dim { background:var(--ink-faint); }
+  .tl-scale { display:grid; grid-template-columns:150px 1fr; gap:14px; font-size:11px; color:var(--ink-faint); }
+  .tl-scale div:last-child { position:relative; height:16px; }
+  .tl-scale span { position:absolute; transform:translateX(-50%); white-space:nowrap; }
+
+  .note-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin-top:26px; }
+  .note { border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:14px 16px; font-size:13.5px; color:var(--ink-soft); }
+  .note b { display:block; margin-bottom:4px; font-size:13px; }
+  .note.amber { border-left:3px solid var(--amber); }
+  .note.teal { border-left:3px solid var(--accent); }
+  .note.rose { border-left:3px solid var(--rose); }
+  .foot { margin-top:clamp(56px,8vw,90px); border-top:1px solid var(--line); padding-top:26px; font-size:13.5px; color:var(--ink-faint); max-width:74ch; }
+
+  /* ===== PHONE FRAME: fixed Culprit app tokens ===== */
+  .phone {
+    --a-bg:#FAFAFA; --a-surface:#FFFFFF; --a-subtle:#F5F5F5;
+    --a-text:#0A0A0A; --a-text2:#525252; --a-text3:#737373; --a-dis:#A3A3A3;
+    --a-border:#EAEAEA; --a-border2:#D4D4D4;
+    --a-accent:#00C2A8; --a-accent-light:#E0FBF7; --a-accent-ink:#0B7B6C; --a-accent-wash:#CDF5EC;
+    --a-action:#3F35A0;
+    --a-symptom:#F43F5E; --a-symptom-light:#FFE4E6; --a-symptom-ink:#B3123A;
+    --a-med:#5B7A9E; --a-med-light:#E8EEF5;
+    --a-shadow:0 2px 10px rgba(0,0,0,.06);
+    width:300px; max-width:100%; background:var(--a-bg); border-radius:36px; border:1px solid var(--line);
+    box-shadow:var(--shadow); overflow:hidden; flex:none; font-size:14px; color:var(--a-text); text-align:left;
+    font-family:"Geist", -apple-system, system-ui, sans-serif;
+  }
+  .ph { padding:18px 16px 20px; min-height:540px; display:flex; flex-direction:column; gap:12px; }
+  .ph-nav { display:flex; align-items:center; justify-content:space-between; min-height:24px; font-size:13.5px; }
+  .ph-back { color:var(--a-accent-ink); font-weight:500; }
+  .ph-navt { font-size:15px; font-weight:600; }
+  .ph-sp { width:40px; }
+  .ph-h { font-size:24px; font-weight:600; letter-spacing:-.3px; margin:2px 0 0; line-height:1.15; }
+  .ph-sub { font-size:12.5px; color:var(--a-text3); }
+  .ph-sec { font-size:11px; font-weight:600; letter-spacing:.8px; text-transform:uppercase; color:var(--a-text3); margin-top:4px; }
+  .card { background:var(--a-surface); border-radius:16px; box-shadow:var(--a-shadow); padding:12px 14px; }
+  .card.dim { opacity:.45; }
+  .prow { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--a-border); font-size:13.5px; }
+  .prow:last-child { border-bottom:0; }
+  .prow .l { color:var(--a-text); font-weight:500; }
+  .prow .r { color:var(--a-text3); font-size:12.5px; white-space:nowrap; }
+  .prow .r.ink { color:var(--a-accent-ink); font-weight:500; }
+  .prow.focus { background:var(--a-accent-light); margin:0 -14px; padding:9px 14px; border-bottom-color:transparent; }
+  .q { font-size:13px; color:var(--a-text2); margin:6px 0 6px; font-weight:500; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { font-size:12.5px; padding:6px 11px; border-radius:999px; background:var(--a-subtle); color:var(--a-text2); border:1px solid transparent; white-space:nowrap; }
+  .chip.on { background:var(--a-accent-light); color:var(--a-accent-ink); border-color:var(--a-accent); font-weight:600; }
+  .chip.new { border:1px dashed var(--a-border2); background:var(--a-surface); }
+  .readback { background:var(--a-subtle); border-radius:12px; padding:10px 12px; font-size:13px; color:var(--a-text); line-height:1.45; }
+  .readback small { display:block; color:var(--a-text3); font-size:11.5px; margin-top:3px; }
+  .toggle { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; }
+  .toggle small { display:block; color:var(--a-text3); font-size:11.5px; }
+  .sw { flex:none; width:40px; height:24px; border-radius:12px; background:var(--a-border2); position:relative; }
+  .sw::after { content:""; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+  .sw.on { background:var(--a-accent); }
+  .sw.on::after { left:18px; }
+  .check { display:flex; gap:9px; align-items:flex-start; font-size:13px; line-height:1.4; }
+  .box { flex:none; width:18px; height:18px; border-radius:5px; border:1.5px solid var(--a-border2); margin-top:1px; }
+  .box.on { background:var(--a-accent); border-color:var(--a-accent); position:relative; }
+  .box.on::after { content:""; position:absolute; left:5px; top:1px; width:5px; height:10px; border:solid #fff; border-width:0 2px 2px 0; transform:rotate(45deg); }
+  .btn { text-align:center; padding:12px; border-radius:12px; background:var(--a-text); color:#fff; font-weight:600; font-size:14px; }
+  .btn.ghost { background:var(--a-surface); color:var(--a-text); border:1px solid var(--a-border2); }
+  .btn.soft { background:var(--a-accent-light); color:var(--a-accent-ink); }
+  .btn-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .link { color:var(--a-accent-ink); font-size:13px; font-weight:500; }
+  .grow { flex:1; }
+
+  /* Home pieces */
+  .home-head { display:flex; justify-content:space-between; align-items:center; }
+  .petname { font-family:"Newsreader", Georgia, serif; font-size:22px; }
+  .avatar { width:30px; height:30px; border-radius:50%; background:#2B2B2B; }
+  .signal { background:var(--a-surface); border-radius:16px; box-shadow:var(--a-shadow); padding:14px; }
+  .signal .kick { font-size:10.5px; font-weight:600; letter-spacing:.8px; text-transform:uppercase; color:var(--a-text3); }
+  .signal .big { font-family:"Newsreader", Georgia, serif; font-size:20px; line-height:1.25; margin:6px 0; }
+  .signal .small { font-size:12.5px; color:var(--a-text2); }
+  .signal .ask { color:var(--a-action); font-weight:600; font-size:13px; margin-top:8px; }
+  .signal .tagline { display:inline-block; font-size:11px; font-weight:600; color:var(--a-accent-ink); background:var(--a-accent-light); padding:2px 8px; border-radius:999px; }
+  .door { display:flex; gap:10px; align-items:center; background:var(--a-surface); border-radius:14px; padding:11px 12px; box-shadow:var(--a-shadow); border:1px solid var(--a-accent-wash); }
+  .door .ic { flex:none; width:30px; height:30px; border-radius:9px; background:var(--a-accent-light); display:grid; place-items:center; }
+  .door .ic::before { content:""; width:10px; height:12px; border:2px solid var(--a-accent-ink); border-radius:2px; }
+  .door .tx { flex:1; min-width:0; font-size:13px; line-height:1.35; }
+  .door .tx b { display:block; font-size:13.5px; }
+  .door .tx span { color:var(--a-text3); font-size:12px; }
+  .door .chev { color:var(--a-text3); }
+  .strip { font-size:12.5px; color:var(--a-text2); background:var(--a-subtle); border-radius:10px; padding:9px 11px; }
+  .strip b { color:var(--a-text); font-weight:600; }
+  .look { font-size:12.5px; color:var(--a-text3); }
+
+  /* instruction screen */
+  .quote { font-family:"Newsreader", Georgia, serif; font-size:20px; line-height:1.3; }
+  .quote em { font-style:normal; color:var(--a-accent-ink); }
+  .count { border-radius:14px; background:var(--a-surface); box-shadow:var(--a-shadow); padding:12px 14px; }
+  .count .n { font-size:15px; font-weight:600; }
+  .count .cov { font-size:12px; color:var(--a-text3); margin-top:2px; }
+  .dots { display:grid; grid-template-columns:repeat(12,1fr); gap:3px; margin-top:10px; }
+  .dots i { height:9px; border-radius:3px; background:var(--a-subtle); }
+  .dots i.l { background:#E5E5E5; }
+  .dots i.c { background:var(--a-symptom); }
+  .caveat { font-size:12px; color:var(--a-text2); background:var(--a-subtle); border-radius:10px; padding:8px 10px; }
+  .muted { font-size:12px; color:var(--a-text3); }
+  .field { margin-top:10px; border:1px solid var(--a-border2); border-radius:10px; padding:9px 11px; font-size:13px; color:var(--a-text); background:var(--a-surface); }
+  .field.ph-empty { color:var(--a-dis); }
+  .field.on { border-color:var(--a-accent); box-shadow:0 0 0 3px var(--a-accent-light); }
+  .caret { display:inline-block; width:1.5px; height:14px; background:var(--a-accent-ink); vertical-align:-2px; margin-left:1px; }
+  .watch { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--a-border); }
+  .watch:last-child { border-bottom:0; }
+  .watch .dot { flex:none; width:8px; height:8px; border-radius:50%; background:var(--a-accent); margin-top:6px; }
+  .watch .tx { flex:1; min-width:0; font-size:13px; line-height:1.4; }
+  .watch .tx span { display:block; color:var(--a-text3); font-size:12px; }
+  .watch .when { font-size:12px; color:var(--a-accent-ink); font-weight:600; white-space:nowrap; }
+  .crumb { font-size:12px; color:var(--ink-faint); text-align:center; }
+
+  /* lock screen */
+  .lock { background:linear-gradient(180deg,#13112E 0%,#251F57 100%); color:#ECEAF6; }
+  .lock .time { text-align:center; font-size:56px; font-weight:300; letter-spacing:-1px; margin-top:26px; line-height:1; }
+  .lock .date { text-align:center; font-size:14px; color:#A6A2CE; margin-top:4px; }
+  .notif { margin-top:auto; background:rgba(255,255,255,.14); border-radius:18px; padding:11px 13px; font-size:13px; color:#fff; }
+  .notif .top { display:flex; justify-content:space-between; font-size:11.5px; color:rgba(255,255,255,.7); margin-bottom:3px; }
+  .notif b { display:block; font-size:13.5px; }
+  .appic { display:inline-block; width:14px; height:14px; border-radius:4px; background:#00C2A8; vertical-align:-2px; margin-right:6px; }
+</style>
+
+<style>
+  /* round 2 additions */
+  .dline { display:flex; align-items:center; gap:8px; min-height:44px; padding:0 2px; font-size:13.5px; color:var(--a-text); border-top:1px solid var(--a-border); border-bottom:1px solid var(--a-border); }
+  .dline .tx { flex:1; min-width:0; }
+  .dline .mk { color:var(--a-text3); font-size:16px; }
+  .safety { font-size:12.5px; line-height:1.45; color:var(--a-text); background:var(--a-surface); border:1px solid var(--a-border2); border-radius:12px; padding:9px 11px; }
+  .safety b { font-weight:600; }
+  .safety .lk { display:block; margin-top:4px; color:var(--a-accent-ink); font-weight:500; }
+  .typed { font-size:14px; background:var(--a-subtle); border-radius:10px; padding:8px 10px; }
+  .typed small { display:block; font-size:11px; color:var(--a-text3); letter-spacing:.4px; text-transform:uppercase; margin-bottom:2px; }
+  .s24 { display:grid; grid-template-columns:repeat(24,1fr); gap:2px; margin-top:10px; }
+  .s24 i { height:12px; border-radius:2px; background:#E5E5E5; }
+  .s24 i.c { background:var(--a-symptom); }
+  .s24 i.n { background:transparent; box-shadow:inset 0 0 0 1px #C4C4C4; }
+  .ends { display:flex; justify-content:space-between; font-size:11px; color:var(--a-text3); margin-top:4px; }
+  .legend { display:flex; gap:10px; flex-wrap:wrap; font-size:11px; color:var(--a-text3); margin-top:6px; }
+  .legend i { display:inline-block; width:9px; height:9px; border-radius:2px; vertical-align:-1px; margin-right:4px; background:#E5E5E5; }
+  .legend i.c { background:var(--a-symptom); } .legend i.n { background:transparent; box-shadow:inset 0 0 0 1px #C4C4C4; }
+  .ans { display:flex; flex-direction:column; gap:8px; }
+  .ans .btn, .ans .btn.ghost { min-height:44px; display:flex; align-items:center; justify-content:center; padding:0 12px; }
+  .btn.off { background:#E5E5E5; color:#A3A3A3; }
+  .tabbar { margin:auto -16px -20px; border-top:1px solid var(--a-border); background:var(--a-surface); display:grid; grid-template-columns:repeat(4,1fr); padding:8px 0 14px; font-size:10px; color:var(--a-text3); text-align:center; }
+  .tabbar span.on { color:var(--a-accent-ink); font-weight:600; }
+  .today { font-size:12.5px; }
+  .today .row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--a-border); }
+  .today .row:last-child { border-bottom:0; }
+  .kbd { margin:auto -16px -20px; background:#D1D3D9; padding:8px 4px 16px; display:grid; grid-template-columns:repeat(10,1fr); gap:5px; }
+  .kbd i { height:30px; background:#fff; border-radius:5px; box-shadow:0 1px 0 #898A8D; }
+  .banner { font-size:12px; color:var(--a-text2); background:var(--a-subtle); border-radius:10px; padding:8px 10px; }
+  .confirm { background:var(--a-text); color:#fff; border-radius:14px; padding:12px 14px; font-size:13px; display:flex; justify-content:space-between; gap:10px; align-items:center; }
+  .confirm .u { color:var(--a-accent); font-weight:600; }
+  .sheet { margin:auto -16px -20px; background:var(--a-surface); border-radius:20px 20px 0 0; box-shadow:0 -4px 18px rgba(0,0,0,.12); padding:14px 16px 20px; font-size:13px; display:flex; flex-direction:column; gap:8px; }
+  .sheet .grab { width:36px; height:4px; border-radius:2px; background:#D4D4D4; margin:0 auto 4px; }
+  .sheet li { margin:3px 0; }
+  .sheet ul { margin:0; padding-left:18px; color:var(--a-text); }
+  .scrim { background:rgba(10,10,10,.35); }
+  .switchnote { font-size:12px; background:var(--a-accent-light); color:var(--a-accent-ink); border-radius:10px; padding:7px 10px; }
+  .lane { display:grid; gap:10px; margin-top:22px; }
+  .conf { margin-top:20px; padding:14px 16px; border-radius:12px; border:1.5px dashed var(--amber); background:color-mix(in srgb, var(--amber-tint) 45%, transparent); font-size:14px; color:var(--ink-soft); max-width:80ch; }
+  .conf b { color:var(--ink); }
+  .conf p { margin:6px 0; }
+</style>
+<div class="wrap">
+  <p class="eyebrow">Mock round 3 · exploratory · 2026-11-13 · CUL-2731</p>
+  <h1 class="title">The vet's "call me if", held and shown on its date</h1>
+  <p class="lede">At Nyx's visit on <b>Sep 16</b> her vet said to call if she was still coughing after the full strength prednisolone. She was, and the app never noticed. Round 3 redraws the feature after Jordan, Sam and Dr. Chen each walked round 2 on their own. It supersedes round 2 (commit 850e6ef). <b>Every count on these screens is illustrative,</b> not her real record.</p>
+
+  <div class="ledger" role="table" aria-label="What changed in round 3">
+    <div class="ledger-h">Ledger · round 3, after the owners and the vet walked it</div>
+    <div class="ledger-row"><span class="ledger-who open">For you · §1</span><span><b>How big the open field is.</b> Jordan and Sam want a box that grows and holds the whole instruction ("bring a stool sample" included). Dr. Chen wants a short label. The team's proposal (frames 3 and 4) gives the owners their box and keeps Dr. Chen's safeguards; their dissent on length is drawn beside it.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Fixed · Dr. Chen</span><span><b>The typed safety line no longer names straining.</b> The app can't know what was typed, so every typed instruction gets the same species line, and at capture the call today signs show inline, not behind a link.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Fixed · Sam, Jordan</span><span><b>Frame 11 contradicted frame 12</b> (a cough logged on the reminder day, a dose on the day after the last dose). The example now agrees with itself.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Added · Sam</span><span><b>Cat chips</b> Culprit can't count but owners hear all the time: Eating less, Hiding, Peeing outside the box. The pet's name is on the capture screen.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Added · Jordan</span><span><b>Call the clinic from the reminder</b> when its number is on file, a reminder toggle on typed instructions too, Edit on the instruction, and up to two signs ("vomit or loose stool").</span></div>
+    <div class="ledger-row"><span class="ledger-who">Settled · §7</span><span><b>"Decide later" comes back once</b>, the next morning, on Home only. Jordan moved to Dr. Chen's side, and Sam agrees. Your one call: make the shipped "What did the vet say?" line do the same.</span></div>
+    <div class="ledger-row"><span class="ledger-who">Settled · §8</span><span><b>Keep "Vet visit follow up".</b> Both owners said "Culprit" alone reads like a come back to the app nudge. The team lean reversed.</span></div>
+    <div class="ledger-row"><span class="ledger-who open">For you · §6</span><span><b>Decision 4:</b> all three back "A + no early close", the recommendation.</span></div>
+  </div>
+
+  <!-- ============ 1. CAPTURE ============ -->
+  <section>
+    <p class="sec-eyebrow">1 · In the parking lot</p>
+    <h2>Four taps, and a sentence to check</h2>
+    <p class="sec-lede">One row under <b>Next visit</b>, resting at <b>Later</b>. Tapping it pushes its own screen: a sign, what to do, and when. Nothing is preselected, and Done stays dim until all three are set. Then the app reads the instruction back as one sentence, with the line that matters most beneath it: <b>don't wait for this date if things get worse.</b></p>
+    <div class="rail">
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">Cancel</span><span class="ph-navt">Nyx · Sep 16</span><span class="ph-back">Save</span></div>
+          <div class="ph-h">How did it go?</div>
+          <div class="ph-sub">Riverside Animal Clinic · Dr. Patel</div>
+          <div class="ph-sec">The plan</div>
+          <div class="card">
+            <div class="prow"><span class="l">Prednisolone</span><span class="r ink">Changed</span></div>
+            <div class="prow"><span class="l">Started something new?</span><span class="r">Later</span></div>
+            <div class="prow"><span class="l">Next visit</span><span class="r">Later</span></div>
+            <div class="prow focus"><span class="l">Anything to watch for?</span><span class="r">Later ›</span></div>
+            <div class="prow"><span class="l">Paperwork</span><span class="r">Later</span></div>
+          </div>
+          <div class="ph-sec">Notes</div>
+          <div class="card" style="font-size:13px;color:#525252">Lungs sound clear. X-ray if it drags on. Full strength for three more weeks.</div>
+          <div class="grow"></div>
+          <div class="btn">Save visit</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">1 · The row at rest <span class="tag cur">current</span></span><p>Shaded only to show where it sits. The owner's notes stay notes; the instruction never reads or rewrites them.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Visit</span><span class="ph-navt">Anything to watch for?</span><span class="ph-sp"></span></div>
+          <div class="ph-sub" style="margin-top:-6px">For Nyx · from Sep 16</div>
+          <div class="q">Your vet asked you to watch for <span class="muted">(up to two)</span></div>
+          <div class="chips"><span class="chip on">Cough</span><span class="chip">Sneeze</span><span class="chip">Vomit</span><span class="chip">Loose stool</span><span class="chip">Itch/Scratch</span><span class="chip">Lethargy</span></div>
+          <div class="muted" style="margin-top:2px">Culprit can't count these, so it asks you on the day:</div>
+          <div class="chips"><span class="chip">Eating less</span><span class="chip">Hiding</span><span class="chip">Peeing outside the box</span><span class="chip new">Something else…</span></div>
+          <div class="q">If it's still there</div>
+          <div class="chips"><span class="chip on">Call the vet</span><span class="chip">Book a visit</span></div>
+          <div class="q">When</div>
+          <div class="chips"><span class="chip on">When prednisolone ends</span><span class="chip">In 1 week</span><span class="chip">In 2 weeks</span><span class="chip">Pick a date</span></div>
+          <div class="readback">If Nyx's cough is still there on Oct 10, call the vet.<small>Oct 10 · the day after prednisolone's last dose</small></div>
+          <div class="safety"><b>If Nyx gets worse before then, don't wait for this date.</b> Call your vet today.<span class="lk">Signs that mean call today ›</span></div>
+          <div class="card"><div class="toggle"><span>Remind me on Oct 10<small>The notification says "A note about Nyx for today" and nothing more.</small></span><span class="sw on"></span></div></div>
+          <div class="btn">Done</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">2 · Sign, action, when <span class="tag cur">current</span></span><p>Chip labels are the log's own. Cat chips Culprit can't count sit on their own row and say so (Sam). Up to two signs, each counted on its own (Jordan). The read back names where the date came from.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Visit</span><span class="ph-navt">Anything to watch for?</span><span class="ph-sp"></span></div>
+          <div class="ph-sub" style="margin-top:-6px">For Pixel · from Nov 4</div>
+          <div class="chips"><span class="chip">Eating less</span><span class="chip">Hiding</span><span class="chip">Peeing outside the box</span><span class="chip on">Something else…</span></div>
+          <div class="field on" style="line-height:1.45">straining or going in and out of the box a lot. bring a urine sample if we come in<span class="caret"></span></div>
+          <div class="muted">Saved as you write it, to-dos included. Culprit won't track this one, so on the day it'll ask you.</div>
+          <div class="kbd" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">3 · In your words, a box that grows <span class="tag open">team proposal · §1</span></span><p>Starts as one line so it never looks like homework, and grows to four as the owner types, then scrolls. It holds the whole instruction, to-dos included (Jordan, Sam). About 200 characters.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Visit</span><span class="ph-navt">Anything to watch for?</span><span class="ph-sp"></span></div>
+          <div class="typed"><small>You noted</small>straining or going in and out of the box a lot. bring a urine sample if we come in</div>
+          <div class="q">Then</div>
+          <div class="chips"><span class="chip">Call the vet</span><span class="chip on">Book a visit</span></div>
+          <div class="q">When</div>
+          <div class="chips"><span class="chip on">In 1 week</span><span class="chip">In 2 weeks</span><span class="chip">Pick a date</span></div>
+          <div class="readback">Back on Nov 11, so you can decide whether to book a visit.<small>Nov 11 · in your words, not tracked</small></div>
+          <div class="safety"><b>If Pixel gets worse before then, or your vet told you to call sooner for something, don't wait for this date.</b> Call your vet now if you see:<span style="display:block;margin-top:4px;color:#525252">fast or open mouthed breathing · straining with little or nothing coming · can't stand · a fit · pale gums</span></div>
+          <div class="card"><div class="toggle"><span>Remind me on Nov 11</span><span class="sw on"></span></div></div>
+          <div class="btn">Done</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">4 · A typed instruction, read back <span class="tag cur">ruled</span></span><p>The owner's words sit in their own box. The app's sentence no longer says "if it's still there", which broke on thresholds. The safety line is the same for every typed entry, picked by species only, and the call now signs show inline because the app can't tell what was typed (Dr. Chen).</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 1b. FIELD DECISION ============ -->
+  <section>
+    <p class="sec-eyebrow">1b · For you · a persona conflict</p>
+    <h2>How much room "Something else" gets</h2>
+    <p class="sec-lede">You asked whether owners would write a few sentences. Both owners said yes, sometimes, and wrote real examples. Jordan: <i>"still vomiting &gt;2x a week after cerenia. bring stool sample"</i>. Sam: <i>"vomiting more than once, not eating, hiding under the bed. she gave us the laxatone paste, 1 inch twice a day for 5 days"</i>. Dr. Chen agrees owners will try, and says that's the risk.</p>
+    <div class="who">
+      <blockquote><b>Jordan and Sam</b>A box that starts small and grows. It should hold the whole instruction, because the to-do ("bring a stool sample") is the part we'd forget. Show all of it on the day.</blockquote>
+      <blockquote><b>Dr. Chen</b>A short label, about 60 characters: just the sign. Of ten real discharge instructions, seven carry a threshold, a to-do or "go sooner if". A long box files "if nothing comes out, go to the ER" under a date a week away. Full instructions belong in the visit notes.</blockquote>
+    </div>
+    <div class="rail">
+      <div class="optbox">
+        <div class="optbox-h">Team proposal · drawn as current</div>
+        <div class="phone"><div class="ph" style="min-height:400px">
+          <div class="field on" style="line-height:1.45">straining or going in and out of the box a lot. bring a urine sample if we come in<span class="caret"></span></div>
+          <div class="muted">Saved as you write it, to-dos included. Culprit won't track this one, so on the day it'll ask you.</div>
+          <div class="safety"><b>If your vet said to call sooner for something, don't wait for this date.</b> Call your vet now if you see:<span style="display:block;margin-top:4px;color:#525252">fast or open mouthed breathing · straining with little or nothing coming · can't stand · a fit · pale gums</span></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">A · The owners' box, with Dr. Chen's safeguards</span><p>Grows to four lines, about 200 characters. The call now signs show inline at capture, and the app's sentence never wraps the owner's words. Dr. Chen accepts the safeguards and still dissents on length.</p></div>
+      </div>
+      <div class="optbox">
+        <div class="optbox-h">Option · drawn for the decision</div>
+        <div class="phone"><div class="ph" style="min-height:400px">
+          <div class="field on">straining in the litter box<span class="caret"></span><span style="float:right;color:#A3A3A3;font-size:11px">27/60</span></div>
+          <div class="muted">Just the sign, in your words. The full instructions belong in the visit notes. If your vet said to call sooner for something, don't put it here: call when you see it.</div>
+          <div class="safety">Call your vet now if you see:<span style="display:block;margin-top:4px;color:#525252">fast or open mouthed breathing · straining with little or nothing coming · can't stand · a fit · pale gums</span></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">B · Dr. Chen's label</span><p>One line, 60 characters, the sign only. Safer, and the to-do goes in the visit notes, which the reminder doesn't show.</p></div>
+      </div>
+    </div>
+    <p class="ask"><b>Deciding:</b> A, the owners' box with the safeguards, or B, Dr. Chen's label. The residual in A, which Dr. Chen named: an owner who types an ER instruction anyway still has it held until the date. The inline signs at capture are the mitigation.</p>
+  </section>
+
+  <!-- ============ 2. BETWEEN ============ -->
+  <section>
+    <p class="sec-eyebrow">2 · Between the visit and the date</p>
+    <h2>Quiet on Home, findable in Vet visits</h2>
+    <p class="sec-lede">Your question from round 1: where would you find it again? The saved moment is shown once, and its Done takes you to the visit you just saved. After that there are two ways back, both one tap from the Pet tab: the <b>Watching</b> line on the Vet visits card, and the <b>Watching</b> section at the top of Vet visits.</p>
+    <div class="rail">
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-h" style="margin-top:40px">Saved</div>
+          <div class="ph-sub">Nyx's visit on Sep 16</div>
+          <div class="card">
+            <div class="prow"><span class="l">Prednisolone</span><span class="r">Changed</span></div>
+            <div class="prow"><span class="l">Watching: cough</span><span class="r ink">on Oct 10</span></div>
+          </div>
+          <div class="muted">Your next vet report starts from this visit.</div>
+          <div class="grow"></div>
+          <div class="btn">Done</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">5 · The saved moment <span class="tag cur">current</span></span><p class="crumb">Shown once, right after Save</p><p>Done opens the visit page (frame 8), as it does today.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-h">Nyx</div>
+          <div class="card dim"><b style="font-size:14px">Vet report</b><div class="muted">A clinical summary to send your vet.</div></div>
+          <div class="card">
+            <div style="display:flex;justify-content:space-between"><b style="font-size:14px">Vet visits</b><span class="muted">3 visits</span></div>
+            <div class="dline" style="margin-top:8px;border-bottom:0"><span class="tx" style="color:#0B7B6C;font-weight:500">Watching: cough · on Oct 10</span><span class="mk">›</span></div>
+            <div style="font-size:13px;color:#525252">Last visit Sep 16 · Prednisolone changed</div>
+            <div class="btn ghost" style="margin-top:10px;padding:9px">Open visits</div>
+          </div>
+          <div class="card dim"><b style="font-size:14px">Vet Files</b><div class="muted">3 documents</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">6 · Pet tab, the way back in <span class="tag cur">ruled</span></span><p class="crumb">Pet tab</p><p>The Watching line is tappable. One instruction opens it; several read "Watching: cough and 2 more · next on Oct 10" and open the list.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-navt">Vet visits</span><span class="ph-back">Add</span></div>
+          <div class="ph-sec">Watching</div>
+          <div class="card">
+            <div class="watch"><span class="dot"></span><span class="tx">Cough · call if still there<span>From Sep 16 · when prednisolone ends</span></span><span class="when">Oct 10</span></div>
+          </div>
+          <div class="ph-sec">Next</div>
+          <div class="card"><div class="prow"><span class="l">No visit booked</span><span class="r ink">Book</span></div></div>
+          <div class="ph-sec">Past</div>
+          <div class="card">
+            <div class="prow"><span class="l">Sep 16 · Riverside<span class="muted" style="display:block;font-weight:400">Cough recheck · Pred changed</span></span><span class="r">›</span></div>
+            <div class="prow"><span class="l">Aug 2 · Riverside<span class="muted" style="display:block;font-weight:400">Vomiting · Diet trial started</span></span><span class="r">›</span></div>
+          </div>
+          <div class="ph-sec">Calls</div>
+          <div class="card"><div class="prow"><span class="l">Sep 2 · You called</span><span class="r">›</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">7 · Vet visits, the home <span class="tag cur">ruled</span></span><p class="crumb">Pet › Vet visits</p><p>Watching leads while anything is open and disappears when nothing is. It shows three at most, then "2 more". The shipped sections follow in their usual order.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Visits</span><span class="ph-navt"></span><span class="ph-back">⋯</span></div>
+          <div class="ph-h">Sep 16 · Riverside</div>
+          <div class="ph-sub">Cough recheck · Dr. Patel</div>
+          <div class="ph-sec">What your vet asked you to watch</div>
+          <div class="card">
+            <div class="prow"><span class="l">Cough · call if still there<span class="muted" style="display:block;font-weight:400">on Oct 10 · when prednisolone ends · reminder on</span></span><span class="r">›</span></div>
+          </div>
+          <div class="ph-sec">The plan</div>
+          <div class="card"><div class="prow"><span class="l">Prednisolone</span><span class="r">Dose 18 of 21</span></div></div>
+          <div class="ph-sec">Notes</div>
+          <div class="card" style="font-size:13px;color:#525252">Lungs sound clear. X-ray if it drags on. Full strength for three more weeks.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">8 · The visit's page <span class="tag cur">current</span></span><p class="crumb">Pet › Vet visits › Sep 16</p><p>The instruction leads, above the plan and the notes. Its row opens the instruction (frame 9).</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Sep 16 visit</span><span class="ph-navt"></span><span class="ph-sp"></span></div>
+          <div class="quote">Your vet asked you to call if Nyx's cough was still there when the prednisolone ended.</div>
+          <div class="count"><div class="n">Asks on Oct 10</div><div class="cov">The day after prednisolone's last dose · reminder on</div></div>
+          <div class="safety"><b>If Nyx gets worse before then, don't wait for this date.</b> Call your vet today.<span class="lk">Signs that mean call today ›</span></div>
+          <div class="grow"></div>
+          <div class="btn ghost">Edit</div>
+          <div class="link" style="text-align:center;color:#B3123A">Remove</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">9 · Before its date <span class="tag cur">current</span></span><p>No answers yet and no count. Edit changes the sign, the words, the action or the date (Jordan).</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3. ON THE DATE ============ -->
+  <section>
+    <p class="sec-eyebrow">3 · Oct 10</p>
+    <h2>One notification, one line on Home, one screen</h2>
+    <p class="sec-lede">The follow up notification arrives if the owner turned it on. On Home, a single line sits under the Signal, in the same register as the shipped "What did the vet say?" line. It stays until it is answered, for up to 14 days. <b>It opens whatever the logs say.</b> The answers live one tap away, never on Home.</p>
+    <div class="rail">
+      <div class="opt">
+        <div class="phone lock"><div class="ph">
+          <div class="time">9:41</div>
+          <div class="date">Friday, October 10</div>
+          <div class="notif"><div class="top"><span><i class="appic"></i>CULPRIT</span><span>now</span></div><b>Vet visit follow up</b>A note about Nyx for today.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">10 · The follow up notification <span class="tag cur">ruled</span></span><p>Never names the sign, the vet or the action. Tapping it opens the instruction directly, switching to Nyx first if another pet is on screen. Its title is §8's question.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="home-head"><span class="petname">Nyx</span><span class="avatar"></span></div>
+          <div class="look">Friday · Oct 10 · Looks: quiet</div>
+          <div class="signal"><div class="kick">This week</div><div class="big">Vomiting is about where it was last week.</div><div class="small">4 times in 7 days</div></div>
+          <div class="dline"><span class="tx">A note from Nyx's Sep 16 visit</span><span class="mk">›</span></div>
+          <div class="ph-sec">Today</div>
+          <div class="today">
+            <div class="row"><span>Meal · Rabbit wet</span><span class="muted">7:40</span></div>
+            <div class="row"><span>Litter box · normal</span><span class="muted">7:15</span></div>
+          </div>
+          <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">11 · Home on the date, a real day <span class="tag cur">current</span></span><p>A 44pt line under the Signal, below every safety card, above Today. The last dose was yesterday, Oct 9; nothing logged today is a cough, so the count on the next screen agrees.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Sep 16 visit</span><span class="ph-sp"></span></div>
+          <div class="quote">Your vet asked you to call if Nyx's cough was <em>still there when the prednisolone ended.</em> Today is that day.</div>
+          <div class="count">
+            <div class="n">Cough logged on 6 days since Sep 17</div>
+            <div class="cov">Last logged Oct 8 · nothing logged on 2 of 24 days</div>
+            <div class="s24" aria-hidden="true"><i class="c"></i><i></i><i class="c"></i><i></i><i></i><i class="c"></i><i></i><i></i><i class="n"></i><i></i><i class="c"></i><i></i><i></i><i></i><i class="n"></i><i></i><i class="c"></i><i></i><i></i><i></i><i></i><i class="c"></i><i></i><i></i></div>
+            <div class="ends"><span>Sep 17</span><span>Today</span></div>
+            <div class="legend"><span><i class="c"></i>cough</span><span><i></i>other logs</span><span><i class="n"></i>nothing logged</span></div>
+          </div>
+          <div class="caveat">Logs only show what someone saw and wrote down. Only you can tell if the cough is still there.</div>
+          <div class="safety">Nyx's other alerts keep running. <b>If she's worse, call today.</b></div>
+          <div class="ans">
+            <div class="btn">Call Riverside · (555) 014 2290</div>
+            <div class="btn-row"><div class="btn ghost">I've called</div><div class="btn ghost">Book a visit</div></div>
+            <div class="btn ghost">The cough has stopped</div>
+            <div class="link" style="text-align:center;min-height:44px;display:flex;align-items:center;justify-content:center">Decide later</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">12 · The instruction screen <span class="tag cur">current</span></span><p>The vet's words lead. The strip has dated ends and a legend, and outlines the days nothing was logged. The caveat shows on every count. VoiceOver reads the count, the last day and the gap. When the clinic's number is on file the first button calls it (Jordan); without one, "I've called" leads. Storing the number is CUL-2413.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Sep 16 visit</span><span class="ph-sp"></span></div>
+          <div class="quote">Your vet asked you to call if Nyx's cough was <em>still there when the prednisolone ended.</em> Today is that day.</div>
+          <div class="count">
+            <div class="n">No cough logged since Sep 17</div>
+            <div class="cov">Meals and doses logged every day. Those don't tell us about coughing.</div>
+            <div class="s24" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="ends"><span>Sep 17</span><span>Today</span></div>
+          </div>
+          <div class="caveat">That doesn't tell us the cough has stopped. Only you can tell if it's still there.</div>
+          <div class="safety">Nyx's other alerts keep running. <b>If she's worse, call today.</b></div>
+          <div class="ans">
+            <div class="btn">I've called</div>
+            <div class="btn ghost">Book a visit</div>
+            <div class="btn ghost">The cough has stopped</div>
+            <div class="link" style="text-align:center;min-height:44px;display:flex;align-items:center;justify-content:center">Decide later</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">13 · Nothing logged, every day busy <span class="tag cur">current</span></span><p>The hardest case: a full log of meals and doses, and no cough. It still opens, still draws the strip, and says plainly that meals don't tell us about coughing.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Sep 16 visit</span><span class="ph-sp"></span></div>
+          <div class="quote">Your vet asked you to call if Nyx's cough was still there when the prednisolone ended.</div>
+          <div class="confirm"><span>Noted: you called on Oct 10.</span><span class="u">Undo</span></div>
+          <div class="q">Did anything change? (optional)</div>
+          <div class="chips"><span class="chip">Changed the medicine</span><span class="chip">Booked a visit</span><span class="chip">Nothing changed</span></div>
+          <div class="muted">In two days Culprit asks once what the vet said, like any call.</div>
+          <div class="grow"></div>
+          <div class="btn ghost">Done</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">14 · After "I've called" <span class="tag cur">current</span></span><p>Undo for a mis-tap, and one optional follow up that opens the existing forms. The line leaves Home; the instruction shows as answered on the visit page.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-navt">Vet visits</span><span class="ph-back">Add</span></div>
+          <div class="ph-sec">Waiting on you</div>
+          <div class="card">
+            <div class="watch"><span class="dot" style="background:#3F35A0"></span><span class="tx">Cough · call if still there<span>Asked Oct 10 · from Sep 16</span></span><span class="when" style="color:#3F35A0">Open ›</span></div>
+          </div>
+          <div class="ph-sec">Watching</div>
+          <div class="card"><div class="watch"><span class="dot"></span><span class="tx">Vomit · book a visit if still there<span>From Sep 16</span></span><span class="when">Oct 24</span></div></div>
+          <div class="ph-sec">Past</div>
+          <div class="card"><div class="prow"><span class="l">Sep 16 · Riverside</span><span class="r">›</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">15 · After "Decide later" <span class="tag cur">current</span></span><p>On its date an unanswered instruction moves to <b>Waiting on you</b>. "Decide later" brings the Home line back once, the next morning, with no notification, then never again (§7).</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 4. TYPED ============ -->
+  <section>
+    <p class="sec-eyebrow">4 · Ruled · in the owner's words</p>
+    <h2>When the vet's words aren't a chip</h2>
+    <p class="sec-lede">Pixel's vet said to book a visit if she was still straining in the litter box. On Nov 11 it works like any other instruction, with one difference: <b>no count</b>, because Culprit can't count what it never logged. The owner's words come back as written, in their own box, and the screen still points at the signs that mean call today.</p>
+    <div class="rail">
+      <div class="opt">
+        <div class="phone"><div class="ph">
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Nov 4 visit</span><span class="ph-sp"></span></div>
+          <div class="quote" style="font-size:18px">From Pixel's Nov 4 visit. Your vet asked you to book a visit if needed. Today is that day.</div>
+          <div class="typed"><small>You noted</small>straining or going in and out of the box a lot. bring a urine sample if we come in</div>
+          <div class="caveat">Culprit doesn't track this one, so only you can tell how Pixel is doing.</div>
+          <div class="safety">Pixel's other alerts keep running. <b>If she's worse, or you see a sign below, call now.</b><span class="lk">Signs that mean call now ›</span></div>
+          <div class="grow"></div>
+          <div class="ans">
+            <div class="btn">Book a visit</div>
+            <div class="btn ghost">I've called</div>
+            <div class="btn ghost">Pixel's back to normal</div>
+            <div class="link" style="text-align:center;min-height:44px;display:flex;align-items:center;justify-content:center">Decide later</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">16 · The typed instruction on its date <span class="tag cur">ruled</span></span><p>The owner's words are shown in full, never cut. "It's stopped" became "Pixel's back to normal": a blocked cat has also stopped straining (Sam). The safety line is the same for every typed entry and never softer than the sheet (Dr. Chen).</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone scrim"><div class="ph">
+          <div class="sheet">
+            <div class="grab"></div>
+            <b style="font-size:15px">Signs that mean call today</b>
+            <div class="muted">For a cat. Call your vet now if you see:</div>
+            <ul>
+              <li>Breathing fast or open mouthed while resting</li>
+              <li>Straining or crying in the tray with little or nothing coming, going in and out (especially a male cat)</li>
+              <li>Can't stand or walk, collapsed, wobbling</li>
+              <li>A fit or seizure</li>
+              <li>Pale, white or blue gums</li>
+            </ul>
+            <div class="muted">And call today if she's subdued and not eating, vomiting or hiding, or hasn't eaten for a day.</div>
+            <div class="btn ghost">Close</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">17 · Signs that mean call today <span class="tag cur">current</span></span><p>The same species list Noticed already carries, reused word for word. Pronouns follow the pet. Static: it reads nothing and writes nothing.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 5. EDGES ============ -->
+  <section>
+    <p class="sec-eyebrow">5 · The edges</p>
+    <h2>Days that aren't the golden path</h2>
+    <div class="rail">
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:420px">
+          <div class="home-head"><span class="petname">Nyx</span><span class="avatar"></span></div>
+          <div class="signal"><div class="kick">This week</div><div class="big">Cough is about where it was.</div></div>
+          <div class="dline"><span class="tx">You called on Oct 8. What did the vet say?</span><span class="mk">›</span></div>
+          <div class="muted">The Sep 16 note waits in Vet visits under Waiting on you, and takes this line tomorrow.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">18 · Same day as a call follow up <span class="tag cur">current</span></span><p>One line under the Signal, ever. The older question shows first; the other waits a day in Vet visits.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:420px">
+          <div class="home-head"><span class="petname">Nyx</span><span class="avatar"></span></div>
+          <div class="signal"><div class="kick">This week</div><div class="big">Vomiting is about where it was last week.</div></div>
+          <div class="dline"><span class="tx">2 notes from Nyx's Sep 16 visit</span><span class="mk">›</span></div>
+          <div class="muted">One line and one notification for both. The screen lists them in date order.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">19 · Two instructions, one date <span class="tag cur">current</span></span><p>Counts as the day's one nudge, not two.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:420px">
+          <div class="ph-nav"><span class="ph-back">‹ Visit</span><span class="ph-navt">Anything to watch for?</span><span class="ph-sp"></span></div>
+          <div class="readback">If Nyx's cough is still there on Oct 10, call the vet.<small>Oct 10 · the day after prednisolone's last dose</small></div>
+          <div class="card"><div class="toggle"><span>Remind me on Oct 10<small>Notifications are off for Culprit. Turn them on in Settings to get this one.</small></span><span class="sw"></span></div></div>
+          <div class="link">Open Settings</div>
+          <div class="muted">Without the reminder, the line still appears on Home on Oct 10.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">20 · Reminder with notifications off <span class="tag cur">current</span></span><p>The toggle can't lie: it shows off, says why, and says what still happens.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:420px">
+          <div class="ph-nav"><span class="ph-back">‹ Visit</span><span class="ph-navt">Anything to watch for?</span><span class="ph-sp"></span></div>
+          <div class="readback">If Nyx's cough is still there on Sep 30, call the vet.<small>Sep 30 has passed · it shows on Home today</small></div>
+          <div class="muted">Entered a week after the visit. The count still starts the day after the visit, so coughs logged in between are counted.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">21 · A date already passed <span class="tag cur">current</span></span><p>Allowed. The line appears on Home straight away.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:420px">
+          <div class="switchnote">Showing Pixel. Juniper is one tap away.</div>
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Nov 4 visit</span><span class="ph-sp"></span></div>
+          <div class="typed"><small>You noted</small>straining in the litter box</div>
+          <div class="muted">Opened from the notification while Juniper was on screen. The note only ever appears on Pixel's Home and names Pixel.</div>
+          <div class="caveat">In a shared litter box, a pile you find is logged to the cat on screen. Counts for found signs can include the other cat's.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">22 · Two cats <span class="tag cur">current</span></span><p>The notification switches pets with the shipped disclosure. In a two pet home, the shared space line sits on the count itself whenever the sign is found rather than seen (Sam).</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 6. DECISION 4 ============ -->
+  <section>
+    <p class="sec-eyebrow">6 · Decision 4 · for you</p>
+    <h2>"When the course ends", if the course changes</h2>
+    <p class="sec-lede">The owner picks <b>When prednisolone ends</b>; the app stores the day after the last dose, Oct 10. Then the vet stops it early (last dose Oct 2) or extends it by phone (last dose Oct 24). The design pass sharpened this: the real risk is not opening early, it's <b>closing early</b>. On Oct 10 a cough can still be hidden by a steroid that's still running.</p>
+    <div class="tl" role="img" aria-label="Timeline comparing when the question opens under each option">
+      <div class="tl-inner">
+        <div class="tl-scale"><div></div><div><span style="left:0%">Sep 16</span><span style="left:30%">Oct 3</span><span style="left:45%">Oct 10</span><span style="left:73%">Oct 25</span><span style="left:96%">Nov 1</span></div></div>
+        <div class="tl-row"><div class="tl-label">The course<span>planned to end Oct 9</span></div><div class="tl-track"><div class="tl-bar" style="left:0%;width:44%"></div></div></div>
+        <div class="tl-row"><div class="tl-label">A + no early close<span>recommended</span></div><div class="tl-track"><span class="tl-pin door" style="left:30%">Stopped → Oct 3</span><span class="tl-pin door" style="left:46%;top:18px">Extended → opens Oct 10, can't close before Oct 25</span></div></div>
+        <div class="tl-row"><div class="tl-label">A as round 1 drew it<span>earlier only</span></div><div class="tl-track"><span class="tl-pin door" style="left:30%">Stopped → Oct 3</span><span class="tl-pin late" style="left:46%;top:18px">Extended → Oct 10, closable while still on pred</span></div></div>
+        <div class="tl-row"><div class="tl-label">C · follows the course<span>both ways</span></div><div class="tl-track"><span class="tl-pin door" style="left:30%">Stopped → Oct 3</span><span class="tl-pin dim" style="left:74%;top:18px">Extended → Oct 25</span></div></div>
+      </div>
+    </div>
+    <div class="rail">
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:440px">
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-navt">Sep 16 visit</span><span class="ph-sp"></span></div>
+          <div class="quote" style="font-size:18px">Your vet asked you to call if Nyx's cough was still there when the prednisolone ended. <em>The course now runs to Oct 24.</em></div>
+          <div class="count"><div class="n">Was due Oct 10 · moved later by the course</div><div class="cov">Prednisolone extended on Oct 6</div></div>
+          <div class="safety"><b>If Nyx is worse, don't wait.</b> Call your vet today.</div>
+          <div class="grow"></div>
+          <div class="ans"><div class="btn">Ask me on Oct 25</div><div class="btn ghost">I've called</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">A + no early close, extended <span class="tag rec">recommended</span></span><p>Opens on the planned day, tells the truth about the extension, and offers only answers that don't close the vet's question early.</p></div>
+      </div>
+      <div class="opt">
+        <div class="phone"><div class="ph" style="min-height:440px">
+          <div class="ph-nav"><span class="ph-back">‹ Visits</span><span class="ph-navt"></span><span class="ph-back">⋯</span></div>
+          <div class="ph-h">Sep 16 · Riverside</div>
+          <div class="ph-sec">What your vet asked you to watch</div>
+          <div class="card"><div class="prow"><span class="l">Cough · call if still there<span class="muted" style="display:block;font-weight:400">on Oct 3 · moved from Oct 10, prednisolone stopped Oct 2</span></span><span class="r">›</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">Any option, stopped early <span class="tag cur">current</span></span><p>A moved date always says where it moved from and why, on the visit page, the Watching row and the instruction screen.</p></div>
+      </div>
+    </div>
+    <div class="note-grid">
+      <div class="note teal"><b>A + no early close · recommended</b>Opens early rather than late. While the course is still running, only "I've called" or "Ask me on {the day after the last dose}" are offered, so nothing closes the vet's question while the steroid could be hiding the cough.</div>
+      <div class="note rose"><b>A as drawn in round 1</b>Opens on Oct 10 for an extended course, and "The cough has stopped" could close it while she's still on full strength pred.</div>
+      <div class="note amber"><b>C · follows both ways</b>Always matches the course record. A wrong extension, or a course never marked ended, makes it late or never.</div>
+    </div>
+    <p class="ask"><b>Deciding:</b> A + no early close (recommended; Jordan, Sam and Dr. Chen all back it), A as round 1 drew it, or C. Jordan's addition: after "I've called" and "Changed the medicine", prompt to update the course, since the extension only helps if it is logged.</p>
+  </section>
+
+  <!-- ============ 7. DECIDE LATER ============ -->
+  <section>
+    <p class="sec-eyebrow">7 · Settled by the personas · one call for you</p>
+    <h2>"Decide later" comes back once</h2>
+    <p class="sec-lede">In round 2, Dr. Chen and Jordan disagreed. Walking the flow, Jordan moved: "Most times I tap Decide later it's because I'm in a meeting, not because I've decided anything." Sam agrees: "with cats, not sure is the dangerous state." So the line returns <b>once</b>, the next morning, on Home only, with no notification, then never again.</p>
+    <div class="conf"><p><b>Your one call:</b> the shipped "What did the vet say?" line should behave the same way, so the two lines under the Signal never disagree (open question Q18, CUL-1597).</p></div>
+  </section>
+
+  <!-- ============ 8. TITLE ============ -->
+  <section>
+    <p class="sec-eyebrow">8 · Settled by the personas</p>
+    <h2>The notification keeps its title</h2>
+    <p class="sec-lede">Round 2 asked whether to match the shipped call follow up's title, "Culprit". Both owners said no. Jordan: "Culprit: A note about Nyx for today is exactly what a come back to the app nudge looks like, which is what made me quit the other two apps." Sam: "missing it is a health problem." So it stays <b>Vet visit follow up</b>, and the team proposes changing the shipped call follow up to match.</p>
+    <div class="rail">
+      <div class="opt">
+        <div class="phone lock"><div class="ph" style="min-height:300px">
+          <div class="notif" style="margin-top:40px"><div class="top"><span><i class="appic"></i>CULPRIT</span><span>now</span></div><b>Vet visit follow up</b>A note about Nyx for today.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">As ruled, kept <span class="tag cur">current</span></span><p>Says what kind of note it is, never what's wrong.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="sec-eyebrow">9 · Out of v1</p>
+    <h2>What this round deliberately leaves out</h2>
+    <div class="note-grid">
+      <div class="note"><b>Pausing "worth booking a visit"</b>Deferred to CUL-2732, with your lean that it has to pause.</div>
+      <div class="note"><b>"If it gets worse" or "more than twice a day"</b>A condition the owner judges every day. The fixed "don't wait" line and the call today signs stand in for it.</div>
+      <div class="note"><b>Reading the discharge sheet</b>No AI or photo reading of the vet's notes in v1.</div>
+      <div class="note"><b>The vet report and Ask</b>Neither reads the instruction or the typed text in v1.</div>
+      <div class="note"><b>Medication or ER instructions</b>"Stop the pred if…" and "go to the ER if…" are never modelled.</div>
+    </div>
+  </section>
+
+  <p class="foot">Mock round 3, exploratory, supersedes round 2 (commit 850e6ef). For <b>CUL-2731</b>. Source of truth: <code>docs/culprit-vet-instructions-mockups.html</code>. The design pass behind it: <code>docs/vet-instructions-critique-2026-11.md</code>. Every count shown is illustrative.</p>
+</div>
