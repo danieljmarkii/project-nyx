@@ -1,0 +1,669 @@
+<title>Culprit — About Nyx</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="exploratory">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap">
+<link rel="stylesheet" href="mockups/theme.css">
+<style>
+  /* Page chrome: the brand's grounds, mark and type (lavender paper by day, the brand night by dark).
+     Phones are always light except where a direction draws a night surface on purpose; every phone colour
+     and size comes from mockups/theme.css. Layout: three key screens, each a row of directions. */
+  :root {
+    --paper:#F5F4F9; --paper-2:#FFFFFF; --ink:#1B1A2E; --ink-2:#5F5C7A; --ink-3:#8B87A8;
+    --rule:#DEDCE9; --rule-soft:#E9E7F1; --tag:#3F35A0; --tag-wash:#ECEAF6;
+    --cur:#08685B; --cur-wash:#E3F2EF; --moon:#211E4E; --dot:#00C2A8;
+    --serif:"Newsreader", ui-serif, Charter, Georgia, serif;
+    --sans:"Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --shadow:0 1px 2px rgba(27,26,46,.05), 0 10px 32px rgba(27,26,46,.07);
+    --s:1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#13112E; --paper-2:#1D1A42; --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#8C87BD;
+      --rule:rgba(196,190,255,.20); --rule-soft:rgba(196,190,255,.11); --tag:#C4BEFF; --tag-wash:rgba(196,190,255,.14);
+      --cur:#7FD8C6; --cur-wash:rgba(127,216,198,.14); --moon:#F2EEE4;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 36px rgba(0,0,0,.45); color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#13112E; --paper-2:#1D1A42; --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#8C87BD;
+    --rule:rgba(196,190,255,.20); --rule-soft:rgba(196,190,255,.11); --tag:#C4BEFF; --tag-wash:rgba(196,190,255,.14);
+    --cur:#7FD8C6; --cur-wash:rgba(127,216,198,.14); --moon:#F2EEE4;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 36px rgba(0,0,0,.45); color-scheme:dark;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font-family:var(--sans); font-size:16px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1280px; margin:0 auto; padding-block:clamp(28px,5vw,56px) 96px;
+    padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+  .mast { display:flex; flex-direction:column; gap:18px; }
+  .brand { display:flex; align-items:center; gap:10px; font-family:var(--serif); font-size:22px; letter-spacing:-.3px; }
+  .eyebrow { font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); margin:0; }
+  h1 { font-family:var(--serif); font-weight:400; font-size:clamp(36px,6vw,56px); line-height:1.05; letter-spacing:-.01em; margin:0; max-width:18ch; text-wrap:balance; }
+  h1 em, h2 em { font-style:italic; }
+  .lede { font-size:clamp(16px,2vw,18px); color:var(--ink-2); max-width:66ch; margin:0; }
+  .lede b, .cap b, .led b, .sec-lede b { color:var(--ink); font-weight:600; }
+  .ledger { margin-top:30px; border:1px solid var(--rule); border-radius:16px; background:var(--paper-2); box-shadow:var(--shadow); overflow:hidden; }
+  .ledger h3 { margin:0; padding:12px 18px; font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); border-bottom:1px solid var(--rule-soft); }
+  .led { display:grid; grid-template-columns:minmax(120px,240px) minmax(0,1fr); gap:14px; padding:11px 18px; font-size:14px; color:var(--ink-2); border-bottom:1px solid var(--rule-soft); }
+  .led:last-child { border-bottom:0; }
+  .led q { font-family:var(--serif); font-style:italic; color:var(--ink); quotes:"\201C" "\201D"; }
+  @media (max-width:600px) { .led { grid-template-columns:1fr; gap:4px; } }
+  section { margin-top:72px; }
+  .num { font-family:var(--serif); font-style:italic; font-size:18px; color:var(--tag); }
+  h2 { font-family:var(--serif); font-weight:400; font-size:clamp(26px,3.6vw,34px); line-height:1.15; margin:4px 0 8px; text-wrap:balance; }
+  .sec-lede { color:var(--ink-2); max-width:68ch; margin:0 0 28px; }
+  .row { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start; }
+  .frame { display:flex; flex-direction:column; gap:10px; width:290px; max-width:100%; min-width:0; }
+  .dir { font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); display:flex; gap:8px; align-items:center; flex-wrap:wrap; min-height:30px; }
+  .dir b { font-family:var(--serif); font-style:italic; font-weight:400; font-size:20px; letter-spacing:0; text-transform:none; color:var(--ink); }
+  .rule { font-size:11px; font-weight:600; letter-spacing:.06em; padding:2px 8px; border-radius:999px; background:var(--tag-wash); color:var(--tag); text-transform:uppercase; }
+  .cap { font-size:13px; color:var(--ink-2); }
+  .cap i { color:var(--ink-3); font-style:normal; }
+  .ctl { display:flex; gap:8px; flex-wrap:wrap; margin-top:18px; }
+  .ctl button { font:inherit; font-size:13px; font-weight:500; color:var(--tag); background:var(--tag-wash); border:0; border-radius:999px; padding:7px 14px; cursor:pointer; }
+  .ctl button:focus-visible { outline:2px solid var(--tag); outline-offset:2px; }
+  .rm { display:none; font-size:13px; color:var(--ink-3); }
+  .asks { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; }
+  .asks div { border:1px solid var(--rule); border-radius:14px; background:var(--paper-2); padding:14px 16px; font-size:14px; color:var(--ink-2); }
+  .asks h4 { margin:0 0 4px; font-family:var(--serif); font-weight:400; font-size:19px; color:var(--ink); }
+
+  /* ---------- Phone ---------- */
+  .phone { width:100%; border-radius:34px; background:var(--colorNeutralLight); border:1px solid var(--rule); box-shadow:var(--shadow); overflow:hidden; color:var(--colorTextPrimary); font-family:var(--sans); font-size:var(--textMD); position:relative; }
+  .body { padding:var(--space2) var(--space2) var(--space3); display:flex; flex-direction:column; gap:var(--space1_5); }
+  .id { display:flex; gap:var(--space1_5); align-items:center; }
+  .ph { width:56px; height:56px; border-radius:50%; background:var(--colorAccentWashDeep); flex:none; }
+  .id .n { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textPageTitle); line-height:var(--lineHeightXL); }
+  .id .f { font-size:var(--textSM); color:var(--colorTextTertiary); line-height:var(--lineHeightSM); }
+  .lbl { font-size:var(--textXS); font-weight:var(--weightSemibold); letter-spacing:var(--trackingWidest); text-transform:uppercase; color:var(--colorTextTertiary); margin-top:var(--space0_5); }
+  .card { background:var(--colorSurface); border-radius:var(--radiusMedium); overflow:hidden; }
+  .r { display:flex; gap:var(--space1_5); align-items:flex-start; padding:11px var(--space2); border-bottom:1px solid var(--colorBorder); min-height:var(--hitTarget); }
+  .r:last-child { border-bottom:0; }
+  .r .k { flex:1; min-width:0; font-size:var(--textMD); }
+  .r .k small { display:block; font-size:var(--textXS); color:var(--colorTextSecondary); line-height:var(--lineHeightXS); margin-top:2px; }
+  .r .k small.src { color:var(--colorTextTertiary); }
+  .r .a { font-size:var(--textSM); font-weight:var(--weightMedium); color:var(--colorAction); flex:none; padding-top:2px; }
+  .r .go { color:var(--colorTextDisabled); flex:none; padding-top:2px; }
+  .r.none .k { color:var(--colorTextTertiary); }
+  .uses { display:flex; gap:4px; flex-wrap:wrap; margin-top:6px; }
+  .uses i { font-style:normal; font-size:var(--textTabLabelTight); padding:1px 6px; border-radius:var(--radiusFull); background:var(--colorSurfaceSubtle); color:var(--colorTextSecondary); }
+  .look { border:1.5px dashed var(--colorBorderStrong); border-radius:var(--radiusMedium); overflow:hidden; }
+  .look .r { border-bottom:1px dashed var(--colorBorderStrong); } .look .r:last-child { border-bottom:0; }
+  .pill { font-size:var(--textTabLabelTight); padding:1px 7px; border-radius:var(--radiusFull); border:1px solid var(--colorBorderStrong); color:var(--colorTextSecondary); white-space:nowrap; flex:none; }
+  .tabbar { display:flex; justify-content:space-around; border-top:1px solid var(--colorBorder); padding:10px 0 14px; font-size:var(--textXS); color:var(--colorTextTertiary); background:var(--colorSurface); }
+  .tabbar .on { color:var(--colorTextPrimary); font-weight:var(--weightSemibold); }
+  .hint { font-size:var(--textXS); color:var(--colorTextSecondary); line-height:var(--lineHeightXS); }
+  .dock { margin:0 var(--space2) var(--space2); background:var(--colorSurface); border:1px solid var(--colorBorderStrong); border-radius:var(--radiusFull); padding:10px var(--space2); font-size:var(--textSM); color:var(--colorTextTertiary); display:flex; justify-content:space-between; }
+  .dock b { color:var(--colorAction); font-weight:var(--weightMedium); }
+  .two { display:flex; gap:var(--space1); }
+  .two div { flex:1; background:var(--colorSurface); border-radius:var(--radiusMedium); padding:10px var(--space1_5); font-size:var(--textSM); }
+  .two div small { display:block; font-size:var(--textXS); color:var(--colorTextSecondary); }
+  .two div b { font-weight:var(--weightMedium); }
+  /* night top */
+  .night { background:radial-gradient(120% 80% at 85% 0%, var(--colorAuroraTeal), transparent 60%), radial-gradient(90% 70% at 0% 10%, var(--colorAuroraViolet), transparent 65%), var(--colorBrandNight);
+    color:var(--colorTextOnNight); padding:var(--space2) var(--space2) var(--space3); display:flex; flex-direction:column; gap:var(--space1_5); }
+  .night .top { display:flex; justify-content:space-between; font-size:var(--textMD); color:var(--colorTextOnNightMuted); }
+  .night .top b { color:var(--colorMoonlight); font-family:var(--fontDisplay),Georgia,serif; font-weight:var(--weightRegular); font-size:var(--textXL); }
+  .night .ey { font-size:var(--textXS); font-weight:var(--weightSemibold); letter-spacing:var(--trackingWidest); text-transform:uppercase; color:var(--colorTextOnNightMuted); }
+  .night .lead { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textXL); line-height:30px; color:var(--colorMoonlight); margin:0; text-wrap:balance; }
+  .night .by { font-size:var(--textXS); color:var(--colorTextOnNightMuted); line-height:var(--lineHeightXS); }
+  .night .by u { text-underline-offset:2px; }
+  .night .big { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--text2XL); color:var(--colorMoonlight); line-height:1.1; }
+  .ntiles { display:grid; grid-template-columns:1fr 1fr; gap:var(--space1); }
+  .ntiles div { border:1px solid var(--colorBorderOnNight); border-radius:var(--radiusMedium); padding:8px var(--space1_5); }
+  .ntiles b { display:block; font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textXL); font-weight:var(--weightRegular); color:var(--colorMoonlight); line-height:1.15; }
+  .ntiles span { font-size:var(--textXS); color:var(--colorTextOnNightMuted); line-height:var(--lineHeightXS); display:block; }
+  .tally { display:flex; gap:6px; flex-wrap:wrap; }
+  .tally span { border:1px solid var(--colorBorderOnNight); border-radius:var(--radiusFull); padding:4px 10px; font-size:var(--textXS); color:var(--colorTextOnNightMuted); font-variant-numeric:tabular-nums; }
+  .tally span b { color:var(--colorMoonlight); font-weight:var(--weightSemibold); }
+  /* daylight rail */
+  .read { position:relative; background:var(--colorSurface); border-radius:var(--radiusMedium); padding:var(--space1_5) var(--space2) var(--space1_5) calc(var(--space2) + 3px); display:flex; flex-direction:column; gap:var(--space1); overflow:hidden; }
+  .read::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--colorAction); }
+  .read .ey { font-size:var(--textXS); font-weight:var(--weightSemibold); letter-spacing:var(--trackingWidest); text-transform:uppercase; color:var(--colorTextTertiary); }
+  .read p { margin:0; font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textLG); line-height:26px; }
+  /* conversation */
+  .bub { align-self:flex-start; max-width:92%; background:var(--colorSurface); border-radius:var(--radiusMedium); border-top-left-radius:var(--radiusXS); padding:10px var(--space1_5); font-size:var(--textMD); line-height:var(--lineHeightBody); }
+  .bub small { display:block; font-size:var(--textXS); color:var(--colorTextSecondary); margin-top:4px; line-height:var(--lineHeightXS); }
+  .me { align-self:flex-end; background:var(--colorAction); color:var(--colorTextOnDark); border-radius:var(--radiusMedium); border-top-right-radius:var(--radiusXS); padding:8px var(--space1_5); font-size:var(--textMD); }
+  .qr { display:flex; flex-wrap:wrap; gap:6px; }
+  .qr span { border:1px solid var(--colorBorderStrong); border-radius:var(--radiusFull); padding:6px 12px; font-size:var(--textSM); color:var(--colorAction); background:var(--colorSurface); }
+  /* record first */
+  .chart { background:var(--colorSurface); border-radius:var(--radiusMedium); padding:var(--space1_5) var(--space2); display:flex; flex-direction:column; gap:var(--space1); }
+  .chart .h { display:flex; justify-content:space-between; align-items:baseline; }
+  .chart .h b { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--text2XL); font-weight:var(--weightRegular); line-height:1.1; }
+  .chart .h span { font-size:var(--textSM); color:var(--colorAction); font-weight:var(--weightMedium); }
+  .tiles { display:grid; grid-template-columns:1fr 1fr; gap:var(--space1); }
+  .tiles div { background:var(--colorSurface); border-radius:var(--radiusMedium); padding:10px var(--space1_5); }
+  .tiles b { display:block; font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textXL); font-weight:var(--weightRegular); line-height:1.15; }
+  .tiles span { font-size:var(--textXS); color:var(--colorTextSecondary); line-height:var(--lineHeightXS); display:block; }
+  /* question, review */
+  .ask { background:var(--colorSurface); border-radius:var(--radiusMedium); padding:var(--space1_5) var(--space2); display:flex; flex-direction:column; gap:var(--space1); }
+  .ask .t { font-size:var(--textMD); line-height:var(--lineHeightBody); }
+  .ask .o { display:flex; flex-direction:column; gap:6px; }
+  .ask .o span { border:1px solid var(--colorBorderStrong); border-radius:var(--radiusSmall); padding:8px var(--space1_5); font-size:var(--textSM); color:var(--colorAction); font-weight:var(--weightMedium); }
+  .ask .o span.q2 { color:var(--colorTextSecondary); font-weight:var(--weightRegular); }
+  .hd { display:flex; align-items:center; justify-content:space-between; padding:var(--space2) var(--space2) 0; font-size:var(--textMD); min-height:var(--hitTarget); }
+  .hd .x { color:var(--colorTextSecondary); } .hd b { font-weight:var(--weightSemibold); } .hd .ok { color:var(--colorAction); font-weight:var(--weightSemibold); }
+  .sg { display:flex; flex-direction:column; gap:6px; padding:11px var(--space2); border-bottom:1px dashed var(--colorBorderStrong); }
+  .sg:last-child { border-bottom:0; }
+  .sg b { font-size:var(--textMD); font-weight:var(--weightMedium); }
+  .q { border-left:2px solid var(--colorBorderStrong); padding-left:var(--space1_5); font-size:var(--textXS); color:var(--colorTextSecondary); line-height:var(--lineHeightXS); }
+  .acts { display:flex; gap:var(--space2); font-size:var(--textSM); font-weight:var(--weightMedium); color:var(--colorAction); }
+  .acts span:last-child { color:var(--colorTextTertiary); font-weight:var(--weightRegular); }
+  .out { background:var(--colorSurfaceSubtle); border-radius:var(--radiusSmall); padding:var(--space1_5); font-size:var(--textXS); line-height:var(--lineHeightXS); color:var(--colorTextSecondary); }
+  .out b { color:var(--colorTextPrimary); font-weight:var(--weightMedium); }
+  .focus { background:var(--colorSurface); border-radius:var(--radiusLarge); padding:var(--space3) var(--space2); display:flex; flex-direction:column; gap:var(--space1_5); box-shadow:0 8px 28px rgba(0,0,0,.08); }
+  .focus .k { font-size:var(--textXS); font-weight:var(--weightSemibold); letter-spacing:var(--trackingWidest); text-transform:uppercase; color:var(--colorTextTertiary); }
+  .focus .t { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textXL); line-height:28px; }
+  .dots { display:flex; gap:5px; justify-content:center; }
+  .dots i { width:6px; height:6px; border-radius:50%; background:var(--colorTickIdle); } .dots i.on { background:var(--colorAction); }
+  .btns { display:flex; gap:var(--space1); }
+  .btn { flex:1; text-align:center; padding:11px 6px; border-radius:var(--radiusMedium); font-size:var(--textSM); font-weight:var(--weightSemibold); background:var(--colorAction); color:var(--colorTextOnDark); }
+  .btn.g { background:transparent; color:var(--colorAction); border:1px solid var(--colorBorderStrong); }
+  .val { color:var(--colorAction); font-size:var(--textMD); flex:none; }
+  .val::after { content:" ⌄"; color:var(--colorTextDisabled); }
+  .plain { font-size:var(--textSM); color:var(--colorTextSecondary); padding:4px 0; }
+  .plain.d { color:var(--colorDestructiveInk); }
+  .sw { width:40px; height:24px; border-radius:12px; background:var(--colorAction); position:relative; flex:none; }
+  .sw.off { background:var(--colorBorderStrong); } .sw.off::after { right:auto; left:2px; }
+  .sw::after { content:""; position:absolute; right:2px; top:2px; width:20px; height:20px; border-radius:50%; background:#fff; }
+  /* motion: arrive out of the tick */
+  .tick { display:inline-block; width:3px; height:16px; border-radius:2px; background:var(--colorMoonlitTeal); vertical-align:-3px; margin-right:8px; animation:breath 1400ms ease-in-out infinite; }
+  @keyframes breath { 0%,100% { opacity:1 } 50% { opacity:.35 } }
+  @keyframes land { from { opacity:0; transform:translateY(-8px) } to { opacity:1; transform:none } }
+  @keyframes gone { from { opacity:1 } to { opacity:0 } }
+  @keyframes pop { from { opacity:0; transform:scale(.02) } to { opacity:1; transform:none } }
+  .wait { position:absolute; font-size:var(--textSM); }
+  .play .wait { animation:gone calc(150ms*var(--s)) ease-out calc(900ms*var(--s)) both; }
+  .play .arr { animation:land calc(300ms*var(--s)) ease-out calc(1000ms*var(--s)) both; }
+  .play .arr2 { animation:land calc(300ms*var(--s)) ease-out calc(1180ms*var(--s)) both; }
+  .dotw { transform-box:fill-box; transform-origin:center; }
+  .play .dotw { animation:pop calc(300ms*var(--s)) cubic-bezier(.2,.8,.2,1.05) both; }
+  .play .dotw.d2 { animation-delay:calc(28ms*var(--s)); } .play .dotw.d3 { animation-delay:calc(56ms*var(--s)); }
+  @media (prefers-reduced-motion: reduce) {
+    .tick, .play .arr, .play .arr2, .play .dotw { animation:none; }
+    .play .wait { animation:none; opacity:0; }
+    .rm { display:block; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="brand">
+      <svg viewBox="0 0 100 100" width="34" height="34" role="img" aria-label="Culprit">
+        <defs><mask id="carve"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs>
+        <circle cx="45" cy="50" r="33" fill="var(--moon)" mask="url(#carve)"/><circle cx="66" cy="53" r="9" fill="var(--dot)"/>
+      </svg>Culprit
+    </div>
+    <p class="eyebrow">About Nyx · Round 3 · exploratory · CUL-2787 · 2026-11-15</p>
+    <h1>Nyx's tab, AI forward: <em>three screens, a few ways each</em></h1>
+    <p class="lede">Only this round is on the page. Every frame is the Pet tab, on Nyx's real record, with the AI on. Nothing has a team pick on it: these are directions to react to. Rounds 1 and 2 are in git at <code>5a01128f4</code> and <code>4c2fc5f70</code>.</p>
+  </header>
+
+  <div class="ledger">
+    <h3>What this round is built from</h3>
+    <div class="led"><q>Let's take their feedback and go AI forward.</q><span>Every direction has the AI on. Jordan's and Sam's conditions are in all of them: weight and the vet report on the first screen, a short summary that says what it read and that it can miss things, one gentle question that can be told it is wrong, and nothing on the record until you add it.</span></div>
+    <div class="led"><q>The first round was the closest to my vision.</q><span>Round 1's parts are back: a top that says what Culprit is working from, facts grouped with where each came from and what uses it. Screen Two keeps that as one of its directions.</span></div>
+    <div class="led"><q>One could be the night header. Other directions can be explored as well.</q><span>Screen One draws four tops: the night header and three others.</span></div>
+    <div class="led"><q>Let's research others as well.</q><span>Done: about sixty-five health, assistant and pet products read for what they do. Six functions that fit a pet's record are sketched near the foot, each with who does it.</span></div>
+  </div>
+
+  <!-- ================= AFTER THE OWNERS ================= -->
+  <section>
+    <div class="num">Added after Jordan and Sam read this round</div>
+    <h2>Where the two owners landed</h2>
+    <p class="sec-lede">Each read the frames below alone, with the captions removed. They agreed on two of the three screens and split on the top. This section draws what their reads add up to; the directions they read are unchanged underneath.</p>
+    <div class="ledger" style="margin-top:0">
+      <h3>Their picks</h3>
+      <div class="led"><b>The top</b><span>Jordan: daylight, then the record leads, a conversation, night. Sam: the record leads, then daylight, night, a conversation. <b>Neither put night or the conversation first.</b> Night read to Jordan as "a dark wall of homework", its counts as an inbox. The conversation "sounds sure of itself" to Sam.</span></div>
+      <div class="led"><b>The facts</b><span><b>Both: now, then before.</b> "It matches how I think." By kind "opens on Nothing recorded for a cat who has lost 1.6 lb, which reads as a clean bill".</span></div>
+      <div class="led"><b>The review</b><span><b>Both: safe ones together,</b> on one condition: show all seven before the button. As drawn, four were hidden with their switches on. Sam: "the finished paragraph problem again".</span></div>
+      <div class="led"><b>What would end it</b><span>Jordan: the tab opening every time on a question and "8 to review". "That is an inbox." Sam: "The AI speaks first and talks about paperwork. If its opening sentence never mentions that she has lost a sixth of her weight, I conclude it does not see the cat."</span></div>
+      <div class="led"><b>A real catch</b><span>"Before a visit" said her weight was down 0.1 lb. True since the last visit, and it would wrongly relax an owner whose cat is down 1.6 lb since June. Fixed on the page, and now a rule: a "since last time" number never appears without the standing one.</span></div>
+      <div class="led"><b>The extras</b><span>Both want: gaps only questions, before a visit (the one each would miss most), sources under the read, hand it to the vet (off until chosen). Still true: fine if rare. Set aside: Jordan wants it; Sam fears using it "on whatever I was tired of hearing".</span></div>
+      <div class="led"><b>Blocking</b><span>The permission screen's line about how long notes are kept and whether they are trained on has to be the real answer before either would tap Allow.</span></div>
+    </div>
+    <div class="row" style="margin-top:28px">
+      <div class="frame">
+        <div class="dir"><b>What their reads add up to</b></div>
+        <div class="phone"><div class="body">
+          <div class="id"><div class="ph"></div><div><div class="n">Nyx ⌄</div><div class="f">Cat · American Shorthair · 3 yrs · female</div></div></div>
+          <div class="chart">
+            <div class="h"><b>8.1 lb</b><span>Log a weight</span></div>
+            <svg viewBox="0 0 250 70" width="100%" role="img" aria-label="Three weigh-ins: 9.7 pounds on June 15, 8.2 on September 16, 8.1 on November 14">
+              <circle cx="14" cy="12" r="6" fill="var(--colorTextPrimary)"/><circle cx="150" cy="46" r="6" fill="var(--colorTextPrimary)"/><circle cx="236" cy="48" r="6" fill="var(--colorTextPrimary)"/>
+              <g font-family="Geist, sans-serif" font-size="11" fill="var(--colorTextTertiary)"><text x="26" y="16">9.7 · Jun 15</text><text x="100" y="66">8.2 · Sep 16</text><text x="196" y="30">8.1 · Nov 14</text></g>
+            </svg>
+            <div class="hint">Down 1.6 lb since June. This is the weight finding on Home.</div>
+          </div>
+          <div class="tiles"><div><b>12</b><span>vomits in 28 days, 6 in the 28 before</span></div><div><b>Vet report</b><span>Open ›</span></div></div>
+          <div class="read">
+            <div class="ey">Culprit's read · Nov 15</div>
+            <p style="font-size:var(--textMD);line-height:22px">Nyx is down 1.6 lb since June and vomiting more often. You've logged a cough and sneezing too. Three medicines are being given that aren't on her record.</p>
+            <div class="hint">Read: your logs and two visit notes. Not read: your two files. It can miss things. <u>Sources</u> · <u>Something's wrong</u></div>
+          </div>
+          <div class="ask"><div class="lbl" style="margin:0">Can you help with one thing</div><div class="t">Your Nov 14 notes say Nyx has been off prednisolone, and a dose is logged that day. Is she back on it?</div><div class="o"><span>Yes, she's on it again</span><span>It was a one-off</span><span>Not sure</span><span class="q2">That's not what my notes say</span></div></div>
+          <div class="hint">Below: 8 found in your notes · going on now · before</div>
+        </div>
+        <div class="dock"><span>Tell Culprit about Nyx</span><b>Talk</b></div>
+        <div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div></div>
+        <div class="cap"><b>The record leads, in daylight.</b> Her numbers first, where both can check them. The read opens with the cat, not the paperwork, and uses only the engine's own numbers. The question shows once and leaves when answered; "8 found" sits below, not at the top.</div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>The same, on night</b><span class="rule">edits a brand rule</span></div>
+        <div class="phone">
+          <div class="night">
+            <div class="top"><b>Nyx ⌄</b><span>Edit profile</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="big">8.1 lb</span><span style="font-size:var(--textSM);color:var(--colorMoonlight)">Log a weight</span></div>
+            <svg viewBox="0 0 250 70" width="100%" role="img" aria-label="Three weigh-ins: 9.7 pounds on June 15, 8.2 on September 16, 8.1 on November 14">
+              <circle cx="14" cy="12" r="6" fill="var(--colorMoonlight)"/><circle cx="150" cy="46" r="6" fill="var(--colorMoonlight)"/><circle cx="236" cy="48" r="6" fill="var(--colorMoonlight)"/>
+              <g font-family="Geist, sans-serif" font-size="11" fill="var(--colorTextOnNightMuted)"><text x="26" y="16">9.7 · Jun 15</text><text x="100" y="66">8.2 · Sep 16</text><text x="196" y="30">8.1 · Nov 14</text></g>
+            </svg>
+            <div class="ntiles"><div><b>12</b><span>vomits in 28 days, 6 before</span></div><div><b>Vet report</b><span>Open ›</span></div></div>
+            <div class="ey" style="margin-top:4px">Culprit's read · Nov 15</div>
+            <p class="lead" style="font-size:var(--textLG);line-height:26px">Nyx is down 1.6 lb since June and vomiting more often. Three medicines are being given that aren't on her record.</p>
+            <div class="by">Read: your logs and two visit notes. Not read: your two files. It can miss things. <u>Sources</u> · <u>Something's wrong</u></div>
+          </div>
+          <div class="body">
+            <div class="ask"><div class="lbl" style="margin:0">Can you help with one thing</div><div class="t">Your Nov 14 notes say Nyx has been off prednisolone, and a dose is logged that day. Is she back on it?</div><div class="o"><span>Yes, she's on it again</span><span>It was a one-off</span><span>Not sure</span></div></div>
+          </div>
+          <div class="dock"><span>Tell Culprit about Nyx</span><b>Talk</b></div>
+          <div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div>
+        </div>
+        <div class="cap"><b>If you still want night.</b> What the owners objected to in the night top was its content: inbox counts, big words about filing, the weight underneath. This keeps the night ground and puts her numbers in it. Neither owner has seen this one. It still needs the brand rule edit.</div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>The review, with their condition</b></div>
+        <div class="phone">
+          <div class="hd"><span class="x">Close</span><b>From your Sep 16 notes</b><span></span></div>
+          <div class="body">
+            <div class="lbl">What her vet asked for · 7</div>
+            <div class="look">
+              <div class="r"><div class="k">Clean her ears every 4 weeks</div><span class="sw"></span></div>
+              <div class="r"><div class="k">Treat the left ear with Motozol once a day</div><span class="sw"></span></div>
+              <div class="r"><div class="k">Call if still coughing after the 10 full strength days</div><span class="sw"></span></div>
+              <div class="r"><div class="k">Don't start and stop the steroid</div><span class="sw"></span></div>
+              <div class="r"><div class="k">No treats to help with pills until the trial ends</div><span class="sw"></span></div>
+              <div class="r"><div class="k">No need to come back at 12 weeks</div><span class="sw"></span></div>
+              <div class="r"><div class="k">One protein at a time when reintroducing</div><span class="sw"></span></div>
+            </div>
+            <div class="hint">Tap any line to see your words. These are notes of what she asked; adding them changes nothing Culprit counts or asks.</div>
+            <div class="btn">Add these 7</div>
+            <div class="lbl">Yours, looked at on its own · 1</div>
+            <div class="look"><div class="sg"><b>Chicken: you think it made her vomit more</b><div class="q">"This increased to 3.4 with chicken reintroduction"</div><div class="acts"><span>Look at this one</span><span></span><span>Not right</span></div></div></div>
+            <div class="out"><b>Left out on purpose.</b> What Dr Miller thought about her weight, "No fever", "Lungs sound good". They stay in your notes, on the Sep 16 visit.</div>
+          </div>
+        </div>
+        <div class="cap"><b>All seven in view before the button.</b> The footer no longer contradicts itself: these are notes of what the vet asked, and none is a medicine or diet on her record. "Left out on purpose" stays, and says where to find it.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ONE ================= -->
+  <section>
+    <div class="num">Screen one</div>
+    <h2>The top of the tab: how Culprit speaks first</h2>
+    <p class="sec-lede">The same content four ways: Culprit's short read of Nyx, one question, what it found, weight and the vet report. What changes is who leads: the brand, the record's own line, a conversation, or the data.</p>
+    <div class="row" id="demo">
+      <div class="frame">
+        <div class="dir"><b>Night</b><span class="rule">edits a brand rule</span></div>
+        <div class="phone">
+          <div class="night">
+            <div class="top"><b>Nyx ⌄</b><span>Edit profile</span></div>
+            <div class="ey">What Culprit is working from</div>
+            <div style="position:relative">
+              <div class="wait"><span class="tick"></span>Reading Nyx's record</div>
+              <p class="lead arr">Four ongoing things in your own words, three medicines not yet listed, and nothing yet from the Nov 14 visit.</p>
+            </div>
+            <div class="tally arr2"><span><b>9</b> on record</span><span><b>8</b> found in your notes</span><span><b>1</b> question</span></div>
+            <div class="by arr2">Read: your logs and two visit notes. Not read: your two files. It can miss things. <u>Something's wrong</u></div>
+          </div>
+          <div class="body">
+            <div class="card">
+              <div class="r"><div class="k">Weight · 8.1 lb<small>Down 1.6 lb since June. This is the weight finding on Home.</small></div><span class="a">Log</span></div>
+              <div class="r"><div class="k">Vet report</div><span class="go">›</span></div>
+            </div>
+            <div class="ask"><div class="lbl" style="margin:0">Can you help with one thing</div><div class="t">Your Nov 14 notes say Nyx has been off prednisolone, and a dose is logged that day. Is she back on it?</div><div class="o"><span>Yes, she's on it again</span><span>It was a one-off</span><span>Not sure</span><span class="q2">That's not what my notes say</span></div></div>
+            <div class="card"><div class="r"><div class="k">Found in your notes<small>8 to review, each with your own words</small></div><span class="a">Review</span></div></div>
+          </div>
+          <div class="dock"><span>Tell Culprit about Nyx</span><b>Talk</b></div>
+          <div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div>
+        </div>
+        <div class="cap"><b>Round 1's top, made to speak.</b> The brand's night ground, a serif read, counts, then the working rows. Night is kept today for when the app is working on the pet's behalf; a tab header is not on that list, so this needs a one line edit to the rule. <i>Closest to WHOOP.</i></div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>Daylight, on the rail</b></div>
+        <div class="phone"><div class="body">
+          <div class="id"><div class="ph"></div><div><div class="n">Nyx ⌄</div><div class="f">Cat · American Shorthair · 3 yrs · female</div></div></div>
+          <div class="card">
+            <div class="r"><div class="k">Weight · 8.1 lb<small>Down 1.6 lb since June. This is the weight finding on Home.</small></div><span class="a">Log</span></div>
+            <div class="r"><div class="k">Vet report</div><span class="go">›</span></div>
+          </div>
+          <div class="read arr">
+            <div class="ey">Culprit's read · Nov 15</div>
+            <p>Four ongoing things in your own words, three medicines not yet listed, and nothing yet from the Nov 14 visit.</p>
+            <div class="hint">Read: your logs and two visit notes. Not read: your two files. It can miss things. <u>Something's wrong</u></div>
+          </div>
+          <div class="ask"><div class="lbl" style="margin:0">Can you help with one thing</div><div class="t">Your Nov 14 notes say Nyx has been off prednisolone, and a dose is logged that day. Is she back on it?</div><div class="o"><span>Yes, she's on it again</span><span>It was a one-off</span><span>Not sure</span><span class="q2">That's not what my notes say</span></div></div>
+          <div class="card"><div class="r"><div class="k">Found in your notes<small>8 to review, each with your own words</small></div><span class="a">Review</span></div></div>
+        </div>
+        <div class="dock"><span>Tell Culprit about Nyx</span><b>Talk</b></div>
+        <div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div></div>
+        <div class="cap"><b>The app's own language.</b> The shipped identity row, weight first, and the read on a card with the indigo rail the Signal already uses. It matches Home and breaks no rule. The quietest of the four.</div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>A conversation</b></div>
+        <div class="phone"><div class="body">
+          <div class="id"><div class="ph"></div><div><div class="n">Nyx ⌄</div><div class="f">Cat · American Shorthair · 3 yrs · female</div></div></div>
+          <div class="two"><div><b>8.1 lb</b><small>Down 1.6 lb · Log</small></div><div><b>Vet report</b><small>Open ›</small></div></div>
+          <div class="bub arr">Here's what I'm working from for Nyx: four ongoing things in your own words, three medicines not yet listed, and nothing yet from the Nov 14 visit.<small>From your logs and two visit notes. I haven't read your two files, and I can miss things.</small></div>
+          <div class="bub arr2">One thing I can't square. Your Nov 14 notes say she's been off prednisolone, and a dose is logged that day. Is she back on it?</div>
+          <div class="qr"><span>Yes, she's on it again</span><span>A one-off</span><span>Not sure</span><span>That's not what I wrote</span></div>
+          <div class="bub">I found 8 things in your notes you might want on her record.<small><u>Review them</u></small></div>
+        </div>
+        <div class="dock"><span>Tell Culprit about Nyx</span><b>Talk</b></div>
+        <div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div></div>
+        <div class="cap"><b>Culprit talks, you answer.</b> The read, the question and the offer are messages; the box at the foot is the reply. The most AI forward, and the one where the record itself is furthest away. It overlaps with Ask. <i>After WHOOP's coach, Pi and ChatGPT.</i></div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>The record leads</b></div>
+        <div class="phone"><div class="body">
+          <div class="id"><div class="ph"></div><div><div class="n">Nyx ⌄</div><div class="f">Cat · American Shorthair · 3 yrs · female</div></div></div>
+          <div class="chart">
+            <div class="h"><b>8.1 lb</b><span>Log a weight</span></div>
+            <svg viewBox="0 0 250 70" width="100%" role="img" aria-label="Three weigh-ins: 9.7 pounds on June 15, 8.2 on September 16, 8.1 on November 14">
+              <circle class="dotw" cx="14" cy="12" r="6" fill="var(--colorTextPrimary)"/><circle class="dotw d2" cx="150" cy="46" r="6" fill="var(--colorTextPrimary)"/><circle class="dotw d3" cx="236" cy="48" r="6" fill="var(--colorTextPrimary)"/>
+              <g font-family="Geist, sans-serif" font-size="11" fill="var(--colorTextTertiary)"><text x="26" y="16">9.7 · Jun 15</text><text x="100" y="66">8.2 · Sep 16</text><text x="196" y="30">8.1 · Nov 14</text></g>
+            </svg>
+            <div class="hint">Down 1.6 lb since June. This is the weight finding on Home.</div>
+          </div>
+          <div class="tiles">
+            <div><b>12</b><span>vomits in 28 days, 6 in the 28 before</span></div>
+            <div><b>3</b><span>medicines given, none listed</span></div>
+          </div>
+          <div class="read arr" style="padding-top:10px;padding-bottom:10px">
+            <div class="ey">Culprit's read · Nov 15</div>
+            <div class="hint" style="font-size:var(--textSM);line-height:var(--lineHeightSM);color:var(--colorTextPrimary)">Four ongoing things in your own words, and nothing yet from the Nov 14 visit. One thing to check with you. <u>See all</u></div>
+          </div>
+          <div class="card"><div class="r"><div class="k">Vet report</div><span class="go">›</span></div><div class="r"><div class="k">Found in your notes<small>8 to review</small></div><span class="a">Review</span></div></div>
+        </div>
+        <div class="dock"><span>Tell Culprit about Nyx</span><b>Talk</b></div>
+        <div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div></div>
+        <div class="cap"><b>Her numbers first, the AI as the caption.</b> Each weigh-in is a dot at its date; the counts are the engine's own. The AI explains and asks underneath. The least "memory", the most Culprit. <i>After Oura and Apple Health.</i></div>
+      </div>
+    </div>
+    <div class="ctl"><button type="button" id="replay">Replay the arrival</button><button type="button" id="slow">Slow ×4</button></div>
+    <p class="rm">Reduce Motion is on, so nothing plays: content is shown still, as the app does.</p>
+    <p class="cap" style="margin-top:10px">The read arrives out of the tick (a 3 pt mark breathing at 1.4 s, only while Culprit is reading), and the dots draw in once. Both are gestures the app already ships.</p>
+  </section>
+
+  <!-- ================= TWO ================= -->
+  <section>
+    <div class="num">Screen two</div>
+    <h2>Below the top: how the facts are laid out</h2>
+    <p class="sec-lede">The same twelve facts, sorted three ways. Every line says where it came from; the dashed ones are not on Nyx's record yet.</p>
+    <div class="row">
+      <div class="frame">
+        <div class="dir"><b>By kind</b></div>
+        <div class="phone"><div class="body">
+          <div class="lbl">Health problems</div>
+          <div class="card"><div class="r none"><div class="k">Nothing recorded<small>What a vet has called it, or what you think is going on.</small></div><span class="a">Add</span></div></div>
+          <div class="lbl">Medicines</div>
+          <div class="look">
+            <div class="r"><div class="k">Motozol<small>Given 10 times since Nov 10</small></div><span class="pill">Not listed</span></div>
+            <div class="r"><div class="k">Prednisolone<small>Given once, on Nov 14</small></div><span class="pill">Not listed</span></div>
+          </div>
+          <div class="card"><div class="r"><div class="k">Prednisolone, Sep 21 to Oct 11<small>5 mg for coughing. Finished.</small><small class="src">Prescribed by Dr. Miller · you entered it Sep 21</small><div class="uses"><i>Signals</i><i>Ask</i><i>Vet report</i></div></div><span class="go">›</span></div></div>
+          <div class="lbl">What you've told Culprit about her vet</div>
+          <div class="card"><div class="r"><div class="k">Her vet knows about the cough<small class="src">You said so on Oct 11</small><small>Because of this, Home held off asking you to book.</small><div class="uses"><i>Signals</i></div></div><span class="go">›</span></div></div>
+          <div class="hint">Diet · weight · what her vet asked for · visits · files below</div>
+        </div></div>
+        <div class="cap"><b>Round 1's layout.</b> The way a vet's chart is organised: problems, medicines, diet. Each fact carries who said it and what uses it. Easy to find a thing; the AI's work is spread through it.</div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>By where it came from</b></div>
+        <div class="phone"><div class="body">
+          <div class="lbl">Culprit found, waiting for you</div>
+          <div class="look">
+            <div class="r"><div class="k">Clean her ears every 4 weeks<small>From your Sep 16 notes</small></div><span class="a">Add</span></div>
+            <div class="r"><div class="k">Call if still coughing after the prednisolone<small>From your Sep 16 notes</small></div><span class="a">Add</span></div>
+          </div>
+          <div class="lbl">Culprit noticed in your logs</div>
+          <div class="look">
+            <div class="r"><div class="k">Motozol, given 10 times since Nov 10</div><span class="pill">Not listed</span></div>
+            <div class="r"><div class="k">Prednisolone, given once on Nov 14</div><span class="pill">Not listed</span></div>
+          </div>
+          <div class="lbl">You told Culprit</div>
+          <div class="card">
+            <div class="r"><div class="k">Her vet knows about the cough<small class="src">Oct 11</small></div><span class="go">›</span></div>
+            <div class="r"><div class="k">Her vet knows about the vomiting<small class="src">Oct 11 · Home began asking again Nov 8</small></div><span class="go">›</span></div>
+          </div>
+          <div class="lbl">You entered</div>
+          <div class="card"><div class="r"><div class="k">Prednisolone, Sep 21 to Oct 11<small>Finished</small></div><span class="go">›</span></div><div class="r"><div class="k">Diet trial, Jul 26 to Oct 20<small>Ended</small></div><span class="go">›</span></div></div>
+        </div></div>
+        <div class="cap"><b>Sorted by who said it.</b> The AI's finds and the app's own notices sit apart from what you entered, so you always know which is which. No other product shows this. Harder to find "her medicines" in one place.</div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>Now, then before</b></div>
+        <div class="phone"><div class="body">
+          <div class="lbl">Going on now</div>
+          <div class="card">
+            <div class="r"><div class="k">Weight down 1.6 lb since June<small class="src">From three weigh-ins · a finding on Home</small></div><span class="go">›</span></div>
+            <div class="r"><div class="k">Vomiting: 12 in 28 days, 6 in the 28 before<small class="src">From your logs · a finding on Home</small></div><span class="go">›</span></div>
+          </div>
+          <div class="look">
+            <div class="r"><div class="k">Motozol, Zyrtec, prednisolone<small>Being given. None is listed.</small></div><span class="a">List</span></div>
+          </div>
+          <div class="card"><div class="r"><div class="k">Eating six rabbit foods<small class="src">From 74 meals logged in 14 days. Unlogged food isn't counted.</small></div><span class="go">›</span></div></div>
+          <div class="lbl">You've told Culprit</div>
+          <div class="card"><div class="r"><div class="k">Her vet knows about the cough<small class="src">You said so on Oct 11</small></div><span class="go">›</span></div></div>
+          <div class="lbl">Before</div>
+          <div class="card"><div class="r"><div class="k">Diet trial, Jul 26 to Oct 20</div><span class="go">›</span></div><div class="r"><div class="k">Prednisolone, Sep 21 to Oct 11</div><span class="go">›</span></div><div class="r"><div class="k">2 vet visits</div><span class="go">›</span></div></div>
+        </div></div>
+        <div class="cap"><b>What is true today, then what is history.</b> It answers "how is she right now" on one screen and brings the app's findings onto the tab. The findings are the engine's, shown with their source; the tab adds no verdict of its own.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= THREE ================= -->
+  <section>
+    <div class="num">Screen three</div>
+    <h2>Going through what Culprit found</h2>
+    <p class="sec-lede">Eight things found in the Sep 16 notes. Jordan said seven one at a time is too many and asked for "Add all". The safety review says a medicine added without a look is how a warning went quiet. Three ways through.</p>
+    <div class="row">
+      <div class="frame">
+        <div class="dir"><b>A list</b></div>
+        <div class="phone">
+          <div class="hd"><span class="x">Close</span><b>From your Sep 16 notes</b><span></span></div>
+          <div class="body">
+            <div class="look">
+              <div class="sg"><b>Clean her ears every 4 weeks</b><div class="q">"Start monthly w the cleaning. Every 4 weeks."</div><div class="acts"><span>Add</span><span>Change</span><span>Not right</span></div></div>
+              <div class="sg"><b>Call if she's still coughing after the 10 full strength days of prednisolone</b><div class="q">"if after the 10d "full strength" dose of pred she's still coughing then we should give her a call"</div><div class="acts"><span>Add</span><span>Change</span><span>Not right</span></div></div>
+            </div>
+            <div class="hint">2 of 8 shown. 6 more below.</div>
+            <div class="out"><b>Left out on purpose.</b> What Dr Miller thought about her weight, "No fever", "Lungs sound good". Culprit doesn't keep a vet's opinion, or a normal finding from one day, as a fact about Nyx. They stay in your notes.</div>
+          </div>
+        </div>
+        <div class="cap"><b>Everything in view, each with your words.</b> Easy to skim and skip. Eight rows of three buttons is a lot of deciding.</div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>One at a time</b></div>
+        <div class="phone">
+          <div class="hd"><span class="x">Later</span><b>3 of 8</b><span></span></div>
+          <div class="body">
+            <div class="focus">
+              <div class="k">What her vet asked for</div>
+              <div class="t">When reintroducing foods, one protein at a time.</div>
+              <div class="q">"Can start w her previous dry food OR other foods. But keep it to a single protein."</div>
+              <div class="hint">From your notes on the Sep 16 visit with Dr Miller.</div>
+              <div class="btns"><div class="btn">Add</div><div class="btn g">Change</div><div class="btn g">Not right</div></div>
+            </div>
+            <div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="hint" style="text-align:center">Stop any time. The rest wait for you.</div>
+          </div>
+        </div>
+        <div class="cap"><b>One decision on screen.</b> Each fact gets a real look, which is what the safety review wants. Eight screens is the most taps of the three. <i>After Linear's accept or decline.</i></div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>Safe ones together</b></div>
+        <div class="phone">
+          <div class="hd"><span class="x">Close</span><b>From your Sep 16 notes</b><span></span></div>
+          <div class="body">
+            <div class="lbl">What her vet asked for · 7</div>
+            <div class="look">
+              <div class="r"><div class="k">Clean her ears every 4 weeks</div><span class="sw"></span></div>
+              <div class="r"><div class="k">Call if still coughing after the prednisolone</div><span class="sw"></span></div>
+              <div class="r"><div class="k">One protein at a time when reintroducing</div><span class="sw"></span></div>
+            </div>
+            <div class="hint">4 more. Tap one to see your words.</div>
+            <div class="btn">Add these 7</div>
+            <div class="lbl">Needs a closer look · 1</div>
+            <div class="look"><div class="sg"><b>Chicken: you think it made her vomit more</b><div class="q">"This increased to 3.4 with chicken reintroduction"</div><div class="acts"><span>Review</span><span></span><span>Not right</span></div></div></div>
+            <div class="hint">Medicines, diets and answers about her vet are always looked at one by one. They can change what Culprit asks you.</div>
+          </div>
+        </div>
+        <div class="cap"><b>"Add all" only where it can't quiet anything.</b> What a vet asked for can be added together; anything that can change a warning is still checked alone. The middle answer to Jordan and the safety review.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FOUR ================= -->
+  <section>
+    <div class="num">Two more, one way each</div>
+    <h2>A fact opened, and the permission</h2>
+    <p class="sec-lede">Not directions: these two take what the research and the owners said and draw it once. The edit uses rows and the phone's own menus, with no chips. The permission says what Jordan and Sam asked to be told.</p>
+    <div class="row">
+      <div class="frame">
+        <div class="dir"><b>A fact, opened</b></div>
+        <div class="phone">
+          <div class="hd"><span class="x">Cancel</span><b>What her vet asked for</b><span class="ok">Save</span></div>
+          <div class="body">
+            <div class="card"><div class="r"><div class="k">Clean her ears every 4 weeks</div></div></div>
+            <div class="q">"Start monthly w the cleaning. Every 4 weeks. First one way today."<br>Your notes, Sep 16 visit</div>
+            <div class="card">
+              <div class="r"><div class="k">Who said it</div><span class="val">Her vet, Dr Miller</span></div>
+              <div class="r"><div class="k">When</div><span class="val">Sep 16</span></div>
+              <div class="r"><div class="k">Still current</div><span class="val">Yes</span></div>
+              <div class="r"><div class="k">How it got here</div><span style="font-size:var(--textSM);color:var(--colorTextSecondary);flex:none">Found by Culprit, added by you</span></div>
+            </div>
+            <div class="hint">Used by nothing yet. Culprit can show it to you; it can't make any warning quieter.</div>
+            <div class="plain d">Remove from Nyx's record</div>
+          </div>
+        </div>
+        <div class="cap"><b>Where it came from stays attached,</b> including that the AI found it. Each value opens the phone's own menu.</div>
+      </div>
+      <div class="frame">
+        <div class="dir"><b>The permission</b></div>
+        <div class="phone">
+          <div class="hd"><span class="x">Not now</span><b></b><span></span></div>
+          <div class="body">
+            <div class="id"><div class="ph"></div><div><div class="n">Let Culprit read Nyx's vet notes</div></div></div>
+            <div class="card">
+              <div class="r"><div class="k">What's read<small>Your typed notes and questions for each vet visit. Your vet files only if you switch them on, one by one.</small></div></div>
+              <div class="r"><div class="k">Who reads it<small>Anthropic's AI, for Culprit. How long they keep it, and whether they train on it, is stated here.</small></div></div>
+              <div class="r"><div class="k">What's kept<small>Culprit's short read of Nyx and what it found, on your account. Erased when you remove the note it came from.</small></div></div>
+              <div class="r"><div class="k">Turning it off<small>Any time, in Settings. The read and everything it found but you didn't add are erased.</small></div></div>
+            </div>
+            <div class="hint">Saying no costs nothing else. Nyx's tab still shows everything you've entered.</div>
+            <div class="btn">Allow</div>
+            <div class="btn g" style="flex:none">Don't allow</div>
+          </div>
+        </div>
+        <div class="cap"><b>Four plain answers before the button.</b> The wording about the AI provider is a placeholder until legal confirms it against the contract.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FUNCTIONS ================= -->
+  <section>
+    <div class="num">From the wider research</div>
+    <h2>What other AI products do that this tab could</h2>
+    <p class="sec-lede">About sixty-five health, assistant and pet products, read for what they do, not how they look. Twelve were read from their own pages; the rest from excerpts and reviews. Six functions that fit a pet's record are sketched below, each with who does it. None is in the directions above yet: say which you want.</p>
+    <div class="row">
+      <div class="frame" style="width:250px">
+        <div class="dir"><b>Ask only about gaps</b></div>
+        <div class="phone"><div class="body">
+          <div class="lbl">Three things your logs can't tell Culprit</div>
+          <div class="ask"><div class="t">Is Nyx spayed?</div><div class="o"><span>Yes</span><span>No</span><span>Not sure</span></div></div>
+          <div class="hint">1 of 3 · Skip</div>
+        </div></div>
+        <div class="cap"><b>Read the data first, then ask at most three things.</b> For Nyx: spayed, indoor or outdoor, any reaction to a medicine. <i>Oura Advisor; Google's health coach opens with a skippable interview.</i></div>
+      </div>
+      <div class="frame" style="width:250px">
+        <div class="dir"><b>Before a visit</b></div>
+        <div class="phone"><div class="body">
+          <div class="read"><div class="ey">Nyx's visit is Friday</div><div class="hint" style="font-size:var(--textSM);line-height:var(--lineHeightSM);color:var(--colorTextPrimary)">Since her Sep 16 visit: 20 vomits logged, and three medicines given that aren't listed. Her weight is down 0.1 lb since then and 1.6 lb since June. Anything to add before you go?</div></div>
+          <div class="dock" style="margin:0"><span>Tell Culprit</span><b>Talk</b></div>
+        </div></div>
+        <div class="cap"><b>The tab asks three days ahead.</b> What changed since last time, and a prompt to add what the record lacks. <i>Digitail's pet parent app; K Health; Dutch.</i></div>
+      </div>
+      <div class="frame" style="width:250px">
+        <div class="dir"><b>Still true?</b></div>
+        <div class="phone"><div class="body">
+          <div class="ask"><div class="lbl" style="margin:0">From Sep 16, two months ago</div><div class="t">Clean her ears every 4 weeks. Is that still what her vet wants?</div><div class="o"><span>Yes, still</span><span>Not any more</span><span>Not sure</span></div></div>
+        </div></div>
+        <div class="cap"><b>An old fact asks to be checked.</b> No product found does this; Google's users delete and retype to get the effect. It is never asked about an answer that keeps Home quiet. <i>A gap in the field.</i></div>
+      </div>
+      <div class="frame" style="width:250px">
+        <div class="dir"><b>Set aside, not deleted</b></div>
+        <div class="phone"><div class="body">
+          <div class="card"><div class="r"><div class="k">Cough and congestion<small class="src">You added this on Nov 15</small></div><span class="pill">Set aside</span></div></div>
+          <div class="hint">Culprit won't bring it up. It stays on Nyx's record and on the vet report, and coughs you log are still counted.</div>
+        </div></div>
+        <div class="cap"><b>A middle state between on and gone.</b> <i>Claude's pause, WHOOP's inactive, ChatGPT's "don't mention this again".</i> Here it can only stop a mention, never a count or a warning.</div>
+      </div>
+      <div class="frame" style="width:250px">
+        <div class="dir"><b>Sources under the read</b></div>
+        <div class="phone"><div class="body">
+          <div class="read"><div class="ey">Culprit's read · Nov 15</div><div class="hint" style="font-size:var(--textSM);line-height:var(--lineHeightSM);color:var(--colorTextPrimary)">…three medicines not yet listed…</div></div>
+          <div class="card"><div class="r"><div class="k">10 Motozol doses<small class="src">Your logs, Nov 10 to 14</small></div><span class="go">›</span></div><div class="r"><div class="k">8 Zyrtec doses<small class="src">Your logs, Oct 12 to Nov 11</small></div><span class="go">›</span></div><div class="r"><div class="k">1 prednisolone dose<small class="src">Your logs, Nov 14</small></div><span class="go">›</span></div></div>
+        </div></div>
+        <div class="cap"><b>Tap any part of the read to see exactly what it rests on.</b> <i>Claude, ChatGPT and Pawtient show sources under an answer.</i></div>
+      </div>
+      <div class="frame" style="width:250px">
+        <div class="dir"><b>Hand it to the vet</b></div>
+        <div class="phone"><div class="body">
+          <div class="card"><div class="r"><div class="k">Add to the vet report<small>A page of what's on Nyx's record: problems, medicines, what her vet asked for. In your words, marked as yours.</small></div><span class="sw off"></span></div></div>
+          <div class="hint">Off until you turn it on, each time. Culprit's own read is never sent.</div>
+        </div></div>
+        <div class="cap"><b>The owner decides what the clinician sees.</b> <i>Amazon's health AI, Oura, Ada and PETTO build a summary the user chooses to share.</i></div>
+      </div>
+    </div>
+    <p class="cap" style="margin-top:22px;max-width:72ch"><b>Five things the research found nobody does,</b> all of which this tab's rules already require: confirm before a fact found in conversation is used; ask whether an old fact still holds; say when a change takes effect; forbid a stored fact from explaining a symptom away; list what the AI does not know. Detail: <code>docs/research/2026-11-pet-memory-functionality.md</code>.</p>
+  </section>
+
+  <section>
+    <div class="num">What to tell me</div>
+    <h2>Four reactions, and three yeses this needs</h2>
+    <div class="asks">
+      <div><h4>Screen one</h4>Which top: night, daylight on the rail, a conversation, or the record leads. Or parts of two.</div>
+      <div><h4>Screen two</h4>Facts by kind, by where they came from, or now then before.</div>
+      <div><h4>Screen three</h4>A list, one at a time, or safe ones together. This also settles the "Add all" disagreement.</div>
+      <div><h4>Functions</h4>Which of the six from the research you want in: gaps only questions, before a visit, still true, set aside, sources, hand it to the vet.</div>
+      <div><h4>A yes on stored AI text</h4>Ask's rule (Jul 18) says no AI memories are kept. The read and what it found have to be kept for this tab to work.</div>
+      <div><h4>A yes on the size</h4>About 18 rows with the tab replacement, against a first forecast of 8. After the 1.2.0 cut, because the permission changes.</div>
+      <div><h4>A yes on night, if you pick it</h4>A one line edit to the brand rule that keeps night off working tabs.</div>
+    </div>
+  </section>
+
+  <p class="cap" style="margin-top:64px">Round 3, exploratory. Source: <code>docs/culprit-pet-memory-mockups.html</code>. The read, the question and the suggestions are taken from real test runs on Nyx's visit notes, edited for voice. Round 2 (the no AI directions, the edit patterns, the motion plate, the first AI forward draw and the owners' reads) is at commit <code>4c2fc5f70</code>.</p>
+</div>
+
+<script>
+  (function () {
+    var d = document.getElementById('demo'), root = document.documentElement, slow = false;
+    function play() { d.classList.remove('play'); void d.offsetWidth; d.classList.add('play'); }
+    document.getElementById('replay').addEventListener('click', play);
+    document.getElementById('slow').addEventListener('click', function () {
+      slow = !slow; root.style.setProperty('--s', slow ? 4 : 1); this.textContent = slow ? 'Normal speed' : 'Slow ×4'; play();
+    });
+    play();
+  })();
+</script>
