@@ -9557,3 +9557,16 @@ Deno.test('CUL-747 — the permitted-later caveat drops its denominator below th
   assert.ok(!/\b7 of 8\b/.test(sparse), 'a "7 of 8" ratio printed below the floor')
   assert.ok(/7 of 8 feedings during the trial did not match the trial diet/.test(later(false)))
 })
+
+Deno.test('CUL-747 — on an extended trial the coverage named is the reading that tripped the floor', () => {
+  const snap = sparseOffDietSnap(true)
+  // Designed window 20 of 28 (above the floor); the whole elapsed trial 22 of 56 (below it).
+  snap.trial!.coverage = { daysLogged: 20, daysElapsed: 28 }
+  snap.trial!.gateCoverage = { daysLogged: 22, daysElapsed: 56 }
+  snap.trial!.coverageClosedByOverrun = true
+  const html = renderReport(snap)
+  const tileText = text(exposureTileOf(html)).replace(/&nbsp;/g, ' ')
+  assert.ok(/meals logged on 22 of the trial&rsquo;s 56 days/.test(tileText), tileText)
+  assert.ok(!/meals logged on 20 of 28 days/.test(tileText), tileText)
+  assert.ok(!/\b7 of 8\b|\b7\s*\/\s*8\b/.test(text(html).replace(/&nbsp;/g, ' ')))
+})

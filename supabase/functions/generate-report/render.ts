@@ -10855,12 +10855,24 @@ export function offDietRatioWithheld(t: NonNullable<ReportSnapshot['trial']>): b
   return trialRefusalDocumented(t) || t.belowCoverageFloor
 }
 
-/** CUL-747 — the coverage a below-floor count was read on, or '' above the floor / with no coverage. */
+/**
+ * CUL-747 — the coverage reading that TRIPPED the floor, or '' above it. `belowCoverageFloor` is the
+ * less reassuring of `coverage` (the report's range) and `gateCoverage` (the whole elapsed trial, wider
+ * on an extended one), so printing `coverage` alone could name a reading above the floor as the reason
+ * (adversarial pass 1, QUIET: 20 of 28 shown while 22 of 56 tripped it). The range reading leads when
+ * it is the one below; the trial-wide one is named as the trial's.
+ */
 function belowFloorCoverageText(t: NonNullable<ReportSnapshot['trial']>): string {
   if (!t.belowCoverageFloor) return ''
-  return t.coverage
-    ? `meals logged on ${num(t.coverage.daysLogged)} of ${num(t.coverage.daysElapsed)} days`
-    : 'a record below the coverage floor'
+  const below = (c: { daysLogged: number; daysElapsed: number } | null): boolean =>
+    !!c && c.daysElapsed > 0 && c.daysLogged / c.daysElapsed < COVERAGE_FLOOR
+  if (t.coverage && (below(t.coverage) || !below(t.gateCoverage))) {
+    return `meals logged on ${num(t.coverage.daysLogged)} of ${num(t.coverage.daysElapsed)} days`
+  }
+  if (t.gateCoverage && below(t.gateCoverage)) {
+    return `meals logged on ${num(t.gateCoverage.daysLogged)} of the trial&rsquo;s ${num(t.gateCoverage.daysElapsed)} days`
+  }
+  return 'a record below the coverage floor'
 }
 
 /** The off-diet feedings' days and the timing counts of the proteins they carried, for either sentence. */
