@@ -4815,7 +4815,7 @@ Deno.test('CUL-1041 §5.1 — the spec’s worked case: extended from 56 on day 
   // all — not a sentence saying the owner acted alone, and not a hedge about not
   // knowing. Silence is the whole of it.
   assert.match(page, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
-  assert.ok(!/a vet asked for the change/.test(page), 'and no vet is credited')
+  assert.ok(!/a vet asked for/.test(page), 'and no vet is credited')
   assert.ok(!/own initiative|on their own|owner decided/i.test(page), 'and no inverse claim either')
 })
 
@@ -4827,13 +4827,42 @@ Deno.test('CUL-1041 §5.1 / D4a — the checked box adds "owner reports", and no
     targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
     targetDurationVetDirected: true,
   })
-  assert.match(page, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+  assert.match(page, /Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one\./)
   // The app cannot verify a vet instruction and must never assert one. The hedge is
   // not decoration: without it the sentence is a clinical claim about a third party.
   assert.ok(
     !/The vet (directed|extended|asked)/.test(page),
     'the report never asserts the vet did anything',
   )
+})
+
+Deno.test('CUL-2796 — a vet-attested move credits the vet with the LAST move, never the span', () => {
+  // The issue's case: the owner moved 42 → 56 alone, and later recorded that a vet moved
+  // it 56 → 84. The record keeps the FIRST window (42) and the LAST change's flag (true),
+  // nothing between, so the page cannot know the middle step existed, and the sentence
+  // must not hand the vet the whole 42 → 84.
+  const page = windowPage({
+    dayOfTrial: 70,
+    targetDurationDays: 84,
+    targetDurationDaysInitial: 42,
+    movedOnDayOfTrial: 70,
+    targetDurationVetDirected: true,
+  })
+  // The window line itself never drops: the from-number and the date stay.
+  assert.match(page, /Window extended from 42 days; last moved [A-Z][a-z]{2} \d{1,2} \(day 70\)\./)
+
+  const at = page.indexOf('Owner reports a vet asked for')
+  assert.ok(at >= 0, 'the attestation is still reported')
+  const sentence = page.slice(at, page.indexOf('.', at) + 1)
+  // Scoped to the one dated step the fact names, and the earlier steps left unclaimed.
+  assert.equal(
+    sentence,
+    'Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one.',
+  )
+  // And never a phrasing that reads as the whole move: not "the change", not "the
+  // extension", not the from-number.
+  assert.ok(!/asked for (the|this) (change|extension|move)/.test(page), 'the attribution never covers the span')
+  assert.ok(!/asked for[^.]*42/.test(page), 'the vet is never tied to the original window')
 })
 
 Deno.test('CUL-1041 — FALSE reads exactly like NULL (the two-sided rule, both spellings)', () => {
@@ -4939,7 +4968,7 @@ Deno.test('CUL-1041 — an unattributed window move cannot borrow the trial\u201
   )
   // And the change itself still carries no attribution of any kind, in either direction.
   assert.match(page, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
-  assert.ok(!/a vet asked for the change/.test(page))
+  assert.ok(!/a vet asked for/.test(page))
 })
 
 Deno.test('CUL-1041 — "a vet", never "the vet": the change is not bound to a named clinician', () => {
@@ -4957,7 +4986,7 @@ Deno.test('CUL-1041 — "a vet", never "the vet": the change is not bound to a n
     targetDurationVetDirected: true,
     vetName: 'Dr. Sarah Kim',
   })
-  assert.match(page, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+  assert.match(page, /Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one\./)
   assert.ok(!/the vet\u2019s direction/.test(page), 'no definite article to bind')
   // Both facts stay on the page; what is gone is the false link between them.
   assert.match(page, /Trial directed by Dr\. Sarah Kim\./)
@@ -4973,7 +5002,7 @@ Deno.test('CUL-1041 — "a vet", never "the vet": the change is not bound to a n
     targetDurationVetDirected: true,
     vetName: null,
   })
-  assert.match(unnamed, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+  assert.match(unnamed, /Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one\./)
   assert.ok(!/Trial directed by/.test(unnamed), 'and no trial attribution is invented')
 })
 
@@ -5443,7 +5472,7 @@ Deno.test('CUL-1041 — the UNATTESTED extension is the dangerous one, and carri
   assert.ok(!/Dr\. A\. Chen/.test(headline))
   // And still no attribution of any kind on the change itself, in either direction.
   assert.match(unattested, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
-  assert.ok(!/a vet asked for the change/.test(unattested))
+  assert.ok(!/a vet asked for/.test(unattested))
   assert.ok(!/on their own|owner decided/i.test(unattested))
 })
 
@@ -5464,7 +5493,7 @@ Deno.test('CUL-1041 — the attested clause severs the referent and drops the sh
   const row = page.slice(page.indexOf('Elimination diet trial'), page.indexOf('Record'))
 
   // 1. The record's inability to resolve it is STATED, not implied by an article.
-  assert.match(row, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+  assert.match(row, /Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one\./)
 
   // 2. The lexical echo is gone: `directed` appears once in the row, on the TRIAL.
   assert.equal(row.match(/directed/g)?.length, 1, 'one "directed" in the row, and it is the trial\u2019s')
@@ -5492,7 +5521,7 @@ Deno.test('CUL-1041 brief C — the unattested change says the record cannot say
   // §8.8 STILL HOLDS, and this is the whole reason the sentence is allowed: it attributes
   // the change to NOBODY. Not to a vet, and — the rule §5.1 actually exists to enforce —
   // not to the owner either.
-  assert.ok(!/a vet asked for the change/.test(page), 'no vet is credited')
+  assert.ok(!/a vet asked for/.test(page), 'no vet is credited')
   assert.ok(!/on their own|owner decided|the owner extended/i.test(page), 'and no owner is blamed')
   assert.ok(!/Dr\. Sarah Kim (asked|extended|changed)/.test(page))
 
@@ -5513,7 +5542,7 @@ Deno.test('CUL-1041 brief C — the two arms are one sentence shape, differing o
   }
   const attested = windowPage({ ...shared, targetDurationVetDirected: true })
   const not = windowPage({ ...shared, targetDurationVetDirected: false })
-  assert.match(attested, /Owner reports a vet asked for the change; Culprit cannot say which\./)
+  assert.match(attested, /Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one\./)
   assert.match(not, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
   // Same subject on both arms.
   for (const p of [attested, not]) assert.match(p, /Culprit cannot say/)
@@ -5554,7 +5583,7 @@ Deno.test('CUL-1041 — the change and the trial’s named vet are never in one 
   // 1. The vet's name is in the TRIAL row, and the change is not.
   assert.match(trialRow, /Trial directed by Dr\. Sarah Kim\./)
   assert.ok(!/Window extended from/.test(trialRow), 'the change has left the identity row')
-  assert.ok(!/asked for the change/.test(trialRow), 'and so has its attribution')
+  assert.ok(!/a vet asked for/.test(trialRow), 'and so has its attribution')
 
   // 2. ORDER: the name comes first, the record's limit last — so the disclaimer is the
   //    reader's final state on attribution rather than the thing the name back-fills.

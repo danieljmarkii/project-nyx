@@ -5652,8 +5652,17 @@ function trialWindowChangeLine(
   // clinician reading two reports should meet the same construction and see only the
   // unknown differ. A test pins that, and it caught the first cut of this very change
   // breaking it.
+  //
+  // ⚠️ THE ATTESTED ARM CREDITS THE LAST MOVE, NEVER THE SPAN (CUL-2796). The vet flag
+  // is PER-CHANGE (re-stamped on every move) while `fromDays` is the FIRST window, so
+  // "Window extended from 42 days" beside "a vet asked for the change" handed the vet the
+  // whole 42 → 84 on a trial whose owner moved it to 56 alone and recorded only the
+  // second step as the vet's. The record cannot tell one move from five (D2(a) kept three
+  // columns, no history), so the sentence cannot switch on "moved more than once": it has
+  // to be true under both. "That last move" binds to the fact's own "last moved <date>",
+  // and the closing clause says what the record cannot: who asked for anything before it.
   const attribution = wc.vetDirected
-    ? ' Owner reports a vet asked for the change; Culprit cannot say which.'
+    ? ' Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one.'
     : ' A trial\u2019s window can be changed by its owner; Culprit cannot say who asked for this one.'
   return `${fact}${attribution}`
 }
