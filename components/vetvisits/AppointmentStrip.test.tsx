@@ -71,7 +71,7 @@ jest.mock('../../lib/appointmentAsked', () => ({
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { AppointmentStrip } from './AppointmentStrip';
+import { AppointmentStrip, visitTimePassed } from './AppointmentStrip';
 import { cancelVetAppointment, readHomeAppointment, type HomeAppointment } from '../../lib/vetVisits';
 import { markAppointmentAsked } from '../../lib/appointmentAsked';
 import { useSyncStore } from '../../store/syncStore';
@@ -87,7 +87,13 @@ function homeAppointment(phase: 'upcoming' | 'after'): HomeAppointment {
       // Today at 3pm, matching `isToday` below. Anchored to now rather than a
       // literal date (C-29); the strip itself never reads this, but the confirm
       // copy shared with the visits list and the edit screen does.
+      //
+      // An UPCOMING row is two hours AHEAD of the clock, never "today at 3pm": on the day,
+      // a booked time already behind the clock is the *How did it go?* face (R8·7), so a
+      // fixed 3pm made every upcoming test below pass or fail by the hour the suite ran
+      // (C-29). The passed-time face builds its own instant.
       scheduledAt: (() => {
+        if (phase === 'upcoming') return new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
         const d = new Date();
         d.setHours(15, 0, 0, 0);
         return d.toISOString();
@@ -418,5 +424,92 @@ describe('re-reading without a focus change (F8)', () => {
     r.rerender(<AppointmentStrip />);
     await act(async () => {});
     expect(readHomeAppointment).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('on the day, once the booked time has passed — *How did it go?* (R8·7, CUL-2760)', () => {
+  // Built from local components and the real clock (C-29): an hour behind, on today.
+  function passedToday(): HomeAppointment {
+    const base = homeAppointment('upcoming');
+    const at = new Date(Date.now() - 61 * 60 * 1000);
+    return {
+      ...base,
+      view: { ...base.view, scheduledAt: at.toISOString(), isToday: true, when: 'Today · 10:30 am' },
+    };
+  }
+
+  it('turns the doors into one: *How did it go?*', async () => {
+    mockHome.current = passedToday();
+    const r = render(<AppointmentStrip />);
+    expect(await r.findByText('How did it go?')).toBeTruthy();
+    expect(r.getByText('Back from the vet?')).toBeTruthy();
+    // The place stays, so which visit is never in doubt.
+    expect(r.getByText('Riverside Animal Hospital · recheck')).toBeTruthy();
+    expect(r.queryByText('Get ready')).toBeNull();
+    expect(r.queryByText('Add a question')).toBeNull();
+    expect(r.queryByText('It didn’t')).toBeNull();
+  });
+
+  it('is ONE tap to the capture screen, carrying the appointment', async () => {
+    mockHome.current = passedToday();
+    const r = render(<AppointmentStrip />);
+    fireEvent.press(await r.findByText('How did it go?'));
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/vet-visits/after', params: { appointment: 'appt-1' } });
+  });
+
+  it('navigates only: no write, and no ask spent', async () => {
+    mockHome.current = passedToday();
+    const r = render(<AppointmentStrip />);
+    const door = await r.findByText('How did it go?');
+    await act(async () => {
+      fireEvent.press(door);
+    });
+    expect(cancelVetAppointment).not.toHaveBeenCalled();
+    expect(markAppointmentAsked).not.toHaveBeenCalled();
+  });
+
+  it('keeps *Get ready* while the booked time is still ahead', async () => {
+    mockHome.current = homeAppointment('upcoming');
+    const r = render(<AppointmentStrip />);
+    expect(await r.findByText('Get ready')).toBeTruthy();
+    expect(r.queryByText('How did it go?')).toBeNull();
+  });
+});
+
+describe('visitTimePassed — the face is the record’s, never a guess', () => {
+  const now = Date.now();
+  function at(scheduledAt: string, overrides: Partial<HomeAppointment> = {}, isToday = true): HomeAppointment {
+    const base = homeAppointment('upcoming');
+    return { ...base, ...overrides, view: { ...base.view, scheduledAt, isToday } };
+  }
+
+  it('is true on the day once the time is behind the clock', () => {
+    expect(visitTimePassed(at(new Date(now - 60_000).toISOString()), now)).toBe(true);
+  });
+
+  it('is false while the time is ahead', () => {
+    expect(visitTimePassed(at(new Date(now + 60_000).toISOString()), now)).toBe(false);
+  });
+
+  it('is false for a no-time booking (the local-midnight sentinel), all day', () => {
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    expect(visitTimePassed(at(midnight.toISOString()), now)).toBe(false);
+  });
+
+  it('is false off the day, and on the passed-day ask, which has its own answers', () => {
+    expect(visitTimePassed(at(new Date(now - 60_000).toISOString(), {}, false), now)).toBe(false);
+    expect(visitTimePassed(at(new Date(now - 60_000).toISOString(), { phase: 'after' }), now)).toBe(false);
+  });
+
+  it('reads the PostgREST spelling of the same instant the same way (C-40)', () => {
+    const local = new Date(now - 60_000);
+    local.setMilliseconds(0);
+    const iso = local.toISOString();
+    const pg = iso.replace('.000Z', '+00:00');
+    expect(pg).not.toBe(iso);
+    expect(visitTimePassed(at(pg), now)).toBe(visitTimePassed(at(iso), now));
+    expect(visitTimePassed(at(pg), now)).toBe(true);
   });
 });

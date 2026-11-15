@@ -10,6 +10,7 @@ import { usePetStore } from '../../store/petStore';
 import { useSyncStore } from '../../store/syncStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
 import {
+  appointmentTimeKnown,
   cancelVetAppointment,
   readAppointmentById,
   readHomeAppointment,
@@ -55,6 +56,28 @@ import { hasAskedAboutAppointment, markAppointmentAsked } from '../../lib/appoin
 // entry that said "this card may write" would also permit the next write somebody
 // adds to it.
 
+/**
+ * The visit day, once the booked time has passed (R8·7, CUL-2760): the strip's door
+ * becomes *How did it go?*, one tap from Home to the finish.
+ *
+ * Asked of the RECORD's instant and the read's own clock, never of the face the strip
+ * wore last. Three conditions, each load-bearing:
+ *   • `upcoming`: a passed DAY is the ask's face, which has its own two answers;
+ *   • `isToday`: a booking tomorrow at 9:00 has not "passed" at 10:00 today;
+ *   • a known clock time: a no-time booking is stored as local midnight (the sentinel,
+ *     `appointmentTimeKnown`), and reading that as "the visit was at 00:00" would ask
+ *     how it went before the owner has left the house. Such a booking keeps *Get ready*
+ *     all day and meets the ask tomorrow, as before.
+ * Instants are parsed, never compared as text (C-40).
+ */
+export function visitTimePassed(appointment: HomeAppointment, nowMs: number): boolean {
+  if (appointment.phase !== 'upcoming' || !appointment.view.isToday) return false;
+  const { scheduledAt } = appointment.view;
+  if (!appointmentTimeKnown(scheduledAt)) return false;
+  const at = new Date(scheduledAt).getTime();
+  return !Number.isNaN(at) && at <= nowMs;
+}
+
 export function AppointmentStrip() {
   const activePet = usePetStore((s) => s.activePet);
   const petId = activePet?.id ?? null;
@@ -64,6 +87,11 @@ export function AppointmentStrip() {
   // a pet switch and leave the previous pet's appointment on screen under the new
   // pet's name (the VV-2 card's own defect, avoided here by construction).
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  // The clock the row in state was read against. The face is decided from it rather
+  // than from a render-time `Date.now()`, so the strip changes face when it RE-READS
+  // (focus, resume, a sync landing: the triggers below), the same moments its day label
+  // moves, and never mid-glance under the owner's thumb.
+  const [readAt, setReadAt] = useState(0);
 
   // Monotonic load id, the `app/rundown.tsx` / insights / report pattern.
   //
@@ -96,6 +124,7 @@ export function AppointmentStrip() {
       // newer load to overtake this one.
       if (loadIdRef.current !== myId) return;
       setAppointment(asked ? null : next);
+      setReadAt(Date.now());
       setLoadedFor(petId);
     } catch (err) {
       if (loadIdRef.current !== myId) return;
@@ -148,6 +177,7 @@ export function AppointmentStrip() {
   if (!appointment || loadedFor !== petId) return null;
 
   const { view, phase, id } = appointment;
+  const back = visitTimePassed(appointment, readAt);
 
   const dismissAsk = async () => {
     setAppointment(null);
@@ -155,6 +185,12 @@ export function AppointmentStrip() {
   };
 
   const openGetReady = () => router.push({ pathname: '/rundown', params: { appointmentId: id } });
+  // The same route and param the ask's *Yes* takes, so the notes typed in the room seed
+  // the capture and the save links the booking (CUL-949). A NAVIGATION and nothing else:
+  // it spends no ask (the ask belongs to the passed-day face, and backing out of the
+  // capture leaves this door here for later today), and `guards/homeWrites.test.ts`
+  // still allows this file exactly one write, *It didn't*.
+  const openHowDidItGo = () => router.push({ pathname: '/vet-visits/after', params: { appointment: id } });
 
   const onDidntHappen = async () => {
     // The copy moved to `lib/vetVisits` with CUL-952, when this stopped being the
@@ -220,14 +256,27 @@ export function AppointmentStrip() {
       <AppointmentBlock
         // The DAY half, never the full `when`: built from the joined string the ask came
         // out as "Did Tuesday · 3:00 pm’s visit happen?".
-        appointment={phase === 'upcoming' ? view : { ...view, when: `Did ${view.day}’s visit happen?` }}
+        //
+        // Back from the visit (R8·7), the title asks the question the door answers; the
+        // place stays on the line beneath it, so which visit is never in doubt.
+        appointment={
+          back
+            ? { ...view, when: 'Back from the vet?' }
+            : phase === 'upcoming'
+              ? view
+              : { ...view, when: `Did ${view.day}’s visit happen?` }
+        }
         // On BOTH faces (CUL-987 D1). On the ask it is the door for the answer the two
         // buttons do not offer — "it moved" — through Get ready's ⋯ *Change*. A
         // navigation, not a write: this file's one write is still *It didn't*.
         onPress={openGetReady}
       />
       <View style={styles.doors}>
-        {phase === 'upcoming' ? (
+        {back ? (
+          // One door. The visit has happened, so *Get ready* and *Add a question* are
+          // behind the owner; the block above still opens Get ready for anything else.
+          <Door label="How did it go?" primary onPress={openHowDidItGo} />
+        ) : phase === 'upcoming' ? (
           <>
             <Door label="Get ready" primary onPress={openGetReady} />
             {/* A DOOR, not a sheet. Home carries no form (see the header): the
