@@ -1327,7 +1327,9 @@ function carryPriorSafety(prior: readonly PriorSafetyEntry[], current: readonly 
       // previous row's, owner-writable, and over an incomplete read no answer may quiet anything:
       // the card comes back asking.
       // Nor a care carry (CUL-2662): the carry vouches that a read saw the concern, and this one did not.
-      const { careState: _dropped, careCarry: _carry, ...rest } = p.finding as Finding & { careState?: unknown; careCarry?: unknown }
+      // Nor a booked visit (CUL-2794): the date is the prior read's, and a booking since cancelled,
+      // or a phantom, would sit beside the ask for up to CARRY_MAX_DAYS. A fresh read restores it.
+      const { careState: _dropped, careCarry: _carry, bookedVisit: _booked, ...rest } = p.finding as Finding & { careState?: unknown; careCarry?: unknown; bookedVisit?: unknown }
       const finding = { ...rest, carriedFrom: p.carriedFromIso } as Finding
       return { rank: i, text: templateCarried(finding, petName, p.carriedFromIso), finding }
     })
