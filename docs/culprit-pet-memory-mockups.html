@@ -1,0 +1,607 @@
+<title>Culprit — About Nyx</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="exploratory">
+<link rel="stylesheet" href="mockups/theme.css">
+<style>
+  /* Studio layer, shared with the vet visit and visit summary rounds so the vet surfaces read as one
+     system. Every phone takes its colours, sizes and radii from mockups/theme.css (generated from
+     constants/theme.ts). Layout: a decision page. Each section draws one question, options side by side. */
+  :root {
+    --canvas:#F4F7F6; --panel:#FFFFFF; --ink:#16211F; --ink-soft:#4A5754; --ink-faint:#7B8884;
+    --line:#E2E9E6; --line-soft:#EDF2F0; --accent:#068A78; --accent-tint:#E4F4F1;
+    --amber:#9A6A00; --amber-tint:#F6EED9; --rose:#B8433B; --rose-tint:#F7E4E2;
+    --shadow:0 1px 2px rgba(20,40,36,.04), 0 8px 30px rgba(20,40,36,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+      --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+      --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+    --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+    --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4); color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--canvas); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1120px; margin:0 auto; padding-block:clamp(28px,6vw,64px) 96px;
+    padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+  .eyebrow { font-size:12px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin:0 0 14px; }
+  h1 { font-family:"Newsreader",Georgia,serif; font-size:clamp(30px,5.4vw,48px); line-height:1.05; letter-spacing:-.02em; font-weight:500; margin:0 0 18px; max-width:22ch; text-wrap:balance; }
+  .lede { font-size:clamp(16px,2vw,18px); color:var(--ink-soft); max-width:68ch; margin:0; }
+  .lede b, .cap b, .ledger b, .note b, .sec-lede b { color:var(--ink); font-weight:600; }
+  .ledger { margin-top:28px; border:1px solid var(--line); border-radius:14px; background:var(--panel); box-shadow:var(--shadow); overflow:hidden; }
+  .ledger-h { padding:12px 18px; font-size:12px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-faint); border-bottom:1px solid var(--line-soft); }
+  .ledger-row { display:grid; grid-template-columns:52px minmax(0,1fr); gap:12px; padding:11px 18px; font-size:14px; color:var(--ink-soft); border-bottom:1px solid var(--line-soft); }
+  .ledger-row:last-child { border-bottom:0; }
+  .ledger-row .k { font-weight:700; color:var(--accent); }
+  section { margin-top:64px; }
+  h2 { font-family:"Newsreader",Georgia,serif; font-size:clamp(24px,3.4vw,32px); font-weight:500; letter-spacing:-.01em; margin:8px 0 8px; text-wrap:balance; }
+  .sec-lede { color:var(--ink-soft); max-width:70ch; margin:0 0 26px; }
+  .tag { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:999px; background:var(--accent-tint); color:var(--accent); }
+  .tag.state { background:var(--line-soft); color:var(--ink-faint); }
+  .tag.guard { background:var(--rose-tint); color:var(--rose); }
+  .row { display:flex; flex-wrap:wrap; gap:28px; align-items:flex-start; }
+  .frame { display:flex; flex-direction:column; gap:10px; width:300px; max-width:100%; min-width:0; }
+  .cap { font-size:13px; color:var(--ink-soft); }
+  .note { border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:14px 16px; font-size:13.5px; color:var(--ink-soft); line-height:1.55; max-width:70ch; }
+  .note.rose { border-color:var(--rose); }
+  .note ol, .note ul { margin:6px 0 0; padding-left:20px; }
+  .optbox { border:1.5px dashed var(--line); border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:12px; min-width:0; }
+  .optbox .oh { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); }
+  .optbox.rec { border-color:var(--accent); }
+  .optbox.rec .oh { color:var(--accent); }
+  .arch { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px; }
+  .arch .col { border:1px solid var(--line); border-radius:14px; background:var(--panel); padding:16px; display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .arch .col.rec { border-color:var(--accent); }
+  .arch h3 { margin:0; font-size:16px; }
+  .arch .step { border:1px solid var(--line-soft); border-radius:10px; padding:8px 10px; font-size:13px; color:var(--ink-soft); }
+  .arch .step b { color:var(--ink); }
+  .arch .step.new { border-color:var(--amber); background:var(--amber-tint); }
+  .arch .arrow { text-align:center; color:var(--ink-faint); font-size:13px; line-height:1; }
+  .arch .verdict { font-size:13px; color:var(--ink-soft); border-top:1px solid var(--line-soft); padding-top:10px; }
+  .tbl { width:100%; border-collapse:collapse; font-size:13.5px; }
+  .tbl th, .tbl td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line-soft); vertical-align:top; color:var(--ink-soft); }
+  .tbl th { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); }
+  .tbl td b { color:var(--ink); }
+  .scroll { overflow-x:auto; }
+
+  /* Phone (app screens): app tokens only */
+  .phone { width:100%; border-radius:34px; background:var(--colorNeutralLight); border:1px solid var(--line); box-shadow:var(--shadow); overflow:hidden; color:var(--colorTextPrimary); font-size:var(--textMD); position:relative; }
+  .hd { display:flex; align-items:center; justify-content:space-between; padding:var(--space2) var(--space2) var(--space1); min-height:var(--hitTarget); }
+  .hd .back { color:var(--colorTextTertiary); font-size:var(--textMD); }
+  .hd .act { color:var(--colorAction); font-size:var(--textMD); font-weight:var(--weightMedium); }
+  .body { padding:0 var(--space2) var(--space3); display:flex; flex-direction:column; gap:var(--space1_5); }
+  .ttl { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textPageTitle); line-height:var(--lineHeightXL); margin:0; font-weight:var(--weightRegular); }
+  .sub { font-size:var(--textSM); color:var(--colorTextTertiary); line-height:var(--lineHeightSM); }
+  .lbl { font-size:var(--textXS); font-weight:var(--weightSemibold); letter-spacing:var(--trackingWidest); text-transform:uppercase; color:var(--colorTextTertiary); margin-top:var(--space1); display:flex; justify-content:space-between; gap:var(--space1); }
+  .lbl span { letter-spacing:0; text-transform:none; font-weight:var(--weightRegular); }
+  .card { background:var(--colorSurface); border-radius:var(--radiusMedium); overflow:hidden; }
+  .pr { display:flex; gap:var(--space1_5); align-items:flex-start; padding:var(--space1_5) var(--space2); border-bottom:1px solid var(--colorBorder); }
+  .pr:last-child { border-bottom:0; }
+  .pr .t { flex:1; min-width:0; }
+  .pr .t b { display:block; font-size:var(--textMD); font-weight:var(--weightMedium); color:var(--colorTextPrimary); line-height:var(--lineHeightBody); }
+  .pr .t span { display:block; font-size:var(--textXS); color:var(--colorTextSecondary); line-height:var(--lineHeightXS); margin-top:var(--spaceMicro); }
+  .pr .t span.src { color:var(--colorTextTertiary); }
+  .pr .chev { color:var(--colorTextDisabled); flex:none; padding-top:2px; }
+  .pr .a { font-size:var(--textSM); font-weight:var(--weightMedium); color:var(--colorAction); flex:none; padding:2px 0; }
+  .pr.logs { background:var(--colorAttentionLight); }
+  .pr.logs .t b { color:var(--colorAttentionInk); }
+  .pr.wait { background:var(--colorAccentLight); }
+  .pr.none .t b { color:var(--colorTextTertiary); font-weight:var(--weightRegular); }
+  .uses { display:flex; gap:4px; flex-wrap:wrap; margin-top:6px; }
+  .uses i { font-style:normal; font-size:var(--textTabLabelTight); padding:1px 6px; border-radius:var(--radiusFull); background:var(--colorSurfaceSubtle); color:var(--colorTextSecondary); }
+  .uses i.off { text-decoration:line-through; color:var(--colorTextDisabled); }
+  .btn { background:var(--colorNeutralDark); color:var(--colorTextOnDark); border-radius:var(--radiusMedium); text-align:center; padding:13px; font-weight:var(--weightSemibold); font-size:var(--textMD); }
+  .btn.act { background:var(--colorAction); }
+  .btn.ghost { background:transparent; color:var(--colorAction); border:1px solid var(--colorBorderStrong); }
+  .btn.danger { background:transparent; color:var(--colorDestructiveInk); border:1px solid var(--colorDestructiveBorder); }
+  .chips { display:flex; flex-wrap:wrap; gap:var(--space1); }
+  .chip { min-height:32px; display:inline-flex; align-items:center; padding:0 var(--space1_5); border-radius:var(--radiusFull); border:1px solid var(--colorBorderStrong); background:var(--colorSurface); color:var(--colorTextSecondary); font-size:var(--textSM); }
+  .chip.on { border-color:var(--colorAction); color:var(--colorAction); font-weight:var(--weightMedium); }
+  .field { background:var(--colorSurface); border:1px solid var(--colorBorder); border-radius:var(--radiusSmall); padding:var(--space1_5); font-size:var(--textMD); }
+  .quote { border-left:2px solid var(--colorBorderStrong); padding:2px 0 2px var(--space1_5); font-size:var(--textXS); line-height:var(--lineHeightXS); color:var(--colorTextSecondary); }
+  .tell { background:var(--colorSurfaceSubtle); border-radius:var(--radiusSmall); padding:var(--space1_5); font-size:var(--textSM); line-height:var(--lineHeightSM); color:var(--colorTextSecondary); }
+  .tell.warn { background:var(--colorAttentionLight); color:var(--colorAttentionInk); }
+  .scrim { position:absolute; inset:0; background:var(--colorScrim); display:flex; align-items:flex-end; }
+  .sheet { background:var(--colorSurface); border-radius:var(--radiusLarge) var(--radiusLarge) 0 0; padding:10px var(--space2) var(--space3); width:100%; display:flex; flex-direction:column; gap:var(--space1_5); }
+  .grab { width:36px; height:5px; border-radius:3px; background:var(--colorBorderStrong); margin:0 auto 4px; }
+  .sheet h5 { margin:0; font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textXL); font-weight:var(--weightRegular); line-height:var(--lineHeightXL); }
+  .sheet p { margin:0; font-size:var(--textSM); line-height:var(--lineHeightSM); color:var(--colorTextSecondary); }
+  .night { background:
+      radial-gradient(120% 80% at 85% 0%, var(--colorAuroraTeal), transparent 60%),
+      radial-gradient(90% 70% at 0% 10%, var(--colorAuroraViolet), transparent 65%),
+      var(--colorBrandNight);
+    color:var(--colorTextOnNight); padding:var(--space2) var(--space2) var(--space3); display:flex; flex-direction:column; gap:var(--space1_5); }
+  .night .nhd { display:flex; justify-content:space-between; color:var(--colorTextOnNightMuted); font-size:var(--textMD); min-height:28px; }
+  .night .ey2 { font-size:var(--textXS); font-weight:var(--weightSemibold); letter-spacing:var(--trackingWidest); text-transform:uppercase; color:var(--colorTextOnNightMuted); }
+  .night .lead { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textSignal); line-height:var(--lineHeightSignal); color:var(--colorMoonlight); margin:0; font-weight:var(--weightRegular); text-wrap:balance; }
+  .night .say { font-size:var(--textSM); line-height:var(--lineHeightSM); color:var(--colorTextOnNight); }
+  .tally { display:flex; gap:var(--space1); flex-wrap:wrap; }
+  .tally span { border:1px solid var(--colorBorderOnNight); border-radius:var(--radiusFull); padding:5px 10px; font-size:var(--textXS); color:var(--colorTextOnNightMuted); font-variant-numeric:tabular-nums; }
+  .tally span b { color:var(--colorMoonlight); font-weight:var(--weightSemibold); }
+  .sig { background:var(--colorSurface); border-radius:var(--radiusMedium); padding:var(--space2); display:flex; flex-direction:column; gap:var(--space1); }
+  .sig .k { font-size:var(--textXS); font-weight:var(--weightSemibold); letter-spacing:var(--trackingWidest); text-transform:uppercase; color:var(--colorEventSymptomInk); }
+  .sig .s { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textLG); line-height:var(--lineHeightLG); }
+  .sig .c { font-size:var(--textXS); color:var(--colorTextSecondary); line-height:var(--lineHeightXS); }
+  .around { display:flex; flex-direction:column; gap:6px; }
+  .around .l { background:var(--colorSurface); border-radius:var(--radiusSmall); padding:10px var(--space1_5); font-size:var(--textSM); line-height:var(--lineHeightSM); display:flex; justify-content:space-between; gap:var(--space1); }
+  .around .l.new { box-shadow:0 0 0 1.5px var(--colorAction) inset; }
+  .around .l em { font-style:normal; color:var(--colorAction); flex:none; }
+  .hero-pet { display:flex; gap:var(--space1_5); align-items:center; }
+  .avatar { width:52px; height:52px; border-radius:50%; background:var(--colorAccentWashDeep); flex:none; }
+  .tabbar { display:flex; justify-content:space-around; border-top:1px solid var(--colorBorder); padding:10px 0 14px; font-size:var(--textXS); color:var(--colorTextTertiary); background:var(--colorSurface); }
+  .tabbar .on { color:var(--colorTextPrimary); font-weight:var(--weightSemibold); }
+  .door { display:flex; justify-content:space-between; align-items:center; background:var(--colorSurface); border-radius:var(--radiusMedium); padding:var(--space1_5) var(--space2); font-size:var(--textMD); }
+  .door.hi { box-shadow:0 0 0 1.5px var(--colorAction) inset; }
+  .door small { display:block; font-size:var(--textXS); color:var(--colorTextSecondary); }
+  .dim { opacity:.45; }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">CUL-2787 · Mock round 1 · exploratory · 2026-11-15</p>
+  <h1>One page for what Culprit is working from</h1>
+  <p class="lede">The idea: a single place that lists the standing facts the app holds about a pet, says where each came from, and lets the owner change or remove any of them. Every frame below uses <b>Nyx's real record as of Nov 15</b>. Nothing here is built and nothing is ruled. Where a decision has options that look different, they sit side by side, and the team's pick has a green outline.</p>
+
+  <div class="ledger">
+    <div class="ledger-h">What each section is asking you</div>
+    <div class="ledger-row"><span class="k">§A</span><span><b>The page, today and after ten minutes.</b> What it would honestly show for Nyx right now, and what it shows once you fill it in. Brief 1 (the model).</span></div>
+    <div class="ledger-row"><span class="k">§B</span><span><b>Where a fact came from.</b> Who said it, when, and which parts of the app use it.</span></div>
+    <div class="ledger-row"><span class="k">§C</span><span><b>Editing and removing.</b> Including the two removals that change what Home says. Brief 4.</span></div>
+    <div class="ledger-row"><span class="k">§D</span><span><b>A fact waiting for you.</b> Owner only, or the app proposes and you confirm. Brief 2.</span></div>
+    <div class="ledger-row"><span class="k">§E</span><span><b>A new pet, and two pets.</b></span></div>
+    <div class="ledger-row"><span class="k">§F</span><span><b>Where it lives and what it is called.</b> Brief 5.</span></div>
+    <div class="ledger-row"><span class="k">§G</span><span><b>The loop closing.</b> A Signal finding that cites a fact from the page. Brief 3.</span></div>
+    <div class="ledger-row"><span class="k">§H</span><span><b>The two shapes underneath.</b> A view over what exists, or a new store. Brief 1.</span></div>
+  </div>
+
+  <!-- ============ A ============ -->
+  <section>
+    <span class="tag">§A · The page</span>
+    <h2>Nyx's page today, and after you fill it in</h2>
+    <p class="sec-lede">The honest first finding: <b>the list built for this is empty.</b> Nyx has no health problem on record, no medicine running and no diet, while her logs show ten doses of ear drops, a steroid dose and 74 rabbit meals. So the page has three kinds of line: what you told the app, what the logs show that nothing on record explains (amber), and what is empty.</p>
+    <div class="row">
+      <div class="frame">
+        <div class="phone">
+          <div class="night">
+            <div class="nhd"><span>‹ Nyx</span><span>Nyx ⌄</span></div>
+            <div class="ey2">About Nyx</div>
+            <p class="lead">What Culprit is working from</p>
+            <div class="say">All of it came from you. Change anything that's wrong.</div>
+            <div class="tally"><span><b>9</b> on record</span><span><b>4</b> from your logs</span><span><b>2</b> empty</span></div>
+          </div>
+          <div class="body" style="padding-top:var(--space2)">
+            <div class="lbl">Who she is</div>
+            <div class="card"><div class="pr"><div class="t"><b>Cat · American Shorthair · female</b><span>3 years old, born Sep 1, 2023</span><span class="src">You entered this on May 17</span><div class="uses"><i>Signals</i><i>Ask</i><i>Vet report</i></div></div><span class="chev">›</span></div></div>
+
+            <div class="lbl">Health problems <span>0</span></div>
+            <div class="card"><div class="pr none"><div class="t"><b>Nothing recorded</b><span>Culprit counts what you log. It only knows what a vet has called it, or what you think is going on, if it's listed here.</span></div><span class="a">Add</span></div></div>
+
+            <div class="lbl">Medicines <span>none running on record</span></div>
+            <div class="card">
+              <div class="pr logs"><div class="t"><b>Motozol, 10 doses since Nov 10</b><span>From your logs. No course on record, so Signals can't see an ear treatment is running.</span></div><span class="a">Start a course</span></div>
+              <div class="pr logs"><div class="t"><b>Prednisolone, 1 dose on Nov 14</b><span>From your logs. No course on record. It can hide vomiting and coughing.</span></div><span class="a">Start a course</span></div>
+              <div class="pr logs"><div class="t"><b>Zyrtec, 8 doses since Oct 12</b><span>From your logs. No course on record.</span></div><span class="a">Start a course</span></div>
+              <div class="pr"><div class="t"><b>Prednisolone, Sep 21 to Oct 11</b><span>5 mg for coughing. Ended.</span><span class="src">Prescribed by Dr. Miller · you entered it Sep 21</span><div class="uses"><i>Signals</i><i>Ask</i><i>Vet report</i></div></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>Motozol, Jul 16 to Aug 9</b><span>Ear drops for an ear infection. Ended.</span><span class="src">You entered it Jul 24</span></div><span class="chev">›</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><b>A1 · Today, top half.</b> Drawn from her rows as they are. The amber lines are counted from doses, never stored and never guessed by a model.</div>
+      </div>
+
+      <div class="frame">
+        <div class="phone">
+          <div class="body" style="padding-top:var(--space2)">
+            <div class="lbl">Diet <span>none on record</span></div>
+            <div class="card">
+              <div class="pr logs"><div class="t"><b>Rabbit foods only, last 14 days</b><span>From your logs: 74 meals, six foods, all rabbit. Since the trial ended, Signals and Ask have no diet on record for Nyx.</span></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>Diet trial, Jul 26 to Oct 20</b><span>12 weeks, for stomach signs. You said Nyx was better at the end of it.</span><span class="src">Length set by her vet · linked to the Sep 16 visit</span><div class="uses"><i class="off">Signals</i><i class="off">Ask</i><i>Vet report</i></div></div><span class="chev">›</span></div>
+            </div>
+
+            <div class="lbl">Weight</div>
+            <div class="card"><div class="pr"><div class="t"><b>8.1 lb on Nov 14</b><span>Down from 9.7 lb on Jun 15. Three readings.</span><span class="src">All three are marked home scale</span><div class="uses"><i>Signals</i><i>Ask</i><i>Vet report</i></div></div><span class="chev">›</span></div></div>
+
+            <div class="lbl">What her vet asked for <span>0</span></div>
+            <div class="card"><div class="pr none"><div class="t"><b>Nothing recorded</b><span>Things like "call me if she's still coughing after the course."</span></div><span class="a">Add</span></div></div>
+
+            <div class="lbl">What you've told Culprit about her vet</div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>Her vet knows about the cough</b><span class="src">You said so on Oct 11</span><span>Because of this, Home held off asking you to book about the cough.</span></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>Her vet knows about the vomiting</b><span class="src">You said so on Oct 11</span><span>Home started asking again on Nov 8, because it came more often.</span></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>Her vet started the diet trial for the vomiting</b><span class="src">You said so on Oct 11</span></div><span class="chev">›</span></div>
+            </div>
+
+            <div class="lbl">Visits and paperwork</div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>2 vet visits</b><span>Sep 16 and Nov 14. Signals uses the dates only, never your notes.</span></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>2 files</b><span>Nothing in the app reads them.</span></div><span class="chev">›</span></div>
+            </div>
+            <div class="sub">Culprit doesn't hold: whether Nyx is spayed, indoor or outdoor, vaccines, or any reaction to a medicine.</div>
+          </div>
+        </div>
+        <div class="cap"><b>A2 · Today, lower half.</b> The three "you told Culprit" lines change what Home asks. Today no screen lists them.</div>
+      </div>
+
+      <div class="frame">
+        <div class="phone">
+          <div class="body" style="padding-top:var(--space2)">
+            <div class="lbl">Health problems <span>3</span></div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>Vomiting, long running</b><span>Being looked into</span><span class="src">You added this on Nov 15 · your own words</span><div class="uses"><i>Vet report</i></div></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>Ear infections, keep coming back</b><span>Left ear this time, both last time</span><span class="src">You noted Dr Miller said this at the Sep 16 visit</span><div class="uses"><i>Vet report</i></div></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>Cough and congestion</b><span>Being looked into</span><span class="src">You added this on Nov 15 · your own words</span><div class="uses"><i>Vet report</i></div></div><span class="chev">›</span></div>
+            </div>
+            <div class="lbl">Foods and medicines she may react to <span>1</span></div>
+            <div class="card"><div class="pr"><div class="t"><b>Chicken</b><span>Suspected. More vomiting when you tried it after the trial.</span><span class="src">You added this on Nov 15 · your own words · not tested by a vet</span><div class="uses"><i>Vet report</i></div></div><span class="chev">›</span></div></div>
+            <div class="lbl">Medicines <span>2 running</span></div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>Motozol, since Nov 10</b><span>1 drop twice a day, left ear</span><span class="src">You entered it Nov 15 from 10 logged doses</span><div class="uses"><i>Signals</i><i>Ask</i><i>Vet report</i></div></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>Prednisolone, since Nov 14</b><span>It can hide vomiting and coughing.</span><span class="src">You entered it Nov 15</span><div class="uses"><i>Signals</i><i>Ask</i><i>Vet report</i></div></div><span class="chev">›</span></div>
+            </div>
+            <div class="lbl">What her vet asked for <span>2</span></div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>Clean her ears every 4 weeks</b><span class="src">You noted Dr Miller said this at the Sep 16 visit</span></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>Call if she's still coughing after the course</b><span class="src">From the Sep 16 visit · due the day after the last dose</span></div><span class="chev">›</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><b>A3 · After ten minutes.</b> The same page once the amber lines are acted on and three problems are added. Every line still says whose words it is.</div>
+      </div>
+    </div>
+    <div class="note" style="margin-top:22px"><b>What is deliberately not on the page.</b> "Her vet wasn't very concerned about the weight" (an opinion from one day; it stays in your visit notes). "No fever", "lungs sound good" (absences). "Chronic vomiting" guessed from the logs (that is a finding, and it lives with findings). A page that listed any of these would let a fact quiet a warning.</div>
+  </section>
+
+  <!-- ============ B ============ -->
+  <section>
+    <span class="tag">§B · Provenance</span>
+    <h2>Where a fact came from, and who uses it</h2>
+    <p class="sec-lede">Tapping any line opens it. A fact always answers three things: <b>whose words</b>, <b>when</b>, and <b>what in the app reads it</b>. A fact whose presence changes what Home asks says so in plain words.</p>
+    <div class="row">
+      <div class="frame">
+        <div class="phone">
+          <div class="hd"><span class="back">‹ About Nyx</span><span class="act">Edit</span></div>
+          <div class="body">
+            <p class="ttl">Ear infections, keep coming back</p>
+            <div class="sub">Left ear this time, both last time</div>
+            <div class="lbl">Where this came from</div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>Her vet said it</b><span>You noted Dr Miller said this at the Sep 16 visit. Culprit hasn't checked it with the clinic.</span></div></div>
+              <div class="pr"><div class="t"><b>How sure</b><span>Not stated</span></div></div>
+              <div class="pr"><div class="t"><b>Added</b><span>By you, on Nov 15</span></div></div>
+              <div class="pr"><div class="t"><b>Sep 16 visit</b><span>Potential ear infection</span></div><span class="chev">›</span></div>
+            </div>
+            <div class="lbl">What uses it</div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>Vet report</b><span>Printed on page 1 as "owner reports the vet said".</span></div></div>
+              <div class="pr"><div class="t"><b>Signals and Ask</b><span>Not yet. When they do, it can add a line to a finding. It can't make one quieter.</span></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><b>B1 · A health problem.</b> "Her vet said it" means you reported it. The report prints it that way.</div>
+      </div>
+
+      <div class="frame">
+        <div class="phone">
+          <div class="hd"><span class="back">‹ About Nyx</span><span></span></div>
+          <div class="body">
+            <p class="ttl">Her vet knows about the cough</p>
+            <div class="lbl">Where this came from</div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>You said so</b><span>On Oct 11, on the coughing finding.</span></div></div>
+            </div>
+            <div class="lbl">What it changes</div>
+            <div class="tell">Because of this, Home held off asking you to book a visit about the cough. It asks again if the cough comes more often.</div>
+            <div class="lbl">What uses it</div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>Signals</b><span>Yes. It never reaches Ask or the vet report.</span></div></div>
+            </div>
+            <div class="btn ghost">Take this back</div>
+            <div class="sub">Taking it back means Home asks about the cough again.</div>
+          </div>
+        </div>
+        <div class="cap"><b>B2 · An answer you gave.</b> Today this can only be undone in the moment it's given. Here it can be taken back any time, and taking it back only ever makes Home ask more.</div>
+      </div>
+
+      <div class="frame">
+        <div class="phone">
+          <div class="hd"><span class="back">‹ About Nyx</span><span class="act">Edit</span></div>
+          <div class="body">
+            <p class="ttl">8.1 lb on Nov 14</p>
+            <div class="sub">3.69 kg</div>
+            <div class="lbl">Where this came from</div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>You weighed her</b><span>Entered Nov 14 at 10:06 am, six minutes into a vet appointment.</span></div></div>
+              <div class="pr"><div class="t"><b>Which scale</b><span>Marked home scale</span></div><span class="a">Change</span></div>
+            </div>
+            <div class="lbl">What uses it</div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>Signals</b><span>Part of the weight finding on Home: down from 9.7 lb on Jun 15.</span></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>Ask · Vet report</b><span>Yes</span></div></div>
+            </div>
+            <div class="lbl">Earlier readings</div>
+            <div class="card">
+              <div class="pr"><div class="t"><b>8.2 lb on Sep 16</b><span class="src">Marked home scale</span></div><span class="chev">›</span></div>
+              <div class="pr"><div class="t"><b>9.7 lb on Jun 15</b><span class="src">Marked home scale</span></div><span class="chev">›</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><b>B3 · A weight.</b> The scale is stored today and shown nowhere. Whether changing it is offered here waits on the separate weights discovery you asked for on CUL-2753.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ C ============ -->
+  <section>
+    <span class="tag">§C · Editing and removing</span>
+    <h2>Changing a fact, and the two kinds of removal</h2>
+    <p class="sec-lede">An edit here is the same write the fact's own screen already makes. The page adds no new way to change the record, with one exception: health problems, which today can't be removed at all. <b>A removal takes a fact away. It never says the opposite.</b></p>
+    <div class="row">
+      <div class="frame">
+        <div class="phone">
+          <div class="hd"><span class="back">Cancel</span><span class="act">Save</span></div>
+          <div class="body">
+            <p class="ttl">Health problem</p>
+            <div class="field">Vomiting, long running</div>
+            <div class="lbl">Who said it</div>
+            <div class="chips"><span class="chip on">It's what I've seen</span><span class="chip">Her vet said it</span></div>
+            <div class="lbl">How sure</div>
+            <div class="chips"><span class="chip on">Being looked into</span><span class="chip">A vet confirmed it</span><span class="chip">Not sure</span></div>
+            <div class="lbl">Since about</div>
+            <div class="field">May 2026</div>
+            <div class="lbl">Which thing you log is this about</div>
+            <div class="chips"><span class="chip on">Vomiting</span><span class="chip">Loose stool</span><span class="chip">Itching</span><span class="chip">Cough</span><span class="chip">None of these</span></div>
+            <div class="tell">Culprit keeps counting vomiting the same way. Listing it here adds your words beside the count. It doesn't turn any warning down.</div>
+          </div>
+        </div>
+        <div class="cap"><b>C1 · Edit.</b> Four taps and a name. You choose which logged sign it is about; the app never matches on the name.</div>
+      </div>
+
+      <div class="frame">
+        <div class="phone">
+          <div class="body dim" style="padding-top:var(--space2)"><p class="ttl">Cough and congestion</p><div class="card"><div class="pr"><div class="t"><b>It's what you've seen</b></div></div></div></div>
+          <div class="scrim"><div class="sheet">
+            <div class="grab"></div>
+            <h5>Take this off Nyx's page?</h5>
+            <div class="btn ghost">We haven't seen it lately</div>
+            <p>Stays in her history with today's date. If the cough comes back, Culprit says it has come back.</p>
+            <div class="btn danger">It was entered by mistake</div>
+            <p>Removed. Reports you already saved keep what they said that day.</p>
+            <p>Either way, Culprit keeps counting coughs you log, and nothing on Home gets quieter.</p>
+          </div></div>
+          <div style="height:430px"></div>
+        </div>
+        <div class="cap"><b>C2 · Removing a health problem.</b> Two different acts, never one button. There is no "resolved": only a vet can say that.</div>
+      </div>
+
+      <div class="frame">
+        <div class="phone">
+          <div class="body dim" style="padding-top:var(--space2)"><p class="ttl">9.7 lb on Jun 15</p><div class="card"><div class="pr"><div class="t"><b>You weighed her</b></div></div></div></div>
+          <div class="scrim"><div class="sheet">
+            <div class="grab"></div>
+            <h5>Remove this reading?</h5>
+            <div class="tell warn">This is the reading the weight finding on Home compares against. Without it, Culprit has less to go on, and that finding may no longer show.</div>
+            <p>If the number was wrong, fixing it keeps the reading.</p>
+            <div class="btn act">Fix the number</div>
+            <div class="btn danger">Remove it</div>
+          </div></div>
+          <div style="height:400px"></div>
+        </div>
+        <div class="cap"><b>C3 · A removal that can quiet a finding.</b> You can delete this reading today, from History, with no word about what it feeds. This is option (a) in brief 4: allowed, and named before the tap.</div>
+      </div>
+
+      <div class="frame">
+        <div class="optbox">
+          <div class="oh">Option, drawn for brief 4 · not the current proposal</div>
+          <div class="phone">
+            <div class="body" style="padding-top:var(--space2)">
+              <div class="sig"><div class="k">Weight</div><div class="s">Nyx's 9.7 lb reading from Jun 15 was removed today.</div><div class="c">Culprit can't compare her weight without it. This line stays for 14 days.</div></div>
+              <div class="btn ghost">Put the reading back</div>
+            </div>
+          </div>
+          <div class="cap"><b>C4 · Option (b): the finding leaves a mark.</b> A removal that takes a number out of a safety finding keeps a line on Home for 14 days. It costs an engine change and its own review.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ D ============ -->
+  <section>
+    <span class="tag">§D · A fact waiting for you</span>
+    <h2>Who may put a fact on the page</h2>
+    <p class="sec-lede">Whoop, ChatGPT, Oura and Gemini all let the AI write a memory silently and show it afterwards. The house rule is the opposite: nothing is added until you say so. The question is only whether the app may <b>suggest</b>.</p>
+    <div class="row">
+      <div class="optbox">
+        <div class="oh">Option A · you only</div>
+        <div class="frame"><div class="phone"><div class="body" style="padding-top:var(--space2)">
+          <div class="lbl">Health problems <span>0</span></div>
+          <div class="card"><div class="pr none"><div class="t"><b>Nothing recorded</b></div><span class="a">Add</span></div></div>
+          <div class="lbl">Medicines</div>
+          <div class="card"><div class="pr none"><div class="t"><b>No course running on record</b></div><span class="a">Add</span></div></div>
+        </div></div>
+        <div class="cap"><b>D1.</b> The page waits. For Nyx it would have sat empty since May, as the Conditions card has.</div></div>
+      </div>
+      <div class="optbox rec">
+        <div class="oh">Option B · recommended · the app points, you add</div>
+        <div class="frame"><div class="phone"><div class="body" style="padding-top:var(--space2)">
+          <div class="lbl">Medicines</div>
+          <div class="card">
+            <div class="pr logs"><div class="t"><b>Motozol, 10 doses since Nov 10</b><span>From your logs. No course on record.</span></div><span class="a">Start a course</span></div>
+          </div>
+          <div class="sub">Counted from what you logged. No AI. Opens the usual medicine form with only the name filled in.</div>
+        </div></div>
+        <div class="cap"><b>D2 · From your logs.</b> A count, not a guess. It needs no consent change and no model.</div></div>
+        <div class="frame"><div class="phone"><div class="body" style="padding-top:var(--space2)">
+          <div class="lbl">Waiting for you <span>1</span></div>
+          <div class="card">
+            <div class="pr wait"><div class="t"><b>Clean her ears every 4 weeks</b><span>Found in your notes from the Sep 16 visit.</span><div class="quote" style="margin-top:6px">"Start monthly w the cleaning. Every 4 weeks."</div><span class="src" style="margin-top:6px">Suggested by AI from your notes · not on Nyx's page until you add it</span></div></div>
+          </div>
+          <div class="btn act">Add to what her vet asked for</div>
+          <div class="btn ghost">Not right</div>
+          <div class="sub">Nothing in Culprit uses this until you add it. If you add it, it keeps the note "suggested from your notes".</div>
+        </div></div>
+        <div class="cap"><b>D3 · From a visit summary.</b> Only if the visit summary (CUL-2753) is ruled in and keeps its suggestions. It arrives through that feature's own confirm step, never by a second route.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ E ============ -->
+  <section>
+    <span class="tag">§E · States</span>
+    <h2>A new pet, and an account with two</h2>
+    <div class="row">
+      <div class="frame">
+        <div class="phone">
+          <div class="night">
+            <div class="nhd"><span>‹ Mochi</span><span></span></div>
+            <div class="ey2">About Mochi</div>
+            <p class="lead">Culprit is only starting to learn about Mochi</p>
+            <div class="say">So far it has what you entered when you set up. Add what you already know and the rest builds as you log.</div>
+          </div>
+          <div class="body" style="padding-top:var(--space2)">
+            <div class="lbl">Who she is</div>
+            <div class="card"><div class="pr"><div class="t"><b>Dog · mixed breed · female</b><span>About 2 years old</span><span class="src">You entered this today</span></div><span class="chev">›</span></div></div>
+            <div class="lbl">Worth adding now</div>
+            <div class="card">
+              <div class="pr none"><div class="t"><b>Anything a vet is treating or looking into</b></div><span class="a">Add</span></div>
+              <div class="pr none"><div class="t"><b>Any medicine Mochi is on</b></div><span class="a">Add</span></div>
+              <div class="pr none"><div class="t"><b>Anything her vet asked you to watch for</b></div><span class="a">Add</span></div>
+            </div>
+            <div class="sub">Nothing recorded isn't the same as nothing wrong. Culprit won't treat an empty list as a clean bill of health.</div>
+          </div>
+        </div>
+        <div class="cap"><b>E1 · New pet.</b> Forward looking, three doors, and one line that an empty list means not recorded.</div>
+      </div>
+      <div class="frame">
+        <div class="phone">
+          <div class="night">
+            <div class="nhd"><span>‹ Nyx</span><span>Nyx ⌄</span></div>
+            <div class="ey2">About Nyx</div>
+            <p class="lead">What Culprit is working from</p>
+          </div>
+          <div class="scrim"><div class="sheet">
+            <div class="grab"></div>
+            <h5>Whose page?</h5>
+            <div class="card" style="background:var(--colorSurfaceSubtle)">
+              <div class="pr"><div class="t"><b>Nyx</b><span>9 on record · 4 from your logs</span></div><span class="a">Open</span></div>
+              <div class="pr"><div class="t"><b>Schrodingers Cat</b><span>1 on record</span></div><span class="chev">›</span></div>
+            </div>
+            <p>Each pet has its own page. A fact about Nyx is never used for another pet.</p>
+          </div></div>
+          <div style="height:300px"></div>
+        </div>
+        <div class="cap"><b>E2 · Two pets.</b> The pet's name is in the title and the header on every screen; the shipped switcher changes pets.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ F ============ -->
+  <section>
+    <span class="tag">§F · Placement and name</span>
+    <h2>Where it lives, and what it's called</h2>
+    <p class="sec-lede">The Pet tab already gathers most of these facts as separate cards. The question is whether the page is a door on that tab, or replaces the tab's top.</p>
+    <div class="row">
+      <div class="optbox rec">
+        <div class="oh">Option A · recommended · a door on the Pet tab, and from every finding</div>
+        <div class="frame"><div class="phone"><div class="body" style="padding-top:var(--space2)">
+          <div class="hero-pet"><div class="avatar"></div><div><p class="ttl">Nyx ⌄</p><div class="sub">Cat · American Shorthair · 3 yrs · female</div></div></div>
+          <div class="door hi"><div>About Nyx<small>What Culprit is working from · 4 things to look at</small></div><span class="chev">›</span></div>
+          <div class="card dim"><div class="pr"><div class="t"><b>Weight</b><span>8.1 lb</span></div></div></div>
+          <div class="card dim"><div class="pr"><div class="t"><b>Conditions</b><span>Nothing recorded</span></div></div></div>
+          <div class="card dim"><div class="pr"><div class="t"><b>Current medications</b></div></div></div>
+        </div><div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div></div>
+        <div class="cap"><b>F1.</b> One tap from Home. The tab keeps its cards; the page is the one place that lists everything, including what the tab never shows.</div></div>
+      </div>
+      <div class="optbox">
+        <div class="oh">Option B · the Pet tab becomes the page</div>
+        <div class="frame"><div class="phone"><div class="body" style="padding-top:var(--space2)">
+          <div class="hero-pet"><div class="avatar"></div><div><p class="ttl">Nyx ⌄</p><div class="sub">What Culprit is working from</div></div></div>
+          <div class="lbl">Health problems <span>0</span></div>
+          <div class="card"><div class="pr none"><div class="t"><b>Nothing recorded</b></div><span class="a">Add</span></div></div>
+          <div class="lbl">Medicines</div>
+          <div class="card"><div class="pr logs"><div class="t"><b>Motozol, 10 doses since Nov 10</b><span>From your logs</span></div></div></div>
+          <div class="lbl">Diet · Weight · Vet · Files</div>
+        </div><div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div></div>
+        <div class="cap"><b>F2.</b> No second place to look. It rebuilds a 2,000 line screen that 1.2.0 ships with, and the tab's working controls (log a dose, open the report) lose their room.</div></div>
+      </div>
+    </div>
+    <div class="scroll" style="margin-top:22px"><table class="tbl">
+      <tr><th>Name</th><th>Reads as</th><th>Against the voice rules</th></tr>
+      <tr><td><b>About Nyx</b> · recommended</td><td>The pet, by name. A page about her.</td><td>Passes. Plain, names the pet, claims nothing.</td></tr>
+      <tr><td>What Culprit knows about Nyx</td><td>A list of verified facts.</td><td>"Knows" claims more than an owner's report can carry. The vet lens read it as checked facts.</td></tr>
+      <tr><td>Nyx's memory / My Memory</td><td>Something the AI wrote for itself.</td><td>Every product using "memory" lets the AI write silently. Here it never does. Also reads as the pet's own memory.</td></tr>
+      <tr><td>What Culprit is working from</td><td>The inputs.</td><td>Honest and a little long for a title. Used as the line under the title.</td></tr>
+      <tr><td>Nyx's file / Nyx's chart</td><td>A clinic record.</td><td>"File" collides with Vet Files; "chart" with the app's charts.</td></tr>
+    </table></div>
+  </section>
+
+  <!-- ============ G ============ -->
+  <section>
+    <span class="tag">§G · The loop</span>
+    <h2>A finding that cites a fact, and opens it</h2>
+    <p class="sec-lede">Findings already cite standing facts in their "Around this" lines. Today those lines are dead text. Stage one makes each a door to the fact. Stage two lets a health problem from the page appear as one more line. <b>The finding's own words, rank and ask do not change in either stage.</b></p>
+    <div class="row">
+      <div class="frame">
+        <div class="phone"><div class="hd"><span class="back">‹ Home</span><span></span></div><div class="body">
+          <div class="sig"><div class="k">Vomiting</div><div class="s">Nyx has vomited on 16 of the last 56 days, and more often in the last four weeks.</div><div class="c">12 episodes in the last 28 days, 6 in the 28 before. Something was logged on 55 of 56 days.</div></div>
+          <div class="lbl">Around this</div>
+          <div class="around">
+            <div class="l"><span>Prednisolone, Sep 21 to Oct 11. It can hide vomiting.</span></div>
+            <div class="l"><span>Since the Sep 16 visit, 59 days: 20 episodes, with something logged on 58 of 59.</span></div>
+          </div>
+        </div></div>
+        <div class="cap"><b>G1 · Today.</b> Real text from Nyx's Nov 14 Signal. Two standing facts are cited. Neither can be opened.</div>
+      </div>
+      <div class="frame">
+        <div class="phone"><div class="hd"><span class="back">‹ Home</span><span></span></div><div class="body">
+          <div class="sig"><div class="k">Vomiting</div><div class="s">Nyx has vomited on 16 of the last 56 days, and more often in the last four weeks.</div><div class="c">12 episodes in the last 28 days, 6 in the 28 before. Something was logged on 55 of 56 days.</div></div>
+          <div class="lbl">Around this</div>
+          <div class="around">
+            <div class="l new"><span>On Nyx's page: vomiting, long running. Your own words, added Nov 15.</span><em>›</em></div>
+            <div class="l"><span>Prednisolone, Sep 21 to Oct 11. It can hide vomiting.</span><em>›</em></div>
+            <div class="l"><span>Since the Sep 16 visit, 59 days: 20 episodes, with something logged on 58 of 59.</span><em>›</em></div>
+          </div>
+          <div class="door"><div>About Nyx<small>Everything Culprit is working from</small></div><span class="chev">›</span></div>
+        </div></div>
+        <div class="cap"><b>G2 · With the page.</b> Each line opens its fact. The outlined line is new. The count, the comparison and the ask above it are word for word the same.</div>
+      </div>
+      <div class="frame">
+        <div class="note rose"><span class="tag guard">Never drawn, on purpose</span><br><br><b>The version this must never become:</b> "Nyx has long running vomiting on record, so this is expected." A listed problem that explains a sign away is how a real illness hides behind its own label. In cats with long running vomiting that reached biopsy, 99 of 100 had bowel disease. The rule proposed in brief 4: a fact from this page may add a line or an ask. It may never remove, soften, delay or re-rank one.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ H ============ -->
+  <section>
+    <span class="tag">§H · The model</span>
+    <h2>A view over what exists, or a new store</h2>
+    <p class="sec-lede">Both shapes can draw §A. They differ in where the truth lives.</p>
+    <div class="arch">
+      <div class="col rec">
+        <h3>A view, plus one table grown · recommended</h3>
+        <div class="step"><b>The page</b> is put together on the phone from the rows that already hold each kind of fact.</div>
+        <div class="arrow">reads</div>
+        <div class="step">pet · medicines and doses · diet trial and its foods · weights · visits · files · your answers about the vet · vet instructions (when built)</div>
+        <div class="step new"><b>Health problems grows:</b> who said it, how sure, when, which visit, a second kind for foods and medicines she may react to, and a real remove.</div>
+        <div class="step"><b>"From your logs"</b> lines are counted fresh each time and stored nowhere.</div>
+        <div class="verdict"><b>Cost:</b> one migration on one table. No new sync table, no new deletion path, one source of truth per fact. <b>Can't hold:</b> a free sentence that fits no kind.</div>
+      </div>
+      <div class="col">
+        <h3>A new store of facts</h3>
+        <div class="step"><b>The page</b> reads one new table of facts: a kind, a sentence or value, who said it, when, a status.</div>
+        <div class="arrow">which copies or points at</div>
+        <div class="step">medicines · trial · weights · visits (each now true in two places)</div>
+        <div class="step new"><b>New:</b> the table, its sync, its access rules, its place in account deletion and export, and a rule for every reader about which copy wins.</div>
+        <div class="step new">A free sentence the engine "reads" needs a model to interpret it, on Home.</div>
+        <div class="verdict"><b>Cost:</b> a migration, a synced table, and a second truth for every fact that already has a home. <b>Gains:</b> one place to delete, export and audit; room for any sentence.</div>
+      </div>
+    </div>
+  </section>
+
+  <p class="cap" style="margin-top:56px">Round 1, exploratory. Source: <code>docs/culprit-pet-memory-mockups.html</code>. Evidence: <code>docs/research/2026-11-pet-memory-*.md</code>. Synthesis and decision briefs: <code>docs/pet-memory-discovery-2026-11.md</code> and CUL-2787.</p>
+</div>
