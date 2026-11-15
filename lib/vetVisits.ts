@@ -740,38 +740,60 @@ export interface RecheckVisitDay {
 }
 
 /**
+ * The instant PR-03 (#1539) merged: the first moment `main` stopped writing a booking
+ * from the recheck wheel. Every `reason = 'recheck'` row made before it is treated as
+ * the wheel's (CUL-2788).
+ */
+export const RECHECK_WHEEL_RETIRED_AT = '2026-11-15T01:17:37Z';
+
+const DAY_MS = 86_400_000;
+
+/**
  * A booking the OLD "Set a date" wheel wrote, which the owner never made (CUL-2788).
  *
  * Before PR-03 (#1539) the after-visit row booked a `vet_appointments` row on the wheel's
- * first settle, so these rows sit in every account that used it. They look like this:
- * `reason = 'recheck'`, `scheduled_at` at local midnight (the no-time sentinel), and
- * `created_at` on the same local day as a visit for that pet (the visit's date, or the
- * day it was entered, since the wheel lived on the screen that enters it).
+ * first settle, so these rows sit in every account that used it: `reason = 'recheck'`,
+ * `scheduled_at` at local midnight (the no-time sentinel), made on the after-visit screen.
  *
- * STOPGAP, and deliberately wide: it errs toward "not booked yet". A real booking made
- * through *Book it* the same day, for the recheck, with no time also matches, and that
- * owner sees *Book it* again. That is the louder error, and the quieter one is the harm:
- * "Booked" for an appointment the clinic never received means nobody calls. The ruling
- * on the old rows (leave, relabel or offer to clear) is the PM's, on CUL-2788.
+ * Two tests, both deliberately wide (they err toward "not booked yet"):
+ *
+ *   • MADE BEFORE THE WHEEL WAS RETIRED: any `reason = 'recheck'` row. No time test and
+ *     no day test, because both break on real data. The midnight test is judged in the
+ *     READING device's zone (`appointmentTimeKnown`), so a row written in one zone and
+ *     read in another shows a clock time. And the wheel could be spun the day after the
+ *     visit was entered, or on a reopened visit, so no day match is total.
+ *   • MADE AFTER IT (a device still on an old build): `reason = 'recheck'`, no time, and
+ *     made on, or the day after, a visit's date or the day it was entered.
+ *
+ * The cost is the louder error. A real recheck booked before the cutoff reads "not booked
+ * yet", and so does one booked through *Book it* on or the day after the visit with no
+ * time. That owner sees *Book it* again. The quieter error is the harm: "Booked" for an
+ * appointment the clinic never received means nobody calls. The ruling on the old rows
+ * (leave, relabel or offer to clear) is the PM's, on CUL-2788.
  *
  * Deleted visits count: a phantom does not become real because its visit went away. An
- * unreadable `created_at` counts as the visit's day for the same reason.
+ * unreadable `created_at` counts as a phantom for the same reason.
  */
 export function isPhantomRecheckBooking(
   appointment: Pick<RecheckCandidate, 'pet_id' | 'reason' | 'scheduled_at' | 'created_at'>,
   petVisits: ReadonlyArray<RecheckVisitDay>,
 ): boolean {
   if (appointment.reason?.trim().toLowerCase() !== 'recheck') return false;
+  const madeAt = appointment.created_at ? new Date(appointment.created_at).getTime() : NaN;
+  if (Number.isNaN(madeAt)) return true;
+  if (madeAt < new Date(RECHECK_WHEEL_RETIRED_AT).getTime()) return true;
   if (appointmentTimeKnown(appointment.scheduled_at)) return false;
-  const madeAt = appointment.created_at ? new Date(appointment.created_at) : null;
-  const madeOn = madeAt && !Number.isNaN(madeAt.getTime()) ? localDateKey(madeAt) : null;
+  const madeOn = localDateKey(new Date(madeAt));
+  // The day before `madeOn`, as a local date key: a spin just after midnight still
+  // matches the visit entered the evening before.
+  const dayBefore = localDateKey(new Date(startOfLocalDay(new Date(madeAt)).getTime() - DAY_MS / 2));
+  const near = (key: string) => key === madeOn || key === dayBefore;
   for (const v of petVisits) {
     if (v.pet_id !== appointment.pet_id) continue;
-    if (madeOn === null) return true;
-    if (v.visited_at === madeOn) return true;
+    if (near(v.visited_at)) return true;
     const enteredAt = v.created_at ? new Date(v.created_at) : null;
     if (!enteredAt || Number.isNaN(enteredAt.getTime())) continue;
-    if (localDateKey(enteredAt) === madeOn) return true;
+    if (near(localDateKey(enteredAt))) return true;
   }
   return false;
 }

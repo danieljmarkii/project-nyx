@@ -15,6 +15,7 @@ import {
   localDateKey,
   recheckBookingFor,
   isPhantomRecheckBooking,
+  RECHECK_WHEEL_RETIRED_AT,
   appointmentEditScopeNote,
   appointmentPrepNote,
   removeAppointmentCopy,
@@ -760,59 +761,100 @@ describe('recheckBookingFor', () => {
 });
 
 // CUL-2788 stopgap: the old "Set a date" wheel booked a recheck the owner never made.
-// Its rows: reason 'recheck', local midnight (no time), made the day of a visit for the pet.
+// Its rows: reason 'recheck', local midnight (no time), made on the after-visit screen.
 describe('recheckBookingFor never reads a phantom recheck booking as booked', () => {
-  const visit0 = { id: 'v1', pet_id: 'pet-a', visited_at: '2026-09-16' };
   const midnight = (y: number, m: number, d: number) => new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
-  const local = (y: number, m: number, d: number, h: number) => new Date(y, m - 1, d, h, 30).toISOString();
-  // What the old wheel wrote: a recheck six weeks on, at the sentinel, made the visit day.
-  const phantom = (over: Record<string, string | null> = {}) => ({
-    id: 'ph', pet_id: 'pet-a', scheduled_at: midnight(2026, 10, 28), vet_visit_id: null,
-    cancelled_at: null, deleted_at: null, reason: 'recheck', created_at: local(2026, 9, 16, 18), ...over,
-  });
-  const VISITS = [{ pet_id: 'pet-a', visited_at: '2026-09-16', created_at: local(2026, 9, 16, 17) }];
-
-  it('the wheel’s row, made on the visit day, is not a booking', () => {
-    expect(isPhantomRecheckBooking(phantom(), VISITS)).toBe(true);
-    expect(recheckBookingFor(visit0, [phantom()], VISITS)).toBeNull();
+  const local = (y: number, m: number, d: number, h: number, min = 30) => new Date(y, m - 1, d, h, min).toISOString();
+  const row = (over: Record<string, string | null> = {}) => ({
+    id: 'ph', pet_id: 'pet-a', scheduled_at: midnight(2027, 1, 28), vet_visit_id: null,
+    cancelled_at: null, deleted_at: null, reason: 'recheck', created_at: local(2026, 12, 16, 18), ...over,
   });
 
-  it('a visit entered days later: the row made the day it was entered is still a phantom', () => {
-    const entered = [{ pet_id: 'pet-a', visited_at: '2026-09-16', created_at: local(2026, 9, 19, 8) }];
-    expect(recheckBookingFor(visit0, [phantom({ created_at: local(2026, 9, 19, 9) })], entered)).toBeNull();
+  describe('made before the wheel was retired', () => {
+    const visit0 = { id: 'v1', pet_id: 'pet-a', visited_at: '2026-09-16' };
+    const VISITS = [{ pet_id: 'pet-a', visited_at: '2026-09-16', created_at: local(2026, 9, 16, 17) }];
+    const before = (over: Record<string, string | null> = {}) =>
+      row({ scheduled_at: midnight(2026, 10, 28), created_at: local(2026, 9, 16, 18), ...over });
+
+    it('the wheel’s row is not a booking', () => {
+      expect(isPhantomRecheckBooking(before(), VISITS)).toBe(true);
+      expect(recheckBookingFor(visit0, [before()], VISITS)).toBeNull();
+    });
+
+    it('spun the day after the visit was entered, or on a reopen weeks later: still a phantom', () => {
+      expect(recheckBookingFor(visit0, [before({ created_at: local(2026, 9, 17, 0, 2) })], VISITS)).toBeNull();
+      expect(recheckBookingFor(visit0, [before({ created_at: local(2026, 11, 14, 12) })], VISITS)).toBeNull();
+    });
+
+    it('a row that reads as having a time (written in another zone) is still a phantom', () => {
+      // Midnight in UTC+14 is 10:00 UTC the day before; read anywhere else it shows a time.
+      expect(recheckBookingFor(visit0, [before({ scheduled_at: '2026-10-27T10:00:00+00:00' })], VISITS)).toBeNull();
+      expect(recheckBookingFor(visit0, [before({ scheduled_at: local(2026, 10, 28, 9) })], VISITS)).toBeNull();
+    });
+
+    it('the cutoff is the instant, in either ISO spelling (C-40)', () => {
+      const atCutoff = new Date(RECHECK_WHEEL_RETIRED_AT).getTime();
+      const justBefore = new Date(atCutoff - 1000).toISOString().replace('.000Z', '+00:00');
+      expect(isPhantomRecheckBooking(before({ created_at: justBefore, scheduled_at: local(2026, 12, 1, 9) }), VISITS)).toBe(true);
+      expect(isPhantomRecheckBooking(before({ created_at: RECHECK_WHEEL_RETIRED_AT, scheduled_at: local(2026, 12, 1, 9) }), VISITS)).toBe(false);
+    });
+
+    it('another reason is a booking, whenever it was made', () => {
+      expect(recheckBookingFor(visit0, [before({ reason: 'dental' })], VISITS)?.id).toBe('ph');
+      expect(recheckBookingFor(visit0, [before({ reason: null })], VISITS)?.id).toBe('ph');
+    });
+
+    it('a phantom from an EARLIER visit cannot answer a later visit’s recheck', () => {
+      const later = { id: 'v2', pet_id: 'pet-a', visited_at: '2026-10-01' };
+      expect(recheckBookingFor(later, [before()], VISITS)).toBeNull();
+    });
   });
 
-  it('a phantom from an EARLIER visit cannot answer a later visit’s recheck', () => {
-    const later = { id: 'v2', pet_id: 'pet-a', visited_at: '2026-10-01' };
-    const both = [...VISITS, { pet_id: 'pet-a', visited_at: '2026-10-01', created_at: local(2026, 10, 1, 12) }];
-    expect(recheckBookingFor(later, [phantom()], both)).toBeNull();
-  });
+  describe('made after it, on a device still on an old build', () => {
+    const visit0 = { id: 'v1', pet_id: 'pet-a', visited_at: '2026-12-16' };
+    const VISITS = [{ pet_id: 'pet-a', visited_at: '2026-12-16', created_at: local(2026, 12, 16, 17) }];
 
-  it('PostgREST’s spelling of created_at reads as the same day (C-40)', () => {
-    const hydrated = phantom().created_at!.replace('.000Z', '+00:00');
-    expect(hydrated).not.toBe(phantom().created_at);
-    expect(recheckBookingFor(visit0, [phantom({ created_at: hydrated })], VISITS)).toBeNull();
-  });
+    it('a no-time recheck made on the visit day is not a booking', () => {
+      expect(recheckBookingFor(visit0, [row()], VISITS)).toBeNull();
+    });
 
-  it('an unreadable created_at errs toward not booked', () => {
-    expect(recheckBookingFor(visit0, [phantom({ created_at: null })], VISITS)).toBeNull();
-    expect(recheckBookingFor(visit0, [phantom({ created_at: 'garbage' })], VISITS)).toBeNull();
-  });
+    it('spun just after midnight, the day after the visit was entered: still a phantom', () => {
+      const entered = [{ pet_id: 'pet-a', visited_at: '2026-12-12', created_at: local(2026, 12, 16, 23, 58) }];
+      const v = { id: 'v1', pet_id: 'pet-a', visited_at: '2026-12-12' };
+      expect(recheckBookingFor(v, [row({ created_at: local(2026, 12, 17, 0, 2) })], entered)).toBeNull();
+    });
 
-  it('the phantom does not hide a real booking beside it', () => {
-    const real = phantom({ id: 'real', scheduled_at: local(2026, 11, 2, 9), created_at: local(2026, 9, 20, 10) });
-    expect(recheckBookingFor(visit0, [phantom(), real], VISITS)?.id).toBe('real');
-  });
+    it('a visit entered days after it happened: the entry day matches', () => {
+      const entered = [{ pet_id: 'pet-a', visited_at: '2026-12-12', created_at: local(2026, 12, 16, 8) }];
+      const v = { id: 'v1', pet_id: 'pet-a', visited_at: '2026-12-12' };
+      expect(recheckBookingFor(v, [row()], entered)).toBeNull();
+    });
 
-  it('a booking with a time, or another reason, or made on another day, is a booking', () => {
-    expect(recheckBookingFor(visit0, [phantom({ scheduled_at: local(2026, 10, 28, 9) })], VISITS)?.id).toBe('ph');
-    expect(recheckBookingFor(visit0, [phantom({ reason: 'dental' })], VISITS)?.id).toBe('ph');
-    expect(recheckBookingFor(visit0, [phantom({ reason: null })], VISITS)?.id).toBe('ph');
-    expect(recheckBookingFor(visit0, [phantom({ created_at: local(2026, 9, 20, 10) })], VISITS)?.id).toBe('ph');
-  });
+    it('PostgREST’s spelling of created_at reads as the same day (C-40)', () => {
+      const hydrated = row().created_at!.replace('.000Z', '+00:00');
+      expect(hydrated).not.toBe(row().created_at);
+      expect(recheckBookingFor(visit0, [row({ created_at: hydrated })], VISITS)).toBeNull();
+    });
 
-  it('another pet’s visit day does not make this pet’s booking a phantom', () => {
-    const other = [{ pet_id: 'pet-b', visited_at: '2026-09-16', created_at: local(2026, 9, 16, 17) }];
-    expect(isPhantomRecheckBooking(phantom(), other)).toBe(false);
+    it('an unreadable created_at errs toward not booked', () => {
+      expect(recheckBookingFor(visit0, [row({ created_at: null })], VISITS)).toBeNull();
+      expect(recheckBookingFor(visit0, [row({ created_at: 'garbage' })], VISITS)).toBeNull();
+    });
+
+    it('the phantom does not hide a real booking beside it', () => {
+      const real = row({ id: 'real', scheduled_at: local(2027, 2, 2, 9), created_at: local(2026, 12, 20, 10) });
+      expect(recheckBookingFor(visit0, [row(), real], VISITS)?.id).toBe('real');
+    });
+
+    it('a booking with a time, another reason, or made two days on, is a booking', () => {
+      expect(recheckBookingFor(visit0, [row({ scheduled_at: local(2027, 1, 28, 9) })], VISITS)?.id).toBe('ph');
+      expect(recheckBookingFor(visit0, [row({ reason: 'dental' })], VISITS)?.id).toBe('ph');
+      expect(recheckBookingFor(visit0, [row({ created_at: local(2026, 12, 18, 10) })], VISITS)?.id).toBe('ph');
+    });
+
+    it('another pet’s visit day does not make this pet’s booking a phantom', () => {
+      const other = [{ pet_id: 'pet-b', visited_at: '2026-12-16', created_at: local(2026, 12, 16, 17) }];
+      expect(isPhantomRecheckBooking(row(), other)).toBe(false);
+    });
   });
 });

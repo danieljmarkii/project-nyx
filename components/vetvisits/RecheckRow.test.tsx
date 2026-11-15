@@ -56,8 +56,9 @@ describe('RecheckRow over the old wheel’s phantom booking (CUL-2788)', () => {
     expect(queryByText(/Booked/)).toBeNull();
   });
 
-  it('the same row made on another day is a booking, and reads Booked (non-vacuity)', async () => {
-    rows.appointments = [booking(new Date(2026, 8, 18, 14, 0))];
+  it('a recheck booked through Book it after the wheel was retired reads Booked (non-vacuity)', async () => {
+    // Made after the cutoff and not near the visit's days: the owner's own booking.
+    rows.appointments = [booking(new Date(2026, 10, 20, 14, 0))];
     const { getByText, queryByText } = await renderRow();
     expect(getByText(/Booked/)).toBeTruthy();
     expect(queryByText('Book it')).toBeNull();

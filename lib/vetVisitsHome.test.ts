@@ -40,7 +40,9 @@ function appointmentRow(scheduledAt: string, id = 'a1') {
     scheduled_at: scheduledAt,
     clinic_name: 'Riverside Animal Hospital',
     vet_name: null,
-    reason: 'recheck',
+    // Not 'recheck': a row made before the old wheel was retired with that reason is the
+    // wheel's (CUL-2788), and these fixtures are real bookings.
+    reason: 'Dental cleaning',
     vet_visit_id: null,
     cancelled_at: null,
     deleted_at: null,
@@ -288,6 +290,7 @@ describe('a recheck nobody booked is a date on every reader, and Home asks nothi
     rows.visits = [visitRow({ visited_at: '2026-09-16', next_visit_at: '2026-10-28' })];
     rows.appointments = [{
       ...appointmentRow(composeScheduledAt(new Date(2026, 9, 28), null)),
+      reason: 'recheck',
       created_at: new Date(2026, 8, 16, 18, 0).toISOString(),
     }];
     const home = await readVetVisitsHome('pet-a', NOW);
