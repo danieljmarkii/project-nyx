@@ -33,9 +33,11 @@ interface ChipRowProps {
   onChange: (next: string) => void;
   /** Inert while the write this row started is in flight (ChipGroup's busy state). */
   busy?: boolean;
+  /** The chips' group label, when "What happened with {title}" is not the question. */
+  accessibilityLabel?: string;
 }
 
-export function PlanChipRow({ glyph, title, subtitle, options, value, onChange, busy }: ChipRowProps) {
+export function PlanChipRow({ glyph, title, subtitle, options, value, onChange, busy, accessibilityLabel }: ChipRowProps) {
   return (
     <View style={styles.row}>
       <View style={styles.head}>
@@ -55,7 +57,7 @@ export function PlanChipRow({ glyph, title, subtitle, options, value, onChange, 
           if (next) onChange(next);
         }}
         disabled={busy}
-        accessibilityLabel={`What happened with ${title}`}
+        accessibilityLabel={accessibilityLabel ?? `What happened with ${title}`}
         style={styles.chips}
       />
     </View>

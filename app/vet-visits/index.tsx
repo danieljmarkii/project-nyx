@@ -71,13 +71,21 @@ export default function VetVisitsScreen() {
   // A door that names its pet (the Signal screen's "Book a visit", Engines v3 PR-35) is
   // about THAT pet, the finding's, never the store's current one (C-9). Only a pet this
   // account holds is taken; anything else falls back to the active pet.
-  const { pet: petParam, reason: reasonParam } = useLocalSearchParams<{ pet?: string; reason?: string }>();
+  const { pet: petParam, reason: reasonParam, on: onParam } =
+    useLocalSearchParams<{ pet?: string; reason?: string; on?: string }>();
   const [screenPetId, setScreenPetId] = useState<string | null>(null);
   if (screenPetId === null && petParam && pets.some((p) => p.id === petParam)) setScreenPetId(petParam);
   else if (screenPetId === null && activePet) setScreenPetId(activePet.id);
   // The reason the door carried, held once like `pendingAdd` below and cleared with it.
   const [carriedReason] = useState<string | null>(() =>
     typeof reasonParam === 'string' && reasonParam.trim().length > 0 ? reasonParam.trim().slice(0, 200) : null,
+  );
+  // The day a door carried (the after-visit recheck's *Book it*, §4.4 R2): it seeds the
+  // booking sheet's date in place of the last visit's, because the recheck being booked may
+  // be an older visit's. Held once and cleared with the other params; a malformed value is
+  // dropped rather than parsed loosely.
+  const [carriedDay] = useState<string | null>(() =>
+    typeof onParam === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(onParam) ? onParam : null,
   );
   const petId = screenPetId;
   // Named from the id, never from `activePet` — there is no `?? activePet?.name`
@@ -186,7 +194,7 @@ export default function VetVisitsScreen() {
           // Clear the request at its source too. Without this the URL still reads
           // `?add=booked` on every later focus of this screen, which is a standing
           // instruction nobody issued.
-          router.setParams({ add: undefined, reason: undefined });
+          router.setParams({ add: undefined, reason: undefined, on: undefined });
         }
       });
       return () => {
@@ -575,7 +583,7 @@ export default function VetVisitsScreen() {
           initialMode={sheetMode}
           petName={petName}
           otherPets={otherPets}
-          prefill={prefill}
+          prefill={sheetMode === 'booked' && carriedDay ? { ...prefill, suggestedDate: carriedDay } : prefill}
           initialReason={sheetMode === 'booked' ? carriedReason : null}
           busy={saving}
           reminderStatus={reminderStatus}

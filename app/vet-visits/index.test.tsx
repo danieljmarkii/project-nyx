@@ -24,7 +24,7 @@ let mockDetail: { questions: string | null; notes_draft: string | null } | null 
 
 jest.mock('expo-router', () => ({
   Redirect: () => null,
-  router: { back: jest.fn(), push: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
+  router: { back: jest.fn(), push: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true), setParams: jest.fn() },
   // The screen reloads on focus; in the test environment the callback is run once
   // on mount, which is the lifecycle this file cares about.
   useFocusEffect: (cb: () => void | (() => void)) => {
@@ -33,7 +33,7 @@ jest.mock('expo-router', () => ({
   },
   useLocalSearchParams: () => mockParams,
 }));
-let mockParams: { add?: string } = {};
+let mockParams: { add?: string; on?: string; reason?: string } = {};
 
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -721,5 +721,31 @@ describe('the list’s remove confirm names what goes with the row (CUL-987 D2)'
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy.mock.calls[0][1]).toMatch(/Your notes for this visit go with it\. Nothing else in the record changes\.$/);
     spy.mockRestore();
+  });
+});
+
+// §4.4 R2: the after-visit recheck's *Book it* carries its date (`on`), which seeds the
+// sheet in place of the last visit's.
+describe('a door that carries the recheck date seeds the booking with it', () => {
+  function dayKey(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  it('books on the carried day when submitted untouched', async () => {
+    const target = new Date();
+    target.setDate(target.getDate() + 30);
+    mockParams = { add: 'booked', reason: 'recheck', on: dayKey(target) };
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('Add the appointment'));
+    await waitFor(() => expect(mockBook).toHaveBeenCalledTimes(1));
+    expect(dayKey(new Date(mockBook.mock.calls[0][0].scheduledAt))).toBe(dayKey(target));
+  });
+
+  it('drops a malformed day rather than parsing it loosely', async () => {
+    mockParams = { add: 'booked', on: 'next tuesday' };
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('Add the appointment'));
+    await waitFor(() => expect(mockBook).toHaveBeenCalledTimes(1));
+    expect(dayKey(new Date(mockBook.mock.calls[0][0].scheduledAt))).toBe(dayKey(new Date()));
   });
 });

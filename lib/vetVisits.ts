@@ -351,6 +351,25 @@ export interface VisitLinks {
   trialCount: number;
   documentCount: number;
   hasNextVisit: boolean;
+  /** The visit's `next_visit_at`, so the tag can say the date (§4.4 R2). Optional: a
+   *  reader that only knows the boolean still gets an honest "Recheck set". */
+  nextVisitAt?: string | null;
+  /** A later booking exists for this pet (`recheckBookingFor`). Until one does, the
+   *  recheck is a date, never an appointment (R2, AC 17). */
+  nextVisitBooked?: boolean;
+}
+
+/**
+ * The recheck tag says only what the record holds (§4.4 R2). A date the vet named is
+ * "Recheck around {date}" until a later booking exists; then "Next visit booked", which
+ * names no date and no reason, because the booking that clears it may be for anything
+ * (the ruling: any later booking for the pet counts) and the booking says its own date
+ * wherever it is shown. Without the date in hand, "Recheck set" claims neither.
+ */
+function recheckTagLabel(links: VisitLinks): string {
+  if (links.nextVisitBooked) return 'Next visit booked';
+  if (links.nextVisitAt) return `Recheck around ${formatVisitDate(links.nextVisitAt)}`;
+  return 'Recheck set';
 }
 
 export function derivePlanTags(links: VisitLinks): PlanTag[] {
@@ -359,7 +378,7 @@ export function derivePlanTags(links: VisitLinks): PlanTag[] {
     tags.push({ label: links.trialCount === 1 ? 'Trial started' : `${links.trialCount} trials started`, kind: 'diet' });
   }
   for (const name of links.medicationNames) tags.push({ label: name, kind: 'med' });
-  if (links.hasNextVisit) tags.push({ label: 'Recheck set', kind: 'recheck' });
+  if (links.hasNextVisit) tags.push({ label: recheckTagLabel(links), kind: 'recheck' });
   if (links.documentCount > 0) {
     tags.push({
       label: links.documentCount === 1 ? '1 document' : `${links.documentCount} documents`,
@@ -579,6 +598,10 @@ export function buildVetVisitsCardModel(home: VetVisitsHome, now: Date = new Dat
  *     pills say what the visit left behind, and not after the word "Plan:", where
  *     it claims the vet prescribed some paperwork.
  */
+function lowerFirst(label: string): string {
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
 function lastVisitLine(last: VisitListRow, now: Date): string {
   // Built from `formatVisitDate`, not from `stamp`: the stamp is the two-part
   // date BLOCK (a numeral over a month, where the row it sits in supplies the
@@ -588,7 +611,11 @@ function lastVisitLine(last: VisitListRow, now: Date): string {
   const head = dated ? `Last visit ${dated} — ${last.title}` : `Last visit — ${last.title}`;
   const plan = last.tags
     .filter((t) => PLAN_KINDS.has(t.kind))
-    .map((t) => (t.kind === 'med' ? t.label : t.label.toLowerCase()));
+    // A recheck tag carries a date ("Recheck around Oct 28"), so only its first letter
+    // is lowered: a month is a proper noun, like a drug name.
+    .map((t) =>
+      t.kind === 'med' ? t.label : t.kind === 'recheck' ? lowerFirst(t.label) : t.label.toLowerCase(),
+    );
   if (plan.length === 0) return `${head}.`;
   return `${head}. Plan: ${plan.join(', ')}.`;
 }
@@ -682,7 +709,79 @@ export async function readVetVisitsHome(petId: string, now: Date = new Date()): 
 }
 
 function emptyLinks(nextVisitAt: string | null): VisitLinks {
-  return { medicationNames: [], trialCount: 0, documentCount: 0, hasNextVisit: !!nextVisitAt };
+  return {
+    medicationNames: [], trialCount: 0, documentCount: 0,
+    hasNextVisit: !!nextVisitAt, nextVisitAt, nextVisitBooked: false,
+  };
+}
+
+// ── The recheck: a date until the owner books it (§4.4 R2, AC 17) ───────────────
+
+/** A booking as the recheck row needs it. */
+export interface RecheckBooking {
+  id: string;
+  scheduledAt: string;
+  /** 'Tue, Oct 28 · 9:30 am', the booking's own words for its own time. */
+  when: string;
+  where: string;
+}
+
+/**
+ * The booking that answers a visit's recheck, or null.
+ *
+ * ONE predicate for every reader (the after-visit row, the list's tag, the Pet-tab card),
+ * so no two surfaces can disagree about whether a recheck is booked. A booking answers it
+ * when it is for the same pet, not deleted, not cancelled, scheduled on a LOCAL day after
+ * the visit's, and is not the booking this visit was itself logged from. Logged bookings
+ * still count: a recheck that was booked and then happened was booked. The ruling (plan,
+ * PR-03): any later booking for the pet clears "not booked yet", so readers print the
+ * BOOKING's date, never the recheck's, and never call it a recheck on the booking's behalf.
+ *
+ * The visit's own `next_visit_at` does not enter it: a booking made on another day than
+ * the vet's "around" is still the booking.
+ */
+export function recheckBookingFor<A extends Pick<LocalVetAppointment, 'id' | 'pet_id' | 'scheduled_at' | 'vet_visit_id' | 'cancelled_at' | 'deleted_at'>>(
+  visit: Pick<LocalVetVisit, 'id' | 'pet_id' | 'visited_at'>,
+  appointments: ReadonlyArray<A>,
+): A | null {
+  let best: A | null = null;
+  for (const a of appointments) {
+    if (a.pet_id !== visit.pet_id || a.deleted_at || a.cancelled_at) continue;
+    if (a.vet_visit_id === visit.id) continue;
+    const t = new Date(a.scheduled_at).getTime();
+    if (Number.isNaN(t)) continue;
+    // Local calendar days, both 'YYYY-MM-DD', so the text compare is a day compare.
+    if (localDateKey(new Date(t)) <= visit.visited_at) continue;
+    if (!best || t < new Date(best.scheduled_at).getTime()) best = a;
+  }
+  return best;
+}
+
+/** Every appointment row for these pets that `recheckBookingFor` may weigh. */
+async function readRecheckCandidates(petIds: ReadonlyArray<string>): Promise<LocalVetAppointment[]> {
+  if (petIds.length === 0) return [];
+  const db = getDb();
+  return db.getAllAsync<LocalVetAppointment>(
+    `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments
+      WHERE pet_id IN (${petIds.map(() => '?').join(', ')})
+        AND deleted_at IS NULL AND cancelled_at IS NULL`,
+    [...petIds],
+  );
+}
+
+/** The after-visit row's read: the booking that answers this visit's recheck, or null. */
+export async function readRecheckBooking(
+  visit: Pick<LocalVetVisit, 'id' | 'pet_id' | 'visited_at'>,
+  now: Date = new Date(),
+): Promise<RecheckBooking | null> {
+  const hit = recheckBookingFor(visit, await readRecheckCandidates([visit.pet_id]));
+  if (!hit) return null;
+  return {
+    id: hit.id,
+    scheduledAt: hit.scheduled_at,
+    when: formatAppointmentWhen(hit.scheduled_at, now),
+    where: formatWhereLine({ clinicName: hit.clinic_name, vetName: hit.vet_name }),
+  };
 }
 
 /**
@@ -692,7 +791,7 @@ function emptyLinks(nextVisitAt: string | null): VisitLinks {
  * visit itself contributes no number — which is the whole of AC 10.
  */
 export async function readVisitLinks(
-  visits: ReadonlyArray<Pick<LocalVetVisit, 'id' | 'next_visit_at'>>,
+  visits: ReadonlyArray<Pick<LocalVetVisit, 'id' | 'next_visit_at' | 'pet_id' | 'visited_at'>>,
 ): Promise<Map<string, VisitLinks>> {
   const out = new Map<string, VisitLinks>();
   if (visits.length === 0) return out;
@@ -733,6 +832,17 @@ export async function readVisitLinks(
   for (const d of docs) {
     const entry = out.get(d.vet_visit_id);
     if (entry) entry.documentCount = d.n;
+  }
+
+  // The recheck's booked / not-booked read, through the one predicate (R2). One read for
+  // every pet in hand, only when some visit names a recheck.
+  const withRecheck = visits.filter((v) => !!v.next_visit_at);
+  if (withRecheck.length > 0) {
+    const candidates = await readRecheckCandidates([...new Set(withRecheck.map((v) => v.pet_id))]);
+    for (const v of withRecheck) {
+      const entry = out.get(v.id);
+      if (entry) entry.nextVisitBooked = recheckBookingFor(v, candidates) !== null;
+    }
   }
 
   return out;
@@ -892,6 +1002,10 @@ export async function readVetVisitDetail(visitId: string): Promise<VetVisitDetai
       trialCount: trials.length,
       documentCount: documents.length,
       hasNextVisit: !!visit.next_visit_at,
+      nextVisitAt: visit.next_visit_at,
+      nextVisitBooked: visit.next_visit_at
+        ? recheckBookingFor(visit, await readRecheckCandidates([visit.pet_id])) !== null
+        : false,
     },
     medications: medications.map((m) => ({
       id: m.id, drugName: m.drug_name, doseAmount: m.dose_amount, status: m.status,
