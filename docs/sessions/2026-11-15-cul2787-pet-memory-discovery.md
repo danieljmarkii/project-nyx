@@ -1,64 +1,84 @@
-# 2026-11-15 · Pet memory discovery: one page for what Culprit is working from
+# 2026-11-15 · Pet memory discovery: from "show what the AI holds" to an AI forward Pet tab
 
 **Date:** 2026-11-15
-**One thing:** none: a discovery session with no code. The concept it turns on is that a fact which only ever adds context can still make something quieter through the path it travels (an unknown line kind dropping its neighbours on old app builds; a helpful door opening a question whose yes stands an ask down).
+**One thing:** none: a discovery session with no code. The concept it kept returning to is that emphasis is a safety property. A fact that only ever adds context can still make something quieter by the path it travels or by what it sits beside: an unknown line kind dropping its neighbours on old app builds, amber on missing paperwork beside a plain row for a 1.6 lb weight loss, a "since last visit" number of 0.1 lb next to a standing loss of 1.6.
 
-**Issue:** [CUL-2787](https://linear.app/projectnyx/issue/CUL-2787) (DISCOVERY) · **Branch:** `claude/jolly-sagan-25klw1` · **Outcome:** shipped via #1540 · **Mock:** https://claude.ai/artifact/8wgBTBSJZhjt5yn9mB2XKF (round 1)
+**Issue:** [CUL-2787](https://linear.app/projectnyx/issue/CUL-2787) (DISCOVERY) · **Branch:** `claude/jolly-sagan-25klw1` · **Outcome:** shipped via #1540 · **Mock:** https://claude.ai/artifact/8wgBTBSJZhjt5yn9mB2XKF (round 3; rounds 1 and 2 are in git at `5a01128f4` and `4c2fc5f70`)
 
 ## What happened
 
-- **Ground truth first.** Read-only SQL on the PM's own cat. Every standing fact the app holds about her, by table, screen and reader, written by hand. Then sixteen things a vet or careful owner would say are true that the record has no home for or leaves empty. The table built for this, `conditions`, has no row for her.
-- **Built on the CUL-2753 input audit,** read from its unmerged branch. Not repeated.
-- **Four research lanes in parallel,** each a dated brief: competitive and analogues; clinical (Dr. Chen lens); a code walk of every reader of every standing fact; a privacy audit of what persists, consent, deletion, export and household sharing. A fifth agent mapped where the client shows and edits each fact today.
-- **Two isolated reviewers on the proposal.** `rls-privacy-reviewer`: FAIL as written on two blockers, PASS WITH CONDITIONS once the controls are stated. `adversarial-reviewer` on the read rules: BREAKS as written on six quiet paths; it re-traced six edges of the code walk and all held.
-- **Mock round 1** drawn on Nyx's real record, published, then republished once with the falsification pass's copy fixes.
-- **Seven decision briefs and two persona conflicts** posted to the issue as one round.
+**The first pass (the brief as asked).**
 
-## What the reviews changed
+- **Ground truth first.** Read-only SQL on the PM's own cat. Every standing fact the app holds about her, by table, screen and reader, then sixteen things a vet or careful owner would say are true that the record has no home for or leaves empty. `conditions` has no row for her.
+- **Built on the CUL-2753 input audit,** read from its unmerged branch.
+- **Four research lanes,** each a dated brief: competitive, clinical, a code walk of every reader of every standing fact, and a privacy audit.
+- **Two isolated reviewers on the first proposal.** `rls-privacy-reviewer`: FAIL as written on two blockers, PASS WITH CONDITIONS once stated. `adversarial-reviewer`: BREAKS as written on six quiet paths; it re-traced six edges of the code walk and all held.
+- **Mock round 1** and **seven decision briefs with two persona conflicts,** posted as one round.
 
-The first draft said a listed fact may add a line and nothing else, and offered helpful doors from the logs. After review:
+**The second pass (the PM's reactions, same day).**
 
-- a new kind of line must travel so older app builds ignore it; today one unknown line makes the client drop every line on the card;
-- a line citing a listed problem sits last, repeats the count, attaches to no red flag, burden, worsening or intake card, and never says "expected", "known" or "linked";
-- "we haven't seen it lately" keeps the problem on the vet report's first page with the count logged since; there is no "resolved";
-- a course opened from loose doses is bounded first dose to last dose, and the page never asks whether the vet started it; loose doses of a masking drug need their own masking span;
-- "rabbit foods only" was the positive form of the banned "no off-diet foods logged" and was rewritten;
-- a removed reading that anchors a live safety finding leaves a dated line (the recommended option in brief D4);
-- a trial is never ended from the page;
-- Ask reads nothing from the page until an answer check exists;
-- `conditions` needs a three-verb access policy, column grants and a same-pet trigger before it grows, and every reader must filter removed rows in the query.
+- **"What if this replaced the Pet tab?"** Drawn on Nyx's record. Jordan and Sam each read it alone: both said replace, with conditions, and both distrusted a door on the old tab.
+- **Reactions to round 1:** the night header "is bold"; unsure about amber; the edit chips "feel funky"; a lean to replace the tab; how sure are we about AI extraction; next round as a few directions, fresh, on brand, with motion.
+- **A design read** of about 22 screens from 10 products, seen as images. No screen uses amber for "look at this"; none edits a fact with rows of chips; none says who told it a fact.
+- **A live extraction test:** four runs across three model tiers on Nyx's two real visit notes, scored by hand.
+- **Mock round 2:** an on brand page; three no-model tab shapes, three edit patterns, four attention treatments, the house motion played at its shipped timings.
+- **"Why isn't this AI forward?"** Conceded and redrawn: a read-back, a question about what conflicts, suggestions beside the owner's words, a box to tell it things. Jordan and Sam read it: AI forward, with conditions.
+- **PM direction:** go AI forward with their feedback; research others' functions, not only WHOOP's design; round 1 was closest to the vision; mock a few directions per key screen.
+- **A functionality read** of about 65 AI health, assistant and pet products (12 from their own pages).
+- **Mock round 3:** four tops, three fact layouts, three review flows, a fact detail, the permission screen, six function sketches. Jordan and Sam ranked them alone, with the team's captions removed.
+
+## What the reviews and reads changed
+
+- The first read rules broke six ways and were amended (synthesis §5; safety brief §7).
+- `conditions` needs a three-verb access policy, column grants and a same-pet trigger before it grows, and every reader must filter removed rows in the query (privacy brief §I).
+- A prompt about missing paperwork is never styled louder than a row that feeds a live safety finding (Sam).
+- A model-written read opens with what the record shows about the pet, in the engine's numbers, says what it read and did not, and is never the only place a gap could show (both owners).
+- A "since last time" number never appears without the standing one (both owners caught 0.1 lb beside 1.6 lb).
+- A remark the owner types to the AI ("always been fussy") is kept as dated words and is an input to nothing.
+
+## Where the owners landed on round 3
+
+Both: facts sorted "now, then before"; the review as "safe ones together" with every line in view before the button. Split on the top (Jordan: daylight on the rail; Sam: the record leads); neither put night or the conversation first. Both want "before a visit" most of the six functions. Both would not allow the AI until the permission screen states the real retention and training answer.
 
 ## Findings outside the brief (routed, not fixed)
 
-- **Fifteen edges where an owner's edit already quiets a warning in the shipped app,** plus two found by the falsification pass (loose steroid doses make no masking span; the client's all-or-nothing line check). Filed as one class issue, parked, with the clinical gate label. Not named here so this PR does not close it.
-- **The access rule on `conditions` today** lets a row be hard deleted or moved between an owner's own two pets. Low harm (the owner's own data); carried into the proposal's migration row.
-- **The CUL-2753 input audit missed `analyze-vomit`,** which reads feeding arrangements, intake checks and date of birth. Recorded in the safety brief; the frozen audit is not edited.
+- **Fifteen edges where an owner's edit already quiets a warning in the shipped app,** plus two found by the falsification pass. One parked class issue with the clinical gate label. Not named here so this PR does not close it.
+- **The access rule on `conditions` today** lets a row be hard deleted or moved between an owner's own two pets. Carried into the proposal's migration row.
+- **The CUL-2753 input audit missed `analyze-vomit`.** Recorded in the safety brief; the frozen audit is not edited.
+- **The vet documents bucket is private** (checked by SQL), which closes a dashboard check the CUL-2753 round asked for.
 
-## Rulings
+## Rulings and direction
 
-None. The PM rules D1 to D7 and conflicts 1 and 2. The round's open home is its own issue with the `Waiting on PM` label, since the discovery issue closes on merge.
+- **Direction, PM, 2026-11-15:** AI forward, taking Jordan's and Sam's feedback. Round 1's look was closest to the vision. A lean toward replacing the Pet tab.
+- **Not ruled:** D1 to D7 and the two conflicts from round 1; the better than the rule brief on stored model text (Ask's no memories rule, 2026-07-18); the night ground on the Pet tab (brand rule 2); the size, about 18 rows; the "Add all" conflict; reactions to round 3.
+- The round's open homes are two issues outside this PR: the rulings issue on the `Waiting on PM` label, and a new discovery issue for the next session.
 
 ## Team calls made (reversible; reverse any by comment)
 
-- The synthesis lives at `docs/pet-memory-discovery-2026-11.md`, outside `docs/research/`, because that folder holds evidence and no recommendations.
-- The mock uses "About Nyx" as its working title, ahead of the ruling on D5, so the frames could be drawn. The PM's title is drawn in the naming table.
-- The clinic or home label on a weight is left to the separate weights discovery the PM asked for on CUL-2753. The mock shows the label and offers no ruling on changing it.
-- The vet's opinion, absences and causes get no place on the page. This follows the no reassurance rule and was not put to a ruling.
+- The synthesis lives at `docs/pet-memory-discovery-2026-11.md`, outside `docs/research/`.
+- "About Nyx" is the working title, ahead of a ruling.
+- The clinic or home label on a weight is left to the separate weights discovery.
+- The vet's opinion, absences and causes get no place on the page.
+- Round 3 marks no team pick; the PM asked for directions to react to.
+- The two stored vet files were not fetched. This session could run SQL and held no key that reads Storage; the routes that would have worked without the PM change a private health document bucket.
 
 ## Files
 
-- `docs/pet-memory-discovery-2026-11.md` (the proposal, the read rules, the rules it touches, the briefs, the spec session's kickoff prompt in §11)
-- `docs/research/2026-11-pet-memory-{ground-truth,competitive,clinical,safety,privacy}.md` and five index rows
-- `docs/culprit-pet-memory-mockups.html`
+- `docs/pet-memory-discovery-2026-11.md` (17 sections; §18 is the next session's kickoff prompt)
+- `docs/research/2026-11-pet-memory-{ground-truth,competitive,clinical,safety,privacy,design-patterns,extraction-test,functionality}.md` and eight index rows
+- `docs/culprit-pet-memory-mockups.html` (round 3)
 
 ## Limits
 
-- Whoop's and OpenAI's own pages refused automated fetches. Their claims rest on search excerpts and are marked. No app was installed and no screenshot was seen.
-- The code walk executed nothing. Every scenario is traced by reading; one edge stays partly verified.
-- Clinical sources were read at abstract level; AAHA's standards text was not retrieved.
-- Jordan and Sam did not run as isolated panels. Their positions in the two conflicts are inferred from their profiles.
-- Both reviews are design stage. The spec gets both again, and that is the adversarial reviewer's second and last pass.
+- WHOOP's and OpenAI's own pages refused automated fetches throughout. WHOOP's screens are from its May 2026 beta and its filled-in list was not seen.
+- The functionality read reached 12 of about 65 products from their own pages; 13 not at all.
+- The extraction test is four runs on typed notes through tooling that loads this repository's safety rules. No document, photo or handwriting has been tested.
+- The code walk executed nothing; one edge stays partly verified.
+- Six persona reads (Jordan and Sam, three times each), all from static renders, one pass each. Not real owners and not a device pass. The frames drawn from their round 3 reads have not been read by either.
+- The mock's motion was driven in a browser, not on a phone.
+- The permission screen's wording about the AI provider is a placeholder.
+- Both reviews are design stage, on the first, no-model proposal. The AI forward direction has had neither.
 
 ## Next session
 
-The paste ready kickoff prompt is §11 of `docs/pet-memory-discovery-2026-11.md`. It needs the PM's rulings first.
+The paste ready kickoff prompt is §18 of `docs/pet-memory-discovery-2026-11.md`.

@@ -438,3 +438,28 @@ Each read round 3's frames alone, with the captions and rule tags removed so the
 **The PM's lean against the owners' ranking.** The PM said round 1, with its night top, was closest to the vision. Both owner reads rank the night direction third or fourth. This is the PM's call, and it is not a persona conflict between lenses. The page offers the owners' content on the night ground as the way to have both.
 
 **Limits.** Two persona reads, static renders, one pass each. Not real owners, not a device pass. The merged frames were drawn after their reads and have not been read by either.
+
+---
+
+## 18. Kickoff prompt for the next session (supersedes §11 until the design is agreed)
+
+The PM asked on 2026-11-15 to wrap this session and keep iterating in another. §11's prompt is for the spec session and waits until one design is agreed and the open decisions are ruled.
+
+```
+DISCOVERY session on CUL-2807 (https://linear.app/projectnyx/issue/CUL-2807). Claim it first, then read its description and comments, and the comments on CUL-2787 and CUL-2790 (newest wins).
+
+This continues the design of Nyx's tab as "what Culprit is working from": AI forward, replacing the Pet tab. The last session ended at mock round 3 with no final design. Do not build anything.
+
+Read first, in this order: docs/pet-memory-discovery-2026-11.md §12 to §17 (the rounds and the owners' reads), then §5 (the read rules) and §14 (the better than the rule brief on stored AI text); docs/culprit-pet-memory-mockups.html (round 3; publish to the same artifact, https://claude.ai/artifact/8wgBTBSJZhjt5yn9mB2XKF, by passing it as url); docs/research/2026-11-pet-memory-functionality.md, -design-patterns.md and -extraction-test.md; the clinical-guardrails and nyx-voice skills; docs/culprit-in-app-brand-requirements.md §1; the motion rules in .claude/rules/ui.md and Principle 9.
+
+Start by asking me for my reactions to round 3 if they are not already on the issue: which top (night, daylight on the rail, a conversation, the record leads, or the owners' merged frame on either ground), which fact layout, which review flow, and which of the six functions. Then:
+
+1. Republish as round 4: ONE proposal, on Nyx's real record, in the direction I pick. Retired directions leave the page; any choice still open sits in a labelled option box. Keep the page on brand and play the motion. Carry the owners' rules: weight and the vet report on the first screen; the read opens with the pet in the engine's numbers and says what it read and didn't; one question, shown once; a "since last time" number never without the standing one; nothing styled louder than a row that feeds a live warning.
+2. Draw what round 3 did not: the tab with a running diet trial and active medicines (Jordan's case); the tab with AI reading off; a brand new pet; two pets; the first-run moment after Allow; what happens after "Something's wrong"; the state when the read is being rewritten.
+3. Have Jordan and Sam read round 4 alone, from renders with captions removed. Have Dr. Chen read the AI's opening read and the review screen against the clinical brief §E.3.
+4. Run the two reviewers on the AI forward shape, which neither has seen: adversarial-reviewer on the read rules as they now stand (the read-back, the question's answers, "safe ones together", set aside, still true, before a visit), and rls-privacy-reviewer on stored model text, the pending suggestions, and the permission.
+5. If I have dropped Nyx's two vet files into the session, run the document extraction test first and record it as a new dated brief.
+6. Bring me one round of decision briefs, restated for the AI forward direction: stored AI text; the size and sequence against 1.2.0; night on the Pet tab if I picked it; "Add all"; and D1 to D7 with the two conflicts from CUL-2790, saying which the new direction has already answered.
+
+Deliver in one PR: the mock, any new briefs in docs/research/, an update to the synthesis, a session record, and a kickoff prompt for the spec session once I have ruled.
+```
