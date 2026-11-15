@@ -34,7 +34,7 @@ const appointment: AppointmentDetail = {
   scheduled_at: composeScheduledAt(new Date(2026, 8, 16), new Date(2026, 8, 16, 15, 0)),
   clinic_name: 'Riverside Animal Hospital',
   vet_name: 'Dr. Chen',
-  reason: 'recheck',
+  reason: 'ear recheck',
   notes_draft: null,
   questions: null,
   vet_visit_id: null,
@@ -132,7 +132,7 @@ describe('the populated card', () => {
     );
     renderCard(model);
     expect(
-      screen.getByLabelText('Wednesday · 3:00 pm, Riverside Animal Hospital · Dr. Chen · recheck'),
+      screen.getByLabelText('Wednesday · 3:00 pm, Riverside Animal Hospital · Dr. Chen · ear recheck'),
     ).toBeTruthy();
   });
 });

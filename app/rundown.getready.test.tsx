@@ -123,7 +123,7 @@ const mockAppointment = {
   scheduled_at: new Date(Date.now() + 2 * 86_400_000).toISOString(),
   clinic_name: 'Riverside Animal Hospital',
   vet_name: 'Dr. Chen',
-  reason: 'recheck',
+  reason: 'ear recheck',
   questions: null as string | null,
   vet_visit_id: null,
   cancelled_at: null,

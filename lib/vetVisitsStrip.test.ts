@@ -344,3 +344,33 @@ describe('parseAppointmentQuestions', () => {
     expect(parseAppointmentQuestions('{"not":"an array"}')).toEqual([]);
   });
 });
+
+// CUL-2793 reader 2 (STOPGAP): Home's strip never presents a booking the old wheel may
+// have written as the pet's booked visit. It still CARRIES the row, both faces, because
+// the passed-day ask (*It didn't*) is how the owner clears it.
+describe('a possible phantom recheck booking on Home (CUL-2793)', () => {
+  const now = new Date();
+
+  it('upcoming: the strip reads a date not yet booked, never a booked time and clinic', async () => {
+    rows.appointments = [appointmentRow('p', at(2, now))];
+    const strip = await readHomeAppointment('pet-a', now);
+    expect(strip?.phase).toBe('upcoming');
+    expect(strip?.view.when).toMatch(/^Recheck around /);
+    expect(strip?.view.where).toBe('Not booked yet');
+  });
+
+  it('after: the row stays on Home so the ask can clear it, and its day still names the ask', async () => {
+    rows.appointments = [appointmentRow('p', at(-2, now))];
+    const strip = await readHomeAppointment('pet-a', now);
+    expect(strip?.phase).toBe('after');
+    expect(strip?.view.where).toBe('Not booked yet');
+    expect(strip?.view.day).toBe(formatAppointmentDay(at(-2, now), now));
+  });
+
+  it('a real booking keeps its booked face', async () => {
+    rows.appointments = [{ ...appointmentRow('r', at(2, now)), reason: 'Dental cleaning' }];
+    const strip = await readHomeAppointment('pet-a', now);
+    expect(strip?.view.where).toBe('Riverside Animal Hospital · Dental cleaning');
+    expect(strip?.view.when).not.toMatch(/^Recheck around/);
+  });
+});

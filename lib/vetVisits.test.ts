@@ -401,9 +401,9 @@ describe('the Pet-tab card model', () => {
 
 describe('the appointment view', () => {
   it('names the record\'s pet and joins clinic, vet and reason', () => {
-    const view = buildAppointmentView(appointment({ pet_id: 'pet-b' }), new Date(2026, 8, 14));
+    const view = buildAppointmentView(appointment({ pet_id: 'pet-b', reason: 'ear recheck' }), new Date(2026, 8, 14));
     expect(view.petId).toBe('pet-b');
-    expect(view.where).toBe('Riverside Animal Hospital · Dr. Chen · recheck');
+    expect(view.where).toBe('Riverside Animal Hospital · Dr. Chen · ear recheck');
     expect(view.stamp).toEqual({ day: '16', month: 'Sep' });
   });
 

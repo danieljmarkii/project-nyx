@@ -523,7 +523,7 @@ export function buildAppointmentView(
   appointment: LocalVetAppointment & { notes_draft?: string | null },
   now: Date = new Date(),
 ): AppointmentView {
-  return {
+  const view: AppointmentView = {
     id: appointment.id,
     petId: appointment.pet_id,
     scheduledAt: appointment.scheduled_at,
@@ -541,7 +541,26 @@ export function buildAppointmentView(
       reason: appointment.reason,
     }),
   };
+  // STOPGAP (CUL-2793, readers 2 and 3): a booking the old "Set a date" wheel may have
+  // written is never drawn as a booked visit. Its time and its clinic line are what say
+  // "booked", so both give way to the recheck row's own words (`RecheckRow`): the vet's
+  // "around" and *Not booked yet*. The row itself STAYS, with its doors and Home's
+  // *Did … happen?* ask, because those are how the owner clears it (*It didn't*) and how
+  // a real recheck still gets ready. The louder error, stated: a recheck the owner really
+  // booked through *Book it* also reads *Not booked yet*, the same cost `recheckBookingFor`
+  // already pays. `day` keeps the booking's own day: it only feeds the passed-day ask.
+  if (isPhantomRecheckBooking(appointment)) {
+    const d = new Date(appointment.scheduled_at);
+    if (!Number.isNaN(d.getTime())) {
+      view.when = `Recheck around ${formatVisitDate(localDateKey(d), now)}`;
+      view.where = NOT_BOOKED_YET;
+    }
+  }
+  return view;
 }
+
+/** The recheck row's subtitle, shared so the two surfaces cannot drift apart. */
+export const NOT_BOOKED_YET = 'Not booked yet';
 
 /** One test for "notes exist", shared by the list doors and Get ready's button. */
 export function hasNotesDraft(notesDraft: string | null | undefined): boolean {

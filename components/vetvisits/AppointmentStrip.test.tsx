@@ -530,3 +530,39 @@ describe('visitTimePassed — the face is the record’s, never a guess', () => 
     expect(visitTimePassed(at(pg), now)).toBe(true);
   });
 });
+
+// CUL-2793 reader 2 (STOPGAP): a booking the old wheel may have written reaches Home with
+// the view the REAL builder makes for it (`jest.requireActual`, never a hand-typed view,
+// C-34), and the strip never draws it as a booked visit. It still carries the row, and on
+// the passed day still asks, because *It didn't* is how the owner clears it.
+describe('a possible phantom recheck booking (CUL-2793)', () => {
+  const { buildAppointmentView } = jest.requireActual('../../lib/vetVisits');
+  function phantom(phase: 'upcoming' | 'after'): HomeAppointment {
+    const d = new Date();
+    d.setDate(d.getDate() + (phase === 'upcoming' ? 3 : -2));
+    d.setHours(0, 0, 0, 0); // the old wheel's no-time sentinel
+    const view = buildAppointmentView({
+      id: 'appt-1', pet_id: 'p1', scheduled_at: d.toISOString(),
+      clinic_name: 'Riverside Animal Hospital', vet_name: null, reason: 'recheck',
+      vet_visit_id: null, cancelled_at: null, deleted_at: null,
+    });
+    return { id: 'appt-1', petId: 'p1', phase, view };
+  }
+
+  it('upcoming: reads as a date not yet booked, never the clinic it was booked with', async () => {
+    mockHome.current = phantom('upcoming');
+    const r = render(<AppointmentStrip />);
+    expect(await r.findByText(/^Recheck around /)).toBeTruthy();
+    expect(r.getByText('Not booked yet')).toBeTruthy();
+    expect(r.queryByText(/Riverside/)).toBeNull();
+    expect(r.getByText('Get ready')).toBeTruthy();
+  });
+
+  it('after the day: the ask stays, so *It didn’t* can clear the row', async () => {
+    mockHome.current = phantom('after');
+    const r = render(<AppointmentStrip />);
+    expect(await r.findByText(/visit happen\?$/)).toBeTruthy();
+    expect(r.getByText('Not booked yet')).toBeTruthy();
+    expect(r.getByText('It didn’t')).toBeTruthy();
+  });
+});
