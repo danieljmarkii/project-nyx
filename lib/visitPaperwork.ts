@@ -182,3 +182,42 @@ export async function captureVisitPaperwork(petId: string): Promise<PaperworkCap
 
   return { groupId: rows[0]?.document_group_id ?? null, skipped };
 }
+
+// ── Results that arrive after the visit (CUL-2759) ─────────────────────────────
+//
+// Bloodwork, a culture, a biopsy: the answer comes back days after the visit it belongs
+// to. The saved visit's *Results arrived?* files it there, with the same capture as the
+// paperwork above (one document, camera, no type asked) and two differences that are the
+// point of the door:
+//   • it is LINKED AT INSERT. The visit already exists and the owner is standing on it,
+//     so the rows carry `vet_visit_id` from the first write. Linking afterwards would be
+//     a second write the first push can race past, leaving the document on the server
+//     unlinked until some later drain. D7 still holds: the link points at a visit the
+//     owner created and touches `vet_visits` in no way.
+//   • it is TYPED as results (kind `lab_result`), because the owner told us what it is by
+//     choosing this door. The title stays NULL, as every fresh capture's does: a stored
+//     "Results" could not be told from one the owner typed, and the document would lose its
+//     Name affordance. The visit page names an untitled result from its kind
+//     (`visitDocumentLabel`), and Vet Files shows its Lab result pill.
+export const VISIT_RESULTS_KIND = 'lab_result' as const;
+
+/** Photograph results into this pet's Vet Files, filed under the visit, named as results. */
+export async function captureVisitResults(petId: string, visitId: string): Promise<PaperworkCapture> {
+  const picked = await pickVetImages('camera');
+  if (picked.length === 0) return { groupId: null, skipped: null };
+
+  const screened = screenPickedFiles(picked);
+  const skipped = rejectedPickMessage(screened);
+  if (screened.accepted.length === 0) return { groupId: null, skipped };
+
+  const rows = buildVetDocumentRows({
+    petId,
+    source: 'camera',
+    pages: screened.accepted,
+    kind: VISIT_RESULTS_KIND,
+  }).map((row) => ({ ...row, vet_visit_id: visitId }));
+  await insertVetDocumentRows(rows);
+  syncPendingVetDocuments().catch((e) => console.warn('[visitPaperwork] results push failed:', e));
+
+  return { groupId: rows[0]?.document_group_id ?? null, skipped };
+}

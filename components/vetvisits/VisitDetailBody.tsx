@@ -1,5 +1,5 @@
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { ChevronRight, Plus } from 'lucide-react-native';
+import { ChevronRight, FileText, Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
@@ -19,6 +19,14 @@ interface Props {
   onOpenDocument: (groupId: string) => void;
   /** *Add to the plan*: opens How did it go? for this visit, at The plan (§4.4 R1). */
   onAddToPlan: () => void;
+  /** A course row's door (`lib/visitPlanDoors.ts`); null leaves the row as text. */
+  courseDoor: (med: VetVisitDetail['medications'][number]) => (() => void) | null;
+  /** A trial row's door; null leaves the row as text. */
+  trialDoor: (trial: VetVisitDetail['trials'][number]) => (() => void) | null;
+  /** *Results arrived?*: photograph results, filed under this visit (CUL-2759). */
+  onResultsArrived: () => void;
+  /** The results capture is in flight. */
+  resultsBusy?: boolean;
 }
 
 // One visit as written (mock D3, read-only).
@@ -29,16 +37,25 @@ interface Props {
 // the second one, is VV-6's and gated on CUL-19 deploying the reader that honours
 // `deleted_at`. VV-6 is where the pair becomes a ⋯.
 //
-// The plan rows are LINKS TO RECORDS, and in this PR most of them have nowhere to
-// go yet: there is no per-regimen route and no per-trial route in the app (the
-// audit in spec §2 — `app/medication/[id].tsx` edits a catalog ITEM, not a
-// course). So a course and a trial render as what the record says about them and
-// carry no chevron; a document, which does have a route, carries one. A row that
-// cannot open does not pretend it can.
+// The plan rows are LINKS TO RECORDS (CUL-2759). A course opens the course, a running trial
+// opens the trial's own screen, and which door a row gets is `lib/visitPlanDoors.ts`'s call,
+// handed in as a callback so this body never routes. A row with no door (an ended trial, a
+// course with no library item) renders as what the record says and carries no chevron: a
+// row that cannot open does not pretend it can.
+//
+// THE UNASKED QUESTION IS NAMED (CUL-2759). "Asked 3 of 4" alone hid the one question the
+// owner most needs afterwards, the one still to raise on the phone, behind a score. Each
+// question not ticked in the room is listed by its own words; the count stays beneath it.
+//
+// RESULTS ARRIVE LATER (CUL-2759). Bloodwork or a culture comes back days after the visit,
+// and *Results arrived?* files it here, in Vet Files under this visit, typed as results. It
+// sits with the paperwork, always: the door is for the visit that has none yet.
 //
 // *ADD TO THE PLAN* IS ALWAYS HERE (CUL-2754, §4.4 R1), on a visit with no plan above all:
 // the visit saved in a car park with nothing typed is the one that most needs the door.
-export function VisitDetailBody({ detail, petName, onOpenDocument, onAddToPlan }: Props) {
+export function VisitDetailBody({
+  detail, petName, onOpenDocument, onAddToPlan, courseDoor, trialDoor, onResultsArrived, resultsBusy,
+}: Props) {
   const { visit } = detail;
   const where = formatWhereLine({ clinicName: visit.clinic_name, vetName: visit.vet_name });
   const hasPlan =
@@ -46,6 +63,7 @@ export function VisitDetailBody({ detail, petName, onOpenDocument, onAddToPlan }
   // 'Asked 3 of 4' — absent when the visit had no prepared questions, where a "0 of
   // 0" would be a score for something the owner never set out to do.
   const asked = askedSummary(detail.questions);
+  const unasked = detail.questions.filter((q) => !q.asked_at);
   const bare = !visit.notes?.trim() && !hasPlan && detail.documents.length === 0;
 
   return (
@@ -84,6 +102,7 @@ export function VisitDetailBody({ detail, petName, onOpenDocument, onAddToPlan }
               sub={[med.doseAmount, med.status === 'active' ? 'Still on it' : 'Ended']
                 .filter(Boolean)
                 .join(' · ')}
+              onPress={courseDoor(med)}
             />
           ))}
           {detail.trials.map((trial) => (
@@ -91,6 +110,7 @@ export function VisitDetailBody({ detail, petName, onOpenDocument, onAddToPlan }
               key={trial.id}
               title={trial.label}
               sub={trial.status === 'active' ? 'Trial running' : 'Trial ended'}
+              onPress={trialDoor(trial)}
             />
           ))}
           {visit.next_visit_at ? (
@@ -106,26 +126,50 @@ export function VisitDetailBody({ detail, petName, onOpenDocument, onAddToPlan }
         </View>
       </View>
 
-      {detail.documents.length > 0 ? (
-        <View style={styles.block}>
-          <SectionLabel label="Paperwork · in Vet Files" header style={styles.sectionLabel} />
-          <View style={styles.rows}>
-            {detail.documents.map((doc) => (
+      <View style={styles.block}>
+        <SectionLabel label="Paperwork · in Vet Files" header style={styles.sectionLabel} />
+        <View style={styles.rows}>
+          {detail.documents.map((doc) => {
+            const label = visitDocumentLabel(doc);
+            return (
               <TouchableOpacity
                 key={doc.groupId}
                 style={styles.row}
                 onPress={() => onOpenDocument(doc.groupId)}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel={documentLabel(doc.title, doc.documentDate)}
+                accessibilityLabel={label}
               >
                 <View style={styles.rowMain}>
                   <ThemedText style={styles.rowTitle} numberOfLines={1}>
-                    {documentLabel(doc.title, doc.documentDate)}
+                    {label}
                   </ThemedText>
                 </View>
                 <ChevronRight size={18} color={theme.colorTextTertiary} strokeWidth={2} />
               </TouchableOpacity>
+            );
+          })}
+          <PlanActionRow
+            glyph={<FileText size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+            title="Results arrived?"
+            subtitle="Photograph them and they file under this visit"
+            actionLabel="Add"
+            onPress={onResultsArrived}
+            busy={resultsBusy}
+          />
+        </View>
+      </View>
+
+      {unasked.length > 0 ? (
+        <View style={styles.block}>
+          <SectionLabel label="Not asked at the visit" header style={styles.sectionLabel} />
+          <View style={styles.rows}>
+            {unasked.map((q) => (
+              <View key={q.id} style={styles.row} accessible accessibilityLabel={`Not asked: ${q.text.trim()}`}>
+                <View style={styles.rowMain}>
+                  <ThemedText style={styles.questionText}>{q.text.trim()}</ThemedText>
+                </View>
+              </View>
             ))}
           </View>
         </View>
@@ -139,23 +183,46 @@ export function VisitDetailBody({ detail, petName, onOpenDocument, onAddToPlan }
   );
 }
 
-function documentLabel(title: string | null, documentDate: string | null): string {
-  const named = title?.trim();
+/** A document's name on the visit page: the owner's title, else what it is and its date.
+ *  An untitled lab result reads as *Results*, the word the door that filed it used. */
+export function visitDocumentLabel(doc: { title: string | null; kind: string; documentDate: string | null }): string {
+  const named = doc.title?.trim();
   if (named) return named;
-  const dated = documentDate ? formatVisitDate(documentDate) : '';
-  return dated ? `Document — ${dated}` : 'Document';
+  const noun = doc.kind === 'lab_result' ? 'Results' : 'Document';
+  const dated = doc.documentDate ? formatVisitDate(doc.documentDate) : '';
+  return dated ? `${noun} — ${dated}` : noun;
 }
 
-function PlanRow({ title, sub }: { title: string; sub: string }) {
-  return (
-    <View style={styles.row} accessible accessibilityLabel={sub ? `${title}, ${sub}` : title}>
-      <View style={styles.rowMain}>
-        <ThemedText style={styles.rowTitle} numberOfLines={1}>
-          {title}
-        </ThemedText>
-        {sub ? <ThemedText style={styles.rowSub}>{sub}</ThemedText> : null}
-      </View>
+// One row, two hosts (C-7): a row with a door is a button with a chevron, a row without one
+// is a plain `accessible` View, never a touchable carrying `disabled`.
+function PlanRow({ title, sub, onPress }: { title: string; sub: string; onPress?: (() => void) | null }) {
+  const label = sub ? `${title}, ${sub}` : title;
+  const body = (
+    <View style={styles.rowMain}>
+      <ThemedText style={styles.rowTitle} numberOfLines={1}>
+        {title}
+      </ThemedText>
+      {sub ? <ThemedText style={styles.rowSub}>{sub}</ThemedText> : null}
     </View>
+  );
+  if (!onPress) {
+    return (
+      <View style={styles.row} accessible accessibilityLabel={label}>
+        {body}
+      </View>
+    );
+  }
+  return (
+    <TouchableOpacity
+      style={styles.row}
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      {body}
+      <ChevronRight size={18} color={theme.colorTextTertiary} strokeWidth={2} />
+    </TouchableOpacity>
   );
 }
 
@@ -217,6 +284,11 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextSecondary,
     marginTop: 2,
+  },
+  questionText: {
+    fontSize: theme.textMD,
+    lineHeight: 22,
+    color: theme.colorTextPrimary,
   },
   asked: {
     fontSize: theme.textXS,

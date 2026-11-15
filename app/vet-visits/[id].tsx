@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { colorRoles, theme } from '../../constants/theme';
@@ -10,6 +10,8 @@ import { VisitDetailBody } from '../../components/vetvisits/VisitDetailBody';
 import { VisitReports } from '../../components/vetvisits/VisitReports';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { readAppointmentForVisit, readVetVisitDetail, type VetVisitDetail } from '../../lib/vetVisits';
+import { visitCourseHref, visitTrialHref } from '../../lib/visitPlanDoors';
+import { captureVisitResults } from '../../lib/visitPaperwork';
 
 // One visit as written (CUL-900 VV-2; mock D3). *Edit* and *Add to the plan* both open
 // How did it go? for this visit (CUL-2754, §4.4 R1); the five-field edit screen retired.
@@ -20,6 +22,10 @@ import { readAppointmentForVisit, readVetVisitDetail, type VetVisitDetail } from
 export default function VetVisitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const pets = usePetStore((s) => s.pets);
+  // Read only to decide whether a course's door may open the Pet tab, which draws the active
+  // pet (`lib/visitPlanDoors.ts`); the page itself names the RECORD's pet.
+  const activePetId = usePetStore((s) => s.activePet?.id ?? null);
+  const [resultsBusy, setResultsBusy] = useState(false);
 
   const [detail, setDetail] = useState<VetVisitDetail | null>(null);
   // The booking this visit was logged from: a report filed under it before the day is this
@@ -78,6 +84,24 @@ export default function VetVisitScreen() {
   // back to an anonymous label, and correct-but-anonymous beats confidently wrong.
   const petName = resolveRecordPetName(pets, detail?.visit.pet_id);
 
+  // *Results arrived?* (CUL-2759): the paperwork capture, filed under this visit and typed as
+  // results at insert. A refusal or a failure is said, never swallowed; a save re-reads the
+  // visit so the new document is in its paperwork on the way back from the camera.
+  async function handleResultsArrived() {
+    if (!detail || resultsBusy) return;
+    setResultsBusy(true);
+    try {
+      const { groupId, skipped } = await captureVisitResults(detail.visit.pet_id, detail.visit.id);
+      if (groupId) await load();
+      if (skipped) Alert.alert('Some files were skipped', skipped);
+    } catch (err) {
+      console.warn('[vet-visit] results capture failed:', err);
+      Alert.alert('That didn’t save', 'Something went wrong saving the results. Give it another try.');
+    } finally {
+      setResultsBusy(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <Header
@@ -116,6 +140,21 @@ export default function VetVisitScreen() {
             petName={petName}
             onOpenDocument={(groupId) => router.push(`/vet-document/${groupId}`)}
             onAddToPlan={() => router.push(`/vet-visits/after?visit=${detail.visit.id}&at=plan`)}
+            courseDoor={(med) => {
+              const href = visitCourseHref({
+                course: med,
+                visitPetId: detail.visit.pet_id,
+                activePetId,
+                nowMs: Date.now(),
+              });
+              return href ? () => router.push(href) : null;
+            }}
+            trialDoor={(trial) => {
+              const href = visitTrialHref({ trial, visitPetId: detail.visit.pet_id });
+              return href ? () => router.push(href) : null;
+            }}
+            onResultsArrived={() => void handleResultsArrived()}
+            resultsBusy={resultsBusy}
           />
           <VisitReports
             petId={detail.visit.pet_id}
