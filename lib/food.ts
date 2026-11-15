@@ -378,6 +378,9 @@ export function foodIntakeNote(stat: FoodIntakeStat | undefined, now: number): s
 //     present-tense acceptance from a stale sample: absence of recent data read as
 //     wellness. The window is the decline detector's own baseline window, so a food is
 //     called a favourite only while its intake is still inside what that detector reads.
+//   • PLACEABLE — every rated, directly-observed meal of the food has a readable time
+//     (CUL-2719). One that cannot be placed withholds the food: it could be the latest
+//     rating, so the recency guard cannot vouch for the food without it.
 
 /** Min rated, directly-observed meals before a "favorite" is a claim and not noise.
  *  One above analytics' neutral-rate floor (minRatedMealsForIntakeRate = 4): a
@@ -413,7 +416,8 @@ export interface FavoriteMealRow {
   foodType: string | null;
   /** WSAVA rating string, or null when the meal was logged without an intake rating. */
   intakeRating: string | null;
-  /** occurred_at as epoch ms — the recency guard needs ordering. Non-finite dropped. */
+  /** occurred_at as epoch ms — the recency guard needs ordering. A RATED row with a
+   *  non-finite time withholds its food's favourite (CUL-2719); it is never dropped. */
   ms: number;
 }
 
@@ -488,10 +492,13 @@ export function selectReliableFavorites(
   const favorites: ReliableFavorite[] = [];
   for (const [key, g] of groups) {
     if (g.treatTainted) continue; // ceiling-unsafe — never a meal favorite
-    // Qualifying = rated, directly-observed (non-free-fed), parseable-time meals.
-    const qualifying = g.rows.filter(
-      (r) => r.intakeRating != null && !freeFed.has(r.foodItemId) && Number.isFinite(r.ms),
-    );
+    // Qualifying = rated, directly-observed (non-free-fed) meals.
+    const qualifying = g.rows.filter((r) => r.intakeRating != null && !freeFed.has(r.foodItemId));
+    // A rated meal whose time cannot be read cannot be placed: it may be the latest
+    // rating, and it may be a refusal. Unknown time is not absence of a refusal, so the
+    // food is withheld, whatever the unplaceable rating says (CUL-2719). Dropping the row
+    // instead let five finished meals make a favourite over a refusal.
+    if (qualifying.some((r) => !Number.isFinite(r.ms))) continue;
     if (qualifying.length < minRatedMeals) continue; // §11 #5 floor
     const finishedMeals = qualifying.filter(
       (r) => FINISHED_RATINGS.has(r.intakeRating as string),

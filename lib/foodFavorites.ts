@@ -79,7 +79,7 @@ export const FAVORITE_MEALS_SQL = `SELECT f.id AS food_item_id, f.brand, f.produ
  * reads (`readFreeFedIntakeSpans` + `isFreeFedIntakeMeal`, CUL-1086 / CUL-1237). The old rule
  * dropped every meal of a food free-fed TODAY, so a bowl left out last month and since taken
  * up had its "ate it all" counted as a watched meal, and a meal-fed food set down as a bowl
- * this week lost its watched ratings. A non-finite time is kept here and dropped by the core.
+ * this week lost its watched ratings. A non-finite time is kept here; the core withholds that food (CUL-2719).
  *
  * ASYMMETRIC where an instant is missing (a pre-076 take-up day): a FINISHED rating counts only
  * when it was certainly watched (`mayBeFreeFedIntakeMeal`, the decline detector's own
