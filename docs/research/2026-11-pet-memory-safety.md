@@ -313,4 +313,44 @@ Flags, restated: Q2, Q4 and Q5 exist only behind `engines_v3_en9`; Q12 and Q13 b
 
 ## 7. Falsification pass on the proposed read rules
 
-Added by the discovery session after the adversarial review.
+The `adversarial-reviewer` ran isolated on 2026-11-15 against the seventeen read rules first proposed for the page (a view over existing rows; `conditions` extended; a condition allowed to add a line to a finding and nothing else). It read this brief, the clinical brief and the ground truth, and opened the code. The rules as amended are in `docs/pet-memory-discovery-2026-11.md` §5.
+
+**Verdict on the rules as first written: BREAKS, on six quiet paths.** None needed the shape replaced. Each is closed by a changed rule.
+
+### 7.1 Spot check of sections 1 to 6
+
+Six edges were re-traced against the code and all held: Q2 (the reschedule loop, `careState.ts:1359-1373`), Q3 (the 365 day window and the estimate filter, `weightStory.ts:411-427`), Q4 (the latch reads the live answer set), Q6 (`generate-signal/index.ts:740-747`), Q12 (a start after today masks nothing, `maskingSpans.ts:330`), and section 4 (only the report and the client read `conditions`). Q11 stays partly verified. The walk missed two things, both found by the pass: the client's all-or-nothing context line check, and the care question a newly created course opens.
+
+### 7.2 Counterexamples
+
+| # | Tried | Result |
+|---|---|---|
+| a | A condition line added to Nyx's vomiting card | **Broke, quiet.** Identity, fold, rank and latch all held. But the client accepts a card's context lines only when every line is a known kind (`lib/careContext.ts:32`, `:46-49`), and Edge Functions deploy on merge. One line of a new kind makes every older app build drop all the card's lines, including "Prednisolone... It can hide vomiting." |
+| b | The line's wording beside "more often in the last four weeks" | **Broke, quiet.** "On record: vomiting, long running" reads as "expected". Today no context line can reach a red flag, burden, worsening or intake card; no proposed rule pinned that |
+| c | "Not seen since Nov 15" while vomits are still logged twice a week | **Broke, quiet.** The report's first page prints active conditions only (`render.ts:1969`). The rules did not say what "not seen since" does there. "Has come back" with no count implies a clear interval the record does not show |
+| d | "Chicken, suspected" | **Held in code, broke for Ask.** No engine path reads it, and the trial's protein logic rejects an excluded list by design. A model answering "is chicken a problem?" has nothing stopping it from attributing a flare |
+| e | A course started from the stray Nov 14 prednisolone dose | **Broke, quiet, both ways.** A new course opens the "did her vet start it for this?" question; one yes quiets that ask for 14 days after each logged dose with no end (`careState.ts:498-504`), and the course caps food findings. With no course, loose doses make no masking span at all; only the Nov 14 visit span covers the steroid, and it ends Dec 26 |
+| f | "Rabbit foods only, last 14 days" | **Broke, quiet.** It is the positive form of the banned "No off-diet foods logged". It reads as adherence |
+| g | Removing the Jun 15 reading after a warning names what it feeds | **Broke, quiet** (a shipped edge, newly routed). Named or not, the firm weight card vanishes without a trace. A stored reason does not change that. A dated line left on the finding is the only variant that errs loud |
+| h | Taking back the newest "my vet knows" | **Held.** Answers are append-only and a retraction cannot be retracted. One gap: an older live answer can remain, so the card stays quiet while the owner expects the ask back |
+| i | A "review this" prompt on a stale fact | **Held for engines.** Residual: the review door opens the edit form, where a rename or a start date change ends masking (Q12) |
+| j | An empty group relayed by Ask | **Broke, quiet.** "Medicines: nothing recorded" beside loose doses lets a model say "not on any medication". A "0" in a group header reads as none |
+| k | A fact for one pet reaching another pet's run | **Held** once the access controls in the privacy brief §I.1 land. The household species count was not verified |
+| l | Retitling a report flag with the recorded condition (CUL-1867 option 3) | **Broke, quiet as drawn.** A title that leads with "recorded condition" is a hedge. It holds only sign first, count unchanged, treatment status shown, condition last |
+| m | The rules as a set | The first draft let an active trial be "taken back" from the page, which is Q10. Three rules bound an engine and were only wishes for a model. Chaining two quiet makers in one sitting (Q5 then Q2) was not covered |
+
+### 7.3 What must hold for the rules to stand
+
+1. A condition line travels in a field older app builds ignore, or the client's tolerance ships before the server change. One unknown line never drops its neighbours.
+2. A condition line attaches only to the card types that carry context lines today. Never to a red flag, burden, worsening or intake card, nor to one raised again. It sits last and repeats the count against the prior window. It never uses "expected", "known", "linked" or "normal for".
+3. "Not seen since" never changes which conditions print on the report's first page. The line carries the count logged since. A return is named a recurrence.
+4. A course opened from loose doses is prefilled from first dose to last dose and is never open-ended. The page asks no "vet started it" question. Loose doses of a masking drug make their own masking span.
+5. No derived diet line, unless it states the meal count, says unlogged food is not counted, and says it is not a trial.
+6. A reading that anchors a live safety finding, when removed, leaves a dated line on the finding and on the report for 14 days.
+7. Take back covers answers, appointments and courses. Never a trial.
+8. Ask reads nothing from the page until an answer check exists that refuses an answer attributing a sign to a condition or sensitivity, or stating an empty group as a negative.
+9. The direction rule is a property test: the engine run with and without the pet's conditions gives the same tier, rank, ask and care state, and the lines are a superset.
+
+**Residuals that err loud:** list every live answer per sign; a staleness review opens a confirm and not the edit form; group headers carry no counts.
+
+**Falsification attempts, in one line:** a condition line on the vomiting card (identity, fold, latch and rank held; an unknown line kind dropped the steroid line on older clients); "not seen since" with vomiting continuing (first page behaviour unspecified); a course from one stray steroid dose (opens a quiet); no course (masking ends Dec 26); "rabbit foods only" (adherence by absence); removing the Jun 15 reading (the card vanishes); retracting the newest answer (held); a suspected sensitivity against the trial's protein logic (held in code; Ask unguarded).
