@@ -77,9 +77,12 @@ export function VisitDetailBody({
           happens to be active (CUL-660). */}
       <ThemedText style={styles.pageSub}>{where ? `${petName} · ${where}` : petName}</ThemedText>
 
+      {/* *Notes*, never *What the vet said* (CUL-2791): How did it go? seeds this field from
+          the appointment's notes_draft, which the owner starts days ahead, so the text may be
+          the owner's own prep ("ask about the itching?"). The label claims only what it is. */}
       {visit.notes?.trim() ? (
         <View style={styles.block}>
-          <SectionLabel label="What the vet said" header style={styles.sectionLabel} />
+          <SectionLabel label="Notes" header style={styles.sectionLabel} />
           <ThemedText style={styles.notes}>{visit.notes.trim()}</ThemedText>
         </View>
       ) : null}

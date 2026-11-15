@@ -174,3 +174,15 @@ describe('VisitDetailBody — the recheck is a date, not a booking (§4.4 R2)', 
     expect(screen.getByText(/^Recheck around Dec 26/)).toBeTruthy();
   });
 });
+
+// CUL-2791: How did it go? seeds the visit's notes from the appointment's draft, which the
+// owner starts days ahead, so the section may hold the owner's own prep. Its label says
+// what it is, never that the vet said it.
+describe('VisitDetailBody — the notes', () => {
+  it('labels the notes as Notes, never as the vet’s words', () => {
+    renderBody({ detail: detail({ visit: { ...detail().visit, notes: 'ask about the itching?' } }) });
+    expect(screen.getByText('Notes')).toBeTruthy();
+    expect(screen.getByText('ask about the itching?')).toBeTruthy();
+    expect(screen.queryByText(/vet said/i)).toBeNull();
+  });
+});

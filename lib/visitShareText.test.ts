@@ -34,12 +34,12 @@ function detail(over: Partial<VetVisitDetail['visit']> = {}, rest: Partial<VetVi
 }
 
 describe('visitToPlainText', () => {
-  it('carries what the vet said, the plan and the recheck, in that order', () => {
+  it('carries the notes, the plan and the recheck, in that order', () => {
     const text = visitToPlainText(detail(), 'Nyx', NOW);
     expect(text).toBe(
       [
         'Nyx · vet visit · Saturday, Nov 14 · Completely Cat Clinic · Dr Miller',
-        'What the vet said: Left ear still a little red. Keep cleaning it.',
+        'Notes: Left ear still a little red. Keep cleaning it.',
         [
           'The plan:',
           '• Motozol · 2 drops · still on it',
@@ -78,7 +78,15 @@ describe('visitToPlainText', () => {
   it('drops the plan heading when only the notes exist', () => {
     const text = visitToPlainText(detail({ next_visit_at: null }, { medications: [], trials: [] }), 'Nyx', NOW);
     expect(text).not.toMatch(/The plan/);
-    expect(text).toMatch(/What the vet said/);
+    expect(text).toMatch(/^Notes: /m);
+  });
+
+  // CUL-2791: the notes may be the owner's own prep, carried over from the appointment's
+  // draft, so nothing in the share may say the vet said them.
+  it('never attributes the notes to the vet', () => {
+    const text = visitToPlainText(detail({ notes: 'ask about the itching?' }), 'Nyx', NOW);
+    expect(text).toContain('Notes: ask about the itching?');
+    expect(text).not.toMatch(/vet said/i);
   });
 
   it('stamps the year on a recheck in another year', () => {

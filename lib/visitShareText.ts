@@ -8,7 +8,9 @@ import { formatVisitDate, formatVisitWeekday, formatWhereLine, type VetVisitDeta
 // for the vet (the vet's artifact is the report). Free, always (Principle 7).
 //
 // IT SAYS WHAT THE RECORD SAYS AND NOTHING ELSE. Every line is a field the visit screen
-// already renders, in the words that screen uses: *What the vet said* is the notes, the
+// already renders, in the words that screen uses: *Notes* is the notes (never *What the vet
+// said*: the field is seeded from the owner's own prep, CUL-2791, and a partner would act on
+// it as the vet's instruction), the
 // plan is the courses and trials this visit started and their status, and the recheck is
 // *Recheck around {date}*: `next_visit_at` is the vet's "around", never a booking (§4.4 R2). No line is derived: no dose count, no adherence, no "booked"
 // or "not booked" (whether a booking exists for that date is not on this read, and a
@@ -25,7 +27,7 @@ export function visitToPlainText(detail: VetVisitDetail, petName: string, now: D
   const blocks: string[] = [heading];
 
   const notes = visit.notes?.trim();
-  if (notes) blocks.push(`What the vet said: ${notes}`);
+  if (notes) blocks.push(`Notes: ${notes}`);
 
   const plan: string[] = [
     ...detail.medications.map((m) =>
