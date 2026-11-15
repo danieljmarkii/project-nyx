@@ -133,6 +133,27 @@
   .night .n { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textSignal); line-height:var(--lineHeightSignal); color:var(--colorMoonlight); }
   .night .f { font-size:var(--textSM); color:var(--colorTextOnNightMuted); }
 
+  .nc { border-radius:var(--radiusMedium); background:radial-gradient(120% 80% at 85% 0%, var(--colorAuroraTeal), transparent 60%), radial-gradient(90% 70% at 0% 10%, var(--colorAuroraViolet), transparent 65%), var(--colorBrandNight);
+    color:var(--colorTextOnNight); padding:var(--space2); display:flex; flex-direction:column; gap:var(--space1_5); }
+  .nc .ey { font-size:var(--textXS); font-weight:var(--weightSemibold); letter-spacing:var(--trackingWidest); text-transform:uppercase; color:var(--colorTextOnNightMuted); }
+  .nc p { margin:0; font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textLG); line-height:26px; color:var(--colorMoonlight); }
+  .nc p u { text-decoration:underline; text-decoration-color:var(--colorWatermarkOnNight); text-underline-offset:3px; text-decoration-thickness:1px; }
+  .nc .by { font-size:var(--textXS); color:var(--colorTextOnNightMuted); line-height:var(--lineHeightXS); }
+  .ask { background:var(--colorSurface); border-radius:var(--radiusMedium); padding:var(--space1_5) var(--space2); display:flex; flex-direction:column; gap:var(--space1); }
+  .ask .t { font-size:var(--textMD); line-height:var(--lineHeightBody); }
+  .ask .o { display:flex; flex-direction:column; gap:6px; }
+  .ask .o span { border:1px solid var(--colorBorderStrong); border-radius:var(--radiusSmall); padding:9px var(--space1_5); font-size:var(--textSM); color:var(--colorAction); font-weight:var(--weightMedium); }
+  .sg { display:flex; flex-direction:column; gap:6px; padding:11px var(--space2); border-bottom:1px dashed var(--colorBorderStrong); }
+  .sg:last-child { border-bottom:0; }
+  .sg b { font-size:var(--textMD); font-weight:var(--weightMedium); }
+  .sg .w { font-size:var(--textXS); color:var(--colorTextSecondary); }
+  .sg .acts { display:flex; gap:var(--space2); font-size:var(--textSM); font-weight:var(--weightMedium); color:var(--colorAction); }
+  .sg .acts span:last-child { color:var(--colorTextTertiary); font-weight:var(--weightRegular); }
+  .out { background:var(--colorSurfaceSubtle); border-radius:var(--radiusSmall); padding:var(--space1_5); font-size:var(--textXS); line-height:var(--lineHeightXS); color:var(--colorTextSecondary); }
+  .out b { color:var(--colorTextPrimary); font-weight:var(--weightMedium); }
+  .dock { margin:0 var(--space2) var(--space2); background:var(--colorSurface); border:1px solid var(--colorBorderStrong); border-radius:var(--radiusFull); padding:10px var(--space2); font-size:var(--textSM); color:var(--colorTextTertiary); display:flex; justify-content:space-between; }
+  .dock b { color:var(--colorAction); font-weight:var(--weightMedium); }
+
   /* ---------- Motion: the house gestures, values from components/motion ---------- */
   .tick { display:inline-block; width:3px; height:16px; border-radius:2px; background:var(--colorAction); vertical-align:-3px; margin-right:8px; animation:breath 1400ms ease-in-out infinite; }
   @keyframes breath { 0%,100% { opacity:1 } 50% { opacity:.35 } }
@@ -156,11 +177,15 @@
   .play .dotw.d2 { animation-delay:calc(28ms*var(--s)); } .play .dotw.d3 { animation-delay:calc(56ms*var(--s)); }
   .play .wl { animation:fade calc(300ms*var(--s)) ease-out calc(300ms*var(--s)) both; }
   .play .arrive { animation:land calc(300ms*var(--s)) ease-out calc(1100ms*var(--s)) both; }
+  .play0 .arrive0 { animation:land calc(300ms*var(--s)) ease-out calc(200ms*var(--s)) both; }
+  .play0 .arrive0 p { animation:fade calc(400ms*var(--s)) ease-out calc(450ms*var(--s)) both; }
+  .play0 .arrive0 p + p { animation-delay:calc(600ms*var(--s)); } .play0 .arrive0 p + p + p { animation-delay:calc(750ms*var(--s)); }
   .play .waiting { animation:gone calc(150ms*var(--s)) ease-out calc(1000ms*var(--s)) both; }
   @media (prefers-reduced-motion: reduce) {
     .tick { animation:none; }
     .play .open .rail, .play .open .more, .play .open .more .in > *, .play .dotw, .play .wl, .play .arrive { animation:none; }
     .play .waiting { animation:none; opacity:0; }
+    .play0 .arrive0, .play0 .arrive0 p { animation:none; }
     .rm { display:block; }
   }
 </style>
@@ -185,17 +210,84 @@
     <div class="led"><q>The chips feel funky.</q><span>No product we saw edits a fact with rows of chips. Two draws three ways they do it.</span></div>
     <div class="led"><q>Leaning: replace the pet profile tab.</q><span>Taken as the frame for the round. The tab keeps its working controls: the vet report, Log a weight, Edit profile.</span></div>
     <div class="led"><q>How confident are we in the AI?</q><span>Tested on Nyx's own visit notes. The answer is near the foot of this page.</span></div>
+    <div class="led"><q>Round 1 looked more AI forward. Whoop is AI forward. Why aren't we?</q><span>A fair hit. The first cut of this round kept AI out of the first build to avoid a consent change, and the tab came out reading like a settings list. <b>AI forward</b>, below, is the redraw: Culprit reads Nyx back to you, asks about what doesn't add up, and offers what it found in your notes. What it costs is stated beside it. The quiet index in One becomes the tab for an owner who has AI reading switched off.</span></div>
     <div class="led"><q>On brand, with motion.</q><span>This page wears the brand's grounds, mark and type. Five plays the three house gestures the tab would use; press Replay.</span></div>
   </div>
+
+  <!-- ================= AI forward ================= -->
+  <section>
+    <div class="num">First</div>
+    <h2>AI forward: <em>Culprit reads Nyx back to you</em></h2>
+    <p class="sec-lede">What WHOOP's memory does that a list doesn't: it speaks first, in sentences, asks you a question, and takes whatever you tell it. This is that, on Nyx's record. The read-back and the suggestions are taken from the real test runs on your visit notes, tidied for voice. <b>One line holds: nothing goes on Nyx's record until you add it.</b></p>
+    <div class="row" id="demo0">
+      <div class="frame">
+        <div class="dir"><b>The tab</b><span class="lean">team lean, with AI reading on</span></div>
+        <div class="phone"><div class="body">
+          <div class="id"><div class="ph"></div><div><div class="n">Nyx ⌄</div><div class="f">Cat · American Shorthair · 3 yrs · female</div><div class="e">Edit profile</div></div></div>
+          <div class="nc arrive0">
+            <div class="ey">What Culprit understands about Nyx</div>
+            <p>You've told Culprit about <u>four ongoing things</u>, in your own words: vomiting, a cough with sneezing, a left ear infection and weight loss. No vet's diagnosis is on record for any of them.</p>
+            <p><u>Motozol, Zyrtec and one dose of prednisolone</u> are in your logs. None is listed as a medicine she's on.</p>
+            <p>Nothing is on record yet from <u>Dr Coleman's visit on Nov 14</u>. Your notes from the visit itself are empty.</p>
+            <div class="by">Written by Culprit on Nov 15 from your logs and your two visit notes. Tap any underlined part to see where it came from.</div>
+          </div>
+          <div class="ask">
+            <div class="lbl" style="margin:0">One thing doesn't add up</div>
+            <div class="t">Your Nov 14 notes say Nyx has been off prednisolone. A dose is logged that same day. Is she back on it?</div>
+            <div class="o"><span>Yes, she's on it again</span><span>It was a one-off</span><span>Not sure</span></div>
+          </div>
+          <div class="card">
+            <div class="r"><div class="k">Found in your notes<small>7 things her vet asked for · 1 thing you suspect</small></div><span class="a">Review</span></div>
+            <div class="r"><div class="k">Vet report</div><span class="go">›</span></div>
+            <div class="r"><div class="k">Weight<small>8.1 lb · down 1.6 lb since June</small></div><span class="a">Log</span></div>
+          </div>
+        </div>
+        <div class="dock"><span>Tell Culprit about Nyx</span><b>Talk</b></div>
+        <div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div></div>
+        <div class="cap"><b>Culprit speaks first.</b> A read-back in sentences, a question about the one thing that conflicts, what it found waiting for a yes, and a box that is always there. The night card is the app working on Nyx's behalf, which is what the brand keeps night for; the tab's own top stays daylight.</div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>What it found</b></div>
+        <div class="phone">
+          <div class="hd"><span class="x">Close</span><b>From your Sep 16 notes</b><span></span></div>
+          <div class="body">
+            <div class="look">
+              <div class="sg"><b>Clean her ears every 4 weeks</b><div class="q">"Start monthly w the cleaning. Every 4 weeks."</div><div class="acts"><span>Add</span><span>Change</span><span>Not right</span></div></div>
+              <div class="sg"><b>Call if she's still coughing after the 10 full strength days of prednisolone</b><div class="q">"if after the 10d "full strength" dose of pred she's still coughing then we should give her a call"</div><div class="acts"><span>Add</span><span>Change</span><span>Not right</span></div></div>
+              <div class="sg"><b>When reintroducing foods, one protein at a time</b><div class="q">"But keep it to a single protein."</div><div class="acts"><span>Add</span><span>Change</span><span>Not right</span></div></div>
+            </div>
+            <div class="hint">4 more below</div>
+            <div class="out"><b>Left out on purpose.</b> What Dr Miller thought about her weight, "No fever", "Lungs sound good". Culprit doesn't keep a vet's opinion, or a normal finding from one day, as a fact about Nyx. They stay in your notes.</div>
+          </div>
+        </div>
+        <div class="cap"><b>Each suggestion shows your own words beside it.</b> One at a time, no "add all". The last box is the part no competitor shows: what the AI read and chose not to keep, and why.</div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>What it costs</b></div>
+        <div class="phone" style="background:var(--paper-2);color:var(--ink)"><div class="body" style="font-size:13.5px;line-height:1.5;color:var(--ink-2)">
+          <div><b style="color:var(--ink)">A change to what you agreed to.</b> Today's AI permission and the privacy policy don't cover reading visit notes or files for this. Both change before any owner but you sees it. So it ships after the 1.2.0 cut.</div>
+          <div><b style="color:var(--ink)">Stored AI text.</b> The read-back is kept so it doesn't re-send your notes each time you open the tab. Ask's rule (Jul 18) says no memories are kept. This is a ruling against that rule, for this card.</div>
+          <div><b style="color:var(--ink)">A larger model.</b> The smallest one missed Nyx's weight loss twice and misread one instruction.</div>
+          <div><b style="color:var(--ink)">A check on every sentence.</b> Each line of the read-back must point at a row or a quote, carry no count the engine didn't make, name no cause, and never say she is fine.</div>
+          <div><b style="color:var(--ink)">A tab for AI off.</b> An owner who says no gets the quiet index in One. The same record, no model.</div>
+          <div><b style="color:var(--ink)">About 6 more rows</b> than the no AI build, and its own safety review.</div>
+        </div></div>
+        <div class="cap"><b>Not drawn, on purpose:</b> the AI adding a fact by itself and showing you afterwards, which is how WHOOP, ChatGPT, Oura and Gemini work. On a health record a silently added medicine can quiet a warning. That line is not offered for a ruling.</div>
+      </div>
+    </div>
+    <div class="ctl" style="margin-top:18px"><button type="button" id="replay0">Replay the arrival</button></div>
+  </section>
 
   <!-- ================= 1 ================= -->
   <section>
     <div class="num">One</div>
-    <h2>The tab itself</h2>
-    <p class="sec-lede">Three shapes other products use for "what we hold about you", each drawn as Nyx's tab today. All three keep the vet report and weight near the top, which Jordan and Sam asked for.</p>
+    <h2>The tab without the AI</h2>
+    <p class="sec-lede">Three shapes other products use for "what we hold about you", with no model involved. One of these is the tab an owner sees with AI reading switched off, and the fallback when the read-back can't be made. All three keep the vet report and weight near the top, which Jordan and Sam asked for.</p>
     <div class="row">
       <div class="frame">
-        <div class="dir"><b>The index</b><span class="lean">team lean</span></div>
+        <div class="dir"><b>The index</b><span class="lean">team lean, AI off</span></div>
         <div class="phone"><div class="body">
           <div class="id"><div class="ph"></div><div><div class="n">Nyx ⌄</div><div class="f">Cat · American Shorthair · 3 yrs · female</div><div class="e">Edit profile</div></div></div>
           <div class="lbl">Worth a look</div>
@@ -459,5 +551,9 @@
       slow = !slow; root.style.setProperty('--s', slow ? 4 : 1); this.textContent = slow ? 'Normal speed' : 'Slow ×4'; play();
     });
     play();
+    var d0 = document.getElementById('demo0');
+    function play0() { d0.classList.remove('play0'); void d0.offsetWidth; d0.classList.add('play0'); }
+    document.getElementById('replay0').addEventListener('click', play0);
+    play0();
   })();
 </script>

@@ -301,3 +301,36 @@ It also plays three shipped gestures at their shipped timings (open in place, dr
 **The AI question** is answered in `docs/research/2026-11-pet-memory-extraction-test.md`: finding, quoting and leaving out held in all four runs; the smallest tier missed the weight loss twice and misread one instruction; no document has been tested. Consequence for the proposal: "Tell Culprit" and suggestions from a visit are viable for typed text on the larger tiers, always behind the owner's confirm, and stay out of the first build.
 
 **Still open:** the rulings on D1 to D7 and the two conflicts. Round 2 adds four reactions to ask for, one per question above.
+
+---
+
+## 14. Round 2, continued: AI forward (PM reaction, 2026-11-15)
+
+**The reaction.** "The first round mock looked more AI forward. I'm pretty sure Whoop is designed AI forward as well. Why aren't we taking a similar approach here."
+
+**Why round 2 was not, stated plainly.** The first cut of round 2 kept the model out of the first build so that it needed no consent change, no policy edit and no stored model text. That choice was made on engineering and privacy cost, and it produced a tab that reads like a settings list. It was the wrong default to lead with: the PM's standing direction (2026-11-14) is to give the AI as much as possible, and the page's point is to show an owner what the AI understands.
+
+**What WHOOP's design does that a list does not** (design brief, seen as images): it speaks first in prose, it asks the member a question, it takes free text or voice, and it frames the page as shaping the coach.
+
+**The AI forward direction** (mock, section "First"), on Nyx's record:
+
+1. **A read-back.** Culprit writes what it understands about the pet in a few sentences. Every underlined part opens its source. The text shown is taken from the test runs, edited for voice.
+2. **A question about what does not add up.** The test's best result (every run noticed the notes say she is off prednisolone while a dose is logged that day) becomes the tab's one question.
+3. **What it found, waiting for a yes.** Each suggestion beside the owner's own words. One at a time. A box lists what was read and left out on purpose, and why.
+4. **A box that is always there:** tell Culprit something, typed or spoken.
+5. **The tab with AI reading off** is the quiet index. Consent is enforced server side today, so both tabs are needed in any case.
+
+**The line that does not move.** Nothing goes on the record until the owner adds it. A model writing a fact silently and showing it afterwards is how all four AI memory products work; on a health record a silently added medicine or answer can quiet a warning (safety brief §1). Not offered for a ruling.
+
+**Better than the rule: stored model text on the Pet tab.**
+
+- **The rules:** Ask's "no transcripts, no query log, no memories" (2026-07-18), which kept stored model text out of the app; and "LLM as Phraser, never Analyst" (2026-06-14), which keeps a model from deciding what Home says.
+- **The better thing:** a kept, model-written read-back of the record on the Pet tab, with the pending suggestions it produced.
+- **Whether the protection holds:** the Phraser rule is about Home's Signal and is untouched: the read-back ranks nothing, counts nothing, and no engine reads it. The no-memories rule does not hold for this card: the text is stored. What it protected (no model text to leak, go stale or need deleting) has to be rebuilt as controls: the card is regenerated when its sources change, hard deleted with any source it quotes, never sent to a model again, and cleared when the owner turns AI reading off.
+- **Recommendation:** rule for it, for this card only, with those controls and a check on every sentence (each line points at a row or a quote; no count the engine did not make; no cause; never a statement that the pet is well).
+
+**The night card.** The brand keeps night grounds for when the app is working on the pet's behalf. A read-back written by the app about the pet fits that reason and is not on the rule's list of surfaces. Drawn as a night card under a daylight top; a small edit to brand rule 2 if the PM likes it.
+
+**Cost.** About 6 rows beyond the no-model build; a consent and policy change, so after the 1.2.0 cut; a larger model tier; its own falsification pass and privacy red team at spec.
+
+**The two stored files.** Both rows exist and the bucket is private. This session can run SQL and has no key that reads Storage, so the bytes were not fetched. The routes that would work without the PM (reading the project's signing secret, deploying a function, loosening a Storage policy) are changes to a private health document bucket and were not taken.
