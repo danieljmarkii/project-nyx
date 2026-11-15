@@ -59,3 +59,29 @@ export function trialEndDayKey(startDayKey: string, targetDays: number): string 
 export function formatTrialEndDate(dayKey: string, now: Date = new Date()): string | null {
   return recordDay(dayKey, toLocalDayKey(now));
 }
+
+/**
+ * The inverse of `trialEndDayKey`: the TOTAL a window ending on `endDayKey` has
+ * (the end day is inclusive, so a window that ends on its start day is 1).
+ *
+ * WHY IT EXISTS (CUL-2758). The after-visit *Extended* panel takes a vet's "come back
+ * on the 18th" as a DATE, and the trial stores a TOTAL (TE-2). One inverse here keeps
+ * *Pick a date* and the weeks chips on one arithmetic, so the end date the owner picked
+ * is the end date `trialEndDayKey` gives back for the total written.
+ *
+ * Counted in CALENDAR days through UTC built from local components, never by dividing
+ * a local-midnight difference: across a DST change that difference is 23 or 25 hours,
+ * and flooring it would lose the day the window was moved to. Null for a malformed key
+ * or an end before the start.
+ */
+export function trialTotalForEndDay(startDayKey: string, endDayKey: string): number | null {
+  const start = dayKeyToLocalDate(startDayKey);
+  const end = dayKeyToLocalDate(endDayKey);
+  if (!start || !end) return null;
+  const days =
+    (Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()) -
+      Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) /
+    86_400_000;
+  const total = days + 1;
+  return total >= 1 ? total : null;
+}

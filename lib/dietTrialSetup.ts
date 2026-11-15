@@ -1229,9 +1229,10 @@ export async function changeTrialWindow(params: {
  * A THIN DELEGATE SINCE CUL-1039. The caller still computes the new target through
  * `nextTargetDays` — one arithmetic home — and this hands that total to
  * `changeTrialWindow`, so the milestone and the mid-trial sheet share one clamp and
- * one provenance contract. `vetDirected` is null here BY CONSTRUCTION: the
- * milestone's affordance is a named default with no box to check, and silence is
- * the honest record of that (§5.1).
+ * one provenance contract. `vetDirected` is null on the milestone's call BY
+ * CONSTRUCTION: its affordance is a named default with no box to check, and silence is
+ * the honest record of that (§5.1). The after-visit *Extended* panel is the one caller
+ * that passes `true` (CUL-2758).
  *
  * It inherits the forward-only refusal, which `nextTargetDays` can never trip — its
  * result is strictly above both the current target and the current day. What it
@@ -1243,11 +1244,18 @@ export async function changeTrialWindow(params: {
 export async function extendTrial(params: {
   trialId: string;
   targetDurationDays: number;
+  /**
+   * The after-visit *Extended* panel only (CUL-2758, §4.4 R6): the owner is recording
+   * what the vet decided at this visit, and the panel says *recorded as the vet's call*
+   * before the press. `true` or absent, never `false`: no door here asserts the vet did
+   * NOT direct a change, and the milestone passes nothing, so its silence stays null.
+   */
+  vetDirected?: true;
 }): Promise<void> {
   await changeTrialWindow({
     trialId: params.trialId,
     targetDurationDays: params.targetDurationDays,
-    vetDirected: null,
+    vetDirected: params.vetDirected === true ? true : null,
   });
 }
 

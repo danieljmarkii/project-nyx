@@ -697,6 +697,16 @@ describe('extendTrial delegates to changeTrialWindow — one clamp, two doors (C
     expect(params[2]).toBeNull();
   });
 
+  it('records the vet’s call as 1 only when the after-visit panel says so (CUL-2758)', async () => {
+    // The after-visit *Extended* panel is the one door that passes `vetDirected`, and
+    // the report prints "Owner reports a vet asked for the change" off it. The milestone
+    // test above pins the other half: absent stays NULL, never 0.
+    await extendTrial({ trialId: 't-1', targetDurationDays: 84, vetDirected: true });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(params[0]).toBe(84);
+    expect(params[2]).toBe(1);
+  });
+
   it('inherits the forward-only refusal, which nextTargetDays can never trip', async () => {
     // THE CLAIM BEHIND THE DELEGATION. §5.6 already swept "strictly above the
     // current DAY"; the half this PR adds is "strictly above the current TARGET",

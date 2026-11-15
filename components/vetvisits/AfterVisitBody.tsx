@@ -9,10 +9,13 @@ import { TextField } from '../ui/TextField';
 import { ThemedText } from '../ui/ThemedText';
 import { PlanActionRow, PlanChipRow, PlanSettledRow } from './PlanRows';
 import { RecheckRow } from './RecheckRow';
+import { ExtendTrialPanel } from './ExtendTrialPanel';
 import {
   courseRowSubtitle,
+  extendedTrialLine,
   settledVerdictLine,
   type CourseVerdict,
+  type ExtendWindow,
   type TrialVerdict,
 } from '../../lib/vetVisitPlan';
 import { formatVisitDate, localDateKey, type ActiveCourse, type RecheckBooking } from '../../lib/vetVisits';
@@ -36,6 +39,18 @@ export interface TrialRow {
   dayLine: string | null;
   /** A reopened visit only: this trial names this visit (§4.4 R3). */
   linkedHere?: boolean;
+  /** The record's window, for *Extended*'s panel (CUL-2758). Null when `started_at` is
+   *  unreadable: no day counter, no floor, so the chip is not offered. */
+  window?: ExtendWindow | null;
+}
+
+/** A trial this screen EXTENDED (CUL-2758): the row settles to the new end. */
+export interface ExtendedTrialRow {
+  label: string;
+  /** The new last day, 'YYYY-MM-DD', as `trialEndDayKey` gives it for the total written. */
+  endDayKey: string | null;
+  /** The record names this visit (first-wins: an earlier visit's link is kept). */
+  linkedHere: boolean;
 }
 
 /**
@@ -88,6 +103,13 @@ export interface AfterVisitBodyProps {
   /** The trial *Ended* on this screen, or null. Wins over the *Start a trial* door. */
   endedTrial: EndedTrialRow | null;
   onTrialVerdict: (verdict: TrialVerdict) => void;
+  /** The trial *Extended* on this screen, or null. Wins over the chips. */
+  extendedTrial?: ExtendedTrialRow | null;
+  /** *Extend the trial*: the total the owner chose, in days. */
+  onExtendTrial?: (totalDays: number) => void;
+  /** A refusal the write returned, already phrased (`windowRefusedLine`). */
+  extendRefusal?: string | null;
+  onExtendChoiceChange?: () => void;
   onStartTrial: () => void;
   onAddFood: () => void;
   /**
@@ -147,6 +169,7 @@ const COURSE_OPTIONS = [
 
 const TRIAL_OPTIONS = [
   { value: 'keep', label: 'Keep' },
+  { value: 'extended', label: 'Extended' },
   { value: 'ended', label: 'Ended' },
   { value: 'switched', label: 'Switched' },
 ];
@@ -167,6 +190,7 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
     petName, fields, onChangeField,
     courses, courseVerdicts, settledCourses, onCourseVerdict, onAddCourse,
     trial, trialVerdict, endedTrial, onTrialVerdict, onStartTrial, onAddFood,
+    extendedTrial = null, onExtendTrial, extendRefusal = null, onExtendChoiceChange,
     nextVisitAt, recheckBooking = null, onSetNextVisit, onBookRecheck, paperworkCount, onAddPaperwork,
     busyRow, saving, onSave,
     homeConcerns = [], concernAnswers = {}, onConcernAnswer,
@@ -331,16 +355,38 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
             busy={busyRow === 'add-course'}
           />
 
-          {trial ? (
-            <PlanChipRow
+          {trial && extendedTrial ? (
+            // Where the chips were (CUL-2758, mock §C C2). The trial is still running, so
+            // the glyph keeps its colour; the row names the NEW end only.
+            <PlanSettledRow
               glyph={<Utensils size={16} color={colorRoles.positive.textOnLight} strokeWidth={2} />}
-              title={trial.label}
-              subtitle={linkedHere(trial.dayLine ?? undefined, trial.linkedHere)}
-              options={TRIAL_OPTIONS}
-              value={trialVerdict}
-              onChange={(next) => onTrialVerdict(next as TrialVerdict)}
-              busy={busyRow === 'trial'}
+              title={extendedTrial.label}
+              subtitle={linkedHere(extendedTrialLine(extendedTrial.endDayKey), extendedTrial.linkedHere)}
             />
+          ) : trial ? (
+            <>
+              <PlanChipRow
+                glyph={<Utensils size={16} color={colorRoles.positive.textOnLight} strokeWidth={2} />}
+                title={trial.label}
+                subtitle={linkedHere(trial.dayLine ?? undefined, trial.linkedHere)}
+                // *Extended* needs the record's window to compute a forward total; with no
+                // readable start there is nothing honest to offer, so the chip is absent.
+                options={trial.window && onExtendTrial ? TRIAL_OPTIONS : TRIAL_OPTIONS.filter((o) => o.value !== 'extended')}
+                value={trialVerdict}
+                onChange={(next) => onTrialVerdict(next as TrialVerdict)}
+                busy={busyRow === 'trial'}
+              />
+              {trialVerdict === 'extended' && trial.window && onExtendTrial ? (
+                <ExtendTrialPanel
+                  window={trial.window}
+                  petName={petName}
+                  onExtend={onExtendTrial}
+                  busy={busyRow === 'trial'}
+                  refusal={extendRefusal}
+                  onChoiceChange={onExtendChoiceChange}
+                />
+              ) : null}
+            </>
           ) : (
             <>
               {endedTrial ? (

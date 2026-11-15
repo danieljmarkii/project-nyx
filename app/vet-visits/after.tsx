@@ -10,6 +10,7 @@ import {
   AfterVisitBody,
   type AfterVisitFields,
   type EndedTrialRow,
+  type ExtendedTrialRow,
   type SettledCourse,
   type TrialRow,
 } from '../../components/vetvisits/AfterVisitBody';
@@ -36,11 +37,16 @@ import { reducedMotionNow } from '../../store/reducedMotionStore';
 import {
   describeActiveTrial,
   endActiveTrial,
+  extendTrial,
   getActiveTrialForPet,
   TrialEndRefused,
   trialEndRefusedNotice,
+  TrialWindowRefused,
   type ActiveTrialSummary,
 } from '../../lib/dietTrialSetup';
+import { getDietTrialProgress } from '../../lib/analytics';
+import { trialEndDayKey, trialStartDayKey } from '../../lib/trialWindowDates';
+import { windowRefusedLine } from '../../lib/trialWindowSheet';
 import { captureVisitPaperwork, forgetPaperwork, readPaperworkFor } from '../../lib/visitPaperwork';
 import {
   courseVerdictLabel,
@@ -55,6 +61,7 @@ import {
   visitAnchorsAnything,
   type CourseVerdict,
   type EndConfirmCopy,
+  type ExtendWindow,
   type LinkedLine,
   type TrialVerdict,
   type VisitSaveSummary,
@@ -185,6 +192,12 @@ export default function AfterVisitScreen() {
   const settledCourseIds = useRef<Set<string>>(new Set());
   const [settledCourses, setSettledCourses] = useState<Record<string, SettledCourse>>({});
   const [endedTrial, setEndedTrial] = useState<EndedTrialRow | null>(null);
+  // CUL-2758: what *Extend the trial* wrote, so the row settles to the new end. The trial
+  // read still returns the (running) trial, so the chips would otherwise come back over
+  // an answer the owner already gave.
+  const [extendedTrial, setExtendedTrial] = useState<ExtendedTrialRow | null>(null);
+  // A refusal from the write path, phrased; cleared when the panel's choice moves.
+  const [extendRefusal, setExtendRefusal] = useState<string | null>(null);
   // The answer *Switched* replaced, put back if the trial sheet closes with no trial
   // started (CUL-1092): the old trial is still running, so nothing was switched.
   const verdictBeforeSwitch = useRef<TrialVerdict | null>(null);
@@ -803,6 +816,12 @@ export default function AfterVisitScreen() {
 
   function handleTrialVerdict(verdict: TrialVerdict) {
     if (busyRow || !trial) return;
+    if (verdict === 'extended') {
+      // Opens the panel and nothing else (§4.4 R6): the write is *Extend the trial*.
+      setExtendRefusal(null);
+      setTrialVerdict('extended');
+      return;
+    }
     if (verdict !== 'ended') {
       void applyTrialVerdict(verdict);
       return;
@@ -943,6 +962,67 @@ export default function AfterVisitScreen() {
       if (petId) await loadPlan(petId);
     } catch (err) {
       sayFailed(err, 'trial verdict');
+    } finally {
+      setBusyRow(null);
+    }
+  }
+
+  /**
+   * *Extend the trial* (CUL-2758, §4.4 R6). The link first, then the window, the *Ended*
+   * path's order: a crash between the two leaves the trial named at this visit with its
+   * old window, never a moved window with no visit behind it. A refused window keeps the
+   * link for the same reason *Keep* writes one: the trial was talked about here.
+   *
+   * `totalDays` is a TOTAL from the trial's start (TE-2), so the day the visit is logged
+   * does not move what is recorded. `vetDirected: true` because the panel said *recorded
+   * as the vet's call* before the press; the milestone's own extension stays silent.
+   *
+   * `changeTrialWindow` re-reads the row and is the authority on the floor. Its refusal
+   * is said through `windowRefusedLine` from the structured fields, never the message,
+   * and the plan re-reads, so a trial ended on another phone settles as it now is.
+   */
+  async function handleExtendTrial(totalDays: number) {
+    if (busyRow || !trial) return;
+    setBusyRow('trial');
+    try {
+      const id = await ensureVisit();
+      const linkedNow = await linkTrialToVisit(trial.id, id);
+      try {
+        await extendTrial({ trialId: trial.id, targetDurationDays: totalDays, vetDirected: true });
+      } catch (e) {
+        if (!(e instanceof TrialWindowRefused)) throw e;
+        const line = windowRefusedLine({
+          reason: e.reason,
+          requestedDays: e.requestedDays,
+          currentTargetDays: e.currentTargetDays,
+          dayCounter: e.dayCounter,
+          petName: resolveRecordPetName(pets, petId),
+        });
+        // A window the trial outran stays on the panel, beside the choice to change. An
+        // ended or missing trial leaves the screen on the re-read below, panel and all,
+        // so its sentence is said once as an alert rather than painted where nobody is.
+        if (e.reason === 'not_forward') setExtendRefusal(line);
+        else Alert.alert('The trial didn’t change', line);
+        if (petId) await loadPlan(petId);
+        return;
+      }
+      const linkedHereNow = linkedNow || trialLinkedHere;
+      setExtendRefusal(null);
+      setExtendedTrial({
+        label: trial.foodLabel?.trim() || 'Diet trial',
+        // The same helper every reader uses for the same total, so the row and the trial
+        // screen name one day.
+        endDayKey: trialEndDayKey(trialStartDayKey(trial.startedAt), totalDays),
+        linkedHere: linkedHereNow,
+      });
+      note({
+        key: 'trial',
+        title: `${trialMomentTitle(trial.foodLabel)} ${trialVerdictLabel('extended')}`,
+        note: linkedHereNow ? 'linked to this visit' : 'still running',
+      });
+      if (petId) await loadPlan(petId);
+    } catch (err) {
+      sayFailed(err, 'extend trial');
     } finally {
       setBusyRow(null);
     }
@@ -1197,6 +1277,7 @@ export default function AfterVisitScreen() {
         // Day math through the ONE shared helper (B-421) — never re-derived here.
         dayLine: describeActiveTrial(trial).dayLine,
         linkedHere: trialLinkedHere,
+        window: extendWindowOf(trial),
       }
     : null;
 
@@ -1269,6 +1350,10 @@ export default function AfterVisitScreen() {
                   trialVerdict={trialVerdict}
                   endedTrial={endedTrial}
                   onTrialVerdict={handleTrialVerdict}
+                  extendedTrial={extendedTrial}
+                  onExtendTrial={handleExtendTrial}
+                  extendRefusal={extendRefusal}
+                  onExtendChoiceChange={() => setExtendRefusal(null)}
                   onStartTrial={openTrialSheet}
                   // `returnTo=back`: food-capture otherwise ends in `dismissAll()`, which pops
                   // every root-stack screen above the tabs, this one included, and loses the
@@ -1461,3 +1546,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+/** The record's window for *Extended*'s panel, off the ONE shared day counter (B-421).
+ *  Null when `started_at` is unreadable: no counter, no floor, nothing honest to offer. */
+function extendWindowOf(trial: ActiveTrialSummary): ExtendWindow | null {
+  const progress = getDietTrialProgress(
+    { startedAt: trial.startedAt, targetDurationDays: trial.targetDurationDays },
+    Date.now(),
+  );
+  if (!progress) return null;
+  return {
+    startDayKey: trialStartDayKey(trial.startedAt),
+    currentTargetDays: trial.targetDurationDays,
+    dayCounter: progress.dayCounter,
+  };
+}
