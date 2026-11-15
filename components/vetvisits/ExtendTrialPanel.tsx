@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
     marginTop: theme.space2,
   },
   change: {
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     justifyContent: 'center',
     alignSelf: 'flex-start',
   },
