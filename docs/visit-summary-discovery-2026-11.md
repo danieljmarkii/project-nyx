@@ -224,3 +224,20 @@ The spec must carry, as numbered requirements: every condition in discovery §3.
 
 Run rls-privacy-reviewer on the spec's read path and adversarial-reviewer on its fact rules before calling it build ready. Do not build. If the PM has supplied Nyx's documents, run the document extraction test first and record per fact accuracy in a new dated brief.
 ```
+
+---
+
+## 11. Round 2: the PM's reactions (2026-11-15)
+
+Mock round 2 is at the same link and is one proposal; round 1 is in git at `1bbf33bdc`.
+
+| Reaction | Outcome |
+|---|---|
+| "I like the checkbox approach. But always default to on." | **D3 ruled.** One sheet per summary, a tick beside each thing read, all ticked. Conflict 3 (how often the sheet shows) is settled by the same words: the sheet is the second tap, every time, and costs nothing extra |
+| "We need WAY better design of the summary." | §B redrawn: the night ground; what the vet asked for as the headline; a count of what was found; every line opens the owner's own sentence it came from |
+| "I was just thinking of a few button click to summarize UX. We're doing a lot more here." | The proposal is now two taps to a summary. Proposing things for Nyx's logs left the flow and is drawn as an option (mock §D). This points D2 at option (b), summary only first, 5 rows; it is put back to the PM as one question, because it also means Signals learns nothing from the first build |
+| "What do you mean by add to record?" | The phrase is retired. It meant offering to put something the notes mention (a medicine, a reminder to call) into the list where the app keeps that kind of thing, so it can be counted and shown |
+| "Weights are weights… log that as a separate task." | Clinic and home labels are out of this feature. Filed as its own discovery. D7 and conflict 1 leave this round with it |
+| "Can you confirm that the summary also incorporates extracting data from attachments?" | Yes by design: any file filed under the visit is read with the notes, and a line that came from a file says so. Not yet tested on a real file |
+
+**Still open after round 2:** D1 (the recommendation stands; the PM's "few clicks" direction is consistent with it), D2 as restated above, D4, D5, D6 with conflict 2, D8.

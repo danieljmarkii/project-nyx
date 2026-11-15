@@ -33,6 +33,8 @@ The idea as pitched had the model fill each fact in and the owner tap yes. After
 
 ## Rulings
 
+**2026-11-15, the PM's reactions to round 1:** D3 ruled (ticks, all on by default). The summary's design redrawn in round 2. The flow cut to two taps, with saving things to the logs moved to an option. Weight labels taken out of this feature and filed as their own discovery. Synthesis §11 has the ledger.
+
 None. The PM rules D1 to D8 and conflicts 1 to 3; the round's open home is its own issue with the `Waiting on PM` label, linked from the discovery issue, since that one closes on merge.
 
 ## Team calls made (reversible; reverse any by comment)
