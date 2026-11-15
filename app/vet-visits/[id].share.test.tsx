@@ -89,7 +89,8 @@ it('hands the record to the system share sheet as plain text', async () => {
   expect(share).toHaveBeenCalledTimes(1);
   const message = (share.mock.calls[0][0] as { message: string }).message;
   expect(message.startsWith('Nyx · vet visit')).toBe(true);
-  expect(message).toContain('What the vet said: Keep cleaning the left ear.');
+  expect(message).toContain('Notes: Keep cleaning the left ear.');
+  expect(message).not.toMatch(/vet said/i);
   expect(message).not.toContain('Mochi');
 });
 
