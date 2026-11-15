@@ -1528,6 +1528,7 @@ function readWordSinks(raw: string, file?: string): { sanctioned: Sink[]; violat
     const owner = /^(\w+)\.values$/.exec(arg)
     if (arg === 'values' && fn === 'updateAnalysisRow') sanctioned.push({ kind: 'updateAnalysisRow', at: open })
     else if (arg === 'writeBack.values' && fn === 'applyAnalysisWriteBack') sanctioned.push({ kind: 'applyAnalysisWriteBack', at: open })
+    else if (arg === 'write.values' && fn === 'applyFailureWrite') sanctioned.push({ kind: 'applyFailureWrite', at: open })
     else if (owner && /^buildFailureWrite\(/.test(boundTo(src, owner[1], open))) sanctioned.push({ kind: 'failure write', at: open })
     else if (isStateLiteral(arg)) sanctioned.push({ kind: 'state literal', at: open })
     else violations.push(`line ${lineOf(open)} (${fn}): event_ai_analysis .${method}(${arg.slice(0, 60)})`)
@@ -1542,12 +1543,23 @@ function readWordSinks(raw: string, file?: string): { sanctioned: Sink[]; violat
     } else violations.push(`line ${lineOf(open)}: applyAnalysisWriteBack(…, ${arg.slice(0, 60)})`)
   }
 
+  // 2b. applyFailureWrite is handed buildFailureWrite's result, and only that (CUL-2805).
+  for (const m of src.matchAll(/(?<!function\s)\bapplyFailureWrite\(/g)) {
+    const open = m.index! + m[0].length - 1
+    const arg = callArgs(src, open)[2] ?? ''
+    if (/^\w+$/.test(arg) && /^buildFailureWrite\(/.test(boundTo(src, arg, open))) {
+      sanctioned.push({ kind: 'failure write', at: open })
+    } else violations.push(`line ${lineOf(open)}: applyFailureWrite(…, ${arg.slice(0, 60)})`)
+  }
+
   // 3. updateAnalysisRow is handed a builder's `.values`.
   for (const m of src.matchAll(/(?<!function\s)\bupdateAnalysisRow\(/g)) {
     const open = m.index! + m[0].length - 1
     const arg = callArgs(src, open)[2] ?? ''
     const owner = /^(\w+)\.values$/.exec(arg)
     if (enclosingFunction(src, open) === 'applyAnalysisWriteBack' && arg === 'writeBack.values') continue
+    // applyFailureWrite's held update: buildFailureWrite's values less the key columns.
+    if (enclosingFunction(src, open) === 'applyFailureWrite' && arg === 'values') continue
     if (owner && BUILT.test(boundTo(src, owner[1], open))) sanctioned.push({ kind: 'builder → update', at: open })
     else violations.push(`line ${lineOf(open)}: updateAnalysisRow(…, ${arg.slice(0, 60)})`)
   }
@@ -1590,7 +1602,7 @@ Deno.test('CUL-1323 — every write of read words under supabase/functions goes 
   const raw = await Deno.readTextFile(new URL('./incident-analysis.ts', import.meta.url))
   const { sanctioned } = readWordSinks(raw)
   const kinds = new Set(sanctioned.map((s) => s.kind))
-  for (const k of ['updateAnalysisRow', 'applyAnalysisWriteBack', 'failure write', 'state literal', 'builder → apply', 'builder → update']) {
+  for (const k of ['updateAnalysisRow', 'applyAnalysisWriteBack', 'applyFailureWrite', 'failure write', 'state literal', 'builder → apply', 'builder → update']) {
     assertStrictEquals(kinds.has(k), true, `the scan never saw a "${k}" sink`)
   }
   // Each writer still spells its clear (their values are pinned by the tests above).

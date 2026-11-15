@@ -877,6 +877,32 @@ export async function applyAnalysisWriteBack(
   return { error: null, missed: !data || data.length === 0 }
 }
 
+// The catch's two writes that decide over the row's contents (CUL-2805): the plain failed
+// state and the rescue. Each was decided over the catch's own re-read, so each is held to
+// that read's version, as every write-back is (CUL-2773): over a row, an UPDATE matching
+// that updated_at only; over no row, insert-only. A miss writes nothing and is final. The
+// row moved after the catch looked, and whatever moved it (a sibling's call now, a read
+// that found blood, an owner's correction) is newer than this run's failure, so it stands.
+// The error-only note is not routed here: it decides nothing about the row's contents.
+export async function applyFailureWrite(
+  client: SupabaseClient,
+  key: { eventId: string; petId: string },
+  write: { mode: 'upsert' | 'rescue'; values: Record<string, unknown> },
+  decidedOn: RowVersion,
+): Promise<WriteOutcome> {
+  if (decidedOn !== null) {
+    // The key columns are the filter, not values: pet_id is frozen on update (migration 074).
+    const { event_id: _e, pet_id: _p, incident_type: _t, ...values } = write.values
+    return updateAnalysisRow(client, key, values, decidedOn.updatedAt)
+  }
+  const { data, error } = await client
+    .from('event_ai_analysis')
+    .upsert(write.values, { onConflict: 'event_id', ignoreDuplicates: true })
+    .select('id')
+  if (error) return { error: error.message, missed: false }
+  return { error: null, missed: !data || data.length === 0 }
+}
+
 // ── The failure write (CUL-812 / CUL-539) ────────────────────────────────────
 //
 // THE RULE, stated once: an ESCALATION already in the record survives a failed
@@ -2562,6 +2588,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     if (revalidateForFailure) await revalidateForFailure()
     let latest: StoredAnalysis | null = null
     let latestReadFailed = false
+    let latestVersion: RowVersion = null
     if (petIdForFailure && incidentTypeForFailure) {
       const { data: latestRow, error: latestErr } = await adminClient
         .from('event_ai_analysis')
@@ -2574,6 +2601,16 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       // folds into "could not read" on purpose — buildFailureWrite then writes
       // nothing, which is the fail-closed answer for a row we will not touch.
       latestReadFailed = !!latestErr || !analysisRowMatchesEvent(latestRow ?? null, petIdForFailure)
+      // The version the failure write is decided over (CUL-2805). A row that came back with
+      // no updated_at has none to hold, so it folds into "could not read" (rowVersionOf fails
+      // closed): the write is skipped, never sent unconditionally.
+      if (!latestReadFailed) {
+        try {
+          latestVersion = rowVersionOf(latestRow ?? null)
+        } catch {
+          latestReadFailed = true
+        }
+      }
     }
 
     const failureWrite = buildFailureWrite({
@@ -2604,11 +2641,11 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     if (failureWrite.mode === 'error-only' && petIdForFailure) {
       // Unconditional (null): it notes the error and decides nothing about the row's contents.
       await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values, null)
-    } else if (failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') {
-      await adminClient
-        .from('event_ai_analysis')
-        .upsert(failureWrite.values, { onConflict: 'event_id' })
-        .then(() => undefined)
+    } else if ((failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') && petIdForFailure) {
+      // Held to the version the catch read (CUL-2805): a miss means a newer writer landed, and
+      // its state stands over this failure.
+      const wrote = await applyFailureWrite(adminClient, { eventId, petId: petIdForFailure }, failureWrite, latestVersion)
+      if (wrote.missed) console.info(`${descriptor.functionName}: the stored row changed before the failure write; left it as it stands (CUL-2805)`)
     }
 
     return Response.json(

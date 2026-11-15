@@ -1518,3 +1518,95 @@ Deno.test('pipeline CUL-2773 — a write that FAILS after a withdrawal still res
   assertStrictEquals(r.status, 500)
   assertStrictEquals(w.row?.recommendation === 'worth_a_call', false)
 })
+
+// ── CUL-2805: the catch's failure write lands only over the row the catch read ─────────
+// The catch re-reads the row, decides, then writes. A sibling's read can commit inside that
+// gap; `beforeAiWrite` puts one there. Before CUL-2805 the rescue and the plain failed state
+// were unconditional upserts: a sibling's call now came back as this run's call today, and a
+// sibling's calm read with blood got the failure frame over its blood row.
+
+const SIBLING_CALL_NOW = {
+  recommendation: 'worth_a_call', tier: 'call_now', status: 'completed', read_text: 'SIBLING CALL NOW', error: null,
+}
+
+Deno.test('pipeline CUL-2805 — a sibling\'s call now landing in the rescue\'s gap is not lowered to call today', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    beforeAiWrite: (world, n) => { if (n === 1) commit(world, SIBLING_CALL_NOW) },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.aiWriteAttempts, 1)
+  assertEquals(w.writes, [])
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
+  assertStrictEquals(w.row?.status, 'completed')
+})
+
+Deno.test('pipeline CUL-2805 — a sibling row that appears in the rescue\'s gap over no row is not written over', async () => {
+  const w = makeWorld({
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    beforeAiWrite: (world, n) => {
+      if (n === 1) world.row = { ...OWN, ...STORED_CALM, ...SIBLING_CALL_NOW, updated_at: '2026-09-26T08:30:00.000004+00:00' }
+    },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertEquals(w.writes, [])
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
+})
+
+Deno.test('pipeline CUL-2805 — a sibling\'s calm read with blood landing in the failed write\'s gap keeps its frame', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: overloaded,
+    beforeAiWrite: (world, n) => { if (n === 1) commit(world, { status: 'completed', blood_col: 'yes', read_text: 'SIBLING: blood', error: null }) },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.aiWriteAttempts, 1)
+  assertEquals(w.writes, [])
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(w.row?.error, null)
+  assertStrictEquals(w.row?.blood_col, 'yes')
+})
+
+Deno.test('pipeline CUL-2805 — with nobody in the gap the failed state and the rescue still land (the hook is the difference)', async () => {
+  const failed = makeWorld({ row: { ...STORED_CALM }, vision: overloaded })
+  await run(failed)
+  assertEquals(failed.writes.map((x) => x.mode), ['update'])
+  assertStrictEquals(failed.row?.status, 'failed')
+  assertStrictEquals(failed.row?.blood_col, 'no')
+
+  const rescued = makeWorld({ row: { ...STORED_CALM }, contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER })
+  await run(rescued)
+  assertEquals(rescued.writes.map((x) => x.mode), ['update'])
+  assertStrictEquals(rescued.row?.status, 'failed')
+  assertStrictEquals(rescued.row?.tier, 'call_today')
+  // The held update sends no key column: the row's pet is frozen (migration 074).
+  assertEquals(Object.keys(rescued.writes[0].values).filter((k) => ['event_id', 'pet_id', 'incident_type'].includes(k)), [])
+
+  const fresh = makeWorld({ contextFlags: ['ctx_flag'], vision: overloaded })
+  await run(fresh)
+  assertEquals(fresh.writes.map((x) => x.mode), ['upsert'])
+  assertStrictEquals(fresh.row?.recommendation, 'worth_a_call')
+})
+
+Deno.test('pipeline CUL-2805 — a catch read with no version writes nothing, never an unconditional failure', async () => {
+  const w = makeWorld({ row: { ...STORED_CALM }, vision: overloaded })
+  // Step 3b's read keeps its version; the catch's (the second read) comes back without one.
+  const real = w.row!
+  let reads = 0
+  const orig = Object.getOwnPropertyDescriptor(real, 'updated_at')!.value
+  Object.defineProperty(real, 'updated_at', {
+    configurable: true, enumerable: true,
+    get: () => (++reads >= 2 ? null : orig),
+    set: () => {},
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertEquals(w.writes, [])
+  assertStrictEquals(real.status, 'completed')
+})
