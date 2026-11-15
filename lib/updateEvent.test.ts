@@ -495,6 +495,13 @@ describe('updateEvent — ifTimeStill refuses a row that moved after it was judg
       false,
     ],
     [
+      'only the upper bound: the window shortens under a point moved near its old edge',
+      ['window', '2026-07-01T02:00:00.000Z', '2026-07-01T06:00:00.000Z'] as const,
+      { occurredAt: '2026-07-01T04:00:00.000Z', confidence: 'window', earliest: '2026-07-01T02:00:00.000Z', latest: '2026-07-01T05:00:00.000Z' },
+      { occurredAt: new Date('2026-07-01T05:30:00.000Z'), source: 'manual' as const },
+      true,
+    ],
+    [
       'only the lower bound appearing: an open window closes on a point before it',
       ['window', null, '2026-07-01T04:00:00.000Z'] as const,
       { occurredAt: '2026-07-01T04:00:00.000Z', confidence: 'window', earliest: '2026-07-01T03:00:00.000Z', latest: '2026-07-01T04:00:00.000Z' },
