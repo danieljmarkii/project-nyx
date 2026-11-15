@@ -32,6 +32,7 @@ import {
   analysisRowMatchesEvent,
   updateAnalysisRow,
   applyAnalysisWriteBack,
+  rowVersionOf,
   fetchUsableImageBlob,
   getToolUseInput,
   sanitizeEnum,
@@ -990,7 +991,7 @@ function memoryTable(rows: Row[], opts: { failWith?: string } = {}) {
   const client = {
     from(table: string) {
       log.push(`from:${table}`)
-      let pending: { kind: 'update' | 'upsert'; values: Row } | null = null
+      let pending: { kind: 'update' | 'upsert'; values: Row; ignoreDuplicates?: boolean } | null = null
       const filters: [string, unknown][] = []
       let selecting = false
       const run = () => {
@@ -998,9 +999,11 @@ function memoryTable(rows: Row[], opts: { failWith?: string } = {}) {
         if (!pending) return { data: null, error: { message: 'no operation' } }
         if (pending.kind === 'upsert') {
           const hit = rows.find((r) => r.event_id === pending!.values.event_id)
+          // ON CONFLICT DO NOTHING: the row there is left alone and nothing comes back.
+          if (hit && pending.ignoreDuplicates) return { data: selecting ? [] : null, error: null }
           if (hit) Object.assign(hit, pending.values)
-          else rows.push({ ...pending.values })
-          return { data: null, error: null }
+          else rows.push({ id: 'new', ...pending.values })
+          return { data: selecting ? [{ id: (hit ?? rows[rows.length - 1]).id }] : null, error: null }
         }
         const matched = rows.filter((r) => filters.every(([c, v]) => r[c] === v))
         for (const r of matched) Object.assign(r, pending.values)
@@ -1008,7 +1011,11 @@ function memoryTable(rows: Row[], opts: { failWith?: string } = {}) {
       }
       const builder = {
         update(values: Row) { pending = { kind: 'update', values }; log.push('update'); return builder },
-        upsert(values: Row, o: unknown) { pending = { kind: 'upsert', values }; log.push(`upsert:${JSON.stringify(o)}`); return builder },
+        upsert(values: Row, o?: { ignoreDuplicates?: boolean }) {
+          pending = { kind: 'upsert', values, ignoreDuplicates: o?.ignoreDuplicates === true }
+          log.push(`upsert:${JSON.stringify(o)}`)
+          return builder
+        },
         eq(c: string, v: unknown) { filters.push([c, v]); log.push(`eq:${c}`); return builder },
         select(_cols: string) { selecting = true; log.push('select'); return builder },
         then(resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) {
@@ -1034,7 +1041,7 @@ const VICTIM_READ: AnalysisReadFields<'blood'> = {
 Deno.test('CUL-1203 — the plant: a humanEdited write-back cannot reach a row filed under another pet', async () => {
   // The attack as it ran before 074: a row on the victim's event, filed under the
   // attacker's pet, with edited_at set so the read takes the update branch.
-  const planted: Row = { id: 'r1', event_id: 'E', pet_id: 'attacker-pet', edited_at: 't', read_text: null, recommendation: null }
+  const planted: Row = { id: 'r1', event_id: 'E', pet_id: 'attacker-pet', updated_at: 'v1', edited_at: 't', read_text: null, recommendation: null }
   const { client } = memoryTable([planted])
   const writeBack = buildAnalysisWriteBack({
     humanEdited: true,
@@ -1044,47 +1051,116 @@ Deno.test('CUL-1203 — the plant: a humanEdited write-back cannot reach a row f
     structuredValues: {},
     readFields: VICTIM_READ,
   })
-  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack, null)
-  // Nothing of the victim's read reached the attacker's row, and the miss is SAID.
+  const outcome = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack, null, { updatedAt: 'v1' })
+  // Nothing of the victim's read reached the attacker's row, and the miss is SAID: never a
+  // success. The pipeline re-reads on a miss and refuses the row there (analysisRowMatchesEvent).
   assertStrictEquals(planted.read_text, null)
   assertStrictEquals(planted.recommendation, null)
-  assertStrictEquals(error, 'no event_ai_analysis row for this event and pet')
+  assertEquals(outcome, { error: null, missed: true })
 })
 
 Deno.test('CUL-1203 — the owner\'s own edited row still takes the read', async () => {
-  const own: Row = { id: 'r1', event_id: 'E', pet_id: 'victim-pet', edited_at: 't', description: 'owner edit', read_text: null }
+  const own: Row = { id: 'r1', event_id: 'E', pet_id: 'victim-pet', updated_at: 'v1', edited_at: 't', description: 'owner edit', read_text: null }
   const { client, log } = memoryTable([own])
   const writeBack = buildAnalysisWriteBack({
     humanEdited: true, eventId: 'E', petId: 'victim-pet', incidentType: 'vomit', structuredValues: {}, readFields: VICTIM_READ,
   })
-  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack, null)
-  assertStrictEquals(error, null)
+  const outcome = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack, null, { updatedAt: 'v1' })
+  assertEquals(outcome, { error: null, missed: false })
   assertStrictEquals(own.read_text, VICTIM_READ.read_text)
   assertStrictEquals(own.description, 'owner edit') // never-clobber, unchanged
-  assertEquals(log, ['from:event_ai_analysis', 'update', 'eq:event_id', 'eq:pet_id', 'select'])
+  assertEquals(log, ['from:event_ai_analysis', 'update', 'eq:event_id', 'eq:pet_id', 'eq:updated_at', 'select'])
 })
 
 Deno.test('CUL-1203 — updateAnalysisRow: zero rows is an error, never a silent success (C-39)', async () => {
   const { client } = memoryTable([])
-  const { error } = await updateAnalysisRow(client, { eventId: 'E', petId: 'P' }, { error: 'boom' })
+  const { error } = await updateAnalysisRow(client, { eventId: 'E', petId: 'P' }, { error: 'boom' }, null)
   assertStrictEquals(error, 'no event_ai_analysis row for this event and pet')
 })
 
 Deno.test('CUL-1203 — updateAnalysisRow: a database error passes through', async () => {
   const { client } = memoryTable([{ id: 'r1', event_id: 'E', pet_id: 'P' }], { failWith: 'permission denied' })
-  const { error } = await updateAnalysisRow(client, { eventId: 'E', petId: 'P' }, { error: 'boom' })
+  const { error } = await updateAnalysisRow(client, { eventId: 'E', petId: 'P' }, { error: 'boom' }, null)
   assertStrictEquals(error, 'permission denied')
 })
 
-Deno.test('CUL-1203 — the upsert branch is unchanged: onConflict event_id, the event\'s pet as a value', async () => {
+Deno.test('CUL-1203 — a first write inserts the event\'s pet as a value, and only inserts (CUL-2773)', async () => {
   const { client, rows, log } = memoryTable([])
   const writeBack = buildAnalysisWriteBack({
     humanEdited: false, eventId: 'E', petId: 'victim-pet', incidentType: 'vomit', structuredValues: {}, readFields: VICTIM_READ,
   })
-  const { error } = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack, null)
-  assertStrictEquals(error, null)
-  assertEquals(log, ['from:event_ai_analysis', 'upsert:{"onConflict":"event_id"}'])
+  const outcome = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'victim-pet' }, writeBack, null, null)
+  assertEquals(outcome, { error: null, missed: false })
+  assertEquals(log, ['from:event_ai_analysis', 'upsert:{"onConflict":"event_id","ignoreDuplicates":true}', 'select'])
   assertStrictEquals(rows[0].pet_id, 'victim-pet')
+})
+
+// ── The row a write decided on (CUL-2773) ─────────────────────────────────────
+// The helper half. The interleaved runs are in incident-analysis.pipeline.test.ts.
+
+const FULL_WRITE = () => buildAnalysisWriteBack({
+  humanEdited: false, eventId: 'E', petId: 'P', incidentType: 'vomit',
+  structuredValues: { blood_present: 'none_visible', ai_raw_payload: { blood_present: 'none_visible' } },
+  readFields: { ...VICTIM_READ, recommendation: 'monitor' },
+})
+
+Deno.test('CUL-2773 — a full write over the version it decided on lands, as an update held to that version', async () => {
+  const row: Row = { id: 'r1', event_id: 'E', pet_id: 'P', updated_at: 'v1', edited_at: null, blood_present: null }
+  const { client, log } = memoryTable([row])
+  const outcome = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'P' }, FULL_WRITE(), null, { updatedAt: 'v1' })
+  assertEquals(outcome, { error: null, missed: false })
+  assertStrictEquals(row.blood_present, 'none_visible')
+  assertEquals(log, ['from:event_ai_analysis', 'update', 'eq:event_id', 'eq:pet_id', 'eq:updated_at', 'select'])
+})
+
+Deno.test('CUL-2773 — a full write over a row that has moved writes nothing and says it missed', async () => {
+  // The owner's correction committed after the decision: new values, edited_at, a new version.
+  const row: Row = { id: 'r1', event_id: 'E', pet_id: 'P', updated_at: 'v2', edited_at: 't', blood_present: 'fresh_red', recommendation: null }
+  const before = { ...row }
+  const { client } = memoryTable([row])
+  const outcome = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'P' }, FULL_WRITE(), null, { updatedAt: 'v1' })
+  assertEquals(outcome, { error: null, missed: true })
+  assertEquals(row, before)
+})
+
+Deno.test('CUL-2773 — a write decided over no row never writes over one that appeared', async () => {
+  const row: Row = { id: 'r1', event_id: 'E', pet_id: 'P', updated_at: 'v1', edited_at: 't', blood_present: 'fresh_red' }
+  const before = { ...row }
+  const { client, rows } = memoryTable([row])
+  const outcome = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'P' }, FULL_WRITE(), null, null)
+  assertEquals(outcome, { error: null, missed: true })
+  assertEquals(rows, [before])
+})
+
+Deno.test('CUL-2773 — a read-fields-only write decided over no row is a miss, never an insert', async () => {
+  const { client, rows, log } = memoryTable([])
+  const writeBack = buildAnalysisWriteBack({
+    humanEdited: true, eventId: 'E', petId: 'P', incidentType: 'vomit', structuredValues: {}, readFields: VICTIM_READ,
+  })
+  const outcome = await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'P' }, writeBack, null, null)
+  assertEquals(outcome, { error: null, missed: true })
+  assertEquals(rows, [])
+  assertEquals(log, [])
+})
+
+Deno.test('CUL-2773 — updateAnalysisRow: a stale version is a miss; no version at all is the old error', async () => {
+  const row: Row = { id: 'r1', event_id: 'E', pet_id: 'P', updated_at: 'v2', status: 'completed' }
+  const { client } = memoryTable([row])
+  assertEquals(await updateAnalysisRow(client, { eventId: 'E', petId: 'P' }, { status: 'failed' }, 'v1'), { error: null, missed: true })
+  assertStrictEquals(row.status, 'completed')
+  assertEquals(await updateAnalysisRow(client, { eventId: 'E', petId: 'P' }, { status: 'failed' }, 'v2'), { error: null, missed: false })
+  assertStrictEquals(row.status, 'failed')
+})
+
+Deno.test('CUL-2773 — rowVersionOf: no row is no version; a row without updated_at fails closed', () => {
+  assertStrictEquals(rowVersionOf(null), null)
+  assertEquals(rowVersionOf({ updated_at: 'v1' }), { updatedAt: 'v1' })
+  // A select that forgot the column must not turn every write unconditional.
+  for (const bad of [{}, { updated_at: null }, { updated_at: '' }, { updated_at: 5 }]) {
+    let threw = false
+    try { rowVersionOf(bad) } catch { threw = true }
+    assertStrictEquals(threw, true, JSON.stringify(bad))
+  }
 })
 
 Deno.test('CUL-1203 — analysisRowMatchesEvent: no row, or the event\'s own pet; anything else is refused', () => {

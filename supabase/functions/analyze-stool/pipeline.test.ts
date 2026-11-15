@@ -41,6 +41,12 @@ interface World {
 
 const iso = (ms: number) => new Date(ms).toISOString()
 
+// Migration 075: updated_at moves strictly forward on every UPDATE, and the pipeline holds
+// each write to the version it read (CUL-2773). The fake keeps that contract.
+let versionTick = 0
+const nextVersion = (): string => `2026-01-01T00:00:00.${String(++versionTick).padStart(6, '0')}+00:00`
+const versioned = (row: Row): Row => { row.updated_at ??= nextVersion(); return row }
+
 class FakeQuery {
   private mode: 'select' | 'update' | 'upsert' = 'select'
   private values: Row = {}
@@ -56,7 +62,8 @@ class FakeQuery {
   gte(_c: string, v: string) { this.since = v; return this }
   maybeSingle() { return this }
   update(v: Row) { this.mode = 'update'; this.values = v; return this }
-  upsert(v: Row) { this.mode = 'upsert'; this.values = v; return this }
+  private ignoreDuplicates = false
+  upsert(v: Row, o?: { ignoreDuplicates?: boolean }) { this.mode = 'upsert'; this.values = v; this.ignoreDuplicates = o?.ignoreDuplicates === true; return this }
   then<T>(res: (r: { data: unknown; error: null }) => T, rej?: (e: unknown) => T) {
     return Promise.resolve().then(() => this.run()).then(res, rej)
   }
@@ -92,14 +99,17 @@ class FakeQuery {
     // the held branch is _shared/incident-analysis.pipeline.test.ts's.
     if (this.table === 'ai_consent_events') return { data: [{ granted: true, decided_at: '2020-01-01T00:00:00+00:00' }], error: null }
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
-    if (this.mode === 'select') return { data: w.row ? { ...w.row } : null, error: null }
+    if (this.mode === 'select') return { data: w.row ? { ...versioned(w.row) } : null, error: null }
     if (this.mode === 'update') {
       if (!w.row) return { data: [], error: null }
-      Object.assign(w.row, this.values)
+      if (this.filters.updated_at !== undefined && this.filters.updated_at !== w.row.updated_at) return { data: [], error: null }
+      Object.assign(w.row, this.values, { updated_at: nextVersion() })
       return { data: [{ id: w.row.id }], error: null }
     }
+    if (w.row && this.ignoreDuplicates) return { data: [], error: null }
     w.row = w.row ? Object.assign(w.row, this.values) : { id: 'a1', edited_at: null, ...this.values }
-    return { data: null, error: null }
+    w.row.updated_at = nextVersion()
+    return { data: [{ id: w.row.id }], error: null }
   }
 }
 

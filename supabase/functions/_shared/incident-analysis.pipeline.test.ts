@@ -46,6 +46,10 @@ interface World {
   aiWriteError?: (n: number) => boolean
   // Runs inside the vision call: a sibling run landing in the 10-60s window.
   duringVision?: (w: World) => void
+  // Runs as the nth write to event_ai_analysis arrives (1-based), before it is matched
+  // against the row: another writer committing between this run's read of the stored row
+  // and its write (CUL-2773). Use `commit` so the row's version moves as production's does.
+  beforeAiWrite?: (w: World, n: number) => void
   // What app_config returns (Engines v3 flag + the gate config), or a read error.
   appConfig?: Row[] | 'error'
   // CUL-552 PR 2: the owner's ai_consent row as the service-role read sees it. Absent from
@@ -81,8 +85,18 @@ interface World {
   writes: Array<{ mode: 'update' | 'upsert'; values: Row }>
 }
 
-// A stored row is this event's own unless a test says otherwise (CUL-1203).
-const OWN = { id: 'a1', event_id: 'evt-1', pet_id: 'pet-1' }
+// A stored row is this event's own unless a test says otherwise (CUL-1203), and carries a
+// version: migration 075's trigger moves updated_at strictly forward on every UPDATE.
+const OWN = { id: 'a1', event_id: 'evt-1', pet_id: 'pet-1', updated_at: '2026-09-26T08:00:00.000000+00:00' }
+let versionTick = 0
+const nextVersion = (): string => `2026-09-26T09:00:00.${String(++versionTick).padStart(6, '0')}+00:00`
+
+// Another writer's UPDATE landing on the row (an owner's edit, a sibling run): the fields
+// change and so does the version, as the trigger guarantees.
+function commit(w: World, fields: Row): void {
+  if (!w.row) throw new Error('commit: no row to update')
+  Object.assign(w.row, fields, { updated_at: nextVersion() })
+}
 // The event's one photo (an attachment id is a UUID; photo_set_key is built from it).
 const ATTACHMENT_ID = '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b'
 
@@ -107,11 +121,13 @@ function makeWorld(o: Partial<World> & Pick<World, 'vision'>): World {
 
 class FakeQuery {
   private mode: 'select' | 'update' | 'upsert' = 'select'
+  private ignoreDuplicates = false
+  private returning = false
   private cols = '*'
   private values: Row = {}
   private filters: Row = {}
   constructor(private w: World, private table: string, private who: 'user' | 'admin') {}
-  select(cols = '*') { if (this.mode === 'select') this.cols = cols; return this }
+  select(cols = '*') { if (this.mode === 'select') this.cols = cols; else this.returning = true; return this }
   eq(column: string, value: unknown) { this.filters[column] = value; return this }
   is() { return this }
   in() { return this }
@@ -121,7 +137,12 @@ class FakeQuery {
   limit(n: unknown) { this.limitArg = n; return this }
   maybeSingle() { return this }
   update(values: Row) { this.mode = 'update'; this.values = values; return this }
-  upsert(values: Row) { this.mode = 'upsert'; this.values = values; return this }
+  upsert(values: Row, options?: { ignoreDuplicates?: boolean }) {
+    this.mode = 'upsert'
+    this.values = values
+    this.ignoreDuplicates = options?.ignoreDuplicates === true
+    return this
+  }
   then<T>(resolve: (r: { data: unknown; error: { message: string } | null }) => T, reject?: (e: unknown) => T) {
     return Promise.resolve().then(() => this.run()).then(resolve, reject)
   }
@@ -172,6 +193,7 @@ class FakeQuery {
       return { data: out, error: null }
     }
     w.aiWriteAttempts++
+    w.beforeAiWrite?.(w, w.aiWriteAttempts)
     if (w.aiWriteError?.(w.aiWriteAttempts)) return { data: null, error: { message: `write failed #${w.aiWriteAttempts}` } }
     if (this.mode === 'update') {
       // PostgREST: an UPDATE touches only rows matching every filter, and returns them
@@ -179,7 +201,7 @@ class FakeQuery {
       const matches = !!w.row && Object.entries(this.filters).every(([k, v]) => w.row?.[k] === v)
       if (!matches) return { data: [], error: null }
       w.writes.push({ mode: this.mode, values: structuredClone(this.values) })
-      Object.assign(w.row!, this.values)
+      Object.assign(w.row!, this.values, { updated_at: nextVersion() })
       return { data: [{ id: w.row!.id }], error: null }
     }
     // Migration 074: a row's pet is frozen on update, and an insert must be the event's
@@ -191,13 +213,16 @@ class FakeQuery {
     if (!w.row && this.values.pet_id !== OWN.pet_id) {
       return { data: null, error: { message: '23514: analysis row must be the event\'s pet' } }
     }
+    // ON CONFLICT DO NOTHING: a row already there is left alone and nothing comes back.
+    if (w.row && this.ignoreDuplicates) return { data: this.returning ? [] : null, error: null }
     w.writes.push({ mode: this.mode, values: structuredClone(this.values) })
     if (w.row) {
-      Object.assign(w.row, this.values) // PostgREST: only the sent columns change on conflict
+      // PostgREST: only the sent columns change on conflict
+      Object.assign(w.row, this.values, { updated_at: nextVersion() })
     } else {
-      w.row = { edited_at: null, ...this.values }
+      w.row = { id: OWN.id, edited_at: null, ...this.values, updated_at: nextVersion() }
     }
-    return { data: null, error: null }
+    return { data: this.returning ? [{ id: w.row.id }] : null, error: null }
   }
 }
 
@@ -1213,4 +1238,147 @@ Deno.test('pipeline CUL-1835 — a photoless event never reads the history', asy
   const w = makeWorld({ noPhoto: true, consentHistory: yesFrom(YES_AT), contextFlags: ['ctx_flag'], vision: () => CLEAN })
   await run(w)
   assertEquals(w.historyReads, [])
+})
+
+// ── CUL-2773: a write lands only over the row it decided on ───────────────────────────
+// The run reads the stored row, awaits, then writes. Another writer can commit inside
+// that gap; `beforeAiWrite` puts one there, as the write arrives. Before CUL-2773 the
+// full write was an unconditional upsert: it wrote the read's own observations over an
+// owner's just-saved correction and left edited_at standing, so the AI's values printed
+// as owner-reviewed.
+
+const STORED_CALM = {
+  recommendation: 'monitor', status: 'completed', read_text: 'OLD READ', edited_at: null,
+  blood_col: 'no', colour: 'yellow', ai_raw_payload: { blood: 'no', colour: 'yellow' },
+}
+const EDITED_AT = '2026-09-26T08:30:00Z'
+// The owner's correction as the phone writes it: the fields, and the stamp.
+const OWNER_EDIT = { blood_col: 'yes', colour: 'red', edited_at: EDITED_AT }
+const STRUCTURED = ['blood_col', 'colour', 'description', 'ai_raw_payload']
+const structuredKeysWritten = (w: World): string[] =>
+  w.writes.flatMap((x) => Object.keys(x.values)).filter((k) => STRUCTURED.includes(k))
+
+Deno.test('pipeline CUL-2773 — an owner edit between the stored-row read and the write survives, with edited_at', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: () => CLEAN, // reads blood: no — the value the owner is correcting
+    beforeAiWrite: (world, n) => { if (n === 1) commit(world, OWNER_EDIT) },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 200)
+  // The owner's values, the stamp, and the payload the edit is diffed against all stand.
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.colour, 'red')
+  assertStrictEquals(w.row?.edited_at, EDITED_AT)
+  assertEquals(w.row?.ai_raw_payload, STORED_CALM.ai_raw_payload)
+  // The first write matched nothing; the second is the read-fields-only one, so the run's
+  // words still land and no structured column was sent at all.
+  assertStrictEquals(w.aiWriteAttempts, 2)
+  assertEquals(w.writes.map((x) => x.mode), ['update'])
+  assertEquals(structuredKeysWritten(w), [])
+  assertStrictEquals(w.row?.read_text, 'MONITOR:Mochi')
+})
+
+Deno.test('pipeline CUL-2773 — with nobody in the gap the same re-read still lands in full (the hook is the difference)', async () => {
+  const w = makeWorld({ row: { ...STORED_CALM, colour: 'green' }, vision: () => CLEAN })
+  await run(w)
+  assertStrictEquals(w.aiWriteAttempts, 1)
+  assertStrictEquals(w.row?.colour, 'yellow')
+  assertStrictEquals(w.row?.edited_at, null)
+})
+
+Deno.test('pipeline CUL-2773 — an edit that lands on a FIRST read\'s freshly made row is not written over', async () => {
+  // No row when the run decided; a sibling's read and the owner's correction of it both
+  // commit before this run's write. Insert-only: the run must not upsert over them.
+  const w = makeWorld({
+    vision: () => CLEAN,
+    beforeAiWrite: (world, n) => {
+      if (n === 1) world.row = { ...OWN, ...STORED_CALM, ...OWNER_EDIT, updated_at: '2026-09-26T08:30:00.000001+00:00' }
+    },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 200)
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.edited_at, EDITED_AT)
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2773 — a sibling\'s escalation landing in the gap is held, not lowered by this run\'s calm write', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: () => CLEAN,
+    beforeAiWrite: (world, n) => {
+      if (n === 1) commit(world, { recommendation: 'worth_a_call', read_text: 'SIBLING: blood', blood_col: 'yes', visual_flags: ['blood'] })
+    },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.body.held, true)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.read_text, 'SIBLING: blood')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertEquals(w.writes, [])
+})
+
+Deno.test('pipeline CUL-2773 — a row that keeps moving ends the run failed: no structured column is ever written', async () => {
+  let edits = 0
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: () => CLEAN,
+    beforeAiWrite: (world) => { commit(world, { ...OWNER_EDIT, colour: `red-${++edits}` }) },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  // Three attempts, each missed; then the catch's own write, which carries state only.
+  assertStrictEquals(edits, 4)
+  assertEquals(structuredKeysWritten(w), [])
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.colour, 'red-4')
+  assertStrictEquals(w.row?.edited_at, EDITED_AT)
+  assertEquals(w.row?.ai_raw_payload, STORED_CALM.ai_raw_payload)
+})
+
+Deno.test('pipeline CUL-2773 — a hold\'s settle is held to the version too: an edit in its gap survives and the hold still lands', async () => {
+  const w = makeWorld({
+    // A stored escalation the owner hid: a calmer run holds, and the hold clears the hide.
+    row: { ...STORED_CALM, recommendation: 'worth_a_call', blood_col: 'yes', dismissed_at: '2026-09-25T00:00:00Z' },
+    vision: () => CLEAN,
+    beforeAiWrite: (world, n) => { if (n === 1) commit(world, { colour: 'brown', edited_at: EDITED_AT }) },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.body.held, true)
+  assertStrictEquals(w.aiWriteAttempts, 2)
+  assertStrictEquals(w.row?.colour, 'brown')
+  assertStrictEquals(w.row?.edited_at, EDITED_AT)
+  assertStrictEquals(w.row?.dismissed_at, null)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+})
+
+Deno.test('pipeline CUL-2773 — the capped escalation: a row that appears in its gap keeps its observations', async () => {
+  // Capped, a contextual flag, no row at step 3b: the write is a full one with NULL
+  // structured columns. A read and the owner's correction land before it.
+  const w = makeWorld({
+    contextFlags: ['ctx_flag'],
+    dayCount: 11,
+    vision: () => CLEAN,
+    beforeAiWrite: (world, n) => {
+      if (n === 1) world.row = { ...OWN, ...STORED_CALM, ...OWNER_EDIT, updated_at: '2026-09-26T08:30:00.000002+00:00' }
+    },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 200)
+  assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call') // the escalation still lands
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.colour, 'red')
+  assertStrictEquals(w.row?.edited_at, EDITED_AT)
+  assertEquals(w.row?.ai_raw_payload, STORED_CALM.ai_raw_payload)
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2773 — a stored row with no version is refused, never written unconditionally', async () => {
+  const w = makeWorld({ row: { ...STORED_CALM, updated_at: null }, vision: () => CLEAN })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertEquals(structuredKeysWritten(w), [])
+  assertStrictEquals(w.row?.colour, 'yellow')
 })

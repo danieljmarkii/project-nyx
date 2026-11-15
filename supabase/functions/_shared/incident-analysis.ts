@@ -546,6 +546,7 @@ export function existingRowOrThrow<T>(
 // decision reads, plus the descriptor's red-flag columns by name.
 export type StoredRow = Record<string, unknown> & {
   pet_id?: string | null
+  updated_at?: string | null
   edited_at?: string | null
   status?: string | null
   recommendation?: string | null
@@ -783,22 +784,61 @@ export function analysisRowMatchesEvent(
   return existing.pet_id === eventPetId
 }
 
+// ── The row a write decided on (CUL-2773) ─────────────────────────────────────
+//
+// Every write decision here is made on a row read some awaits earlier, and an owner's
+// edit (or a sibling run) can commit in between. Before CUL-2773 the full write was an
+// unconditional upsert, so a read that landed second wrote its own observations over
+// the owner's and left `edited_at` standing: the AI's values, marked owner-reviewed.
+//
+// `updated_at` is the version. Since migration 075 it strictly increases on every
+// UPDATE of this table, the owner's included, so "the row still carries the updated_at
+// I read" is exactly "nothing has written since I decided". A write that decided over a
+// row is an UPDATE filtered on it; a write that decided over NO row is insert-only. A
+// write that matches nothing is a MISS, never an error and never a success: the caller
+// re-reads, decides again over what is there now, and writes under the new version.
+//
+// null = no row was there when the write was decided.
+export type RowVersion = { updatedAt: string } | null
+
+// Fails CLOSED: a row whose updated_at did not come back (a select that forgot the
+// column) has no version to hold, and writing over it unconditionally is the bug.
+export function rowVersionOf(row: { updated_at?: unknown } | null): RowVersion {
+  if (!row) return null
+  if (typeof row.updated_at !== 'string' || row.updated_at.length === 0) {
+    throw new Error('Stored analysis row carries no updated_at to write against')
+  }
+  return { updatedAt: row.updated_at }
+}
+
+// How many times one run re-decides over a row that keeps moving before it gives up and
+// fails (the catch then writes no structured column and keeps a stored escalation).
+export const WRITE_ATTEMPTS = 3
+
+export type WriteOutcome = { error: string | null; missed: boolean }
+
+// `ifUpdatedAt` is required, never defaulted (C-37): a string writes only over that
+// version of the row and reports a zero-row match as `missed`; null writes whatever is
+// there, and is said at the call site by a write that carries no decision about the
+// row's contents (the error-only failure note).
 export async function updateAnalysisRow(
   client: SupabaseClient,
   key: { eventId: string; petId: string },
   values: Record<string, unknown>,
-): Promise<{ error: string | null }> {
-  const { data, error } = await client
+  ifUpdatedAt: string | null,
+): Promise<WriteOutcome> {
+  const keyed = client
     .from('event_ai_analysis')
     .update(values)
     .eq('event_id', key.eventId)
     .eq('pet_id', key.petId)
-    .select('id')
-  if (error) return { error: error.message }
+  const { data, error } = await (ifUpdatedAt === null ? keyed : keyed.eq('updated_at', ifUpdatedAt)).select('id')
+  if (error) return { error: error.message, missed: false }
   if (!data || data.length === 0) {
-    return { error: 'no event_ai_analysis row for this event and pet' }
+    if (ifUpdatedAt !== null) return { error: null, missed: true }
+    return { error: 'no event_ai_analysis row for this event and pet', missed: false }
   }
-  return { error: null }
+  return { error: null, missed: false }
 }
 
 // The one place an AnalysisWriteBack reaches the table, both modes. Two other
@@ -811,18 +851,30 @@ export async function updateAnalysisRow(
 // decided the values (engineStamps.ts owns which stamps a write carries). `stamps` is
 // required and nullable, never defaulted (C-37): only a test that is not about stamps
 // passes null, and it has to say so.
+//
+// `decidedOn` is the version of the row the builder decided over (CUL-2773, above),
+// required for the same reason. Over a row, both modes are an UPDATE held to that
+// version: the full write sends the same columns the old upsert's conflict arm did. Over
+// no row, the full write is insert-only, so a row that appeared meanwhile is never
+// written over. `missed` means nothing was written and the caller must decide again.
 export async function applyAnalysisWriteBack(
   client: SupabaseClient,
   key: { eventId: string; petId: string },
   unstamped: AnalysisWriteBack,
   stamps: IncidentStamps | null,
-): Promise<{ error: string | null }> {
+  decidedOn: RowVersion,
+): Promise<WriteOutcome> {
   const writeBack = stamps ? stampIncidentWrite(unstamped, stamps) : unstamped
-  if (writeBack.mode === 'update') return updateAnalysisRow(client, key, writeBack.values)
-  const { error } = await client
+  if (decidedOn !== null) return updateAnalysisRow(client, key, writeBack.values, decidedOn.updatedAt)
+  // A read-fields-only write was decided over a row; with none on file there is nothing
+  // for it to update, and an insert of read fields alone is not a row.
+  if (writeBack.mode === 'update') return { error: null, missed: true }
+  const { data, error } = await client
     .from('event_ai_analysis')
-    .upsert(writeBack.values, { onConflict: 'event_id' })
-  return { error: error ? error.message : null }
+    .upsert(writeBack.values, { onConflict: 'event_id', ignoreDuplicates: true })
+    .select('id')
+  if (error) return { error: error.message, missed: false }
+  return { error: null, missed: !data || data.length === 0 }
 }
 
 // ── The failure write (CUL-812 / CUL-539) ────────────────────────────────────
@@ -1549,6 +1601,8 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
     copy: IncidentCopy<TFlag>
     minTier: FloorTier | undefined
     existing: StoredRow
+    // The same read, again: what a write that missed decides over next (CUL-2773).
+    reread: () => Promise<StoredRow | null>
     stamps: IncidentStamps
     // What "may wait" reads about the record (CUL-1628). Reached only under EN-4 + EN-3.
     mayWait: { userClient: SupabaseClient; ownerId: string | null; species: string; occurredAt: string; nowMs: number }
@@ -1557,82 +1611,98 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
   const nothing = () => Response.json({ success: true, skipped: 'nothing_raised' }, { headers: CORS_HEADERS })
   if (p.contextualFlags.length === 0) return nothing()
 
-  // The two cached columns this run keeps: what the photo showed, and the flags already on
-  // the row (a floor-only run never takes a flag off the record).
-  const { data: cached, error: cachedErr } = await adminClient
-    .from('event_ai_analysis')
-    .select('visual_flags, contextual_flags')
-    .eq('event_id', p.eventId)
-    .eq('pet_id', p.petId)
-    .maybeSingle<{ visual_flags: string[] | null; contextual_flags: string[] | null }>()
-  if (cachedErr || !cached) throw new Error(`Floor read of the stored flags failed${cachedErr ? `: ${cachedErr.message}` : ''}`)
-  const { visualFlags, leadFlags, storedContextual, contextual } = storedPhotoFinding(descriptor, p.existing, cached, p.contextualFlags)
+  // Decided over the stored row and held to its version (CUL-2773, RowVersion): the reads
+  // below sit between the caller's read of `existing` and the write, so a sibling's louder
+  // read or an owner's edit can land inside them. A miss re-reads and decides again.
+  let existing = p.existing
+  let writtenTier: IncidentTier
+  for (let attempt = 1; ; attempt++) {
+    // The two cached columns this run keeps: what the photo showed, and the flags already on
+    // the row (a floor-only run never takes a flag off the record).
+    const { data: cached, error: cachedErr } = await adminClient
+      .from('event_ai_analysis')
+      .select('visual_flags, contextual_flags')
+      .eq('event_id', p.eventId)
+      .eq('pet_id', p.petId)
+      .maybeSingle<{ visual_flags: string[] | null; contextual_flags: string[] | null }>()
+    if (cachedErr || !cached) throw new Error(`Floor read of the stored flags failed${cachedErr ? `: ${cachedErr.message}` : ''}`)
+    const { visualFlags, leadFlags, storedContextual, contextual } = storedPhotoFinding(descriptor, existing, cached, p.contextualFlags)
 
-  const next = raisedTier(tierForVerdict('worth_a_call'), { recommendation: 'worth_a_call', contextual_flags: contextual }, p.minTier)
-  const addsFlag = contextual.length > storedContextual.length
-  if (tierRank(next) <= effectiveTierRank(p.existing) && !addsFlag) return nothing()
+    const next = raisedTier(tierForVerdict('worth_a_call'), { recommendation: 'worth_a_call', contextual_flags: contextual }, p.minTier)
+    const addsFlag = contextual.length > storedContextual.length
+    if (tierRank(next) <= effectiveTierRank(existing) && !addsFlag) return nothing()
 
-  const baseReadFields: AnalysisReadFields<TFlag> = {
-    recommendation: 'worth_a_call',
-    tier: next,
-    read_text: selectReadText(p.copy, {
-      petName: p.petName,
+    const baseReadFields: AnalysisReadFields<TFlag> = {
       recommendation: 'worth_a_call',
-      contextualFlags: contextual,
-      visualFlags: leadFlags,
-      modelReadText: null,
-      photoUnreadable: false,
+      tier: next,
+      read_text: selectReadText(p.copy, {
+        petName: p.petName,
+        recommendation: 'worth_a_call',
+        contextualFlags: contextual,
+        visualFlags: leadFlags,
+        modelReadText: null,
+        photoUnreadable: false,
+        hasPhoto: true,
+        // A stored call with no flag behind it was the model's own: the photo finding still leads.
+        modelEscalated: !existing.edited_at && storedContextual.length === 0 && visualFlags.length === 0 && existing.recommendation === 'worth_a_call',
+      }),
+      visual_flags: visualFlags,
+      contextual_flags: contextual,
+      status: 'completed',
+      error: null,
+    }
+    // "May wait" over the photo read already on the row: this run read no photo, so the row's own
+    // payload, flags and columns are the photo evidence, and a row with no payload showing the
+    // subject is an unread photo (storedRowInput).
+    const mayWaitInput = (record: MayWaitRecord | null): MayWaitInput => storedRowInput({
+      row: existing,
+      incidentType: p.incidentType,
       hasPhoto: true,
-      // A stored call with no flag behind it was the model's own: the photo finding still leads.
-      modelEscalated: !p.existing.edited_at && storedContextual.length === 0 && visualFlags.length === 0 && p.existing.recommendation === 'worth_a_call',
-    }),
-    visual_flags: visualFlags,
-    contextual_flags: contextual,
-    status: 'completed',
-    error: null,
+      photoSetKey: p.stamps.photoSetKey,
+      floorOn: true,
+      record,
+      write: { tier: next, contextualFlags: contextual, visualFlags, status: 'completed' },
+    })
+    const readFields = withMayWait(
+      baseReadFields,
+      await decideMayWait(mayWaitInput, () => readMayWaitRecord(p.mayWait.userClient, {
+        petId: p.petId, ownerId: p.mayWait.ownerId, eventId: p.eventId, anchorAt: p.mayWait.occurredAt, species: p.mayWait.species, nowMs: p.mayWait.nowMs,
+      })),
+      existing.may_wait,
+    )
+    const stored = snapshotStoredAnalysis(descriptor, existing)
+    const writeBack = resolveReanalysisWrite({
+      stored,
+      eventId: p.eventId,
+      petId: p.petId,
+      // A floor-only run reads no photo, so it never clears a photo read's error.
+      readComplete: false,
+      incidentType: p.incidentType,
+      structuredValues: {},
+      nextPresentFlags: stored?.presentFlags ?? [],
+      readFields,
+      readFieldsOnly: true,
+      // Unreachable (this write always escalates, so it never holds); said rather than defaulted.
+      holdLowersMayWaitTo: null,
+    })
+    if (writeBack.mode === 'hold') return nothing() // unreachable: this write always escalates
+    const wrote = await applyAnalysisWriteBack(adminClient, { eventId: p.eventId, petId: p.petId }, writeBack, p.stamps, rowVersionOf(existing))
+    if (wrote.error) throw new Error(`DB write failed: ${wrote.error}`)
+    if (!wrote.missed) {
+      writtenTier = (writeBack.values.tier as IncidentTier | undefined) ?? next
+      break
+    }
+    if (attempt >= WRITE_ATTEMPTS) throw new Error('DB write failed: the stored row kept changing under this read')
+    const again = await p.reread()
+    // The photo read this run floors over is gone, or is no longer this event's (CUL-1203).
+    if (!again || !analysisRowMatchesEvent(again, p.petId)) throw new Error('Analysis row does not belong to this event')
+    existing = again
   }
-  // "May wait" over the photo read already on the row: this run read no photo, so the row's own
-  // payload, flags and columns are the photo evidence, and a row with no payload showing the
-  // subject is an unread photo (storedRowInput).
-  const mayWaitInput = (record: MayWaitRecord | null): MayWaitInput => storedRowInput({
-    row: p.existing,
-    incidentType: p.incidentType,
-    hasPhoto: true,
-    photoSetKey: p.stamps.photoSetKey,
-    floorOn: true,
-    record,
-    write: { tier: next, contextualFlags: contextual, visualFlags, status: 'completed' },
-  })
-  const readFields = withMayWait(
-    baseReadFields,
-    await decideMayWait(mayWaitInput, () => readMayWaitRecord(p.mayWait.userClient, {
-      petId: p.petId, ownerId: p.mayWait.ownerId, eventId: p.eventId, anchorAt: p.mayWait.occurredAt, species: p.mayWait.species, nowMs: p.mayWait.nowMs,
-    })),
-    p.existing.may_wait,
-  )
-  const stored = snapshotStoredAnalysis(descriptor, p.existing)
-  const writeBack = resolveReanalysisWrite({
-    stored,
-    eventId: p.eventId,
-    petId: p.petId,
-    // A floor-only run reads no photo, so it never clears a photo read's error.
-    readComplete: false,
-    incidentType: p.incidentType,
-    structuredValues: {},
-    nextPresentFlags: stored?.presentFlags ?? [],
-    readFields,
-    readFieldsOnly: true,
-    // Unreachable (this write always escalates, so it never holds); said rather than defaulted.
-    holdLowersMayWaitTo: null,
-  })
-  if (writeBack.mode === 'hold') return nothing() // unreachable: this write always escalates
-  const { error } = await applyAnalysisWriteBack(adminClient, { eventId: p.eventId, petId: p.petId }, writeBack, p.stamps)
-  if (error) throw new Error(`DB write failed: ${error}`)
   await revalidateMayWait(p.mayWait.userClient, adminClient, {
     petId: p.petId, ownerId: p.mayWait.ownerId, species: p.mayWait.species, anchorAt: p.mayWait.occurredAt, excludeEventId: p.eventId, nowMs: p.mayWait.nowMs,
   })
   return Response.json(
-    { success: true, floor: true, recommendation: 'worth_a_call', tier: writeBack.values.tier ?? next },
+    { success: true, floor: true, recommendation: 'worth_a_call', tier: writtenTier },
     { headers: CORS_HEADERS },
   )
 }
@@ -1802,12 +1872,13 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // between them takes 10-60s and a sibling run (Ask's A8 read holds no analysis-
   // chain claim) or an owner edit can land inside it. A read error throws (CUL-817).
   // pet_id: every decision on the row first checks it is this event's (CUL-1203).
+  // updated_at: the version every write-back is held to (CUL-2773, rowVersionOf).
   // dismissed_at: a hold clears the owner's hide, so it has to know one is there (CUL-1323).
   // tier: every guard reads the louder of it and `recommendation` (EN-3, lib/incidentTier.ts).
   // may_wait and the columns its rule reads (CUL-1628): the stored FALSE is kept, and the stored
   // flags, payload and colour are evidence about this incident's photo (incidentMayWait.ts).
   const storedColumns = [...new Set([
-    'id', 'pet_id', 'edited_at', 'status', 'recommendation', 'tier', 'dismissed_at', 'error',
+    'id', 'pet_id', 'updated_at', 'edited_at', 'status', 'recommendation', 'tier', 'dismissed_at', 'error',
     ...descriptor.redFlagColumns, ...(descriptor.afterReadColumns ?? []),
     ...MAY_WAIT_ANALYSIS_COLUMNS.filter((c) => c !== 'event_id' && c !== 'incident_type'),
   ])].join(', ')
@@ -1962,12 +2033,11 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         return Response.json({ success: true, skipped: 'photo_read_pending' }, { headers: CORS_HEADERS })
       }
       return await writeFloorOverStoredRead(descriptor, adminClient, {
-        eventId, petId, incidentType, petName, contextualFlags, copy, minTier, existing, stamps,
+        eventId, petId, incidentType, petName, contextualFlags, copy, minTier, existing, reread: readStoredRow, stamps,
         mayWait: { userClient, ownerId, species, occurredAt, nowMs: Date.now() },
       })
     }
 
-    const humanEdited = !!existing?.edited_at
     // A row holding an escalation is a real analysis whatever its STATUS says
     // (CUL-812; any escalation since CUL-1277) — `isRealAnalysis` carries the why.
     const existingRealAnalysis = isRealAnalysis(existing)
@@ -2038,45 +2108,57 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // read's fresh red blood (a 529 flips status and nothing else). This write has
         // no structured data of its own to contribute, so an existing row has nothing
         // for it to overwrite and everything for it to lose.
-        const preserveStructured = humanEdited || existingRealAnalysis || existing !== null
-        // What the photo already showed stays on the card (CUL-552 PR 2, adversarial pass):
-        // with the owner's decline this branch is every withdrawn owner's re-read, and writing
-        // `visual_flags: []` here replaced "fresh blood" with the context-only sentence.
-        const kept = storedPhotoFinding(descriptor, existing, existing, contextualFlags)
-        const readText = selectReadText(copy, {
-          petName,
-          recommendation: cappedRec, // worth_a_call
-          contextualFlags: kept.contextual,
-          visualFlags: kept.leadFlags,
-          modelReadText: null,
-          photoUnreadable: false,
-          hasPhoto,
-          // A stored call with no flag behind it was the model's own: the photo finding still leads.
-          modelEscalated: !!existing && !existing.edited_at && kept.storedContextual.length === 0 && kept.visualFlags.length === 0 && existing.recommendation === 'worth_a_call',
-        })
-        // A capped run read no photo, so it never carries leave to wait (CUL-1611: a settled read).
-        const readFields: AnalysisReadFields<TFlag> = withMayWait(tieredReadFields({
-          recommendation: cappedRec,
-          read_text: readText,
-          visual_flags: kept.visualFlags,
-          contextual_flags: kept.contextual,
-          status: 'completed',
-          error: null,
-        }, tiersOn, minTier), null, existing?.may_wait)
-        // Under the tier key a capped call never steps a louder stored call down (spec §1,
-        // the PR-04b note): it keeps the stored tier, from the step-3b row, because this branch
-        // makes no vision call and so has no window for a sibling to land in.
-        const readFieldsKept = keepLouderTier(snapshotStoredAnalysis(descriptor, existing), readFields)
-        const writeBack = buildAnalysisWriteBack({
-          humanEdited: preserveStructured,
-          eventId,
-          petId,
-          incidentType,
-          structuredValues: descriptor.buildStructuredValues(null),
-          readFields: readFieldsKept,
-        })
-        const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
-        if (writeError) throw new Error(`DB write failed: ${writeError}`)
+        // Decided over a row and held to its version, like step 9 (CUL-2773, RowVersion): the
+        // consent and gate reads above sit between step 3b's read and this write, so an owner's
+        // edit or a sibling's read can land inside them. A miss re-reads and decides again.
+        let capRow = existing
+        for (let attempt = 1; ; attempt++) {
+          const row = capRow
+          const preserveStructured = row !== null
+          // What the photo already showed stays on the card (CUL-552 PR 2, adversarial pass):
+          // with the owner's decline this branch is every withdrawn owner's re-read, and writing
+          // `visual_flags: []` here replaced "fresh blood" with the context-only sentence.
+          const kept = storedPhotoFinding(descriptor, row, row, contextualFlags)
+          const readText = selectReadText(copy, {
+            petName,
+            recommendation: cappedRec, // worth_a_call
+            contextualFlags: kept.contextual,
+            visualFlags: kept.leadFlags,
+            modelReadText: null,
+            photoUnreadable: false,
+            hasPhoto,
+            // A stored call with no flag behind it was the model's own: the photo finding still leads.
+            modelEscalated: !!row && !row.edited_at && kept.storedContextual.length === 0 && kept.visualFlags.length === 0 && row.recommendation === 'worth_a_call',
+          })
+          // A capped run read no photo, so it never carries leave to wait (CUL-1611: a settled read).
+          const readFields: AnalysisReadFields<TFlag> = withMayWait(tieredReadFields({
+            recommendation: cappedRec,
+            read_text: readText,
+            visual_flags: kept.visualFlags,
+            contextual_flags: kept.contextual,
+            status: 'completed',
+            error: null,
+          }, tiersOn, minTier), null, row?.may_wait)
+          // Under the tier key a capped call never steps a louder stored call down (spec §1,
+          // the PR-04b note): it keeps the stored tier of the row this write is held to.
+          const readFieldsKept = keepLouderTier(snapshotStoredAnalysis(descriptor, row), readFields)
+          const writeBack = buildAnalysisWriteBack({
+            humanEdited: preserveStructured,
+            eventId,
+            petId,
+            incidentType,
+            structuredValues: descriptor.buildStructuredValues(null),
+            readFields: readFieldsKept,
+          })
+          const wrote = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps, rowVersionOf(row))
+          if (wrote.error) throw new Error(`DB write failed: ${wrote.error}`)
+          if (!wrote.missed) break
+          if (attempt >= WRITE_ATTEMPTS) throw new Error('DB write failed: the stored row kept changing under this read')
+          capRow = await readStoredRow()
+          if (!analysisRowMatchesEvent(capRow, petId)) {
+            throw new Error('Analysis row does not belong to this event')
+          }
+        }
         await revalidateNeighbours()
       } else if (!existingRealAnalysis) {
         // No escalation AND no prior real analysis to protect → record the cap /
@@ -2322,61 +2404,89 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //     stored row and the record around the incident (incidentMayWait.ts). Settled means every
     //     photo was read and shows the subject; a photo-less log is settled by having none.
     const settledRun = !hasPhoto || (completeRead && !partialReadCollapsed && !photoUnreadable && !!analysis && descriptor.appearsToShowSubject(analysis))
-    const runInput = (record: MayWaitRecord | null): MayWaitInput => ({
-      floorOn: mayWaitOn,
-      write: { incidentType, tier: tieredFields.tier, contextualFlags, visualFlags, status },
-      run: { settled: settledRun, modelCalled: !!analysis && analysis.recommendation === 'worth_a_call', columns: analysis ? structuredValues : null },
-      stored: freshRow,
-      record,
-    })
-    const readFields = withMayWait(
-      tieredFields,
-      tieredFields.tier === undefined
-        ? null
-        : await decideMayWait(runInput, () => readMayWaitRecord(userClient, { petId, ownerId, eventId, anchorAt: occurredAt, species, nowMs: Date.now() })),
-      freshRow?.may_wait,
-    )
-    const stored = snapshotStoredAnalysis(descriptor, freshRow)
-    const writeBack = resolveReanalysisWrite({
-      stored,
-      eventId,
-      petId,
-      incidentType,
-      structuredValues,
-      readComplete: !photoUnreadable && !partialReadCollapsed,
-      nextPresentFlags: descriptor.presentFlagsFromStructured(structuredValues),
-      readFields,
-      holdLowersMayWaitTo: photoEvidenceRefuses(runInput(null)) ? false : null,
-    })
 
-    // A hold writes no stamp: the words it keeps are an earlier run's (engineStamps.ts).
-    if (writeBack.mode === 'hold') {
-      console.info(`${descriptor.functionName}: held a stored escalation over a calmer read (CUL-1201)`)
-      if (writeBack.values) {
-        const { error: settleError } = await updateAnalysisRow(adminClient, { eventId, petId }, writeBack.values)
-        if (settleError) throw new Error(`DB write failed: ${settleError}`)
-      }
-      // No flags in the body: this run's are what it saw, not what the row holds, and
-      // every caller re-reads the row rather than trusting a response (lib/analysis.ts,
-      // ask/index.ts runLivePhotoRead).
-      return Response.json(
-        { success: true, held: true, recommendation: stored?.recommendation ?? null },
-        { headers: CORS_HEADERS },
+    // 8c and 9 run as one decision, held to the row it was made on (CUL-2773, RowVersion).
+    // The fresh read is some awaits old by the time the write goes out (the may-wait record
+    // read below is one), and an owner's edit or a sibling run can commit inside them. So
+    // the write names the version it decided over; if the row has moved it writes nothing,
+    // and the run reads the row again and decides again: an edit that landed now takes the
+    // read-fields-only branch (the owner's values and edited_at stand), an escalation that
+    // landed now holds. A row that keeps moving ends the run in the catch, which writes no
+    // structured column. Not re-run on a miss: steps 6a' to 8, whose flags and words were
+    // settled against the first fresh read, exactly as for an edit that lands after a run.
+    let decidedRow = freshRow
+    for (let attempt = 1; ; attempt++) {
+      const row = decidedRow
+      const decidedOn = rowVersionOf(row)
+      const runInput = (record: MayWaitRecord | null): MayWaitInput => ({
+        floorOn: mayWaitOn,
+        write: { incidentType, tier: tieredFields.tier, contextualFlags, visualFlags, status },
+        run: { settled: settledRun, modelCalled: !!analysis && analysis.recommendation === 'worth_a_call', columns: analysis ? structuredValues : null },
+        stored: row,
+        record,
+      })
+      const readFields = withMayWait(
+        tieredFields,
+        tieredFields.tier === undefined
+          ? null
+          : await decideMayWait(runInput, () => readMayWaitRecord(userClient, { petId, ownerId, eventId, anchorAt: occurredAt, species, nowMs: Date.now() })),
+        row?.may_wait,
       )
+      const stored = snapshotStoredAnalysis(descriptor, row)
+      const writeBack = resolveReanalysisWrite({
+        stored,
+        eventId,
+        petId,
+        incidentType,
+        structuredValues,
+        readComplete: !photoUnreadable && !partialReadCollapsed,
+        nextPresentFlags: descriptor.presentFlagsFromStructured(structuredValues),
+        readFields,
+        holdLowersMayWaitTo: photoEvidenceRefuses(runInput(null)) ? false : null,
+      })
+
+      // A hold writes no stamp: the words it keeps are an earlier run's (engineStamps.ts).
+      if (writeBack.mode === 'hold') {
+        // A hold is decided over a stored escalation, so there is always a row and a version.
+        if (!decidedOn) throw new Error('A hold was decided over no stored row')
+        const settled = writeBack.values
+          ? await updateAnalysisRow(adminClient, { eventId, petId }, writeBack.values, decidedOn.updatedAt)
+          : { error: null, missed: false }
+        if (settled.error) throw new Error(`DB write failed: ${settled.error}`)
+        if (!settled.missed) {
+          console.info(`${descriptor.functionName}: held a stored escalation over a calmer read (CUL-1201)`)
+          // No flags in the body: this run's are what it saw, not what the row holds, and
+          // every caller re-reads the row rather than trusting a response (lib/analysis.ts,
+          // ask/index.ts runLivePhotoRead).
+          return Response.json(
+            { success: true, held: true, recommendation: stored?.recommendation ?? null },
+            { headers: CORS_HEADERS },
+          )
+        }
+      } else {
+        const wrote = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps, decidedOn)
+        if (wrote.error) throw new Error(`DB write failed: ${wrote.error}`)
+        if (!wrote.missed) {
+          // This read may be the sign a neighbour's TRUE was given without: re-check them (lower-only).
+          // A TRUE this write just carried is re-checked too, against the record as it stands after
+          // the write: a neighbour's read that landed between this run's decision and its write
+          // re-checked before the TRUE existed (adversarial pass, finding 5).
+          await revalidateNeighbours(writeBack.values.may_wait === true)
+          return Response.json(
+            { success: true, recommendation, contextual_flags: contextualFlags, visual_flags: visualFlags },
+            { headers: CORS_HEADERS },
+          )
+        }
+      }
+
+      // Missed: the row moved between the decision and the write. Nothing was written.
+      if (attempt >= WRITE_ATTEMPTS) throw new Error('DB write failed: the stored row kept changing under this read')
+      console.info(`${descriptor.functionName}: the stored row changed before the write; deciding again (CUL-2773)`)
+      decidedRow = await readStoredRow()
+      if (!analysisRowMatchesEvent(decidedRow, petId)) {
+        throw new Error('Analysis row does not belong to this event')
+      }
     }
-
-    const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
-    if (writeError) throw new Error(`DB write failed: ${writeError}`)
-    // This read may be the sign a neighbour's TRUE was given without: re-check them (lower-only).
-    // A TRUE this write just carried is re-checked too, against the record as it stands after
-    // the write: a neighbour's read that landed between this run's decision and its write
-    // re-checked before the TRUE existed (adversarial pass, finding 5).
-    await revalidateNeighbours(writeBack.values.may_wait === true)
-
-    return Response.json(
-      { success: true, recommendation, contextual_flags: contextualFlags, visual_flags: visualFlags },
-      { headers: CORS_HEADERS },
-    )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`${descriptor.functionName} error:`, message)
@@ -2440,7 +2550,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // returns 'skip' whenever petIdForFailure is null, so the guard below is a
     // narrowing for the type checker, never a second decision.
     if (failureWrite.mode === 'error-only' && petIdForFailure) {
-      await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values)
+      // Unconditional (null): it notes the error and decides nothing about the row's contents.
+      await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values, null)
     } else if (failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') {
       await adminClient
         .from('event_ai_analysis')
