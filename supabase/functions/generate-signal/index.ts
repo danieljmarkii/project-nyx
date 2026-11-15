@@ -49,6 +49,7 @@ import {
   CARE_STATE_CONFIG,
   careStateText,
   EMPTY_CARE_RECORD,
+  isPossibleRecheckPhantom,
   type AckFact,
   type AckSource,
   type AppointmentFact,
@@ -1118,9 +1119,11 @@ export async function readCareContextFacts(
 // answers (never a visit id, a clinic or a note: the answer's ANCHOR is the date it names), the
 // trial or course an answer is scoped to (dates, status and whether it has a target), the newest
 // given or partial dose of each such course, the lethargy rows in the lookback (C1a source 2),
-// and the pet's appointments by DATE ONLY (CUL-2652: `scheduled_at`, `cancelled_at`, `deleted_at`,
-// the three AC 10 as amended allows; never a reason, a question, a clinic or a note). Caller's
-// JWT, so RLS scopes every read.
+// and the pet's appointments by DATE (CUL-2652: `scheduled_at`, `cancelled_at`, `deleted_at`, the
+// three AC 10 as amended allows) plus `reason`, which CUL-2793 (PM go, 2026-11-15) reads only to
+// reduce it at once to one boolean, `possibleRecheckPhantom`: the reason text never leaves the
+// mapping line, never reaches careState.ts, never is stored or printed. Never a question, a clinic
+// or a note. Caller's JWT, so RLS scopes every read.
 //
 // Fails toward RAISED: any failure returns EMPTY_CARE_RECORD, so no answer quiets a concern on a
 // read that did not answer.
@@ -1129,7 +1132,7 @@ const ACK_SOURCES: ReadonlySet<string> = new Set<AckSource>(['at_vet_tick', 'vis
 type AckRow = { id: string; symptom_type: string; source: string; anchor_on: string; diet_trial_id: string | null; medication_id: string | null; retracts: string | null; created_at: string }
 type AckTrialRow = { id: string; started_at: string; ended_at: string | null; target_duration_days: number | null; target_duration_days_initial: number | null }
 type AckMedRow = { id: string; drug_name: string | null; started_at: string | null; ended_at: string | null; status: string | null; target_duration_days: number | null; target_duration_doses: number | null }
-type AppointmentRow = { id: string; scheduled_at: string; cancelled_at: string | null; deleted_at: string | null }
+type AppointmentRow = { id: string; scheduled_at: string; cancelled_at: string | null; deleted_at: string | null; reason: string | null }
 type AckDoseRow = { id: string; occurred_at: string; medication_administrations: { medication_id: string | null } | { medication_id: string | null }[] | null }
 
 // EN-8 (PR-19, CUL-1413): the weight lane's facts. Every weigh-in in the predicate's window
@@ -1202,7 +1205,7 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
       fetchAll<AppointmentRow>('vet_appointments', (r) => r.id, (from, to) =>
         supabase
           .from('vet_appointments')
-          .select('id, scheduled_at, cancelled_at, deleted_at', { count: 'exact' })
+          .select('id, scheduled_at, cancelled_at, deleted_at, reason', { count: 'exact' })
           .eq('pet_id', petId)
           .gte('scheduled_at', apptSinceIso)
           .order('scheduled_at', { ascending: false })
@@ -1293,7 +1296,7 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
       })
     }
     const history = await readCareHistory(supabase, petId, lookbackIso, nowMs, acknowledgements)
-    const appointments: AppointmentFact[] = apptPull.rows.map((a) => ({ id: a.id, scheduledAt: a.scheduled_at, cancelledAt: a.cancelled_at, deletedAt: a.deleted_at }))
+    const appointments: AppointmentFact[] = apptPull.rows.map((a) => ({ id: a.id, scheduledAt: a.scheduled_at, cancelledAt: a.cancelled_at, deletedAt: a.deleted_at, possibleRecheckPhantom: isPossibleRecheckPhantom(a.reason) }))
     return { acknowledgements, appointments, lethargyAt: lethargyPull.rows.map((r) => r.occurred_at), history }
   } catch (err) {
     console.warn('generate-signal: care-record reads failed, every concern stays raised:', err instanceof Error ? err.message : String(err))

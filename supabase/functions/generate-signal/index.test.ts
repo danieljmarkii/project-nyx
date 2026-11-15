@@ -411,28 +411,39 @@ Deno.test('EN-8 reads — every weigh-in in the window with its source, and the 
   assertStrictEquals(thrown, null)
 })
 
-Deno.test('CUL-2652 reads — the appointments by date only; a failed or short read takes every answer and booking away', async () => {
+Deno.test('CUL-2652 reads — the appointments by date (and, CUL-2793, a phantom flag from the reason); a failed or short read takes every answer and booking away', async () => {
   const { readCareRecord } = await import('./index.ts')
   const { EMPTY_CARE_RECORD } = await import('./careState.ts')
   const NOW = Date.parse('2026-11-07T23:00:00.000Z')
-  const APPTS = [{ id: 'a1', scheduled_at: '2026-11-14T15:00:00+00:00', cancelled_at: null, deleted_at: null }]
+  const APPTS = [
+    { id: 'a1', scheduled_at: '2026-11-14T15:00:00+00:00', cancelled_at: null, deleted_at: null, reason: 'Annual exam, the lump on her leg' },
+    { id: 'a2', scheduled_at: '2026-11-12T15:00:00+00:00', cancelled_at: null, deleted_at: null, reason: ' Recheck ' },
+    { id: 'a3', scheduled_at: '2026-11-10T15:00:00+00:00', cancelled_at: null, deleted_at: null, reason: null },
+  ]
   const answer = (appt: { data: unknown; error: unknown; count?: number }) => (c: Call) =>
     c.table === 'vet_appointments' ? appt : { data: [], error: null, count: 0 }
-  const { client, calls } = fakeClient(answer({ data: APPTS, error: null, count: 1 }))
+  const { client, calls } = fakeClient(answer({ data: APPTS, error: null, count: 3 }))
   const rec = await readCareRecord(client, 'pet-1', LOOKBACK, NOW)
-  assertEquals(rec.appointments, [{ id: 'a1', scheduledAt: '2026-11-14T15:00:00+00:00', cancelledAt: null, deletedAt: null }])
+  // CUL-2793: the reason is reduced to one boolean at the mapping line; its text goes no further.
+  assertEquals(rec.appointments, [
+    { id: 'a1', scheduledAt: '2026-11-14T15:00:00+00:00', cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false },
+    { id: 'a2', scheduledAt: '2026-11-12T15:00:00+00:00', cancelledAt: null, deletedAt: null, possibleRecheckPhantom: true },
+    { id: 'a3', scheduledAt: '2026-11-10T15:00:00+00:00', cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false },
+  ])
+  assertStrictEquals(JSON.stringify(rec).includes('lump'), false, 'no reason text reaches the care record')
   const a = calls.find((c) => c.table === 'vet_appointments')!
   assertEquals(a.ops.filter(([op]) => op !== 'range'), [
-    // Never the reason, the questions, the clinic, the vet, the notes or the visit link (AC 10).
-    ['select', ['id, scheduled_at, cancelled_at, deleted_at', { count: 'exact' }]],
+    // Never the questions, the clinic, the vet, the notes or the visit link (AC 10). The reason
+    // only for CUL-2793's phantom flag (PM go, 2026-11-15).
+    ['select', ['id, scheduled_at, cancelled_at, deleted_at, reason', { count: 'exact' }]],
     ['eq', ['pet_id', 'pet-1']],
     // From the Signal's lookback (ruling A reads back to the course's onset).
     ['gte', ['scheduled_at', LOOKBACK]],
     ['order', ['scheduled_at', { ascending: false }]],
     ['order', ['id', { ascending: false }]],
   ])
-  // A short read (the count says 3 exist) or a failed one is the empty record: no booking quiets anything.
-  assertEquals(await readCareRecord(fakeClient(answer({ data: APPTS, error: null, count: 3 })).client, 'pet-1', LOOKBACK, NOW), EMPTY_CARE_RECORD)
+  // A short read (the count says 5 exist) or a failed one is the empty record: no booking quiets anything.
+  assertEquals(await readCareRecord(fakeClient(answer({ data: APPTS, error: null, count: 5 })).client, 'pet-1', LOOKBACK, NOW), EMPTY_CARE_RECORD)
   assertEquals(await readCareRecord(fakeClient(answer({ data: null, error: { message: 'x' } })).client, 'pet-1', LOOKBACK, NOW), EMPTY_CARE_RECORD)
   // vet_appointments is read inside readCareRecord and nowhere else in the shell.
   const { blankComments } = await import('../_shared/sourceScan.testutil.ts')

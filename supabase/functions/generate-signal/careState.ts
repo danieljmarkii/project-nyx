@@ -160,12 +160,30 @@ export interface AckFact {
   course: AckCourseScope | null
 }
 
-/** An appointment, reduced to its dates (§4.7; AC 10 as amended allows exactly these columns). */
+/** An appointment, reduced to its dates (§4.7; AC 10 as amended allows exactly these columns)
+ *  and one boolean the shell derives from its reason (CUL-2793, below). */
 export interface AppointmentFact {
   id: string
   scheduledAt: string
   cancelledAt: string | null
   deletedAt: string | null
+  /** CUL-2793: a booking the old "set a date" wheel may have written by itself, so nobody may
+   *  have booked it. It never stands as a booked visit. The shell sets it from the row's reason
+   *  with `isPossibleRecheckPhantom` and passes no reason text on. */
+  possibleRecheckPhantom: boolean
+}
+
+/**
+ * CUL-2793: the client's rule (`isPhantomRecheckBooking`, lib/vetVisits.ts, CUL-2788), on the
+ * server. Before the after-visit fix, spinning the recheck wheel wrote a real `vet_appointments`
+ * row with reason `recheck`, and installed old builds still do; no narrower test told those apart
+ * from a booking the owner made (two adversarial passes on #1542). So every reason-`recheck` row
+ * is a possible phantom, and a phantom never quiets a concern: the engine errs loud. A booking the
+ * owner really made from the recheck row carries the same reason and stops quieting too (LOUD).
+ * Telling them apart needs a mark an old build cannot write, which is the PM's ruling.
+ */
+export function isPossibleRecheckPhantom(reason: string | null | undefined): boolean {
+  return typeof reason === 'string' && reason.trim().toLowerCase() === 'recheck'
 }
 
 /** The record BEHIND the Signal's lookback, back to the earliest answer's anchor less the
@@ -1334,11 +1352,17 @@ export const BOOKED_VISIT_HORIZON_DAYS = 30
  *  Unanswered past it, the ask returns. "It didn't" cancels the appointment and returns it at once. */
 export const BOOKED_VISIT_AFTER_DAYS = 7
 
-/** The appointments that stand: not cancelled, not deleted, with a date that parses. */
+/** The appointments that stand: not cancelled, not deleted, not a possible phantom (CUL-2793),
+ *  with a date that parses. Every booked-visit reader goes through here or `standsAsBooked`. */
+function standsAsBooked(a: AppointmentFact): boolean {
+  // `!== false`: a fact that does not say it is a real booking is treated as a phantom (loud).
+  return !a.cancelledAt && !a.deletedAt && a.possibleRecheckPhantom === false
+}
+
 function standingAppointments(args: CareStateArgs): { id: string; day: number; on: string }[] {
   const tz = args.timezone
   return args.record.appointments
-    .filter((a) => !a.cancelledAt && !a.deletedAt)
+    .filter(standsAsBooked)
     .map((a) => ({ a, ms: Date.parse(a.scheduledAt) }))
     .filter((x) => Number.isFinite(x.ms))
     .map((x) => ({ id: x.a.id, on: x.a.scheduledAt, day: localDayIndex(x.ms, tz) }))
@@ -1482,7 +1506,7 @@ export function recheckQuestionFor(
   const from = Math.max(anchor, localDayIndex(created, tz))
   if (ix.today - from < cfg.recheckQuestionDays) return null
   const booked = args.record.appointments.some((a) => {
-    if (a.cancelledAt || a.deletedAt) return false
+    if (!standsAsBooked(a)) return false
     const ms = Date.parse(a.scheduledAt)
     if (!Number.isFinite(ms)) return false
     const day = localDayIndex(ms, tz)
