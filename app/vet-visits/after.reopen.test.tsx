@@ -570,6 +570,29 @@ describe('R2 — the recheck row', () => {
     expect(mockReadRecheckBooking).toHaveBeenCalledWith(expect.objectContaining({ id: 'v-sep', pet_id: 'pet-a' }));
   });
 
+  it('a later booking never stands in for a recheck the visit does not name (adversarial, QUIET)', async () => {
+    // The vet said "recheck in two weeks"; the pet already has an annual booked for later.
+    mockVisit = savedVisit({ next_visit_at: null });
+    mockRecheckBooking = { id: 'appt-annual', scheduledAt: '2027-02-15T14:00:00.000Z', when: 'Mon, Feb 15 · 9:00 am', where: 'Completely Cat Clinic' };
+    await openReopen();
+    expect(screen.getByText('2 weeks')).toBeTruthy();
+    expect(screen.queryByText(/· Booked/)).toBeNull();
+    expect(mockReadRecheckBooking).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByText('2 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { nextVisitAt: expect.any(String) }));
+  });
+
+  it('Book it pushes one booking screen however fast it is tapped', async () => {
+    mockVisit = savedVisit({ next_visit_at: '2026-10-28' });
+    await openReopen();
+    const book = screen.getByLabelText('Book it — Recheck around Oct 28');
+    fireEvent.press(book);
+    fireEvent.press(book);
+    await waitFor(() => expect(router.push).toHaveBeenCalled());
+    expect(router.push).toHaveBeenCalledTimes(1);
+  });
+
   it('a recheck with no booking found never says booked', async () => {
     mockVisit = savedVisit({ next_visit_at: '2026-10-28' });
     await openReopen();

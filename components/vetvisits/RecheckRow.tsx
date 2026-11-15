@@ -48,7 +48,10 @@ export function RecheckRow({ petName, nextVisitAt, booking, busy, onSet, onBook 
   const [showWheel, setShowWheel] = useState(false);
   const glyph = <CalendarPlus size={16} color={theme.colorTextTertiary} strokeWidth={2} />;
 
-  if (booking) {
+  // Only a recheck the visit names can be answered by a booking (R2: "an appointment for
+  // that recheck"). With no date set, a later booking for the pet answers nothing, and the
+  // chips stay so the vet's recheck can still be recorded (adversarial pass, QUIET).
+  if (nextVisitAt && booking) {
     // The booking's date and place, never the recheck's: the booking that answers it may
     // be on another day than the vet's "around", and the record cannot say it is a recheck.
     return (

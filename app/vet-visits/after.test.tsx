@@ -1375,6 +1375,20 @@ describe('a fresh visit: typing saves once the visit exists, and the recheck nev
     expect(mockUpdateVisit).toHaveBeenCalledTimes(1);
   });
 
+  it('typing while the create is in flight is written once the visit exists', async () => {
+    freshScreen();
+    let finish!: (id: string) => void;
+    mockLogFromAppointment.mockImplementationOnce(() => new Promise<string>((r) => { finish = r; }));
+    render(<AfterVisitScreen />);
+    await screen.findByText('Done');
+    fireEvent.press(screen.getByText('6 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalled());
+    fireEvent.changeText(screen.getByLabelText('Notes from Nyx’s visit'), 'Typed during the create.');
+    await act(async () => finish('new-visit'));
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('new-visit', { notes: 'Typed during the create.' }));
+  });
+
   it('Done after the visit exists, with nothing changed, writes no field update', async () => {
     freshScreen();
     render(<AfterVisitScreen />);

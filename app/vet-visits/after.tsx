@@ -242,6 +242,7 @@ export default function AfterVisitScreen() {
   const flushing = useRef<Promise<void>>(Promise.resolve());
   // The autosave's debounce (R5). Cleared by every flush, which writes the latest form.
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bookingRecheck = useRef(false);
   // `&at=plan`: the one-shot scroll to The plan, consumed in a ref on the first layout (C-22).
   const scrollToPlan = useRef(at === 'plan');
   const scrollRef = useRef<ScrollViewInstance>(null);
@@ -417,6 +418,11 @@ export default function AfterVisitScreen() {
     const id = visitIdRef.current;
     const record = recordRef.current;
     if (!id || !record) return;
+    // No recheck named, nothing to answer: never read a booking in (see RecheckRow).
+    if (!record.next_visit_at) {
+      setRecheckBooking(null);
+      return;
+    }
     try {
       setRecheckBooking(await readRecheckBooking({ id, pet_id: record.pet_id, visited_at: record.visited_at }));
     } catch (err) {
@@ -640,6 +646,9 @@ export default function AfterVisitScreen() {
     };
     visitIdRef.current = id;
     setVisitId(id);
+    // Typing that landed while the create was in flight armed no debounce (no visit yet),
+    // so it is written now. A no-op when the form still matches what the create wrote.
+    flushFields().catch((err) => console.warn('[after-visit] post-create save failed:', err));
 
     // The paperwork photographed in the room now has a visit to belong to. Through
     // Vet Files' own `linkVetDocumentVisit` — the ONE function that implements D7 —
@@ -664,7 +673,7 @@ export default function AfterVisitScreen() {
       .then(() => syncPendingVetAppointments())
       .catch(console.error);
     return id;
-  }, [appointment, fields, petId, paperwork]);
+  }, [appointment, fields, petId, paperwork, flushFields]);
 
   function note(line: LinkedLine) {
     setLinked((prev) => [...prev.filter((l) => l.key !== line.key), line]);
@@ -990,12 +999,18 @@ export default function AfterVisitScreen() {
   /** *Book it*: the one booking flow, seeded with the recheck's date. What was typed is
    *  written first, because the visits list re-reads the record. */
   async function handleBookRecheck() {
-    if (busyRow || !petId || !nextVisitAt) return;
-    await flushOnLeave();
-    router.push({
-      pathname: '/vet-visits',
-      params: { pet: petId, add: 'booked', reason: 'recheck', on: nextVisitAt },
-    });
+    // A ref, not state: two taps in one tick would otherwise push two booking screens.
+    if (busyRow || !petId || !nextVisitAt || bookingRecheck.current) return;
+    bookingRecheck.current = true;
+    try {
+      await flushOnLeave();
+      router.push({
+        pathname: '/vet-visits',
+        params: { pet: petId, add: 'booked', reason: 'recheck', on: nextVisitAt },
+      });
+    } finally {
+      bookingRecheck.current = false;
+    }
   }
 
   async function handleAddPaperwork() {
