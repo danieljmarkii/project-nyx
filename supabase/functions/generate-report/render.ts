@@ -5659,10 +5659,17 @@ function trialWindowChangeLine(
   // whole 42 → 84 on a trial whose owner moved it to 56 alone and recorded only the
   // second step as the vet's. The record cannot tell one move from five (D2(a) kept three
   // columns, no history), so the sentence cannot switch on "moved more than once": it has
-  // to be true under both. "That last move" binds to the fact's own "last moved <date>",
-  // and the closing clause says what the record cannot: who asked for anything before it.
+  // to be true under both. "That last move" binds to the fact's own "last moved <date>".
+  //
+  // AND IT NAMES WHERE THAT MOVE ENDED, because the scope alone did not hold on a cold
+  // read (2026-11-15, NOT READY at ~80%): with "from 42 days" the only number in the
+  // line, a reader sized the attested move as 42 → 84 and credited the trial's named vet
+  // with all of it. The end is the one thing the record holds about the last move (it is
+  // the current target, re-stamped with the flag in the same write), so the sentence says
+  // it; the start is the thing it does not hold, so the sentence says that instead of
+  // leaving "from 42" to be borrowed for it.
   const attribution = wc.vetDirected
-    ? ' Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one.'
+    ? ` Owner reports a vet asked for that last move, to ${num(t.targetDurationDays)} days; Culprit cannot say which vet, where that move started, or how many moves came before it.`
     : ' A trial\u2019s window can be changed by its owner; Culprit cannot say who asked for this one.'
   return `${fact}${attribution}`
 }

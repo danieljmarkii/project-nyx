@@ -4827,7 +4827,7 @@ Deno.test('CUL-1041 §5.1 / D4a — the checked box adds "owner reports", and no
     targetDurationSetAt: `${NOW.slice(0, 10)}T11:00:00Z`,
     targetDurationVetDirected: true,
   })
-  assert.match(page, /Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one\./)
+  assert.match(page, /Owner reports a vet asked for that last move, to \d+ days; Culprit cannot say which vet, where that move started, or how many moves came before it\./)
   // The app cannot verify a vet instruction and must never assert one. The hedge is
   // not decoration: without it the sentence is a clinical claim about a third party.
   assert.ok(
@@ -4857,12 +4857,34 @@ Deno.test('CUL-2796 — a vet-attested move credits the vet with the LAST move, 
   // Scoped to the one dated step the fact names, and the earlier steps left unclaimed.
   assert.equal(
     sentence,
-    'Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one.',
+    'Owner reports a vet asked for that last move, to 84 days; Culprit cannot say which vet, where that move started, or how many moves came before it.',
   )
   // And never a phrasing that reads as the whole move: not "the change", not "the
   // extension", not the from-number.
   assert.ok(!/asked for (the|this) (change|extension|move)/.test(page), 'the attribution never covers the span')
   assert.ok(!/asked for[^.]*42/.test(page), 'the vet is never tied to the original window')
+
+  // The end-number is the CURRENT window, the one fact the record holds about the last
+  // move, whichever way it went: a round trip (no from-number on the fact) and a
+  // shortening both end where the trial now stands.
+  const roundTrip = windowPage({
+    dayOfTrial: 60,
+    targetDurationDays: 56,
+    targetDurationDaysInitial: 56,
+    movedOnDayOfTrial: 60,
+    targetDurationVetDirected: true,
+  })
+  assert.match(roundTrip, /Window changed; last moved/)
+  assert.match(roundTrip, /a vet asked for that last move, to 56 days; Culprit cannot say which vet, where that move started/)
+  const shortened = windowPage({
+    dayOfTrial: 20,
+    targetDurationDays: 28,
+    targetDurationDaysInitial: 56,
+    movedOnDayOfTrial: 20,
+    targetDurationVetDirected: true,
+  })
+  assert.match(shortened, /Window shortened from 56 days;/)
+  assert.match(shortened, /a vet asked for that last move, to 28 days;/)
 })
 
 Deno.test('CUL-1041 — FALSE reads exactly like NULL (the two-sided rule, both spellings)', () => {
@@ -4986,7 +5008,7 @@ Deno.test('CUL-1041 — "a vet", never "the vet": the change is not bound to a n
     targetDurationVetDirected: true,
     vetName: 'Dr. Sarah Kim',
   })
-  assert.match(page, /Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one\./)
+  assert.match(page, /Owner reports a vet asked for that last move, to \d+ days; Culprit cannot say which vet, where that move started, or how many moves came before it\./)
   assert.ok(!/the vet\u2019s direction/.test(page), 'no definite article to bind')
   // Both facts stay on the page; what is gone is the false link between them.
   assert.match(page, /Trial directed by Dr\. Sarah Kim\./)
@@ -5002,7 +5024,7 @@ Deno.test('CUL-1041 — "a vet", never "the vet": the change is not bound to a n
     targetDurationVetDirected: true,
     vetName: null,
   })
-  assert.match(unnamed, /Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one\./)
+  assert.match(unnamed, /Owner reports a vet asked for that last move, to \d+ days; Culprit cannot say which vet, where that move started, or how many moves came before it\./)
   assert.ok(!/Trial directed by/.test(unnamed), 'and no trial attribution is invented')
 })
 
@@ -5493,7 +5515,7 @@ Deno.test('CUL-1041 — the attested clause severs the referent and drops the sh
   const row = page.slice(page.indexOf('Elimination diet trial'), page.indexOf('Record'))
 
   // 1. The record's inability to resolve it is STATED, not implied by an article.
-  assert.match(row, /Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one\./)
+  assert.match(row, /Owner reports a vet asked for that last move, to \d+ days; Culprit cannot say which vet, where that move started, or how many moves came before it\./)
 
   // 2. The lexical echo is gone: `directed` appears once in the row, on the TRIAL.
   assert.equal(row.match(/directed/g)?.length, 1, 'one "directed" in the row, and it is the trial\u2019s')
@@ -5542,7 +5564,7 @@ Deno.test('CUL-1041 brief C — the two arms are one sentence shape, differing o
   }
   const attested = windowPage({ ...shared, targetDurationVetDirected: true })
   const not = windowPage({ ...shared, targetDurationVetDirected: false })
-  assert.match(attested, /Owner reports a vet asked for that last move; Culprit cannot say which vet, or who asked for any earlier one\./)
+  assert.match(attested, /Owner reports a vet asked for that last move, to \d+ days; Culprit cannot say which vet, where that move started, or how many moves came before it\./)
   assert.match(not, /A trial’s window can be changed by its owner; Culprit cannot say who asked for this one\./)
   // Same subject on both arms.
   for (const p of [attested, not]) assert.match(p, /Culprit cannot say/)
