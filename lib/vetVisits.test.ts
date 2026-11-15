@@ -14,6 +14,7 @@ import {
   formatWhereLine,
   localDateKey,
   recheckBookingFor,
+  isPhantomRecheckBooking,
   appointmentEditScopeNote,
   appointmentPrepNote,
   removeAppointmentCopy,
@@ -707,50 +708,111 @@ describe('appointmentDayReached (CUL-966)', () => {
 describe('recheckBookingFor', () => {
   const visit0 = { id: 'v1', pet_id: 'pet-a', visited_at: '2026-09-16' };
   const at = (y: number, m: number, d: number, h = 9) => new Date(y, m - 1, d, h, 30).toISOString();
-  const appt = (over: Partial<{ id: string; pet_id: string; scheduled_at: string; vet_visit_id: string | null; cancelled_at: string | null; deleted_at: string | null }> = {}) => ({
-    id: 'a1', pet_id: 'pet-a', scheduled_at: at(2026, 10, 28), vet_visit_id: null, cancelled_at: null, deleted_at: null, ...over,
+  const appt = (over: Partial<{ id: string; pet_id: string; scheduled_at: string; vet_visit_id: string | null; cancelled_at: string | null; deleted_at: string | null; reason: string | null; created_at: string | null }> = {}) => ({
+    id: 'a1', pet_id: 'pet-a', scheduled_at: at(2026, 10, 28), vet_visit_id: null, cancelled_at: null, deleted_at: null,
+    reason: null, created_at: at(2026, 9, 18, 14), ...over,
   });
+  // The pet's visits as the phantom test reads them: visit0, entered the day it happened.
+  const VISITS = [{ pet_id: 'pet-a', visited_at: '2026-09-16', created_at: at(2026, 9, 16, 15) }];
 
   it('finds nothing when nothing is booked', () => {
-    expect(recheckBookingFor(visit0, [])).toBeNull();
+    expect(recheckBookingFor(visit0, [], VISITS)).toBeNull();
   });
 
   it('a later live booking for the pet answers it', () => {
-    expect(recheckBookingFor(visit0, [appt()])?.id).toBe('a1');
+    expect(recheckBookingFor(visit0, [appt()], VISITS)?.id).toBe('a1');
   });
 
   it('the earliest of several later bookings answers it', () => {
-    const hit = recheckBookingFor(visit0, [appt({ id: 'late', scheduled_at: at(2026, 12, 1) }), appt({ id: 'soon', scheduled_at: at(2026, 10, 2) })]);
+    const hit = recheckBookingFor(visit0, [appt({ id: 'late', scheduled_at: at(2026, 12, 1) }), appt({ id: 'soon', scheduled_at: at(2026, 10, 2) })], VISITS);
     expect(hit?.id).toBe('soon');
   });
 
   it('a cancelled or deleted booking never answers it', () => {
-    expect(recheckBookingFor(visit0, [appt({ cancelled_at: at(2026, 9, 20) })])).toBeNull();
-    expect(recheckBookingFor(visit0, [appt({ deleted_at: at(2026, 9, 20) })])).toBeNull();
+    expect(recheckBookingFor(visit0, [appt({ cancelled_at: at(2026, 9, 20) })], VISITS)).toBeNull();
+    expect(recheckBookingFor(visit0, [appt({ deleted_at: at(2026, 9, 20) })], VISITS)).toBeNull();
   });
 
   it('another pet’s booking never answers it', () => {
-    expect(recheckBookingFor(visit0, [appt({ pet_id: 'pet-b' })])).toBeNull();
+    expect(recheckBookingFor(visit0, [appt({ pet_id: 'pet-b' })], VISITS)).toBeNull();
   });
 
   it('the booking this visit was logged from never answers its own recheck', () => {
-    expect(recheckBookingFor(visit0, [appt({ vet_visit_id: 'v1', scheduled_at: at(2026, 10, 1) })])).toBeNull();
+    expect(recheckBookingFor(visit0, [appt({ vet_visit_id: 'v1', scheduled_at: at(2026, 10, 1) })], VISITS)).toBeNull();
   });
 
   it('a booking on or before the visit day never answers it (a local-day compare)', () => {
-    expect(recheckBookingFor(visit0, [appt({ scheduled_at: at(2026, 9, 16, 23) })])).toBeNull();
-    expect(recheckBookingFor(visit0, [appt({ scheduled_at: at(2026, 9, 16, 0) })])).toBeNull();
-    expect(recheckBookingFor(visit0, [appt({ scheduled_at: at(2026, 9, 17, 0) })])?.id).toBe('a1');
+    expect(recheckBookingFor(visit0, [appt({ scheduled_at: at(2026, 9, 16, 23) })], VISITS)).toBeNull();
+    expect(recheckBookingFor(visit0, [appt({ scheduled_at: at(2026, 9, 16, 0) })], VISITS)).toBeNull();
+    expect(recheckBookingFor(visit0, [appt({ scheduled_at: at(2026, 9, 17, 0) })], VISITS)?.id).toBe('a1');
   });
 
   it('a booking that went on to be logged as a later visit still counts: it was booked', () => {
-    expect(recheckBookingFor(visit0, [appt({ vet_visit_id: 'v2' })])?.id).toBe('a1');
+    expect(recheckBookingFor(visit0, [appt({ vet_visit_id: 'v2' })], VISITS)?.id).toBe('a1');
   });
 
   it('the same instant in PostgREST’s spelling compares the same (C-40)', () => {
     const local = new Date(2026, 9, 28, 0, 0).toISOString();
     const hydrated = local.replace('.000Z', '+00:00');
     expect(hydrated).not.toBe(local);
-    expect(recheckBookingFor(visit0, [appt({ scheduled_at: hydrated })])?.id).toBe('a1');
+    expect(recheckBookingFor(visit0, [appt({ scheduled_at: hydrated })], VISITS)?.id).toBe('a1');
+  });
+});
+
+// CUL-2788 stopgap: the old "Set a date" wheel booked a recheck the owner never made.
+// Its rows: reason 'recheck', local midnight (no time), made the day of a visit for the pet.
+describe('recheckBookingFor never reads a phantom recheck booking as booked', () => {
+  const visit0 = { id: 'v1', pet_id: 'pet-a', visited_at: '2026-09-16' };
+  const midnight = (y: number, m: number, d: number) => new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+  const local = (y: number, m: number, d: number, h: number) => new Date(y, m - 1, d, h, 30).toISOString();
+  // What the old wheel wrote: a recheck six weeks on, at the sentinel, made the visit day.
+  const phantom = (over: Record<string, string | null> = {}) => ({
+    id: 'ph', pet_id: 'pet-a', scheduled_at: midnight(2026, 10, 28), vet_visit_id: null,
+    cancelled_at: null, deleted_at: null, reason: 'recheck', created_at: local(2026, 9, 16, 18), ...over,
+  });
+  const VISITS = [{ pet_id: 'pet-a', visited_at: '2026-09-16', created_at: local(2026, 9, 16, 17) }];
+
+  it('the wheel’s row, made on the visit day, is not a booking', () => {
+    expect(isPhantomRecheckBooking(phantom(), VISITS)).toBe(true);
+    expect(recheckBookingFor(visit0, [phantom()], VISITS)).toBeNull();
+  });
+
+  it('a visit entered days later: the row made the day it was entered is still a phantom', () => {
+    const entered = [{ pet_id: 'pet-a', visited_at: '2026-09-16', created_at: local(2026, 9, 19, 8) }];
+    expect(recheckBookingFor(visit0, [phantom({ created_at: local(2026, 9, 19, 9) })], entered)).toBeNull();
+  });
+
+  it('a phantom from an EARLIER visit cannot answer a later visit’s recheck', () => {
+    const later = { id: 'v2', pet_id: 'pet-a', visited_at: '2026-10-01' };
+    const both = [...VISITS, { pet_id: 'pet-a', visited_at: '2026-10-01', created_at: local(2026, 10, 1, 12) }];
+    expect(recheckBookingFor(later, [phantom()], both)).toBeNull();
+  });
+
+  it('PostgREST’s spelling of created_at reads as the same day (C-40)', () => {
+    const hydrated = phantom().created_at!.replace('.000Z', '+00:00');
+    expect(hydrated).not.toBe(phantom().created_at);
+    expect(recheckBookingFor(visit0, [phantom({ created_at: hydrated })], VISITS)).toBeNull();
+  });
+
+  it('an unreadable created_at errs toward not booked', () => {
+    expect(recheckBookingFor(visit0, [phantom({ created_at: null })], VISITS)).toBeNull();
+    expect(recheckBookingFor(visit0, [phantom({ created_at: 'garbage' })], VISITS)).toBeNull();
+  });
+
+  it('the phantom does not hide a real booking beside it', () => {
+    const real = phantom({ id: 'real', scheduled_at: local(2026, 11, 2, 9), created_at: local(2026, 9, 20, 10) });
+    expect(recheckBookingFor(visit0, [phantom(), real], VISITS)?.id).toBe('real');
+  });
+
+  it('a booking with a time, or another reason, or made on another day, is a booking', () => {
+    expect(recheckBookingFor(visit0, [phantom({ scheduled_at: local(2026, 10, 28, 9) })], VISITS)?.id).toBe('ph');
+    expect(recheckBookingFor(visit0, [phantom({ reason: 'dental' })], VISITS)?.id).toBe('ph');
+    expect(recheckBookingFor(visit0, [phantom({ reason: null })], VISITS)?.id).toBe('ph');
+    expect(recheckBookingFor(visit0, [phantom({ created_at: local(2026, 9, 20, 10) })], VISITS)?.id).toBe('ph');
+  });
+
+  it('another pet’s visit day does not make this pet’s booking a phantom', () => {
+    const other = [{ pet_id: 'pet-b', visited_at: '2026-09-16', created_at: local(2026, 9, 16, 17) }];
+    expect(isPhantomRecheckBooking(phantom(), other)).toBe(false);
   });
 });

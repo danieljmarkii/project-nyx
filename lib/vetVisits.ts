@@ -726,23 +726,78 @@ export interface RecheckBooking {
   where: string;
 }
 
+/** What `recheckBookingFor` needs of an appointment row: the live fields, plus the two the
+ *  phantom test reads (`reason`, `created_at`). */
+export type RecheckCandidate = Pick<LocalVetAppointment, 'id' | 'pet_id' | 'scheduled_at' | 'vet_visit_id' | 'cancelled_at' | 'deleted_at' | 'reason'> & {
+  created_at: string | null;
+};
+
+/** What the phantom test needs of a visit: the days it could have been written on. */
+export interface RecheckVisitDay {
+  pet_id: string;
+  visited_at: string;
+  created_at: string | null;
+}
+
+/**
+ * A booking the OLD "Set a date" wheel wrote, which the owner never made (CUL-2788).
+ *
+ * Before PR-03 (#1539) the after-visit row booked a `vet_appointments` row on the wheel's
+ * first settle, so these rows sit in every account that used it. They look like this:
+ * `reason = 'recheck'`, `scheduled_at` at local midnight (the no-time sentinel), and
+ * `created_at` on the same local day as a visit for that pet (the visit's date, or the
+ * day it was entered, since the wheel lived on the screen that enters it).
+ *
+ * STOPGAP, and deliberately wide: it errs toward "not booked yet". A real booking made
+ * through *Book it* the same day, for the recheck, with no time also matches, and that
+ * owner sees *Book it* again. That is the louder error, and the quieter one is the harm:
+ * "Booked" for an appointment the clinic never received means nobody calls. The ruling
+ * on the old rows (leave, relabel or offer to clear) is the PM's, on CUL-2788.
+ *
+ * Deleted visits count: a phantom does not become real because its visit went away. An
+ * unreadable `created_at` counts as the visit's day for the same reason.
+ */
+export function isPhantomRecheckBooking(
+  appointment: Pick<RecheckCandidate, 'pet_id' | 'reason' | 'scheduled_at' | 'created_at'>,
+  petVisits: ReadonlyArray<RecheckVisitDay>,
+): boolean {
+  if (appointment.reason?.trim().toLowerCase() !== 'recheck') return false;
+  if (appointmentTimeKnown(appointment.scheduled_at)) return false;
+  const madeAt = appointment.created_at ? new Date(appointment.created_at) : null;
+  const madeOn = madeAt && !Number.isNaN(madeAt.getTime()) ? localDateKey(madeAt) : null;
+  for (const v of petVisits) {
+    if (v.pet_id !== appointment.pet_id) continue;
+    if (madeOn === null) return true;
+    if (v.visited_at === madeOn) return true;
+    const enteredAt = v.created_at ? new Date(v.created_at) : null;
+    if (!enteredAt || Number.isNaN(enteredAt.getTime())) continue;
+    if (localDateKey(enteredAt) === madeOn) return true;
+  }
+  return false;
+}
+
 /**
  * The booking that answers a visit's recheck, or null.
  *
  * ONE predicate for every reader (the after-visit row, the list's tag, the Pet-tab card),
  * so no two surfaces can disagree about whether a recheck is booked. A booking answers it
  * when it is for the same pet, not deleted, not cancelled, scheduled on a LOCAL day after
- * the visit's, and is not the booking this visit was itself logged from. Logged bookings
- * still count: a recheck that was booked and then happened was booked. The ruling (plan,
- * PR-03): any later booking for the pet clears "not booked yet", so readers print the
- * BOOKING's date, never the recheck's, and never call it a recheck on the booking's behalf.
+ * the visit's, is not the booking this visit was itself logged from, and is not a phantom
+ * the old wheel wrote (`isPhantomRecheckBooking`). Logged bookings still count: a recheck
+ * that was booked and then happened was booked. The ruling (plan, PR-03): any later
+ * booking for the pet clears "not booked yet", so readers print the BOOKING's date, never
+ * the recheck's, and never call it a recheck on the booking's behalf.
+ *
+ * `petVisits` is required, not defaulted: a default of none would switch the phantom test
+ * off for whoever forgot it, and the phantom is what makes the row say "Booked" falsely.
  *
  * The visit's own `next_visit_at` does not enter it: a booking made on another day than
  * the vet's "around" is still the booking.
  */
-export function recheckBookingFor<A extends Pick<LocalVetAppointment, 'id' | 'pet_id' | 'scheduled_at' | 'vet_visit_id' | 'cancelled_at' | 'deleted_at'>>(
+export function recheckBookingFor<A extends RecheckCandidate>(
   visit: Pick<LocalVetVisit, 'id' | 'pet_id' | 'visited_at'>,
   appointments: ReadonlyArray<A>,
+  petVisits: ReadonlyArray<RecheckVisitDay>,
 ): A | null {
   let best: A | null = null;
   for (const a of appointments) {
@@ -752,21 +807,34 @@ export function recheckBookingFor<A extends Pick<LocalVetAppointment, 'id' | 'pe
     if (Number.isNaN(t)) continue;
     // Local calendar days, both 'YYYY-MM-DD', so the text compare is a day compare.
     if (localDateKey(new Date(t)) <= visit.visited_at) continue;
+    if (isPhantomRecheckBooking(a, petVisits)) continue;
     if (!best || t < new Date(best.scheduled_at).getTime()) best = a;
   }
   return best;
 }
 
-/** Every appointment row for these pets that `recheckBookingFor` may weigh. */
-async function readRecheckCandidates(petIds: ReadonlyArray<string>): Promise<LocalVetAppointment[]> {
-  if (petIds.length === 0) return [];
+type RecheckCandidateRow = LocalVetAppointment & { created_at: string | null };
+
+/** Every appointment row for these pets that `recheckBookingFor` may weigh, and every
+ *  visit for them (deleted ones too) that its phantom test reads. */
+async function readRecheckCandidates(petIds: ReadonlyArray<string>): Promise<{
+  appointments: RecheckCandidateRow[];
+  visits: RecheckVisitDay[];
+}> {
+  if (petIds.length === 0) return { appointments: [], visits: [] };
   const db = getDb();
-  return db.getAllAsync<LocalVetAppointment>(
-    `SELECT ${APPOINTMENT_COLUMNS} FROM vet_appointments
-      WHERE pet_id IN (${petIds.map(() => '?').join(', ')})
+  const marks = petIds.map(() => '?').join(', ');
+  const appointments = await db.getAllAsync<RecheckCandidateRow>(
+    `SELECT ${APPOINTMENT_COLUMNS}, created_at FROM vet_appointments
+      WHERE pet_id IN (${marks})
         AND deleted_at IS NULL AND cancelled_at IS NULL`,
     [...petIds],
   );
+  const visits = await db.getAllAsync<RecheckVisitDay>(
+    `SELECT pet_id, visited_at, created_at FROM vet_visits WHERE pet_id IN (${marks})`,
+    [...petIds],
+  );
+  return { appointments, visits };
 }
 
 /** The after-visit row's read: the booking that answers this visit's recheck, or null. */
@@ -774,7 +842,8 @@ export async function readRecheckBooking(
   visit: Pick<LocalVetVisit, 'id' | 'pet_id' | 'visited_at'>,
   now: Date = new Date(),
 ): Promise<RecheckBooking | null> {
-  const hit = recheckBookingFor(visit, await readRecheckCandidates([visit.pet_id]));
+  const { appointments, visits } = await readRecheckCandidates([visit.pet_id]);
+  const hit = recheckBookingFor(visit, appointments, visits);
   if (!hit) return null;
   return {
     id: hit.id,
@@ -841,7 +910,9 @@ export async function readVisitLinks(
     const candidates = await readRecheckCandidates([...new Set(withRecheck.map((v) => v.pet_id))]);
     for (const v of withRecheck) {
       const entry = out.get(v.id);
-      if (entry) entry.nextVisitBooked = recheckBookingFor(v, candidates) !== null;
+      if (entry) {
+        entry.nextVisitBooked = recheckBookingFor(v, candidates.appointments, candidates.visits) !== null;
+      }
     }
   }
 
@@ -1010,7 +1081,9 @@ export async function readVetVisitDetail(visitId: string): Promise<VetVisitDetai
       hasNextVisit: !!visit.next_visit_at,
       nextVisitAt: visit.next_visit_at,
       nextVisitBooked: visit.next_visit_at
-        ? recheckBookingFor(visit, await readRecheckCandidates([visit.pet_id])) !== null
+        ? await readRecheckCandidates([visit.pet_id]).then(
+            (c) => recheckBookingFor(visit, c.appointments, c.visits) !== null,
+          )
         : false,
     },
     medications: medications.map((m) => ({
