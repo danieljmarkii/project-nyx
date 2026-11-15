@@ -1013,6 +1013,28 @@ Deno.test('CUL-2793 adv #1: a reason-recheck visit never quiets, but still SPEND
   assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: cancelled } }).state, 'visit_booked')
 })
 
+Deno.test('CUL-2793 adv #2: a reason-recheck booking sooner than a real one drops the call-before date, never moves it later', () => {
+  const phantomFirst = { appointments: [apptAt({ id: 'p', daysAhead: 15, possibleRecheckPhantom: true }), apptAt({ id: 'real', daysAhead: 24 })] }
+  // A re-raise keeps its ask and carries no date at all (main named the 15th; the 24th would be a delay).
+  const again = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ daysAgo: 60 })], record: phantomFirst })
+  assertStrictEquals(again.state, 'raised_again')
+  assertStrictEquals('bookedVisit' in again, false)
+  // An escalation the same way: untouched.
+  const rows = step({ findings: [burden(), chronicity()], symptoms: STABLE, record: phantomFirst })
+  assertEquals(rows[0].finding, burden())
+  // The quiet concern still names the real booking (a quiet state is not a deadline).
+  assertEquals(careStateOf(rows[1].finding)!.bookedVisit, { on: '2026-10-24', appointmentId: 'real', passed: false })
+  // A phantom AFTER the real booking changes nothing: the real date stands beside the ask.
+  const realFirst = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ daysAgo: 60 })], record: { appointments: [apptAt({ id: 'real', daysAhead: 7 }), apptAt({ id: 'p', daysAhead: 15, possibleRecheckPhantom: true })] } })
+  assertEquals(realFirst.bookedVisit, { on: '2026-10-07', appointmentId: 'real', passed: false })
+  // A phantom on the SAME day is no delay: the real date stands.
+  const sameDay = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ daysAgo: 60 })], record: { appointments: [apptAt({ id: 'p', daysAhead: 7, hour: 9, possibleRecheckPhantom: true }), apptAt({ id: 'real', daysAhead: 7 })] } })
+  assertEquals(sameDay.bookedVisit, { on: '2026-10-07', appointmentId: 'real', passed: false })
+  // A cancelled phantom before it drops nothing.
+  const cancelled = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ daysAgo: 60 })], record: { appointments: [apptAt({ id: 'p', daysAhead: 3, possibleRecheckPhantom: true, cancelledAt: at(1) }), apptAt({ id: 'real', daysAhead: 7 })] } })
+  assertEquals(cancelled.bookedVisit, { on: '2026-10-07', appointmentId: 'real', passed: false })
+})
+
 Deno.test('CUL-2793: a fact that does not say it is a real booking counts as a phantom (errs loud)', () => {
   const base = apptAt({ daysAhead: 7 })
   const unsaid = { ...base, possibleRecheckPhantom: undefined as unknown as boolean }

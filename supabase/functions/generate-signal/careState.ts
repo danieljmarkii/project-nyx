@@ -174,8 +174,9 @@ export interface AppointmentFact {
 }
 
 /**
- * CUL-2793: the client's rule (`isPhantomRecheckBooking`, lib/vetVisits.ts, CUL-2788), on the
- * server. Before the after-visit fix, spinning the recheck wheel wrote a real `vet_appointments`
+ * CUL-2793: the client's rule, on the server. It mirrors `isPhantomRecheckBooking` in
+ * lib/vetVisits.ts, which lands with CUL-2788 (#1542); a parity test lands with whichever merges
+ * second (C-34). Before the after-visit fix, spinning the recheck wheel wrote a real `vet_appointments`
  * row with reason `recheck`, and installed old builds still do; no narrower test told those apart
  * from a booking the owner made (two adversarial passes on #1542). So every reason-`recheck` row
  * is a possible phantom, and a phantom never quiets a concern: the engine errs loud. A booking the
@@ -1159,7 +1160,10 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
   const priorMarkers = readPriorMarkers(args.priorFindings, priorGen ?? args.nowMs, tz)
   // CUL-2652: one booked visit per pet, read once (dates only, no topic test).
   const booked = bookedVisitFor(args)
-  const upcoming = booked && !booked.fact.passed ? booked : null
+  // The date beside an ask that still stands (ruling 3's "call before" line). CUL-2793 adv pass 2:
+  // when a possible phantom falls BEFORE the booking named, the date is dropped, never moved later:
+  // the phantom may be a real recheck, and a later deadline is a delay. No date leaves the plain ask.
+  const upcoming = booked && !booked.fact.passed && !phantomBefore(args, booked.day) ? booked : null
   const chronicOnset = new Map<SymptomType, string>()
   for (const r of findings) {
     if (r.finding.type === 'symptom_chronicity') chronicOnset.set(r.finding.symptomType, r.finding.firstOnsetIso)
@@ -1370,6 +1374,14 @@ function standingAppointments(args: CareStateArgs): { id: string; day: number; o
  *  same reason, and must not buy the course a second quiet window (adversarial pass 1, CUL-2793). */
 function spendingAppointments(args: CareStateArgs): { id: string; day: number; on: string }[] {
   return datedAppointments(args, (a) => !a.cancelledAt && !a.deletedAt)
+}
+
+/** CUL-2793: a possible phantom that stands (not cancelled, not deleted) from today up to, not
+ *  including, `day`. */
+function phantomBefore(args: CareStateArgs, day: number): boolean {
+  const today = localDayIndex(args.nowMs, args.timezone)
+  return datedAppointments(args, (a) => !a.cancelledAt && !a.deletedAt && a.possibleRecheckPhantom !== false)
+    .some((x) => x.day >= today && x.day < day)
 }
 
 function datedAppointments(args: CareStateArgs, keep: (a: AppointmentFact) => boolean): { id: string; day: number; on: string }[] {
