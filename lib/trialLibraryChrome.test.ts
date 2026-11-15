@@ -170,8 +170,8 @@ describe('the Foods-tab trial strip (FR-1)', () => {
   // its primary_diet row; the one permitted extra becomes "and 1 more".
   it('renders the day counter and names the foods on the list', () => {
     expect(buildFoodsTrialStrip(SET, opts, DAY_12)).toEqual({
-      header: 'Diet trial · day 12 of 28',
-      subject: 'Diet trial',
+      header: 'Kangaroo trial · day 12 of 28',
+      subject: 'Kangaroo trial',
       dayClause: 'day 12 of 28',
       line: 'Zignature Kangaroo Formula, and 1 more',
     });
@@ -204,18 +204,18 @@ describe('the Foods-tab trial strip (FR-1)', () => {
       .toBe('Royal Canin Hydrolyzed Protein HP, and 2 more');
   });
 
-  // D7. On a single-pet account "Biscuit's diet trial" is noise — there is no
+  // D7. On a single-pet account "Biscuit's kangaroo trial" is noise — there is no
   // other trial it could be — and on a multi-pet one the strip must say whose
   // trial is marking the shared, per-account library.
   it('names the pet only on a multi-pet account', () => {
     expect(buildFoodsTrialStrip(SET, { petName: 'Biscuit', multiPet: true }, DAY_12)?.header)
-      .toBe('Biscuit’s diet trial · day 12 of 28');
+      .toBe('Biscuit’s kangaroo trial · day 12 of 28');
     expect(buildFoodsTrialStrip(SET, { petName: 'Biscuit', multiPet: false }, DAY_12)?.header)
-      .toBe('Diet trial · day 12 of 28');
+      .toBe('Kangaroo trial · day 12 of 28');
     // A multi-pet account whose active pet somehow has no name still gets a
-    // truthful strip rather than "’s diet trial".
+    // truthful strip rather than "’s kangaroo trial".
     expect(buildFoodsTrialStrip(SET, { petName: null, multiPet: true }, DAY_12)?.header)
-      .toBe('Diet trial · day 12 of 28');
+      .toBe('Kangaroo trial · day 12 of 28');
   });
 
   // B-706 — the strip renders the "{Protein} trial" identity (the SAME token the
@@ -231,6 +231,39 @@ describe('the Foods-tab trial strip (FR-1)', () => {
       .toBe('Biscuit’s rabbit trial · day 12 of 28');
   });
 
+  // CUL-1781 — the strip resolves the protein through `trialTargetProtein`, the
+  // resolver Home's card uses: stored first, derived from the primary-diet foods
+  // when nothing is stored. Nyx's live record was six rabbit primaries with a null
+  // `target_protein`: Home read "Rabbit trial", this strip read "Diet trial".
+  it('derives the protein from uniform primary foods when none is stored', () => {
+    const rabbitFood = (id: string) =>
+      food({ foodItemId: id, foodKey: trialFoodKey('Instinct', id), label: `Instinct ${id}`,
+        primaryProtein: 'rabbit', proteins: ['rabbit'] });
+    const set = readySet([rabbitFood('a'), rabbitFood('b')], { ...TRIAL, targetProtein: null });
+    expect(buildFoodsTrialStrip(set, { petName: 'Nyx', multiPet: true }, DAY_12)?.header)
+      .toBe('Nyx’s rabbit trial · day 12 of 28');
+  });
+
+  it('lets a stored protein win over the derived one', () => {
+    const set = readySet([food()], { ...TRIAL, targetProtein: 'rabbit' });
+    expect(buildFoodsTrialStrip(set, opts, DAY_12)?.subject).toBe('Rabbit trial');
+  });
+
+  // TG-2 — a null that derivation cannot answer stays the generic name, never a claim.
+  // A permitted extra's protein never names the trial (derivation reads primaries only).
+  it('stays "Diet trial" when neither stored nor primary foods name a protein', () => {
+    const set = readySet(
+      [
+        food({ primaryProtein: null, proteins: [] }),
+        food({ foodItemId: 'food-treat', foodKey: trialFoodKey('Real Meat', 'Rabbit Jerky'),
+          label: 'Real Meat Rabbit Jerky', role: 'permitted_treat',
+          primaryProtein: 'rabbit', proteins: ['rabbit'] }),
+      ],
+      { ...TRIAL, targetProtein: null },
+    );
+    expect(buildFoodsTrialStrip(set, opts, DAY_12)?.subject).toBe('Diet trial');
+  });
+
   // §5 edge 7 — one day-math source. Asserted against the function itself, since
   // a local re-derivation that drifted by one would still satisfy a literal.
   it('shows the day the trial card is showing', () => {
@@ -244,8 +277,8 @@ describe('the Foods-tab trial strip (FR-1)', () => {
       const past = (expected?.dayCounter ?? 0) - 28;
       expect(buildFoodsTrialStrip(SET, opts, at)?.header).toBe(
         past > 0
-          ? `Diet trial · day ${expected?.dayCounter} — ${past} days past`
-          : `Diet trial · day ${expected?.dayCounter} of 28`,
+          ? `Kangaroo trial · day ${expected?.dayCounter} — ${past} days past`
+          : `Kangaroo trial · day ${expected?.dayCounter} of 28`,
       );
     }
   });
@@ -254,20 +287,20 @@ describe('the Foods-tab trial strip (FR-1)', () => {
   // owner would actually read.
   it('reads like the trial card past the window (day 35 of a 28-day trial)', () => {
     const strip = buildFoodsTrialStrip(SET, { petName: 'Pumpernickel', multiPet: true }, localNoon(2026, 8, 4))!;
-    expect(strip.header).toBe('Pumpernickel’s diet trial · day 35 — 7 days past');
-    expect(strip.subject).toBe('Pumpernickel’s diet trial');
+    expect(strip.header).toBe('Pumpernickel’s kangaroo trial · day 35 — 7 days past');
+    expect(strip.subject).toBe('Pumpernickel’s kangaroo trial');
     expect(strip.dayClause).toBe('day 35 — 7 days past');
     expect(strip.header).not.toMatch(/of 28/);
   });
 
   it('drops the "of M" rather than printing a target of zero', () => {
     const set = readySet([food()], { ...TRIAL, targetDurationDays: 0 });
-    expect(buildFoodsTrialStrip(set, opts, DAY_12)?.header).toBe('Diet trial · day 12');
+    expect(buildFoodsTrialStrip(set, opts, DAY_12)?.header).toBe('Kangaroo trial · day 12');
   });
 
   it('drops the day clause entirely rather than fabricating a day', () => {
     const set = readySet([food()], { ...TRIAL, startedAt: 'not-a-date' });
-    expect(buildFoodsTrialStrip(set, opts, DAY_12)?.header).toBe('Diet trial');
+    expect(buildFoodsTrialStrip(set, opts, DAY_12)?.header).toBe('Kangaroo trial');
   });
 
   // FR-4 / §5 edge 3. `loadTrialAllowedSet` has already applied `isTrialRunning`

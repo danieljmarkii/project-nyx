@@ -32,6 +32,7 @@ import {
 import type { AllowedFood } from './dietTrial';
 import { getDietTrialProgress } from './analytics';
 import { proteinTrialLabel } from './trialProteinPicker';
+import { trialTargetProtein } from './trialProtein';
 import { trialDayClause } from './trialOverrun';
 
 // ── §4 copy pack, verbatim ──────────────────────────────────────────────────
@@ -182,7 +183,16 @@ export function buildFoodsTrialStrip(
   // and the Home strip render (`proteinTrialLabel`), so the Foods tab does not read
   // "Diet trial" one tap from a card reading "Rabbit trial". Null protein → the
   // generic "Diet trial", never a claim (TG-2).
-  const identity = proteinTrialLabel(set.trial.targetProtein ?? null);
+  //
+  // CUL-1781: resolved through the ONE resolver (`trialTargetProtein`, stored
+  // first, derived from the set's primary-diet foods as the fallback), over the
+  // same source Home's card uses (`lib/dietTrialFacts.ts`: every primary row, not
+  // date-filtered). Reading the stored value alone named a trial whose protein was
+  // never saved "Diet trial" here while Home derived "Rabbit trial" from its foods.
+  const primaryFoods = set.foods.filter((f) => f.role === 'primary_diet');
+  const identity = proteinTrialLabel(
+    trialTargetProtein({ target_protein: set.trial.targetProtein ?? null }, primaryFoods).protein,
+  );
   // D7: the pet's name only when the account holds more than one pet. On a
   // single-pet account "Biscuit's rabbit trial" is noise — there is no other trial
   // it could be. The identity lower-cases into the possessive form.
