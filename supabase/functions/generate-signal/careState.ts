@@ -1352,17 +1352,30 @@ export const BOOKED_VISIT_HORIZON_DAYS = 30
  *  Unanswered past it, the ask returns. "It didn't" cancels the appointment and returns it at once. */
 export const BOOKED_VISIT_AFTER_DAYS = 7
 
-/** The appointments that stand: not cancelled, not deleted, not a possible phantom (CUL-2793),
- *  with a date that parses. Every booked-visit reader goes through here or `standsAsBooked`. */
+/** The appointments that stand as BOOKED: not cancelled, not deleted, not a possible phantom
+ *  (CUL-2793), with a date that parses. Every reader that can quiet goes through here or
+ *  `standsAsBooked`; the one that can only re-raise (`quietWindowSpent`) reads `spendingAppointments`. */
 function standsAsBooked(a: AppointmentFact): boolean {
   // `!== false`: a fact that does not say it is a real booking is treated as a phantom (loud).
   return !a.cancelledAt && !a.deletedAt && a.possibleRecheckPhantom === false
 }
 
 function standingAppointments(args: CareStateArgs): { id: string; day: number; on: string }[] {
+  return datedAppointments(args, standsAsBooked)
+}
+
+/** Every appointment not cancelled and not deleted, a possible phantom INCLUDED: what may SPEND a
+ *  quiet window (ruling A). A possible phantom never quiets (above) but always spends, so it errs
+ *  loud on both sides: a real recheck the owner booked, attended and never answered carries the
+ *  same reason, and must not buy the course a second quiet window (adversarial pass 1, CUL-2793). */
+function spendingAppointments(args: CareStateArgs): { id: string; day: number; on: string }[] {
+  return datedAppointments(args, (a) => !a.cancelledAt && !a.deletedAt)
+}
+
+function datedAppointments(args: CareStateArgs, keep: (a: AppointmentFact) => boolean): { id: string; day: number; on: string }[] {
   const tz = args.timezone
   return args.record.appointments
-    .filter(standsAsBooked)
+    .filter(keep)
     .map((a) => ({ a, ms: Date.parse(a.scheduledAt) }))
     .filter((x) => Number.isFinite(x.ms))
     .map((x) => ({ id: x.a.id, on: x.a.scheduledAt, day: localDayIndex(x.ms, tz) }))
@@ -1393,7 +1406,7 @@ export function bookedVisitFor(args: CareStateArgs): { day: number; fact: Booked
  * inside the horizon and its ask never comes back.
  */
 export function quietWindowSpent(args: CareStateArgs, fromDay: number | null, today: number): boolean {
-  return standingAppointments(args).some((x) => (fromDay === null || x.day >= fromDay) && x.day < today - BOOKED_VISIT_AFTER_DAYS)
+  return spendingAppointments(args).some((x) => (fromDay === null || x.day >= fromDay) && x.day < today - BOOKED_VISIT_AFTER_DAYS)
 }
 
 /** The quiet state's cached sentence (template-only, AC 8; nyx-voice). It stands alone, since Get

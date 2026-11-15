@@ -1000,15 +1000,27 @@ Deno.test('CUL-2793: a reason-recheck booking never quiets the weight card, and 
   assertStrictEquals(careStateOf(rows[1].finding)!.state, 'raised')
 })
 
-Deno.test('CUL-2793: a reason-recheck booking never spends the quiet window a real booking would open', () => {
-  // A phantom 20 days ago would spend ruling A's one window; it must not, so a real booking 9 days out quiets.
-  const s = stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ id: 'p', daysAhead: -20, possibleRecheckPhantom: true }), apptAt({ id: 'next', daysAhead: 9 })] } })
-  assertStrictEquals(s.state, 'visit_booked')
+Deno.test('CUL-2793 adv #1: a reason-recheck visit never quiets, but still SPENDS the quiet window (loud on both sides)', () => {
+  // An unanswered reason-recheck visit 20 days ago may be a real recheck the owner booked and
+  // attended: it spends ruling A's one window, so the real booking 9 days out does not re-quiet it.
+  const spent = [apptAt({ id: 'p', daysAhead: -20, possibleRecheckPhantom: true }), apptAt({ id: 'next', daysAhead: 9 })]
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: spent } }).state, 'raised')
+  // The weight card the same way.
+  const w = step({ findings: [weight()], symptoms: STABLE, record: { appointments: [apptAt({ id: 'p', daysAhead: -10, possibleRecheckPhantom: true }), apptAt({ id: 'next', daysAhead: 5 })] } })[0].finding
+  assertEquals(w, weight(), 'the weight card asks: no care state written')
+  // A cancelled one still never spends it.
+  const cancelled = [apptAt({ id: 'p', daysAhead: -20, possibleRecheckPhantom: true, cancelledAt: at(19) }), apptAt({ id: 'next', daysAhead: 9 })]
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: cancelled } }).state, 'visit_booked')
 })
 
 Deno.test('CUL-2793: a fact that does not say it is a real booking counts as a phantom (errs loud)', () => {
-  const unsaid = { ...apptAt({ daysAhead: 7 }), possibleRecheckPhantom: undefined as unknown as boolean }
-  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [unsaid] } }).state, 'raised')
+  const base = apptAt({ daysAhead: 7 })
+  const unsaid = { ...base, possibleRecheckPhantom: undefined as unknown as boolean }
+  const asText = { ...base, possibleRecheckPhantom: 'false' as unknown as boolean }
+  const { possibleRecheckPhantom: _drop, ...absent } = base
+  for (const [name, a] of [['undefined', unsaid], ['the string false', asText], ['the key absent', absent]] as const) {
+    assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [a as typeof base] } }).state, 'raised', name)
+  }
 })
 
 Deno.test('CUL-2793: isPossibleRecheckPhantom is the client rule (reason "recheck", trimmed, any case)', () => {
