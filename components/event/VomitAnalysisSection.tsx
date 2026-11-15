@@ -22,6 +22,7 @@ import {
   writeAnalysisDismissal,
   shownRead,
   sameShown,
+  rowAfterSavedEdit,
   type ShownRead,
   VOMIT_DISMISSAL_COLUMNS,
   READ_CHANGED_TITLE,
@@ -638,10 +639,22 @@ export function VomitAnalysisSection(
       return;
     }
     setSaving(false);
-    // Optimistic local commit — mirror the DB write (fields + provenance stamp).
-    setRow({ ...row, ...norm, edited_at: new Date().toISOString() });
+    // Optimistic local commit — mirror the DB write (fields + provenance stamp), over the
+    // row on screen now, not the one Save was pressed on: a newer read can have landed
+    // while the save was in flight, and it must not be replaced by the old one (CUL-2773).
+    const saved = rowAfterSavedEdit({
+      onScreen: latestRow.current, pressedOn: row, seen, edits: norm, editedAt: new Date().toISOString(),
+    });
+    setRow(saved.row);
     editBase.current = null;
     setEditing(false);
+    if (!saved.current) {
+      // The read under the edit changed: show the stored row. If that read does not
+      // answer, the merge above stands, with the owner's saved fields on it.
+      const stored = await fetchRow().catch(() => null);
+      if (cancelled.current) return;
+      if (stored) setRow(stored);
+    }
   }
 
   // ── Render states ──
