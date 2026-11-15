@@ -5652,8 +5652,30 @@ function trialWindowChangeLine(
   // clinician reading two reports should meet the same construction and see only the
   // unknown differ. A test pins that, and it caught the first cut of this very change
   // breaking it.
+  //
+  // ⚠️ THE ATTESTED ARM CREDITS THE LAST MOVE, NEVER THE SPAN (CUL-2796). The vet flag
+  // is PER-CHANGE (re-stamped on every move) while `fromDays` is the FIRST window, so
+  // "Window extended from 42 days" beside "a vet asked for the change" handed the vet the
+  // whole 42 → 84 on a trial whose owner moved it to 56 alone and recorded only the
+  // second step as the vet's. The record cannot tell one move from five (D2(a) kept three
+  // columns, no history), so the sentence cannot switch on "moved more than once": it has
+  // to be true under both. "That last move" binds to the fact's own "last moved <date>".
+  //
+  // AND IT SAYS IN WORDS THAT THE SPAN MAY NOT BE THE VET'S. Scoping alone did not hold
+  // on two cold reads (2026-11-15, NOT READY at ~80% and ~70%): with "from 42 days" in
+  // the bold fact, a reader sized the attested move as 42 → 84 and credited the trial's
+  // named vet with all of it, and an abstract "where that move started" was skimmed.
+  // So the clause names the from-number and denies it the attribution outright.
+  //
+  // ⚠️ IT NAMES NO END-NUMBER, though one was tried. "to <current target> days" assumes
+  // every writer re-stamps `set_at` and the flag with the target, and builds shipped
+  // 2026-07-26 → 2026-09-17 extend the target ALONE (adversarial pass 2): a vet's 56 → 84
+  // followed by an old phone's +14 printed "a vet asked for that last move, to 98 days".
+  // Without the number the same record reads as the vet's dated move plus a stated doubt
+  // about the span, which errs toward scepticism (CUL-2801 repairs the record itself).
+  const spanDoubt = fromBit ? `, so the change${fromBit} may not all be a vet’s` : ''
   const attribution = wc.vetDirected
-    ? ' Owner reports a vet asked for the change; Culprit cannot say which.'
+    ? ` Owner reports a vet asked for that last move; Culprit cannot say which vet, or what the window was just before it${spanDoubt}.`
     : ' A trial\u2019s window can be changed by its owner; Culprit cannot say who asked for this one.'
   return `${fact}${attribution}`
 }
