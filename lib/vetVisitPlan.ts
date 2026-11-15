@@ -14,6 +14,14 @@
 
 import type { VisitConsequence } from './vetVisits';
 import { ANCHORED_WINDOW_NAMES } from './historyWindows';
+import { formatTrialEndDate, trialEndDayKey } from './trialWindowDates';
+import {
+  WINDOW_MAX_DAYS,
+  windowFloorDays,
+  windowOptionsFor,
+  windowRefusalLine,
+  type WindowOption,
+} from './trialWindowSheet';
 
 // ── The next-visit row ──────────────────────────────────────────────────────────
 
@@ -49,8 +57,9 @@ export function recheckDateIn(weeks: number, now: Date = new Date()): Date {
 
 /** What the owner said about an existing course. `null` is *Later* — the resting state. */
 export type CourseVerdict = 'keep' | 'changed' | 'stopped';
-/** The same for a running trial. */
-export type TrialVerdict = 'keep' | 'ended' | 'switched';
+/** The same for a running trial. *Extended* writes nothing until the panel's own
+ *  *Extend the trial* (CUL-2758): the chip only opens the panel. */
+export type TrialVerdict = 'keep' | 'extended' | 'ended' | 'switched';
 
 /**
  * A course row's sub-line: what the record holds about this course, and nothing it
@@ -86,9 +95,100 @@ export function courseVerdictLabel(verdict: CourseVerdict): string {
 export function trialVerdictLabel(verdict: TrialVerdict): string {
   switch (verdict) {
     case 'keep': return 'continuing';
+    case 'extended': return 'extended';
     case 'ended': return 'ended';
     case 'switched': return 'switched';
   }
+}
+
+// ── *Extended*: the vet moved the trial's end (CUL-2758, spec §4.4 R6, mock §C) ──
+//
+// THE CHOICES ARE TOTALS FROM THE TRIAL'S START, NEVER A DELTA FROM TODAY (TE-2). A
+// recheck logged a week late still records what the vet said: "12 weeks" is 84 days
+// from the day the diet started whichever day the owner gets round to the screen,
+// where `nextTargetDays`' "four more weeks from today" would drift the prescribed
+// window by the lateness (§5.5's divergence, which the totals path sidesteps).
+//
+// The floor is `windowFloorDays`, the write path's own mirror (C-34: same question),
+// so a total the trial has already passed is never offered: forward-only is an
+// ABSENCE, not a dimmed chip (TE-3). `changeTrialWindow` keeps its own SELECT and is
+// still the authority; a refusal it returns is said through `windowRefusedLine`.
+
+/** The trial's window as the panel needs it: the record's three numbers, nothing derived. */
+export interface ExtendWindow {
+  /** The trial's first day, 'YYYY-MM-DD' (`trialStartDayKey`). */
+  startDayKey: string;
+  /** `diet_trials.target_duration_days` as stored. */
+  currentTargetDays: number;
+  /** Today's trial day, from the ONE shared counter (`getDietTrialProgress`). */
+  dayCounter: number;
+}
+
+/** How many ladder totals sit before *Pick a date* (mock §C: *10 weeks · 12 weeks*). */
+export const EXTEND_PRESET_COUNT = 2;
+
+/** The weeks chips: the first forward totals on the shared ladder, the current window
+ *  left out (unlike the window sheet, this panel has no "leave it" option: *Keep* is). */
+export function extendPresets(w: ExtendWindow): WindowOption[] {
+  return windowOptionsFor(w).filter((o) => !o.isCurrent).slice(0, EXTEND_PRESET_COUNT);
+}
+
+/** The dates *Pick a date* may land on: the day after the forward floor's last day up
+ *  to the ceiling's. Null when nothing forward fits under the ceiling. */
+export function extendDateBounds(w: ExtendWindow): { minEndDayKey: string; maxEndDayKey: string } | null {
+  const floor = windowFloorDays(w);
+  if (floor + 1 > WINDOW_MAX_DAYS) return null;
+  const minEndDayKey = trialEndDayKey(w.startDayKey, floor + 1);
+  const maxEndDayKey = trialEndDayKey(w.startDayKey, WINDOW_MAX_DAYS);
+  return minEndDayKey && maxEndDayKey ? { minEndDayKey, maxEndDayKey } : null;
+}
+
+/** Whether *Extended* has anything to offer: a forward preset or a date under the ceiling. */
+export function canExtendTrial(w: ExtendWindow): boolean {
+  return extendPresets(w).length > 0 || extendDateBounds(w) !== null;
+}
+
+/** Why this total cannot be extended to, or null when it can: the window sheet's own
+ *  sentences, so one refusal reads one way wherever the window is moved. */
+export function extendRefusal(w: ExtendWindow, totalDays: number, petName: string): string | null {
+  return windowRefusalLine({
+    requestedDays: totalDays,
+    currentTargetDays: w.currentTargetDays,
+    dayCounter: w.dayCounter,
+    petName,
+  });
+}
+
+/**
+ * The panel's end line, a live region: *Ends Oct 18 instead of Sep 20 · recorded as
+ * the vet's call*.
+ *
+ * Both dates, because the old end is the one the owner has been counting toward and the
+ * milestone was going to ask about; naming it once here is what makes its absence later
+ * legible. *Recorded as the vet's call* discloses the write before it happens: the report
+ * prints "Owner reports a vet asked for the change" from it (render.ts), so the owner is
+ * told what the record will say in their name. Null when either date is unreadable: a
+ * line with a hole in it would name a window nobody can check.
+ */
+export function extendEndLine(args: {
+  w: ExtendWindow;
+  totalDays: number;
+  now?: Date;
+}): string | null {
+  const now = args.now ?? new Date();
+  const nextKey = trialEndDayKey(args.w.startDayKey, args.totalDays);
+  const prevKey = trialEndDayKey(args.w.startDayKey, args.w.currentTargetDays);
+  const next = nextKey ? formatTrialEndDate(nextKey, now) : null;
+  const prev = prevKey ? formatTrialEndDate(prevKey, now) : null;
+  if (!next || !prev) return null;
+  return `Ends ${next} instead of ${prev} · recorded as the vet’s call`;
+}
+
+/** The settled row once the window moved: *Extended · ends Oct 18*. The new end only;
+ *  the old one is past tense now and the row never asks about it. */
+export function extendedTrialLine(endDayKey: string | null, now: Date = new Date()): string {
+  const end = endDayKey ? formatTrialEndDate(endDayKey, now) : null;
+  return end ? `Extended · ends ${end}` : 'Extended';
 }
 
 // ── The one safety net on *Stopped* / *Ended* (CUL-951) ─────────────────────────

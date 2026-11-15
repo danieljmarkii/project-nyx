@@ -5,6 +5,12 @@ import {
   defaultRecheckDate,
   describeVisitSave,
   endTrialCopy,
+  canExtendTrial,
+  extendDateBounds,
+  extendEndLine,
+  extendedTrialLine,
+  extendPresets,
+  extendRefusal,
   linkedLinesAsOf,
   mergePlanCourses,
   settledVerdictLine,
@@ -16,6 +22,8 @@ import {
   type LinkedLine,
 } from './vetVisitPlan';
 import { ANCHORED_WINDOW_NAMES } from './historyWindows';
+import { trialEndDayKey, trialTotalForEndDay } from './trialWindowDates';
+import { WINDOW_LADDER_DAYS, WINDOW_MAX_DAYS } from './trialWindowSheet';
 
 // CUL-902 VV-4 — the after-visit view model, and in particular the ONE clinically
 // load-bearing string on the saved moment: what the save did to the vet report's
@@ -432,5 +440,93 @@ describe('the saved moment says what ended once, with its day (CUL-1092)', () =>
   it('never reads "Diet trial trial" for a trial with no food name', () => {
     expect(trialMomentTitle(null)).toBe('Diet trial');
     expect(trialMomentTitle('   ')).toBe('Diet trial');
+  });
+});
+
+
+// ── CUL-2758 — *Extended*: the vet moved the trial's end ────────────────────────
+//
+// The mock's own trial (§C): started Jul 27, day 53 of 56, ending Sep 20, extended to
+// 12 weeks ending Oct 18. Local-components dates throughout (C-29).
+describe('CUL-2758 — the Extended panel’s window', () => {
+  const NOW = new Date(2026, 8, 17, 12, 0, 0);
+  const MOCK = { startDayKey: '2026-07-27', currentTargetDays: 56, dayCounter: 53 };
+
+  it('offers the next two forward totals on the shared ladder — the mock’s 10 and 12 weeks', () => {
+    expect(extendPresets(MOCK).map((o) => [o.days, o.label])).toEqual([[70, '10 weeks'], [84, '12 weeks']]);
+  });
+
+  it('never offers the current window, nor any total at or behind the floor', () => {
+    for (const target of WINDOW_LADDER_DAYS) {
+      for (const day of [1, 20, 41, 55, 56, 57, 69, 70, 71, 100, 140]) {
+        const presets = extendPresets({ startDayKey: '2026-01-05', currentTargetDays: target, dayCounter: day });
+        for (const o of presets) {
+          expect(o.days).toBeGreaterThan(Math.max(target, day));
+          expect(o.isCurrent).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('in overrun the day counter binds: day 75 of 56 drops 10 weeks and offers 12 and 16', () => {
+    // A recheck that came late: the trial already ran past 70 days. "10 weeks" would be a
+    // window behind today, which `changeTrialWindow` refuses, so it is absent, not dimmed.
+    expect(extendPresets({ ...MOCK, dayCounter: 75 }).map((o) => o.days)).toEqual([84, 112]);
+  });
+
+  it('*Pick a date* starts the day after the floor’s last day and stops at the ceiling', () => {
+    const b = extendDateBounds(MOCK);
+    expect(b).toEqual({ minEndDayKey: '2026-09-21', maxEndDayKey: trialEndDayKey('2026-07-27', WINDOW_MAX_DAYS) });
+    // Overrun: the floor is today, so the earliest end is tomorrow.
+    expect(extendDateBounds({ ...MOCK, dayCounter: 75 })?.minEndDayKey).toBe(trialEndDayKey('2026-07-27', 76));
+    // Nothing forward fits under the ceiling: no picker at all.
+    expect(extendDateBounds({ ...MOCK, currentTargetDays: WINDOW_MAX_DAYS })).toBeNull();
+  });
+
+  it('offers *Extended* only while something forward fits under the ceiling', () => {
+    expect(canExtendTrial(MOCK)).toBe(true);
+    expect(canExtendTrial({ ...MOCK, currentTargetDays: WINDOW_MAX_DAYS - 1 })).toBe(true);
+    expect(canExtendTrial({ ...MOCK, currentTargetDays: WINDOW_MAX_DAYS })).toBe(false);
+    expect(canExtendTrial({ ...MOCK, dayCounter: WINDOW_MAX_DAYS + 3 })).toBe(false);
+  });
+
+  it('names the new end beside the old one, and says whose call it is recorded as', () => {
+    expect(extendEndLine({ w: MOCK, totalDays: 84, now: NOW })).toBe(
+      'Ends Oct 18 instead of Sep 20 · recorded as the vet’s call',
+    );
+  });
+
+  it('settles to the new end only', () => {
+    expect(extendedTrialLine('2026-10-18', NOW)).toBe('Extended · ends Oct 18');
+    expect(extendedTrialLine(null, NOW)).toBe('Extended');
+  });
+
+  it('refuses with the window sheet’s own sentences', () => {
+    expect(extendRefusal(MOCK, 84, 'Nyx')).toBeNull();
+    expect(extendRefusal(MOCK, 50, 'Nyx')).toBe('Nyx is already on day 53.');
+    expect(extendRefusal(MOCK, 56, 'Nyx')).toBe('That is the window you have now.');
+    expect(extendRefusal(MOCK, WINDOW_MAX_DAYS + 1, 'Nyx')).toMatch(/^Culprit records a trial up to 365 days/);
+  });
+});
+
+describe('CUL-2758 — trialTotalForEndDay is trialEndDayKey’s inverse', () => {
+  it('round-trips every total a year of starts can hold, across both DST changes', () => {
+    // Starts on every day of 2026 (both DST changes in any zone the CI matrix runs), and
+    // totals from 1 to the ceiling: the picked day always gives back the total that ends on it.
+    for (let d = 0; d < 365; d += 3) {
+      const start = new Date(2026, 0, 1 + d);
+      const key = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+      for (const total of [1, 2, 28, 56, 70, 84, 113, 200, WINDOW_MAX_DAYS]) {
+        const end = trialEndDayKey(key, total);
+        expect(end).not.toBeNull();
+        expect(trialTotalForEndDay(key, end as string)).toBe(total);
+      }
+    }
+  });
+
+  it('is 1 on the start day and null before it or on a malformed key', () => {
+    expect(trialTotalForEndDay('2026-07-27', '2026-07-27')).toBe(1);
+    expect(trialTotalForEndDay('2026-07-27', '2026-07-26')).toBeNull();
+    expect(trialTotalForEndDay('2026-07-27', 'Oct 18')).toBeNull();
   });
 });
