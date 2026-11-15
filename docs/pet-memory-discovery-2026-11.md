@@ -367,3 +367,39 @@ Each read the AI forward tab, the review screen, the "tell Culprit" screen and t
 **Carried, not resolved here.** Both owners want the vet's view on the weight kept somewhere findable. That is conflict 2 on the CUL-2753 round (Sam against Dr. Chen), already before the PM.
 
 **Limits.** Two persona reads, static renders, one pass each. Not real owners and not a device pass.
+
+---
+
+## 16. Round 3 (2026-11-15): AI forward, as directions
+
+**PM direction.** "Let's take their feedback and go AI forward." "As we're exploring functionality, let's research others as well." "Of all the rounds, the first round was the closest to my vision." Then: "Mock a few different directions for key screens. One could be the night header. Other directions can be explored as well."
+
+**Taken as:** AI forward is the direction. Round 1's parts (a top that says what Culprit is working from; facts with where each came from and what uses it) are the base. No team pick is marked on round 3; it asks for reactions.
+
+**Round 3's page** (same link; round 2 is at commit `4c2fc5f70`), every frame the Pet tab with the AI on:
+
+| Screen | Directions |
+|---|---|
+| The top: how Culprit speaks first | Night · daylight on the rail · a conversation · the record leads |
+| How the facts are laid out | By kind (round 1) · by where it came from · now, then before |
+| Going through what Culprit found | A list · one at a time · safe ones together |
+| Drawn once | A fact opened (rows and native menus, origin kept) · the permission screen |
+
+All four tops carry Jordan's and Sam's conditions: weight and the vet report on the first screen; a short read that says what it read, what it did not, and that it can miss things; one gentle question with "That's not what my notes say"; nothing on the record until the owner adds it.
+
+**"Safe ones together"** is option (b) of the "Add all" conflict (§15): one tap for kinds that cannot quiet anything; one at a time for medicines, diets and answers.
+
+**The wider functionality read** (`docs/research/2026-11-pet-memory-functionality.md`, about 65 products, 12 from primary pages). Six functions are sketched on the page for the PM to pick from:
+
+| Function | Precedent | Safety question it raises |
+|---|---|---|
+| Ask only about gaps, at most three | Oura Advisor; Google's coach opens with a skippable interview | An answer of "no" or "none" is an absence; it may be shown, never read as a negative |
+| Before a visit: what changed, anything to add | Digitail's pet parent app; K Health; Dutch | The "what changed" numbers must be the engine's, with their coverage |
+| Still true? | Nobody found; Google's users delete and retype | Never asked about a fact whose "yes" keeps Home quiet (safety brief Q4) |
+| Set aside, not deleted | Claude's pause; WHOOP's inactive; ChatGPT's "don't mention this again" | It may stop a mention; it may never stop a count, a warning or a report line |
+| Sources under the read | Claude, ChatGPT, Pawtient | A source list that looks complete when the read missed something |
+| Hand it to the vet | Amazon's health AI, Oura, Ada, PETTO | The report prints owner facts as the owner's; the model's read is never sent |
+
+**Five things the read found nobody does,** each already a rule here: confirm before a conversation-derived fact is used; ask whether an old fact holds; say when a change takes effect; forbid a stored fact from explaining a symptom away; list what the AI does not know.
+
+**Needed before a spec:** reactions on the three screens and the six functions; a yes on stored model text (§14); a yes on the size (about 18 rows, after the 1.2.0 cut); the brand rule edit if night is picked; and D1 to D7 with the two conflicts from round 1, several of which this direction changes (D2 and D3 most).
