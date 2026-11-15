@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, Share, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { colorRoles, theme } from '../../constants/theme';
@@ -13,6 +13,7 @@ import { readAppointmentForVisit, readVetVisitDetail, type VetVisitDetail } from
 import { visitCourseHref, visitTrialHref } from '../../lib/visitPlanDoors';
 import { captureVisitResults, type VisitResultsSource } from '../../lib/visitPaperwork';
 import { isDocumentPickerAvailable } from '../../lib/vetDocumentCapture';
+import { visitToPlainText } from '../../lib/visitShareText';
 
 // One visit as written (CUL-900 VV-2; mock D3). *Edit* and *Add to the plan* both open
 // How did it go? for this visit (CUL-2754, §4.4 R1); the five-field edit screen retired.
@@ -105,6 +106,19 @@ export default function VetVisitScreen() {
     }
   }
 
+  // *Share* (R8·6): the visit as plain text through the system share sheet, addressed to
+  // no one. Built from the RECORD the screen just read, never from what is on screen, and
+  // under the record's pet. A dismissed sheet is not an error; a sheet that cannot open is
+  // said, never swallowed.
+  async function handleShare(read: VetVisitDetail) {
+    try {
+      await Share.share({ message: visitToPlainText(read, petName) });
+    } catch (err) {
+      console.warn('[vet-visit] share failed:', err);
+      Alert.alert('Couldn’t open sharing', 'Give it another try in a moment.');
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <Header
@@ -113,22 +127,35 @@ export default function VetVisitScreen() {
         right={
           // Inline rather than behind the mock's ⋯ — the header's own rule is that a
           // single secondary action does not hide in a tap-to-reveal menu (B-075, a
-          // PM call). VV-6 adds *Delete* (gated on CUL-19) and that is the PR where
-          // the pair becomes a menu.
+          // PM call). *Share* (R8·6, CUL-2760) is the second, and it sits beside *Edit*
+          // rather than starting the menu: both are one word, a menu would put the share
+          // two taps away for the one reader it exists for, and VV-6's *Delete* (gated
+          // on CUL-19) is still the PR where the row becomes a ⋯.
           //
           // Absent, never `disabled`, while the read is in flight or the row is gone:
           // `disabled` is an accessibility CLAIM that a control exists and is
           // unavailable, and here no control exists at all (C-7).
           detail ? (
-            <TouchableOpacity
-              onPress={() => router.push(`/vet-visits/after?visit=${detail.visit.id}`)}
-              activeOpacity={0.7}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              accessibilityRole="button"
-              accessibilityLabel={`Edit ${petName}’s visit`}
-            >
-              <ThemedText style={styles.editLabel}>Edit</ThemedText>
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                onPress={() => void handleShare(detail)}
+                activeOpacity={0.7}
+                hitSlop={HEADER_HIT}
+                accessibilityRole="button"
+                accessibilityLabel={`Share ${petName}’s visit`}
+              >
+                <ThemedText style={styles.editLabel}>Share</ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push(`/vet-visits/after?visit=${detail.visit.id}`)}
+                activeOpacity={0.7}
+                hitSlop={HEADER_HIT}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${petName}’s visit`}
+              >
+                <ThemedText style={styles.editLabel}>Edit</ThemedText>
+              </TouchableOpacity>
+            </View>
           ) : undefined
         }
       />
@@ -195,7 +222,18 @@ export default function VetVisitScreen() {
   );
 }
 
+/**
+ * Two touchable siblings in the header: the gap is the facing reach of both slops (C-5),
+ * computed from the one constant rather than typed.
+ */
+const HEADER_HIT = { top: 12, bottom: 12, left: 12, right: 12 };
+
 const styles = StyleSheet.create({
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: HEADER_HIT.right + HEADER_HIT.left,
+  },
   editLabel: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,

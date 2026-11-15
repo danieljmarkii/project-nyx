@@ -165,3 +165,12 @@ describe('VisitDetailBody — results arrive later (CUL-2759)', () => {
     expect(visitDocumentLabel({ title: null, kind: 'other', documentDate: day })).toBe('Document — Sep 20');
   });
 });
+
+describe('VisitDetailBody — the recheck is a date, not a booking (§4.4 R2)', () => {
+  it('reads "Recheck around {date}", never a bare date that looks booked', () => {
+    const base = detail();
+    renderBody({ detail: { ...base, visit: { ...base.visit, next_visit_at: '2026-12-26' } } });
+    expect(screen.getByText('Next visit')).toBeTruthy();
+    expect(screen.getByText(/^Recheck around Dec 26/)).toBeTruthy();
+  });
+});

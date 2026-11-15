@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ChevronRight } from 'lucide-react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { colorRoles, theme } from '../../constants/theme';
 import { Header } from '../../components/ui';
@@ -45,7 +46,7 @@ const DRAFT_DEBOUNCE_MS = 600;
 // route lost their day gate, so the first reader of this screen is now an owner
 // whose visit is six weeks away. Everything the screen DOES is fine at that
 // distance — the draft, the ticks and the paperwork all write to an appointment
-// that already exists — with one exception: *Done* routes to "How did it go?",
+// that already exists — with one exception: the finish row routes to "How did it go?",
 // whose save marks the booking attended and moves the vet report's window, with no
 // way back before VV-6's delete. That is the same hazard `AppointmentActions` gates,
 // arriving by a second path, so it takes the same answer: the control is ABSENT
@@ -221,22 +222,6 @@ export default function AtTheVetScreen() {
           if (router.canGoBack()) router.back();
           else router.replace('/vet-visits');
         }}
-        right={
-          appointment && appointmentDayReached(appointment.scheduled_at) ? (
-            <TouchableOpacity
-              onPress={() => {
-                void flushDraft();
-                router.replace(`/vet-visits/after?appointment=${appointment.id}`);
-              }}
-              activeOpacity={0.7}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              accessibilityRole="button"
-              accessibilityLabel="Finish the visit"
-            >
-              <ThemedText style={styles.doneLabel}>Done</ThemedText>
-            </TouchableOpacity>
-          ) : undefined
-        }
       />
 
       {loading ? (
@@ -292,6 +277,31 @@ export default function AtTheVetScreen() {
                 void setCareVisitTick(appointmentId, c.sign, next);
               }}
             />
+            {/* THE FINISH IS A LABELLED ROW, NOT A HEADER WORD (R8·7, CUL-2760). *Done*
+                in the header read as "close this screen" and was found by nobody in the
+                car park; the step the whole room leads to now says what it does, under
+                the last thing the owner did here. Same gate as before (the top of this
+                file): ABSENT until the visit's day, never `disabled` (C-7). The draft
+                is written first, so the capture is seeded with every word typed. */}
+            {appointmentDayReached(appointment.scheduled_at) ? (
+              <TouchableOpacity
+                style={styles.finish}
+                onPress={async () => {
+                  // AWAITED, unlike the back chevron: the capture seeds from the row, so
+                  // routing before the write lands would open it without the last words
+                  // typed. `flushDraft` says its own failure and never throws.
+                  if (timer.current) clearTimeout(timer.current);
+                  await flushDraft();
+                  router.replace(`/vet-visits/after?appointment=${appointment.id}`);
+                }}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityHint="Opens How did it go?"
+              >
+                <ThemedText style={styles.finishLabel}>{`Finish ${petName}’s visit`}</ThemedText>
+                <ChevronRight size={18} color={theme.colorTextTertiary} strokeWidth={2} />
+              </TouchableOpacity>
+            ) : null}
           </ScrollView>
         </KeyboardAvoidingView>
       ) : loaded ? (
@@ -327,9 +337,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space3,
     paddingBottom: theme.space5,
   },
-  doneLabel: {
+  finish: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.space2,
+    marginTop: theme.space3,
+    paddingHorizontal: theme.space2,
+    // The row is the target, pinned at the floor rather than left to its line box (C-5).
+    minHeight: theme.hitTarget,
+    paddingVertical: theme.space1,
+    borderRadius: theme.radiusMedium,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    backgroundColor: theme.colorSurface,
+  },
+  finishLabel: {
+    flexShrink: 1,
     fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
+    fontWeight: theme.weightSemibold,
     color: colorRoles.action.onLight,
   },
   retry: {

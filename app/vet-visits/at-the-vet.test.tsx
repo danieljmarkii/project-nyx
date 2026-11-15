@@ -245,19 +245,38 @@ describe('the finish door is gated, and the notes are not (CUL-966)', () => {
     // ABSENT rather than `disabled`: before the visit no finish control exists, and
     // `disabled` would claim one does (C-7).
     await mount(daysFromNow(42));
-    expect(screen.queryByLabelText('Finish the visit')).toBeNull();
+    expect(screen.queryByText('Finish Nyx’s visit')).toBeNull();
   });
 
   it('offers the finish door on the day', async () => {
     await mount(daysFromNow(0));
-    expect(screen.getByLabelText('Finish the visit')).toBeTruthy();
+    expect(screen.getByText('Finish Nyx’s visit')).toBeTruthy();
   });
 
   it('still offers it once the day has passed — the visit is unlogged, not gone', async () => {
     // The list's *Waiting on you* bucket reaches the notes now too, and an owner
     // there has a visit to finish. `isToday` would have been the wrong predicate.
     await mount(daysFromNow(-3));
-    expect(screen.getByLabelText('Finish the visit')).toBeTruthy();
+    expect(screen.getByText('Finish Nyx’s visit')).toBeTruthy();
+  });
+
+  it('is a labelled row in the body, not a header word (R8·7, CUL-2760)', async () => {
+    await mount(daysFromNow(0));
+    expect(screen.queryByText('Done')).toBeNull();
+    // Announced by its visible words, as a button (C-7: never a label that differs).
+    const row = screen.getByRole('button', { name: 'Finish Nyx’s visit' });
+    expect(row).toBeTruthy();
+  });
+
+  it('flushes the draft, then opens How did it go? carrying the appointment', async () => {
+    const { router } = jest.requireMock('expo-router');
+    await mount(daysFromNow(0));
+    fireEvent.changeText(field(), 'Ear still red');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Finish Nyx’s visit'));
+    });
+    expect(mockSaveDraft).toHaveBeenCalledWith('appt-1', 'Ear still red');
+    expect(router.replace).toHaveBeenCalledWith('/vet-visits/after?appointment=appt-1');
   });
 
   it('takes notes at any distance — the field is the point', async () => {

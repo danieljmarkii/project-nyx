@@ -117,7 +117,8 @@ export function VisitDetailBody({
             />
           ))}
           {visit.next_visit_at ? (
-            <PlanRow title="Next visit" sub={formatVisitDate(visit.next_visit_at)} />
+            // A date, not a booking (§4.4 R2): the vet's "around", in How did it go?'s words.
+            <PlanRow title="Next visit" sub={`Recheck around ${formatVisitDate(visit.next_visit_at)}`} />
           ) : null}
           <PlanActionRow
             glyph={<Plus size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
