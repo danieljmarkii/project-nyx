@@ -1382,3 +1382,43 @@ Deno.test('pipeline CUL-2773 — a stored row with no version is refused, never 
   assertEquals(structuredKeysWritten(w), [])
   assertStrictEquals(w.row?.colour, 'yellow')
 })
+
+Deno.test('pipeline CUL-2773 — the capped STATE write never lands over a read that arrived in its gap', async () => {
+  // Capped, no flag, no row at step 3b: the run would record the capped state. A
+  // sibling's escalation lands first; the state must not replace its status.
+  const w = makeWorld({
+    dayCount: 11,
+    vision: () => CLEAN,
+    beforeAiWrite: (world, n) => {
+      if (n === 1) world.row = { ...OWN, ...STORED_CALM, recommendation: 'worth_a_call', blood_col: 'yes', updated_at: '2026-09-26T08:30:00.000003+00:00' }
+    },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 200)
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.writes, [])
+})
+
+Deno.test('pipeline CUL-2773 — the capped STATE over a failed row that becomes a real read in its gap is not written', async () => {
+  const w = makeWorld({
+    row: { status: 'failed', recommendation: null, error: 'boom', blood_col: null },
+    dayCount: 11,
+    vision: () => CLEAN,
+    beforeAiWrite: (world, n) => {
+      if (n === 1) commit(world, { status: 'completed', recommendation: 'worth_a_call', error: null, blood_col: 'yes' })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.writes, [])
+})
+
+Deno.test('pipeline CUL-2773 — the capped STATE still lands over a failed row nobody touched', async () => {
+  const w = makeWorld({ row: { status: 'failed', recommendation: null, error: 'boom' }, dayCount: 11, vision: () => CLEAN })
+  await run(w)
+  assertEquals(w.writes.map((x) => x.mode), ['update'])
+  assertStrictEquals(w.row?.error, null)
+  assertStrictEquals(w.row?.status === 'failed', false)
+})

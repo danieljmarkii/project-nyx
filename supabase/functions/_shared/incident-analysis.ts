@@ -1693,6 +1693,7 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
       break
     }
     if (attempt >= WRITE_ATTEMPTS) throw new Error('DB write failed: the stored row kept changing under this read')
+    console.info(`${descriptor.functionName}: the stored row changed before the write; deciding again (CUL-2773)`)
     const again = await p.reread()
     // The photo read this run floors over is gone, or is no longer this event's (CUL-1203).
     if (!again || !analysisRowMatchesEvent(again, p.petId)) throw new Error('Analysis row does not belong to this event')
@@ -2150,6 +2151,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           if (wrote.error) throw new Error(`DB write failed: ${wrote.error}`)
           if (!wrote.missed) break
           if (attempt >= WRITE_ATTEMPTS) throw new Error('DB write failed: the stored row kept changing under this read')
+          console.info(`${descriptor.functionName}: the stored row changed before the write; deciding again (CUL-2773)`)
           capRow = await readStoredRow()
           if (!analysisRowMatchesEvent(capRow, petId)) {
             throw new Error('Analysis row does not belong to this event')
@@ -2162,14 +2164,45 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // No recommendation, no read, no flags — nothing reassuring is written. A
         // pre-existing completed/edited analysis is left UNTOUCHED (the cap must
         // never downgrade a real read).
+        // Held to the row it was decided on, like every other write here (CUL-2773): a
+        // sibling's read or an owner's edit can land during the consent and gate reads
+        // above, and the state must not be written over a row that became a real analysis
+        // meanwhile. Over no row it is insert-only; over a row it is held to its version.
+        // A miss re-reads and asks the same question of the row that is there now.
         const status = gatedStatus(gate)
-        const { error: writeError } = await adminClient
-          .from('event_ai_analysis')
-          .upsert(
-            { event_id: eventId, pet_id: petId, incident_type: incidentType, status, error: null },
-            { onConflict: 'event_id' },
-          )
-        if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
+        let stateRow = existing
+        for (let attempt = 1; ; attempt++) {
+          if (isRealAnalysis(stateRow)) break
+          const version = rowVersionOf(stateRow)
+          const { data: stated, error: writeError } = version === null
+            ? await adminClient
+              .from('event_ai_analysis')
+              .upsert(
+                { event_id: eventId, pet_id: petId, incident_type: incidentType, status, error: null },
+                { onConflict: 'event_id', ignoreDuplicates: true },
+              )
+              .select('id')
+            : await adminClient
+              .from('event_ai_analysis')
+              .update({ incident_type: incidentType, status, error: null })
+              .eq('event_id', eventId)
+              .eq('pet_id', petId)
+              .eq('updated_at', version.updatedAt)
+              .select('id')
+          if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
+          if (stated && stated.length > 0) break
+          // The state is a courtesy to the screen, never a finding: a row that keeps
+          // moving keeps whatever its newer writers gave it.
+          if (attempt >= WRITE_ATTEMPTS) {
+            console.warn(`${descriptor.functionName}: the stored row kept changing; the ${status} state was not written`)
+            break
+          }
+          console.info(`${descriptor.functionName}: the stored row changed before the write; deciding again (CUL-2773)`)
+          stateRow = await readStoredRow()
+          if (!analysisRowMatchesEvent(stateRow, petId)) {
+            throw new Error('Analysis row does not belong to this event')
+          }
+        }
       }
       // else: capped/disabled, no new flags, but a real analysis already exists →
       // leave it exactly as-is (success, no write), save one column: a stored TRUE beside a
