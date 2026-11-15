@@ -425,6 +425,24 @@ describe('a sync that lands between the save\'s check and its write (CUL-2772)',
     mockUpdateEvent.mockReset().mockResolvedValue(undefined);
   });
 
+  it('after that the time on screen is the row\'s again, not the one that was refused', async () => {
+    // Pass 2 of the adversarial review: deleting the screen reset left every test green,
+    // and without it the row shows the refused time while the next save writes the row's.
+    mockStoredTime.current = ROW;
+    const utils = await open('cough');
+    const opened = utils.getByTestId('time-when').props.accessibilityLabel as string;
+    mockMovedTo.current = new Date('2026-03-15T05:00:00.000Z');
+    fireEvent.press(utils.getByTestId('time-when'));
+    await act(async () => { fireEvent.press(utils.getByText('move-the-point')); });
+    expect(utils.getByTestId('time-when').props.accessibilityLabel).not.toBe(opened);
+
+    mockUpdateEvent.mockImplementation(async () => { throw moved(); });
+    await act(async () => { fireEvent.press(utils.getByText('Save')); });
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('This time was just updated', expect.any(String)));
+    expect(utils.getByTestId('time-when').props.accessibilityLabel).toBe(opened);
+    mockUpdateEvent.mockReset().mockResolvedValue(undefined);
+  });
+
   it('any other failure is still a failed save, not a retry', async () => {
     const utils = await openAndMove('2026-03-15T05:00:00.000Z');
     const failed = jest.spyOn(console, 'error').mockImplementation(() => {});
