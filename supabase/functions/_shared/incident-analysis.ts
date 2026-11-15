@@ -2011,7 +2011,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //     catch then keeps the contextual flags just computed (CUL-815).
     const existing = await readStoredRow()
     // CUL-1203: a row filed under another pet is not this event's read, and every
-    // decision below (humanEdited, existingRealAnalysis) would otherwise be taken
+    // decision below (existingRealAnalysis, the capped write) would otherwise be taken
     // on a stranger's row. Refused here, before the usage counter and before any
     // write — a direct return, so the catch's failure write never runs over it.
     // The client maps any non-2xx to its calm retry line; nothing new is shown.
@@ -2095,19 +2095,15 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       if (contextualFlags.length > 0) {
         // Escalation survives the cap → write a COMPLETED escalation row. CRITICAL
         // never-clobber guard (B-028; caught by adversarial + code review 2026-07-14):
-        // this write carries analysis=null (no model ran), so a FULL upsert would null
-        // the per-type structured clinical fields. A prior REAL analysis's facts must
-        // survive untouched — so we route through update-read-fields-only whenever the
-        // row is already a real analysis (humanEdited OR completed/uncertain), exactly
-        // the protection the no-flags branch below gives via existingRealAnalysis.
-        // Only a truly-fresh row (no prior real analysis) takes the full upsert, where
-        // null structured fields are correct (there is nothing to preserve — same as a
-        // photo-less escalation).
-        // Widened to ANY existing row (CUL-532's class, adversarial pass on PR-04b): a
-        // 'failed' or 'pending' row is not a "real analysis" but can still hold a prior
-        // read's fresh red blood (a 529 flips status and nothing else). This write has
-        // no structured data of its own to contribute, so an existing row has nothing
-        // for it to overwrite and everything for it to lose.
+        // this write carries analysis=null (no model ran), so a FULL write would null
+        // the per-type structured clinical fields. So ANY existing row takes the
+        // read-fields-only update (CUL-532's class, adversarial pass on PR-04b): an
+        // edited or completed row holds facts that must survive, and a 'failed' or
+        // 'pending' row can still hold a prior read's fresh red blood (a 529 flips
+        // status and nothing else). This write has no structured data of its own to
+        // contribute, so an existing row has nothing for it to overwrite and everything
+        // for it to lose. Only a row that is not there takes the full write, where null
+        // structured fields are correct (same as a photo-less escalation).
         // Decided over a row and held to its version, like step 9 (CUL-2773, RowVersion): the
         // consent and gate reads above sit between step 3b's read and this write, so an owner's
         // edit or a sibling's read can land inside them. A miss re-reads and decides again.
