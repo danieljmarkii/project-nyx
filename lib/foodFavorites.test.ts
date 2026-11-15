@@ -119,4 +119,14 @@ describe('free-fed ratings are set aside by date, not by food', () => {
     // The control: without the refusal the watched meals still make a favourite.
     expect(shelf(rows.slice(0, 5), [pre076])).toHaveLength(1);
   });
+
+  // CUL-2719: the wiring the wrapper's comment claims. A rating whose time cannot be read
+  // is never set aside as a bowl (no span can hold it) and never dropped: the core withholds.
+  it.each(['garbage', '', '2026-11-09T25:00:00Z'])('a refusal with the unreadable time %p withholds the favourite', (occurredAt) => {
+    const rows = [10, 9, 8, 7, 6].map((d) => row(d, 'all'));
+    rows.push({ ...row(0, 'refused'), occurred_at: occurredAt });
+    expect(shelf(rows, [])).toEqual([]);
+    expect(shelf(rows, [pre076])).toEqual([]);
+    expect(shelf(rows.slice(0, 5), [])).toHaveLength(1);
+  });
 });
