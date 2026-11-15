@@ -828,7 +828,12 @@ export interface VetVisitDetail {
   /** The questions prepared for this visit, read back through the appointment that
    *  names it (CUL-902). Empty for a visit logged with no appointment behind it. */
   questions: AppointmentQuestion[];
-  medications: Array<{ id: string; drugName: string; doseAmount: string | null; status: string }>;
+  /** `medicationItemId` is the course's drug-library item, or null for a course typed with
+   *  none: with the id it mints the Pet tab's med key (`medStripKeyForRegimen`), so the
+   *  visit's plan row opens the course it names (CUL-2759). */
+  medications: Array<{
+    id: string; drugName: string; doseAmount: string | null; status: string; medicationItemId?: string | null;
+  }>;
   trials: Array<{ id: string; label: string; status: string }>;
   documents: Array<{ groupId: string; title: string | null; kind: string; documentDate: string | null }>;
 }
@@ -845,8 +850,9 @@ export async function readVetVisitDetail(visitId: string): Promise<VetVisitDetai
 
   const medications = await db.getAllAsync<{
     id: string; drug_name: string; dose_amount: string | null; status: string;
+    medication_item_id: string | null;
   }>(
-    `SELECT id, drug_name, dose_amount, status FROM medications
+    `SELECT id, drug_name, dose_amount, status, medication_item_id FROM medications
       WHERE vet_visit_id = ? ORDER BY created_at ASC`,
     [visitId],
   );
@@ -895,6 +901,7 @@ export async function readVetVisitDetail(visitId: string): Promise<VetVisitDetai
     },
     medications: medications.map((m) => ({
       id: m.id, drugName: m.drug_name, doseAmount: m.dose_amount, status: m.status,
+      medicationItemId: m.medication_item_id ?? null,
     })),
     trials: trials.map((t) => ({
       id: t.id, label: t.food_label?.trim() || 'Diet trial', status: t.status,
