@@ -31,6 +31,7 @@ import * as path from 'path';
 import {
   pgTextArray,
   sameShown,
+  rowAfterSavedEdit,
   shownRead,
   writeAnalysisDismissal,
   VOMIT_DISMISSAL_COLUMNS,
@@ -192,5 +193,49 @@ describe('the column lists against the sections and the descriptors (C-34)', () 
     expect(cols.length).toBeGreaterThanOrEqual(10); // the parse found the list, not nothing
     expect(listed.filter((c) => !cols.includes(c))).toEqual([]);
     expect(listed.slice(0, 2)).toEqual(['recommendation', 'read_text']);
+  });
+});
+
+// CUL-2773 — what the record screen shows once an owner's edit is saved.
+describe('rowAfterSavedEdit', () => {
+  const pressedOn = { ...CALM, colour: 'yellow', edited_at: null as string | null };
+  const seen = shownRead(pressedOn, VOMIT_DISMISSAL_COLUMNS);
+  const edits = { colour: 'red' };
+  const editedAt = '2026-11-15T10:00:00.000Z';
+
+  it('the screen still shows the read the edit was made on: the owner\'s fields go over it', () => {
+    const out = rowAfterSavedEdit({ onScreen: pressedOn, pressedOn, seen, edits, editedAt });
+    expect(out.current).toBe(true);
+    expect(out.row).toEqual({ ...pressedOn, colour: 'red', edited_at: editedAt });
+  });
+
+  it('a newer read landed while the save was in flight: it stays on screen, and the caller is told to re-fetch', () => {
+    const newer = { ...pressedOn, recommendation: 'worth_a_call', read_text: 'Worth a call to your vet.' };
+    const out = rowAfterSavedEdit({ onScreen: newer, pressedOn, seen, edits, editedAt });
+    expect(out.current).toBe(false);
+    // The newer call is never replaced by the read Save was pressed on.
+    expect(out.row.recommendation).toBe('worth_a_call');
+    expect(out.row.read_text).toBe('Worth a call to your vet.');
+    expect(out.row.colour).toBe('red');
+    expect(out.row.edited_at).toBe(editedAt);
+  });
+
+  it('no row on screen falls back to the one Save was pressed on', () => {
+    for (const onScreen of [null, undefined]) {
+      const out = rowAfterSavedEdit({ onScreen, pressedOn, seen, edits, editedAt });
+      expect(out).toEqual({ row: { ...pressedOn, colour: 'red', edited_at: editedAt }, current: true });
+    }
+  });
+
+  it('both record sections merge over the row on screen and re-fetch when it moved (wiring)', () => {
+    for (const file of ['VomitAnalysisSection.tsx', 'StoolAnalysisSection.tsx']) {
+      const src = fs.readFileSync(path.join(__dirname, '..', 'components', 'event', file), 'utf8');
+      const save = src.slice(src.indexOf('async function handleSaveEdits'));
+      const body = save.slice(0, save.indexOf('// ── Render states ──'));
+      expect(body).toMatch(/rowAfterSavedEdit\(\{\s*onScreen: latestRow\.current, pressedOn: row, seen,/);
+      expect(body).toMatch(/if \(!saved\.current\) \{[\s\S]*?await fetchRow\(\)/);
+      // The old merge, over the row Save was pressed on, is gone.
+      expect(body).not.toMatch(/setRow\(\{ \.\.\.row, \.\.\.norm/);
+    }
   });
 });

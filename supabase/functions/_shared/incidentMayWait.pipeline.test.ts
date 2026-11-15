@@ -76,6 +76,12 @@ const KEYS_ON = (...keys: string[]): Row[] => keys.map((key) => ({ key, value: {
 
 // ── The fake client: PostgREST's filters, over arrays ─────────────────────────────
 
+// Migration 075: updated_at moves strictly forward on every UPDATE, and the pipeline holds
+// each write to the version it read (CUL-2773). The fake keeps that contract.
+let versionTick = 0
+const nextVersion = (): string => `2026-01-01T00:00:00.${String(++versionTick).padStart(6, '0')}+00:00`
+const versioned = (row: Row): Row => { row.updated_at ??= nextVersion(); return row }
+
 class Q {
   private mode: 'select' | 'update' | 'upsert' = 'select'
   private values: Row = {}
@@ -94,7 +100,8 @@ class Q {
   limit() { return this }
   maybeSingle() { this.single = true; return this }
   update(v: Row) { this.mode = 'update'; this.values = v; return this }
-  upsert(v: Row) { this.mode = 'upsert'; this.values = v; return this }
+  private ignoreDuplicates = false
+  upsert(v: Row, o?: { ignoreDuplicates?: boolean }) { this.mode = 'upsert'; this.values = v; this.ignoreDuplicates = o?.ignoreDuplicates === true; return this }
   then<T>(res: (r: { data: unknown; error: null }) => T, rej?: (e: unknown) => T) {
     return Promise.resolve().then(() => this.run()).then(res, rej)
   }
@@ -105,19 +112,24 @@ class Q {
       this.db.reads[this.table] = (this.db.reads[this.table] ?? 0) + 1
       // An event's log time defaults to when it occurred, a photo's upload time to long after the
       // yes (CUL-1835's rule reads both).
+      if (this.table === 'event_ai_analysis') rows.forEach(versioned)
       const hit = rows.filter((r) => this.preds.every((p) => p(r))).map((r) => (this.table === 'events' ? { created_at: r.occurred_at, ...r } : this.table === 'event_attachments' ? { created_at: '2020-06-01T00:00:00+00:00', ...r } : r))
       return { data: this.single ? (hit[0] ? { ...hit[0] } : null) : hit.map((r) => ({ ...r })), error: null }
     }
     if (this.mode === 'update') {
       const hit = rows.filter((r) => this.preds.every((p) => p(r)))
-      for (const r of hit) Object.assign(r, structuredClone(this.values))
+      for (const r of hit) Object.assign(r, structuredClone(this.values), this.table === 'event_ai_analysis' ? { updated_at: nextVersion() } : {})
       return { data: this.returning ? hit.map((r) => ({ id: r.id })) : null, error: null }
     }
     if (this.table === 'event_ai_analysis') { const hook = this.db.onUpsert; this.db.onUpsert = undefined; hook?.(this.db) }
     const existing = rows.find((r) => r.event_id === this.values.event_id)
-    if (existing) Object.assign(existing, structuredClone(this.values))
-    else rows.push({ id: `a-${this.values.event_id}`, edited_at: null, ...structuredClone(this.values) })
-    return { data: null, error: null }
+    if (existing && this.ignoreDuplicates) return { data: this.returning ? [] : null, error: null }
+    const written = existing
+      ? Object.assign(existing, structuredClone(this.values))
+      : { id: `a-${this.values.event_id}`, edited_at: null, ...structuredClone(this.values) }
+    if (!existing) rows.push(written)
+    if (this.table === 'event_ai_analysis') written.updated_at = nextVersion()
+    return { data: this.returning ? [{ id: written.id }] : null, error: null }
   }
 }
 

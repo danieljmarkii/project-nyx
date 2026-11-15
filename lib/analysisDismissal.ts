@@ -95,6 +95,30 @@ export function sameShown(row: object, shown: ShownRead): boolean {
   return Object.entries(shown).every(([column, value]) => sameValue(columnValue(row, column), value));
 }
 
+// What the record screen shows once an owner's field edit is saved (CUL-2773). The save is
+// a compare-and-set over the read the editor opened on (`seen`), so it landed on that read.
+// But the screen can have moved while it was in flight: the wait line re-fetches, and a
+// re-read can write a newer read after the edit commits (the server keeps the owner's
+// fields under it). Merging over the row the save was pressed on would put the old read
+// back on screen, a newer Worth a call included, until the next re-fetch.
+//
+// So the owner's fields go over the row ON SCREEN, and `current` says whether that row
+// still shows the read the edit was made on. When it does not, the caller re-fetches and
+// shows the stored row; the merge is only what stands until that answers.
+export function rowAfterSavedEdit<T extends object>(p: {
+  onScreen: T | null | undefined;
+  pressedOn: T;
+  seen: ShownRead;
+  edits: Partial<T>;
+  editedAt: string;
+}): { row: T; current: boolean } {
+  const base = p.onScreen ?? p.pressedOn;
+  return {
+    row: { ...base, ...p.edits, edited_at: p.editedAt },
+    current: sameShown(base, p.seen),
+  };
+}
+
 // The filter half of the compare-and-set, shared by every write the record screen makes
 // over a read it is showing: Hide / Show here, and the owner's field edit
 // (`saveVomitFieldEdits` / `saveStoolFieldEdits`, CUL-1356). One loop, so a column added to

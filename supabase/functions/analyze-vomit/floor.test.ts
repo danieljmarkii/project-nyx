@@ -44,10 +44,19 @@ interface World {
   // When > 0, that many event_ai_analysis UPDATEs match no row (a write the database refused),
   // so the run throws into its catch. Only for the CUL-1509 failure test.
   failUpdates?: number
+  // Runs once, as the first event_ai_analysis UPDATE arrives: another writer committing between
+  // the run's read of the row and its write (CUL-2773).
+  beforeUpdate?: (w: World) => void
   // Only for the tests about a photo read: when set, Storage, the counter and the model answer,
   // and `during` runs inside the model call (a log landing mid-read).
   photoRead?: { analysis: VomitAnalysis; during?: (w: World) => void }
 }
+
+// Migration 075: updated_at moves strictly forward on every UPDATE, and the pipeline holds
+// each write to the version it read (CUL-2773). The fake keeps that contract.
+let versionTick = 0
+const nextVersion = (): string => `2026-01-01T00:00:00.${String(++versionTick).padStart(6, '0')}+00:00`
+const versioned = (row: Row): Row => { row.updated_at ??= nextVersion(); return row }
 
 class FakeQuery {
   private mode: 'select' | 'update' | 'upsert' = 'select'
@@ -70,7 +79,8 @@ class FakeQuery {
   lt(_c: string, v: string) { this.ltV = v; return this }
   maybeSingle() { return this }
   update(v: Row) { this.mode = 'update'; this.values = v; return this }
-  upsert(v: Row) { this.mode = 'upsert'; this.values = v; return this }
+  private ignoreDuplicates = false
+  upsert(v: Row, o?: { ignoreDuplicates?: boolean }) { this.mode = 'upsert'; this.values = v; this.ignoreDuplicates = o?.ignoreDuplicates === true; return this }
   then<T>(res: (r: { data: unknown; error: null }) => T, rej?: (e: unknown) => T) {
     return Promise.resolve().then(() => this.run()).then(res, rej)
   }
@@ -118,16 +128,21 @@ class FakeQuery {
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
     const id = (this.mode === 'upsert' ? this.values.event_id : this.filters.event_id) as string
     const row = w.rows.get(id) ?? null
-    if (this.mode === 'select') return { data: row ? { ...row } : null, error: null }
+    if (this.mode === 'select') return { data: row ? { ...versioned(row) } : null, error: null }
     w.writes++
     if (this.mode === 'update') {
       if (!row) return { data: [], error: null }
+      if (w.beforeUpdate) { const hook = w.beforeUpdate; w.beforeUpdate = undefined; hook(w) }
       if ((w.failUpdates ?? 0) > 0) { w.failUpdates! -= 1; return { data: [], error: null } }
-      Object.assign(row, this.values)
+      if (this.filters.updated_at !== undefined && this.filters.updated_at !== row.updated_at) return { data: [], error: null }
+      Object.assign(row, this.values, { updated_at: nextVersion() })
       return { data: [{ id: row.id }], error: null }
     }
-    w.rows.set(id, row ? Object.assign(row, this.values) : { id: `a-${id}`, edited_at: null, dismissed_at: null, ...this.values })
-    return { data: null, error: null }
+    if (row && this.ignoreDuplicates) return { data: [], error: null }
+    const next = row ? Object.assign(row, this.values) : { id: `a-${id}`, edited_at: null, dismissed_at: null, ...this.values }
+    next.updated_at = nextVersion()
+    w.rows.set(id, next)
+    return { data: [{ id: next.id }], error: null }
   }
 }
 
@@ -286,6 +301,7 @@ Deno.test('floor · a floor-only run never lowers: nothing louder to say writes 
   const stored = {
     id: 'a-v3', event_id: 'v3', pet_id: PET_ID, status: 'completed', recommendation: 'worth_a_call', tier: 'call_now',
     read_text: 'kept', visual_flags: [], contextual_flags: ['repeated_vomiting'], edited_at: null, dismissed_at: null,
+    updated_at: '2025-12-31T00:00:00+00:00', // unchanged below: no write moved the version
   }
   w.rows.set('v3', { ...stored })
   const r = await call(w, { event_id: 'v3', mode: 'floor' })
@@ -304,9 +320,10 @@ Deno.test('floor · CUL-1509: a floor-only run that fails over a call writes no 
     id: 'a-v3', event_id: 'v3', pet_id: PET_ID, status: 'completed', recommendation: 'worth_a_call', tier: 'call_today',
     read_text: 'earlier words', visual_flags: ['blood'], contextual_flags: [], blood_present: 'fresh_red',
     edited_at: null, dismissed_at: null, error: null,
+    updated_at: '2025-12-31T00:00:00+00:00', // unchanged below: no write moved the version
   }
   w.rows.set('v3', { ...stored })
-  w.failUpdates = 1
+  w.failUpdates = 3 // every attempt the run makes (WRITE_ATTEMPTS, CUL-2773)
   const r = await call(w, { event_id: 'v3', mode: 'floor' })
   assertStrictEquals(r.status, 500)
   assertStrictEquals(w.failUpdates, 0) // the floor's raise was attempted, and refused
@@ -544,6 +561,30 @@ Deno.test('floor · adversarial D5: an owner-corrected photo finding is not asse
   assertStrictEquals(String(row.read_text).includes('blood'), false)
   assertStrictEquals(String(row.read_text).startsWith('Nyx has thrown up'), true)
   assertEquals(row.visual_flags, ['blood']) // the cache is left as the owner's edit left it (Pattern 7)
+})
+
+Deno.test('floor · CUL-2773: an owner correction landing in the floor\'s gap is decided over, not written past', async () => {
+  // The stored read says blood. As the floor's raise goes out, the owner's correction to
+  // "none visible" commits. The raise was worded over the old row ("blood" leads), so it
+  // must not land: the run decides again over the corrected row, as D5 does at rest.
+  const w = world({ events: photolessTriple().map((e) => (e.id === 'v3' ? { ...e, photo: true } : e)) })
+  w.rows.set('v3', {
+    id: 'a-v3', event_id: 'v3', pet_id: PET_ID, status: 'completed', recommendation: 'worth_a_call', tier: 'call_today',
+    read_text: 'earlier', visual_flags: ['blood'], contextual_flags: [], blood_present: 'fresh_red',
+    foreign_material_present: 'no', edited_at: null, dismissed_at: null,
+  })
+  const editedAt = iso(Date.now())
+  w.beforeUpdate = (world) => {
+    Object.assign(world.rows.get('v3')!, { blood_present: 'none_visible', edited_at: editedAt, updated_at: 'owner-edit' })
+  }
+  const r = await call(w, { event_id: 'v3', mode: 'floor' })
+  assertStrictEquals(r.status, 200)
+  const row = w.rows.get('v3')!
+  assertStrictEquals(row.tier, 'call_now') // the raise still lands
+  assertStrictEquals(row.blood_present, 'none_visible')
+  assertStrictEquals(row.edited_at, editedAt)
+  assertStrictEquals(String(row.read_text).includes('blood'), false)
+  assertStrictEquals(w.writes, 2) // one missed, one landed
 })
 
 Deno.test('floor · adversarial D4: soft-deleting a mis-logged meal re-floors, and the intake arm it hid comes back', async () => {
