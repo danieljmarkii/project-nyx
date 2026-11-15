@@ -106,6 +106,11 @@
   .night .lead { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textXL); line-height:30px; color:var(--colorMoonlight); margin:0; text-wrap:balance; }
   .night .by { font-size:var(--textXS); color:var(--colorTextOnNightMuted); line-height:var(--lineHeightXS); }
   .night .by u { text-underline-offset:2px; }
+  .night .big { font-family:var(--fontDisplay),Georgia,serif; font-size:var(--text2XL); color:var(--colorMoonlight); line-height:1.1; }
+  .ntiles { display:grid; grid-template-columns:1fr 1fr; gap:var(--space1); }
+  .ntiles div { border:1px solid var(--colorBorderOnNight); border-radius:var(--radiusMedium); padding:8px var(--space1_5); }
+  .ntiles b { display:block; font-family:var(--fontDisplay),Georgia,serif; font-size:var(--textXL); font-weight:var(--weightRegular); color:var(--colorMoonlight); line-height:1.15; }
+  .ntiles span { font-size:var(--textXS); color:var(--colorTextOnNightMuted); line-height:var(--lineHeightXS); display:block; }
   .tally { display:flex; gap:6px; flex-wrap:wrap; }
   .tally span { border:1px solid var(--colorBorderOnNight); border-radius:var(--radiusFull); padding:4px 10px; font-size:var(--textXS); color:var(--colorTextOnNightMuted); font-variant-numeric:tabular-nums; }
   .tally span b { color:var(--colorMoonlight); font-weight:var(--weightSemibold); }
@@ -158,6 +163,7 @@
   .plain { font-size:var(--textSM); color:var(--colorTextSecondary); padding:4px 0; }
   .plain.d { color:var(--colorDestructiveInk); }
   .sw { width:40px; height:24px; border-radius:12px; background:var(--colorAction); position:relative; flex:none; }
+  .sw.off { background:var(--colorBorderStrong); } .sw.off::after { right:auto; left:2px; }
   .sw::after { content:""; position:absolute; right:2px; top:2px; width:20px; height:20px; border-radius:50%; background:#fff; }
   /* motion: arrive out of the tick */
   .tick { display:inline-block; width:3px; height:16px; border-radius:2px; background:var(--colorMoonlitTeal); vertical-align:-3px; margin-right:8px; animation:breath 1400ms ease-in-out infinite; }
@@ -199,6 +205,99 @@
     <div class="led"><q>One could be the night header. Other directions can be explored as well.</q><span>Screen One draws four tops: the night header and three others.</span></div>
     <div class="led"><q>Let's research others as well.</q><span>Done: about sixty-five health, assistant and pet products read for what they do. Six functions that fit a pet's record are sketched near the foot, each with who does it.</span></div>
   </div>
+
+  <!-- ================= AFTER THE OWNERS ================= -->
+  <section>
+    <div class="num">Added after Jordan and Sam read this round</div>
+    <h2>Where the two owners landed</h2>
+    <p class="sec-lede">Each read the frames below alone, with the captions removed. They agreed on two of the three screens and split on the top. This section draws what their reads add up to; the directions they read are unchanged underneath.</p>
+    <div class="ledger" style="margin-top:0">
+      <h3>Their picks</h3>
+      <div class="led"><b>The top</b><span>Jordan: daylight, then the record leads, a conversation, night. Sam: the record leads, then daylight, night, a conversation. <b>Neither put night or the conversation first.</b> Night read to Jordan as "a dark wall of homework", its counts as an inbox. The conversation "sounds sure of itself" to Sam.</span></div>
+      <div class="led"><b>The facts</b><span><b>Both: now, then before.</b> "It matches how I think." By kind "opens on Nothing recorded for a cat who has lost 1.6 lb, which reads as a clean bill".</span></div>
+      <div class="led"><b>The review</b><span><b>Both: safe ones together,</b> on one condition: show all seven before the button. As drawn, four were hidden with their switches on. Sam: "the finished paragraph problem again".</span></div>
+      <div class="led"><b>What would end it</b><span>Jordan: the tab opening every time on a question and "8 to review". "That is an inbox." Sam: "The AI speaks first and talks about paperwork. If its opening sentence never mentions that she has lost a sixth of her weight, I conclude it does not see the cat."</span></div>
+      <div class="led"><b>A real catch</b><span>"Before a visit" said her weight was down 0.1 lb. True since the last visit, and it would wrongly relax an owner whose cat is down 1.6 lb since June. Fixed on the page, and now a rule: a "since last time" number never appears without the standing one.</span></div>
+      <div class="led"><b>The extras</b><span>Both want: gaps only questions, before a visit (the one each would miss most), sources under the read, hand it to the vet (off until chosen). Still true: fine if rare. Set aside: Jordan wants it; Sam fears using it "on whatever I was tired of hearing".</span></div>
+      <div class="led"><b>Blocking</b><span>The permission screen's line about how long notes are kept and whether they are trained on has to be the real answer before either would tap Allow.</span></div>
+    </div>
+    <div class="row" style="margin-top:28px">
+      <div class="frame">
+        <div class="dir"><b>What their reads add up to</b></div>
+        <div class="phone"><div class="body">
+          <div class="id"><div class="ph"></div><div><div class="n">Nyx ⌄</div><div class="f">Cat · American Shorthair · 3 yrs · female</div></div></div>
+          <div class="chart">
+            <div class="h"><b>8.1 lb</b><span>Log a weight</span></div>
+            <svg viewBox="0 0 250 70" width="100%" role="img" aria-label="Three weigh-ins: 9.7 pounds on June 15, 8.2 on September 16, 8.1 on November 14">
+              <circle cx="14" cy="12" r="6" fill="var(--colorTextPrimary)"/><circle cx="150" cy="46" r="6" fill="var(--colorTextPrimary)"/><circle cx="236" cy="48" r="6" fill="var(--colorTextPrimary)"/>
+              <g font-family="Geist, sans-serif" font-size="11" fill="var(--colorTextTertiary)"><text x="26" y="16">9.7 · Jun 15</text><text x="100" y="66">8.2 · Sep 16</text><text x="196" y="30">8.1 · Nov 14</text></g>
+            </svg>
+            <div class="hint">Down 1.6 lb since June. This is the weight finding on Home.</div>
+          </div>
+          <div class="tiles"><div><b>12</b><span>vomits in 28 days, 6 in the 28 before</span></div><div><b>Vet report</b><span>Open ›</span></div></div>
+          <div class="read">
+            <div class="ey">Culprit's read · Nov 15</div>
+            <p style="font-size:var(--textMD);line-height:22px">Nyx is down 1.6 lb since June and vomiting more often. You've logged a cough and sneezing too. Three medicines are being given that aren't on her record.</p>
+            <div class="hint">Read: your logs and two visit notes. Not read: your two files. It can miss things. <u>Sources</u> · <u>Something's wrong</u></div>
+          </div>
+          <div class="ask"><div class="lbl" style="margin:0">Can you help with one thing</div><div class="t">Your Nov 14 notes say Nyx has been off prednisolone, and a dose is logged that day. Is she back on it?</div><div class="o"><span>Yes, she's on it again</span><span>It was a one-off</span><span>Not sure</span><span class="q2">That's not what my notes say</span></div></div>
+          <div class="hint">Below: 8 found in your notes · going on now · before</div>
+        </div>
+        <div class="dock"><span>Tell Culprit about Nyx</span><b>Talk</b></div>
+        <div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div></div>
+        <div class="cap"><b>The record leads, in daylight.</b> Her numbers first, where both can check them. The read opens with the cat, not the paperwork, and uses only the engine's own numbers. The question shows once and leaves when answered; "8 found" sits below, not at the top.</div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>The same, on night</b><span class="rule">edits a brand rule</span></div>
+        <div class="phone">
+          <div class="night">
+            <div class="top"><b>Nyx ⌄</b><span>Edit profile</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="big">8.1 lb</span><span style="font-size:var(--textSM);color:var(--colorMoonlight)">Log a weight</span></div>
+            <svg viewBox="0 0 250 70" width="100%" role="img" aria-label="Three weigh-ins: 9.7 pounds on June 15, 8.2 on September 16, 8.1 on November 14">
+              <circle cx="14" cy="12" r="6" fill="var(--colorMoonlight)"/><circle cx="150" cy="46" r="6" fill="var(--colorMoonlight)"/><circle cx="236" cy="48" r="6" fill="var(--colorMoonlight)"/>
+              <g font-family="Geist, sans-serif" font-size="11" fill="var(--colorTextOnNightMuted)"><text x="26" y="16">9.7 · Jun 15</text><text x="100" y="66">8.2 · Sep 16</text><text x="196" y="30">8.1 · Nov 14</text></g>
+            </svg>
+            <div class="ntiles"><div><b>12</b><span>vomits in 28 days, 6 before</span></div><div><b>Vet report</b><span>Open ›</span></div></div>
+            <div class="ey" style="margin-top:4px">Culprit's read · Nov 15</div>
+            <p class="lead" style="font-size:var(--textLG);line-height:26px">Nyx is down 1.6 lb since June and vomiting more often. Three medicines are being given that aren't on her record.</p>
+            <div class="by">Read: your logs and two visit notes. Not read: your two files. It can miss things. <u>Sources</u> · <u>Something's wrong</u></div>
+          </div>
+          <div class="body">
+            <div class="ask"><div class="lbl" style="margin:0">Can you help with one thing</div><div class="t">Your Nov 14 notes say Nyx has been off prednisolone, and a dose is logged that day. Is she back on it?</div><div class="o"><span>Yes, she's on it again</span><span>It was a one-off</span><span>Not sure</span></div></div>
+          </div>
+          <div class="dock"><span>Tell Culprit about Nyx</span><b>Talk</b></div>
+          <div class="tabbar"><span>Home</span><span>History</span><span>Foods</span><span class="on">Nyx</span></div>
+        </div>
+        <div class="cap"><b>If you still want night.</b> What the owners objected to in the night top was its content: inbox counts, big words about filing, the weight underneath. This keeps the night ground and puts her numbers in it. Neither owner has seen this one. It still needs the brand rule edit.</div>
+      </div>
+
+      <div class="frame">
+        <div class="dir"><b>The review, with their condition</b></div>
+        <div class="phone">
+          <div class="hd"><span class="x">Close</span><b>From your Sep 16 notes</b><span></span></div>
+          <div class="body">
+            <div class="lbl">What her vet asked for · 7</div>
+            <div class="look">
+              <div class="r"><div class="k">Clean her ears every 4 weeks</div><span class="sw"></span></div>
+              <div class="r"><div class="k">Treat the left ear with Motozol once a day</div><span class="sw"></span></div>
+              <div class="r"><div class="k">Call if still coughing after the 10 full strength days</div><span class="sw"></span></div>
+              <div class="r"><div class="k">Don't start and stop the steroid</div><span class="sw"></span></div>
+              <div class="r"><div class="k">No treats to help with pills until the trial ends</div><span class="sw"></span></div>
+              <div class="r"><div class="k">No need to come back at 12 weeks</div><span class="sw"></span></div>
+              <div class="r"><div class="k">One protein at a time when reintroducing</div><span class="sw"></span></div>
+            </div>
+            <div class="hint">Tap any line to see your words. These are notes of what she asked; adding them changes nothing Culprit counts or asks.</div>
+            <div class="btn">Add these 7</div>
+            <div class="lbl">Yours, looked at on its own · 1</div>
+            <div class="look"><div class="sg"><b>Chicken: you think it made her vomit more</b><div class="q">"This increased to 3.4 with chicken reintroduction"</div><div class="acts"><span>Look at this one</span><span></span><span>Not right</span></div></div></div>
+            <div class="out"><b>Left out on purpose.</b> What Dr Miller thought about her weight, "No fever", "Lungs sound good". They stay in your notes, on the Sep 16 visit.</div>
+          </div>
+        </div>
+        <div class="cap"><b>All seven in view before the button.</b> The footer no longer contradicts itself: these are notes of what the vet asked, and none is a medicine or diet on her record. "Left out on purpose" stays, and says where to find it.</div>
+      </div>
+    </div>
+  </section>
 
   <!-- ================= ONE ================= -->
   <section>
@@ -355,13 +454,13 @@
           <div class="lbl">Going on now</div>
           <div class="card">
             <div class="r"><div class="k">Weight down 1.6 lb since June<small class="src">From three weigh-ins · a finding on Home</small></div><span class="go">›</span></div>
-            <div class="r"><div class="k">Vomiting, more often lately<small class="src">From your logs · a finding on Home</small></div><span class="go">›</span></div>
+            <div class="r"><div class="k">Vomiting: 12 in 28 days, 6 in the 28 before<small class="src">From your logs · a finding on Home</small></div><span class="go">›</span></div>
           </div>
           <div class="look">
             <div class="r"><div class="k">Motozol, Zyrtec, prednisolone<small>Being given. None is listed.</small></div><span class="a">List</span></div>
           </div>
           <div class="card"><div class="r"><div class="k">Eating six rabbit foods<small class="src">From 74 meals logged in 14 days. Unlogged food isn't counted.</small></div><span class="go">›</span></div></div>
-          <div class="lbl">Still standing</div>
+          <div class="lbl">You've told Culprit</div>
           <div class="card"><div class="r"><div class="k">Her vet knows about the cough<small class="src">You said so on Oct 11</small></div><span class="go">›</span></div></div>
           <div class="lbl">Before</div>
           <div class="card"><div class="r"><div class="k">Diet trial, Jul 26 to Oct 20</div><span class="go">›</span></div><div class="r"><div class="k">Prednisolone, Sep 21 to Oct 11</div><span class="go">›</span></div><div class="r"><div class="k">2 vet visits</div><span class="go">›</span></div></div>
@@ -500,7 +599,7 @@
       <div class="frame" style="width:250px">
         <div class="dir"><b>Before a visit</b></div>
         <div class="phone"><div class="body">
-          <div class="read"><div class="ey">Nyx's visit is Friday</div><div class="hint" style="font-size:var(--textSM);line-height:var(--lineHeightSM);color:var(--colorTextPrimary)">Since her Sep 16 visit: 20 vomits logged, weight down 0.1 lb, three medicines given that aren't listed. Anything to add before you go?</div></div>
+          <div class="read"><div class="ey">Nyx's visit is Friday</div><div class="hint" style="font-size:var(--textSM);line-height:var(--lineHeightSM);color:var(--colorTextPrimary)">Since her Sep 16 visit: 20 vomits logged, and three medicines given that aren't listed. Her weight is down 0.1 lb since then and 1.6 lb since June. Anything to add before you go?</div></div>
           <div class="dock" style="margin:0"><span>Tell Culprit</span><b>Talk</b></div>
         </div></div>
         <div class="cap"><b>The tab asks three days ahead.</b> What changed since last time, and a prompt to add what the record lacks. <i>Digitail's pet parent app; K Health; Dutch.</i></div>
@@ -531,8 +630,8 @@
       <div class="frame" style="width:250px">
         <div class="dir"><b>Hand it to the vet</b></div>
         <div class="phone"><div class="body">
-          <div class="card"><div class="r"><div class="k">Add to the vet report<small>A page of what's on Nyx's record: problems, medicines, what her vet asked for. In your words, marked as yours.</small></div><span class="sw"></span></div></div>
-          <div class="hint">You choose each time. Culprit's own read is never sent.</div>
+          <div class="card"><div class="r"><div class="k">Add to the vet report<small>A page of what's on Nyx's record: problems, medicines, what her vet asked for. In your words, marked as yours.</small></div><span class="sw off"></span></div></div>
+          <div class="hint">Off until you turn it on, each time. Culprit's own read is never sent.</div>
         </div></div>
         <div class="cap"><b>The owner decides what the clinician sees.</b> <i>Amazon's health AI, Oura, Ada and PETTO build a summary the user chooses to share.</i></div>
       </div>

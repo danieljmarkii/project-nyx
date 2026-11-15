@@ -403,3 +403,38 @@ All four tops carry Jordan's and Sam's conditions: weight and the vet report on 
 **Five things the read found nobody does,** each already a rule here: confirm before a conversation-derived fact is used; ask whether an old fact holds; say when a change takes effect; forbid a stored fact from explaining a symptom away; list what the AI does not know.
 
 **Needed before a spec:** reactions on the three screens and the six functions; a yes on stored model text (§14); a yes on the size (about 18 rows, after the 1.2.0 cut); the brand rule edit if night is picked; and D1 to D7 with the two conflicts from round 1, several of which this direction changes (D2 and D3 most).
+
+---
+
+## 17. Jordan and Sam on round 3 (2026-11-15)
+
+Each read round 3's frames alone, with the captions and rule tags removed so the team's own descriptions could not steer them.
+
+| Screen | Jordan | Sam |
+|---|---|---|
+| The top | Daylight on the rail, the record leads, a conversation, night | The record leads, daylight, night, a conversation |
+| The facts | Now then before, by kind, by where it came from | Now then before, by where it came from, by kind |
+| The review | Safe ones together, a list, one at a time | Safe ones together, a list, one at a time |
+| Would miss most | Before a visit | Before a visit |
+
+**Agreed.** "Now, then before" for the facts. "Safe ones together" for the review, on the condition that all seven are in view before the button. Neither put night or the conversation first.
+
+**On night.** Jordan: "a dark wall of homework"; the counts read as an inbox. Sam: "the big words are about filing"; the weight loss is small grey text underneath. Both objections are to what the night top said and where it put the weight, more than to the ground itself. A night top with her numbers in it is drawn for the PM; neither owner has read it.
+
+**Sam's trust breaker, which is a rule.** "The AI speaks first and talks about paperwork. If its opening sentence never mentions that she has lost a sixth of her weight or how she is eating, I conclude it does not see the cat." The read must open with what the record shows about the pet, in the engine's own numbers, before anything about what is unlisted. A read that leads with housekeeping while a safety finding is live is the emphasis hazard from §12 in a new place.
+
+**A softening the owners caught.** The "before a visit" sketch said weight was down 0.1 lb, which is true since the last visit and sits beside a 1.6 lb loss since June. A "since last time" number must never appear without the standing one. This is the same family as the safety brief's Q1 (a window that opens at the last visit).
+
+**Other catches, applied on the page:** all seven suggestions shown before "Add these 7"; the batch footer no longer contradicts its own contents; "hand it to the vet" is off until chosen; "more often lately" replaced with the counts; "Still standing" renamed.
+
+**Jordan's inbox objection.** A tab that opens every time on a question and "8 to review" is an inbox. The question shows once and leaves when answered; the count of things found sits below the fold.
+
+**Extras.** Both want gaps only questions, before a visit, sources under the read, and hand it to the vet. Still true: acceptable if rare. Set aside: Jordan wants it; Sam fears using it on whatever she is tired of hearing, which is the intake hazard, so it stays a mention control and is not offered on a sign with a live finding.
+
+**Blocking for both:** the permission screen must state the real retention and training answer.
+
+**What their reads add up to** (drawn at the top of the round 3 page): the record leads, in daylight; the read on the rail, opening with the pet; the question once; facts sorted now then before; the review with safe ones together and every line in view.
+
+**The PM's lean against the owners' ranking.** The PM said round 1, with its night top, was closest to the vision. Both owner reads rank the night direction third or fourth. This is the PM's call, and it is not a persona conflict between lenses. The page offers the owners' content on the night ground as the way to have both.
+
+**Limits.** Two persona reads, static renders, one pass each. Not real owners, not a device pass. The merged frames were drawn after their reads and have not been read by either.
