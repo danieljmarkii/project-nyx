@@ -10,7 +10,7 @@ import { formatVisitDate, formatVisitWeekday, formatWhereLine, type VetVisitDeta
 // IT SAYS WHAT THE RECORD SAYS AND NOTHING ELSE. Every line is a field the visit screen
 // already renders, in the words that screen uses: *What the vet said* is the notes, the
 // plan is the courses and trials this visit started and their status, and the recheck is
-// *Next visit* with its date. No line is derived: no dose count, no adherence, no "booked"
+// *Recheck around {date}*: `next_visit_at` is the vet's "around", never a booking (§4.4 R2). No line is derived: no dose count, no adherence, no "booked"
 // or "not booked" (whether a booking exists for that date is not on this read, and a
 // shared sentence that guessed would travel further than the screen it came from). A
 // visit with no notes and no plan says exactly that (paperwork may exist and is not this
@@ -34,7 +34,7 @@ export function visitToPlainText(detail: VetVisitDetail, petName: string, now: D
     ...detail.trials.map((t) => `${t.label} · ${t.status === 'active' ? 'trial running' : 'trial ended'}`),
   ];
   const nextVisit = visit.next_visit_at ? formatVisitDate(visit.next_visit_at, now) : '';
-  if (nextVisit) plan.push(`Next visit · ${nextVisit}`);
+  if (nextVisit) plan.push(`Recheck around ${nextVisit}`);
   if (plan.length > 0) blocks.push(['The plan:', ...plan.map((line) => `• ${line}`)].join('\n'));
 
   if (!notes && plan.length === 0) {

@@ -64,19 +64,28 @@ import { hasAskedAboutAppointment, markAppointmentAsked } from '../../lib/appoin
  * wore last. Three conditions, each load-bearing:
  *   • `upcoming`: a passed DAY is the ask's face, which has its own two answers;
  *   • `isToday`: a booking tomorrow at 9:00 has not "passed" at 10:00 today;
- *   • a known clock time: a no-time booking is stored as local midnight (the sentinel,
- *     `appointmentTimeKnown`), and reading that as "the visit was at 00:00" would ask
- *     how it went before the owner has left the house. Such a booking keeps *Get ready*
- *     all day and meets the ask tomorrow, as before.
+ *   • the time it is judged against: the booked clock time, or NOON for a booking with
+ *     no time (spec §4.4 R7). A no-time booking is stored as local midnight (the
+ *     sentinel, `appointmentTimeKnown`), and reading that as "the visit was at 00:00"
+ *     would ask how it went before the owner has left the house.
  * Instants are parsed, never compared as text (C-40).
  */
 export function visitTimePassed(appointment: HomeAppointment, nowMs: number): boolean {
   if (appointment.phase !== 'upcoming' || !appointment.view.isToday) return false;
   const { scheduledAt } = appointment.view;
-  if (!appointmentTimeKnown(scheduledAt)) return false;
-  const at = new Date(scheduledAt).getTime();
-  return !Number.isNaN(at) && at <= nowMs;
+  const at = new Date(scheduledAt);
+  if (Number.isNaN(at.getTime())) return false;
+  if (!appointmentTimeKnown(scheduledAt)) {
+    // Noon of the booking's own LOCAL day, built from local components (DST-safe: noon
+    // exists on every day a transition can land on).
+    const noon = new Date(at.getFullYear(), at.getMonth(), at.getDate(), NO_TIME_FLIP_HOUR, 0, 0, 0);
+    return noon.getTime() <= nowMs;
+  }
+  return at.getTime() <= nowMs;
 }
+
+/** The hour a no-time booking is treated as over, for the strip's face only (§4.4 R7). */
+export const NO_TIME_FLIP_HOUR = 12;
 
 export function AppointmentStrip() {
   const activePet = usePetStore((s) => s.activePet);
@@ -269,12 +278,17 @@ export function AppointmentStrip() {
         // On BOTH faces (CUL-987 D1). On the ask it is the door for the answer the two
         // buttons do not offer — "it moved" — through Get ready's ⋯ *Change*. A
         // navigation, not a write: this file's one write is still *It didn't*.
-        onPress={openGetReady}
+        //
+        // Except on *Back from the vet?*: the title asks a question, and the biggest
+        // thing on the card answers it, so the block goes where the door goes and its
+        // hint says so. Get ready (and *Change*) stays reachable from the visits list.
+        onPress={back ? openHowDidItGo : openGetReady}
+        hint={back ? 'Opens How did it go? for this visit' : undefined}
       />
       <View style={styles.doors}>
         {back ? (
           // One door. The visit has happened, so *Get ready* and *Add a question* are
-          // behind the owner; the block above still opens Get ready for anything else.
+          // behind the owner.
           <Door label="How did it go?" primary onPress={openHowDidItGo} />
         ) : phase === 'upcoming' ? (
           <>

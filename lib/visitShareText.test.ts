@@ -45,7 +45,7 @@ describe('visitToPlainText', () => {
           '• Motozol · 2 drops · still on it',
           '• Prednisolone · ended',
           '• Hydrolyzed salmon · trial running',
-          '• Next visit · Dec 26',
+          '• Recheck around Dec 26',
         ].join('\n'),
       ].join('\n\n'),
     );
@@ -82,6 +82,6 @@ describe('visitToPlainText', () => {
   });
 
   it('stamps the year on a recheck in another year', () => {
-    expect(visitToPlainText(detail({ next_visit_at: '2027-01-09' }), 'Nyx', NOW)).toMatch('• Next visit · Jan 9, 2027');
+    expect(visitToPlainText(detail({ next_visit_at: '2027-01-09' }), 'Nyx', NOW)).toMatch('• Recheck around Jan 9, 2027');
   });
 });

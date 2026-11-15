@@ -16,6 +16,11 @@ interface Props {
    * it; optional so the block still draws where no destination exists.
    */
   onPress?: () => void;
+  /**
+   * Where the press goes, spoken. Get ready by default; the strip's *Back from the vet?*
+   * face points the block at How did it go? (R8·7), and the hint follows the press.
+   */
+  hint?: string;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -39,7 +44,9 @@ interface Props {
 // is the trial strip's, not the Signal's — a safety card must always outrank it,
 // which on the Pet tab it does by not competing. No chevron and no label either: the
 // press state is the whole affordance, which is the cost of D1 (a) the ruling took.
-export function AppointmentBlock({ appointment, variant = 'plain', onPress, style }: Props) {
+export function AppointmentBlock({
+  appointment, variant = 'plain', onPress, hint = 'Opens Get ready for this visit', style,
+}: Props) {
   const { stamp } = appointment;
   // At the accessibility sizes the date block sits above the time rather than beside it:
   // beside, the day drew under the time ("17 3:00 pm"), and a wider block left the time
@@ -80,7 +87,7 @@ export function AppointmentBlock({ appointment, variant = 'plain', onPress, styl
         activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityLabel={label}
-        accessibilityHint="Opens Get ready for this visit"
+        accessibilityHint={hint}
       >
         {body}
       </TouchableOpacity>

@@ -71,7 +71,7 @@ jest.mock('../../lib/appointmentAsked', () => ({
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { AppointmentStrip, visitTimePassed } from './AppointmentStrip';
+import { AppointmentStrip, NO_TIME_FLIP_HOUR, visitTimePassed } from './AppointmentStrip';
 import { cancelVetAppointment, readHomeAppointment, type HomeAppointment } from '../../lib/vetVisits';
 import { markAppointmentAsked } from '../../lib/appointmentAsked';
 import { useSyncStore } from '../../store/syncStore';
@@ -469,6 +469,15 @@ describe('on the day, once the booked time has passed — *How did it go?* (R8·
     expect(markAppointmentAsked).not.toHaveBeenCalled();
   });
 
+  it('points the block where the question points, and says so', async () => {
+    mockHome.current = passedToday();
+    const r = render(<AppointmentStrip />);
+    const block = await r.findByLabelText('Back from the vet?, Riverside Animal Hospital · recheck');
+    expect(block.props.accessibilityHint).toBe('Opens How did it go? for this visit');
+    fireEvent.press(block);
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/vet-visits/after', params: { appointment: 'appt-1' } });
+  });
+
   it('keeps *Get ready* while the booked time is still ahead', async () => {
     mockHome.current = homeAppointment('upcoming');
     const r = render(<AppointmentStrip />);
@@ -492,10 +501,18 @@ describe('visitTimePassed — the face is the record’s, never a guess', () => 
     expect(visitTimePassed(at(new Date(now + 60_000).toISOString()), now)).toBe(false);
   });
 
-  it('is false for a no-time booking (the local-midnight sentinel), all day', () => {
+  it('judges a no-time booking (the local-midnight sentinel) against NOON, never 00:00 (§4.4 R7)', () => {
     const midnight = new Date(now);
     midnight.setHours(0, 0, 0, 0);
-    expect(visitTimePassed(at(midnight.toISOString()), now)).toBe(false);
+    const atHour = (h: number, m = 0) => {
+      const d = new Date(midnight);
+      d.setHours(h, m, 0, 0);
+      return d.getTime();
+    };
+    expect(visitTimePassed(at(midnight.toISOString()), atHour(0, 30))).toBe(false);
+    expect(visitTimePassed(at(midnight.toISOString()), atHour(NO_TIME_FLIP_HOUR - 1, 59))).toBe(false);
+    expect(visitTimePassed(at(midnight.toISOString()), atHour(NO_TIME_FLIP_HOUR))).toBe(true);
+    expect(visitTimePassed(at(midnight.toISOString()), atHour(18))).toBe(true);
   });
 
   it('is false off the day, and on the passed-day ask, which has its own answers', () => {
