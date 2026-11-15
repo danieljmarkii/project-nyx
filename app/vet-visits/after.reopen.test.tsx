@@ -583,6 +583,37 @@ describe('R2 — the recheck row', () => {
     await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { nextVisitAt: expect.any(String) }));
   });
 
+  it('Set right after a date move reads the booking against the NEW date (adversarial pass 2, QUIET)', async () => {
+    mockVisit = savedVisit();
+    await openReopen();
+    const moved = new Date();
+    moved.setDate(moved.getDate() - 10);
+    await moveDateTo(moved);
+    // Inside the 600 ms debounce: the date is not on the record yet.
+    fireEvent.press(screen.getByText('6 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    const key = `${moved.getFullYear()}-${String(moved.getMonth() + 1).padStart(2, '0')}-${String(moved.getDate()).padStart(2, '0')}`;
+    await waitFor(() => expect(mockReadRecheckBooking).toHaveBeenCalled());
+    expect(mockReadRecheckBooking).toHaveBeenLastCalledWith(expect.objectContaining({ visited_at: key }));
+    // The date was written before the recheck.
+    expect(mockUpdateVisit.mock.calls[0][1]).toEqual({ visitedAt: key });
+  });
+
+  it('a flush landing after Set keeps the recheck on the record it diffs against', async () => {
+    let release!: () => void;
+    mockUpdateVisit.mockImplementationOnce(() => new Promise<undefined>((r) => { release = () => r(undefined); }));
+    await openReopen();
+    fireEvent.changeText(screen.getByLabelText('Clinic'), 'Elm St Clinic');
+    // The debounce's write starts and hangs.
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { clinicName: 'Elm St Clinic' }), { timeout: 2000 });
+    fireEvent.press(screen.getByText('6 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    await act(async () => release());
+    await waitFor(() => expect(screen.getByText('Not booked yet')).toBeTruthy());
+    // Set's read ran with the recheck in hand, so it asked the record about a booking.
+    await waitFor(() => expect(mockReadRecheckBooking).toHaveBeenCalled());
+  });
+
   it('Book it pushes one booking screen however fast it is tapped', async () => {
     mockVisit = savedVisit({ next_visit_at: '2026-10-28' });
     await openReopen();

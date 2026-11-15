@@ -315,13 +315,16 @@ export default function AfterVisitScreen() {
       const patch = visitFieldsPatch(record, form);
       if (Object.keys(patch).length === 0) return;
       await updateVisitDetails(id, patch);
+      // Merged onto the record AS IT STANDS NOW, not the one this flush started from: a
+      // *Set* that landed during the write moved `next_visit_at`, and must keep it.
+      const now = recordRef.current ?? record;
       recordRef.current = {
-        ...record,
-        visited_at: patch.visitedAt ?? record.visited_at,
-        clinic_name: patch.clinicName !== undefined ? patch.clinicName ?? null : record.clinic_name,
-        vet_name: patch.vetName !== undefined ? patch.vetName ?? null : record.vet_name,
-        reason: patch.reason !== undefined ? patch.reason ?? null : record.reason,
-        notes: patch.notes !== undefined ? patch.notes ?? null : record.notes,
+        ...now,
+        visited_at: patch.visitedAt ?? now.visited_at,
+        clinic_name: patch.clinicName !== undefined ? patch.clinicName ?? null : now.clinic_name,
+        vet_name: patch.vetName !== undefined ? patch.vetName ?? null : now.vet_name,
+        reason: patch.reason !== undefined ? patch.reason ?? null : now.reason,
+        notes: patch.notes !== undefined ? patch.notes ?? null : now.notes,
       };
       syncPendingVetVisits().catch(console.error);
     });
@@ -982,6 +985,9 @@ export default function AfterVisitScreen() {
     setBusyRow('next-visit');
     try {
       const id = await ensureVisit();
+      // The form first: the booking read below is against the visit's date, and a date moved
+      // inside the debounce is not on the record yet (adversarial pass 2, QUIET).
+      await flushFields();
       const dayKey = localDateKey(day);
       await updateVisitDetails(id, { nextVisitAt: dayKey });
       if (recordRef.current) recordRef.current = { ...recordRef.current, next_visit_at: dayKey };
