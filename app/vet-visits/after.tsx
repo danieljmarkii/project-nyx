@@ -1009,6 +1009,7 @@ export default function AfterVisitScreen() {
       const linkedHereNow = linkedNow || trialLinkedHere;
       setExtendRefusal(null);
       setExtendedTrial({
+        trialId: trial.id,
         label: trial.foodLabel?.trim() || 'Diet trial',
         // The same helper every reader uses for the same total, so the row and the trial
         // screen name one day.

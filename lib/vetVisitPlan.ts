@@ -143,6 +143,11 @@ export function extendDateBounds(w: ExtendWindow): { minEndDayKey: string; maxEn
   return minEndDayKey && maxEndDayKey ? { minEndDayKey, maxEndDayKey } : null;
 }
 
+/** Whether *Extended* has anything to offer: a forward preset or a date under the ceiling. */
+export function canExtendTrial(w: ExtendWindow): boolean {
+  return extendPresets(w).length > 0 || extendDateBounds(w) !== null;
+}
+
 /** Why this total cannot be extended to, or null when it can: the window sheet's own
  *  sentences, so one refusal reads one way wherever the window is moved. */
 export function extendRefusal(w: ExtendWindow, totalDays: number, petName: string): string | null {

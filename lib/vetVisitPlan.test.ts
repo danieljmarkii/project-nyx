@@ -5,6 +5,7 @@ import {
   defaultRecheckDate,
   describeVisitSave,
   endTrialCopy,
+  canExtendTrial,
   extendDateBounds,
   extendEndLine,
   extendedTrialLine,
@@ -480,6 +481,13 @@ describe('CUL-2758 — the Extended panel’s window', () => {
     expect(extendDateBounds({ ...MOCK, dayCounter: 75 })?.minEndDayKey).toBe(trialEndDayKey('2026-07-27', 76));
     // Nothing forward fits under the ceiling: no picker at all.
     expect(extendDateBounds({ ...MOCK, currentTargetDays: WINDOW_MAX_DAYS })).toBeNull();
+  });
+
+  it('offers *Extended* only while something forward fits under the ceiling', () => {
+    expect(canExtendTrial(MOCK)).toBe(true);
+    expect(canExtendTrial({ ...MOCK, currentTargetDays: WINDOW_MAX_DAYS - 1 })).toBe(true);
+    expect(canExtendTrial({ ...MOCK, currentTargetDays: WINDOW_MAX_DAYS })).toBe(false);
+    expect(canExtendTrial({ ...MOCK, dayCounter: WINDOW_MAX_DAYS + 3 })).toBe(false);
   });
 
   it('names the new end beside the old one, and says whose call it is recorded as', () => {

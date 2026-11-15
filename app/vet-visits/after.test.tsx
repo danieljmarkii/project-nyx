@@ -1514,6 +1514,52 @@ describe('CUL-2758 — *Extended* moves the trial’s end, and only on *Extend t
     expect(screen.queryByText(/^Extended · ends/)).toBeNull();
   });
 
+  it('*Pick a date* counts the day the picker opens on, so the earliest date is one press', async () => {
+    render(<AfterVisitScreen />);
+    await screen.findByText('Royal Canin Selected Protein');
+    await act(async () => { fireEvent.press(screen.getByText('Extended')); });
+    const panel = within(screen.getByTestId('extend-trial-panel'));
+    await act(async () => { fireEvent.press(panel.getByText('Pick a date')); });
+    expect(screen.getByTestId('extend-trial-line').props.children).toMatch(/recorded as the vet’s call$/);
+    await act(async () => { fireEvent.press(screen.getByText('Extend the trial')); });
+    // Day 53 of 56: the earliest end the picker allows is the day after Sep 20's, total 57.
+    expect(extendMock().mock.calls[0][0].targetDurationDays).toBe(57);
+  });
+
+  it('while another row is saving, the panel says it is waiting and the press writes nothing', async () => {
+    mockCourses = [course()];
+    let release: () => void = () => {};
+    mockLinkCourse.mockImplementationOnce(() => new Promise<boolean>((r) => { release = () => r(true); }));
+    render(<AfterVisitScreen />);
+    await screen.findByText('Royal Canin Selected Protein');
+    await act(async () => { fireEvent.press(screen.getByText('Extended')); });
+    await act(async () => { fireEvent.press(screen.getByText('12 weeks')); });
+    // The course's *Keep* holds the screen's one mutex.
+    await act(async () => { fireEvent.press(screen.getAllByText('Keep')[0]); });
+    expect(await screen.findByText('Waiting for the other change to save.')).toBeTruthy();
+    fireEvent.press(screen.getByText('Extend the trial'));
+    expect(extendMock()).not.toHaveBeenCalled();
+    await act(async () => { release(); });
+    await waitFor(() => expect(screen.queryByText('Waiting for the other change to save.')).toBeNull());
+  });
+
+  it('a settled *Extended* stands only over the trial it extended', async () => {
+    const { getActiveTrialForPet } = jest.requireMock('../../lib/dietTrialSetup');
+    const NEXT = { id: 'trial-2', startedAt: daysAgo(1), targetDurationDays: 56, foodLabel: 'Hill’s z/d' };
+    extendMock().mockImplementationOnce(async () => {
+      // Ended and replaced on another phone between the press and the re-read.
+      getActiveTrialForPet.mockImplementation(async () => NEXT);
+    });
+    render(<AfterVisitScreen />);
+    await screen.findByText('Royal Canin Selected Protein');
+    await act(async () => { fireEvent.press(screen.getByText('Extended')); });
+    await act(async () => { fireEvent.press(screen.getByText('12 weeks')); });
+    await act(async () => { fireEvent.press(screen.getByText('Extend the trial')); });
+    expect(await screen.findByText('Hill’s z/d')).toBeTruthy();
+    expect(screen.queryByText(/^Extended · ends/)).toBeNull();
+    expect(screen.getByText('Switched')).toBeTruthy();
+  });
+
   it('a trial with an unreadable start offers no *Extended* chip', async () => {
     jest.requireMock('../../lib/dietTrialSetup').getActiveTrialForPet
       .mockImplementation(async () => ({ ...TRIAL, startedAt: 'not a date' }));

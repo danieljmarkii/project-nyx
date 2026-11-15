@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colorRoles, theme } from '../../constants/theme';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
@@ -7,6 +7,7 @@ import { ChipGroup } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
+import { WINDOW_MAX_DAYS } from '../../lib/trialWindowSheet';
 import {
   extendDateBounds,
   extendEndLine,
@@ -37,18 +38,32 @@ export interface ExtendTrialPanelProps {
   /** The total the owner chose, in days. */
   onExtend: (totalDays: number) => void;
   busy: boolean;
+  /** ANOTHER plan row's write is in flight. The route takes one mutex for every row,
+   *  so the press would do nothing; the panel says so rather than look live (C-7). */
+  blocked?: boolean;
   /** A refusal the write path returned, phrased by `windowRefusedLine`. */
   refusal?: string | null;
   /** The choice moved, so a refusal about the last one no longer applies. */
   onChoiceChange?: () => void;
 }
 
-export function ExtendTrialPanel({ window: w, petName, onExtend, busy, refusal = null, onChoiceChange }: ExtendTrialPanelProps) {
+export function ExtendTrialPanel({ window: w, petName, onExtend, busy, blocked = false, refusal = null, onChoiceChange }: ExtendTrialPanelProps) {
   const presets = extendPresets(w);
   const bounds = extendDateBounds(w);
-  const [choice, setChoice] = useState<string | null>(null);
-  const [pickedKey, setPickedKey] = useState<string | null>(null);
+  const [chosen, setChoice] = useState<string | null>(null);
+  const [picked, setPickedKey] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+
+  const options = [
+    ...presets.map((o) => ({ value: String(o.days), label: o.label })),
+    ...(bounds ? [{ value: PICK, label: 'Pick a date' }] : []),
+  ];
+  // A re-read can move the floor under a choice (a refusal, a sync from another phone):
+  // a chip that is no longer offered is no longer chosen, and a picked day the new floor
+  // passed is no longer picked. Derived, not effected, so no frame shows the stale one.
+  const choice = chosen && options.some((o) => o.value === chosen) ? chosen : null;
+  const pickedKey =
+    picked && bounds && picked >= bounds.minEndDayKey && picked <= bounds.maxEndDayKey ? picked : null;
 
   const total =
     choice === PICK
@@ -60,22 +75,19 @@ export function ExtendTrialPanel({ window: w, petName, onExtend, busy, refusal =
 
   // What the button is waiting on, said where the owner is looking (C-7: `disabled`
   // is a claim, so the reason rides beside it).
-  const status = refusal ?? refused ?? endLine ?? 'Choose the length the vet gave.';
+  const status = blocked
+    ? 'Waiting for the other change to save.'
+    : refusal ?? refused ?? endLine ?? 'Choose the length the vet gave.';
   // Spoken once a choice exists; the waiting line is read with the panel itself.
   useLiveRegionAnnouncement(choice ? status : null);
 
-  const options = [
-    ...presets.map((o) => ({ value: String(o.days), label: o.label })),
-    ...(bounds ? [{ value: PICK, label: 'Pick a date' }] : []),
-  ];
-
-  // Nothing forward fits under the ceiling: say so rather than render an empty group.
+  // Nothing forward fits under the ceiling. The body does not offer *Extended* then
+  // (`canExtendTrial`); this branch is for a re-read that took the room away mid-panel.
   if (options.length === 0) {
+    const line = extendRefusal(w, WINDOW_MAX_DAYS + 1, petName);
     return (
       <View style={styles.panel} testID="extend-trial-panel">
-        <ThemedText style={styles.line}>
-          {extendRefusal(w, Math.max(w.currentTargetDays, w.dayCounter) + 1, petName) ?? 'This trial cannot run longer here.'}
-        </ThemedText>
+        <ThemedText style={styles.line}>{refusal ?? line}</ThemedText>
       </View>
     );
   }
@@ -90,11 +102,14 @@ export function ExtendTrialPanel({ window: w, petName, onExtend, busy, refusal =
         value={choice}
         allowDeselect={false}
         accessibilityLabel="Extend to"
-        disabled={busy}
+        disabled={busy || blocked}
         onChange={(next) => {
           if (!next) return;
           setChoice(next);
           setShowPicker(next === PICK);
+          // The spinner opens ON a day, so that day is the pick until the owner moves it:
+          // otherwise the earliest allowed date reads as chosen and the button stays dark.
+          if (next === PICK && !pickedKey && bounds) setPickedKey(bounds.minEndDayKey);
           onChoiceChange?.();
         }}
       />
@@ -116,8 +131,20 @@ export function ExtendTrialPanel({ window: w, petName, onExtend, busy, refusal =
           }}
         />
       ) : null}
+      {choice === PICK && !showPicker ? (
+        // Android's picker is a dialog that closes on answer; this is the way back to it.
+        // The selected chip cannot reopen it (a re-tap on the chosen chip fires nothing).
+        <TouchableOpacity
+          onPress={() => setShowPicker(true)}
+          disabled={busy || blocked}
+          accessibilityRole="button"
+          style={styles.change}
+        >
+          <ThemedText style={styles.changeLabel}>Change the date</ThemedText>
+        </TouchableOpacity>
+      ) : null}
       <ThemedText
-        style={[styles.line, (refusal ?? refused) ? styles.refused : null]}
+        style={[styles.line, !blocked && (refusal ?? refused) ? styles.refused : null]}
         accessibilityLiveRegion="polite"
         testID="extend-trial-line"
       >
@@ -126,7 +153,7 @@ export function ExtendTrialPanel({ window: w, petName, onExtend, busy, refusal =
       <PrimaryButton
         label="Extend the trial"
         onPress={() => { if (ready && total != null) onExtend(total); }}
-        disabled={!ready || busy}
+        disabled={!ready || busy || blocked}
         loading={busy}
         style={styles.button}
       />
@@ -152,5 +179,15 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: theme.space2,
+  },
+  change: {
+    minHeight: 44,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  changeLabel: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: colorRoles.action.onLight,
   },
 });

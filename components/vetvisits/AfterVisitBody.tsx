@@ -11,6 +11,7 @@ import { PlanActionRow, PlanChipRow, PlanSettledRow } from './PlanRows';
 import { RecheckRow } from './RecheckRow';
 import { ExtendTrialPanel } from './ExtendTrialPanel';
 import {
+  canExtendTrial,
   courseRowSubtitle,
   extendedTrialLine,
   settledVerdictLine,
@@ -46,6 +47,9 @@ export interface TrialRow {
 
 /** A trial this screen EXTENDED (CUL-2758): the row settles to the new end. */
 export interface ExtendedTrialRow {
+  /** The trial that was extended: the settled row stands only over THIS trial, so a
+   *  re-read that finds a different one (ended and replaced on another phone) shows it. */
+  trialId: string;
   label: string;
   /** The new last day, 'YYYY-MM-DD', as `trialEndDayKey` gives it for the total written. */
   endDayKey: string | null;
@@ -355,7 +359,7 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
             busy={busyRow === 'add-course'}
           />
 
-          {trial && extendedTrial ? (
+          {trial && extendedTrial && extendedTrial.trialId === trial.id ? (
             // Where the chips were (CUL-2758, mock §C C2). The trial is still running, so
             // the glyph keeps its colour; the row names the NEW end only.
             <PlanSettledRow
@@ -371,7 +375,9 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
                 subtitle={linkedHere(trial.dayLine ?? undefined, trial.linkedHere)}
                 // *Extended* needs the record's window to compute a forward total; with no
                 // readable start there is nothing honest to offer, so the chip is absent.
-                options={trial.window && onExtendTrial ? TRIAL_OPTIONS : TRIAL_OPTIONS.filter((o) => o.value !== 'extended')}
+                // Nor when nothing forward fits under the ceiling: forward-only is an absence,
+                // never a chip that opens onto a dead end (TE-3).
+                options={trial.window && onExtendTrial && canExtendTrial(trial.window) ? TRIAL_OPTIONS : TRIAL_OPTIONS.filter((o) => o.value !== 'extended')}
                 value={trialVerdict}
                 onChange={(next) => onTrialVerdict(next as TrialVerdict)}
                 busy={busyRow === 'trial'}
@@ -382,6 +388,7 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
                   petName={petName}
                   onExtend={onExtendTrial}
                   busy={busyRow === 'trial'}
+                  blocked={!!busyRow && busyRow !== 'trial'}
                   refusal={extendRefusal}
                   onChoiceChange={onExtendChoiceChange}
                 />
