@@ -247,3 +247,28 @@ The spec must carry, as numbered requirements: every read rule in discovery §5 
 
 Run rls-privacy-reviewer on the migration design and adversarial-reviewer on the amended read rules (second and last pass) before calling it build ready. Do not build.
 ```
+
+---
+
+## 12. Addendum: the page replacing the Pet tab (PM question, 2026-11-15)
+
+The PM asked what happens if the page replaces the Pet tab, and for the owner personas to react. Mock §F2 draws it on Nyx's record: R1 today's tab, R2 and R3 the tab as the page, R4 the door. Jordan and Sam each read the four renders alone, without the discovery documents.
+
+**Both said: replace, with conditions. Neither wanted the door.**
+
+| | Jordan | Sam |
+|---|---|---|
+| Verdict | Replace, with conditions | Replace, with conditions |
+| On the door (R4) | "4 things to look at" sits right above "No current medications". The app contradicts itself. Would open it once, then ignore it | The same contradiction; would stop trusting both |
+| Job that gets worse | The vet report, opened in the car park, moves to the foot | Weight, the most frequent job, drops from first card to fourth |
+| On the amber rows | A to-do list; "no course on record" reads as paperwork not done | Homework; "course" is not a word an owner who gave one tablet uses |
+| Sharpest point | A running trial must lead; the main case (a trial and two medicines) was not drawn | Amber goes to paperwork while a 1.6 lb loss sits in plain white. It reads as if the app thinks the weight is fine |
+| Wording that failed | "It can hide vomiting and coughing" alarmed without saying what to do; "Home asked again from Nov 8" | "Nothing in the app reads them" under Vet Files; the same medicine shown in amber and again as ended |
+
+**What changed on the page (R5, R6):** the vet report and weight lead; a running trial sits above both; the count of things to look at is gone; "course" is gone ("You've given Motozol 10 times since Nov 10. It isn't listed as a medicine Nyx is on."); the steroid line says why listing it matters; the weight row names the finding on Home and adds no verdict of its own. R6 draws Jordan's case on an example dog.
+
+**What this does to brief D5.** The round as posted recommended the door, on the engineering ground that the Pet tab ships in 1.2.0 and is a large screen. The owners' reads give a product reason against the door that the first round did not have: two surfaces that disagree are worse than one. The recommendation on placement moves to **replace the tab, after the 1.2.0 cut**, with the door as the fallback if the rebuild cannot be afforded. The Dir. of Engineering position is recorded, not overruled: the rebuild is about 4 more rows (12 in all), which is past forecast plus one and is the PM's fork to take.
+
+**One clinical watch for the spec.** Sam's point about the weight row is a real hazard in the direction this discovery worries about: emphasis given to missing paperwork can make a live finding look minor beside it. The page must never style a "from your logs" prompt louder than a row that feeds a live safety finding. R5's wording of the steroid line ("Culprit reads those more carefully if it knows") needs the `clinical-guardrails` check before it is specified.
+
+**Limits.** Two persona reads from static renders, each one pass. R6 is an example, not a record. Neither read replaces a device pass.
