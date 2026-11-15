@@ -1395,7 +1395,9 @@ function boundTo(src: string, name: string, at: number): string {
   return all.length ? all[all.length - 1][1].trim() : ''
 }
 
-const BUILT = /^(buildAnalysisWriteBack|resolveReanalysisWrite|buildFailureWrite)\(/
+// errorOnly: buildFailureWrite's error-only note, which the catch also writes on its own when a
+// rescue's held write keeps missing (CUL-2805). It carries no words: `error` and `may_wait` only.
+const BUILT = /^(buildAnalysisWriteBack|resolveReanalysisWrite|buildFailureWrite|errorOnly)\(/
 const HIDE_WRITERS = new Set(['buildAnalysisWriteBack', 'buildFailureWrite', 'resolveReanalysisWrite'])
 // A binding, with an optional type annotation: `const q = ` / `const q: Q = `.
 const BINDING = String.raw`\b(?:const|let|var)\s+(\w+)(?:\s*:[^=\n]+)?\s*=\s*`

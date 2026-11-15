@@ -1537,9 +1537,10 @@ Deno.test('pipeline CUL-2805 — a sibling\'s call now landing in the rescue\'s 
   })
   const r = await run(w)
   assertStrictEquals(r.status, 500)
-  assertStrictEquals(w.aiWriteAttempts, 1)
-  assertEquals(w.writes, [])
+  // The held rescue missed; the re-decision over the call now writes the error note only.
+  assertEquals(w.writes.map((x) => Object.keys(x.values).sort()), [['error', 'may_wait']])
   assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
   assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
   assertStrictEquals(w.row?.status, 'completed')
 })
@@ -1553,7 +1554,7 @@ Deno.test('pipeline CUL-2805 — a sibling row that appears in the rescue\'s gap
   })
   const r = await run(w)
   assertStrictEquals(r.status, 500)
-  assertEquals(w.writes, [])
+  assertEquals(w.writes.map((x) => Object.keys(x.values).sort()), [['error', 'may_wait']])
   assertStrictEquals(w.row?.tier, 'call_now')
   assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
 })
@@ -1585,8 +1586,10 @@ Deno.test('pipeline CUL-2805 — with nobody in the gap the failed state and the
   assertEquals(rescued.writes.map((x) => x.mode), ['update'])
   assertStrictEquals(rescued.row?.status, 'failed')
   assertStrictEquals(rescued.row?.tier, 'call_today')
-  // The held update sends no key column: the row's pet is frozen (migration 074).
-  assertEquals(Object.keys(rescued.writes[0].values).filter((k) => ['event_id', 'pet_id', 'incident_type'].includes(k)), [])
+  // The held update sends no key column (the row's pet is frozen, migration 074), and still
+  // re-syncs incident_type as the upsert did.
+  assertEquals(Object.keys(rescued.writes[0].values).filter((k) => ['event_id', 'pet_id'].includes(k)), [])
+  assertStrictEquals(rescued.writes[0].values.incident_type, 'vomit')
 
   const fresh = makeWorld({ contextFlags: ['ctx_flag'], vision: overloaded })
   await run(fresh)
@@ -1609,4 +1612,60 @@ Deno.test('pipeline CUL-2805 — a catch read with no version writes nothing, ne
   assertStrictEquals(r.status, 500)
   assertEquals(w.writes, [])
   assertStrictEquals(real.status, 'completed')
+})
+
+// Adversarial pass 1 on CUL-2805: a miss that skipped dropped this run's computed escalation
+// whenever the row moved WITHOUT escalating. A missed rescue now re-reads and decides again.
+Deno.test('pipeline CUL-2805 — a row that moves without escalating in the rescue\'s gap still gets the rescue', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, may_wait: true },
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    // A neighbour's run lowers this row's leave to wait: the version moves, the read does not.
+    beforeAiWrite: (world, n) => { if (n === 1) commit(world, { may_wait: null }) },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.aiWriteAttempts, 2)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.tier, 'call_today')
+  assertStrictEquals(w.row?.status, 'failed')
+  assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
+})
+
+Deno.test('pipeline CUL-2805 — an owner\'s edit in the rescue\'s gap keeps its fields and the rescue still lands', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded,
+    beforeAiWrite: (world, n) => { if (n === 1) commit(world, { colour: 'green', edited_at: EDITED_AT }) },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.colour, 'green')
+  assertStrictEquals(w.row?.edited_at, EDITED_AT)
+})
+
+Deno.test('pipeline CUL-2805 — a sibling call now on the rescue\'s re-decision becomes the error-only note', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    beforeAiWrite: (world, n) => { if (n === 1) commit(world, SIBLING_CALL_NOW) },
+  })
+  await run(w)
+  // Missed once, re-read, saw the call now: the note only, held nothing over the sibling.
+  assertEquals(w.writes.map((x) => Object.keys(x.values).sort()), [['error', 'may_wait']])
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
+})
+
+Deno.test('pipeline CUL-2805 — a row that keeps moving under the rescue ends in the error note, never an unheld write', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    beforeAiWrite: (world, n) => { if (n <= 3) commit(world, {}) },
+  })
+  await run(w)
+  assertStrictEquals(w.aiWriteAttempts, 4)
+  assertEquals(w.writes.map((x) => Object.keys(x.values).sort()), [['error', 'may_wait']])
+  assertStrictEquals(w.row?.recommendation, 'monitor')
+  assertStrictEquals(w.row?.error, 'Claude API error 529: overloaded')
 })

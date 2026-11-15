@@ -880,9 +880,10 @@ export async function applyAnalysisWriteBack(
 // The catch's two writes that decide over the row's contents (CUL-2805): the plain failed
 // state and the rescue. Each was decided over the catch's own re-read, so each is held to
 // that read's version, as every write-back is (CUL-2773): over a row, an UPDATE matching
-// that updated_at only; over no row, insert-only. A miss writes nothing and is final. The
-// row moved after the catch looked, and whatever moved it (a sibling's call now, a read
-// that found blood, an owner's correction) is newer than this run's failure, so it stands.
+// that updated_at only; over no row, insert-only. A miss writes nothing: the
+// row moved after the catch looked. The caller re-decides a missed rescue (the row may have
+// moved without escalating) and treats a missed plain failed state as final (a newer read
+// stands over "couldn't finish").
 // The error-only note is not routed here: it decides nothing about the row's contents.
 export async function applyFailureWrite(
   client: SupabaseClient,
@@ -892,7 +893,8 @@ export async function applyFailureWrite(
 ): Promise<WriteOutcome> {
   if (decidedOn !== null) {
     // The key columns are the filter, not values: pet_id is frozen on update (migration 074).
-    const { event_id: _e, pet_id: _p, incident_type: _t, ...values } = write.values
+    // incident_type stays, so the row is re-synced to the event's type as the upsert did.
+    const { event_id: _e, pet_id: _p, ...values } = write.values
     return updateAnalysisRow(client, key, values, decidedOn.updatedAt)
   }
   const { data, error } = await client
@@ -2586,66 +2588,84 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // A failed read leaves this row a refusing neighbour (an unread photo, an error): re-check the
     // TRUEs around it, lower-only and best-effort, before the failure write (CUL-1628).
     if (revalidateForFailure) await revalidateForFailure()
-    let latest: StoredAnalysis | null = null
-    let latestReadFailed = false
-    let latestVersion: RowVersion = null
-    if (petIdForFailure && incidentTypeForFailure) {
-      const { data: latestRow, error: latestErr } = await adminClient
-        .from('event_ai_analysis')
-        .select(storedColumns)
-        .eq('event_id', eventId)
-        .maybeSingle<StoredRow>()
-      latest = snapshotStoredAnalysis(descriptor, latestRow ?? null)
-      // CUL-1203, the same rule as step 3b: a row filed under another pet is not
-      // this event's, so its recommendation must not steer the failure write. It
-      // folds into "could not read" on purpose — buildFailureWrite then writes
-      // nothing, which is the fail-closed answer for a row we will not touch.
-      latestReadFailed = !!latestErr || !analysisRowMatchesEvent(latestRow ?? null, petIdForFailure)
-      // The version the failure write is decided over (CUL-2805). A row that came back with
-      // no updated_at has none to hold, so it folds into "could not read" (rowVersionOf fails
-      // closed): the write is skipped, never sent unconditionally.
-      if (!latestReadFailed) {
-        try {
-          latestVersion = rowVersionOf(latestRow ?? null)
-        } catch {
-          latestReadFailed = true
+    const rescueRead = withRescueTier(
+      buildRescueRead(copyForFailure, {
+        computed: computedRead,
+        contextualFlags: contextualFlagsForFailure,
+        petName: petNameForFailure,
+        hasPhoto: hasPhotoForFailure,
+      }),
+      tiersOnForFailure,
+      minTierForFailure,
+    )
+    // Decided over the catch's own re-read and held to its version (CUL-2805). A rescue that
+    // misses re-reads and decides again, as every held write does: the row may have moved
+    // without escalating (a neighbour lowering may_wait, an owner's edit, a sibling's calm
+    // read), and a final skip there would drop the escalation this run computed. Over an
+    // escalated row the next decision is the error-only note; over a quiet one, the rescue again.
+    for (let attempt = 1; ; attempt++) {
+      let latest: StoredAnalysis | null = null
+      let latestReadFailed = false
+      let latestVersion: RowVersion = null
+      if (petIdForFailure && incidentTypeForFailure) {
+        const { data: latestRow, error: latestErr } = await adminClient
+          .from('event_ai_analysis')
+          .select(storedColumns)
+          .eq('event_id', eventId)
+          .maybeSingle<StoredRow>()
+        latest = snapshotStoredAnalysis(descriptor, latestRow ?? null)
+        // CUL-1203, the same rule as step 3b: a row filed under another pet is not
+        // this event's, so its recommendation must not steer the failure write. It
+        // folds into "could not read" on purpose — buildFailureWrite then writes
+        // nothing, which is the fail-closed answer for a row we will not touch.
+        latestReadFailed = !!latestErr || !analysisRowMatchesEvent(latestRow ?? null, petIdForFailure)
+        // A row that came back with no updated_at has no version to hold, so it folds into
+        // "could not read" (rowVersionOf fails closed): skipped, never sent unconditionally.
+        if (!latestReadFailed) {
+          try {
+            latestVersion = rowVersionOf(latestRow ?? null)
+          } catch {
+            latestReadFailed = true
+          }
         }
       }
-    }
 
-    const failureWrite = buildFailureWrite({
-      existing: latest,
-      existingReadFailed: latestReadFailed,
-      floorOnly,
-      tiersOn: tiersOnForFailure,
-      eventId,
-      petId: petIdForFailure,
-      incidentType: incidentTypeForFailure,
-      message,
-      rescue: withRescueTier(
-        buildRescueRead(copyForFailure, {
-          computed: computedRead,
-          contextualFlags: contextualFlagsForFailure,
-          petName: petNameForFailure,
-          hasPhoto: hasPhotoForFailure,
-        }),
-        tiersOnForFailure,
-        minTierForFailure,
-      ),
-      stamps: stampsForFailure,
-    })
-    // Best-effort, as before: a failure write that fails is not re-reported. It is
-    // keyed on the event's pet like every other update (CUL-1203); buildFailureWrite
-    // returns 'skip' whenever petIdForFailure is null, so the guard below is a
-    // narrowing for the type checker, never a second decision.
-    if (failureWrite.mode === 'error-only' && petIdForFailure) {
-      // Unconditional (null): it notes the error and decides nothing about the row's contents.
-      await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values, null)
-    } else if ((failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') && petIdForFailure) {
-      // Held to the version the catch read (CUL-2805): a miss means a newer writer landed, and
-      // its state stands over this failure.
-      const wrote = await applyFailureWrite(adminClient, { eventId, petId: petIdForFailure }, failureWrite, latestVersion)
-      if (wrote.missed) console.info(`${descriptor.functionName}: the stored row changed before the failure write; left it as it stands (CUL-2805)`)
+      const failureWrite = buildFailureWrite({
+        existing: latest,
+        existingReadFailed: latestReadFailed,
+        floorOnly,
+        tiersOn: tiersOnForFailure,
+        eventId,
+        petId: petIdForFailure,
+        incidentType: incidentTypeForFailure,
+        message,
+        rescue: rescueRead,
+        stamps: stampsForFailure,
+      })
+      // Best-effort, as before: a failure write that fails is not re-reported. It is
+      // keyed on the event's pet like every other update (CUL-1203); buildFailureWrite
+      // returns 'skip' whenever petIdForFailure is null, so the guard below is a
+      // narrowing for the type checker, never a second decision.
+      if (failureWrite.mode === 'error-only' && petIdForFailure) {
+        // Unconditional (null): it notes the error and decides nothing about the row's contents.
+        await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values, null)
+      } else if ((failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') && petIdForFailure) {
+        const wrote = await applyFailureWrite(adminClient, { eventId, petId: petIdForFailure }, failureWrite, latestVersion)
+        if (wrote.missed && failureWrite.mode === 'rescue') {
+          if (attempt < WRITE_ATTEMPTS) continue
+          // Still moving: the rescue never landed. Note the error, so the record says its latest
+          // read hit a problem and takes back any leave to wait (the louder of what is left).
+          // A floor-only run read no photo, so it never notes one (CUL-1509, buildFailureWrite).
+          if (floorOnly) break
+          console.info(`${descriptor.functionName}: the stored row kept changing under the rescue; noted the error only (CUL-2805)`)
+          const note = errorOnly({ message, tiersOn: tiersOnForFailure, existing: latest })
+          await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, note.values, null)
+        } else if (wrote.missed) {
+          // The plain failed state is final on a miss: a newer read stands over "couldn't finish".
+          console.info(`${descriptor.functionName}: the stored row changed before the failure write; left it as it stands (CUL-2805)`)
+        }
+      }
+      break
     }
 
     return Response.json(
