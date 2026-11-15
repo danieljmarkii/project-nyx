@@ -665,9 +665,47 @@ describe('selectReliableFavorites', () => {
     expect(favs[0]).toMatchObject({ finishedMeals: 5, ratedMeals: 5, rate: 1 });
   });
 
-  it('drops meals with an unparseable timestamp from the qualifying set', () => {
-    const rows = [...series(['all', 'all', 'all', 'all', 'all']), meal({ intakeRating: 'all', ms: NaN })];
-    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, nowMs: NOW })[0].ratedMeals).toBe(5);
+  // ── A rating that cannot be placed in time withholds the food (CUL-2719) ─────
+  describe('a rated meal whose time cannot be read', () => {
+    const five = () => series(['all', 'all', 'all', 'all', 'all']);
+    const opts = { freeFedFoodIds: NO_FREE_FED, nowMs: NOW };
+
+    it('control: the five finished meals alone make the favourite', () => {
+      expect(selectReliableFavorites(five(), opts)).toHaveLength(1);
+    });
+
+    it.each([NaN, Infinity, -Infinity])('WITHHOLDS the food when a refusal sits at ms=%p', (ms) => {
+      // Unknown time is not absence of a refusal: the unplaceable rating may be the latest.
+      const rows = [...five(), meal({ intakeRating: 'refused', ms })];
+      expect(selectReliableFavorites(rows, opts)).toEqual([]);
+    });
+
+    it('withholds wherever the unplaceable refusal sits in the input', () => {
+      const rows = [meal({ intakeRating: 'refused', ms: NaN }), ...five()];
+      expect(selectReliableFavorites(rows, opts)).toEqual([]);
+    });
+
+    it('withholds on an unplaceable FINISHED rating too (the row is never counted or dropped)', () => {
+      const rows = [...five(), meal({ intakeRating: 'all', ms: NaN })];
+      expect(selectReliableFavorites(rows, opts)).toEqual([]);
+    });
+
+    it('withholds only that food: another food keeps its favourite', () => {
+      const other = { foodItemId: 'f2', brand: 'Weruva', productName: 'Paw Lickin Chicken' };
+      const rows = [...five(), meal({ intakeRating: 'refused', ms: NaN }), ...series(['all', 'all', 'all', 'all', 'all'], other)];
+      const favs = selectReliableFavorites(rows, opts);
+      expect(favs.map((f) => f.key)).toEqual([foodIntakeKey('Weruva', 'Paw Lickin Chicken')]);
+    });
+
+    it('pools by brand+product: an unplaceable refusal on a duplicate capture withholds the food', () => {
+      const rows = [...five(), meal({ foodItemId: 'f1-dup', intakeRating: 'refused', ms: NaN })];
+      expect(selectReliableFavorites(rows, opts)).toEqual([]);
+    });
+
+    it('an UNRATED unplaceable meal is not a refusal signal and withholds nothing', () => {
+      const rows = [...five(), meal({ intakeRating: null, ms: NaN })];
+      expect(selectReliableFavorites(rows, opts)[0]).toMatchObject({ finishedMeals: 5, ratedMeals: 5 });
+    });
   });
 
   // ── The recency guard — the decline mask (the headline case) ─────────────────
