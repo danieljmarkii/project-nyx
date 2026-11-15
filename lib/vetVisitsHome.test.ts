@@ -315,7 +315,7 @@ describe('a possible phantom recheck booking is on the Pet tab, never as booked 
     const home = await readVetVisitsHome('pet-a', NOW);
     expect(home.next?.id).toBe('phantom');
     expect(home.next?.when).toBe('Recheck around Oct 28');
-    expect(home.next?.where).toBe('Not booked yet');
+    expect(home.next?.where).toBe('Not booked yet · Riverside Animal Hospital');
   });
 
   it('holds for any casing or padding the old builds wrote, and in later and awaiting too', async () => {
@@ -328,10 +328,10 @@ describe('a possible phantom recheck booking is on the Pet tab, never as booked 
     // The real booking keeps its booked face.
     expect(home.next?.id).toBe('real');
     expect(home.next?.where).toBe('Riverside Animal Hospital · Dental cleaning');
-    expect(home.later.map((a) => [a.id, a.where])).toEqual([['later', 'Not booked yet']]);
+    expect(home.later.map((a) => [a.id, a.where])).toEqual([['later', 'Not booked yet · Riverside Animal Hospital']]);
     // Never dropped: *Waiting on you* is where the owner clears it.
     expect(home.awaiting.map((a) => [a.id, a.when, a.where])).toEqual([
-      ['passed', 'Recheck around Sep 10', 'Not booked yet'],
+      ['passed', 'Recheck around Sep 10', 'Not booked yet · Riverside Animal Hospital'],
     ]);
   });
 

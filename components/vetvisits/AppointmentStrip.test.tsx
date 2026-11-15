@@ -549,12 +549,12 @@ describe('a possible phantom recheck booking (CUL-2793)', () => {
     return { id: 'appt-1', petId: 'p1', phase, view };
   }
 
-  it('upcoming: reads as a date not yet booked, never the clinic it was booked with', async () => {
+  it('upcoming: reads as a date not yet booked, keeping the clinic to call', async () => {
     mockHome.current = phantom('upcoming');
     const r = render(<AppointmentStrip />);
     expect(await r.findByText(/^Recheck around /)).toBeTruthy();
-    expect(r.getByText('Not booked yet')).toBeTruthy();
-    expect(r.queryByText(/Riverside/)).toBeNull();
+    expect(r.getByText('Not booked yet · Riverside Animal Hospital')).toBeTruthy();
+    expect(r.queryByText(/recheck$/)).toBeNull();
     expect(r.getByText('Get ready')).toBeTruthy();
   });
 
@@ -562,7 +562,7 @@ describe('a possible phantom recheck booking (CUL-2793)', () => {
     mockHome.current = phantom('after');
     const r = render(<AppointmentStrip />);
     expect(await r.findByText(/visit happen\?$/)).toBeTruthy();
-    expect(r.getByText('Not booked yet')).toBeTruthy();
+    expect(r.getByText('Not booked yet · Riverside Animal Hospital')).toBeTruthy();
     expect(r.getByText('It didn’t')).toBeTruthy();
   });
 });

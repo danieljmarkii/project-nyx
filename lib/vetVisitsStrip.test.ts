@@ -356,14 +356,14 @@ describe('a possible phantom recheck booking on Home (CUL-2793)', () => {
     const strip = await readHomeAppointment('pet-a', now);
     expect(strip?.phase).toBe('upcoming');
     expect(strip?.view.when).toMatch(/^Recheck around /);
-    expect(strip?.view.where).toBe('Not booked yet');
+    expect(strip?.view.where).toBe('Not booked yet · Riverside Animal Hospital');
   });
 
   it('after: the row stays on Home so the ask can clear it, and its day still names the ask', async () => {
     rows.appointments = [appointmentRow('p', at(-2, now))];
     const strip = await readHomeAppointment('pet-a', now);
     expect(strip?.phase).toBe('after');
-    expect(strip?.view.where).toBe('Not booked yet');
+    expect(strip?.view.where).toBe('Not booked yet · Riverside Animal Hospital');
     expect(strip?.view.day).toBe(formatAppointmentDay(at(-2, now), now));
   });
 

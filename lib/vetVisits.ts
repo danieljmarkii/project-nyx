@@ -517,6 +517,9 @@ export function buildVisitListRow(
   };
 }
 
+/** The recheck row's subtitle, shared so the two surfaces cannot drift apart. */
+export const NOT_BOOKED_YET = 'Not booked yet';
+
 export function buildAppointmentView(
   // `notes_draft` is optional because most reads of a booking never select it; only
   // the list read below does, and that is the one whose doors show the notes label.
@@ -553,14 +556,16 @@ export function buildAppointmentView(
     const d = new Date(appointment.scheduled_at);
     if (!Number.isNaN(d.getTime())) {
       view.when = `Recheck around ${formatVisitDate(localDateKey(d), now)}`;
-      view.where = NOT_BOOKED_YET;
+      // The clinic stays: it is who the owner calls to book. The reason does not, since
+      // 'recheck' is now the title's word.
+      view.where = [NOT_BOOKED_YET, formatWhereLine({ clinicName: appointment.clinic_name, vetName: appointment.vet_name })]
+        .filter(Boolean)
+        .join(' · ');
     }
   }
   return view;
 }
 
-/** The recheck row's subtitle, shared so the two surfaces cannot drift apart. */
-export const NOT_BOOKED_YET = 'Not booked yet';
 
 /** One test for "notes exist", shared by the list doors and Get ready's button. */
 export function hasNotesDraft(notesDraft: string | null | undefined): boolean {
