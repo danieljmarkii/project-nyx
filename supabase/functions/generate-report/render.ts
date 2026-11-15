@@ -3417,7 +3417,11 @@ function lateLoggedNote(snap: ReportSnapshot): string {
 function headline(snap: ReportSnapshot): string {
   const q = snap.clinicalQuestion
   const prim = snap.atAGlance.primarySymptom
-  const primPhrase = prim ? `${h(symptomLabel(prim.type).toLowerCase())} (${num(prim.count)} logged)` : 'the logged observations'
+  // CUL-2718 (QUIET): with no symptom logged this fell back to "the logged observations", which
+  // reads as a sign being tracked and quiet. Absence is the record's, never the patient's: both
+  // branches below say none was logged, in the monitoring tile's words.
+  const primPhrase = prim ? `${h(symptomLabel(prim.type).toLowerCase())} (${num(prim.count)} logged)` : null
+  const noneLogged = '<b>No symptom was logged in this window</b>'
   if (q.question === 'diet_trial_working' && snap.diet.trial) {
     const t = snap.diet.trial
     const food = t.foodLabel ? h(t.foodLabel) : 'a diet trial'
@@ -3561,7 +3565,7 @@ function headline(snap: ReportSnapshot): string {
       outsideHere > 0 && tb
         ? ` <b>This report covers ${h(fmtRange(snap.scope.startDate, snap.scope.endDate))} &mdash; ${num(
             outsideHere,
-          )} of the trial&rsquo;s ${num(tb.trialDaysElapsed)} days fall outside it</b>, so the count above is over that window, not over the trial.`
+          )} of the trial&rsquo;s ${num(tb.trialDaysElapsed)} days fall outside it</b>, so ${primPhrase ? 'the count above' : 'that absence'} is over that window, not over the trial.`
         : ''
     // CUL-1978 — THE DISCRETE BREACHES RIDE THE HEADLINE TOO. `breachBit` names proteins the
     // record shows inside a food or a bowl; a beef dinner logged four times is neither, so
@@ -3591,12 +3595,18 @@ function headline(snap: ReportSnapshot): string {
         : ''
     const medsBit = tb ? headlineMedicationBit(snap, tb) : ''
     return `
-  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}${windowMovedBit}. Primary sign logged: <b>${primPhrase}</b>.${windowBit}${offDietBit}${breachBit}${medsBit}</div>`
+  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}${windowMovedBit}. ${
+      primPhrase
+        ? `Primary sign logged: <b>${primPhrase}</b>.`
+        : `${noneLogged}: that is what the record holds, not a finding that there were none.`
+    }${windowBit}${offDietBit}${breachBit}${medsBit}</div>`
   }
   const hasChronic = snap.safetyFlags.some((f) => f.kind === 'chronicity')
   const chronicBit = hasChronic ? ' Ongoing pattern — see the safety flags above.' : ''
   return `
-  <div class="headline">Owner monitoring <b>${primPhrase}</b> over this window — no diet trial; symptom monitoring only.${chronicBit}</div>`
+  <div class="headline">${
+    primPhrase ? `Owner monitoring <b>${primPhrase}</b> over this window` : noneLogged
+  } — no diet trial; symptom monitoring only.${chronicBit}</div>`
 }
 
 /**
@@ -7341,11 +7351,20 @@ function trialTiles(snap: ReportSnapshot): string[] {
       : tail.after === null
         ? '<br/>nothing logged in this window'
         : `<br/>${num(ag.loggedDays)} of ${num(ag.windowDays)} days logged; ${tail.looksAfter ? 'no meal, symptom or other entry' : 'no event'} logged ${tail.recordContinues ? 'in this window ' : ''}after ${fmtDay(tail.after)}`
+  // CUL-2718 (QUIET): a bare "0 / 32 d" read as 32 observed symptom-free days. A zero says none was
+  // logged, in the monitoring tile's words, and counts over the days anything was logged at all.
+  const none = ag.totalSymptomIncidents === 0
+  const empty = none && ag.loggedDays === 0
+  const noneLine = !none
+    ? ''
+    : empty
+      ? '<br/>nothing logged in this window'
+      : `<br/>none logged in this window${tailLine || `<br/>${num(ag.loggedDays)} of ${num(ag.windowDays)} days had an entry`}`
   tiles.push(
     tile(
       `${ag.totalSymptomIncidents}`,
-      `<small>&nbsp;/&nbsp;${ag.windowDays}&nbsp;d</small>`,
-      `Symptom events${breakdown ? `<br/>${breakdown}` : ''}${tailLine}`,
+      empty ? '' : `<small>&nbsp;/&nbsp;${none ? `${ag.loggedDays}&nbsp;d&nbsp;logged` : `${ag.windowDays}&nbsp;d`}</small>`,
+      `Symptom events${breakdown ? `<br/>${breakdown}` : ''}${none ? noneLine : tailLine}`,
     ),
   )
 

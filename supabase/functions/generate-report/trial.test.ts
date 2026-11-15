@@ -5418,7 +5418,7 @@ Deno.test('CUL-1041 — the page-1 headline marks a target that is not the origi
     movedOnDayOfTrial: 40,
   })
   // The marker rides the headline's own day phrase, ABOVE the block.
-  assert.match(page, /as a diet trial — day 50 of 64 \(window extended\)\. Primary sign logged/)
+  assert.match(page, /as a diet trial — day 50 of 64 \(window extended\)\. (<b>)?No symptom was logged/)
   // And the block still carries the whole sentence; the marker replaces nothing.
   assert.match(page, /Window extended from 28 days; last moved [A-Z][a-z]+ \d+ \(day 40\)\./)
 
@@ -5431,7 +5431,7 @@ Deno.test('CUL-1041 — the page-1 headline marks a target that is not the origi
 
 Deno.test('CUL-1041 — an unmoved window adds no headline marker at all', () => {
   const page = windowPage({ dayOfTrial: 50, targetDurationDays: 64 })
-  assert.match(page, /as a diet trial — day 50 of 64\. Primary sign logged/)
+  assert.match(page, /as a diet trial — day 50 of 64\. (<b>)?No symptom was logged/)
   assert.ok(!/\(window /.test(page), 'no marker, and no empty parenthetical')
 })
 
@@ -5462,7 +5462,7 @@ Deno.test('CUL-1041 — a named vet and the window marker never share the headli
     movedOnDayOfTrial: 40,
     vetName: 'Dr. A. Chen',
   })
-  const headline = moved.slice(moved.indexOf('Tracking'), moved.indexOf('Primary sign logged'))
+  const headline = moved.slice(moved.indexOf('Tracking'), moved.indexOf('No symptom was logged'))
   assert.match(headline, /day 50 of 64 \(window extended\)/, 'the marker survives')
   assert.ok(!/Dr\. A\. Chen/.test(headline), 'and the name is not in the sentence with it')
 
@@ -5493,7 +5493,7 @@ Deno.test('CUL-1041 — the UNATTESTED extension is the dangerous one, and carri
   })
   const headline = unattested.slice(
     unattested.indexOf('Tracking'),
-    unattested.indexOf('Primary sign logged'),
+    unattested.indexOf('No symptom was logged'),
   )
   assert.ok(!/Dr\. A\. Chen/.test(headline))
   // And still no attribution of any kind on the change itself, in either direction.
@@ -5739,28 +5739,31 @@ for (const [tz, now] of [
 // diff of all 21 renders against the merge-base differed only in that "Symptoms vs logging" line.
 // Re-recorded for CUL-2581: these trial fixtures run on a hydrolysed soy diet, so the trial line
 // now reads "Soy (hydrolysed)" (diffed: the only change in the rendered page).
+// Re-recorded for CUL-2718: none of these trials has a symptom logged, so the headline and tile 1
+// now say so. With HEAD's render.ts this grid reproduced the previous digests; a diff of all 21
+// renders differed only in those two lines.
 const CUL_2094_GOLDEN: Record<string, string> = {
-  'endedPast/America/Phoenix': '2ca9d025dc4f7dce',
-  'endedPast/window/America/Phoenix': '9fe08376c9624d88',
-  'endedToday/America/Phoenix': 'cdff697079358379',
-  'endedToday/window/America/Phoenix': '9c4ccab85af3f926',
-  'endedOnTarget/America/Phoenix': '9c2e6760f16a6fc4',
-  'endedOnTarget/window/America/Phoenix': '9d63a3361fda8da7',
-  'active/America/Phoenix': '27ef27591220c685',
-  'endedPast/Pacific/Noumea': '2ca9d025dc4f7dce',
-  'endedPast/window/Pacific/Noumea': '9fe08376c9624d88',
-  'endedToday/Pacific/Noumea': 'cdff697079358379',
-  'endedToday/window/Pacific/Noumea': '9c4ccab85af3f926',
-  'endedOnTarget/Pacific/Noumea': '9c2e6760f16a6fc4',
-  'endedOnTarget/window/Pacific/Noumea': '9d63a3361fda8da7',
-  'active/Pacific/Noumea': 'e4c89bf6a51923a0',
-  'endedPast/UTC': '2ca9d025dc4f7dce',
-  'endedPast/window/UTC': '9fe08376c9624d88',
-  'endedToday/UTC': 'cdff697079358379',
-  'endedToday/window/UTC': '9c4ccab85af3f926',
-  'endedOnTarget/UTC': '9c2e6760f16a6fc4',
-  'endedOnTarget/window/UTC': '9d63a3361fda8da7',
-  'active/UTC': '27ef27591220c685',
+  'endedPast/America/Phoenix': '77ac3020430f382e',
+  'endedPast/window/America/Phoenix': 'bcf1bc002e84f8ee',
+  'endedToday/America/Phoenix': 'fc27a12142dcaa5d',
+  'endedToday/window/America/Phoenix': 'ab83e7a82e3aeec1',
+  'endedOnTarget/America/Phoenix': '51c4c5cf7d1a07c5',
+  'endedOnTarget/window/America/Phoenix': '14a3e9e2590eaed6',
+  'active/America/Phoenix': 'e32fe59f5496dacc',
+  'endedPast/Pacific/Noumea': '77ac3020430f382e',
+  'endedPast/window/Pacific/Noumea': 'bcf1bc002e84f8ee',
+  'endedToday/Pacific/Noumea': 'fc27a12142dcaa5d',
+  'endedToday/window/Pacific/Noumea': 'ab83e7a82e3aeec1',
+  'endedOnTarget/Pacific/Noumea': '51c4c5cf7d1a07c5',
+  'endedOnTarget/window/Pacific/Noumea': '14a3e9e2590eaed6',
+  'active/Pacific/Noumea': '3c98111cc8b11abd',
+  'endedPast/UTC': '77ac3020430f382e',
+  'endedPast/window/UTC': 'bcf1bc002e84f8ee',
+  'endedToday/UTC': 'fc27a12142dcaa5d',
+  'endedToday/window/UTC': 'ab83e7a82e3aeec1',
+  'endedOnTarget/UTC': '51c4c5cf7d1a07c5',
+  'endedOnTarget/window/UTC': '14a3e9e2590eaed6',
+  'active/UTC': 'e32fe59f5496dacc',
 }
 
 Deno.test('CUL-2094 — every trial the fix does not reach renders byte-identically (before/after)', async () => {

@@ -9371,3 +9371,57 @@ Deno.test('CUL-2516 pass 2 — the permitted-later sentence keeps the days and t
   const callout = text(interpretingCallout(renderReport(snap)))
   assert.ok(callout.includes('did not match the trial diet on Jun 2 and Jun 3, 2026 (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean. Of the proteins those feedings carried: Beef was in the 12&nbsp;h before 4 of 4 vomiting episodes (an early signal, not confirmed).'), callout)
 })
+
+// ── CUL-2718 — a trial with no symptom logged says so on page 1, twice ──────────────────
+// Cold read on PR-24's fixture (QUIET): "Primary sign logged: the logged observations" and a bare
+// "0 / 32 d" let a skin trial with no skin sign ever logged read as a symptom-free dog.
+function noSymptomTrialSnap(ag: Partial<ReportSnapshot['atAGlance']> = {}): ReportSnapshot {
+  const snap = cleanTrialSnap(null)
+  snap.symptoms = []
+  snap.atAGlance = { ...snap.atAGlance, primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 32, loggedDays: 20, ...ag }
+  return snap
+}
+
+Deno.test('CUL-2718 — a trial with no symptom logged: the headline says none was logged, never "the logged observations"', () => {
+  const page = pageOne(renderReport(noSymptomTrialSnap()))
+  const headline = page.slice(page.indexOf('<div class="headline">'), page.indexOf('</div>', page.indexOf('<div class="headline">')))
+  assert.ok(headline.length > 0, 'the fixture renders a headline')
+  assert.ok(
+    headline.includes('<b>No symptom was logged in this window</b>: that is what the record holds, not a finding that there were none.'),
+    'the absence is stated, and stated as the record',
+  )
+  assert.ok(!headline.includes('Primary sign logged'), 'no primary sign is claimed where none was logged')
+  assert.ok(!renderReport(noSymptomTrialSnap()).includes('the logged observations'), 'the fallback noun is gone from the report')
+})
+
+Deno.test('CUL-2718 — a trial with no symptom logged: tile 1 says none logged and counts over the days logged', () => {
+  const page = pageOne(renderReport(noSymptomTrialSnap()))
+  assert.ok(
+    page.includes(
+      '<div class="tile"><div class="v num">0<small>&nbsp;/&nbsp;20&nbsp;d&nbsp;logged</small></div><div class="l">Symptom events<br/>none logged in this window<br/><span class="num">20</span> of <span class="num">32</span> days had an entry</div></div>',
+    ),
+    'the zero names its logged days and says none was logged',
+  )
+  assert.ok(!page.includes('0<small>&nbsp;/&nbsp;32&nbsp;d</small>'), 'never a bare 0 / N d')
+  // A tail nobody logged already names the logged days; the coverage is said once.
+  const tailed = pageOne(renderReport(noSymptomTrialSnap({ unloggedTailDays: 12, lastLoggedDate: '2026-06-20' })))
+  assert.ok(
+    tailed.includes('Symptom events<br/>none logged in this window<br/><span class="num">20</span> of <span class="num">32</span> days logged; no event logged after Jun 20</div>'),
+    'the tail line carries the coverage, once',
+  )
+  // Nothing logged at all: the existing line, never "none logged" over an empty window twice.
+  const empty = pageOne(renderReport(noSymptomTrialSnap({ loggedDays: 0, unloggedTailDays: 32, lastLoggedDate: null })))
+  assert.ok(empty.includes('<div class="l">Symptom events<br/>nothing logged in this window</div>'), 'an empty window says nothing was logged')
+})
+
+Deno.test('CUL-2718 — a trial WITH a symptom logged keeps its headline and tile 1 byte for byte', () => {
+  const snap = cleanTrialSnap(null)
+  snap.symptoms = [{ ...monitoringSnap().symptoms[0] }]
+  const s = snap.symptoms[0]
+  snap.atAGlance = { ...snap.atAGlance, primarySymptom: { type: s.type, count: s.count }, totalSymptomIncidents: s.count, windowDays: 32, loggedDays: 20 }
+  const page = pageOne(renderReport(snap))
+  assert.ok(page.includes('Primary sign logged: <b>vomiting (<span class="num">22</span> logged)</b>.'), 'the headline names the sign and its count')
+  assert.ok(page.includes(`<div class="v num">${s.count}<small>&nbsp;/&nbsp;32&nbsp;d</small></div><div class="l">Symptom events<br/>`), 'tile 1 keeps the window denominator')
+  assert.ok(!page.includes('none logged in this window'), 'no absence line beside a count')
+  assert.ok(!page.includes('No symptom was logged'), 'no absence sentence beside a count')
+})
