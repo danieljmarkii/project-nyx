@@ -11,7 +11,8 @@ import { VisitReports } from '../../components/vetvisits/VisitReports';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { readAppointmentForVisit, readVetVisitDetail, type VetVisitDetail } from '../../lib/vetVisits';
 import { visitCourseHref, visitTrialHref } from '../../lib/visitPlanDoors';
-import { captureVisitResults } from '../../lib/visitPaperwork';
+import { captureVisitResults, type VisitResultsSource } from '../../lib/visitPaperwork';
+import { isDocumentPickerAvailable } from '../../lib/vetDocumentCapture';
 
 // One visit as written (CUL-900 VV-2; mock D3). *Edit* and *Add to the plan* both open
 // How did it go? for this visit (CUL-2754, §4.4 R1); the five-field edit screen retired.
@@ -26,6 +27,8 @@ export default function VetVisitScreen() {
   // pet (`lib/visitPlanDoors.ts`); the page itself names the RECORD's pet.
   const activePetId = usePetStore((s) => s.activePet?.id ?? null);
   const [resultsBusy, setResultsBusy] = useState(false);
+  // Probed once per mount, as Vet Files does (B-548): an older binary has no Files picker.
+  const [pdfAvailable] = useState(() => isDocumentPickerAvailable());
 
   const [detail, setDetail] = useState<VetVisitDetail | null>(null);
   // The booking this visit was logged from: a report filed under it before the day is this
@@ -87,11 +90,11 @@ export default function VetVisitScreen() {
   // *Results arrived?* (CUL-2759): the paperwork capture, filed under this visit and typed as
   // results at insert. A refusal or a failure is said, never swallowed; a save re-reads the
   // visit so the new document is in its paperwork on the way back from the camera.
-  async function handleResultsArrived() {
+  async function handleResultsArrived(source: VisitResultsSource) {
     if (!detail || resultsBusy) return;
     setResultsBusy(true);
     try {
-      const { groupId, skipped } = await captureVisitResults(detail.visit.pet_id, detail.visit.id);
+      const { groupId, skipped } = await captureVisitResults(detail.visit.pet_id, detail.visit.id, source);
       if (groupId) await load();
       if (skipped) Alert.alert('Some files were skipped', skipped);
     } catch (err) {
@@ -153,7 +156,8 @@ export default function VetVisitScreen() {
               const href = visitTrialHref({ trial, visitPetId: detail.visit.pet_id });
               return href ? () => router.push(href) : null;
             }}
-            onResultsArrived={() => void handleResultsArrived()}
+            onResultsArrived={(source) => void handleResultsArrived(source)}
+            pdfAvailable={pdfAvailable}
             resultsBusy={resultsBusy}
           />
           <VisitReports

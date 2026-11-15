@@ -31,6 +31,7 @@ function renderBody(over: Partial<BodyProps> & { detail: VetVisitDetail }) {
     courseDoor: () => null,
     trialDoor: () => null,
     onResultsArrived: jest.fn(),
+    pdfAvailable: true,
     ...over,
   };
   render(<VisitDetailBody {...props} />);
@@ -138,12 +139,21 @@ describe('VisitDetailBody — the unasked question is named (CUL-2759)', () => {
 });
 
 describe('VisitDetailBody — results arrive later (CUL-2759)', () => {
-  it('offers Results arrived? on a visit with no paperwork yet', () => {
+  it('offers Results arrived? on a visit with no paperwork yet, as a photo or a PDF', () => {
     const onResultsArrived = jest.fn();
     renderBody({ detail: detail(), onResultsArrived });
     expect(screen.getByText('Paperwork · in Vet Files')).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Add — Results arrived?'));
-    expect(onResultsArrived).toHaveBeenCalledTimes(1);
+    fireEvent.press(screen.getByLabelText('Photograph — Results arrived?'));
+    expect(onResultsArrived).toHaveBeenLastCalledWith('camera');
+    fireEvent.press(screen.getByLabelText('PDF — Results arrived?'));
+    expect(onResultsArrived).toHaveBeenLastCalledWith('files');
+    expect(onResultsArrived).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops the PDF button, never dims it, on a binary without the Files picker', () => {
+    renderBody({ detail: detail(), pdfAvailable: false });
+    expect(screen.getByLabelText('Photograph — Results arrived?')).toBeTruthy();
+    expect(screen.queryByLabelText('PDF — Results arrived?')).toBeNull();
   });
 
   it('names an untitled result as results, and keeps an owner’s title', () => {

@@ -34,7 +34,7 @@ import {
   rejectedPickMessage,
   screenPickedFiles,
 } from './vetDocumentCapture';
-import { pickVetImages } from './vetDocumentPickers';
+import { pickVetImages, pickVetPdfs } from './vetDocumentPickers';
 
 export const VISIT_PAPERWORK_STORAGE_KEY = 'nyx.visitPaperwork';
 
@@ -201,21 +201,30 @@ export async function captureVisitPaperwork(petId: string): Promise<PaperworkCap
 //     (`visitDocumentLabel`), and Vet Files shows its Lab result pill.
 export const VISIT_RESULTS_KIND = 'lab_result' as const;
 
-/** Photograph results into this pet's Vet Files, filed under the visit, named as results. */
-export async function captureVisitResults(petId: string, visitId: string): Promise<PaperworkCapture> {
-  const picked = await pickVetImages('camera');
+//
+// TWO SOURCES, unlike the in-room capture. This door is used at home, days later, and
+// results arrive as a printout (the camera) or as a PDF from an email or a clinic portal
+// (Files). Grouping is Vet Files' own (§4.4): the camera's pages are one document, and
+// each PDF is its own document, because two lab PDFs are two records.
+export type VisitResultsSource = 'camera' | 'files';
+
+/** Results into this pet's Vet Files, filed under the visit, typed as results. */
+export async function captureVisitResults(
+  petId: string,
+  visitId: string,
+  source: VisitResultsSource = 'camera',
+): Promise<PaperworkCapture> {
+  const picked = source === 'files' ? await pickVetPdfs() : await pickVetImages('camera');
   if (picked.length === 0) return { groupId: null, skipped: null };
 
   const screened = screenPickedFiles(picked);
   const skipped = rejectedPickMessage(screened);
   if (screened.accepted.length === 0) return { groupId: null, skipped };
 
-  const rows = buildVetDocumentRows({
-    petId,
-    source: 'camera',
-    pages: screened.accepted,
-    kind: VISIT_RESULTS_KIND,
-  }).map((row) => ({ ...row, vet_visit_id: visitId }));
+  const groups = source === 'files' ? screened.accepted.map((file) => [file]) : [screened.accepted];
+  const rows = groups
+    .flatMap((pages) => buildVetDocumentRows({ petId, source, pages, kind: VISIT_RESULTS_KIND }))
+    .map((row) => ({ ...row, vet_visit_id: visitId }));
   await insertVetDocumentRows(rows);
   syncPendingVetDocuments().catch((e) => console.warn('[visitPaperwork] results push failed:', e));
 

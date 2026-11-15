@@ -11,6 +11,7 @@ import {
   formatWhereLine,
   type VetVisitDetail,
 } from '../../lib/vetVisits';
+import type { VisitResultsSource } from '../../lib/visitPaperwork';
 
 interface Props {
   detail: VetVisitDetail;
@@ -23,8 +24,10 @@ interface Props {
   courseDoor: (med: VetVisitDetail['medications'][number]) => (() => void) | null;
   /** A trial row's door; null leaves the row as text. */
   trialDoor: (trial: VetVisitDetail['trials'][number]) => (() => void) | null;
-  /** *Results arrived?*: photograph results, filed under this visit (CUL-2759). */
-  onResultsArrived: () => void;
+  /** *Results arrived?*: results filed under this visit (CUL-2759), photographed or a PDF. */
+  onResultsArrived: (source: VisitResultsSource) => void;
+  /** Whether this binary can pick a PDF from Files (`isDocumentPickerAvailable`). */
+  pdfAvailable: boolean;
   /** The results capture is in flight. */
   resultsBusy?: boolean;
 }
@@ -54,7 +57,7 @@ interface Props {
 // *ADD TO THE PLAN* IS ALWAYS HERE (CUL-2754, §4.4 R1), on a visit with no plan above all:
 // the visit saved in a car park with nothing typed is the one that most needs the door.
 export function VisitDetailBody({
-  detail, petName, onOpenDocument, onAddToPlan, courseDoor, trialDoor, onResultsArrived, resultsBusy,
+  detail, petName, onOpenDocument, onAddToPlan, courseDoor, trialDoor, onResultsArrived, pdfAvailable, resultsBusy,
 }: Props) {
   const { visit } = detail;
   const where = formatWhereLine({ clinicName: visit.clinic_name, vetName: visit.vet_name });
@@ -152,10 +155,14 @@ export function VisitDetailBody({
           <PlanActionRow
             glyph={<FileText size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
             title="Results arrived?"
-            subtitle="Photograph them and they file under this visit"
-            actionLabel="Add"
-            onPress={onResultsArrived}
+            subtitle="A printout or a PDF, filed under this visit"
+            actionLabel="Photograph"
+            onPress={() => onResultsArrived('camera')}
             busy={resultsBusy}
+            // A binary without the Files picker gets no PDF button rather than a dimmed
+            // one (C-7); the camera still works there.
+            secondaryLabel={pdfAvailable ? 'PDF' : undefined}
+            onSecondaryPress={pdfAvailable ? () => onResultsArrived('files') : undefined}
           />
         </View>
       </View>
@@ -287,7 +294,7 @@ const styles = StyleSheet.create({
   },
   questionText: {
     fontSize: theme.textMD,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
     color: theme.colorTextPrimary,
   },
   asked: {

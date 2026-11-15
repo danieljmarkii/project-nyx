@@ -178,6 +178,14 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       '`started_at` and the target duration come from the owner\'s choices on the ' +
       'setup sheet.',
   },
+  'lib/visitPaperwork.ts': {
+    kinds: ['column'],
+    why:
+      'captureVisitResults (CUL-2759) writes vet_documents.vet_visit_id INTO the ' +
+      'document INSERT, for results filed from the saved visit the owner is on (D7: a ' +
+      'link to an existing visit, never a minted or re-dated one). Writes the column; ' +
+      'reads no visit and returns no visit fact to a caller.',
+  },
   'lib/vetVisitLink.ts': {
     kinds: ['table'],
     why:
