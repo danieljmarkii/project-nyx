@@ -889,8 +889,14 @@ export async function applyFailureWrite(
   client: SupabaseClient,
   key: { eventId: string; petId: string },
   write: { mode: 'upsert' | 'rescue'; values: Record<string, unknown> },
-  decidedOn: RowVersion,
+  // 'unheld' is the pre-CUL-2805 write, said at the call site: the catch's last resort once a
+  // rescue has missed WRITE_ATTEMPTS times, so no path is quieter than the build before it.
+  decidedOn: RowVersion | 'unheld',
 ): Promise<WriteOutcome> {
+  if (decidedOn === 'unheld') {
+    const { error } = await client.from('event_ai_analysis').upsert(write.values, { onConflict: 'event_id' })
+    return { error: error?.message ?? null, missed: false }
+  }
   if (decidedOn !== null) {
     // The key columns are the filter, not values: pet_id is frozen on update (migration 074).
     // incident_type stays, so the row is re-synced to the event's type as the upsert did.
@@ -2603,6 +2609,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // without escalating (a neighbour lowering may_wait, an owner's edit, a sibling's calm
     // read), and a final skip there would drop the escalation this run computed. Over an
     // escalated row the next decision is the error-only note; over a quiet one, the rescue again.
+    // After WRITE_ATTEMPTS held misses the next rescue is written unheld (below).
     for (let attempt = 1; ; attempt++) {
       let latest: StoredAnalysis | null = null
       let latestReadFailed = false
@@ -2650,17 +2657,13 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // Unconditional (null): it notes the error and decides nothing about the row's contents.
         await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values, null)
       } else if ((failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') && petIdForFailure) {
-        const wrote = await applyFailureWrite(adminClient, { eventId, petId: petIdForFailure }, failureWrite, latestVersion)
-        if (wrote.missed && failureWrite.mode === 'rescue') {
-          if (attempt < WRITE_ATTEMPTS) continue
-          // Still moving: the rescue never landed. Note the error, so the record says its latest
-          // read hit a problem and takes back any leave to wait (the louder of what is left).
-          // A floor-only run read no photo, so it never notes one (CUL-1509, buildFailureWrite).
-          if (floorOnly) break
-          console.info(`${descriptor.functionName}: the stored row kept changing under the rescue; noted the error only (CUL-2805)`)
-          const note = errorOnly({ message, tiersOn: tiersOnForFailure, existing: latest })
-          await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, note.values, null)
-        } else if (wrote.missed) {
+        // Past WRITE_ATTEMPTS held misses, the decision just made over a fresh read is written
+        // unheld, as before CUL-2805: a row that keeps moving must not cost the escalation this
+        // run computed (adversarial pass 2). Its window is one round trip, as it always was.
+        const unheld = failureWrite.mode === 'rescue' && attempt > WRITE_ATTEMPTS
+        const wrote = await applyFailureWrite(adminClient, { eventId, petId: petIdForFailure }, failureWrite, unheld ? 'unheld' : latestVersion)
+        if (wrote.missed && failureWrite.mode === 'rescue') continue
+        if (wrote.missed) {
           // The plain failed state is final on a miss: a newer read stands over "couldn't finish".
           console.info(`${descriptor.functionName}: the stored row changed before the failure write; left it as it stands (CUL-2805)`)
         }

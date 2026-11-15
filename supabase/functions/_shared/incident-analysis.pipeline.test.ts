@@ -1657,7 +1657,7 @@ Deno.test('pipeline CUL-2805 — a sibling call now on the rescue\'s re-decision
   assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
 })
 
-Deno.test('pipeline CUL-2805 — a row that keeps moving under the rescue ends in the error note, never an unheld write', async () => {
+Deno.test('pipeline CUL-2805 — a row that keeps moving under the rescue still gets it: the last try is unheld, as before', async () => {
   const w = makeWorld({
     row: { ...STORED_CALM },
     contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
@@ -1665,7 +1665,23 @@ Deno.test('pipeline CUL-2805 — a row that keeps moving under the rescue ends i
   })
   await run(w)
   assertStrictEquals(w.aiWriteAttempts, 4)
+  assertEquals(w.writes.map((x) => x.mode), ['upsert'])
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.tier, 'call_today')
+  assertStrictEquals(w.row?.status, 'failed')
+})
+
+Deno.test('pipeline CUL-2805 — the unheld last try still decides over a fresh read: an escalation that landed is only noted', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    beforeAiWrite: (world, n) => {
+      if (n <= 2) commit(world, {})
+      if (n === 3) commit(world, SIBLING_CALL_NOW)
+    },
+  })
+  await run(w)
   assertEquals(w.writes.map((x) => Object.keys(x.values).sort()), [['error', 'may_wait']])
-  assertStrictEquals(w.row?.recommendation, 'monitor')
-  assertStrictEquals(w.row?.error, 'Claude API error 529: overloaded')
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
 })
