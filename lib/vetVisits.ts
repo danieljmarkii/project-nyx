@@ -726,21 +726,48 @@ export interface RecheckBooking {
   where: string;
 }
 
+/** What `recheckBookingFor` needs of an appointment row. */
+export type RecheckCandidate = Pick<LocalVetAppointment, 'id' | 'pet_id' | 'scheduled_at' | 'vet_visit_id' | 'cancelled_at' | 'deleted_at' | 'reason'>;
+
+/**
+ * A booking that may be one the OLD "Set a date" wheel wrote, which the owner never made
+ * (CUL-2788). STOPGAP: every `reason = 'recheck'` booking, whoever made it.
+ *
+ * Before PR-03 (#1539) the after-visit row booked a `vet_appointments` row on the wheel's
+ * first settle: `reason = 'recheck'`, `scheduled_at` at local midnight. Installed builds
+ * keep writing them until they update, so no narrower test holds. Two were tried and
+ * broken by the adversarial passes on the stopgap PR:
+ *   • the midnight test is judged in the READING device's zone, so a row written in one
+ *     zone and read in another shows a clock time;
+ *   • a made-on-the-visit-day test misses a spin on a reopened visit, and a cutoff at the
+ *     merge instant misses every row an old build writes after it.
+ *
+ * The cost is the louder error, and it is wide: a recheck the owner books through *Book
+ * it* (which seeds the reason 'recheck') also reads "not booked yet", and the row keeps
+ * offering *Book it*. The quieter error is the harm: "Booked" for an appointment the
+ * clinic never received means nobody calls. Telling the owner's bookings apart needs a
+ * mark an old build cannot write, which is the PM's ruling on CUL-2788.
+ */
+export function isPhantomRecheckBooking(appointment: Pick<RecheckCandidate, 'reason'>): boolean {
+  return appointment.reason?.trim().toLowerCase() === 'recheck';
+}
+
 /**
  * The booking that answers a visit's recheck, or null.
  *
  * ONE predicate for every reader (the after-visit row, the list's tag, the Pet-tab card),
  * so no two surfaces can disagree about whether a recheck is booked. A booking answers it
  * when it is for the same pet, not deleted, not cancelled, scheduled on a LOCAL day after
- * the visit's, and is not the booking this visit was itself logged from. Logged bookings
- * still count: a recheck that was booked and then happened was booked. The ruling (plan,
- * PR-03): any later booking for the pet clears "not booked yet", so readers print the
- * BOOKING's date, never the recheck's, and never call it a recheck on the booking's behalf.
+ * the visit's, is not the booking this visit was itself logged from, and is not one the
+ * old wheel may have written (`isPhantomRecheckBooking`). Logged bookings still count: a
+ * recheck that was booked and then happened was booked. The ruling (plan, PR-03): any
+ * later booking for the pet clears "not booked yet", so readers print the BOOKING's date,
+ * never the recheck's, and never call it a recheck on the booking's behalf.
  *
  * The visit's own `next_visit_at` does not enter it: a booking made on another day than
  * the vet's "around" is still the booking.
  */
-export function recheckBookingFor<A extends Pick<LocalVetAppointment, 'id' | 'pet_id' | 'scheduled_at' | 'vet_visit_id' | 'cancelled_at' | 'deleted_at'>>(
+export function recheckBookingFor<A extends RecheckCandidate>(
   visit: Pick<LocalVetVisit, 'id' | 'pet_id' | 'visited_at'>,
   appointments: ReadonlyArray<A>,
 ): A | null {
@@ -748,6 +775,7 @@ export function recheckBookingFor<A extends Pick<LocalVetAppointment, 'id' | 'pe
   for (const a of appointments) {
     if (a.pet_id !== visit.pet_id || a.deleted_at || a.cancelled_at) continue;
     if (a.vet_visit_id === visit.id) continue;
+    if (isPhantomRecheckBooking(a)) continue;
     const t = new Date(a.scheduled_at).getTime();
     if (Number.isNaN(t)) continue;
     // Local calendar days, both 'YYYY-MM-DD', so the text compare is a day compare.

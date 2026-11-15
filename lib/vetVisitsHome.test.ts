@@ -40,7 +40,9 @@ function appointmentRow(scheduledAt: string, id = 'a1') {
     scheduled_at: scheduledAt,
     clinic_name: 'Riverside Animal Hospital',
     vet_name: null,
-    reason: 'recheck',
+    // Not 'recheck': until the PM rules on CUL-2788 a recheck booking never reads as booked,
+    // and these fixtures are real bookings.
+    reason: 'Dental cleaning',
     vet_visit_id: null,
     cancelled_at: null,
     deleted_at: null,
@@ -279,6 +281,14 @@ describe('a recheck nobody booked is a date on every reader, and Home asks nothi
     const hit = await readRecheckBooking({ id: 'v1', pet_id: 'pet-a', visited_at: '2026-09-16' }, NOW);
     expect(hit?.id).toBe('a9');
     expect(hit?.where).toBe('Riverside Animal Hospital');
+  });
+
+  it('a recheck booking the old wheel may have written never turns the tag to booked (CUL-2788)', async () => {
+    rows.visits = [visitRow({ visited_at: '2026-09-16', next_visit_at: '2026-10-28' })];
+    rows.appointments = [{ ...appointmentRow(composeScheduledAt(new Date(2026, 9, 28), null)), reason: 'recheck' }];
+    const home = await readVetVisitsHome('pet-a', NOW);
+    expect(home.visits[0].tags.map((t) => t.label)).toEqual(['Recheck around Oct 28']);
+    expect(await readRecheckBooking({ id: 'v1', pet_id: 'pet-a', visited_at: '2026-09-16' }, NOW)).toBeNull();
   });
 
   it('Home’s strip has nothing to show for a recheck date with no booking (AC 17)', async () => {
