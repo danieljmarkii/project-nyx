@@ -297,3 +297,48 @@ describe('a recheck nobody booked is a date on every reader, and Home asks nothi
     expect(await readHomeAppointment('pet-a', NOW)).toBeNull();
   });
 });
+
+// CUL-2793 readers 2 and 3 (STOPGAP): a booking the old wheel may have written is never
+// presented as a booked visit on the Pet tab, and is never dropped from it either. Driven
+// through the real reader; the fixture is the shape the old wheel wrote (reason 'recheck',
+// no time, so local midnight) beside a real booking that must keep its booked face.
+describe('a possible phantom recheck booking is on the Pet tab, never as booked (CUL-2793)', () => {
+  const NOW = new Date(2026, 8, 16, 9, 30);
+  const noTime = (y: number, m: number, d: number) => composeScheduledAt(new Date(y, m, d), null);
+
+  function phantom(scheduledAt: string, id = 'phantom') {
+    return { ...appointmentRow(scheduledAt, id), clinic_name: 'Riverside Animal Hospital', reason: 'recheck' };
+  }
+
+  it('the lead under Next reads as a date not yet booked: no booked time, no clinic line', async () => {
+    rows.appointments = [phantom(noTime(2026, 9, 28))];
+    const home = await readVetVisitsHome('pet-a', NOW);
+    expect(home.next?.id).toBe('phantom');
+    expect(home.next?.when).toBe('Recheck around Oct 28');
+    expect(home.next?.where).toBe('Not booked yet · Riverside Animal Hospital');
+  });
+
+  it('holds for any casing or padding the old builds wrote, and in later and awaiting too', async () => {
+    rows.appointments = [
+      appointmentRow(noTime(2026, 9, 7), 'real'),
+      phantom(noTime(2026, 9, 28), 'later'),
+      { ...phantom(noTime(2026, 8, 10), 'passed'), reason: '  Recheck ' },
+    ];
+    const home = await readVetVisitsHome('pet-a', NOW);
+    // The real booking keeps its booked face.
+    expect(home.next?.id).toBe('real');
+    expect(home.next?.where).toBe('Riverside Animal Hospital · Dental cleaning');
+    expect(home.later.map((a) => [a.id, a.where])).toEqual([['later', 'Not booked yet · Riverside Animal Hospital']]);
+    // Never dropped: *Waiting on you* is where the owner clears it.
+    expect(home.awaiting.map((a) => [a.id, a.when, a.where])).toEqual([
+      ['passed', 'Recheck around Sep 10', 'Not booked yet · Riverside Animal Hospital'],
+    ]);
+  });
+
+  it('a reason that only CONTAINS recheck is a real booking, booked face unchanged', async () => {
+    rows.appointments = [{ ...appointmentRow(noTime(2026, 9, 28), 'bloods'), reason: 'recheck with bloods' }];
+    const home = await readVetVisitsHome('pet-a', NOW);
+    expect(home.next?.where).toBe('Riverside Animal Hospital · recheck with bloods');
+    expect(home.next?.when).not.toMatch(/^Recheck around/);
+  });
+});

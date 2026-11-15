@@ -5,7 +5,7 @@ import { CalendarPlus } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { PlanActionRow, PlanChipRow, PlanSettledRow } from './PlanRows';
 import { defaultRecheckDate, recheckDateIn } from '../../lib/vetVisitPlan';
-import { formatVisitDate, localDateKey, type RecheckBooking } from '../../lib/vetVisits';
+import { NOT_BOOKED_YET, formatVisitDate, localDateKey, type RecheckBooking } from '../../lib/vetVisits';
 
 type Choice = '2w' | '6w' | 'pick';
 
@@ -68,7 +68,7 @@ export function RecheckRow({ petName, nextVisitAt, booking, busy, onSet, onBook 
       <PlanActionRow
         glyph={glyph}
         title={`Recheck around ${formatVisitDate(nextVisitAt)}`}
-        subtitle="Not booked yet"
+        subtitle={NOT_BOOKED_YET}
         actionLabel="Book it"
         onPress={onBook}
         busy={busy}

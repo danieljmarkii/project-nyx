@@ -599,14 +599,14 @@ describe('every upcoming booking renders under Next (CUL-970)', () => {
 
   it('shows the recheck AND the annual — the second is no longer on no screen at all', async () => {
     mockHome = {
-      next: booking('recheck', 21, 'recheck'),
+      next: booking('recheck', 21, 'ear recheck'),
       later: [booking('annual', 180, 'annual exam')],
       awaiting: [],
       visits: [],
     };
     render(<VetVisitsScreen />);
 
-    expect(await screen.findByText('Riverside Animal Hospital · recheck')).toBeTruthy();
+    expect(await screen.findByText('Riverside Animal Hospital · ear recheck')).toBeTruthy();
     expect(screen.getByText('Riverside Animal Hospital · annual exam')).toBeTruthy();
     // Under ONE Next label — "what else is booked" is part of "what is next", not a
     // section of its own.
@@ -616,7 +616,7 @@ describe('every upcoming booking renders under Next (CUL-970)', () => {
   it('gives the later booking its own notes door and its own Change, pointed at ITS id', async () => {
     const { router } = require('expo-router');
     mockHome = {
-      next: booking('recheck', 21, 'recheck'),
+      next: booking('recheck', 21, 'ear recheck'),
       later: [booking('annual', 180, 'annual exam')],
       awaiting: [],
       visits: [],
@@ -639,7 +639,7 @@ describe('every upcoming booking renders under Next (CUL-970)', () => {
     // With more than one booking under Next, "Take notes for Nyx’s visit" read out
     // identically per row (pm-feature-review) — the label now carries the booking's
     // own `when`, the same string the block beside it shows.
-    const lead = booking('recheck', 21, 'recheck');
+    const lead = booking('recheck', 21, 'ear recheck');
     const later = booking('annual', 180, 'annual exam');
     mockHome = { next: lead, later: [later], awaiting: [], visits: [] };
     render(<VetVisitsScreen />);
@@ -653,7 +653,7 @@ describe('every upcoming booking renders under Next (CUL-970)', () => {
 
   it('keeps *How did it go?* off a later booking that is not today', async () => {
     mockHome = {
-      next: booking('recheck', 21, 'recheck'),
+      next: booking('recheck', 21, 'ear recheck'),
       later: [booking('annual', 180, 'annual exam')],
       awaiting: [],
       visits: [],
@@ -683,13 +683,13 @@ describe('the appointment block opens Get ready, in every bucket (CUL-987 D1)', 
   }
 
   it.each([
-    ['the lead under Next', 'recheck', 'Riverside Animal Hospital · recheck'],
+    ['the lead under Next', 'recheck', 'Riverside Animal Hospital · ear recheck'],
     ['a later booking', 'annual', 'Riverside Animal Hospital · annual exam'],
     ['a passed day waiting on an answer', 'passed', 'Riverside Animal Hospital · dental'],
   ])('%s', async (_label, id, where) => {
     const { router } = require('expo-router');
     mockHome = {
-      next: booking('recheck', 21, 'recheck'),
+      next: booking('recheck', 21, 'ear recheck'),
       later: [booking('annual', 180, 'annual exam')],
       awaiting: [booking('passed', -7, 'dental')],
       visits: [],
