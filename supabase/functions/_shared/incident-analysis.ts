@@ -2352,8 +2352,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         contextualFlags = merged.flags
         copy = merged.copy
       }
-      // The rescue takes this attempt's flags and words, so a write that fails after this
-      // point keeps what was decided over the row as it stands now.
+      // The rescue takes this attempt's flags and words, so a write that FAILS after this
+      // point keeps what was decided over the row. A write that MISSES gives them back
+      // (below): the row has moved, so a withdrawal decided over it is no longer known true.
       contextualFlagsForFailure = contextualFlags
       copyForFailure = copy
 
@@ -2524,6 +2525,13 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       }
 
       // Missed: the row moved between the decision and the write. Nothing was written.
+      // Until the next attempt has taken its own second look, the catch must not rescue
+      // from this one's: a flag it withdrew was withdrawn over a row that is gone, and the
+      // row there now may be an owner's correction that keeps the call (adversarial pass 2:
+      // three misses, the owner's "watery" landing last, and the failed frame carried no
+      // call). So the rescue falls back to what the RECORD gave, which only ever says more.
+      contextualFlagsForFailure = recordFlags
+      copyForFailure = recordCopy
       if (attempt >= WRITE_ATTEMPTS) throw new Error('DB write failed: the stored row kept changing under this read')
       console.info(`${descriptor.functionName}: the stored row changed before the write; deciding again (CUL-2773)`)
       decidedRow = await readStoredRow()

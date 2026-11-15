@@ -1465,11 +1465,10 @@ Deno.test('pipeline CUL-2773 — with nobody in the gap the same read withdraws 
   assertEquals(w.row?.contextual_flags, [])
 })
 
-Deno.test('pipeline CUL-2773 — an attempt never inherits the last one\'s description gate', async () => {
-  // Attempt 1 is calm, so the model's description is gated out; the owner's edit in the gap
-  // keeps the flag on attempt 2, which escalates on context and gates it out too. The row
-  // is edited by then, so no structured column is written at all: the stored description
-  // stands, whatever either attempt decided about the model's.
+Deno.test('pipeline CUL-2773 — a retry that escalates over an edited row leaves the stored description alone', async () => {
+  // The owner's edit in the gap keeps the flag on attempt 2, which escalates on context.
+  // The row is edited by then, so no structured column is written at all: the stored
+  // description stands, whatever either attempt decided about the model's.
   const w = makeWorld({
     row: { ...STORED_CALM, description: 'STORED' },
     contextFlags: ['ctx_flag'],
@@ -1480,4 +1479,42 @@ Deno.test('pipeline CUL-2773 — an attempt never inherits the last one\'s descr
   await run(w)
   assertStrictEquals(w.row?.description, 'STORED')
   assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+})
+
+// Adversarial pass 2: every attempt withdrew the flag over a row that then moved, and the
+// catch rescued from the last attempt's withdrawal. The owner's correction landed last, so
+// the failed frame carried no call over a row that warrants one.
+Deno.test('pipeline CUL-2773 — three misses with the owner\'s correction landing last: the catch keeps the record\'s call', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'],
+    vision: () => CLEAN,
+    afterRead: (_a, stored) => (stored?.edited_at && stored.colour !== 'yellow' ? ['ctx_flag'] : []),
+    beforeAiWrite: (world, n) => {
+      if (n <= 2) commit(world, {}) // a sibling moves the version and nothing else
+      if (n === 3) commit(world, { colour: 'watery', edited_at: EDITED_AT })
+    },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+  assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
+  assertStrictEquals(w.row?.status, 'failed')
+  assertStrictEquals(w.row?.colour, 'watery')
+  assertStrictEquals(w.row?.edited_at, EDITED_AT)
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2773 — a write that FAILS after a withdrawal still rescues nothing (only a miss gives the flags back)', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'],
+    vision: () => CLEAN,
+    afterRead: () => [],
+    aiWriteError: (n) => n === 1,
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.row?.recommendation === 'worth_a_call', false)
 })
