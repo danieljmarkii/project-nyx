@@ -14,6 +14,7 @@ import {
   careStateOf,
   EMPTY_CARE_RECORD,
   EN9_CARE_STATE_STEP,
+  isPossibleRecheckPhantom,
   priorCareCarry,
   rankWatchedLast,
   readPriorCare,
@@ -423,7 +424,7 @@ Deno.test('the pair: coughing turning chronic after the answer brings watched vo
 // ── A booked recheck (§4.7, AC 6, AC 16) ──
 
 Deno.test('a booked visit within 30 days moves with_vet to recheck_booked; anything else does not (AC 6, AC 16, CUL-2652)', () => {
-  const appt = (over: Partial<CareRecord['appointments'][number]>) => ({ id: 'x', scheduledAt: at(-10, 10), cancelledAt: null, deletedAt: null, ...over })
+  const appt = (over: Partial<CareRecord['appointments'][number]>) => ({ id: 'x', scheduledAt: at(-10, 10), cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false, ...over })
   const with_ = (a: ReturnType<typeof appt>) => stateOf({ symptoms: STABLE, acks: [ack({ daysAgo: 40 })], record: { appointments: [a] } })
   const booked = with_(appt({}))
   assertStrictEquals(booked.state, 'recheck_booked')
@@ -434,6 +435,8 @@ Deno.test('a booked visit within 30 days moves with_vet to recheck_booked; anyth
   // CUL-2652 ruling 2: no topic test; the guard is time. A visit 31 days out never quiets it.
   assertStrictEquals(with_(appt({ scheduledAt: at(-31, 10) })).state, 'with_vet', 'a visit past the horizon')
   assertStrictEquals(with_(appt({ scheduledAt: at(-30, 10) })).state, 'recheck_booked', 'the horizon is inclusive')
+  // CUL-2793: a booking the old recheck wheel may have made up is never a booked recheck.
+  assertStrictEquals(with_(appt({ possibleRecheckPhantom: true })).state, 'with_vet', 'a phantom recheck booking')
   // A worsening re-raises straight through a booked recheck.
   const doubling = events('vomit', [...everyNth(3.5, 170, 22).map(Math.round), ...range(20, 0).filter((d) => d % 7 !== 0)])
   assertStrictEquals(stateOf({ symptoms: doubling, acks: [ack({ daysAgo: 60 })], record: { appointments: [appt({})] } }).state, 'raised_again')
@@ -724,13 +727,15 @@ Deno.test('CUL-1290: counted from the later of the anchor and the day it was wri
 })
 
 Deno.test('CUL-1290: a recheck recorded ahead withholds it; a cancelled or past one does not', () => {
-  const appt = (over: Partial<CareRecord['appointments'][number]>) => ({ id: 'x', scheduledAt: at(-10, 10), cancelledAt: null, deletedAt: null, ...over })
+  const appt = (over: Partial<CareRecord['appointments'][number]>) => ({ id: 'x', scheduledAt: at(-10, 10), cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false, ...over })
   const q = (a: ReturnType<typeof appt>) => questionOf({ symptoms: STABLE, acks: [ack({ daysAgo: 70 })], record: { appointments: [a] } }).recheckQuestion
   assertStrictEquals(q(appt({})), null, 'a visit booked within four weeks is recheck_booked, which carries no question')
   assertStrictEquals(q(appt({ scheduledAt: at(-40, 10) })), 'Did your vet want to see Nyx again?', 'a visit 40 days out does not answer it')
   assertStrictEquals(q(appt({ cancelledAt: at(1) })), 'Did your vet want to see Nyx again?')
   assertStrictEquals(q(appt({ deletedAt: at(1) })), 'Did your vet want to see Nyx again?')
   assertStrictEquals(q(appt({ scheduledAt: at(5) })), 'Did your vet want to see Nyx again?')
+  // CUL-2793: a booking the old recheck wheel may have made up never withholds the question.
+  assertStrictEquals(q(appt({ possibleRecheckPhantom: true })), 'Did your vet want to see Nyx again?', 'a phantom recheck booking')
   // A booked visit within the horizon is recheck_booked, which carries no question.
   const booked = questionOf({ symptoms: STABLE, acks: [ack({ daysAgo: 70 })], record: { appointments: [appt({})] } })
   assertStrictEquals(booked.state, 'recheck_booked')
@@ -931,6 +936,7 @@ const apptAt = (over: Partial<CareRecord['appointments'][number]> & { daysAhead:
   scheduledAt: over.scheduledAt ?? at(-over.daysAhead, over.hour ?? 15),
   cancelledAt: over.cancelledAt ?? null,
   deletedAt: over.deletedAt ?? null,
+  possibleRecheckPhantom: over.possibleRecheckPhantom ?? false,
 })
 const worsening = (sign: SymptomType = 'vomit'): Finding =>
   ({ type: 'symptom_worsening', priorityClass: 'safety', symptomType: sign, tier: 'firm', currentDays: 4, priorDays: 1, windowDays: 7 } as unknown as Finding)
@@ -969,6 +975,79 @@ Deno.test('CUL-2652 guard = A: only a standing visit within 30 days quiets the a
   assertStrictEquals(s(apptAt({ daysAhead: 7, scheduledAt: 'not a date' })).state, 'raised', 'a malformed date')
   assertStrictEquals(stateOf({ symptoms: STABLE }).state, 'raised', 'no appointment')
   assertStrictEquals('bookedVisit' in stateOf({ symptoms: STABLE }), false, 'no booking writes no key')
+})
+
+// ── CUL-2793: a booking the old recheck wheel may have made up never quiets anything ──
+
+Deno.test('CUL-2793: a reason-recheck booking never quiets a raised concern, upcoming or just passed; a real one beside it still does', () => {
+  const phantom = (daysAhead: number) => apptAt({ id: `phantom-${daysAhead}`, daysAhead, possibleRecheckPhantom: true })
+  for (const d of [0, 7, 30, -1, -7]) {
+    const s = stateOf({ symptoms: STABLE, record: { appointments: [phantom(d)] } })
+    assertStrictEquals(s.state, 'raised', `a phantom ${d} days out`)
+    assertStrictEquals('bookedVisit' in s, false, 'a phantom names no booked visit')
+  }
+  // A real booking still quiets, and the phantom beside it (sooner) is never the one named.
+  const both = stateOf({ symptoms: STABLE, record: { appointments: [phantom(3), apptAt({ id: 'real', daysAhead: 12 })] } })
+  assertStrictEquals(both.state, 'visit_booked')
+  assertEquals(both.bookedVisit, { on: '2026-10-12', appointmentId: 'real', passed: false })
+})
+
+Deno.test('CUL-2793: a reason-recheck booking never quiets the weight card, and never adds a date to an escalation', () => {
+  const p = apptAt({ daysAhead: 7, possibleRecheckPhantom: true })
+  assertEquals(step({ findings: [weight()], symptoms: STABLE, record: { appointments: [p] } })[0].finding, weight())
+  const rows = step({ findings: [burden(), chronicity()], symptoms: STABLE, record: { appointments: [p] } })
+  assertEquals(rows[0].finding, burden())
+  assertStrictEquals(careStateOf(rows[1].finding)!.state, 'raised')
+})
+
+Deno.test('CUL-2793 adv #1: a reason-recheck visit never quiets, but still SPENDS the quiet window (loud on both sides)', () => {
+  // An unanswered reason-recheck visit 20 days ago may be a real recheck the owner booked and
+  // attended: it spends ruling A's one window, so the real booking 9 days out does not re-quiet it.
+  const spent = [apptAt({ id: 'p', daysAhead: -20, possibleRecheckPhantom: true }), apptAt({ id: 'next', daysAhead: 9 })]
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: spent } }).state, 'raised')
+  // The weight card the same way.
+  const w = step({ findings: [weight()], symptoms: STABLE, record: { appointments: [apptAt({ id: 'p', daysAhead: -10, possibleRecheckPhantom: true }), apptAt({ id: 'next', daysAhead: 5 })] } })[0].finding
+  assertEquals(w, weight(), 'the weight card asks: no care state written')
+  // A cancelled one still never spends it.
+  const cancelled = [apptAt({ id: 'p', daysAhead: -20, possibleRecheckPhantom: true, cancelledAt: at(19) }), apptAt({ id: 'next', daysAhead: 9 })]
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: cancelled } }).state, 'visit_booked')
+})
+
+Deno.test('CUL-2793 adv #2: a reason-recheck booking sooner than a real one drops the call-before date, never moves it later', () => {
+  const phantomFirst = { appointments: [apptAt({ id: 'p', daysAhead: 15, possibleRecheckPhantom: true }), apptAt({ id: 'real', daysAhead: 24 })] }
+  // A re-raise keeps its ask and carries no date at all (main named the 15th; the 24th would be a delay).
+  const again = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ daysAgo: 60 })], record: phantomFirst })
+  assertStrictEquals(again.state, 'raised_again')
+  assertStrictEquals('bookedVisit' in again, false)
+  // An escalation the same way: untouched.
+  const rows = step({ findings: [burden(), chronicity()], symptoms: STABLE, record: phantomFirst })
+  assertEquals(rows[0].finding, burden())
+  // The quiet concern still names the real booking (a quiet state is not a deadline).
+  assertEquals(careStateOf(rows[1].finding)!.bookedVisit, { on: '2026-10-24', appointmentId: 'real', passed: false })
+  // A phantom AFTER the real booking changes nothing: the real date stands beside the ask.
+  const realFirst = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ daysAgo: 60 })], record: { appointments: [apptAt({ id: 'real', daysAhead: 7 }), apptAt({ id: 'p', daysAhead: 15, possibleRecheckPhantom: true })] } })
+  assertEquals(realFirst.bookedVisit, { on: '2026-10-07', appointmentId: 'real', passed: false })
+  // A phantom on the SAME day is no delay: the real date stands.
+  const sameDay = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ daysAgo: 60 })], record: { appointments: [apptAt({ id: 'p', daysAhead: 7, hour: 9, possibleRecheckPhantom: true }), apptAt({ id: 'real', daysAhead: 7 })] } })
+  assertEquals(sameDay.bookedVisit, { on: '2026-10-07', appointmentId: 'real', passed: false })
+  // A cancelled phantom before it drops nothing.
+  const cancelled = stateOf({ symptoms: BOOKED_DOUBLING, acks: [ack({ daysAgo: 60 })], record: { appointments: [apptAt({ id: 'p', daysAhead: 3, possibleRecheckPhantom: true, cancelledAt: at(1) }), apptAt({ id: 'real', daysAhead: 7 })] } })
+  assertEquals(cancelled.bookedVisit, { on: '2026-10-07', appointmentId: 'real', passed: false })
+})
+
+Deno.test('CUL-2793: a fact that does not say it is a real booking counts as a phantom (errs loud)', () => {
+  const base = apptAt({ daysAhead: 7 })
+  const unsaid = { ...base, possibleRecheckPhantom: undefined as unknown as boolean }
+  const asText = { ...base, possibleRecheckPhantom: 'false' as unknown as boolean }
+  const { possibleRecheckPhantom: _drop, ...absent } = base
+  for (const [name, a] of [['undefined', unsaid], ['the string false', asText], ['the key absent', absent]] as const) {
+    assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [a as typeof base] } }).state, 'raised', name)
+  }
+})
+
+Deno.test('CUL-2793: isPossibleRecheckPhantom is the client rule (reason "recheck", trimmed, any case)', () => {
+  for (const r of ['recheck', 'Recheck', ' RECHECK ']) assertStrictEquals(isPossibleRecheckPhantom(r), true, r)
+  for (const r of [null, undefined, '', 'rechecks', 'dental', 'recheck ears']) assertStrictEquals(isPossibleRecheckPhantom(r), false, String(r))
 })
 
 Deno.test('CUL-2652 frame 3 D: the week after the visit stays quiet and asks how it went; day 8 asks again', () => {
@@ -1030,7 +1109,7 @@ Deno.test('CUL-2652: the 30 days are LOCAL days (a Los Angeles owner, an evening
   // Now is Sep 30, 14:00 in Los Angeles. Oct 30 at 19:00 local is 02:00 UTC on Oct 31.
   const run = (iso: string) =>
     careStateOf(EN9_CARE_STATE_STEP([{ rank: 0, finding: chronicity() }], {
-      ...args({ symptoms: STABLE, record: { appointments: [{ id: 'x', scheduledAt: iso, cancelledAt: null, deletedAt: null }] } }),
+      ...args({ symptoms: STABLE, record: { appointments: [{ id: 'x', scheduledAt: iso, cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false }] } }),
       timezone: 'America/Los_Angeles',
     })[0].finding)!
   const in30 = run('2026-10-31T02:00:00.000Z')

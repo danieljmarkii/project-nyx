@@ -49,6 +49,7 @@ import {
   CARE_STATE_CONFIG,
   careStateText,
   EMPTY_CARE_RECORD,
+  isPossibleRecheckPhantom,
   type AckFact,
   type AckSource,
   type AppointmentFact,
@@ -135,7 +136,7 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.12' // signal.12: CUL-2652, a booked visit within 30 days quiets a raised concern and the weight card behind engines_v3_en9 (flag off unchanged). signal.11: CUL-2037, a device with refused rows makes the run an incomplete read (PM ruling (a)); CUL-2059, a log's rebuild over the cap runs on templates. signal.10: PR-24 (CUL-772, Q14), a device with unsent rows makes the run an incomplete read. signal.9: PR-30s (CUL-1725), I5's refused-then-vomited intake card behind engines_v3_en5 (flag off unchanged). signal.8: PR-19 (CUL-1413), EN-8's weight lane behind engines_v3_en8 (flag off unchanged). signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
+export const SIGNAL_ENGINE_VERSION = 'signal.13' // signal.13: CUL-2793, a booking with reason "recheck" (one the old wheel may have made up) never quiets a concern or the weight card, but still spends ruling A's quiet window. signal.12: CUL-2652, a booked visit within 30 days quiets a raised concern and the weight card behind engines_v3_en9 (flag off unchanged). signal.11: CUL-2037, a device with refused rows makes the run an incomplete read (PM ruling (a)); CUL-2059, a log's rebuild over the cap runs on templates. signal.10: PR-24 (CUL-772, Q14), a device with unsent rows makes the run an incomplete read. signal.9: PR-30s (CUL-1725), I5's refused-then-vomited intake card behind engines_v3_en5 (flag off unchanged). signal.8: PR-19 (CUL-1413), EN-8's weight lane behind engines_v3_en8 (flag off unchanged). signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
 
@@ -1118,9 +1119,11 @@ export async function readCareContextFacts(
 // answers (never a visit id, a clinic or a note: the answer's ANCHOR is the date it names), the
 // trial or course an answer is scoped to (dates, status and whether it has a target), the newest
 // given or partial dose of each such course, the lethargy rows in the lookback (C1a source 2),
-// and the pet's appointments by DATE ONLY (CUL-2652: `scheduled_at`, `cancelled_at`, `deleted_at`,
-// the three AC 10 as amended allows; never a reason, a question, a clinic or a note). Caller's
-// JWT, so RLS scopes every read.
+// and the pet's appointments by DATE (CUL-2652: `scheduled_at`, `cancelled_at`, `deleted_at`, the
+// three AC 10 as amended allows) plus `reason`, which CUL-2793 (PM go, 2026-11-15) reads only to
+// reduce it at once to one boolean, `possibleRecheckPhantom`: the reason text never leaves the
+// mapping line, never reaches careState.ts, never is stored or printed. Never a question, a clinic
+// or a note. Caller's JWT, so RLS scopes every read.
 //
 // Fails toward RAISED: any failure returns EMPTY_CARE_RECORD, so no answer quiets a concern on a
 // read that did not answer.
@@ -1129,7 +1132,7 @@ const ACK_SOURCES: ReadonlySet<string> = new Set<AckSource>(['at_vet_tick', 'vis
 type AckRow = { id: string; symptom_type: string; source: string; anchor_on: string; diet_trial_id: string | null; medication_id: string | null; retracts: string | null; created_at: string }
 type AckTrialRow = { id: string; started_at: string; ended_at: string | null; target_duration_days: number | null; target_duration_days_initial: number | null }
 type AckMedRow = { id: string; drug_name: string | null; started_at: string | null; ended_at: string | null; status: string | null; target_duration_days: number | null; target_duration_doses: number | null }
-type AppointmentRow = { id: string; scheduled_at: string; cancelled_at: string | null; deleted_at: string | null }
+type AppointmentRow = { id: string; scheduled_at: string; cancelled_at: string | null; deleted_at: string | null; reason: string | null }
 type AckDoseRow = { id: string; occurred_at: string; medication_administrations: { medication_id: string | null } | { medication_id: string | null }[] | null }
 
 // EN-8 (PR-19, CUL-1413): the weight lane's facts. Every weigh-in in the predicate's window
@@ -1202,7 +1205,7 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
       fetchAll<AppointmentRow>('vet_appointments', (r) => r.id, (from, to) =>
         supabase
           .from('vet_appointments')
-          .select('id, scheduled_at, cancelled_at, deleted_at', { count: 'exact' })
+          .select('id, scheduled_at, cancelled_at, deleted_at, reason', { count: 'exact' })
           .eq('pet_id', petId)
           .gte('scheduled_at', apptSinceIso)
           .order('scheduled_at', { ascending: false })
@@ -1293,7 +1296,7 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
       })
     }
     const history = await readCareHistory(supabase, petId, lookbackIso, nowMs, acknowledgements)
-    const appointments: AppointmentFact[] = apptPull.rows.map((a) => ({ id: a.id, scheduledAt: a.scheduled_at, cancelledAt: a.cancelled_at, deletedAt: a.deleted_at }))
+    const appointments: AppointmentFact[] = apptPull.rows.map((a) => ({ id: a.id, scheduledAt: a.scheduled_at, cancelledAt: a.cancelled_at, deletedAt: a.deleted_at, possibleRecheckPhantom: isPossibleRecheckPhantom(a.reason) }))
     return { acknowledgements, appointments, lethargyAt: lethargyPull.rows.map((r) => r.occurred_at), history }
   } catch (err) {
     console.warn('generate-signal: care-record reads failed, every concern stays raised:', err instanceof Error ? err.message : String(err))
