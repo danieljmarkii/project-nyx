@@ -2314,138 +2314,153 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       }
     }
 
-    // 6b. The flags' second look, once the photo is read (EN-7; ContextualRun.afterRead).
-    //     Only on a COMPLETE read: every photo on the event reached the model and a parsed
-    //     analysis came back. Anything less keeps every flag step 3 computed. The rescue
-    //     takes the merged run, so a write that fails after this point keeps its result.
     const completeRead = analysis !== null && photoPaths.length > 0 && usableReadCount === photoPaths.length
-    if (contextRun.afterRead && completeRead) {
-      const merged = mergeAfterRead(
-        { flags: contextualFlags, copy, withdrawable: photoPaths.length === 1 ? contextRun.withdrawable : [] },
-        contextRun.afterRead(analysis, freshRow),
-      )
-      contextualFlags = merged.flags
-      copy = merged.copy
-      contextualFlagsForFailure = contextualFlags
-      copyForFailure = copy
-    }
 
-    // 7. Escalation floor (contextual flags from step 3 + the model's visual flags).
-    let visualFlags = analysis?.visual_flags ?? []
-    let recommendation = applyEscalationFloor({
-      modelRecommendation: analysis?.recommendation ?? 'not_enough_to_say',
-      appearsToShowSubject: analysis ? descriptor.appearsToShowSubject(analysis) : false,
-      hasPhoto,
-      visualFlags,
-      contextualFlags,
-    })
-
-    // 7b. Partial-read honesty (B-203 / CUL-298). If we could not read EVERY photo on
-    //     the event and the photos we DID read did not escalate, we refuse to stand
-    //     behind the benign result: an unseen frame could hold the red flag the
-    //     readable ones lack, so a 'monitor' here would be a reassurance-on-absence,
-    //     and its structured fields ("Blood: none visible", from a partial view) would
-    //     carry that onto the card and the vet report. Collapse to the fully-unread
-    //     shape — drop the analysis so the structured observations vanish (step 9's
-    //     buildStructuredValues(null)) and the verdict + read become the honest
-    //     not_enough_to_say. Any escalation already reached (worth_a_call — a visual
-    //     flag the photos surfaced, the model's own call, or a contextual flag
-    //     computed from the record) is always kept: the floor at step 7 runs FIRST, so
-    //     presence has already escalated before this guard inspects the verdict.
-    const partialReadCollapsed = shouldCollapsePartialRead({ usableCount: usableReadCount, totalCount: photoPaths.length, recommendation })
-    if (partialReadCollapsed) {
-      analysis = null
-      visualFlags = []
-      recommendation = 'not_enough_to_say'
-    }
-
-    // 8. Read text — the load-bearing never-reassure selection (B-060), pure + tested.
-    // The model's free text reaches the owner ONLY on the worth_a_call (visual-flag)
-    // escalation path; the monitor / no-flag path is a deterministic template, so a
-    // single sample can never assert an all-clear (the n=1 invariant, made structural
-    // after a denylist proved too leaky to be the net — adversarial review 2026-06-24).
-    const readText = selectReadText(copy, {
-      petName,
-      recommendation,
-      contextualFlags,
-      visualFlags,
-      modelReadText: analysis?.read_text ?? null,
-      photoUnreadable,
-      hasPhoto,
-      // The model's own call counts as a photo finding only on a photo it says shows the
-      // subject: a not-vomit photo is never described as holding one.
-      modelEscalated: !!analysis && descriptor.appearsToShowSubject(analysis) && analysis.recommendation === 'worth_a_call',
-    })
-
-    // 8b. Post-floor gate on the model's free-text `description` (CUL-152 / B-179 — see
-    // selectDescription). read_text is re-gated post-floor by selectReadText above;
-    // `description` is a structured column written straight from the parse, so it needs
-    // this second gate to inherit the same never-reassure guarantee. Mutating analysis
-    // nulls BOTH the description column AND ai_raw_payload (= analysis) together, so the
-    // owner-edit diff baseline (extract*EditableFromPayload) stays consistent (Pattern 7).
-    // Closes the model-self-escalated-but-floor-downgraded leak the parse gate alone missed.
-    if (analysis) {
-      analysis.description = selectDescription({
-        modelDescription: analysis.description,
-        recommendation,
-        contextualFlags,
-        photoUnreadable,
-      })
-    }
-
-    const status = recommendation === 'not_enough_to_say' ? 'uncertain' : 'completed'
-
-    // From here the run has a verdict of its own; if the write below fails, the catch
-    // keeps it when it escalates (CUL-815's variant: a visual escalation this run found
-    // over a stored 'monitor', lost to a failed write-back).
-    computedRead = withRescueTier(
-      { recommendation, read_text: readText, visual_flags: visualFlags, contextual_flags: contextualFlags },
-      tiersOn,
-      minTier,
-    )
-
-    // 9. Write-back. Never clobbers a human-edited row (Pattern 7), never lowers a
-    // stored escalation, never takes a stored red flag off the record
-    // (resolveReanalysisWrite). Decided on a FRESH read of the row, not step 3b's: see
-    // readStoredRow for why that window matters.
-    const tieredFields: AnalysisReadFields<TFlag> = tieredReadFields({
-      recommendation,
-      read_text: readText,
-      visual_flags: visualFlags,
-      contextual_flags: contextualFlags,
-      status,
-      error: null,
-    }, tiersOn, minTier)
-    if (tieredFields.tier) {
-      console.info(`${descriptor.functionName}: tier ${tieredFields.tier} (${tierReasonOf({ ...tieredFields, tier: tieredFields.tier })})`)
-    }
-
-    // Under the tier key the payload names the photo set this read READ (all of it, or null):
-    // the one key a neighbour's "may wait" check can trust to mean "these photos were read"
-    // (incidentMayWait.ts, photoReadSettled). Flag-off, the payload is today's, byte for byte.
-    const structuredValues = descriptor.buildStructuredValues(
-      analysis && tiersOn
-        ? { ...analysis, [READ_PHOTO_SET_KEY]: completeRead && !partialReadCollapsed ? stamps.photoSetKey : null }
-        : analysis,
-    )
-
-    // 8c. "May wait" (CUL-1628), on a call today only, decided over this run's read, the fresh
-    //     stored row and the record around the incident (incidentMayWait.ts). Settled means every
-    //     photo was read and shows the subject; a photo-less log is settled by having none.
-    const settledRun = !hasPhoto || (completeRead && !partialReadCollapsed && !photoUnreadable && !!analysis && descriptor.appearsToShowSubject(analysis))
-
-    // 8c and 9 run as one decision, held to the row it was made on (CUL-2773, RowVersion).
-    // The fresh read is some awaits old by the time the write goes out (the may-wait record
-    // read below is one), and an owner's edit or a sibling run can commit inside them. So
-    // the write names the version it decided over; if the row has moved it writes nothing,
-    // and the run reads the row again and decides again: an edit that landed now takes the
-    // read-fields-only branch (the owner's values and edited_at stand), an escalation that
-    // landed now holds. A row that keeps moving ends the run in the catch, which writes no
-    // structured column. Not re-run on a miss: steps 6a' to 8, whose flags and words were
-    // settled against the first fresh read, exactly as for an edit that lands after a run.
+    // Steps 6b to 9 run as ONE decision, held to the row it was made on (CUL-2773,
+    // RowVersion). The fresh read is some awaits old by the time the write goes out (the
+    // may-wait record read is one), and an owner's edit or a sibling run can commit inside
+    // them. So the write names the version it decided over; if the row has moved it writes
+    // nothing, and the run reads the row again and decides again, from the flags' second
+    // look onward: an edit that landed now is seen by that look (an owner's "watery" keeps
+    // the call a formed-stool read would withdraw), takes the read-fields-only branch (the
+    // owner's values and edited_at stand), and an escalation that landed now holds. A row
+    // that keeps moving ends the run in the catch, which writes no structured column.
+    //
+    // Every attempt starts from the same three inputs, none of which an attempt changes:
+    // the flags and words the RECORD gave (steps 3 and 6a'), and the model's parse.
+    const recordFlags = contextualFlags
+    const recordCopy = copy
+    const parsed = analysis
     let decidedRow = freshRow
     for (let attempt = 1; ; attempt++) {
       const row = decidedRow
+      let contextualFlags = recordFlags
+      let copy = recordCopy
+      // A copy: step 8b gates `description` in place, and an attempt must not inherit the
+      // last one's gate.
+      let analysis: TAnalysis | null = parsed ? { ...parsed } : null
+
+      // 6b. The flags' second look, once the photo is read (EN-7; ContextualRun.afterRead).
+      //     Only on a COMPLETE read: every photo on the event reached the model and a parsed
+      //     analysis came back. Anything less keeps every flag step 3 computed. The rescue
+      //     takes the merged run, so a write that fails after this point keeps its result.
+      if (contextRun.afterRead && completeRead) {
+        const merged = mergeAfterRead(
+          { flags: contextualFlags, copy, withdrawable: photoPaths.length === 1 ? contextRun.withdrawable : [] },
+          contextRun.afterRead(analysis, row),
+        )
+        contextualFlags = merged.flags
+        copy = merged.copy
+      }
+      // The rescue takes this attempt's flags and words, so a write that fails after this
+      // point keeps what was decided over the row as it stands now.
+      contextualFlagsForFailure = contextualFlags
+      copyForFailure = copy
+
+      // 7. Escalation floor (contextual flags from step 3 + the model's visual flags).
+      let visualFlags = analysis?.visual_flags ?? []
+      let recommendation = applyEscalationFloor({
+        modelRecommendation: analysis?.recommendation ?? 'not_enough_to_say',
+        appearsToShowSubject: analysis ? descriptor.appearsToShowSubject(analysis) : false,
+        hasPhoto,
+        visualFlags,
+        contextualFlags,
+      })
+
+      // 7b. Partial-read honesty (B-203 / CUL-298). If we could not read EVERY photo on
+      //     the event and the photos we DID read did not escalate, we refuse to stand
+      //     behind the benign result: an unseen frame could hold the red flag the
+      //     readable ones lack, so a 'monitor' here would be a reassurance-on-absence,
+      //     and its structured fields ("Blood: none visible", from a partial view) would
+      //     carry that onto the card and the vet report. Collapse to the fully-unread
+      //     shape — drop the analysis so the structured observations vanish (step 9's
+      //     buildStructuredValues(null)) and the verdict + read become the honest
+      //     not_enough_to_say. Any escalation already reached (worth_a_call — a visual
+      //     flag the photos surfaced, the model's own call, or a contextual flag
+      //     computed from the record) is always kept: the floor at step 7 runs FIRST, so
+      //     presence has already escalated before this guard inspects the verdict.
+      const partialReadCollapsed = shouldCollapsePartialRead({ usableCount: usableReadCount, totalCount: photoPaths.length, recommendation })
+      if (partialReadCollapsed) {
+        analysis = null
+        visualFlags = []
+        recommendation = 'not_enough_to_say'
+      }
+
+      // 8. Read text — the load-bearing never-reassure selection (B-060), pure + tested.
+      // The model's free text reaches the owner ONLY on the worth_a_call (visual-flag)
+      // escalation path; the monitor / no-flag path is a deterministic template, so a
+      // single sample can never assert an all-clear (the n=1 invariant, made structural
+      // after a denylist proved too leaky to be the net — adversarial review 2026-06-24).
+      const readText = selectReadText(copy, {
+        petName,
+        recommendation,
+        contextualFlags,
+        visualFlags,
+        modelReadText: analysis?.read_text ?? null,
+        photoUnreadable,
+        hasPhoto,
+        // The model's own call counts as a photo finding only on a photo it says shows the
+        // subject: a not-vomit photo is never described as holding one.
+        modelEscalated: !!analysis && descriptor.appearsToShowSubject(analysis) && analysis.recommendation === 'worth_a_call',
+      })
+
+      // 8b. Post-floor gate on the model's free-text `description` (CUL-152 / B-179 — see
+      // selectDescription). read_text is re-gated post-floor by selectReadText above;
+      // `description` is a structured column written straight from the parse, so it needs
+      // this second gate to inherit the same never-reassure guarantee. Mutating analysis
+      // nulls BOTH the description column AND ai_raw_payload (= analysis) together, so the
+      // owner-edit diff baseline (extract*EditableFromPayload) stays consistent (Pattern 7).
+      // Closes the model-self-escalated-but-floor-downgraded leak the parse gate alone missed.
+      if (analysis) {
+        analysis.description = selectDescription({
+          modelDescription: analysis.description,
+          recommendation,
+          contextualFlags,
+          photoUnreadable,
+        })
+      }
+
+      const status = recommendation === 'not_enough_to_say' ? 'uncertain' : 'completed'
+
+      // From here the run has a verdict of its own; if the write below fails, the catch
+      // keeps it when it escalates (CUL-815's variant: a visual escalation this run found
+      // over a stored 'monitor', lost to a failed write-back).
+      computedRead = withRescueTier(
+        { recommendation, read_text: readText, visual_flags: visualFlags, contextual_flags: contextualFlags },
+        tiersOn,
+        minTier,
+      )
+
+      // 9. Write-back. Never clobbers a human-edited row (Pattern 7), never lowers a
+      // stored escalation, never takes a stored red flag off the record
+      // (resolveReanalysisWrite). Decided on a FRESH read of the row, not step 3b's: see
+      // readStoredRow for why that window matters.
+      const tieredFields: AnalysisReadFields<TFlag> = tieredReadFields({
+        recommendation,
+        read_text: readText,
+        visual_flags: visualFlags,
+        contextual_flags: contextualFlags,
+        status,
+        error: null,
+      }, tiersOn, minTier)
+      if (tieredFields.tier) {
+        console.info(`${descriptor.functionName}: tier ${tieredFields.tier} (${tierReasonOf({ ...tieredFields, tier: tieredFields.tier })})`)
+      }
+
+      // Under the tier key the payload names the photo set this read READ (all of it, or null):
+      // the one key a neighbour's "may wait" check can trust to mean "these photos were read"
+      // (incidentMayWait.ts, photoReadSettled). Flag-off, the payload is today's, byte for byte.
+      const structuredValues = descriptor.buildStructuredValues(
+        analysis && tiersOn
+          ? { ...analysis, [READ_PHOTO_SET_KEY]: completeRead && !partialReadCollapsed ? stamps.photoSetKey : null }
+          : analysis,
+      )
+
+      // 8c. "May wait" (CUL-1628), on a call today only, decided over this run's read, the fresh
+      //     stored row and the record around the incident (incidentMayWait.ts). Settled means every
+      //     photo was read and shows the subject; a photo-less log is settled by having none.
+      const settledRun = !hasPhoto || (completeRead && !partialReadCollapsed && !photoUnreadable && !!analysis && descriptor.appearsToShowSubject(analysis))
+
       const decidedOn = rowVersionOf(row)
       const runInput = (record: MayWaitRecord | null): MayWaitInput => ({
         floorOn: mayWaitOn,

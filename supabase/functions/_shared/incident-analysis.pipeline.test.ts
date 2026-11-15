@@ -50,6 +50,9 @@ interface World {
   // against the row: another writer committing between this run's read of the stored row
   // and its write (CUL-2773). Use `commit` so the row's version moves as production's does.
   beforeAiWrite?: (w: World, n: number) => void
+  // The flags' second look, once the photo is read (ContextualRun.afterRead): which of the
+  // record's flags stand, given the read and the stored row. Every flag is withdrawable.
+  afterRead?: (analysis: TestAnalysis | null, stored: Row | null) => Flag[]
   // What app_config returns (Engines v3 flag + the gate config), or a read error.
   appConfig?: Row[] | 'error'
   // CUL-552 PR 2: the owner's ai_consent row as the service-role read sees it. Absent from
@@ -284,7 +287,11 @@ function descriptorFor(w: World): IncidentDescriptor<TestAnalysis, Flag> {
     ruleVersion: 'test1',
   parseToolResult: () => null, // the model is injected as a parsed result
     appearsToShowSubject: (a) => a.appears,
-    computeContextualFlags: () => Promise.resolve(w.contextFlags),
+    computeContextualFlags: () => Promise.resolve(
+      w.afterRead
+        ? { flags: w.contextFlags, copy: COPY, withdrawable: w.contextFlags, afterRead: (a, stored) => ({ flags: w.afterRead!(a, stored), copy: COPY }) }
+        : w.contextFlags,
+    ),
     copy: w.photoFindingCopy
       ? { ...COPY, contextualWithPhotoFinding: (pet, flags, visual) => `PHOTO_CTX:${pet}:${flags.join(',')}:${visual.join(',')}` }
       : COPY,
@@ -1421,4 +1428,56 @@ Deno.test('pipeline CUL-2773 — the capped STATE still lands over a failed row 
   assertEquals(w.writes.map((x) => x.mode), ['update'])
   assertStrictEquals(w.row?.error, null)
   assertStrictEquals(w.row?.status === 'failed', false)
+})
+
+// Adversarial pass 1 (ADV3): the flags' second look ran once, over the first fresh read,
+// and its answer was replayed on every retry. An owner's correction landing in the gap
+// then got the read-fields-only write of a withdrawal it should have blocked.
+Deno.test('pipeline CUL-2773 — a retry re-runs the flags\' second look over the owner\'s edit: the call a correction keeps is kept', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'],
+    vision: () => CLEAN,
+    // The read withdraws the record's flag unless the owner has corrected the colour away
+    // from what the model saw (EN-7's shape: an owner's "watery" outranks a formed read).
+    afterRead: (_a, stored) => (stored?.edited_at && stored.colour !== 'yellow' ? ['ctx_flag'] : []),
+    beforeAiWrite: (world, n) => { if (n === 1) commit(world, { colour: 'watery', edited_at: EDITED_AT }) },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 200)
+  assertStrictEquals(w.aiWriteAttempts, 2)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+  assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
+  assertStrictEquals(w.row?.colour, 'watery')
+  assertStrictEquals(w.row?.edited_at, EDITED_AT)
+})
+
+Deno.test('pipeline CUL-2773 — with nobody in the gap the same read withdraws (the retry is the difference)', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'],
+    vision: () => CLEAN,
+    afterRead: (_a, stored) => (stored?.edited_at && stored.colour !== 'yellow' ? ['ctx_flag'] : []),
+  })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'monitor')
+  assertEquals(w.row?.contextual_flags, [])
+})
+
+Deno.test('pipeline CUL-2773 — an attempt never inherits the last one\'s description gate', async () => {
+  // Attempt 1 is calm, so the model's description is gated out; the owner's edit in the gap
+  // keeps the flag on attempt 2, which escalates on context and gates it out too. The row
+  // is edited by then, so no structured column is written at all: the stored description
+  // stands, whatever either attempt decided about the model's.
+  const w = makeWorld({
+    row: { ...STORED_CALM, description: 'STORED' },
+    contextFlags: ['ctx_flag'],
+    vision: () => ({ ...CLEAN, description: 'MODEL' }),
+    afterRead: (_a, stored) => (stored?.edited_at ? ['ctx_flag'] : []),
+    beforeAiWrite: (world, n) => { if (n === 1) commit(world, { edited_at: EDITED_AT }) },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.description, 'STORED')
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
 })
