@@ -5418,7 +5418,7 @@ Deno.test('CUL-1041 — the page-1 headline marks a target that is not the origi
     movedOnDayOfTrial: 40,
   })
   // The marker rides the headline's own day phrase, ABOVE the block.
-  assert.match(page, /as a diet trial — day 50 of 64 \(window extended\)\. (<b>)?No symptom was logged/)
+  assert.match(page, /as a diet trial — day 50 of 64 \(window extended\)\. (<b>)?No symptom entry was logged/)
   // And the block still carries the whole sentence; the marker replaces nothing.
   assert.match(page, /Window extended from 28 days; last moved [A-Z][a-z]+ \d+ \(day 40\)\./)
 
@@ -5431,7 +5431,7 @@ Deno.test('CUL-1041 — the page-1 headline marks a target that is not the origi
 
 Deno.test('CUL-1041 — an unmoved window adds no headline marker at all', () => {
   const page = windowPage({ dayOfTrial: 50, targetDurationDays: 64 })
-  assert.match(page, /as a diet trial — day 50 of 64\. (<b>)?No symptom was logged/)
+  assert.match(page, /as a diet trial — day 50 of 64\. (<b>)?No symptom entry was logged/)
   assert.ok(!/\(window /.test(page), 'no marker, and no empty parenthetical')
 })
 
@@ -5462,7 +5462,7 @@ Deno.test('CUL-1041 — a named vet and the window marker never share the headli
     movedOnDayOfTrial: 40,
     vetName: 'Dr. A. Chen',
   })
-  const headline = moved.slice(moved.indexOf('Tracking'), moved.indexOf('No symptom was logged'))
+  const headline = moved.slice(moved.indexOf('Tracking'), moved.indexOf('No symptom entry was logged'))
   assert.match(headline, /day 50 of 64 \(window extended\)/, 'the marker survives')
   assert.ok(!/Dr\. A\. Chen/.test(headline), 'and the name is not in the sentence with it')
 
@@ -5493,7 +5493,7 @@ Deno.test('CUL-1041 — the UNATTESTED extension is the dangerous one, and carri
   })
   const headline = unattested.slice(
     unattested.indexOf('Tracking'),
-    unattested.indexOf('No symptom was logged'),
+    unattested.indexOf('No symptom entry was logged'),
   )
   assert.ok(!/Dr\. A\. Chen/.test(headline))
   // And still no attribution of any kind on the change itself, in either direction.
@@ -5743,27 +5743,27 @@ for (const [tz, now] of [
 // now say so. With HEAD's render.ts this grid reproduced the previous digests; a diff of all 21
 // renders differed only in those two lines.
 const CUL_2094_GOLDEN: Record<string, string> = {
-  'endedPast/America/Phoenix': '77ac3020430f382e',
-  'endedPast/window/America/Phoenix': 'bcf1bc002e84f8ee',
-  'endedToday/America/Phoenix': 'fc27a12142dcaa5d',
-  'endedToday/window/America/Phoenix': 'ab83e7a82e3aeec1',
-  'endedOnTarget/America/Phoenix': '51c4c5cf7d1a07c5',
-  'endedOnTarget/window/America/Phoenix': '14a3e9e2590eaed6',
-  'active/America/Phoenix': 'e32fe59f5496dacc',
-  'endedPast/Pacific/Noumea': '77ac3020430f382e',
-  'endedPast/window/Pacific/Noumea': 'bcf1bc002e84f8ee',
-  'endedToday/Pacific/Noumea': 'fc27a12142dcaa5d',
-  'endedToday/window/Pacific/Noumea': 'ab83e7a82e3aeec1',
-  'endedOnTarget/Pacific/Noumea': '51c4c5cf7d1a07c5',
-  'endedOnTarget/window/Pacific/Noumea': '14a3e9e2590eaed6',
-  'active/Pacific/Noumea': '3c98111cc8b11abd',
-  'endedPast/UTC': '77ac3020430f382e',
-  'endedPast/window/UTC': 'bcf1bc002e84f8ee',
-  'endedToday/UTC': 'fc27a12142dcaa5d',
-  'endedToday/window/UTC': 'ab83e7a82e3aeec1',
-  'endedOnTarget/UTC': '51c4c5cf7d1a07c5',
-  'endedOnTarget/window/UTC': '14a3e9e2590eaed6',
-  'active/UTC': 'e32fe59f5496dacc',
+  'endedPast/America/Phoenix': 'a57082a7c9dd271d',
+  'endedPast/window/America/Phoenix': '02276f8591aa367d',
+  'endedToday/America/Phoenix': '7300fec8c171ac6d',
+  'endedToday/window/America/Phoenix': 'b2e1783719e589b5',
+  'endedOnTarget/America/Phoenix': 'f6163d9bcdf5eee9',
+  'endedOnTarget/window/America/Phoenix': '096f11296b337216',
+  'active/America/Phoenix': '4be9e591bdf1270a',
+  'endedPast/Pacific/Noumea': 'a57082a7c9dd271d',
+  'endedPast/window/Pacific/Noumea': '02276f8591aa367d',
+  'endedToday/Pacific/Noumea': '7300fec8c171ac6d',
+  'endedToday/window/Pacific/Noumea': 'b2e1783719e589b5',
+  'endedOnTarget/Pacific/Noumea': 'f6163d9bcdf5eee9',
+  'endedOnTarget/window/Pacific/Noumea': '096f11296b337216',
+  'active/Pacific/Noumea': '3514e42adf2fbe38',
+  'endedPast/UTC': 'a57082a7c9dd271d',
+  'endedPast/window/UTC': '02276f8591aa367d',
+  'endedToday/UTC': '7300fec8c171ac6d',
+  'endedToday/window/UTC': 'b2e1783719e589b5',
+  'endedOnTarget/UTC': 'f6163d9bcdf5eee9',
+  'endedOnTarget/window/UTC': '096f11296b337216',
+  'active/UTC': '4be9e591bdf1270a',
 }
 
 Deno.test('CUL-2094 — every trial the fix does not reach renders byte-identically (before/after)', async () => {

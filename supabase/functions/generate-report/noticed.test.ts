@@ -951,3 +951,14 @@ Deno.test('a look OUTSIDE the window does not make a block', () => {
   const n = buildNoticed(params({ rows: [look({ day: '2026-07-04' })] }))
   assert.equal(n, null)
 })
+
+Deno.test('CUL-2718 — "no symptom entry was logged" beside daily looks says the looks are not in that count', () => {
+  // Adversarial pass 1 (QUIET): a look marked *subdued* is not a symptom event, so the headline's
+  // absence would otherwise stand over a record in which the owner did report something.
+  const withLook = renderWithLooks([look({ day: '2026-09-12', words: ['subdued'] })])
+  assert.ok(
+    withLook.includes('<b>No symptom entry was logged in this window</b>: an absence in the record, not a finding that there were none. The owner&rsquo;s daily looks are reported separately and are not in it.'),
+    'the looks are named beside the absence',
+  )
+  assert.ok(!renderWithLooks([]).includes('daily looks are reported separately'), 'no looks, no clause')
+})

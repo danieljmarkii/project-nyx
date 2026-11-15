@@ -9375,6 +9375,16 @@ Deno.test('CUL-2516 pass 2 — the permitted-later sentence keeps the days and t
 // ── CUL-2718 — a trial with no symptom logged says so on page 1, twice ──────────────────
 // Cold read on PR-24's fixture (QUIET): "Primary sign logged: the logged observations" and a bare
 // "0 / 32 d" let a skin trial with no skin sign ever logged read as a symptom-free dog.
+const CROP_14_VOMITS: NonNullable<ReportSnapshot['scope']['trialCropSymptoms']> = {
+  count: 14,
+  mostRecentIso: '2026-05-28T15:00:00Z',
+  mostRecentType: 'vomit',
+  byType: [{ type: 'vomit', count: 14 }],
+  cropDays: 28,
+  mealLoggedDaysInCrop: 28,
+  countIsFloor: false,
+}
+
 function noSymptomTrialSnap(ag: Partial<ReportSnapshot['atAGlance']> = {}): ReportSnapshot {
   const snap = cleanTrialSnap(null)
   snap.symptoms = []
@@ -9387,22 +9397,22 @@ Deno.test('CUL-2718 — a trial with no symptom logged: the headline says none w
   const headline = page.slice(page.indexOf('<div class="headline">'), page.indexOf('</div>', page.indexOf('<div class="headline">')))
   assert.ok(headline.length > 0, 'the fixture renders a headline')
   assert.ok(
-    headline.includes('<b>No symptom was logged in this window</b>: that is what the record holds, not a finding that there were none.'),
+    headline.includes('<b>No symptom entry was logged in this window</b>: an absence in the record, not a finding that there were none.'),
     'the absence is stated, and stated as the record',
   )
   assert.ok(!headline.includes('Primary sign logged'), 'no primary sign is claimed where none was logged')
   assert.ok(!renderReport(noSymptomTrialSnap()).includes('the logged observations'), 'the fallback noun is gone from the report')
 })
 
-Deno.test('CUL-2718 — a trial with no symptom logged: tile 1 says none logged and counts over the days logged', () => {
+Deno.test('CUL-2718 — a trial with no symptom logged: tile 1 says none logged and names the days logged', () => {
   const page = pageOne(renderReport(noSymptomTrialSnap()))
   assert.ok(
     page.includes(
-      '<div class="tile"><div class="v num">0<small>&nbsp;/&nbsp;20&nbsp;d&nbsp;logged</small></div><div class="l">Symptom events<br/>none logged in this window<br/><span class="num">20</span> of <span class="num">32</span> days had an entry</div></div>',
+      '<div class="tile"><div class="v num">0</div><div class="l">Symptom events<br/>none logged in this window<br/>an entry of any kind on <span class="num">20</span> of <span class="num">32</span> days &mdash; not a symptom check</div></div>',
     ),
-    'the zero names its logged days and says none was logged',
+    'the zero says none was logged and names the logged days as entries, not symptom checks',
   )
-  assert.ok(!page.includes('0<small>&nbsp;/&nbsp;32&nbsp;d</small>'), 'never a bare 0 / N d')
+  assert.ok(!/<div class="v num">0<small>/.test(page.slice(page.indexOf('<div class="tiles">'), page.indexOf('Symptom events'))), 'never a 0 over a day count')
   // A tail nobody logged already names the logged days; the coverage is said once.
   const tailed = pageOne(renderReport(noSymptomTrialSnap({ unloggedTailDays: 12, lastLoggedDate: '2026-06-20' })))
   assert.ok(
@@ -9423,5 +9433,47 @@ Deno.test('CUL-2718 — a trial WITH a symptom logged keeps its headline and til
   assert.ok(page.includes('Primary sign logged: <b>vomiting (<span class="num">22</span> logged)</b>.'), 'the headline names the sign and its count')
   assert.ok(page.includes(`<div class="v num">${s.count}<small>&nbsp;/&nbsp;32&nbsp;d</small></div><div class="l">Symptom events<br/>`), 'tile 1 keeps the window denominator')
   assert.ok(!page.includes('none logged in this window'), 'no absence line beside a count')
-  assert.ok(!page.includes('No symptom was logged'), 'no absence sentence beside a count')
+  assert.ok(!page.includes('No symptom entry was logged'), 'no absence sentence beside a count')
+})
+
+Deno.test('CUL-2718 — the absence is scoped: "other" entries, daily looks and the trial days outside the window ride it', () => {
+  const headlineOf = (snap: ReportSnapshot) => {
+    const page = pageOne(renderReport(snap))
+    const at = page.indexOf('<div class="headline">')
+    return page.slice(at, page.indexOf('</div>', at))
+  }
+  const plainHeadline = headlineOf(noSymptomTrialSnap())
+  assert.ok(!plainHeadline.includes('&ldquo;other&rdquo;') && !plainHeadline.includes('daily looks'), 'nothing to name, nothing named')
+
+  const other = noSymptomTrialSnap()
+  other.provenance = { ...other.provenance, uncategorisedObservations: 3 }
+  assert.ok(
+    headlineOf(other).includes('not a finding that there were none. <span class="num">3</span> observations logged as &ldquo;other&rdquo; are not in that count.'),
+    'an "other" entry is named beside the absence',
+  )
+
+  // Adversarial pass 1: 14 vomits in the trial days before the window, none inside it.
+  const cropped = noSymptomTrialSnap()
+  cropped.trial = { ...cropped.trial!, trialDaysOutsideRange: { before: 28, after: 0 } }
+  cropped.scope = {
+    ...cropped.scope,
+    trialCropSymptoms: { ...CROP_14_VOMITS },
+  }
+  const h = headlineOf(cropped)
+  assert.ok(
+    /days fall outside it<\/b>, and <b><span class="num">14<\/span> symptom events<\/b> were logged in those days[^.]*, so that absence is over that window, not over the trial\./.test(h),
+    `the cropped trial days carry their count in the absence sentence: ${h}`,
+  )
+
+  // No trial: the monitoring headline says the same thing, never "the logged observations".
+  const mon = headlineOf(
+    monitoringSnap({
+      symptoms: [],
+      atAGlance: { ...monitoringSnap().atAGlance, primarySymptom: null, totalSymptomIncidents: 0, sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null },
+    }),
+  )
+  assert.ok(
+    mon.includes('<b>No symptom entry was logged in this window</b>: an absence in the record, not a finding that there were none. No diet trial; symptom monitoring only.'),
+    `the monitoring headline states the absence: ${mon}`,
+  )
 })
