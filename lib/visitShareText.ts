@@ -13,8 +13,8 @@ import { formatVisitDate, formatVisitWeekday, formatWhereLine, type VetVisitDeta
 // *Next visit* with its date. No line is derived: no dose count, no adherence, no "booked"
 // or "not booked" (whether a booking exists for that date is not on this read, and a
 // shared sentence that guessed would travel further than the screen it came from). A
-// visit with nothing written yet says so, rather than sharing a bare date that reads as
-// "nothing was decided".
+// visit with no notes and no plan says exactly that (paperwork may exist and is not this
+// text's to summarise), rather than sharing a bare date that reads as "nothing was decided".
 export function visitToPlainText(detail: VetVisitDetail, petName: string, now: Date = new Date()): string {
   const { visit } = detail;
   const where = formatWhereLine({ clinicName: visit.clinic_name, vetName: visit.vet_name });
@@ -38,7 +38,7 @@ export function visitToPlainText(detail: VetVisitDetail, petName: string, now: D
   if (plan.length > 0) blocks.push(['The plan:', ...plan.map((line) => `• ${line}`)].join('\n'));
 
   if (!notes && plan.length === 0) {
-    blocks.push('Nothing written down from this visit yet.');
+    blocks.push('No notes or plan on this visit yet.');
   }
 
   return blocks.join('\n\n');

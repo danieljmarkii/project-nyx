@@ -282,12 +282,16 @@ export default function AtTheVetScreen() {
                 car park; the step the whole room leads to now says what it does, under
                 the last thing the owner did here. Same gate as before (the top of this
                 file): ABSENT until the visit's day, never `disabled` (C-7). The draft
-                flushes first, so the capture is seeded with every word typed. */}
+                is written first, so the capture is seeded with every word typed. */}
             {appointmentDayReached(appointment.scheduled_at) ? (
               <TouchableOpacity
                 style={styles.finish}
-                onPress={() => {
-                  void flushDraft();
+                onPress={async () => {
+                  // AWAITED, unlike the back chevron: the capture seeds from the row, so
+                  // routing before the write lands would open it without the last words
+                  // typed. `flushDraft` says its own failure and never throws.
+                  if (timer.current) clearTimeout(timer.current);
+                  await flushDraft();
                   router.replace(`/vet-visits/after?appointment=${appointment.id}`);
                 }}
                 activeOpacity={0.7}
@@ -341,7 +345,8 @@ const styles = StyleSheet.create({
     marginTop: theme.space3,
     paddingHorizontal: theme.space2,
     // The row is the target, pinned at the floor rather than left to its line box (C-5).
-    minHeight: 52,
+    minHeight: theme.hitTarget,
+    paddingVertical: theme.space1,
     borderRadius: theme.radiusMedium,
     borderWidth: 1,
     borderColor: theme.colorBorder,

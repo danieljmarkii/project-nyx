@@ -71,7 +71,7 @@ describe('visitToPlainText', () => {
       NOW,
     );
     expect(text).toBe(
-      'Nyx · vet visit · Saturday, Nov 14 · Completely Cat Clinic · Dr Miller\n\nNothing written down from this visit yet.',
+      'Nyx · vet visit · Saturday, Nov 14 · Completely Cat Clinic · Dr Miller\n\nNo notes or plan on this visit yet.',
     );
   });
 
