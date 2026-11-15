@@ -272,3 +272,32 @@ The PM asked what happens if the page replaces the Pet tab, and for the owner pe
 **One clinical watch for the spec.** Sam's point about the weight row is a real hazard in the direction this discovery worries about: emphasis given to missing paperwork can make a live finding look minor beside it. The page must never style a "from your logs" prompt louder than a row that feeds a live safety finding. R5's wording of the steroid line ("Culprit reads those more carefully if it knows") needs the `clinical-guardrails` check before it is specified.
 
 **Limits.** Two persona reads from static renders, each one pass. R6 is an example, not a record. Neither read replaces a device pass.
+
+---
+
+## 13. Round 2 (2026-11-15): the PM's reactions, the design read and the AI test
+
+**Reactions to round 1.** The night header "is bold". Unsure about the amber. The edit screen's chips "feel funky". A lean toward the page replacing the Pet tab. A question on how far AI extraction can be trusted. And for the next round: a few key screens in different directions, a fresh page, on brand, with motion.
+
+**What the design read found** (`docs/research/2026-11-pet-memory-design-patterns.md`, about 22 screens seen as images from 10 products):
+
+- No screen marks "look at this" with amber or yellow. It is done with a word in an outlined pill, a dashed outline until confirmed, position at the top, or a sentence.
+- No product edits a fact with rows of chips. Edits are rows whose values open native menus (Apple), select then pick a verb (ChatGPT), a box to type or talk into (WHOOP, Claude, Gemini), or accept and decline (Linear).
+- No product says who told it a fact. Per fact provenance would be new.
+
+**What the house rules add.** The night header drawn in round 1 breaks the in-app brand spec §1 rule 2: night grounds are for when the app is working on the pet's behalf, and the profile is named as staying light. It is drawn in round 2 as an option marked as breaking that rule. Amber's house role is a heads up; the pet profile pass rejected it for "Monitoring" because it reads as something to act on.
+
+**Round 2's page** (`docs/culprit-pet-memory-mockups.html`, same link; round 1 is at commit `5a01128f4`) draws four questions on Nyx's record, every direction as the Pet tab:
+
+| Question | Directions | Team lean |
+|---|---|---|
+| The tab | The index · the letter · fact cards | The index: it fits one screen and each row opens in place |
+| Changing a fact | Rows and menus · a sentence you can change · Tell Culprit | Rows and menus, with Tell Culprit as a later add path because it needs a model |
+| "Worth a look" | Amber wash · dashed until listed · its own block · only words | Dashed until listed, inside its own block |
+| The top | Daylight · night | Daylight, as the rule stands |
+
+It also plays three shipped gestures at their shipped timings (open in place, draw in, the tick then arrive), with Replay and a slow control, and is still under Reduce Motion.
+
+**The AI question** is answered in `docs/research/2026-11-pet-memory-extraction-test.md`: finding, quoting and leaving out held in all four runs; the smallest tier missed the weight loss twice and misread one instruction; no document has been tested. Consequence for the proposal: "Tell Culprit" and suggestions from a visit are viable for typed text on the larger tiers, always behind the owner's confirm, and stay out of the first build.
+
+**Still open:** the rulings on D1 to D7 and the two conflicts. Round 2 adds four reactions to ask for, one per question above.
