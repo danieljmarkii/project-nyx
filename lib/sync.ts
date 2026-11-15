@@ -2006,7 +2006,16 @@ export function syncPendingVetAppointments(): Promise<void> {
   return serializeQueuePush('vet_appointments', drainVetAppointmentsQueue);
 }
 
+// CUL-2797: THE CARE STATE READS BOOKINGS SERVER-SIDE (`readCareRecord`, generate-signal), so a
+// concern card quieted by "Visit booked" is only as fresh as the last Signal run. Every booking
+// write (book, cancel, reschedule, the visit logged from an appointment) reaches the server
+// through this drain, so this is the one place that can rebuild the Signal for it: each pet
+// whose row LANDED gets a regen, run after the landing so the server reads the synced row. A
+// row that did not land arms nothing (the server would read the old booking). Sign-out: the
+// regen is armed after a network round trip, so the drain captures the sign-out epoch and arms
+// nothing once it moves (the care-answers drain's rule, CUL-642's class).
 async function drainVetAppointmentsQueue(): Promise<void> {
+  const epoch = currentSignOutEpoch();
   const db = getDb();
 
   const mark = landingMark();
@@ -2024,7 +2033,7 @@ async function drainVetAppointmentsQueue(): Promise<void> {
   if (unsynced.length === 0) return;
 
   const childCtx = await childPushContext(db, 'vet_appointments', unsynced, mark);
-  await pushRows(db, 'vet_appointments', unsynced, (a) => ({
+  const landed = await pushRows(db, 'vet_appointments', unsynced, (a) => ({
     id: a.id, pet_id: a.pet_id, scheduled_at: a.scheduled_at,
     clinic_name: a.clinic_name, vet_name: a.vet_name, reason: a.reason,
     // `questions` is JSONB server-side and TEXT locally. Parsed here rather than
@@ -2038,6 +2047,23 @@ async function drainVetAppointmentsQueue(): Promise<void> {
     cancelled_at: a.cancelled_at, deleted_at: a.deleted_at,
     created_at: a.created_at, updated_at: a.updated_at,
   }), childCtx);
+  if (epoch !== currentSignOutEpoch()) return;
+  rebuildSignalsForBookings(unsynced.filter((a) => landed.has(a.id)).map((a) => a.pet_id));
+}
+
+/**
+ * CUL-2797: a Signal regen for each pet whose booking just moved on the server (pushed from
+ * here) or on this phone (pulled from another device). One regen per pet, however many of its
+ * rows moved; the regen is debounced, so a burst collapses further.
+ */
+function rebuildSignalsForBookings(petIds: readonly string[]): void {
+  const pets = new Set(petIds.filter((p) => typeof p === 'string' && p.length > 0));
+  if (pets.size === 0) return;
+  // Required lazily: lib/signal.ts imports this module, so a top-level import would be a
+  // cycle. By the time a row has landed, both modules are long loaded.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { triggerSignalRegenDebounced } = require('./signal') as typeof import('./signal');
+  for (const petId of pets) triggerSignalRegenDebounced(petId);
 }
 
 /**
@@ -3755,6 +3781,15 @@ async function hydrateVetAppointments(db: Db, stale: () => boolean): Promise<voi
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('vet_appointments', wm);
+  // CUL-2797: another device's booking change, now on this phone. That device's own drain
+  // rebuilds the Signal once its row lands, but an older build does not, and its timer dies
+  // with the app; the server already holds the row this pull read, so a rebuild here reads
+  // it. Only the rows LWW wrote here (`toWrite`). That includes the echo of this phone's own
+  // push (migration 107 stamps server time, so the echo reads as newer) and a notes-only edit:
+  // one extra debounced rebuild per pet, accepted rather than a field-by-field filter whose
+  // mistake would be a missed rebuild. A cold-start pull arms one rebuild per pet with bookings.
+  if (stale()) return;
+  rebuildSignalsForBookings(toWrite.map((a) => a.pet_id));
 }
 
 /**
