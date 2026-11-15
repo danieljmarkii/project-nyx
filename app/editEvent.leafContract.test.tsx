@@ -328,6 +328,38 @@ describe('a window that lands while the editor is open (CUL-2199)', () => {
     });
   });
 
+  it('and that note save does not spend a Signal rebuild on a time it did not move', async () => {
+    const utils = await open('cough');
+    mockStoredTime.current = { confidence: 'witnessed', earliest: null, latest: null, occurredAt: '2026-03-15T12:00:00+00:00' };
+    await save(utils);
+    await act(async () => {});
+    const { triggerSignalRegenDebounced } = jest.requireMock('../lib/signal') as { triggerSignalRegenDebounced: jest.Mock };
+    expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
+  });
+
+  it('a moved point does spend one (the gate is a branch, not a removal)', async () => {
+    mockMovedTo.current = new Date('2026-03-15T05:00:00.000Z');
+    const utils = await open('cough');
+    fireEvent.press(utils.getByTestId('time-when'));
+    await act(async () => { fireEvent.press(utils.getByText('move-the-point')); });
+    await save(utils);
+    const { triggerSignalRegenDebounced } = jest.requireMock('../lib/signal') as { triggerSignalRegenDebounced: jest.Mock };
+    await waitFor(() => expect(triggerSignalRegenDebounced).toHaveBeenCalledTimes(1));
+  });
+
+  it('after a refusal the screen holds the row, so the next save hands the row\'s point back', async () => {
+    mockMovedTo.current = new Date('2026-03-15T21:30:00.000Z');
+    const utils = await open('cough');
+    fireEvent.press(utils.getByTestId('time-when'));
+    await act(async () => { fireEvent.press(utils.getByText('move-the-point')); });
+    // A row whose point sits inside its window, not on the edge (another client's).
+    mockStoredTime.current = { ...WINDOWED, occurredAt: '2026-03-15T05:00:00+00:00' };
+    await act(async () => { fireEvent.press(utils.getByText('Save')); });
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('This time was just updated', expect.any(String)));
+    const fields = await save(utils);
+    expect(fields.occurred_at).toBe('2026-03-15T05:00:00+00:00');
+  });
+
   it('a point moved inside the window that landed still saves', async () => {
     // Non-vacuity: the refusal is about leaving the window, not about any hydrate.
     mockMovedTo.current = new Date('2026-03-15T05:00:00.000Z');

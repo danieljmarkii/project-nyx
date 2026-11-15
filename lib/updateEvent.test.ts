@@ -469,6 +469,56 @@ describe('updateEvent — ifTimeStill refuses a row that moved after it was judg
     expect(Date.parse(row.occurred_at)).toBeGreaterThan(Date.parse(row.occurred_at_latest!));
   });
 
+  // One column at a time (the adversarial pass, M10 to M12): the race above moves the
+  // point, the confidence and the bounds together, so each clause was covered only
+  // by the other two. Each row here moves exactly one, and each must refuse alone.
+  it.each([
+    [
+      'only a bound: the window narrows under a point moved inside the old one',
+      ['window', '2026-07-01T02:00:00.000Z', '2026-07-01T04:00:00.000Z'] as const,
+      { occurredAt: '2026-07-01T04:00:00.000Z', confidence: 'window', earliest: '2026-07-01T03:00:00.000Z', latest: '2026-07-01T04:00:00.000Z' },
+      { occurredAt: new Date('2026-07-01T02:30:00.000Z'), source: 'manual' as const },
+      true,
+    ],
+    [
+      'only the point: a witnessed time re-timed elsewhere, on a note save',
+      ['witnessed', null, null] as const,
+      { occurredAt: '2026-07-01T05:00:00.000Z', confidence: 'witnessed', earliest: null, latest: null },
+      MOVED,
+      false,
+    ],
+    [
+      'only the confidence: witnessed re-graded to estimated at the same instant',
+      ['witnessed', null, null] as const,
+      { occurredAt: '2026-07-01T04:00:00.000Z', confidence: 'estimated', earliest: null, latest: null },
+      MOVED,
+      false,
+    ],
+    [
+      'only the lower bound appearing: an open window closes on a point before it',
+      ['window', null, '2026-07-01T04:00:00.000Z'] as const,
+      { occurredAt: '2026-07-01T04:00:00.000Z', confidence: 'window', earliest: '2026-07-01T03:00:00.000Z', latest: '2026-07-01T04:00:00.000Z' },
+      { occurredAt: new Date('2026-07-01T02:30:00.000Z'), source: 'manual' as const },
+      true,
+    ],
+  ])('refuses when a sync moved %s', async (_name, seeded, landed, form, pointMoved) => {
+    const db = freshDb();
+    seed(db, seeded[0], seeded[1], seeded[2]);
+    const stored = readTime(db);
+    const write = timeWriteForEdit({ ownerAsserted: false, pointMoved, form, stored });
+    expect(pointLeavesStoredWindow({ ownerAsserted: false, stored, point: new Date(write.occurredAt) })).toBe(false);
+
+    hydrate(db, landed);
+
+    await expect(
+      updateEvent('e1', { occurred_at: write.occurredAt, occurred_at_source: write.source, notes: 'n', ifTimeStill: write.guard! }, adapter(db)),
+    ).rejects.toBeInstanceOf(EventTimeMovedError);
+    const row = read(db);
+    expect(row.occurred_at).toBe(landed.occurredAt);
+    expect(row.notes).toBe('original note');
+    expect(row.synced).toBe(1);
+  });
+
   it('a row nothing touched saves through the guard, bounds NULL and all', async () => {
     for (const [confidence, earliest, latest] of [
       [null, null, null],

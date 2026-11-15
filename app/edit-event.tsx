@@ -799,6 +799,14 @@ export default function EditEventModal() {
         }
         if (refused || (raced && attempt >= 1)) {
           seedTimeControl(stored);
+          // The screen now shows the row, so the next save starts from the row: the
+          // point the owner moved was refused, and leaving it "moved" would restate
+          // a time she can no longer see.
+          pointMovedRef.current = false;
+          if (stored.occurredAt && !Number.isNaN(Date.parse(stored.occurredAt))) {
+            setOccurredAt(new Date(stored.occurredAt));
+            if (stored.source) setOccurredAtSource(stored.source);
+          }
           Alert.alert(
             'This time was just updated',
             'Another device saved a time range for this record while it was open. Check the time and save again.',
@@ -830,8 +838,9 @@ export default function EditEventModal() {
       //     in this feature is keyed to (T-19). It needs no loaded gate: the helper
       //     re-reads the row and writes nothing when the derived day already matches.
       if (isLook) {
-        // INSTANTS, never strings. `occurredAtIso` is always JS-canonical
-        // (`…ssssZ`), but `occurredAtParam` is `events.occurred_at` verbatim out of
+        // INSTANTS, never strings. `occurredAtIso` is JS-canonical (`…ssssZ`) when
+        // this save restated the time, and the row's own spelling when it handed the
+        // time back (CUL-2772); `occurredAtParam` is `events.occurred_at` verbatim out of
         // local SQLite — and a row that has been through one sync round-trip holds
         // whatever PostgREST serialised, which is `…+00:00` (`lib/sync.ts:1121`
         // writes the server's value with no normalisation; `parseTs`'s own comment
