@@ -1,21 +1,21 @@
 import { useState } from 'react';
 import { type LayoutChangeEvent, Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { CalendarPlus, FileText, Pill, Stethoscope, Utensils } from 'lucide-react-native';
+import { FileText, Pill, Stethoscope, Utensils } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { SectionLabel } from '../ui/SectionLabel';
 import { TextField } from '../ui/TextField';
 import { ThemedText } from '../ui/ThemedText';
 import { PlanActionRow, PlanChipRow, PlanSettledRow } from './PlanRows';
+import { RecheckRow } from './RecheckRow';
 import {
   courseRowSubtitle,
-  defaultRecheckDate,
   settledVerdictLine,
   type CourseVerdict,
   type TrialVerdict,
 } from '../../lib/vetVisitPlan';
-import { formatVisitDate, localDateKey, type ActiveCourse } from '../../lib/vetVisits';
+import { formatVisitDate, localDateKey, type ActiveCourse, type RecheckBooking } from '../../lib/vetVisits';
 import type { HomeConcernRow } from '../../lib/careVisitConcerns';
 
 /** The owner's answer about one concern Home was raising (EN-9, care-state spec §3.2). Only
@@ -99,9 +99,14 @@ export interface AfterVisitBodyProps {
   /** That trial's name, so the screen says it is running rather than hiding it. */
   heldTrialLabel?: string | null;
 
-  /** 'YYYY-MM-DD' once set — the date the vet said to come back on. */
+  /** 'YYYY-MM-DD' once *Set*: the date the vet said to come back around (§4.4 R2). */
   nextVisitAt: string | null;
-  onPickNextVisit: (day: Date) => void;
+  /** The booking that answers the recheck (`readRecheckBooking`), or null. */
+  recheckBooking?: RecheckBooking | null;
+  /** *Set* on the recheck row: writes `next_visit_at` only, never a booking. */
+  onSetNextVisit: (day: Date) => void;
+  /** *Book it*: the booking sheet, seeded with the date. */
+  onBookRecheck: () => void;
 
   paperworkCount: number;
   onAddPaperwork: () => void;
@@ -121,8 +126,11 @@ export interface AfterVisitBodyProps {
   saving: boolean;
   onSave: () => void;
 
-  /** A saved visit, reopened (§4.4 R1): the button reads *Done* and nothing celebrates. */
+  /** A saved visit, reopened (§4.4 R1): nothing celebrates on *Done*. */
   reopened?: boolean;
+  /** The visit exists, so every field saves as it is typed (R5). Before that nothing is
+   *  written, and the screen says nothing it cannot keep. */
+  savesAsTyped?: boolean;
   /** A reopen's 'Tue, Sep 16 · Completely Cat Clinic', so the owner knows which visit. */
   visitLabel?: string | null;
   /** The report-window line under the date, when moving it would move the window. */
@@ -159,13 +167,12 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
     petName, fields, onChangeField,
     courses, courseVerdicts, settledCourses, onCourseVerdict, onAddCourse,
     trial, trialVerdict, endedTrial, onTrialVerdict, onStartTrial, onAddFood,
-    nextVisitAt, onPickNextVisit, paperworkCount, onAddPaperwork,
+    nextVisitAt, recheckBooking = null, onSetNextVisit, onBookRecheck, paperworkCount, onAddPaperwork,
     busyRow, saving, onSave,
     homeConcerns = [], concernAnswers = {}, onConcernAnswer,
-    linkedCourseIds, answeredOnRecord, trialHeldElsewhere = false, heldTrialLabel = null, reopened = false, visitLabel = null, dateNote = null, onPlanLayout,
+    linkedCourseIds, answeredOnRecord, trialHeldElsewhere = false, heldTrialLabel = null, reopened = false, savesAsTyped = false, visitLabel = null, dateNote = null, onPlanLayout,
   } = props;
   const [showDayPicker, setShowDayPicker] = useState(false);
-  const [showNextPicker, setShowNextPicker] = useState(false);
   const today = localDateKey(new Date());
   // No readable day says the verb alone: a date the record does not hold is not printed.
   const settledLine = (verdict: 'stopped' | 'ended', endedOn: string | null) =>
@@ -249,6 +256,7 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
         placeholderTextColor={theme.colorTextTertiary}
         accessibilityLabel={`Notes from ${petName}’s visit`}
       />
+      {savesAsTyped ? <ThemedText style={styles.savedNote}>Saved as you type</ThemedText> : null}
 
       {/* What Home was raising (EN-9; mock round 2 §08 frame 4): one row per concern, the
           ones ticked in the room arriving as *Talked about it*. Saving writes that answer
@@ -378,45 +386,14 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
             </>
           )}
 
-          {nextVisitAt ? (
-            <PlanSettledRow
-              glyph={<CalendarPlus size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-              title="Next visit"
-              // On a reopen the date comes off the visit, and a booking for it may never have
-              // been made or may have been cancelled since, so only the date is claimed (PR-03
-              // gives this row its honest booked / not-booked read, §4.4 R2).
-              subtitle={reopened ? formatVisitDate(nextVisitAt) : `${formatVisitDate(nextVisitAt)} · booked`}
-            />
-          ) : (
-            <PlanActionRow
-              glyph={<CalendarPlus size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
-              title="Next visit"
-              subtitle="A recheck, if the vet named one"
-              actionLabel="Set a date"
-              onPress={() => setShowNextPicker((s) => !s)}
-              busy={busyRow === 'next-visit'}
-            />
-          )}
-          {showNextPicker && !nextVisitAt && (
-            <DateTimePicker
-              // Seeded at +6 weeks (§8's default), which is a SEED and not a claim —
-              // "in six weeks" is the sentence a vet says, and the owner moves the
-              // picker rather than the app parsing free text.
-              value={defaultRecheckDate()}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              themeVariant="light"
-              accentColor={colorRoles.action.onLight}
-              minimumDate={new Date()}
-              onChange={(_, picked) => {
-                if (Platform.OS !== 'ios') setShowNextPicker(false);
-                if (picked) {
-                  setShowNextPicker(false);
-                  onPickNextVisit(picked);
-                }
-              }}
-            />
-          )}
+          <RecheckRow
+            petName={petName}
+            nextVisitAt={nextVisitAt}
+            booking={recheckBooking}
+            busy={busyRow === 'next-visit'}
+            onSet={onSetNextVisit}
+            onBook={onBookRecheck}
+          />
 
           <PlanActionRow
             glyph={<FileText size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
@@ -436,7 +413,9 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
       </View>
 
       <PrimaryButton
-        label={reopened ? 'Done' : `Save ${petName}’s visit`}
+        // *Done* on both screens (R5): once the visit exists there is nothing left to save,
+        // and before it does this is still the one press that makes it.
+        label="Done"
         onPress={onSave}
         loading={saving}
         // Inert while a plan row's write is in flight. A control that refuses behind
@@ -446,7 +425,9 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
         style={styles.save}
       />
       <ThemedText style={styles.saveNote}>
-        Anything left open stays on the visit — finish it later.
+        {savesAsTyped
+          ? 'Leave any time. What you typed stays on the visit.'
+          : 'Anything left open stays on the visit — finish it later.'}
       </ThemedText>
     </View>
   );
@@ -514,6 +495,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space2,
     paddingVertical: theme.space2,
     minHeight: 120,
+  },
+  savedNote: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    marginTop: theme.space1,
   },
   plan: {
     borderRadius: theme.radiusMedium,

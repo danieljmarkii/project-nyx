@@ -1,4 +1,4 @@
-import { composeScheduledAt, readVetVisitsHome, readVisitsForHistory } from './vetVisits';
+import { composeScheduledAt, readHomeAppointment, readRecheckBooking, readVetVisitsHome, readVisitsForHistory } from './vetVisits';
 import { toLocalDayKey } from './utils';
 
 // CUL-900 VV-2 — `readVetVisitsHome`'s day split, driven against a stubbed DB.
@@ -247,5 +247,43 @@ describe('readVisitsForHistory — the History timeline row', () => {
     // omit the line; a stand-in string would make it read as a gap.
     expect(out[0]).toMatchObject({ reason: null, where: 'Riverside' });
     expect(out[1]).toMatchObject({ reason: 'GI follow-up', where: '' });
+  });
+});
+
+// ── §4.4 R2 / AC 17 — a recheck is a date until the owner books it ───────────────
+describe('a recheck nobody booked is a date on every reader, and Home asks nothing', () => {
+  const NOW = new Date(2026, 8, 20, 9, 0);
+
+  it('the list tag and the Pet-tab line name the date while nothing is booked', async () => {
+    rows.visits = [visitRow({ visited_at: '2026-09-16', next_visit_at: '2026-10-28' })];
+    const home = await readVetVisitsHome('pet-a', NOW);
+    expect(home.visits[0].tags).toEqual([{ label: 'Recheck around Oct 28', kind: 'recheck' }]);
+  });
+
+  it('a later booking for the pet turns the tag to "Next visit booked"', async () => {
+    rows.visits = [visitRow({ visited_at: '2026-09-16', next_visit_at: '2026-10-28' })];
+    rows.appointments = [appointmentRow(composeScheduledAt(new Date(2026, 9, 29), null))];
+    const home = await readVetVisitsHome('pet-a', NOW);
+    expect(home.visits[0].tags.map((t) => t.label)).toEqual(['Next visit booked']);
+  });
+
+  it('a booking the record holds as cancelled never turns it to booked, even if the read returns it', async () => {
+    rows.visits = [visitRow({ visited_at: '2026-09-16', next_visit_at: '2026-10-28' })];
+    rows.appointments = [{ ...appointmentRow(composeScheduledAt(new Date(2026, 9, 29), null)), cancelled_at: '2026-09-18T00:00:00.000Z' }];
+    const home = await readVetVisitsHome('pet-a', NOW);
+    expect(home.visits[0].tags.map((t) => t.label)).toEqual(['Recheck around Oct 28']);
+  });
+
+  it('the after-visit row reads the booking in its own words', async () => {
+    rows.appointments = [appointmentRow(composeScheduledAt(new Date(2026, 9, 29), null), 'a9')];
+    const hit = await readRecheckBooking({ id: 'v1', pet_id: 'pet-a', visited_at: '2026-09-16' }, NOW);
+    expect(hit?.id).toBe('a9');
+    expect(hit?.where).toBe('Riverside Animal Hospital');
+  });
+
+  it('Home’s strip has nothing to show for a recheck date with no booking (AC 17)', async () => {
+    rows.visits = [visitRow({ visited_at: '2026-09-16', next_visit_at: '2026-09-22' })];
+    rows.appointments = [];
+    expect(await readHomeAppointment('pet-a', NOW)).toBeNull();
   });
 });

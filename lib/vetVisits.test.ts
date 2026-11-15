@@ -13,6 +13,7 @@ import {
   formatVisitWeekday,
   formatWhereLine,
   localDateKey,
+  recheckBookingFor,
   appointmentEditScopeNote,
   appointmentPrepNote,
   removeAppointmentCopy,
@@ -273,6 +274,22 @@ describe('the plan a visit left behind', () => {
     expect(derivePlanTags(NO_LINKS)).toEqual([]);
   });
 
+  // §4.4 R2: a recheck is a date until a booking exists, and no tag claims more.
+  it('names the recheck date while nothing is booked', () => {
+    const tags = derivePlanTags({ ...NO_LINKS, hasNextVisit: true, nextVisitAt: '2026-10-28', nextVisitBooked: false });
+    expect(tags).toEqual([{ label: 'Recheck around Oct 28', kind: 'recheck' }]);
+    expect(tags[0].label).not.toMatch(/booked/i);
+  });
+
+  it('says a next visit is booked once one is, with no date and no "recheck" on its behalf', () => {
+    const tags = derivePlanTags({ ...NO_LINKS, hasNextVisit: true, nextVisitAt: '2026-10-28', nextVisitBooked: true });
+    expect(tags).toEqual([{ label: 'Next visit booked', kind: 'recheck' }]);
+  });
+
+  it('never says booked for a visit with no recheck, whatever the booked flag says', () => {
+    expect(derivePlanTags({ ...NO_LINKS, hasNextVisit: false, nextVisitAt: null, nextVisitBooked: true })).toEqual([]);
+  });
+
   it('counts in the plural only when there is more than one', () => {
     const tags = derivePlanTags({ ...NO_LINKS, documentCount: 1, trialCount: 2 });
     expect(tags.map((t) => t.label)).toEqual(['2 trials started', '1 document']);
@@ -359,6 +376,18 @@ describe('the Pet-tab card model', () => {
     expect(line).toBe('Last visit Jul 30 — GI follow-up. Plan: trial started, Cerenia, recheck set.');
     expect(line).not.toMatch(/cerenia/);
     expect(line).not.toMatch(/document/);
+  });
+
+  it('keeps the recheck date cased in the plan line ("recheck around Oct 28")', () => {
+    const rows = [
+      buildVisitListRow(
+        visit(),
+        { ...NO_LINKS, hasNextVisit: true, nextVisitAt: '2026-10-28', nextVisitBooked: false },
+        now,
+      ),
+    ];
+    const line = buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: rows }, now).lastVisitLine;
+    expect(line).toMatch(/Plan: recheck around Oct 28\.$/);
   });
 
   it('omits the plan half rather than announcing that a visit left nothing behind', () => {
@@ -671,5 +700,57 @@ describe('appointmentDayReached (CUL-966)', () => {
     const withOffset = withMillis.replace('.000Z', '+00:00');
     expect(withOffset).not.toBe(withMillis);
     expect(appointmentDayReached(withOffset, NOW)).toBe(appointmentDayReached(withMillis, NOW));
+  });
+});
+
+// §4.4 R2's one predicate: does a booking answer this visit's recheck?
+describe('recheckBookingFor', () => {
+  const visit0 = { id: 'v1', pet_id: 'pet-a', visited_at: '2026-09-16' };
+  const at = (y: number, m: number, d: number, h = 9) => new Date(y, m - 1, d, h, 30).toISOString();
+  const appt = (over: Partial<{ id: string; pet_id: string; scheduled_at: string; vet_visit_id: string | null; cancelled_at: string | null; deleted_at: string | null }> = {}) => ({
+    id: 'a1', pet_id: 'pet-a', scheduled_at: at(2026, 10, 28), vet_visit_id: null, cancelled_at: null, deleted_at: null, ...over,
+  });
+
+  it('finds nothing when nothing is booked', () => {
+    expect(recheckBookingFor(visit0, [])).toBeNull();
+  });
+
+  it('a later live booking for the pet answers it', () => {
+    expect(recheckBookingFor(visit0, [appt()])?.id).toBe('a1');
+  });
+
+  it('the earliest of several later bookings answers it', () => {
+    const hit = recheckBookingFor(visit0, [appt({ id: 'late', scheduled_at: at(2026, 12, 1) }), appt({ id: 'soon', scheduled_at: at(2026, 10, 2) })]);
+    expect(hit?.id).toBe('soon');
+  });
+
+  it('a cancelled or deleted booking never answers it', () => {
+    expect(recheckBookingFor(visit0, [appt({ cancelled_at: at(2026, 9, 20) })])).toBeNull();
+    expect(recheckBookingFor(visit0, [appt({ deleted_at: at(2026, 9, 20) })])).toBeNull();
+  });
+
+  it('another pet’s booking never answers it', () => {
+    expect(recheckBookingFor(visit0, [appt({ pet_id: 'pet-b' })])).toBeNull();
+  });
+
+  it('the booking this visit was logged from never answers its own recheck', () => {
+    expect(recheckBookingFor(visit0, [appt({ vet_visit_id: 'v1', scheduled_at: at(2026, 10, 1) })])).toBeNull();
+  });
+
+  it('a booking on or before the visit day never answers it (a local-day compare)', () => {
+    expect(recheckBookingFor(visit0, [appt({ scheduled_at: at(2026, 9, 16, 23) })])).toBeNull();
+    expect(recheckBookingFor(visit0, [appt({ scheduled_at: at(2026, 9, 16, 0) })])).toBeNull();
+    expect(recheckBookingFor(visit0, [appt({ scheduled_at: at(2026, 9, 17, 0) })])?.id).toBe('a1');
+  });
+
+  it('a booking that went on to be logged as a later visit still counts: it was booked', () => {
+    expect(recheckBookingFor(visit0, [appt({ vet_visit_id: 'v2' })])?.id).toBe('a1');
+  });
+
+  it('the same instant in PostgREST’s spelling compares the same (C-40)', () => {
+    const local = new Date(2026, 9, 28, 0, 0).toISOString();
+    const hydrated = local.replace('.000Z', '+00:00');
+    expect(hydrated).not.toBe(local);
+    expect(recheckBookingFor(visit0, [appt({ scheduled_at: hydrated })])?.id).toBe('a1');
   });
 });

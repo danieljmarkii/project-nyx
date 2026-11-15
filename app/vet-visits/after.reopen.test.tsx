@@ -65,6 +65,8 @@ let mockBooking: AppointmentDetail | null = null;
 let mockCourses: ActiveCourse[] = [];
 let mockPlan: { courses: VisitLinkedCourse[]; trials: VisitLinkedTrial[] } = { courses: [], trials: [] };
 let mockTrialLink: string | null = null;
+let mockRecheckBooking: { id: string; scheduledAt: string; when: string; where: string } | null = null;
+const mockReadRecheckBooking = jest.fn(async (_visit: unknown) => mockRecheckBooking);
 let mockConsequence: VisitConsequence = { isLatest: false, dayRelation: 'before_today' };
 let mockConsequenceThrows = false;
 let mockDeferred: { promise: Promise<VisitConsequence>; settle: (c: VisitConsequence) => void } | null = null;
@@ -111,6 +113,7 @@ jest.mock('../../lib/vetVisits', () => {
     linkTrialToVisit: jest.fn(async () => false),
     updateVisitDetails: (id: string, patch: Record<string, unknown>) => mockUpdateVisit(id, patch),
     bookVetAppointment: jest.fn(async () => 'appt-new'),
+    readRecheckBooking: (visit: unknown) => mockReadRecheckBooking(visit),
   };
 });
 
@@ -205,6 +208,7 @@ beforeEach(() => {
   mockPlan = { courses: [], trials: [] };
   mockActiveTrial = null;
   mockTrialLink = null;
+  mockRecheckBooking = null;
   mockConsequence = { isLatest: false, dayRelation: 'before_today' };
   mockConsequenceThrows = false;
   mockDeferred = null;
@@ -250,8 +254,10 @@ describe('AC 14 — a saved visit reopens, and never makes a second row', () => 
   it('a recheck date read off the visit claims no booking', async () => {
     mockVisit = savedVisit({ next_visit_at: '2026-10-28' });
     await openReopen();
-    expect(screen.getByLabelText(/^Next visit, /)).toBeTruthy();
-    expect(screen.queryByText(/· booked/)).toBeNull();
+    expect(screen.getByText('Recheck around Oct 28')).toBeTruthy();
+    expect(screen.getByText('Not booked yet')).toBeTruthy();
+    expect(screen.queryByText(/booked/i, { exact: false })?.props.children).toBe('Not booked yet');
+    expect(screen.getByLabelText('Book it — Recheck around Oct 28')).toBeTruthy();
   });
 
   it('a visit that is gone says so, in the visit’s words', async () => {
@@ -443,5 +449,185 @@ describe('the report-window note asks the record (moved from the retired edit sc
       mockDeferred?.settle({ isLatest: true, dayRelation: 'before_today' });
     });
     expect(await screen.findByText(NOTE)).toBeTruthy();
+  });
+});
+
+// ── §4.4 R5: nothing typed is lost (AC 16) ──────────────────────────────────────
+// The app's lifecycle, captured: `AppState` is the one exit no focus cleanup sees (R5).
+let mockAppStateListeners: Array<(s: string) => void> = [];
+beforeEach(() => {
+  mockAppStateListeners = [];
+  const { AppState } = require('react-native');
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((...args: unknown[]) => {
+    mockAppStateListeners.push(args[1] as (s: string) => void);
+    return { remove: jest.fn() };
+  });
+});
+
+describe('R5 — the fields save as they are typed', () => {
+  it('typing writes after the debounce, with the owner still on the screen', async () => {
+    await openReopen();
+    fireEvent.changeText(screen.getByLabelText('Notes from Nyx’s visit'), 'Motozol once a day.');
+    // Not per keystroke: nothing is written inside the debounce.
+    expect(mockUpdateVisit).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { notes: 'Motozol once a day.' }), { timeout: 2000 });
+    expect(mockUpdateVisit).toHaveBeenCalledTimes(1);
+    expect(router.back).not.toHaveBeenCalled();
+    expect(screen.getByText('Saved as you type')).toBeTruthy();
+  });
+
+  it('a burst of typing is one write of the last text', async () => {
+    await openReopen();
+    const field = screen.getByLabelText('Notes from Nyx’s visit');
+    fireEvent.changeText(field, 'M');
+    fireEvent.changeText(field, 'Mo');
+    fireEvent.changeText(field, 'Motozol');
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalled(), { timeout: 2000 });
+    expect(mockUpdateVisit).toHaveBeenCalledTimes(1);
+    expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { notes: 'Motozol' });
+  });
+
+  it('the app going to the background writes the pending text at once (an app kill keeps it)', async () => {
+    await openReopen();
+    fireEvent.changeText(screen.getByLabelText('Clinic'), 'Elm St Clinic');
+    await act(async () => {
+      for (const l of mockAppStateListeners) l('background');
+    });
+    // Before the debounce would have fired.
+    expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { clinicName: 'Elm St Clinic' });
+  });
+
+  it('backgrounding with nothing typed writes nothing', async () => {
+    await openReopen();
+    await act(async () => {
+      for (const l of mockAppStateListeners) l('background');
+    });
+    expect(mockUpdateVisit).not.toHaveBeenCalled();
+  });
+});
+
+// ── §4.4 R2: the recheck is a date until the owner books it (AC 17, CUL-1150) ───
+describe('R2 — the recheck row', () => {
+  it('offers the three choices and writes nothing until Set', async () => {
+    await openReopen();
+    expect(screen.getByText('When does the vet want to see Nyx?')).toBeTruthy();
+    fireEvent.press(screen.getByText('6 weeks'));
+    fireEvent.press(screen.getByText('2 weeks'));
+    expect(mockUpdateVisit).not.toHaveBeenCalled();
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    expect(screen.getByText(new RegExp(`^Around .*${label.split(' ')[1]}`))).toBeTruthy();
+  });
+
+  it('the wheel only moves the candidate; its first stop books nothing (CUL-1150)', async () => {
+    await openReopen();
+    fireEvent.press(screen.getByText('Pick a date'));
+    const target = new Date();
+    target.setDate(target.getDate() + 40);
+    await act(async () => {
+      fireEvent(screen.getByTestId('picker'), 'pickerPick', {}, target);
+    });
+    // Still open, nothing written, and the candidate is the wheel's.
+    expect(screen.getByTestId('picker')).toBeTruthy();
+    expect(mockUpdateVisit).not.toHaveBeenCalled();
+    const key = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
+    fireEvent.press(screen.getByText('Set'));
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { nextVisitAt: key }));
+  });
+
+  it('Set writes next_visit_at only, and never books an appointment', async () => {
+    const { bookVetAppointment } = require('../../lib/vetVisits');
+    await openReopen();
+    fireEvent.press(screen.getByText('6 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    await waitFor(() => expect(screen.getByText('Not booked yet')).toBeTruthy());
+    expect(mockUpdateVisit).toHaveBeenCalledTimes(1);
+    expect(Object.keys(mockUpdateVisit.mock.calls[0][1] as object)).toEqual(['nextVisitAt']);
+    expect(bookVetAppointment).not.toHaveBeenCalled();
+    expect(screen.getByText(/^Recheck around /)).toBeTruthy();
+  });
+
+  it('Book it opens the booking sheet for this pet, seeded with the date', async () => {
+    mockVisit = savedVisit({ next_visit_at: '2026-10-28' });
+    await openReopen();
+    fireEvent.press(screen.getByLabelText('Book it — Recheck around Oct 28'));
+    await waitFor(() =>
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: '/vet-visits',
+        params: { pet: 'pet-a', add: 'booked', reason: 'recheck', on: '2026-10-28' },
+      }),
+    );
+  });
+
+  it('once a booking answers it, the row reads the booking, never "not booked"', async () => {
+    mockVisit = savedVisit({ next_visit_at: '2026-10-28' });
+    mockRecheckBooking = { id: 'appt-2', scheduledAt: '2026-10-29T13:30:00.000Z', when: 'Thu, Oct 29 · 9:30 am', where: 'Completely Cat Clinic' };
+    await openReopen();
+    await waitFor(() => expect(screen.getByLabelText('Next visit, Thu, Oct 29 · 9:30 am · Booked · Completely Cat Clinic')).toBeTruthy());
+    expect(screen.queryByText('Not booked yet')).toBeNull();
+    expect(screen.queryByText('Book it')).toBeNull();
+    expect(mockReadRecheckBooking).toHaveBeenCalledWith(expect.objectContaining({ id: 'v-sep', pet_id: 'pet-a' }));
+  });
+
+  it('a later booking never stands in for a recheck the visit does not name (adversarial, QUIET)', async () => {
+    // The vet said "recheck in two weeks"; the pet already has an annual booked for later.
+    mockVisit = savedVisit({ next_visit_at: null });
+    mockRecheckBooking = { id: 'appt-annual', scheduledAt: '2027-02-15T14:00:00.000Z', when: 'Mon, Feb 15 · 9:00 am', where: 'Completely Cat Clinic' };
+    await openReopen();
+    expect(screen.getByText('2 weeks')).toBeTruthy();
+    expect(screen.queryByText(/· Booked/)).toBeNull();
+    expect(mockReadRecheckBooking).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByText('2 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { nextVisitAt: expect.any(String) }));
+  });
+
+  it('Set right after a date move reads the booking against the NEW date (adversarial pass 2, QUIET)', async () => {
+    mockVisit = savedVisit();
+    await openReopen();
+    const moved = new Date();
+    moved.setDate(moved.getDate() - 10);
+    await moveDateTo(moved);
+    // Inside the 600 ms debounce: the date is not on the record yet.
+    fireEvent.press(screen.getByText('6 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    const key = `${moved.getFullYear()}-${String(moved.getMonth() + 1).padStart(2, '0')}-${String(moved.getDate()).padStart(2, '0')}`;
+    await waitFor(() => expect(mockReadRecheckBooking).toHaveBeenCalled());
+    expect(mockReadRecheckBooking).toHaveBeenLastCalledWith(expect.objectContaining({ visited_at: key }));
+    // The date was written before the recheck.
+    expect(mockUpdateVisit.mock.calls[0][1]).toEqual({ visitedAt: key });
+  });
+
+  it('a flush landing after Set keeps the recheck on the record it diffs against', async () => {
+    let release!: () => void;
+    mockUpdateVisit.mockImplementationOnce(() => new Promise<undefined>((r) => { release = () => r(undefined); }));
+    await openReopen();
+    fireEvent.changeText(screen.getByLabelText('Clinic'), 'Elm St Clinic');
+    // The debounce's write starts and hangs.
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { clinicName: 'Elm St Clinic' }), { timeout: 2000 });
+    fireEvent.press(screen.getByText('6 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    await act(async () => release());
+    await waitFor(() => expect(screen.getByText('Not booked yet')).toBeTruthy());
+    // Set's read ran with the recheck in hand, so it asked the record about a booking.
+    await waitFor(() => expect(mockReadRecheckBooking).toHaveBeenCalled());
+  });
+
+  it('Book it pushes one booking screen however fast it is tapped', async () => {
+    mockVisit = savedVisit({ next_visit_at: '2026-10-28' });
+    await openReopen();
+    const book = screen.getByLabelText('Book it — Recheck around Oct 28');
+    fireEvent.press(book);
+    fireEvent.press(book);
+    await waitFor(() => expect(router.push).toHaveBeenCalled());
+    expect(router.push).toHaveBeenCalledTimes(1);
+  });
+
+  it('a recheck with no booking found never says booked', async () => {
+    mockVisit = savedVisit({ next_visit_at: '2026-10-28' });
+    await openReopen();
+    await waitFor(() => expect(mockReadRecheckBooking).toHaveBeenCalled());
+    expect(screen.queryByText(/· Booked/)).toBeNull();
   });
 });

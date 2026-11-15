@@ -23,7 +23,7 @@ type LogArgs = { appointment: Pick<AppointmentDetail, 'id' | 'pet_id'>; visitedA
 
 const mockLogFromAppointment = jest.fn(async (_input: LogArgs) => 'new-visit');
 const mockLinkCourse = jest.fn(async (_id: string, _visit: string) => true);
-const mockUpdateVisit = jest.fn(async () => undefined);
+const mockUpdateVisit = jest.fn(async (..._args: unknown[]) => undefined);
 const mockRepair = jest.fn(async (_petId: string) => 0);
 let mockAppointment: AppointmentDetail | null = null;
 let mockCourses: ActiveCourse[] = [];
@@ -100,8 +100,9 @@ jest.mock('../../lib/vetVisits', () => {
     logVetVisit: jest.fn(async () => 'cold-visit'),
     linkCourseToVisit: (id: string, visit: string) => mockLinkCourse(id, visit),
     linkTrialToVisit: jest.fn(async () => true),
-    updateVisitDetails: () => mockUpdateVisit(),
+    updateVisitDetails: (...args: unknown[]) => mockUpdateVisit(...args),
     bookVetAppointment: jest.fn(async () => 'new-appointment'),
+    readRecheckBooking: jest.fn(async () => null),
   };
 });
 
@@ -226,7 +227,7 @@ function freshScreen(): void {
 beforeAll(async () => {
   freshScreen();
   render(<AfterVisitScreen />);
-  await screen.findByText('Save Nyx’s visit');
+  await screen.findByText('Done');
   screen.unmount();
 }, 60000);
 
@@ -235,7 +236,7 @@ beforeEach(freshScreen);
 describe('AC 11 — the screen writes under the appointment’s pet', () => {
   it('saves under pet A even after the store’s active pet moves to B', async () => {
     const { rerender } = render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
+    await screen.findByText('Done');
 
     // The store moves under the open screen — a hydration pull landing mid-capture,
     // which is exactly what `setPets` does.
@@ -244,14 +245,14 @@ describe('AC 11 — the screen writes under the appointment’s pet', () => {
       rerender(<AfterVisitScreen />);
     });
 
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
     expect(mockLogFromAppointment.mock.calls[0][0].appointment.pet_id).toBe('pet-a');
   });
 
   it('keeps naming pet A after the switch, rather than following the store', async () => {
     const { rerender } = render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
+    await screen.findByText('Done');
 
     await act(async () => {
       mockStoreState = { pets: [PET_A, PET_B], activePet: PET_B };
@@ -260,7 +261,7 @@ describe('AC 11 — the screen writes under the appointment’s pet', () => {
 
     // A screen that renamed itself here would be telling the owner this visit belongs
     // to a pet it does not.
-    expect(screen.getByText('Save Nyx’s visit')).toBeTruthy();
+    expect(screen.getByText('Done')).toBeTruthy();
   });
 });
 
@@ -277,8 +278,8 @@ describe('a visit that HAPPENED cannot be dated in the future', () => {
     mockAppointment = appointment({ scheduled_at: weeksOut.toISOString() });
 
     render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Done');
+    fireEvent.press(screen.getByText('Done'));
 
     await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
     const written = mockLogFromAppointment.mock.calls[0][0].visitedAt;
@@ -296,8 +297,8 @@ describe('a visit that HAPPENED cannot be dated in the future', () => {
     mockAppointment = appointment({ scheduled_at: lastWeek.toISOString() });
 
     render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Done');
+    fireEvent.press(screen.getByText('Done'));
 
     await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
     const expected =
@@ -309,7 +310,7 @@ describe('a visit that HAPPENED cannot be dated in the future', () => {
 describe('AC 7 — exactly one Modal (the CUL-662 pin)', () => {
   it('mounts NO Modal while both sheets are closed', async () => {
     render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
+    await screen.findByText('Done');
     // A resident `<Modal visible={false}>` is still a Modal in the tree, so two
     // sheets kept mounted would be two even while both are shut. They are mounted
     // conditionally for exactly this reason.
@@ -426,13 +427,13 @@ describe('the visit is created ONCE, however fast the taps land', () => {
     await waitFor(() => expect(mockLinkCourse).toHaveBeenCalled());
 
     // Save, mid-write. It must not run.
-    await act(async () => { fireEvent.press(screen.getByText('Save Nyx’s visit')); });
+    await act(async () => { fireEvent.press(screen.getByText('Done')); });
     expect(screen.queryByText('Saved to Nyx’s visits')).toBeNull();
 
     await act(async () => { releaseLink(); });
     // And it works again the moment the row is done.
-    await waitFor(() => expect(screen.getByText('Save Nyx’s visit')).toBeTruthy());
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await waitFor(() => expect(screen.getByText('Done')).toBeTruthy());
+    fireEvent.press(screen.getByText('Done'));
     await screen.findByText('Saved to Nyx’s visits');
   });
 
@@ -492,7 +493,7 @@ describe('AC 7 — the plan rows read the record before they ask', () => {
     fireEvent.press(screen.getByText('Keep'));
     await waitFor(() => expect(mockLinkCourse).toHaveBeenCalledTimes(1));
 
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await screen.findByText('Saved to Nyx’s visits');
     expect(screen.getByText('still on it')).toBeTruthy();
     expect(screen.queryByText('linked to this visit')).toBeNull();
@@ -517,7 +518,7 @@ describe('AC 7 — the plan rows read the record before they ask', () => {
       sheet.onClose();
       sheet.onUpdated({ ...sheet.existingRegimen, dose_amount: '24 mg' });
     });
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await screen.findByText('Saved to Nyx’s visits');
   }
 
@@ -564,8 +565,8 @@ describe('AC 7 — the plan rows read the record before they ask', () => {
 
   it('saving with nothing typed is allowed', async () => {
     render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Done');
+    fireEvent.press(screen.getByText('Done'));
     await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
   });
 
@@ -578,7 +579,7 @@ describe('AC 7 — the plan rows read the record before they ask', () => {
     // whole argument is that it asks for none.
     expect(screen.queryByText('Later')).toBeNull();
 
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
     expect(mockLinkCourse).not.toHaveBeenCalled();
   });
@@ -587,21 +588,21 @@ describe('AC 7 — the plan rows read the record before they ask', () => {
 describe('the saved moment (AC 8)', () => {
   it('replaces the form, names the pet, and never says "from today"', async () => {
     render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Done');
+    fireEvent.press(screen.getByText('Done'));
 
     await screen.findByText('Saved to Nyx’s visits');
     // The form is gone — the moment is the screen, not a banner over a live form
     // whose Save would fire a second time.
-    expect(screen.queryByText('Save Nyx’s visit')).toBeNull();
+    expect(screen.queryByText('How did it go?')).toBeNull();
     expect(screen.getByText(/On this phone now/)).toBeTruthy();
     expect(screen.queryByText(/from today/i)).toBeNull();
   });
 
   it('fires a soft commit haptic, never a success chime', async () => {
     render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await screen.findByText('Done');
+    fireEvent.press(screen.getByText('Done'));
 
     await screen.findByText('Saved to Nyx’s visits');
     // `commitVisit`, not `commitRoutine` — the verb a meal uses plays the system
@@ -614,7 +615,7 @@ describe('the saved moment (AC 8)', () => {
 describe('CUL-945 — the quarantine repair runs where the owner already is', () => {
   it('repairs this pet’s refused links on load', async () => {
     render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
+    await screen.findByText('Done');
     await waitFor(() => expect(mockRepair).toHaveBeenCalledWith('pet-a'));
   });
 });
@@ -641,7 +642,7 @@ describe('F4 — a booking already logged goes to its visit, once', () => {
 
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/vet-visits/visit-1'));
     expect(router.replace).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Save Nyx’s visit')).toBeNull();
+    expect(screen.queryByText('Done')).toBeNull();
     expect(mockLogFromAppointment).not.toHaveBeenCalled();
     // The booking IS on the record, so the screen must not say otherwise on its way out.
     expect(screen.queryByText(/no longer on the record/)).toBeNull();
@@ -662,7 +663,7 @@ describe('F4 — a booking already logged goes to its visit, once', () => {
     await refocus();
 
     expect(router.replace).not.toHaveBeenCalled();
-    expect(screen.getByText('Save Nyx’s visit')).toBeTruthy();
+    expect(screen.getByText('Done')).toBeTruthy();
   });
 
   it('a re-focus after ANOTHER phone logged it keeps the form the owner is filling in', async () => {
@@ -670,13 +671,13 @@ describe('F4 — a booking already logged goes to its visit, once', () => {
     // back. Leaving would drop what the owner typed; the write refuses the duplicate
     // instead (lib/vetVisitWrites.test.ts, F4).
     render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
+    await screen.findByText('Done');
 
     mockAppointment = appointment({ vet_visit_id: 'visit-elsewhere' });
     await refocus();
 
     expect(router.replace).not.toHaveBeenCalled();
-    expect(screen.getByText('Save Nyx’s visit')).toBeTruthy();
+    expect(screen.getByText('Done')).toBeTruthy();
   });
 });
 
@@ -1195,7 +1196,7 @@ describe('CUL-1092 — the saved moment says what ended once, with its day', () 
     fireEvent.press(screen.getByText('Stopped'));
     await screen.findByText('Stopped today');
 
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await screen.findByText('Saved to Nyx’s visits');
 
     expect(screen.getByText('Cerenia')).toBeTruthy();
@@ -1218,7 +1219,7 @@ describe('CUL-1092 — the saved moment says what ended once, with its day', () 
     fireEvent.press(screen.getByText('Ended'));
     await screen.findByText('Ended today');
 
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await screen.findByText('Saved to Nyx’s visits');
 
     // "Hill's z/d ended" read as the FOOD ending.
@@ -1255,7 +1256,7 @@ describe('CUL-1092 — a save after midnight names the day the course ended', ()
     await screen.findByText('Stopped today');
 
     jest.setSystemTime(new Date(2026, 8, 23, 0, 1));
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await screen.findByText('Saved to Nyx’s visits');
 
     expect(screen.getByText('Stopped Sep 22')).toBeTruthy();
@@ -1273,9 +1274,9 @@ describe('What Home was raising (EN-9, Engines v3 PR-35)', () => {
 
   it('draws no section and writes no answer when Home raises nothing with a care state (flag off)', async () => {
     render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
+    await screen.findByText('Done');
     expect(screen.queryByTestId('after-visit-home-concerns')).toBeNull();
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
     expect(mockRecordCareAnswer).not.toHaveBeenCalled();
   });
@@ -1288,7 +1289,7 @@ describe('What Home was raising (EN-9, Engines v3 PR-35)', () => {
     mockTicks = new Set(['vomit']);
     render(<AfterVisitScreen />);
     await screen.findByTestId('after-visit-home-concerns');
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await waitFor(() => expect(mockRecordCareAnswer).toHaveBeenCalledTimes(1));
     // One sign per row (GAP-29): the unticked cough stays Later and writes nothing.
     expect(mockRecordCareAnswer.mock.calls[0][0]).toEqual(
@@ -1308,7 +1309,7 @@ describe('What Home was raising (EN-9, Engines v3 PR-35)', () => {
     await screen.findByTestId('after-visit-home-concerns');
     fireEvent.press(screen.getAllByText('Talked about it')[0]);
     fireEvent.press(screen.getAllByText('Not this time')[1]);
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await waitFor(() => expect(mockRecordCareAnswer).toHaveBeenCalledTimes(1));
     expect(mockRecordCareAnswer.mock.calls[0][0]).toEqual(expect.objectContaining({ sign: 'vomit', source: 'visit_answer' }));
   });
@@ -1320,11 +1321,84 @@ describe('What Home was raising (EN-9, Engines v3 PR-35)', () => {
     ];
     mockTicks = new Set(['vomit']);
     render(<AfterVisitScreen />);
-    await screen.findByText('Save Nyx’s visit');
+    await screen.findByText('Done');
     await waitFor(() => expect(screen.queryByTestId('after-visit-home-concerns')).toBeNull());
-    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    fireEvent.press(screen.getByText('Done'));
     await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
     expect(mockRecordCareAnswer).not.toHaveBeenCalled();
   });
 });
 
+
+// ── §4.4 R5 and R2 on a FRESH visit (AC 16, AC 17; CUL-1150) ─────────────────────
+describe('a fresh visit: typing saves once the visit exists, and the recheck never books', () => {
+  it('before the visit exists, typing writes nothing and claims nothing', async () => {
+    freshScreen();
+    render(<AfterVisitScreen />);
+    await screen.findByText('Done');
+    fireEvent.changeText(screen.getByLabelText('Notes from Nyx’s visit'), 'Ears clean.');
+    await new Promise((r) => setTimeout(r, 800));
+    expect(mockUpdateVisit).not.toHaveBeenCalled();
+    expect(mockLogFromAppointment).not.toHaveBeenCalled();
+    expect(screen.queryByText('Saved as you type')).toBeNull();
+  });
+
+  it('Set mints the visit, writes only next_visit_at, and books no appointment', async () => {
+    const { bookVetAppointment } = require('../../lib/vetVisits');
+    freshScreen();
+    render(<AfterVisitScreen />);
+    await screen.findByText('Done');
+    fireEvent.press(screen.getByText('6 weeks'));
+    expect(mockLogFromAppointment).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByText('Set'));
+    await waitFor(() => expect(screen.getByText('Not booked yet')).toBeTruthy());
+    expect(mockLogFromAppointment).toHaveBeenCalledTimes(1);
+    expect(mockUpdateVisit).toHaveBeenCalledTimes(1);
+    expect(Object.keys(mockUpdateVisit.mock.calls[0][1] as object)).toEqual(['nextVisitAt']);
+    expect(bookVetAppointment).not.toHaveBeenCalled();
+  });
+
+  it('once the visit exists, typing saves as typed, against what the create wrote', async () => {
+    freshScreen();
+    render(<AfterVisitScreen />);
+    await screen.findByText('Done');
+    fireEvent.press(screen.getByText('2 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    await waitFor(() => expect(screen.getByText('Saved as you type')).toBeTruthy());
+    mockUpdateVisit.mockClear();
+    fireEvent.changeText(screen.getByLabelText('Notes from Nyx’s visit'), 'Ears clean. Back in two weeks.');
+    await waitFor(
+      () => expect(mockUpdateVisit).toHaveBeenCalledWith('new-visit', { notes: 'Ears clean. Back in two weeks.' }),
+      { timeout: 2000 },
+    );
+    // Only the field that moved: the clinic the create wrote is not re-sent.
+    expect(mockUpdateVisit).toHaveBeenCalledTimes(1);
+  });
+
+  it('typing while the create is in flight is written once the visit exists', async () => {
+    freshScreen();
+    let finish!: (id: string) => void;
+    mockLogFromAppointment.mockImplementationOnce(() => new Promise<string>((r) => { finish = r; }));
+    render(<AfterVisitScreen />);
+    await screen.findByText('Done');
+    fireEvent.press(screen.getByText('6 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalled());
+    fireEvent.changeText(screen.getByLabelText('Notes from Nyx’s visit'), 'Typed during the create.');
+    await act(async () => finish('new-visit'));
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('new-visit', { notes: 'Typed during the create.' }));
+  });
+
+  it('Done after the visit exists, with nothing changed, writes no field update', async () => {
+    freshScreen();
+    render(<AfterVisitScreen />);
+    await screen.findByText('Done');
+    fireEvent.press(screen.getByText('6 weeks'));
+    fireEvent.press(screen.getByText('Set'));
+    await waitFor(() => expect(screen.getByText('Not booked yet')).toBeTruthy());
+    mockUpdateVisit.mockClear();
+    fireEvent.press(screen.getByText('Done'));
+    await screen.findByText('Saved to Nyx’s visits');
+    expect(mockUpdateVisit).not.toHaveBeenCalled();
+  });
+});

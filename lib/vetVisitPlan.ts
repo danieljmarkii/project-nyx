@@ -34,8 +34,14 @@ export const DEFAULT_RECHECK_WEEKS = 6;
  * the screen this replaces).
  */
 export function defaultRecheckDate(now: Date = new Date()): Date {
+  return recheckDateIn(DEFAULT_RECHECK_WEEKS, now);
+}
+
+/** Local noon `weeks` from today: the recheck row's *2 weeks* and *6 weeks* (§4.4 R2).
+ *  Noon, like the seed, so a DST shift can never move the day. */
+export function recheckDateIn(weeks: number, now: Date = new Date()): Date {
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
-  d.setDate(d.getDate() + DEFAULT_RECHECK_WEEKS * 7);
+  d.setDate(d.getDate() + weeks * 7);
   return d;
 }
 

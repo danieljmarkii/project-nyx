@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, type ScrollViewInstance, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, AppState, KeyboardAvoidingView, Platform, ScrollView, type ScrollViewInstance, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { colorRoles, theme } from '../../constants/theme';
@@ -60,7 +60,6 @@ import {
   type VisitSaveSummary,
 } from '../../lib/vetVisitPlan';
 import {
-  bookVetAppointment,
   clampVisitDate,
   formatVisitDate,
   formatVisitWeekday,
@@ -72,6 +71,7 @@ import {
   readActiveCourses,
   readAppointmentById,
   readAppointmentForVisit,
+  readRecheckBooking,
   readVetVisitDetail,
   readVisitPlanRecord,
   readVisitConsequence,
@@ -85,7 +85,15 @@ import {
   type ActiveCourse,
   type AppointmentDetail,
   type LocalVetVisit,
+  type RecheckBooking,
 } from '../../lib/vetVisits';
+
+/**
+ * How long typing settles before the visit is written (§4.4 R5). The in-room notes'
+ * number (`at-the-vet.tsx`), for the same reason: an app kill mid-sentence keeps what
+ * was there 600 ms earlier, and a sentence is one write rather than forty.
+ */
+const FIELDS_DEBOUNCE_MS = 600;
 
 /**
  * Which sheet is up. At most ONE is ever mounted — see the CUL-662 note below.
@@ -181,6 +189,9 @@ export default function AfterVisitScreen() {
   // started (CUL-1092): the old trial is still running, so nothing was switched.
   const verdictBeforeSwitch = useRef<TrialVerdict | null>(null);
   const [nextVisitAt, setNextVisitAt] = useState<string | null>(null);
+  // The booking that answers the recheck (R2), re-asked on every focus: *Book it* leaves
+  // for the booking sheet and comes back, and a booking made anywhere else counts too.
+  const [recheckBooking, setRecheckBooking] = useState<RecheckBooking | null>(null);
   const [paperwork, setPaperwork] = useState<string[]>([]);
   const [linked, setLinked] = useState<LinkedLine[]>([]);
 
@@ -229,6 +240,9 @@ export default function AfterVisitScreen() {
   const recordRef = useRef<LocalVetVisit | null>(null);
   const fieldsRef = useRef<AfterVisitFields | null>(null);
   const flushing = useRef<Promise<void>>(Promise.resolve());
+  // The autosave's debounce (R5). Cleared by every flush, which writes the latest form.
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bookingRecheck = useRef(false);
   // `&at=plan`: the one-shot scroll to The plan, consumed in a ref on the first layout (C-22).
   const scrollToPlan = useRef(at === 'plan');
   const scrollRef = useRef<ScrollViewInstance>(null);
@@ -281,34 +295,43 @@ export default function AfterVisitScreen() {
   }, [reopenId, ownCourses]);
 
   /**
-   * Write what the owner changed on a reopened visit, and nothing else. Serialised, so a
-   * blur landing during *Done* cannot write the same change twice. Until PR-03's autosave,
-   * this runs whenever the screen loses focus (back, a swipe, a pushed route), which is
-   * what keeps back from dropping typing (§4.4 condition 5).
+   * Write what the owner changed since the record last moved, and nothing else (R5).
+   * The ONE write path for typing, on a fresh visit and a reopened one alike: the debounce,
+   * blur, back, *Done* and the app going to the background all land here. It writes nothing
+   * until the visit exists (`recordRef` is set by the reopen's read or by `ensureVisit`'s
+   * create), and a call with no change writes nothing (AC 16). Serialised, so two triggers
+   * landing together cannot write the same change twice.
    */
   const flushFields = useCallback((): Promise<void> => {
+    if (autosaveTimer.current) {
+      clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = null;
+    }
     const run = flushing.current.then(async () => {
       const record = recordRef.current;
       const form = fieldsRef.current;
       const id = visitIdRef.current;
-      if (!reopenId || !record || !form || !id) return;
+      if (!record || !form || !id) return;
       const patch = visitFieldsPatch(record, form);
       if (Object.keys(patch).length === 0) return;
       await updateVisitDetails(id, patch);
+      // Merged onto the record AS IT STANDS NOW, not the one this flush started from: a
+      // *Set* that landed during the write moved `next_visit_at`, and must keep it.
+      const now = recordRef.current ?? record;
       recordRef.current = {
-        ...record,
-        visited_at: patch.visitedAt ?? record.visited_at,
-        clinic_name: patch.clinicName !== undefined ? patch.clinicName ?? null : record.clinic_name,
-        vet_name: patch.vetName !== undefined ? patch.vetName ?? null : record.vet_name,
-        reason: patch.reason !== undefined ? patch.reason ?? null : record.reason,
-        notes: patch.notes !== undefined ? patch.notes ?? null : record.notes,
+        ...now,
+        visited_at: patch.visitedAt ?? now.visited_at,
+        clinic_name: patch.clinicName !== undefined ? patch.clinicName ?? null : now.clinic_name,
+        vet_name: patch.vetName !== undefined ? patch.vetName ?? null : now.vet_name,
+        reason: patch.reason !== undefined ? patch.reason ?? null : now.reason,
+        notes: patch.notes !== undefined ? patch.notes ?? null : now.notes,
       };
       syncPendingVetVisits().catch(console.error);
     });
     // The chain survives a failure; the caller still hears about it.
     flushing.current = run.catch(() => undefined);
     return run;
-  }, [reopenId]);
+  }, []);
 
   /** The reopen's read: the visit, its booking, its plan, its paperwork and its answers. */
   const loadReopen = useCallback(async (id: string): Promise<void> => {
@@ -382,7 +405,7 @@ export default function AfterVisitScreen() {
     setLoaded(true);
   }, [loadPlan]);
 
-  /** Leaving a reopened visit: the write, and if it fails a sentence that is true once the
+  /** Leaving a visit that exists: the write, and if it fails a sentence that is true once the
    *  form is gone. "Try that again" would point at a screen the owner has already left. */
   const flushOnLeave = useCallback(async (): Promise<void> => {
     try {
@@ -392,6 +415,24 @@ export default function AfterVisitScreen() {
       Alert.alert('That didn’t save', 'The changes to this visit weren’t kept. Tap Edit on the visit to add them again.');
     }
   }, [flushFields]);
+
+  /** Whether a booking answers this visit's recheck, asked of the record (R2). */
+  const refreshRecheck = useCallback(async () => {
+    const id = visitIdRef.current;
+    const record = recordRef.current;
+    if (!id || !record) return;
+    // No recheck named, nothing to answer: never read a booking in (see RecheckRow).
+    if (!record.next_visit_at) {
+      setRecheckBooking(null);
+      return;
+    }
+    try {
+      setRecheckBooking(await readRecheckBooking({ id, pet_id: record.pet_id, visited_at: record.visited_at }));
+    } catch (err) {
+      // Unanswered reads as not booked, the louder of the two: the row keeps *Book it*.
+      console.warn('[after-visit] recheck booking read failed:', err);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -482,19 +523,53 @@ export default function AfterVisitScreen() {
       let cancelled = false;
       load().then(() => {
         if (cancelled) return;
+        void refreshRecheck();
         const resume = resumeTrialSheet.current;
         resumeTrialSheet.current = false;
         if (resume) setSheet({ kind: 'trial' });
       });
       return () => {
         cancelled = true;
-        // Leaving a reopened visit keeps what was typed (§4.4 condition 5).
-        if (reopenId) void flushOnLeave();
+        // Leaving keeps what was typed (R5). A no-op until the visit exists.
+        if (visitIdRef.current) void flushOnLeave();
       };
-    }, [load, reopenId, flushOnLeave]),
+    }, [load, flushOnLeave, refreshRecheck]),
   );
 
   fieldsRef.current = fields;
+
+  // An app kill is the one exit no focus cleanup sees. iOS and Android both background the
+  // app before the switcher can kill it, so the pending debounce is written then (R5).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' && visitIdRef.current) void flushOnLeave();
+    });
+    return () => {
+      sub.remove();
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    };
+  }, [flushOnLeave]);
+
+  /** A field changed: into the form, and once the visit exists, into the record after the
+   *  debounce (R5). `fieldsRef` moves here too, so a flush landing before the next render
+   *  writes this keystroke rather than the one before it. */
+  function changeField<K extends keyof AfterVisitFields>(key: K, value: AfterVisitFields[K]) {
+    const next = { ...(fieldsRef.current ?? fields), [key]: value };
+    fieldsRef.current = next;
+    setFields(next);
+    if (!visitIdRef.current) return;
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => {
+      autosaveTimer.current = null;
+      flushFields().catch((err) => {
+        // No silent failure on a write path: what was typed is still on screen, and the
+        // leave or *Done* will try again.
+        console.warn('[after-visit] autosave failed:', err);
+        Alert.alert('Your changes aren’t saving', 'What you typed is still on screen. Try Done again in a moment.');
+      });
+    }, FIELDS_DEBOUNCE_MS);
+  }
+
 
   // The report-window note (VisitEditBody's, moved here): re-asked whenever the date in the
   // picker moves, because the answer is about the date being saved, and cleared before the
@@ -558,8 +633,25 @@ export default function AfterVisitScreen() {
       creatingVisit.current = null;
     }
 
+    // The record as created, so the autosave diffs every later keystroke against what this
+    // row holds (R5). A create that began before the owner's last edit did not see it, and
+    // the diff is what writes it.
+    recordRef.current = {
+      id,
+      pet_id: petId,
+      visited_at: visitedAt,
+      clinic_name: fields.clinicName.trim() || null,
+      vet_name: fields.vetName.trim() || null,
+      reason: fields.reason.trim() || null,
+      notes: fields.notes.trim() || null,
+      next_visit_at: null,
+      deleted_at: null,
+    };
     visitIdRef.current = id;
     setVisitId(id);
+    // Typing that landed while the create was in flight armed no debounce (no visit yet),
+    // so it is written now. A no-op when the form still matches what the create wrote.
+    flushFields().catch((err) => console.warn('[after-visit] post-create save failed:', err));
 
     // The paperwork photographed in the room now has a visit to belong to. Through
     // Vet Files' own `linkVetDocumentVisit` — the ONE function that implements D7 —
@@ -584,7 +676,7 @@ export default function AfterVisitScreen() {
       .then(() => syncPendingVetAppointments())
       .catch(console.error);
     return id;
-  }, [appointment, fields, petId, paperwork]);
+  }, [appointment, fields, petId, paperwork, flushFields]);
 
   function note(line: LinkedLine) {
     setLinked((prev) => [...prev.filter((l) => l.key !== line.key), line]);
@@ -882,34 +974,48 @@ export default function AfterVisitScreen() {
     }
   }
 
-  async function handlePickNextVisit(day: Date) {
+  /**
+   * *Set* on the recheck row (§4.4 R2, AC 17; CUL-1150): the date the vet named, on the
+   * visit, and nothing else. NEVER a booking: every reader of `vet_appointments` (Home's
+   * strip, the reminder, "Did it happen?") takes a row there as an appointment someone
+   * made, and nobody has. *Book it* is the owner's own step.
+   */
+  async function handleSetNextVisit(day: Date) {
     if (busyRow || !petId) return;
     setBusyRow('next-visit');
     try {
       const id = await ensureVisit();
+      // The form first: the booking read below is against the visit's date, and a date moved
+      // inside the debounce is not on the record yet (adversarial pass 2, QUIET).
+      await flushFields();
       const dayKey = localDateKey(day);
-      // BOTH: the visit says what the vet asked for, and the appointment is the thing
-      // Home and the reminder will read. The visit's own `next_visit_at` is what
-      // `derivePlanTags` renders as "Recheck set" and what seeds the next booking
-      // sheet, so writing only the appointment would leave the visit silent about
-      // its own plan.
       await updateVisitDetails(id, { nextVisitAt: dayKey });
-      await bookVetAppointment({
-        petId,
-        // Local midnight — the no-time sentinel the booking sheet uses, because a
-        // vet who says "in six weeks" has not named an hour.
-        scheduledAt: new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0, 0).toISOString(),
-        clinicName: fields.clinicName,
-        vetName: fields.vetName,
-        reason: 'recheck',
-      });
-      syncPendingVetAppointments().catch(console.error);
+      if (recordRef.current) recordRef.current = { ...recordRef.current, next_visit_at: dayKey };
+      syncPendingVetVisits().catch(console.error);
       setNextVisitAt(dayKey);
-      note({ key: 'next-visit', title: `${formatVisitDate(dayKey)} · recheck`, note: 'booked' });
+      note({ key: 'next-visit', title: `Recheck around ${formatVisitDate(dayKey)}`, note: 'not booked yet' });
+      await refreshRecheck();
     } catch (err) {
       sayFailed(err, 'next visit');
     } finally {
       setBusyRow(null);
+    }
+  }
+
+  /** *Book it*: the one booking flow, seeded with the recheck's date. What was typed is
+   *  written first, because the visits list re-reads the record. */
+  async function handleBookRecheck() {
+    // A ref, not state: two taps in one tick would otherwise push two booking screens.
+    if (busyRow || !petId || !nextVisitAt || bookingRecheck.current) return;
+    bookingRecheck.current = true;
+    try {
+      await flushOnLeave();
+      router.push({
+        pathname: '/vet-visits',
+        params: { pet: petId, add: 'booked', reason: 'recheck', on: nextVisitAt },
+      });
+    } finally {
+      bookingRecheck.current = false;
     }
   }
 
@@ -951,20 +1057,10 @@ export default function AfterVisitScreen() {
       // create started by a plan action and still resolving did NOT see the fields as
       // they stand now, so skipping the update there would silently drop whatever the
       // owner typed between the two.
-      const existed = visitIdRef.current !== null || creatingVisit.current !== null;
       const id = await ensureVisit();
-      if (reopenId) {
-        // Only what changed, against the record: a *Done* with no change writes nothing.
-        await flushFields();
-      } else if (existed) {
-        await updateVisitDetails(id, {
-          visitedAt: localDateKey(fields.visitedAt),
-          clinicName: fields.clinicName,
-          vetName: fields.vetName,
-          reason: fields.reason,
-          notes: fields.notes,
-        });
-      }
+      // Only what changed since the record last moved: a create that began before the last
+      // edit is caught up, and a *Done* with no change writes nothing (R5, AC 16).
+      await flushFields();
       // EN-9 (PR-35): each *Talked about it* is the owner's answer, dated by this visit and
       // naming it (082 requires a visit source to name its visit). Written before the push
       // so the visit's landing sends them on (`sendWhatWaitedOnVisits`); the queue holds each
@@ -1124,9 +1220,9 @@ export default function AfterVisitScreen() {
           <Header
             leading="back"
             onLeadingPress={async () => {
-              // A reopen writes before it leaves, so the visit it returns to reads the new text
-              // (the blur's flush then finds nothing left to write).
-              if (reopenId) await flushOnLeave();
+              // Writes before it leaves, so the visit it returns to reads the new text (the
+              // blur's flush then finds nothing left to write). A no-op before the visit exists.
+              if (visitIdRef.current) await flushOnLeave();
               if (router.canGoBack()) router.back();
               else router.replace(reopenId ? `/vet-visits/${reopenId}` : '/vet-visits');
             }}
@@ -1163,7 +1259,7 @@ export default function AfterVisitScreen() {
                 <AfterVisitBody
                   petName={petName}
                   fields={fields}
-                  onChangeField={(key, value) => setFields((prev) => ({ ...prev, [key]: value }))}
+                  onChangeField={changeField}
                   courses={courses}
                   courseVerdicts={courseVerdicts}
                   settledCourses={settledCourses}
@@ -1179,7 +1275,10 @@ export default function AfterVisitScreen() {
                   // unsaved form (the trial-foods precedent, B-625).
                   onAddFood={() => router.push('/food-capture?returnTo=back')}
                   nextVisitAt={nextVisitAt}
-                  onPickNextVisit={handlePickNextVisit}
+                  recheckBooking={recheckBooking}
+                  onSetNextVisit={handleSetNextVisit}
+                  onBookRecheck={handleBookRecheck}
+                  savesAsTyped={visitId !== null}
                   paperworkCount={paperwork.length}
                   onAddPaperwork={handleAddPaperwork}
                   busyRow={busyRow}
