@@ -14,6 +14,7 @@ import {
   formatWhereLine,
   localDateKey,
   recheckBookingFor,
+  isPhantomRecheckBooking,
   appointmentEditScopeNote,
   appointmentPrepNote,
   removeAppointmentCopy,
@@ -707,8 +708,9 @@ describe('appointmentDayReached (CUL-966)', () => {
 describe('recheckBookingFor', () => {
   const visit0 = { id: 'v1', pet_id: 'pet-a', visited_at: '2026-09-16' };
   const at = (y: number, m: number, d: number, h = 9) => new Date(y, m - 1, d, h, 30).toISOString();
-  const appt = (over: Partial<{ id: string; pet_id: string; scheduled_at: string; vet_visit_id: string | null; cancelled_at: string | null; deleted_at: string | null }> = {}) => ({
-    id: 'a1', pet_id: 'pet-a', scheduled_at: at(2026, 10, 28), vet_visit_id: null, cancelled_at: null, deleted_at: null, ...over,
+  const appt = (over: Partial<{ id: string; pet_id: string; scheduled_at: string; vet_visit_id: string | null; cancelled_at: string | null; deleted_at: string | null; reason: string | null }> = {}) => ({
+    id: 'a1', pet_id: 'pet-a', scheduled_at: at(2026, 10, 28), vet_visit_id: null, cancelled_at: null, deleted_at: null,
+    reason: null, ...over,
   });
 
   it('finds nothing when nothing is booked', () => {
@@ -752,5 +754,39 @@ describe('recheckBookingFor', () => {
     const hydrated = local.replace('.000Z', '+00:00');
     expect(hydrated).not.toBe(local);
     expect(recheckBookingFor(visit0, [appt({ scheduled_at: hydrated })])?.id).toBe('a1');
+  });
+
+  // CUL-2788 stopgap: the old "Set a date" wheel booked rechecks the owner never made, and
+  // installed builds keep writing them, so every reason-'recheck' booking reads not booked.
+  describe('a booking the old wheel may have written never answers it', () => {
+    const midnight = (y: number, m: number, d: number) => new Date(y, m - 1, d, 0, 0, 0, 0).toISOString();
+
+    it('the wheel’s own row (recheck, local midnight) is not a booking', () => {
+      expect(recheckBookingFor(visit0, [appt({ reason: 'recheck', scheduled_at: midnight(2026, 10, 28) })])).toBeNull();
+    });
+
+    it('nor is one that reads as having a time (written in another zone, or booked with one)', () => {
+      // Midnight in UTC+14 is 10:00 UTC the day before; read anywhere else it shows a time.
+      expect(recheckBookingFor(visit0, [appt({ reason: 'recheck', scheduled_at: '2026-10-27T10:00:00+00:00' })])).toBeNull();
+      expect(recheckBookingFor(visit0, [appt({ reason: 'recheck' })])).toBeNull();
+    });
+
+    it('casing and padding do not let one through', () => {
+      for (const reason of ['Recheck', ' RECHECK ', 'recheck\n']) {
+        expect(isPhantomRecheckBooking({ reason })).toBe(true);
+        expect(recheckBookingFor(visit0, [appt({ reason })])).toBeNull();
+      }
+    });
+
+    it('it does not hide a real booking beside it', () => {
+      const hit = recheckBookingFor(visit0, [appt({ id: 'ph', reason: 'recheck', scheduled_at: at(2026, 10, 2) }), appt({ id: 'real', reason: 'Dental cleaning' })]);
+      expect(hit?.id).toBe('real');
+    });
+
+    it('a booking with any other reason, or none, still answers it (non-vacuity)', () => {
+      expect(isPhantomRecheckBooking({ reason: null })).toBe(false);
+      expect(isPhantomRecheckBooking({ reason: 'recheck with bloods' })).toBe(false);
+      expect(recheckBookingFor(visit0, [appt({ reason: 'Dental cleaning' })])?.id).toBe('a1');
+    });
   });
 });
