@@ -13,6 +13,7 @@ import {
   sourceAfterPointEdit,
   refreshedNowPoint,
   pointLeavesStoredWindow,
+  timeWriteForEdit,
   buildTimeFields,
   DEFAULT_WINDOW_SPAN_MS,
 } from './eventTimeEdit';
@@ -404,5 +405,52 @@ describe('pointLeavesStoredWindow (CUL-2199)', () => {
 
   it('an unknown stored point reads as moved', () => {
     expect(ask({ stored: { ...WIN, occurredAt: undefined } })).toBe(true);
+  });
+});
+
+describe('timeWriteForEdit (CUL-2772)', () => {
+  const FORM = { occurredAt: new Date('2026-03-15T09:58:00.000Z'), source: 'now' as const };
+  const ROW = {
+    confidence: 'witnessed' as const, earliest: null, latest: null,
+    occurredAt: '2026-03-15T12:00:00+00:00', source: 'manual' as const,
+  };
+  const ask = (over: Partial<Parameters<typeof timeWriteForEdit>[0]>) =>
+    timeWriteForEdit({ ownerAsserted: false, pointMoved: false, form: FORM, stored: ROW, ...over });
+
+  it('an untouched, unmoved save hands the row its own point and provenance back, verbatim', () => {
+    expect(ask({})).toEqual({
+      occurredAt: '2026-03-15T12:00:00+00:00',
+      source: 'manual',
+      restated: false,
+      guard: { occurredAt: ROW.occurredAt, confidence: 'witnessed', earliest: null, latest: null },
+    });
+  });
+
+  it('a moved point is the owner\'s, written from the form and guarded by the row it was judged against', () => {
+    const w = ask({ pointMoved: true });
+    expect(w.occurredAt).toBe('2026-03-15T09:58:00.000Z');
+    expect(w.source).toBe('now');
+    expect(w.restated).toBe(true);
+    expect(w.guard?.occurredAt).toBe(ROW.occurredAt);
+  });
+
+  it('an asserted save restates the whole claim from the form and takes no guard', () => {
+    const w = ask({ ownerAsserted: true });
+    expect(w.occurredAt).toBe('2026-03-15T09:58:00.000Z');
+    expect(w.restated).toBe(true);
+    expect(w.guard).toBeNull();
+  });
+
+  it('a row that could not be read, or holds an unparseable point, writes the form as before', () => {
+    for (const occurredAt of [undefined, null, 'not a time']) {
+      const w = ask({ stored: { ...ROW, occurredAt } });
+      expect(w.occurredAt).toBe('2026-03-15T09:58:00.000Z');
+      expect(w.restated).toBe(true);
+      expect(w.guard).toBeNull();
+    }
+  });
+
+  it('falls back to the form\'s provenance only when the row gave none', () => {
+    expect(ask({ stored: { ...ROW, source: null } }).source).toBe('now');
   });
 });

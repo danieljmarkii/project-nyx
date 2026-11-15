@@ -33,6 +33,7 @@ jest.mock('expo-file-system', () => ({ File: class {} }));
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
 import { updateEvent } from './db';
+import { EventTimeMovedError, pointLeavesStoredWindow, timeWriteForEdit } from './eventTimeEdit';
 import { BASE_SCHEMA_SQL } from './localSchema';
 
 type RawDb = InstanceType<typeof DatabaseSync>;
@@ -382,5 +383,156 @@ describe('updateEvent — occurred_at_source is required, not defaulted (CUL-708
     );
 
     expect(read(db).occurred_at_source).toBe('now');
+  });
+});
+
+// CUL-2772 — the check and the write are one statement.
+//
+// The editor reads the row, judges the point against it in JS, then writes. A
+// hydrate upsert already queued on the connection lands between the two. These
+// tests play that order on a real engine: read, judge, LAND THE SYNC, write. The
+// hydrate statement is the production one's shape (a whole-row replace of a row
+// still marked synced, in PostgREST's `+00:00` spelling).
+describe('updateEvent — ifTimeStill refuses a row that moved after it was judged (CUL-2772)', () => {
+  /** `getEventTimeFields`'s read, against this database. */
+  function readTime(db: RawDb) {
+    const r = db
+      .prepare('SELECT occurred_at, occurred_at_source, occurred_at_confidence, occurred_at_earliest, occurred_at_latest FROM events WHERE id = ?')
+      .get('e1') as Record<string, string | null>;
+    const c = r.occurred_at_confidence;
+    return {
+      confidence: (c === 'witnessed' || c === 'estimated' || c === 'window' ? c : null) as 'witnessed' | 'estimated' | 'window' | null,
+      earliest: r.occurred_at_earliest,
+      latest: r.occurred_at_latest,
+      occurredAt: r.occurred_at,
+      source: (r.occurred_at_source === 'exif' || r.occurred_at_source === 'now' ? r.occurred_at_source : 'manual') as 'manual' | 'exif' | 'now',
+    };
+  }
+
+  /** A hydrate landing another device's save on a row this device has not edited. */
+  function hydrate(db: RawDb, row: { occurredAt: string; confidence: string | null; earliest: string | null; latest: string | null }) {
+    db.prepare(
+      `UPDATE events SET occurred_at = ?, occurred_at_confidence = ?, occurred_at_earliest = ?,
+              occurred_at_latest = ?, occurred_at_source = 'manual', updated_at = ?, synced = 1
+        WHERE id = 'e1' AND synced = 1`,
+    ).run(row.occurredAt, row.confidence, row.earliest, row.latest, '2026-07-01T06:00:00+00:00');
+  }
+
+  const REMOTE_WINDOW = {
+    occurredAt: '2026-07-01T03:00:00+00:00',
+    confidence: 'window',
+    earliest: '2026-07-01T01:00:00+00:00',
+    latest: '2026-07-01T03:00:00+00:00',
+  };
+  // The owner moved the plain point to 09:30 and touched nothing else.
+  const MOVED = { occurredAt: new Date('2026-07-01T09:30:00.000Z'), source: 'manual' as const };
+
+  it('the issue\'s race: a window lands between the check and the write, and zero rows change', async () => {
+    const db = freshDb();
+    seed(db, 'witnessed');
+
+    const stored = readTime(db);
+    const write = timeWriteForEdit({ ownerAsserted: false, pointMoved: true, form: MOVED, stored });
+    // The JS check passes: the row it read is a witnessed point.
+    expect(pointLeavesStoredWindow({ ownerAsserted: false, stored, point: new Date(write.occurredAt) })).toBe(false);
+
+    hydrate(db, REMOTE_WINDOW); // the gap
+
+    await expect(
+      updateEvent('e1', { occurred_at: write.occurredAt, occurred_at_source: write.source, notes: 'n', ifTimeStill: write.guard! }, adapter(db)),
+    ).rejects.toBeInstanceOf(EventTimeMovedError);
+
+    // The row is exactly what the sync left: the point inside its window, still
+    // synced, the note untouched. Nothing half-landed.
+    const row = read(db);
+    expect(row.occurred_at).toBe(REMOTE_WINDOW.occurredAt);
+    expect(row.occurred_at_confidence).toBe('window');
+    expect(row.notes).toBe('original note');
+    expect(row.synced).toBe(1);
+
+    // And the re-read is refused by the one rule, in JS, as CUL-2199 refuses it.
+    const again = readTime(db);
+    const rewrite = timeWriteForEdit({ ownerAsserted: false, pointMoved: true, form: MOVED, stored: again });
+    expect(pointLeavesStoredWindow({ ownerAsserted: false, stored: again, point: new Date(rewrite.occurredAt) })).toBe(true);
+  });
+
+  it('non-vacuity: without the guard the same order leaves the point outside the window', async () => {
+    const db = freshDb();
+    seed(db, 'witnessed');
+    const write = timeWriteForEdit({ ownerAsserted: false, pointMoved: true, form: MOVED, stored: readTime(db) });
+    hydrate(db, REMOTE_WINDOW);
+
+    await updateEvent('e1', { occurred_at: write.occurredAt, occurred_at_source: write.source }, adapter(db));
+
+    const row = read(db);
+    expect(row.occurred_at_confidence).toBe('window');
+    expect(Date.parse(row.occurred_at)).toBeGreaterThan(Date.parse(row.occurred_at_latest!));
+  });
+
+  it('a row nothing touched saves through the guard, bounds NULL and all', async () => {
+    for (const [confidence, earliest, latest] of [
+      [null, null, null],
+      ['witnessed', null, null],
+      ['window', null, '2026-07-01T04:00:00.000Z'],
+      ['window', '2026-07-01T02:00:00.000Z', '2026-07-01T04:00:00.000Z'],
+    ] as const) {
+      const db = freshDb();
+      seed(db, confidence, earliest, latest);
+      const write = timeWriteForEdit({ ownerAsserted: false, pointMoved: false, form: MOVED, stored: readTime(db) });
+      await updateEvent('e1', { occurred_at: write.occurredAt, occurred_at_source: write.source, notes: 'edited', ifTimeStill: write.guard! }, adapter(db));
+      const row = read(db);
+      expect(row.notes).toBe('edited');
+      expect(row.synced).toBe(0);
+      // An untouched, unmoved save hands the row its own time and provenance back.
+      expect(row.occurred_at).toBe('2026-07-01T04:00:00.000Z');
+      expect(row.occurred_at_source).toBe('now');
+    }
+  });
+
+  it('a note edit keeps a window a sync replaced, point on its new edge (the comment\'s first instance)', async () => {
+    const db = freshDb();
+    seed(db, 'window', '2026-07-01T02:00:00.000Z', '2026-07-01T04:00:00.000Z');
+    // The screen opened on [02:00, 04:00]. A sync replaces it with [03:00, 06:00]:
+    // the old edge 04:00 sits inside the new window, so no window rule objects.
+    hydrate(db, { occurredAt: '2026-07-01T06:00:00+00:00', confidence: 'window', earliest: '2026-07-01T03:00:00+00:00', latest: '2026-07-01T06:00:00+00:00' });
+
+    const write = timeWriteForEdit({
+      ownerAsserted: false, pointMoved: false,
+      form: { occurredAt: new Date('2026-07-01T04:00:00.000Z'), source: 'now' },
+      stored: readTime(db),
+    });
+    await updateEvent('e1', { occurred_at: write.occurredAt, occurred_at_source: write.source, notes: 'edited', ifTimeStill: write.guard! }, adapter(db));
+
+    const row = read(db);
+    expect(row.occurred_at).toBe('2026-07-01T06:00:00+00:00');
+    expect(row.occurred_at).toBe(row.occurred_at_latest);
+    expect(row.notes).toBe('edited');
+  });
+
+  it('a note edit keeps the point a re-grade to witnessed put there (the second instance)', async () => {
+    const db = freshDb();
+    seed(db, 'window', '2026-07-01T02:00:00.000Z', '2026-07-01T04:00:00.000Z');
+    hydrate(db, { occurredAt: '2026-07-01T02:40:00+00:00', confidence: 'witnessed', earliest: null, latest: null });
+
+    const write = timeWriteForEdit({
+      ownerAsserted: false, pointMoved: false,
+      form: { occurredAt: new Date('2026-07-01T04:00:00.000Z'), source: 'now' },
+      stored: readTime(db),
+    });
+    await updateEvent('e1', { occurred_at: write.occurredAt, occurred_at_source: write.source, notes: 'edited', ifTimeStill: write.guard! }, adapter(db));
+
+    const row = read(db);
+    // Not 'witnessed' at the old window's edge, a time nobody saw.
+    expect(row.occurred_at_confidence).toBe('witnessed');
+    expect(row.occurred_at).toBe('2026-07-01T02:40:00+00:00');
+    expect(row.occurred_at_source).toBe('manual');
+  });
+
+  it('a confidence outside the three values reads as null and still matches itself', async () => {
+    const db = freshDb();
+    seed(db, 'approximate');
+    const write = timeWriteForEdit({ ownerAsserted: false, pointMoved: false, form: MOVED, stored: readTime(db) });
+    await updateEvent('e1', { occurred_at: write.occurredAt, occurred_at_source: write.source, notes: 'edited', ifTimeStill: write.guard! }, adapter(db));
+    expect(read(db).notes).toBe('edited');
   });
 });

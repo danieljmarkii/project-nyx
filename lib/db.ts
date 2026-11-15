@@ -37,6 +37,7 @@ import {
 } from './localSchema';
 import { pendingStatusSql, quarantineCountSql, recordGapsForAskSql } from './syncQueue';
 import { uuid } from './utils';
+import { EventTimeMovedError, type EventTimeSnapshot } from './eventTimeEdit';
 import { clearTransientFiles } from './transientFiles';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -733,6 +734,15 @@ export async function updateEvent(
     // it is — so inventing 'witnessed' for it moved a row in the falsely
     // reassuring direction, one edit at a time.
     confidence?: EventConfidenceUpdate;
+    // CUL-2772 — write only if the row's time fields are still the ones the caller
+    // read and judged. A hydrate upsert can land between a save's read and this
+    // statement, so a check made in JS is not a check on the row being written.
+    // With this key the condition rides in the UPDATE itself: zero rows change
+    // when any of the four moved, and that is thrown as `EventTimeMovedError`
+    // (thrown, not returned, so a caller's transaction rolls back with it). The
+    // rule about WHICH rows may be written stays with the caller; this only makes
+    // its answer hold. Omit it and the write is unconditional, as before.
+    ifTimeStill?: EventTimeSnapshot;
   },
   // Injected for tests (the cacheFlush.test.ts pattern); production passes nothing.
   database: Pick<SQLite.SQLiteDatabase, 'runAsync'> = getDb(),
@@ -764,7 +774,28 @@ export async function updateEvent(
   // leaving it permanently stuck with no way out from inside the app.
   sets.push('updated_at = ?', 'synced = 0', 'sync_attempts = 0', 'sync_error = NULL');
   params.push(now, eventId);
-  await database.runAsync(`UPDATE events SET ${sets.join(', ')} WHERE id = ?`, params);
+  const guard = fields.ifTimeStill;
+  if (!guard) {
+    await database.runAsync(`UPDATE events SET ${sets.join(', ')} WHERE id = ?`, params);
+    return;
+  }
+  // `IS`, not `=`: a bound is NULL more often than not. Strings, not instants: this
+  // compares the row with itself as it was read a moment ago, so its spelling is
+  // the same one (C-40 is about values from two sources). `getEventTimeFields`
+  // reads a confidence outside the three values as null, so null matches those too.
+  const where = [
+    'id = ?',
+    'occurred_at IS ?',
+    'occurred_at_earliest IS ?',
+    'occurred_at_latest IS ?',
+    guard.confidence === null
+      ? "(occurred_at_confidence IS NULL OR occurred_at_confidence NOT IN ('witnessed', 'estimated', 'window'))"
+      : 'occurred_at_confidence IS ?',
+  ];
+  params.push(guard.occurredAt, guard.earliest, guard.latest);
+  if (guard.confidence !== null) params.push(guard.confidence);
+  const res = await database.runAsync(`UPDATE events SET ${sets.join(', ')} WHERE ${where.join(' AND ')}`, params);
+  if (res.changes === 0) throw new EventTimeMovedError(eventId);
 }
 
 // CUL-642 — whose pet is this event? Used by the shared reversal to re-arm that
@@ -815,6 +846,9 @@ export async function getEventTimeFields(eventId: string): Promise<{
   /** The row's current occurred_at, so a save can tell a point it moves from one
    *  a sync moved under it (CUL-2199). Absent on a missing row. */
   occurredAt?: string | null;
+  /** The row's current provenance, read with the point so an untouched save hands
+   *  both back together (CUL-2772). Absent on a missing row. */
+  source?: 'manual' | 'exif' | 'now' | null;
 }> {
   const db = getDb();
   const row = await db.getFirstAsync<{
@@ -822,10 +856,12 @@ export async function getEventTimeFields(eventId: string): Promise<{
     occurred_at_earliest: string | null;
     occurred_at_latest: string | null;
     occurred_at: string | null;
+    occurred_at_source: string | null;
   }>(
-    'SELECT occurred_at_confidence, occurred_at_earliest, occurred_at_latest, occurred_at FROM events WHERE id = ?',
+    'SELECT occurred_at_confidence, occurred_at_earliest, occurred_at_latest, occurred_at, occurred_at_source FROM events WHERE id = ?',
     [eventId],
   );
+  const s = row?.occurred_at_source;
   const c = row?.occurred_at_confidence;
   const confidence = c === 'witnessed' || c === 'estimated' || c === 'window' ? c : null;
   return {
@@ -833,6 +869,8 @@ export async function getEventTimeFields(eventId: string): Promise<{
     earliest: row?.occurred_at_earliest ?? null,
     latest: row?.occurred_at_latest ?? null,
     occurredAt: row?.occurred_at ?? null,
+    // Narrowed as `getEventSource` narrows it; a missing row has none to hand back.
+    source: !row ? null : s === 'exif' || s === 'now' ? s : 'manual',
   };
 }
 

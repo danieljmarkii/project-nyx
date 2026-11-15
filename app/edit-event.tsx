@@ -53,7 +53,7 @@ import { gridSectionsFor, gridChipLabel } from '../lib/lookDisplay';
 import { toggleLookWord } from '../lib/lookSelection';
 import { lookSpeciesOf, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, notHerselfLabel } from '../constants/lookWords';
 import { LOOK_NOTE_MAX, LOOK_NOTE_PLACEHOLDER, LOOK_NOTE_CUE } from '../components/event/LookRecordSection';
-import { resolveTimeModeChange, resolveFoundModeChange, reconstructTimeControl, sourceAfterPointEdit, pointLeavesStoredWindow, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
+import { resolveTimeModeChange, resolveFoundModeChange, reconstructTimeControl, sourceAfterPointEdit, pointLeavesStoredWindow, timeWriteForEdit, EventTimeMovedError, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { PhotoViewer, TextField, NumberField, TimeEditSheet, QuietBand, PrimaryButton, SkeletonRows } from '../components/ui';
 import { EditBlock, EditCard, EditRow } from '../components/ui/EditCard';
 import { FoodPicker } from '../components/log/FoodPicker';
@@ -213,6 +213,10 @@ export default function EditEventModal() {
   // the adherence/how_given writes below already follow — write the field the
   // owner changed, never the ones they didn't.
   const confidenceTouched = useRef(false);
+  // Did the owner change the plain point picker's value this session? A save that
+  // neither asserted a confidence nor moved the point is not about the time, so it
+  // hands the row its own time back (CUL-2772, `timeWriteForEdit`).
+  const pointMovedRef = useRef(false);
 
   // Photo attachment
   // CUL-2176: the row the editor shows, whatever its local_uri. `attachmentsLoaded` gates
@@ -595,7 +599,9 @@ export default function EditEventModal() {
   // (B-525). A peek that changes nothing keeps the stored source, so opening the
   // picker never silently drops an EXIF attribution.
   function handlePointChange(date: Date) {
-    setOccurredAtSource(sourceAfterPointEdit(occurredAtSource, date.getTime() !== occurredAt.getTime()));
+    const changed = date.getTime() !== occurredAt.getTime();
+    if (changed) pointMovedRef.current = true;
+    setOccurredAtSource(sourceAfterPointEdit(occurredAtSource, changed));
     setOccurredAt(date);
   }
 
@@ -727,37 +733,13 @@ export default function EditEventModal() {
       const tf = showConfidenceControl
         ? buildTimeFields()
         : { confidence: 'witnessed' as const, occurredAt, earliest: null as Date | null, latest: null as Date | null, source: occurredAtSource };
-      const occurredAtIso = tf.occurredAt.toISOString();
-
       // B-448 — restate the confidence ONLY when the owner touched a
       // confidence-bearing control this session. Otherwise the row keeps exactly
-      // what it had, read back here rather than from the mount-time state so a
-      // save that beats the async reconstruct can't flatten it either.
-      const stored = await getEventTimeFields(id);
-      // CUL-2199 — the row may have taken a window since mount (a sync from another
-      // device). Writing this point would leave it outside the window the row keeps,
-      // so refuse, redraw the control from the fresh row, and let the owner look.
-      if (pointLeavesStoredWindow({
-        ownerAsserted: confidenceTouched.current,
-        stored,
-        point: tf.occurredAt,
-      })) {
-        seedTimeControl(stored);
-        Alert.alert(
-          'This time was just updated',
-          'Another device saved a time range for this record while it was open. Check the time and save again.',
-        );
-        return;
-      }
+      // what it had.
       const confidence = confidenceUpdateForEdit({
         ownerAsserted: confidenceTouched.current,
         form: { confidence: tf.confidence, earliest: tf.earliest, latest: tf.latest },
       });
-      // What the row will hold once this save lands — the patch below must mirror
-      // it, or Today renders a confidence the DB doesn't have.
-      const savedConfidence = confidence
-        ? { value: confidence.value, earliest: confidence.earliest, latest: confidence.latest }
-        : { value: stored.confidence, earliest: stored.earliest, latest: stored.latest };
 
       // A look's PARENT holds NULL notes, always. The server's
       // events_check_in_notes_null CHECK is the authority and this is the belt to it:
@@ -767,13 +749,69 @@ export default function EditEventModal() {
       // cannot push a row the server will reject forever (T-22).
       const parentNotes = isLook ? null : notes.trim() || null;
 
-      await writeOwingFloorCheck(id, () => updateEvent(id, {
-        occurred_at: occurredAtIso,
-        severity: null,
-        notes: parentNotes,
-        occurred_at_source: tf.source,
-        ...(confidence ? { confidence } : {}),
-      }));
+      // The row is read back here rather than from the mount-time state, so a save
+      // that beats the async reconstruct cannot flatten it, and so the time this
+      // save writes is judged against what the row holds NOW.
+      let stored = await getEventTimeFields(id);
+      let write = timeWriteForEdit({
+        ownerAsserted: confidenceTouched.current,
+        pointMoved: pointMovedRef.current,
+        form: { occurredAt: tf.occurredAt, source: tf.source },
+        stored,
+      });
+      // One retry: a sync that lands between the read above and the write is re-read
+      // and re-judged, and usually changes nothing this save cares about. A second
+      // one in a row is not worth chasing; the owner looks instead.
+      for (let attempt = 0; ; attempt += 1) {
+        // CUL-2199 — the row may have taken a window since mount (a sync from another
+        // device). Writing this point would leave it outside the window the row keeps,
+        // so refuse, redraw the control from the fresh row, and let the owner look.
+        const refused = pointLeavesStoredWindow({
+          ownerAsserted: confidenceTouched.current,
+          stored,
+          point: new Date(write.occurredAt),
+        });
+        let raced = false;
+        if (!refused) {
+          const w = write;
+          try {
+            await writeOwingFloorCheck(id, () => updateEvent(id, {
+              occurred_at: w.occurredAt,
+              severity: null,
+              notes: parentNotes,
+              occurred_at_source: w.source,
+              ...(confidence ? { confidence } : {}),
+              // CUL-2772 — the check above and this write are one statement.
+              ...(w.guard ? { ifTimeStill: w.guard } : {}),
+            }));
+            break;
+          } catch (e) {
+            if (!(e instanceof EventTimeMovedError)) throw e;
+            raced = true;
+            stored = await getEventTimeFields(id);
+            write = timeWriteForEdit({
+              ownerAsserted: confidenceTouched.current,
+              pointMoved: pointMovedRef.current,
+              form: { occurredAt: tf.occurredAt, source: tf.source },
+              stored,
+            });
+          }
+        }
+        if (refused || (raced && attempt >= 1)) {
+          seedTimeControl(stored);
+          Alert.alert(
+            'This time was just updated',
+            'Another device saved a time range for this record while it was open. Check the time and save again.',
+          );
+          return;
+        }
+      }
+      const occurredAtIso = write.occurredAt;
+      // What the row will hold once this save lands — the patch below must mirror
+      // it, or Today renders a confidence the DB doesn't have.
+      const savedConfidence = confidence
+        ? { value: confidence.value, earliest: confidence.earliest, latest: confidence.latest }
+        : { value: stored.confidence, earliest: stored.earliest, latest: stored.latest };
 
       // CUL-869 — the look's child. Three fields, three different reasons to write:
       //
@@ -808,7 +846,10 @@ export default function EditEventModal() {
         // own no-op check cannot catch it — in that case the recomputed day really
         // does differ from the stored one. Mirrors `parseTs`, which this codebase
         // already uses for exactly this class of comparison.
+        // And only a time this save RESTATED: a point a sync moved, handed back
+        // untouched, is not the owner moving the look to another day (CUL-2772).
         const pointMoved =
+          write.restated &&
           new Date(occurredAtIso).getTime() !== new Date(occurredAtParam).getTime();
         await updateLookForEdit(id, {
           ...(lookLoadedRef.current
@@ -1011,7 +1052,7 @@ export default function EditEventModal() {
       // the debounce folds the two). A look never enters the engine (T-5), so its edit does not.
       const openedMs = occurredAtParam ? new Date(occurredAtParam).getTime() : NaN;
       const engineInputMoved =
-        (Number.isFinite(openedMs) && new Date(occurredAtIso).getTime() !== openedMs) ||
+        (write.restated && Number.isFinite(openedMs) && new Date(occurredAtIso).getTime() !== openedMs) ||
         confidence != null ||
         // A new photo on a vomit / stool refreshes the Signal from its read chain above, once
         // the read has had its turn (CUL-1680); on any other event the photo counts here.
