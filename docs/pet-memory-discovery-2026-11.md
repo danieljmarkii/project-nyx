@@ -463,3 +463,37 @@ Start by asking me for my reactions to round 3 if they are not already on the is
 
 Deliver in one PR: the mock, any new briefs in docs/research/, an update to the synthesis, a session record, and a kickoff prompt for the spec session once I have ruled.
 ```
+
+---
+
+## 19. Round 4 (2026-11-15, CUL-2807): round 1, taken further
+
+**PM direction.** Round 1 was the version not explored as much as it should have been. Draw a new round, with the round 1 exploration in it. The thinking is still divergent.
+
+**Taken as:** not a one proposal round. Round 4 sits on top of the page; round 3 is unchanged and folded at the foot, still open for reactions. No team pick is marked.
+
+**Round 4's page** (same link; `docs/culprit-pet-memory-mockups.html`):
+
+| Section | What is drawn |
+|---|---|
+| One | Round 1 as drawn: nine of its frames, unchanged, with the PM's three reactions pinned to the frames they were about |
+| Two · the top | The header reads her back · a portrait · the evidence · night only while it works |
+| Three · the fact line | As round 1 drew it · one quiet line · Culprit says it · open in place |
+| Four · the layout | By kind, with each find waiting in the group it would join and the one question beside the medicine it is about |
+| Five · a fact opened | A dated trail: who said it, who wrote it, who found it, who added it, what reads it now |
+| Six · states | A running trial and two medicines (Jordan's case) · a new pet · AI reading off |
+
+**What round 4 adds to the argument.**
+
+- **A night top that does not need the brand rule edit.** "Night only while it works" keeps rule 2 as written: a night band while Culprit reads, daylight at rest. The other three tops still need the one line edit.
+- **The tally can be sources.** "The evidence" replaces round 1's counts with what the read rests on (weigh-ins, logs, notes read, files not read), so the number at the top cannot read as an inbox.
+- **By kind can open on the cat.** The health group leads with the engine's two findings as doors, then "no name on record for any of this", which answers both owners' objection that by kind opened on "Nothing recorded".
+- **Finds inside the groups is a real alternative to a review screen.** It removes every count and every extra screen. Its cost: a find in a group the owner never scrolls to can sit unseen.
+- **AI reading off is round 1.** With reading off the header returns to round 1's own line and the rows counted from logs still show, since no model makes them.
+- **"Culprit says it" lines are templates filled from one row,** never model text, so "LLM as Phraser, never Analyst" is untouched.
+
+**Carried rules, applied in every new frame:** the read opens with the cat in the engine's numbers; it says what it read and did not; weight and the vet report are on the first screen; no "since last time" number without the standing one; nothing styled louder than a row that feeds a live finding; nothing on the record until the owner adds it. Jordan's case makes no claim about how the trial is going.
+
+**Limits.** Neither owner persona has read round 4, and neither reviewer has seen the AI forward shape. Cooper and Mochi are examples. The position of the one unlogged day in "the evidence" is illustrative. Motion was driven in a browser.
+
+**Asked of the PM:** whether section one is the round 1 meant; the top; the fact line; finds inside the groups or on a review screen; whether the trail earns its screen. Round 3's open items (the three yeses, "Add all", the six functions, the permission wording) stand and are not re-asked.
