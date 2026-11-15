@@ -3600,6 +3600,11 @@ function headline(snap: ReportSnapshot): string {
       offDiet > 0 && tb
         ? refused
           ? ` <b>Fed off the trial diet: ${num(offDiet)} feeding${offDiet === 1 ? '' : 's'}</b>${carriedBit} (a floor).`
+          : tb.belowCoverageFloor
+          ? // CUL-747: below the coverage floor the count stands bare with its coverage, never "N of M".
+            ` <b>Fed off the trial diet: ${num(offDiet)} feeding${offDiet === 1 ? '' : 's'}</b>${carriedBit} (${h(
+              fmtRange(tb.evidenceStartDate, tb.evidenceEndDate),
+            )}; ${belowFloorCoverageText(tb)}; a floor)${breachBit ? '.' : ' — see the diet section before reading the trial as a result.'}`
           : ` <b>${num(offDiet)} of ${num(tb.exposures.totalFeedings)} logged feedings did not match the trial diet</b>${carriedBit} (${h(
               fmtRange(tb.evidenceStartDate, tb.evidenceEndDate),
             )}; a floor)${breachBit ? '.' : ' — see the diet section before reading the trial as a result.'}`
@@ -4615,7 +4620,8 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     const d = offDietDetail(snap)
     // CUL-2714: beside a documented refusal the denominator counts the refused bowls as fed; the count
     // stands bare, and the uncertainty it carries stays.
-    const ofTotal = trialRefusalDocumented(t) ? '' : ` of ${num(t.exposures.totalFeedings)}`
+    // CUL-747: and below the coverage floor, where a denominator is a rate the record cannot carry.
+    const ofTotal = offDietRatioWithheld(t) ? '' : ` of ${num(t.exposures.totalFeedings)}`
     caveats.push(
       `${num(t.exposures.offDiet)}${ofTotal} feeding${!ofTotal && t.exposures.offDiet === 1 ? '' : 's'} ${countScope} did not match the trial diet${d.when} (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean.${d.timing}`,
     )
@@ -6143,6 +6149,15 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>, mealsAppendi
         })`,
       )
     }
+    if (t.belowCoverageFloor) {
+      // CUL-747: no "N matched, K did not" below the coverage floor; that pair is a rate. The count
+      // stands with its coverage, and the breakdown of those K is unchanged.
+      return [
+        `<b>${num(offDiet)} feeding${offDiet === 1 ? '' : 's'} counted over ${feedingRange} did not match the trial diet</b>, on ${belowFloorCoverageText(
+          t,
+        )}. Of those ${num(offDiet)}: ${parts.join('; ')}. Dates in appendix&nbsp;C. <b>This is a floor, not a total.</b>`,
+      ]
+    }
     return [
       `<b>${num(totalFeedings)} ${feedingScope} &mdash; ${num(totalFeedings - offDiet)} matched, ${num(
         offDiet,
@@ -7512,6 +7527,16 @@ function trialExposureTile(t: NonNullable<ReportSnapshot['trial']>): string {
         `${t.exposures.offDiet}`,
         '',
         `Fed off the trial diet<br/>${dayListText(days)} &middot; a floor, not a total &mdash; appendix&nbsp;C`,
+      )
+    }
+    // CUL-747: below the coverage floor the count stands bare beside its coverage, never as `/ N`.
+    if (t.belowCoverageFloor) {
+      return tile(
+        `${t.exposures.offDiet}`,
+        '',
+        `Fed off the trial diet<br/>${h(fmtRange(t.evidenceStartDate, t.evidenceEndDate))} &middot; ${belowFloorCoverageText(
+          t,
+        )} &middot; a floor, not a total &mdash; dates in appendix&nbsp;C`,
       )
     }
     return tile(
@@ -10715,9 +10740,12 @@ export function dayListText(days: readonly string[]): string {
 function offDietBottomLine(snap: ReportSnapshot, countScope: string): string {
   const t = snap.trial!
   const { when, timing } = offDietDetail(snap)
-  return `<b>The trial diet was not fed exclusively:</b> ${num(t.exposures.offDiet)} of ${num(
-    t.exposures.totalFeedings,
-  )} feedings ${countScope} did not match it${when} (appendix&nbsp;C; a floor, not a total), so this record shows an elimination that was broken, not a clean one.${timing}`
+  // CUL-747: below the coverage floor the count stands bare, never "N of M".
+  const n = t.exposures.offDiet
+  const counted = t.belowCoverageFloor
+    ? `${num(n)} feeding${n === 1 ? '' : 's'}`
+    : `${num(n)} of ${num(t.exposures.totalFeedings)} feedings`
+  return `<b>The trial diet was not fed exclusively:</b> ${counted} ${countScope} did not match it${when} (appendix&nbsp;C; a floor, not a total), so this record shows an elimination that was broken, not a clean one.${timing}`
 }
 
 /**
@@ -10812,6 +10840,27 @@ function refusalGradeBit(
 export function trialRefusalDocumented(t: NonNullable<ReportSnapshot['trial']>): boolean {
   const r = t.rangeRefusal
   return !!r && r.refusedFeedings * 2 > r.ratedFeedings && t.exposures.offDiet * 2 < t.exposures.totalFeedings
+}
+
+/**
+ * CUL-747 — §5.2 IS TWO-SIDED, AND THE ACCUSING SIDE IS THE ONE EVERY SURFACE MUST ASK TOO.
+ * Below the coverage floor the report already refuses "clean"; on 8 of 28 logged days it still
+ * printed `7 / 8` in the scan grid. A ratio over a record that sparse is a rate the record cannot
+ * carry, so the denominator goes and the count stands bare beside the coverage it was read on
+ * (ruling sheet §1.4, 2026-09-23). The count is a floor and is never withheld. The refusal reason
+ * (CUL-2714) is the other case where the denominator lies; both live here so every site that
+ * prints `offDiet` over `totalFeedings` switches on one predicate.
+ */
+export function offDietRatioWithheld(t: NonNullable<ReportSnapshot['trial']>): boolean {
+  return trialRefusalDocumented(t) || t.belowCoverageFloor
+}
+
+/** CUL-747 — the coverage a below-floor count was read on, or '' above the floor / with no coverage. */
+function belowFloorCoverageText(t: NonNullable<ReportSnapshot['trial']>): string {
+  if (!t.belowCoverageFloor) return ''
+  return t.coverage
+    ? `meals logged on ${num(t.coverage.daysLogged)} of ${num(t.coverage.daysElapsed)} days`
+    : 'a record below the coverage floor'
 }
 
 /** The off-diet feedings' days and the timing counts of the proteins they carried, for either sentence. */

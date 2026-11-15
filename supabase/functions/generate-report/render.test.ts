@@ -9477,3 +9477,83 @@ Deno.test('CUL-2718 — the absence is scoped: "other" entries, daily looks and 
     `the monitoring headline states the absence: ${mon}`,
   )
 })
+
+// ── CUL-747 — the sparsity brake is two-sided ─────────────────────────────────────────────
+// Below the coverage floor the report refuses "clean"; it must refuse the RATE on the accusing
+// side too. 8 of 28 logged days, 7 of 8 feedings off the diet: the count stands bare beside its
+// coverage on every surface that printed `7 / 8`, and is never withheld (§5.2: a floor).
+
+function sparseOffDietSnap(belowFloor: boolean): ReportSnapshot {
+  return cleanTrialSnap(NO_HOUSEHOLD, {
+    exposures: {
+      totalFeedings: 8,
+      offDiet: 7,
+      byRung: { derived_protein: 0, unrecognised: 7 },
+      fedBeforePermitted: 0,
+      unclassifiable: 0,
+      items: Array.from({ length: 7 }, () => exposureItem('unrecognised', null)),
+    },
+    mayClaimAllMatched: false,
+    coverage: belowFloor ? { daysLogged: 8, daysElapsed: 28 } : { daysLogged: 28, daysElapsed: 28 },
+    belowCoverageFloor: belowFloor,
+    interpretability: belowFloor ? 'does_not_support' : 'supports',
+    interpretabilityStatement: belowFloor
+      ? 'This record covers 8 of 28 days of the trial — more days are missing than present, so it does not support interpreting that window either way.'
+      : 'This record covers 28 of 28 days of the trial — enough to read alongside the rest of the history and supports interpreting it.',
+  })
+}
+
+function exposureTileOf(html: string): string {
+  const m = html.match(/<div class="tile"><div class="v num">7[^]*?<\/div><div class="l">[^]*?<\/div><\/div>/)
+  assert.ok(m, 'the off-diet tile rendered')
+  return m![0]
+}
+
+Deno.test('CUL-747 — below the coverage floor the off-diet count stands bare with its coverage, never as a ratio', () => {
+  const html = renderReport(sparseOffDietSnap(true))
+  const doc = text(html).replace(/&nbsp;/g, ' ')
+  // No ratio anywhere: not the tile's "/ 8", not "7 of 8", not the "1 matched, 7 did not" pair.
+  assert.ok(!/\b7\s*\/\s*8\b/.test(doc), 'a "7 / 8" ratio printed below the floor')
+  assert.ok(!/\b7 of 8\b/.test(doc), 'a "7 of 8" ratio printed below the floor')
+  assert.ok(!/\b1 matched\b/.test(doc), 'the matched/did-not pair printed below the floor')
+  // The tile: the count, its coverage, still a floor.
+  const tileText = text(exposureTileOf(html)).replace(/&nbsp;/g, ' ')
+  assert.ok(/^7Fed off the trial diet/.test(tileText), tileText)
+  assert.ok(/meals logged on 8 of 28 days/.test(tileText), tileText)
+  assert.ok(/a floor, not a total/.test(tileText), tileText)
+  // The headline: the count leads, with its coverage.
+  const headline = text(/<div class="headline">[\s\S]*?<\/div>/.exec(html)![0])
+  assert.ok(/Fed off the trial diet: 7 feedings/.test(headline), headline)
+  assert.ok(/meals logged on 8 of 28 days; a floor/.test(headline), headline)
+  // The bottom line keeps the break as a fact, without a denominator.
+  const callout = text(interpretingCallout(html))
+  assert.ok(/The trial diet was not fed exclusively: 7 feedings during the trial did not match it/.test(callout), callout)
+  // The diet section's lead states the count and the coverage, and the breakdown stays.
+  assert.ok(/7 feedings counted over [^.]* did not match the trial diet, on meals logged on 8 of 28 days\. Of those 7:/.test(doc), 'diet-section lead')
+})
+
+Deno.test('CUL-747 control — above the coverage floor the ratio is unchanged', () => {
+  const html = renderReport(sparseOffDietSnap(false))
+  const doc = text(html).replace(/&nbsp;/g, ' ')
+  assert.ok(/^7 \/ 8Feedings not matched to the trial diet/.test(text(exposureTileOf(html)).replace(/&nbsp;/g, ' ')))
+  assert.ok(/7 of 8 logged feedings did not match the trial diet/.test(doc))
+  assert.ok(/8 feedings counted over [^&]*&mdash; 1 matched, 7 did not\./.test(doc))
+  assert.ok(/The trial diet was not fed exclusively: 7 of 8 feedings during the trial did not match it/.test(doc))
+  assert.ok(!/meals logged on \d+ of \d+ days;/.test(doc))
+})
+
+Deno.test('CUL-747 — the permitted-later caveat drops its denominator below the floor, and keeps it above', () => {
+  const later = (belowFloor: boolean) => {
+    const snap = sparseOffDietSnap(belowFloor)
+    snap.trial!.exposures = {
+      ...snap.trial!.exposures,
+      fedBeforePermitted: 7,
+      items: Array.from({ length: 7 }, () => exposureItem('unrecognised', '2026-06-10')),
+    }
+    return text(renderReport(snap)).replace(/&nbsp;/g, ' ')
+  }
+  const sparse = later(true)
+  assert.ok(/7 feedings during the trial did not match the trial diet/.test(sparse), 'the count still stands')
+  assert.ok(!/\b7 of 8\b/.test(sparse), 'a "7 of 8" ratio printed below the floor')
+  assert.ok(/7 of 8 feedings during the trial did not match the trial diet/.test(later(false)))
+})
