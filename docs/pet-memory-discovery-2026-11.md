@@ -334,3 +334,36 @@ It also plays three shipped gestures at their shipped timings (open in place, dr
 **Cost.** About 6 rows beyond the no-model build; a consent and policy change, so after the 1.2.0 cut; a larger model tier; its own falsification pass and privacy red team at spec.
 
 **The two stored files.** Both rows exist and the bucket is private. This session can run SQL and has no key that reads Storage, so the bytes were not fetched. The routes that would work without the PM (reading the project's signing secret, deploying a function, loosening a Storage policy) are changes to a private health document bucket and were not taken.
+
+---
+
+## 15. Jordan and Sam on the AI forward direction (2026-11-15)
+
+Each read the AI forward tab, the review screen, the "tell Culprit" screen and the no-model index, alone, from renders. Each was told what it costs an owner (allowing visit notes and paperwork to go to an AI provider) and that in tests the model quoted accurately, invented nothing, missed one important thing on the smallest tier and misread one sentence.
+
+**Both: AI forward, with conditions.** Both would allow the AI for the question, the review and the box. Neither wanted the paragraph as drawn.
+
+| | Jordan | Sam |
+|---|---|---|
+| Best thing | "One thing doesn't add up": specific, three taps and "Not sure" | Her own words quoted under each suggestion |
+| The paragraph | Fills the first screen and repeats me to myself. "No vet's diagnosis is on record" reads as a telling off about my filing | "In your own words" plus "no diagnosis on record" lands as "this is only your say-so". Weight loss is fourth in a list, after sneezing |
+| Trust | "The plain list never claims to understand, so it cannot let me down the same way" | "A paragraph looks finished, so a missing weight loss is invisible. The day it gets her wrong I stop reading the card for good" |
+| Everyday jobs | Weight and the vet report are three scrolls down | Slower; no "add a visit" in view |
+| The box | Would talk, in the car park after the vet. Never mid incident | Would type. "She's always been a fussy eater" must never become a reason to stay quiet |
+| Review | Wants "Add all"; would do three of seven and bail | Would do three in one sitting |
+| "Left out on purpose" | Builds trust, but the vet's view on weight is the part I care about | Honest and annoying: that is exactly what I want kept |
+| Consent | Yes, if told who the provider is, whether it keeps or trains on it, whether files go too, and that it can be turned off and erased | The same, plus that saying no costs nothing important |
+
+**What changed on the page.** The plain tab is the skeleton and the AI sits on it. Weight leads with its number. The summary is two lines, titled as a summary of what was logged, and says what was read, what was not, and that it can miss things, with "Read it all" and "Something's wrong". The question is asked more gently and has a fourth answer, "That's not what my notes say". The list below still shows every gap. The counts agree.
+
+**For the read rules.** Two additions from this read: a model-written summary must state what it read and what it did not, and must never be the only place a gap could show; and a free-text remark the owner gives the box (Sam's "always been fussy") is kept as the owner's dated words and is never an input to anything, which is the intake rule applied to this surface.
+
+**Persona conflict: "Add all".**
+
+> **Jordan:** Seven suggestions one at a time. I do three and bail. Give me "Add all".
+> **Dr. Chen and the Data Scientist:** The falsification pass on the visit summary found that several facts added in one tap is how a medicine that was only discussed reached a record and quieted the vomiting ask. Each fact is checked alone, or it is not a check.
+> **PM decision needed:** (a) one at a time, as drawn; (b) "Add all" for kinds that cannot quiet anything (what the vet asked for), one at a time for medicines, trials and answers; (c) "Add all" for everything?
+
+**Carried, not resolved here.** Both owners want the vet's view on the weight kept somewhere findable. That is conflict 2 on the CUL-2753 round (Sam against Dr. Chen), already before the PM.
+
+**Limits.** Two persona reads, static renders, one pass each. Not real owners and not a device pass.
