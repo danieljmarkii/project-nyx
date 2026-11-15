@@ -308,20 +308,56 @@ describe('a window that lands while the editor is open (CUL-2199)', () => {
     expect('confidence' in fields).toBe(false);
   });
 
-  it('an untouched save does not write the opening point back over a window that moved it', async () => {
+  it('an untouched save hands back the point a sync moved, never the one the screen opened with', async () => {
     // The adversarial pass on fec6dce: the remote save moved the point to its window's
-    // latest edge, and the screen still holds the 09:58 it opened with. Judged against
-    // the opening point that read as "unmoved" and wrote 09:58 outside [10:00, 12:00].
+    // latest edge, and the screen still holds the 09:58 it opened with. CUL-2199
+    // refused that save; since CUL-2772 an untouched, unmoved time is not restated, so
+    // the note saves and the row keeps its own point, in its own spelling.
     const utils = await open('cough');
     mockStoredTime.current = {
       confidence: 'window', earliest: '2026-03-15T10:00:00.000Z',
       latest: '2026-03-15T12:00:00.000Z', occurredAt: '2026-03-15T12:00:00+00:00',
     };
+    const fields = await save(utils);
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(fields.occurred_at).toBe('2026-03-15T12:00:00+00:00');
+    expect('confidence' in fields).toBe(false);
+    expect(fields.ifTimeStill).toEqual({
+      occurredAt: '2026-03-15T12:00:00+00:00', confidence: 'window',
+      earliest: '2026-03-15T10:00:00.000Z', latest: '2026-03-15T12:00:00.000Z',
+    });
+  });
+
+  it('and that note save does not spend a Signal rebuild on a time it did not move', async () => {
+    const utils = await open('cough');
+    mockStoredTime.current = { confidence: 'witnessed', earliest: null, latest: null, occurredAt: '2026-03-15T12:00:00+00:00' };
+    await save(utils);
+    await act(async () => {});
+    const { triggerSignalRegenDebounced } = jest.requireMock('../lib/signal') as { triggerSignalRegenDebounced: jest.Mock };
+    expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
+  });
+
+  it('a moved point does spend one (the gate is a branch, not a removal)', async () => {
+    mockMovedTo.current = new Date('2026-03-15T05:00:00.000Z');
+    const utils = await open('cough');
+    fireEvent.press(utils.getByTestId('time-when'));
+    await act(async () => { fireEvent.press(utils.getByText('move-the-point')); });
+    await save(utils);
+    const { triggerSignalRegenDebounced } = jest.requireMock('../lib/signal') as { triggerSignalRegenDebounced: jest.Mock };
+    await waitFor(() => expect(triggerSignalRegenDebounced).toHaveBeenCalledTimes(1));
+  });
+
+  it('after a refusal the screen holds the row, so the next save hands the row\'s point back', async () => {
+    mockMovedTo.current = new Date('2026-03-15T21:30:00.000Z');
+    const utils = await open('cough');
+    fireEvent.press(utils.getByTestId('time-when'));
+    await act(async () => { fireEvent.press(utils.getByText('move-the-point')); });
+    // A row whose point sits inside its window, not on the edge (another client's).
+    mockStoredTime.current = { ...WINDOWED, occurredAt: '2026-03-15T05:00:00+00:00' };
     await act(async () => { fireEvent.press(utils.getByText('Save')); });
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('This time was just updated', expect.any(String)));
-    expect(mockUpdateEvent).not.toHaveBeenCalled();
     const fields = await save(utils);
-    expect(fields.occurred_at).toBe('2026-03-15T12:00:00.000Z');
+    expect(fields.occurred_at).toBe('2026-03-15T05:00:00+00:00');
   });
 
   it('a point moved inside the window that landed still saves', async () => {
@@ -333,5 +369,88 @@ describe('a window that lands while the editor is open (CUL-2199)', () => {
     mockStoredTime.current = WINDOWED;
     const fields = await save(utils);
     expect(fields.occurred_at).toBe('2026-03-15T05:00:00.000Z');
+  });
+});
+
+describe('a sync that lands between the save\'s check and its write (CUL-2772)', () => {
+  const ROW = { confidence: 'witnessed', earliest: null, latest: null, occurredAt: '2026-03-15T09:58:00+00:00' };
+  const moved = () => {
+    const { EventTimeMovedError } = jest.requireActual('../lib/eventTimeEdit') as typeof import('../lib/eventTimeEdit');
+    return new EventTimeMovedError('evt-1');
+  };
+
+  async function openAndMove(to: string) {
+    mockStoredTime.current = ROW;
+    mockMovedTo.current = new Date(to);
+    const utils = await open('cough');
+    fireEvent.press(utils.getByTestId('time-when'));
+    await act(async () => { fireEvent.press(utils.getByText('move-the-point')); });
+    return utils;
+  }
+
+  it('re-reads and refuses when the row took a window the moved point falls outside', async () => {
+    const utils = await openAndMove('2026-03-15T21:30:00.000Z');
+    // The write finds the row moved; by the re-read it holds the window.
+    mockUpdateEvent.mockImplementationOnce(async () => {
+      mockStoredTime.current = { ...WINDOWED, occurredAt: '2026-03-15T09:00:00+00:00' };
+      throw moved();
+    });
+    await act(async () => { fireEvent.press(utils.getByText('Save')); });
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('This time was just updated', expect.any(String)));
+    expect(mockUpdateEvent).toHaveBeenCalledTimes(1);
+    expect(await utils.findByText('Found it')).toBeTruthy();
+  });
+
+  it('re-reads and saves when what landed leaves the moved point legal', async () => {
+    const utils = await openAndMove('2026-03-15T05:00:00.000Z');
+    mockUpdateEvent.mockImplementationOnce(async () => {
+      mockStoredTime.current = { ...WINDOWED, occurredAt: '2026-03-15T09:00:00+00:00' };
+      throw moved();
+    });
+    await act(async () => { fireEvent.press(utils.getByText('Save')); });
+    await waitFor(() => expect(mockUpdateEvent).toHaveBeenCalledTimes(2));
+    const second = mockUpdateEvent.mock.calls[1][1] as Record<string, unknown>;
+    expect(second.occurred_at).toBe('2026-03-15T05:00:00.000Z');
+    // Guarded by the row as RE-read, not the one the first attempt judged.
+    expect((second.ifTimeStill as { confidence: string }).confidence).toBe('window');
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  it('stops after one retry and asks the owner to look', async () => {
+    const utils = await openAndMove('2026-03-15T05:00:00.000Z');
+    mockUpdateEvent.mockImplementation(async () => { throw moved(); });
+    await act(async () => { fireEvent.press(utils.getByText('Save')); });
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('This time was just updated', expect.any(String)));
+    expect(mockUpdateEvent).toHaveBeenCalledTimes(2);
+    mockUpdateEvent.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('after that the time on screen is the row\'s again, not the one that was refused', async () => {
+    // Pass 2 of the adversarial review: deleting the screen reset left every test green,
+    // and without it the row shows the refused time while the next save writes the row's.
+    mockStoredTime.current = ROW;
+    const utils = await open('cough');
+    const opened = utils.getByTestId('time-when').props.accessibilityLabel as string;
+    mockMovedTo.current = new Date('2026-03-15T05:00:00.000Z');
+    fireEvent.press(utils.getByTestId('time-when'));
+    await act(async () => { fireEvent.press(utils.getByText('move-the-point')); });
+    expect(utils.getByTestId('time-when').props.accessibilityLabel).not.toBe(opened);
+
+    mockUpdateEvent.mockImplementation(async () => { throw moved(); });
+    await act(async () => { fireEvent.press(utils.getByText('Save')); });
+    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('This time was just updated', expect.any(String)));
+    expect(utils.getByTestId('time-when').props.accessibilityLabel).toBe(opened);
+    mockUpdateEvent.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('any other failure is still a failed save, not a retry', async () => {
+    const utils = await openAndMove('2026-03-15T05:00:00.000Z');
+    const failed = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockUpdateEvent.mockRejectedValueOnce(new Error('disk full'));
+    await act(async () => { fireEvent.press(utils.getByText('Save')); });
+    await waitFor(() => expect(failed).toHaveBeenCalledWith('[edit-event] save failed:', expect.any(Error)));
+    expect(mockUpdateEvent).toHaveBeenCalledTimes(1);
+    expect(alertSpy).not.toHaveBeenCalled();
+    failed.mockRestore();
   });
 });

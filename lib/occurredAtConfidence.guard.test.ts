@@ -261,8 +261,9 @@ describe('app/edit-event.tsx — the save may only write an ASSERTED confidence 
   const src = blankComments(readFileSync(join(ROOT, 'app/edit-event.tsx'), 'utf8'));
   // The single updateEvent call, from the identifier to the closing `}));`. Since Engines
   // v3 PR-28b (CUL-1436) it runs inside writeOwingFloorCheck, so a re-check marker shares
-  // its transaction; the write itself is the same call.
-  const updateCall = /await writeOwingFloorCheck\(id, \(\) => updateEvent\([\s\S]*?\n {6}\}\)\);/.exec(src)?.[0] ?? '';
+  // its transaction; the write itself is the same call. Since CUL-2772 it sits inside the
+  // save's one-retry loop, so the closing line is matched at any depth from six spaces.
+  const updateCall = /await writeOwingFloorCheck\(id, \(\) => updateEvent\([\s\S]*?\n {6,}\}\)\);/.exec(src)?.[0] ?? '';
 
   it('has exactly one updateEvent call, and this suite found it', () => {
     // If the file grows a second write, the assertions below stop covering it —

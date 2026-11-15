@@ -308,6 +308,22 @@ describe('"Change time" and the day key (C-10, T-19)', () => {
     expect('localDay' in (mockUpdateLookForEdit.mock.calls[0][1] as object)).toBe(false);
   });
 
+  it('a point a SYNC moved, handed back by a note save, re-derives nothing (CUL-2772)', async () => {
+    // The row's point is a day later than the one this screen opened with: another
+    // device moved the look. This save did not restate the time, so it must not
+    // re-derive the day key from the stale point the form still holds. (The
+    // adversarial pass: dropping the `restated` gate left every suite green.)
+    const { getByText } = await open();
+    const db = jest.requireMock('../lib/db') as { getEventTimeFields: jest.Mock };
+    db.getEventTimeFields.mockResolvedValueOnce({
+      confidence: 'witnessed', earliest: null, latest: null,
+      occurredAt: '2026-03-16T20:00:00+00:00', source: 'manual',
+    });
+    await act(async () => { fireEvent.press(getByText('Save')); });
+
+    expect('localDay' in (mockUpdateLookForEdit.mock.calls[0][1] as object)).toBe(false);
+  });
+
   it('a picker OPENED and dismissed without a change re-derives nothing', async () => {
     // C-10's peek-and-save, exactly: the owner taps Change time, looks, and saves. The
     // day key must not move, and the row must not re-queue.

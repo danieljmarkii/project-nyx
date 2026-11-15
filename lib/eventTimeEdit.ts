@@ -321,3 +321,88 @@ export function pointLeavesStoredWindow(input: {
   if (l !== null && t > l) return true;
   return false;
 }
+
+// ── The time a save writes, and the write that cannot be raced (CUL-2772) ─────
+//
+// Two rules, both ruled by the PM on 2026-11-15.
+//
+// 1. AN UNTOUCHED, UNMOVED TIME IS NOT RESTATED. B-448 already says an edit that
+//    is not about the time leaves the confidence as stored. The point was the
+//    holdout: the screen wrote the point it loaded at mount on every save, so a
+//    note edit carried a stale time over whatever a sync had put on the row since.
+//    Two shapes of that were found on the adversarial pass of CUL-2199's fix: a
+//    window replaced by another window (the save put the old latest edge back
+//    inside the new one), and a window re-graded to witnessed (the save put the
+//    old window's edge under a claim that someone saw it). Sync itself stays
+//    last-write-wins by row; this is the editor declining to restate a field the
+//    owner did not touch. The row's own string goes back verbatim, with its own
+//    provenance, so the write changes neither.
+//
+// 2. THE CHECK AND THE WRITE ARE ONE STATEMENT. The save reads the row, judges it
+//    in JS (`pointLeavesStoredWindow`, the rule above), then writes. A hydrate
+//    upsert already queued on the connection can land between the read and the
+//    write, with the floor flag on or off. So the save hands `updateEvent` the
+//    time fields it just judged (`ifTimeStill`), the UPDATE changes zero rows if
+//    any of them moved, and that comes back as `EventTimeMovedError`. The screen
+//    re-reads and re-judges once, then refuses. The rule stays in one place, in
+//    JS; the SQL only says "the row I judged is the row I am writing".
+//
+// The class lives here, not in lib/db.ts, because the edit screen's tests mock
+// that module whole and an `instanceof` against a mocked export would throw.
+export class EventTimeMovedError extends Error {
+  constructor(eventId: string) {
+    super(`updateEvent: the time fields of event ${eventId} changed since they were read`);
+    this.name = 'EventTimeMovedError';
+  }
+}
+
+/** The row's time fields as a save last read them (`getEventTimeFields`). */
+export interface EventTimeSnapshot {
+  occurredAt: string;
+  confidence: 'witnessed' | 'estimated' | 'window' | null;
+  earliest: string | null;
+  latest: string | null;
+}
+
+export interface TimeWrite {
+  /** The `occurred_at` to write. */
+  occurredAt: string;
+  source: 'manual' | 'exif' | 'now';
+  /** False when the save hands the row its own time back. Nothing downstream may
+   *  treat an unrestated time as a moved one (the look's day key, the Signal). */
+  restated: boolean;
+  /** The snapshot the write must still match; null when the save restates the
+   *  whole claim from the form, or the row could not be read. */
+  guard: EventTimeSnapshot | null;
+}
+
+export function timeWriteForEdit(input: {
+  /** The owner touched a control that claims something about the time (B-448). */
+  ownerAsserted: boolean;
+  /** The owner changed the plain point picker's value this session. */
+  pointMoved: boolean;
+  form: { occurredAt: Date; source: 'manual' | 'exif' | 'now' };
+  stored: {
+    confidence: 'witnessed' | 'estimated' | 'window' | null;
+    earliest: string | null;
+    latest: string | null;
+    occurredAt?: string | null;
+    source?: 'manual' | 'exif' | 'now' | null;
+  };
+}): TimeWrite {
+  const { ownerAsserted, pointMoved, form, stored } = input;
+  // A point that will not parse is not one to hand back: the form's wins, as before.
+  const rowPoint =
+    stored.occurredAt && !Number.isNaN(Date.parse(stored.occurredAt)) ? stored.occurredAt : null;
+  // An asserted save restates confidence, bounds and point together from the form,
+  // so there is no stored claim left for the point to disagree with: it is the last
+  // write and it wins whole. A row that could not be read has nothing to compare.
+  const guard: EventTimeSnapshot | null =
+    ownerAsserted || rowPoint === null
+      ? null
+      : { occurredAt: rowPoint, confidence: stored.confidence, earliest: stored.earliest, latest: stored.latest };
+  if (!ownerAsserted && !pointMoved && rowPoint !== null) {
+    return { occurredAt: rowPoint, source: stored.source ?? form.source, restated: false, guard };
+  }
+  return { occurredAt: form.occurredAt.toISOString(), source: form.source, restated: true, guard };
+}
