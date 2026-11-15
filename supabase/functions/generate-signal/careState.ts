@@ -175,8 +175,8 @@ export interface AppointmentFact {
 
 /**
  * CUL-2793: the client's rule, on the server. It mirrors `isPhantomRecheckBooking` in
- * lib/vetVisits.ts, which lands with CUL-2788 (#1542); a parity test lands with whichever merges
- * second (C-34). Before the after-visit fix, spinning the recheck wheel wrote a real `vet_appointments`
+ * lib/vetVisits.ts (CUL-2788, #1542), and guards/recheckPhantomParity.test.ts holds the two to the
+ * same answer on every reason (C-34). Before the after-visit fix, spinning the recheck wheel wrote a real `vet_appointments`
  * row with reason `recheck`, and installed old builds still do; no narrower test told those apart
  * from a booking the owner made (two adversarial passes on #1542). So every reason-`recheck` row
  * is a possible phantom, and a phantom never quiets a concern: the engine errs loud. A booking the
