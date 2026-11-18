@@ -1536,7 +1536,7 @@ function readWordSinks(raw: string, file?: string): { sanctioned: Sink[]; violat
     else if (arg === 'values' && fn === 'applyFailureWrite') sanctioned.push({ kind: 'applyFailureWrite, content-held', at: open })
     // The presence write (CUL-2808): present red-flag columns (the branded type lets nothing
     // else in) and the hide's clear, and no words.
-    else if (arg === '{ ...presentColumns, dismissed_at: null }' && fn === 'writePresentRedFlags') sanctioned.push({ kind: 'presence write', at: open })
+    else if (arg === '{ ...write.values, dismissed_at: null }' && fn === 'writePresentRedFlags') sanctioned.push({ kind: 'presence write', at: open })
     else if (owner && /^buildFailureWrite\(/.test(boundTo(src, owner[1], open))) sanctioned.push({ kind: 'failure write', at: open })
     else if (isStateLiteral(arg)) sanctioned.push({ kind: 'state literal', at: open })
     else violations.push(`line ${lineOf(open)} (${fn}): event_ai_analysis .${method}(${arg.slice(0, 60)})`)

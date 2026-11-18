@@ -23,6 +23,7 @@ import {
   STRUCTURED_FIELD_KEYS,
   RED_FLAG_COLUMNS,
   RED_FLAG_COMPANIONS,
+  RED_FLAG_PRESENT_VALUES,
   STOOL_DESCRIPTOR,
   presentFlagsFromStructured,
   detectImageMediaType,
@@ -776,18 +777,40 @@ Deno.test('presentFlagsFromStructured (stool) — the payload\'s blood_present m
 // CUL-2808: what a failed read's presence write carries, through the REAL descriptor. The
 // kind of blood travels with the blood and the object's note with the object.
 Deno.test('CUL-2808 (stool) — a present finding takes its own description; an absence takes nothing', () => {
-  const columns = (over: Record<string, unknown>): Record<string, unknown> => ({
-    ...presentRedFlagColumns(STOOL_DESCRIPTOR, {
+  const values = (over: Record<string, unknown>): Record<string, unknown>[] =>
+    presentRedFlagColumns(STOOL_DESCRIPTOR, {
       stool_blood_present: 'no', stool_blood_type: null, foreign_material_present: 'no', foreign_material_note: null, stool_colour: 'brown', ai_raw_payload: {}, ...over,
-    }),
-  })
-  assertEquals(columns({}), {})
-  assertEquals(columns({ stool_blood_present: 'unsure', foreign_material_present: 'unsure', foreign_material_note: 'maybe grass' }), {})
-  assertEquals(columns({ stool_blood_present: 'yes', stool_blood_type: 'dark_tarry' }), { stool_blood_present: 'yes', stool_blood_type: 'dark_tarry' })
-  assertEquals(columns({ stool_blood_present: 'yes' }), { stool_blood_present: 'yes', stool_blood_type: null })
-  assertEquals(columns({ foreign_material_present: 'yes', foreign_material_note: 'string' }), { foreign_material_present: 'yes', foreign_material_note: 'string' })
+    }).map((w) => w.values)
+  assertEquals(values({}), [])
+  assertEquals(values({ stool_blood_present: 'unsure', foreign_material_present: 'unsure', foreign_material_note: 'maybe grass' }), [])
+  assertEquals(values({ stool_blood_present: 'yes', stool_blood_type: 'dark_tarry' }), [{ stool_blood_present: 'yes', stool_blood_type: 'dark_tarry' }])
+  assertEquals(values({ stool_blood_present: 'yes' }), [{ stool_blood_present: 'yes', stool_blood_type: null }])
+  assertEquals(values({ foreign_material_present: 'yes', foreign_material_note: 'string' }), [{ foreign_material_present: 'yes', foreign_material_note: 'string' }])
+})
+
+// The three lists the presence write reads agree with each other and with the present-only
+// read (C-34): every red-flag column lists its present values, each listed value reads as
+// present alone, a value that is not listed does not, and every companion is a real
+// structured column that is not itself a red flag. The values go into a PostgREST filter
+// unquoted, so they are plain words.
+Deno.test('CUL-2808 (stool) — the present values, the companions and the present-only read agree', () => {
+  const red = RED_FLAG_COLUMNS as readonly string[]
+  assertEquals(Object.keys(RED_FLAG_PRESENT_VALUES).sort(), [...red].sort())
+  for (const [column, present] of Object.entries(RED_FLAG_PRESENT_VALUES)) {
+    assertEquals(present.length > 0, true)
+    for (const value of present) {
+      assertEquals(/^[a-z_]+$/.test(value), true)
+      assertEquals(presentFlagsFromStructured({ [column]: value }).length, 1)
+    }
+    for (const other of ['no', 'none_visible', 'unsure', 'unknown', null]) {
+      assertEquals(presentFlagsFromStructured({ [column]: other }), [])
+    }
+  }
   for (const [column, companions] of Object.entries(RED_FLAG_COMPANIONS)) {
-    assertEquals((RED_FLAG_COLUMNS as readonly string[]).includes(column), true)
-    for (const c of companions) assertEquals((RED_FLAG_COLUMNS as readonly string[]).includes(c), false)
+    assertEquals(red.includes(column), true)
+    for (const c of companions) {
+      assertEquals(red.includes(c), false)
+      assertEquals((STRUCTURED_FIELD_KEYS as readonly string[]).includes(c), true)
+    }
   }
 })

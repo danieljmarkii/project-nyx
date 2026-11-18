@@ -968,6 +968,11 @@ export async function applyFailureWrite(
 //     a new photo's findings reaching an edited row is CUL-1110's design.
 //   · held to no version. "This photo showed blood" is true over every version of an
 //     unedited row, so there is nothing to re-decide and no retry to run out of.
+//   · only where the row does not already hold that finding, checked in the UPDATE too. A
+//     stored finding keeps its own kind and its own description (dark, tarry blood is not
+//     rewritten as "blood, kind unread" by a failed read that saw less), which is what a
+//     finished read does when it would otherwise take a stored flag off (resolveReanalysisWrite).
+//     So each present column is its own statement, with its own filter.
 //   · and the owner's hide goes (CUL-1323: every new read clears it). This puts a finding
 //     on the record the owner has not seen, and the failure write beside it may have
 //     written no words (the error-only note keeps a hide), so the clear is this write's own.
@@ -975,42 +980,59 @@ export async function applyFailureWrite(
 // The brand is the wiring: only presentRedFlagColumns can make the value this write takes,
 // so nothing but a present-only pick of red-flag columns can reach it.
 declare const PRESENT_ONLY: unique symbol
-export type PresentRedFlagColumns = Record<string, unknown> & { readonly [PRESENT_ONLY]: true }
+export interface PresentRedFlagWrite {
+  // The red-flag column, and every value of it that reads as present.
+  column: string
+  presentValues: readonly string[]
+  // The column and the columns that describe it, at this run's values.
+  values: Record<string, unknown>
+}
+export type PresentRedFlagColumns = readonly PresentRedFlagWrite[] & { readonly [PRESENT_ONLY]: true }
 
 export function presentRedFlagColumns<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
-  descriptor: Pick<IncidentDescriptor<TAnalysis, TFlag>, 'redFlagColumns' | 'presentFlagsFromStructured' | 'redFlagCompanions'>,
+  descriptor: Pick<IncidentDescriptor<TAnalysis, TFlag>, 'redFlagColumns' | 'presentFlagsFromStructured' | 'redFlagCompanions' | 'redFlagPresentValues'>,
   runColumns: Record<string, unknown> | null,
 ): PresentRedFlagColumns {
-  const present: Record<string, unknown> = {}
+  const present: PresentRedFlagWrite[] = []
   for (const column of runColumns ? descriptor.redFlagColumns : []) {
     // One column at a time through the descriptor's own present-only read, so "present" here
     // can never drift from what Home and the report will read off the column.
-    if (descriptor.presentFlagsFromStructured({ [column]: runColumns?.[column] }).length > 0) {
-      present[column] = runColumns?.[column]
-      for (const companion of descriptor.redFlagCompanions?.[column] ?? []) {
-        present[companion] = runColumns?.[companion] ?? null
-      }
+    if (descriptor.presentFlagsFromStructured({ [column]: runColumns?.[column] }).length === 0) continue
+    const values: Record<string, unknown> = { [column]: runColumns?.[column] }
+    for (const companion of descriptor.redFlagCompanions?.[column] ?? []) {
+      values[companion] = runColumns?.[companion] ?? null
     }
+    present.push({ column, presentValues: descriptor.redFlagPresentValues[column] ?? [], values })
   }
-  return present as PresentRedFlagColumns
+  return present as unknown as PresentRedFlagColumns
 }
 
-// `landed` false with no error: the row is the owner's (edited), or there is none.
+// `landed` false with no error: the row is the owner's (edited), already holds every finding
+// this run has, or there is none.
 export async function writePresentRedFlags(
   client: SupabaseClient,
   key: { eventId: string; petId: string },
   presentColumns: PresentRedFlagColumns,
 ): Promise<{ error: string | null; landed: boolean }> {
-  if (Object.keys(presentColumns).length === 0) return { error: null, landed: false }
-  const { data, error } = await client
-    .from('event_ai_analysis')
-    .update({ ...presentColumns, dismissed_at: null })
-    .eq('event_id', key.eventId)
-    .eq('pet_id', key.petId)
-    .is('edited_at', null)
-    .select('id')
-  if (error) return { error: error.message, landed: false }
-  return { error: null, landed: !!data && data.length > 0 }
+  let landed = false
+  for (const write of presentColumns) {
+    const unedited = client
+      .from('event_ai_analysis')
+      .update({ ...write.values, dismissed_at: null })
+      .eq('event_id', key.eventId)
+      .eq('pet_id', key.petId)
+      .is('edited_at', null)
+    // NULL is named on its own: `not.in` never matches it. With no present values listed (a
+    // descriptor that left the column out) the finding is written wherever the row is
+    // unedited, which errs toward saying it.
+    const { data, error } = await (write.presentValues.length === 0
+      ? unedited
+      : unedited.or(`${write.column}.is.null,${write.column}.not.in.(${write.presentValues.join(',')})`)
+    ).select('id')
+    if (error) return { error: error.message, landed }
+    if (data && data.length > 0) landed = true
+  }
+  return { error: null, landed }
 }
 
 // ── The failure write (CUL-812 / CUL-539) ────────────────────────────────────
@@ -1587,6 +1609,11 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // else (a stored "hairball" note under this run's string). Never a red flag themselves, and
   // never read by presentFlagsFromStructured.
   redFlagCompanions?: Readonly<Record<string, readonly string[]>>
+  // The values of each red-flag column that presentFlagsFromStructured reads as PRESENT, by
+  // column. The presence write puts a finding only on a row whose column holds none of them,
+  // and the database checks that in the write (CUL-2808). Required: every red-flag column has
+  // an entry, and each descriptor's suite pins the list against presentFlagsFromStructured.
+  redFlagPresentValues: Readonly<Record<string, readonly string[]>>
   // Optional (EN-7): further stored columns step 3b selects for a ContextualRun.afterRead to
   // read (stool's owner-editable consistency). Never read by the red-flag derivation.
   afterReadColumns?: readonly string[]
@@ -2799,7 +2826,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // The presence write (CUL-2808), after the failure write so a row that write just made
     // takes it too, and whatever that write decided: the rescue, the error-only note over a
     // call raised for another reason, a miss, a skip. Best-effort like the failure write.
-    if (petIdForFailure && presentColumnsForFailure) {
+    if (petIdForFailure && presentColumnsForFailure && presentColumnsForFailure.length > 0) {
       try {
         const presence = await writePresentRedFlags(adminClient, { eventId, petId: petIdForFailure }, presentColumnsForFailure)
         if (presence.error) console.error(`${descriptor.functionName}: the presence write failed: ${presence.error}`)

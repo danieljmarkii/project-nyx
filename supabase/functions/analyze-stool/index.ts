@@ -773,6 +773,13 @@ export const RED_FLAG_COMPANIONS = {
   foreign_material_present: ['foreign_material_note'],
 } as const
 
+// Every value presentFlagsFromStructured (below) reads as present, by column: the presence
+// write lands a finding only on a row holding none of them. The suite pins the two together.
+export const RED_FLAG_PRESENT_VALUES = {
+  stool_blood_present: ['yes'],
+  foreign_material_present: ['yes'],
+} as const
+
 export function presentFlagsFromStructured(row: Record<string, unknown>): string[] {
   const flags: string[] = []
   if (row.stool_blood_present === 'yes') flags.push('blood')
@@ -1019,6 +1026,7 @@ export const STOOL_DESCRIPTOR: IncidentDescriptor<StoolAnalysis, ContextualFlag>
   buildStructuredValues: buildStoolStructuredValues,
   redFlagColumns: RED_FLAG_COLUMNS,
   redFlagCompanions: RED_FLAG_COMPANIONS,
+  redFlagPresentValues: RED_FLAG_PRESENT_VALUES,
   // EN-7's withdrawal defers to an owner-corrected consistency (ownerAgreesFormed).
   afterReadColumns: ['stool_consistency'],
   presentFlagsFromStructured,

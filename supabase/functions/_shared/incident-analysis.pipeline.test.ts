@@ -42,6 +42,8 @@ interface TestAnalysis extends IncidentAnalysisBase {
   blood: 'yes' | 'no' | null
   // What kind of blood: a column that describes the red-flag column (redFlagCompanions).
   bloodNote?: string | null
+  // A second red flag, so one read can drop a stored flag while re-asserting another.
+  foreign?: 'yes' | 'no' | null
   colour: string | null
 }
 
@@ -147,11 +149,17 @@ function splitTopLevel(filters: string): string[] {
   return out
 }
 
-// One `or` term: `col.is.null` or `col.in.(a,b)`. Anything else throws, so a filter this
-// fake cannot evaluate is never green by being ignored (C-39). `in` never matches NULL.
+// One `or` term: `col.is.null`, `col.in.(a,b)` or `col.not.in.(a,b)`. Anything else throws, so a filter this
+// fake cannot evaluate is never green by being ignored (C-39). Neither `in` nor `not.in`
+// matches NULL, as in SQL.
 function parseOrTerm(term: string): (row: Row) => boolean {
   const isNull = /^(\w+)\.is\.null$/.exec(term)
   if (isNull) return (row) => (row[isNull[1]] ?? null) === null
+  const notIn = /^(\w+)\.not\.in\.\((.*)\)$/.exec(term)
+  if (notIn) {
+    const values = notIn[2].split(',')
+    return (row) => typeof row[notIn[1]] === 'string' && !values.includes(row[notIn[1]] as string)
+  }
   const inList = /^(\w+)\.in\.\((.*)\)$/.exec(term)
   if (inList) {
     const values = inList[2].split(',')
@@ -347,12 +355,19 @@ function descriptorFor(w: World): IncidentDescriptor<TestAnalysis, Flag> {
       ai_raw_payload: a,
       blood_col: a?.blood ?? null,
       blood_note: a?.bloodNote ?? null,
+      foreign_col: a?.foreign ?? null,
       colour: a?.colour ?? null,
       description: a?.description ?? null,
     }),
-    redFlagColumns: ['blood_col'],
+    redFlagColumns: ['blood_col', 'foreign_col'],
     redFlagCompanions: { blood_col: ['blood_note'] },
-    presentFlagsFromStructured: (row) => (row.blood_col === 'yes' ? ['blood'] : []),
+    // 'yes' and 'old' both read as blood, as vomit's fresh_red and coffee_ground do: a stored
+    // kind the run did not see must survive a presence write.
+    redFlagPresentValues: { blood_col: ['yes', 'old'], foreign_col: ['yes'] },
+    presentFlagsFromStructured: (row) => [
+      ...(row.blood_col === 'yes' || row.blood_col === 'old' ? ['blood'] : []),
+      ...(row.foreign_col === 'yes' ? ['foreign_material'] : []),
+    ],
   }
 }
 
@@ -1311,7 +1326,7 @@ const STORED_CALM = {
 const EDITED_AT = '2026-09-26T08:30:00Z'
 // The owner's correction as the phone writes it: the fields, and the stamp.
 const OWNER_EDIT = { blood_col: 'yes', colour: 'red', edited_at: EDITED_AT }
-const STRUCTURED = ['blood_col', 'blood_note', 'colour', 'description', 'ai_raw_payload']
+const STRUCTURED = ['blood_col', 'blood_note', 'foreign_col', 'colour', 'description', 'ai_raw_payload']
 const structuredKeysWritten = (w: World): string[] =>
   w.writes.flatMap((x) => Object.keys(x.values)).filter((k) => STRUCTURED.includes(k))
 
@@ -2007,18 +2022,26 @@ Deno.test('CUL-2808 — the presence write is filtered on an unedited row, by th
   assertStrictEquals(sent.params.get('edited_at'), 'is.null')
   assertStrictEquals(sent.params.get('event_id'), 'eq.evt-1')
   assertStrictEquals(sent.params.get('pet_id'), 'eq.pet-1')
-  // The present column and the hide's clear, and nothing else.
+  // Only where the row does not already hold the finding, NULL named on its own.
+  assertEquals(sent.params.getAll('or'), ['(blood_col.is.null,blood_col.not.in.(yes,old))'])
+  // The present column, what describes it and the hide's clear, and nothing else.
   assertEquals(sent.body, { blood_col: 'yes', blood_note: null, dismissed_at: null })
 })
 
 Deno.test('CUL-2808 — presentRedFlagColumns carries presence only, one red-flag column at a time', () => {
   const d = descriptorFor(makeWorld({ vision: () => CLEAN }))
-  assertEquals({ ...presentRedFlagColumns(d, { blood_col: 'yes', blood_note: 'fresh', colour: 'red', ai_raw_payload: { blood: 'yes' } }) }, { blood_col: 'yes', blood_note: 'fresh' })
+  const pick = (run: Row | null) => presentRedFlagColumns(d, run).map((x) => ({ ...x }))
+  assertEquals(pick({ blood_col: 'yes', blood_note: 'fresh', colour: 'red', ai_raw_payload: { blood: 'yes' } }), [
+    { column: 'blood_col', presentValues: ['yes', 'old'], values: { blood_col: 'yes', blood_note: 'fresh' } },
+  ])
+  assertEquals(pick({ blood_col: 'yes', foreign_col: 'yes' }).map((x) => x.values), [
+    { blood_col: 'yes', blood_note: null }, { foreign_col: 'yes' },
+  ])
   // A description travels only with its finding: none present, none written.
-  assertEquals({ ...presentRedFlagColumns(d, { blood_col: 'no', blood_note: 'STALE' }) }, {})
-  assertEquals({ ...presentRedFlagColumns(d, { blood_col: 'no', colour: 'red' }) }, {})
-  assertEquals({ ...presentRedFlagColumns(d, { blood_col: null }) }, {})
-  assertEquals({ ...presentRedFlagColumns(d, null) }, {})
+  assertEquals(pick({ blood_col: 'no', blood_note: 'STALE', foreign_col: 'no' }), [])
+  assertEquals(pick({ blood_col: 'no', colour: 'red' }), [])
+  assertEquals(pick({ blood_col: null }), [])
+  assertEquals(pick(null), [])
 })
 
 Deno.test('CUL-2808 — with nothing present the presence write sends nothing', async () => {
@@ -2102,4 +2125,59 @@ Deno.test('pipeline CUL-2808 — a landed presence write takes back a leave to w
   await run(w)
   assertStrictEquals(w.row?.blood_col, 'yes')
   assertStrictEquals(w.row?.may_wait === true, false)
+})
+
+// Adversarial pass 2 on CUL-2808: the presence write replaced a stored finding's kind and
+// description with this run's, where a finished read that drops another stored flag keeps the
+// stored columns whole. A dark, tarry stool became "blood, kind unread" on the vet report.
+Deno.test('pipeline CUL-2808 — a finding the row already holds keeps its own kind and description', async () => {
+  // Stored: old blood with its note, and foreign material. The run sees fresh blood and no
+  // foreign material, then fails its write.
+  const w = makeWorld({
+    row: { ...STORED_CALM, recommendation: 'worth_a_call', blood_col: 'old', blood_note: 'STORED KIND', foreign_col: 'yes' },
+    vision: () => ({ ...BLOODY, bloodNote: null, foreign: 'no' as const }),
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'old')
+  assertStrictEquals(w.row?.blood_note, 'STORED KIND')
+  assertStrictEquals(w.row?.foreign_col, 'yes')
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2808 — two findings, one already on the row: only the new one is written', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, blood_col: 'old', blood_note: 'STORED KIND', foreign_col: 'no', dismissed_at: '2026-09-26T08:10:00Z' },
+    vision: () => ({ ...BLOODY, foreign: 'yes' as const }),
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'old')
+  assertStrictEquals(w.row?.blood_note, 'STORED KIND')
+  assertStrictEquals(w.row?.foreign_col, 'yes')
+  assertEquals(structuredKeysWritten(w), ['foreign_col'])
+})
+
+Deno.test('pipeline CUL-2808 — a finding the row already holds is not new: a hide stays where the failure write left it', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, recommendation: 'worth_a_call', read_text: 'OLD CALL', blood_col: 'yes', dismissed_at: '2026-09-26T08:10:00Z' },
+    vision: () => BLOODY,
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.dismissed_at, '2026-09-26T08:10:00Z')
+})
+
+Deno.test('pipeline CUL-2808 — a sibling writing the same finding under the presence write keeps its kind', async () => {
+  // The catch's writes: 2 is the rescue, 3 the blood statement. The sibling's kind commits as
+  // 3 arrives; the database's own filter refuses it.
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: () => BLOODY,
+    aiWriteError: (n) => n === 1,
+    beforeAiWrite: (world, n) => { if (n === 3) commit(world, { blood_col: 'old', blood_note: 'SIBLING KIND' }) },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'old')
+  assertStrictEquals(w.row?.blood_note, 'SIBLING KIND')
 })
