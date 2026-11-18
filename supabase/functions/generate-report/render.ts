@@ -104,7 +104,7 @@ import type { ContaminationFact, TrialBlock, TrialMaskingTail, TrialMedicationOv
 import { proteinList } from '../../../lib/trialProtein.ts'
 // The off-diet chart's per-week floor mirrors the trial coverage floor (CUL-1779) — the same
 // question ("is this record dense enough to read an absence of off-diet food?"), one constant.
-import { CHALLENGE_WINDOW_DAYS, COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
+import { CHALLENGE_WINDOW_DAYS, COVERAGE_FLOOR, offDietBreakOnRecord, refusalDocumentedOn } from '../../../lib/dietTrial.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
 import { MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
 import { adHocRecordStartOf, withRecordOverlaps, type AdHocRecordStart } from './medicationFacts.ts'
@@ -4631,7 +4631,7 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // a fact in it. The bottom line says the diet was not fed exclusively, with the days, and points
   // at the timing line when a protein those feedings carried is named there. Composed below, once
   // the refusal sentence is known (CUL-2707), and put back at the head of the caveats.
-  const offDietBroken = t.exposures.offDiet > 0 && !t.allowedSetUnavailable && !onlyPermittedLater
+  const offDietBroken = offDietBreakOnRecord(t)
   if (t.exposures.unclassifiable > 0) {
     caveats.push(
       `${num(t.exposures.unclassifiable)} logged feeding${t.exposures.unclassifiable === 1 ? '' : 's'} ${countScope} name${
@@ -4645,8 +4645,12 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     )
   }
   if (t.belowCoverageFloor) {
+    // CUL-2809 (QUIET): the two-sided sentence is about absence. Beside a logged break it hedged
+    // the break; there it names the unlogged days only.
     caveats.push(
-      'A record this sparse cannot distinguish a clean elimination from an untracked one, in either direction.',
+      offDietBroken
+        ? 'Sparse logging leaves the unlogged days unknown; it does not make the logged off-diet feedings uncertain.'
+        : 'A record this sparse cannot distinguish a clean elimination from an untracked one, in either direction.',
     )
   }
   const refusalFact = t.rangeRefusal ?? t.trialDietRefusal
@@ -10838,8 +10842,7 @@ function refusalGradeBit(
  * denominator of refused bowls; where off-diet feedings are the majority the ratio stays.
  */
 export function trialRefusalDocumented(t: NonNullable<ReportSnapshot['trial']>): boolean {
-  const r = t.rangeRefusal
-  return !!r && r.refusedFeedings * 2 > r.ratedFeedings && t.exposures.offDiet * 2 < t.exposures.totalFeedings
+  return refusalDocumentedOn(t)
 }
 
 /**

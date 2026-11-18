@@ -1052,6 +1052,34 @@ Deno.test('§7.2 — the statement is about the RECORD, and its three tiers are 
   assert.ok(!/concern/i.test(text.slice(text.indexOf('Interpreting this record'))))
 })
 
+Deno.test('CUL-2809 — end to end: a sparse trial with a logged off-diet feeding never says "either way" in the box', () => {
+  const input = wellLoggedTrialInput()
+  input.events = input.events.filter((_, n) => n === 0 || n % 6 === 0)
+  // On a day already logged, so the coverage is the sparse record's own.
+  input.events.push(
+    meal({
+      date: '2026-06-01',
+      brand: 'Purina',
+      product: 'Pro Plan Chicken',
+      foodItemId: 'f-ppc',
+      foodType: 'meal',
+      proteins: ['chicken', 'rice'],
+      ingredientsNotes: 'Chicken, rice, corn gluten meal',
+      time: '18:00:00',
+    }),
+  )
+  const s = assembleReport(input)
+  assert.equal(s.trial?.belowCoverageFloor, true)
+  assert.equal(s.trial?.exposures.offDiet, 1)
+  const text = plain(renderReport(s))
+  const box = text.slice(text.indexOf('Interpreting this record'))
+  assert.ok(/The trial diet was not fed exclusively: 1 feeding/.test(box), box.slice(0, 900))
+  assert.ok(/does not support reading the elimination as clean/.test(box), box.slice(0, 900))
+  assert.ok(/Sparse logging leaves the unlogged days unknown; it does not make the logged off-diet feedings uncertain\./.test(box))
+  const boxOnly = box.slice(0, box.indexOf('Sparse logging') + 120)
+  assert.ok(!/either way|either direction/i.test(boxOnly), boxOnly)
+})
+
 Deno.test('§7.2 — under MIN_INTERPRETABLE_DAYS the answer is silence, not an empty card', () => {
   // A ratio over three days is noise in both directions: on day 3 one missed
   // breakfast reads as 33% coverage.
@@ -6107,6 +6135,34 @@ Deno.test('CUL-2707 — a refused trial with one off-diet treat states the treat
   assert.ok(/Also fed off the trial diet: 1 feeding of Jerky Co Chicken Jerky, carrying chicken, on Jun 3, 2026 \(appendix C; a floor, not a total\)\./.test(box), `the treat is a fact: ${box}`)
   assert.ok(!/elimination that was broken/.test(box), `never a broken elimination: ${box}`)
   assert.ok(!/\d+ of \d+ feedings/.test(box), `no ratio counts the refused bowls as feedings: ${box}`)
+})
+
+Deno.test('CUL-2809 pass 1 — a sparse refused trial with an off-diet treat: the statement names no elimination and nothing hedges the treat', () => {
+  const input = cul2707RefusalInput()
+  // Keep the treat's day and every fourth day: 6 of 21 logged, below the floor, refusal intact.
+  input.events = input.events.filter((e, n) => e.meal?.foodItemId === 'f-jerky' || n % 4 === 2)
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.belowCoverageFloor, true, 'non-vacuity: below the floor')
+  assert.equal(snap.trial?.exposures.offDiet, 1, 'non-vacuity: the treat')
+  const box = interpretingBox(renderReport(snap))
+  assert.ok(/documents a refusal rather than an elimination/.test(box), `non-vacuity: the refusal leads: ${box}`)
+  assert.ok(/which does not support reading this record as a trial result — the gaps are larger than the record\./.test(box), box)
+  assert.ok(!/reading the elimination|elimination that was broken/.test(box), `no elimination verdict beside the refusal: ${box}`)
+  assert.ok(/Also fed off the trial diet: 1 feeding/.test(box), box)
+  assert.ok(/it does not make the logged off-diet feedings uncertain\./.test(box), box)
+  assert.ok(!/either way|either direction/i.test(box), box)
+})
+
+Deno.test('CUL-2809 pass 1 — through the adapter, a record gap keeps the two-sided statement', () => {
+  // Every feeding predates the food's allowed-from date: off-diet, and permitted later.
+  const later = wellLoggedTrialInput()
+  later.events = later.events.filter((_, n) => n === 0 || n % 6 === 0)
+  later.dietTrials[0].allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: '2026-07-20' }]
+  const s = assembleReport(later)
+  assert.equal(s.trial?.belowCoverageFloor, true)
+  assert.ok((s.trial?.exposures.offDiet ?? 0) > 0 && s.trial?.exposures.fedBeforePermitted === s.trial?.exposures.offDiet, 'non-vacuity: only permitted-later rows')
+  assert.ok(/interpreting this trial either way/.test(s.trial?.interpretabilityStatement ?? ''), s.trial?.interpretabilityStatement ?? 'null')
+  assert.ok(/in either direction\./.test(interpretingBox(renderReport(s))))
 })
 
 Deno.test('CUL-2707 — without a refusal the same treat still reads as a broken elimination (CUL-2516 holds)', () => {

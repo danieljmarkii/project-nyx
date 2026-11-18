@@ -9498,7 +9498,8 @@ function sparseOffDietSnap(belowFloor: boolean): ReportSnapshot {
     belowCoverageFloor: belowFloor,
     interpretability: belowFloor ? 'does_not_support' : 'supports',
     interpretabilityStatement: belowFloor
-      ? 'This record covers 8 of 28 days of the trial — more days are missing than present, so it does not support interpreting that window either way.'
+      ? // The sentence `interpretabilityStatement` returns for this record (a break is on it, CUL-2809).
+        'This record covers 8 of 28 days of the trial window, which does not support reading the elimination as clean, or this record as a trial result — the gaps are larger than the record.'
       : 'This record covers 28 of 28 days of the trial — enough to read alongside the rest of the history and supports interpreting it.',
   })
 }
@@ -9530,6 +9531,51 @@ Deno.test('CUL-747 — below the coverage floor the off-diet count stands bare w
   assert.ok(/The trial diet was not fed exclusively: 7 feedings during the trial did not match it/.test(callout), callout)
   // The diet section's lead states the count and the coverage, and the breakdown stays.
   assert.ok(/7 feedings counted over [^.]* did not match the trial diet, on meals logged on 8 of 28 days\. Of those 7:/.test(doc), 'diet-section lead')
+})
+
+// ── CUL-2809 — a logged break is never hedged by the sparsity sentences ───────────────────
+const TWO_SIDED_STATEMENT =
+  'This record covers 8 of 28 days of the trial window, which does not support interpreting this trial either way — the gaps are larger than the record.'
+
+Deno.test('CUL-2809 — on a sub-floor trial with off-diet feedings, the box hedges only the clean side', () => {
+  const callout = text(interpretingCallout(renderReport(sparseOffDietSnap(true))))
+  assert.ok(!/either way/i.test(callout), callout)
+  assert.ok(!/either direction/i.test(callout), callout)
+  // The break is stated as a fact, and each sparsity sentence names the unlogged side only.
+  assert.ok(/The trial diet was not fed exclusively: 7 feedings during the trial did not match it/.test(callout), callout)
+  assert.ok(/so this record shows an elimination that was broken, not a clean one\./.test(callout), callout)
+  assert.ok(/does not support reading the elimination as clean, or this record as a trial result/.test(callout), callout)
+  assert.ok(
+    /Sparse logging leaves the unlogged days unknown; it does not make the logged off-diet feedings uncertain\./.test(callout),
+    callout,
+  )
+})
+
+Deno.test('CUL-2809 control — with nothing logged off the diet, both two-sided sentences stand verbatim', () => {
+  const snap = sparseOffDietSnap(true)
+  snap.trial!.exposures = { ...snap.trial!.exposures, offDiet: 0, byRung: { derived_protein: 0, unrecognised: 0 }, items: [] }
+  snap.trial!.interpretabilityStatement = TWO_SIDED_STATEMENT
+  const callout = text(interpretingCallout(renderReport(snap)))
+  assert.ok(callout.includes(TWO_SIDED_STATEMENT.replace('—', '&mdash;')) || callout.includes(TWO_SIDED_STATEMENT), callout)
+  assert.ok(
+    callout.includes('A record this sparse cannot distinguish a clean elimination from an untracked one, in either direction.'),
+    callout,
+  )
+  assert.ok(!/Sparse logging/.test(callout), callout)
+})
+
+Deno.test('CUL-2809 — a record gap is not a break: permitted-later feedings and a missing allowed list keep the two-sided sentence', () => {
+  const later = sparseOffDietSnap(true)
+  later.trial!.exposures = { ...later.trial!.exposures, fedBeforePermitted: 7 }
+  later.trial!.interpretabilityStatement = TWO_SIDED_STATEMENT
+  const noList = sparseOffDietSnap(true)
+  noList.trial!.allowedSetUnavailable = true
+  noList.trial!.interpretabilityStatement = TWO_SIDED_STATEMENT
+  for (const snap of [later, noList]) {
+    const callout = text(interpretingCallout(renderReport(snap)))
+    assert.ok(callout.includes('in either direction.'), callout)
+    assert.ok(!/Sparse logging|not fed exclusively/.test(callout), callout)
+  }
 })
 
 Deno.test('CUL-747 control — above the coverage floor the ratio is unchanged', () => {

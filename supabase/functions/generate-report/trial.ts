@@ -49,6 +49,8 @@ import {
   dayIndexOf,
   feedingWasFinished,
   interpretabilityStatement,
+  offDietBreakOnRecord,
+  refusalDocumentedOn,
   isTrialRunning,
   isWithinChallengeWindow,
   contaminationFindings,
@@ -1622,6 +1624,8 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     },
   )
 
+  // The SAME test `exposureReasonOf` applies in the renderer — truthy, not `!== null`.
+  const fedBeforePermitted = exposures.filter((x) => Boolean(x.permittedLaterFrom)).length
   return {
     transition,
     newFoods,
@@ -1681,7 +1685,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // The SAME test `exposureReasonOf` applies in the renderer — truthy, not
       // `!== null`. Equivalent today (this field is a DATE column or null, never ''),
       // and stated once rather than as two conventions a reader has to reconcile.
-      fedBeforePermitted: exposures.filter((x) => Boolean(x.permittedLaterFrom)).length,
+      fedBeforePermitted,
       unclassifiable: facts.exposures.unclassifiable,
       items: exposures,
     },
@@ -1690,7 +1694,18 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     allowedSetChangedAfterStart: permittedFoods.some((f) => f.addedAfterStart || f.endedBeforeWindowEnd),
     allowedSetUnavailable,
     interpretability: facts.interpretability,
-    interpretabilityStatement: interpretabilityStatement(facts),
+    // CUL-2809: the one break predicate and the one refusal rule, over the values the render's box reads.
+    interpretabilityStatement: interpretabilityStatement(
+      facts,
+      !offDietBreakOnRecord({
+        exposures: { offDiet: facts.exposures.offDiet, fedBeforePermitted },
+        allowedSetUnavailable,
+      })
+        ? 'none'
+        : refusalDocumentedOn({ rangeRefusal, exposures: facts.exposures })
+          ? 'beside_refusal'
+          : 'break',
+    ),
     belowCoverageFloor: facts.belowCoverageFloor,
     mayClaimAllMatched: mayClaimAllMatched(facts),
     // RE-BASED ONTO THE SHARED GATE (B-533). The three clauses that used to live
