@@ -187,6 +187,7 @@ function descriptor(db: Db): IncidentDescriptor<TestAnalysis, Flag> {
       description: a?.description ?? null,
     }),
     redFlagColumns: ['blood_present'],
+    redFlagPresentValues: { blood_present: ['fresh_red'] },
     presentFlagsFromStructured: (r) => (r.blood_present === 'fresh_red' ? ['blood'] : []),
   }
 }

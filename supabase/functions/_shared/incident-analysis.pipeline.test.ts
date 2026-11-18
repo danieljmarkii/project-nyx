@@ -16,8 +16,17 @@
 // are written on conflict.
 
 import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { isEscalationVerdict, QUIET_VERDICTS } from '../../../lib/incidentVerdict.ts'
+import { INCIDENT_TIERS, TIER_RANK, tierRank } from '../../../lib/incidentTier.ts'
 import {
+  applyFailureWrite,
+  presentRedFlagColumns,
+  QUIET_ROW_FILTERS,
+  QUIET_TIERS,
   runIncidentAnalysis,
+  WRITE_ATTEMPTS,
+  writePresentRedFlags,
   type IncidentAnalysisBase,
   type IncidentCopy,
   type IncidentDescriptor,
@@ -31,6 +40,10 @@ type Flag = 'ctx_flag'
 interface TestAnalysis extends IncidentAnalysisBase {
   appears: boolean
   blood: 'yes' | 'no' | null
+  // What kind of blood: a column that describes the red-flag column (redFlagCompanions).
+  bloodNote?: string | null
+  // A second red flag, so one read can drop a stored flag while re-asserting another.
+  foreign?: 'yes' | 'no' | null
   colour: string | null
 }
 
@@ -122,6 +135,39 @@ function makeWorld(o: Partial<World> & Pick<World, 'vision'>): World {
 
 // ── The fake client ────────────────────────────────────────────────────────────────
 
+// A PostgREST `or` string, split on its top-level commas (an `in.(a,b)` list keeps its own).
+function splitTopLevel(filters: string): string[] {
+  const out: string[] = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < filters.length; i++) {
+    if (filters[i] === '(') depth++
+    if (filters[i] === ')') depth--
+    if (filters[i] === ',' && depth === 0) { out.push(filters.slice(start, i)); start = i + 1 }
+  }
+  out.push(filters.slice(start))
+  return out
+}
+
+// One `or` term: `col.is.null`, `col.in.(a,b)` or `col.not.in.(a,b)`. Anything else throws, so a filter this
+// fake cannot evaluate is never green by being ignored (C-39). Neither `in` nor `not.in`
+// matches NULL, as in SQL.
+function parseOrTerm(term: string): (row: Row) => boolean {
+  const isNull = /^(\w+)\.is\.null$/.exec(term)
+  if (isNull) return (row) => (row[isNull[1]] ?? null) === null
+  const notIn = /^(\w+)\.not\.in\.\((.*)\)$/.exec(term)
+  if (notIn) {
+    const values = notIn[2].split(',')
+    return (row) => typeof row[notIn[1]] === 'string' && !values.includes(row[notIn[1]] as string)
+  }
+  const inList = /^(\w+)\.in\.\((.*)\)$/.exec(term)
+  if (inList) {
+    const values = inList[2].split(',')
+    return (row) => typeof row[inList[1]] === 'string' && values.includes(row[inList[1]] as string)
+  }
+  throw new Error(`fake client: unsupported or-term ${term}`)
+}
+
 class FakeQuery {
   private mode: 'select' | 'update' | 'upsert' = 'select'
   private ignoreDuplicates = false
@@ -132,8 +178,17 @@ class FakeQuery {
   constructor(private w: World, private table: string, private who: 'user' | 'admin') {}
   select(cols = '*') { if (this.mode === 'select') this.cols = cols; else this.returning = true; return this }
   eq(column: string, value: unknown) { this.filters[column] = value; return this }
-  is() { return this }
+  // `is` and `or` are honoured on an event_ai_analysis UPDATE, as PostgREST honours them
+  // (CUL-2808: the presence write and the content-held rescue are decided by these filters).
+  // The request they build is pinned against the real client at the foot of this file.
+  private predicates: Array<(row: Row) => boolean> = []
+  is(column: string, value: unknown) { this.predicates.push((row) => (row[column] ?? null) === value); return this }
   in() { return this }
+  or(filters: string) {
+    const terms = splitTopLevel(filters).map(parseOrTerm)
+    this.predicates.push((row) => terms.some((t) => t(row)))
+    return this
+  }
   private orderArgs: unknown[] = []
   private limitArg: unknown = undefined
   order(...args: unknown[]) { this.orderArgs = args; return this }
@@ -201,7 +256,8 @@ class FakeQuery {
     if (this.mode === 'update') {
       // PostgREST: an UPDATE touches only rows matching every filter, and returns them
       // (updateAnalysisRow keys on the event's pet and reads the count back, CUL-1203).
-      const matches = !!w.row && Object.entries(this.filters).every(([k, v]) => w.row?.[k] === v)
+      const matches = !!w.row && Object.entries(this.filters).every(([k, v]) => w.row?.[k] === v) &&
+        this.predicates.every((p) => p(w.row!))
       if (!matches) return { data: [], error: null }
       w.writes.push({ mode: this.mode, values: structuredClone(this.values) })
       Object.assign(w.row!, this.values, { updated_at: nextVersion() })
@@ -298,11 +354,20 @@ function descriptorFor(w: World): IncidentDescriptor<TestAnalysis, Flag> {
     buildStructuredValues: (a) => ({
       ai_raw_payload: a,
       blood_col: a?.blood ?? null,
+      blood_note: a?.bloodNote ?? null,
+      foreign_col: a?.foreign ?? null,
       colour: a?.colour ?? null,
       description: a?.description ?? null,
     }),
-    redFlagColumns: ['blood_col'],
-    presentFlagsFromStructured: (row) => (row.blood_col === 'yes' ? ['blood'] : []),
+    redFlagColumns: ['blood_col', 'foreign_col'],
+    redFlagCompanions: { blood_col: ['blood_note'] },
+    // 'yes' and 'old' both read as blood, as vomit's fresh_red and coffee_ground do: a stored
+    // kind the run did not see must survive a presence write.
+    redFlagPresentValues: { blood_col: ['yes', 'old'], foreign_col: ['yes'] },
+    presentFlagsFromStructured: (row) => [
+      ...(row.blood_col === 'yes' || row.blood_col === 'old' ? ['blood'] : []),
+      ...(row.foreign_col === 'yes' ? ['foreign_material'] : []),
+    ],
   }
 }
 
@@ -1261,7 +1326,7 @@ const STORED_CALM = {
 const EDITED_AT = '2026-09-26T08:30:00Z'
 // The owner's correction as the phone writes it: the fields, and the stamp.
 const OWNER_EDIT = { blood_col: 'yes', colour: 'red', edited_at: EDITED_AT }
-const STRUCTURED = ['blood_col', 'colour', 'description', 'ai_raw_payload']
+const STRUCTURED = ['blood_col', 'blood_note', 'foreign_col', 'colour', 'description', 'ai_raw_payload']
 const structuredKeysWritten = (w: World): string[] =>
   w.writes.flatMap((x) => Object.keys(x.values)).filter((k) => STRUCTURED.includes(k))
 
@@ -1657,21 +1722,23 @@ Deno.test('pipeline CUL-2805 — a sibling call now on the rescue\'s re-decision
   assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
 })
 
-Deno.test('pipeline CUL-2805 — a row that keeps moving under the rescue still gets it: the last try is unheld, as before', async () => {
+Deno.test('pipeline CUL-2805 — a row that keeps moving under the rescue still gets it: the last try is held to its content, not its version', async () => {
   const w = makeWorld({
     row: { ...STORED_CALM },
     contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
-    beforeAiWrite: (world, n) => { if (n <= 3) commit(world, {}) },
+    // The version moves under every held try AND under the last one: only a version-free
+    // write can land here.
+    beforeAiWrite: (world, n) => { if (n <= 4) commit(world, {}) },
   })
   await run(w)
   assertStrictEquals(w.aiWriteAttempts, 4)
-  assertEquals(w.writes.map((x) => x.mode), ['upsert'])
+  assertEquals(w.writes.map((x) => x.mode), ['update'])
   assertStrictEquals(w.row?.recommendation, 'worth_a_call')
   assertStrictEquals(w.row?.tier, 'call_today')
   assertStrictEquals(w.row?.status, 'failed')
 })
 
-Deno.test('pipeline CUL-2805 — the unheld last try still decides over a fresh read: an escalation that landed is only noted', async () => {
+Deno.test('pipeline CUL-2805 — the last try still decides over a fresh read: an escalation that landed is only noted', async () => {
   const w = makeWorld({
     row: { ...STORED_CALM },
     contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
@@ -1684,4 +1751,433 @@ Deno.test('pipeline CUL-2805 — the unheld last try still decides over a fresh 
   assertEquals(w.writes.map((x) => Object.keys(x.values).sort()), [['error', 'may_wait']])
   assertStrictEquals(w.row?.tier, 'call_now')
   assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
+})
+
+// ── CUL-2808: what a failed read still puts on the record ──────────────────────────────
+// Two rules. (1) The red-flag columns the run's photo read found PRESENT reach an unedited
+// row whatever the failure write decided: before, the rescue carried `visual_flags: ['blood']`
+// beside a blood column still saying no, and the report read the column. (2) The rescue's
+// last try lands only over a row that holds no call: before, it was unconditional, and a
+// sibling's call now that landed in its round trip came back as this run's call today.
+
+const moveVersionOnly = (upTo: number) => (world: World, n: number) => { if (n <= upTo) commit(world, {}) }
+
+Deno.test('pipeline CUL-2808 — three missed writes of a blood read: the blood column says blood, not the older read\'s no', async () => {
+  const w = makeWorld({ row: { ...STORED_CALM }, vision: () => BLOODY, beforeAiWrite: moveVersionOnly(3) })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  // Presence only: nothing else of the run's read lands, and the payload an owner's edit is
+  // diffed against is still the last finished read's.
+  assertStrictEquals(w.row?.colour, 'yellow')
+  assertEquals(w.row?.ai_raw_payload, STORED_CALM.ai_raw_payload)
+  assertStrictEquals(w.row?.edited_at, null)
+  assertEquals(structuredKeysWritten(w), ['blood_col', 'blood_note'])
+})
+
+Deno.test('pipeline CUL-2808 — a sibling\'s call for another reason on the last miss: the note is written and the blood still reaches the column', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: () => BLOODY,
+    beforeAiWrite: (world, n) => {
+      if (n <= 2) commit(world, {})
+      if (n === 3) commit(world, { recommendation: 'worth_a_call', read_text: 'SIBLING CTX', visual_flags: [], contextual_flags: ['ctx_flag'] })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.read_text, 'SIBLING CTX')
+  assertStrictEquals(typeof w.row?.error, 'string')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+})
+
+Deno.test('pipeline CUL-2808 — no race needed: one failed write of a blood read still puts blood in the column', async () => {
+  const w = makeWorld({ row: { ...STORED_CALM }, vision: () => BLOODY, aiWriteError: (n) => n === 1 })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.blood_col, 'yes')
+})
+
+Deno.test('pipeline CUL-2808 — a first read that fails its write leaves a row whose column says blood', async () => {
+  const w = makeWorld({ vision: () => BLOODY, aiWriteError: (n) => n === 1 })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.ai_raw_payload ?? null, null)
+})
+
+Deno.test('pipeline CUL-2808 — an owner\'s edit keeps its fields: the presence write never lands on an edited row', async () => {
+  // The owner's "no blood" lands under the last held try. The call and the flags still land
+  // (as a finished read's would over an edited row); the column is the owner's.
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: () => BLOODY,
+    beforeAiWrite: (world, n) => {
+      if (n <= 2) commit(world, {})
+      if (n === 3) commit(world, { blood_col: 'no', colour: 'brown', edited_at: EDITED_AT })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.blood_col, 'no')
+  assertStrictEquals(w.row?.colour, 'brown')
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2808 — an owner\'s edit landing between the rescue and the presence write is not written over', async () => {
+  // Write 1 fails, write 2 is the rescue, write 3 is the presence write. The edit commits as
+  // write 3 arrives: the database's own edited_at check refuses it, with no read in between.
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: () => BLOODY,
+    aiWriteError: (n) => n === 1,
+    beforeAiWrite: (world, n) => { if (n === 3) commit(world, { blood_col: 'no', edited_at: EDITED_AT }) },
+  })
+  await run(w)
+  assertStrictEquals(w.aiWriteAttempts, 3)
+  assertStrictEquals(w.row?.blood_col, 'no')
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2808 — absence is never carried: a clean read that fails its write names no column, over stored blood or none', async () => {
+  for (const stored of ['yes', 'no', null]) {
+    const w = makeWorld({ row: { ...STORED_CALM, blood_col: stored }, vision: () => CLEAN, aiWriteError: (n) => n === 1 })
+    await run(w)
+    assertStrictEquals(w.row?.blood_col, stored)
+    assertEquals(structuredKeysWritten(w), [])
+  }
+})
+
+Deno.test('pipeline CUL-2808 — a model failure has no photo read, so no column is written', async () => {
+  const w = makeWorld({ row: { ...STORED_CALM }, contextFlags: ['ctx_flag'], vision: overloaded })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2808 — a sibling\'s call now landing under the rescue\'s last try is not lowered to call today', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    beforeAiWrite: (world, n) => {
+      if (n <= 3) commit(world, {})
+      if (n === 4) commit(world, SIBLING_CALL_NOW)
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
+  assertStrictEquals(w.row?.status, 'completed')
+  // The catch looked again and noted the error over the call that stands.
+  assertEquals(w.writes.map((x) => Object.keys(x.values).sort()), [['error', 'may_wait']])
+})
+
+Deno.test('pipeline CUL-2808 — a flag-off sibling call (a verdict, no tier) under the last try stands too', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded,
+    beforeAiWrite: (world, n) => {
+      if (n <= 3) commit(world, {})
+      if (n === 4) commit(world, { recommendation: 'worth_a_call', read_text: 'SIBLING CALL', status: 'completed' })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.read_text, 'SIBLING CALL')
+  assertStrictEquals(w.row?.status, 'completed')
+})
+
+Deno.test('pipeline CUL-2808 — a verdict this build cannot name under the last try is a call, and stands', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded,
+    beforeAiWrite: (world, n) => {
+      if (n <= 3) commit(world, {})
+      if (n === 4) commit(world, { recommendation: 'a_later_rule', read_text: 'LATER RULE', status: 'completed' })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'a_later_rule')
+  assertStrictEquals(w.row?.read_text, 'LATER RULE')
+})
+
+Deno.test('pipeline CUL-2808 — a row with no verdict and no tier is quiet: the last try lands over it', async () => {
+  const w = makeWorld({
+    row: { status: 'failed', recommendation: null, tier: null, error: 'boom' },
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    beforeAiWrite: moveVersionOnly(4),
+  })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.tier, 'call_today')
+})
+
+Deno.test('pipeline CUL-2808 — a stored refusal of leave to wait that lands under the last try is not written over', async () => {
+  // The rescue's may_wait was worked out from the row it read (NULL). A sibling's FALSE, the
+  // photo's own evidence, lands under the last try: the write misses, the catch reads again,
+  // and the rescue that lands carries the FALSE.
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    beforeAiWrite: (world, n) => {
+      if (n <= 3) commit(world, {})
+      if (n === 4) commit(world, { may_wait: false })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.aiWriteAttempts, 5)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.may_wait, false)
+})
+
+Deno.test('pipeline CUL-2808 — the content-held tries are bounded', async () => {
+  // A row that reads quiet and refuses every write (its leave to wait flips under each one).
+  // No production writer takes a stored FALSE back to NULL, so this sequence cannot occur;
+  // it is here only to prove the loop ends whatever the row does.
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    beforeAiWrite: (world, n) => commit(world, n <= 3 ? {} : { may_wait: world.row?.may_wait === false ? null : false }),
+  })
+  await run(w)
+  assertStrictEquals(w.aiWriteAttempts, WRITE_ATTEMPTS * 2)
+})
+
+Deno.test('pipeline CUL-2808 — a call tier beside a verdict a client lowered is still a call under the last try', async () => {
+  // The tier is frozen to clients and the verdict is not (CUL-1321): the tier filter alone
+  // has to refuse this row.
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
+    beforeAiWrite: (world, n) => {
+      if (n <= 3) commit(world, {})
+      if (n === 4) commit(world, { ...SIBLING_CALL_NOW, recommendation: 'monitor' })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
+})
+
+// The quiet filters name every quiet value and nothing else, read off the shared rank
+// functions rather than a second list (C-34): a tier or verdict added there reds this.
+Deno.test('CUL-2808 — the quiet-row filters are exactly the values the shared ranks call quiet', () => {
+  assertEquals(INCIDENT_TIERS.filter((t) => tierRank(t) === TIER_RANK.quiet), [...QUIET_TIERS])
+  assertEquals(QUIET_ROW_FILTERS[0], `recommendation.is.null,recommendation.in.(${QUIET_VERDICTS.join(',')})`)
+  assertEquals(QUIET_ROW_FILTERS[1], `tier.is.null,tier.in.(${QUIET_TIERS.join(',')})`)
+  for (const v of QUIET_VERDICTS) assertStrictEquals(isEscalationVerdict(v), false)
+})
+
+// The fake above evaluates `is` and `or`; this pins the REQUEST the real client builds from
+// the same calls, so the fake cannot be green over a filter PostgREST never receives (C-39).
+// Both `or` groups must reach the URL (a second one that replaced the first would drop the
+// verdict check), and NULL must be spelled `is.null`.
+async function requestFor(call: (client: SupabaseClient) => Promise<unknown>): Promise<{ method: string; params: URLSearchParams; body: unknown }> {
+  let seen: { method: string; params: URLSearchParams; body: unknown } | null = null
+  const client = createClient('http://localhost:54321', 'test-key', {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      fetch: ((input: Request | URL | string, init?: RequestInit) => {
+        const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
+        seen = { method: init?.method ?? 'GET', params: url.searchParams, body: init?.body ? JSON.parse(String(init.body)) : null }
+        return Promise.resolve(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      }) as typeof fetch,
+    },
+  })
+  await call(client as unknown as SupabaseClient)
+  if (!seen) throw new Error('no request was made')
+  return seen
+}
+
+Deno.test('CUL-2808 — the content-held rescue sends both quiet filters and the leave to wait it read', async () => {
+  const write = { mode: 'rescue' as const, values: { event_id: 'evt-1', pet_id: 'pet-1', recommendation: 'worth_a_call', tier: 'call_today', may_wait: null } }
+  const sent = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, write, { quietOnly: true, mayWait: null }))
+  assertStrictEquals(sent.method, 'PATCH')
+  assertEquals(sent.params.getAll('or'), [
+    '(recommendation.is.null,recommendation.in.(monitor,not_enough_to_say))',
+    '(tier.is.null,tier.in.(logged,not_enough_to_say))',
+  ])
+  assertStrictEquals(sent.params.get('event_id'), 'eq.evt-1')
+  assertStrictEquals(sent.params.get('pet_id'), 'eq.pet-1')
+  assertStrictEquals(sent.params.get('may_wait'), 'is.null')
+  assertStrictEquals(sent.params.has('updated_at'), false)
+  // The key columns are the filter, never values (pet_id is frozen on update, migration 074).
+  assertEquals(Object.keys(sent.body as Row).sort(), ['may_wait', 'recommendation', 'tier'])
+
+  const kept = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, { ...write, values: { ...write.values, may_wait: false } }, { quietOnly: true, mayWait: false }))
+  assertStrictEquals(kept.params.get('may_wait'), 'eq.false')
+
+  // Flag-off the rescue names no may_wait, so it holds to none.
+  const { tier: _t, may_wait: _m, ...flagOff } = write.values
+  const off = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, { mode: 'rescue', values: flagOff }, { quietOnly: true, mayWait: null }))
+  assertStrictEquals(off.params.has('may_wait'), false)
+  assertStrictEquals(off.params.getAll('or').length, 2)
+})
+
+Deno.test('CUL-2808 — the presence write is filtered on an unedited row, by the database', async () => {
+  const sent = await requestFor((c) => writePresentRedFlags(c, { eventId: 'evt-1', petId: 'pet-1' }, presentRedFlagColumns(descriptorFor(makeWorld({ vision: () => CLEAN })), { blood_col: 'yes', colour: 'red' })))
+  assertStrictEquals(sent.method, 'PATCH')
+  assertStrictEquals(sent.params.get('edited_at'), 'is.null')
+  assertStrictEquals(sent.params.get('event_id'), 'eq.evt-1')
+  assertStrictEquals(sent.params.get('pet_id'), 'eq.pet-1')
+  // Only where the row does not already hold the finding, NULL named on its own.
+  assertEquals(sent.params.getAll('or'), ['(blood_col.is.null,blood_col.not.in.(yes,old))'])
+  // The present column, what describes it and the hide's clear, and nothing else.
+  assertEquals(sent.body, { blood_col: 'yes', blood_note: null, dismissed_at: null })
+})
+
+Deno.test('CUL-2808 — presentRedFlagColumns carries presence only, one red-flag column at a time', () => {
+  const d = descriptorFor(makeWorld({ vision: () => CLEAN }))
+  const pick = (run: Row | null) => presentRedFlagColumns(d, run).map((x) => ({ ...x }))
+  assertEquals(pick({ blood_col: 'yes', blood_note: 'fresh', colour: 'red', ai_raw_payload: { blood: 'yes' } }), [
+    { column: 'blood_col', presentValues: ['yes', 'old'], values: { blood_col: 'yes', blood_note: 'fresh' } },
+  ])
+  assertEquals(pick({ blood_col: 'yes', foreign_col: 'yes' }).map((x) => x.values), [
+    { blood_col: 'yes', blood_note: null }, { foreign_col: 'yes' },
+  ])
+  // A description travels only with its finding: none present, none written.
+  assertEquals(pick({ blood_col: 'no', blood_note: 'STALE', foreign_col: 'no' }), [])
+  assertEquals(pick({ blood_col: 'no', colour: 'red' }), [])
+  assertEquals(pick({ blood_col: null }), [])
+  assertEquals(pick(null), [])
+})
+
+Deno.test('CUL-2808 — with nothing present the presence write sends nothing', async () => {
+  let called = false
+  const client = { from: () => { called = true; throw new Error('no request expected') } } as unknown as SupabaseClient
+  assertEquals(await writePresentRedFlags(client, { eventId: 'evt-1', petId: 'pet-1' }, presentRedFlagColumns(descriptorFor(makeWorld({ vision: () => CLEAN })), null)), { error: null, landed: false })
+  assertStrictEquals(called, false)
+})
+
+Deno.test('pipeline CUL-2808 — the presence write clears a hide: the owner has not seen this finding', async () => {
+  // A hidden call raised for another reason. The blood read fails its write, the catch notes
+  // the error (which keeps a hide), and the blood that lands is new to the owner.
+  const w = makeWorld({
+    row: { ...STORED_CALM, recommendation: 'worth_a_call', read_text: 'OLD CALL', contextual_flags: ['ctx_flag'], dismissed_at: '2026-09-26T08:10:00Z' },
+    vision: () => BLOODY,
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.read_text, 'OLD CALL')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.dismissed_at, null)
+})
+
+Deno.test('pipeline CUL-2808 — a failed clean read leaves a hide alone (no finding, no presence write)', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, recommendation: 'worth_a_call', read_text: 'OLD CALL', dismissed_at: '2026-09-26T08:10:00Z' },
+    vision: () => CLEAN,
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.dismissed_at, '2026-09-26T08:10:00Z')
+})
+
+// Adversarial pass 1 on CUL-2808: the presence write carried the red-flag column alone, so a
+// stored description from an older read (a note the model wrote under 'unsure') became the
+// words shown beside this run's finding, on the card, the report and Ask.
+Deno.test('pipeline CUL-2808 — the finding takes its own description with it: an older read\'s note never stands beside it', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, blood_note: 'STALE NOTE FROM THE OLDER READ' },
+    vision: () => ({ ...BLOODY, bloodNote: 'THIS RUN' }),
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.blood_note, 'THIS RUN')
+})
+
+Deno.test('pipeline CUL-2808 — a finding with no description of its own clears the older one', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, blood_note: 'STALE NOTE FROM THE OLDER READ' },
+    vision: () => BLOODY,
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.blood_note, null)
+})
+
+Deno.test('pipeline CUL-2808 — a clean read that fails leaves the stored description alone', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, blood_col: 'yes', blood_note: 'STORED' },
+    vision: () => CLEAN,
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_note, 'STORED')
+})
+
+Deno.test('pipeline CUL-2808 — a landed presence write takes back a leave to wait a sibling gave in the gap', async () => {
+  // The run's write fails; a sibling's finished call today, with leave to wait, lands before
+  // the catch reads. The catch notes the error over that call, and the blood that then lands
+  // refuses the wait.
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: () => BLOODY,
+    aiWriteError: (n) => n === 1,
+    beforeAiWrite: (world, n) => {
+      if (n === 3) commit(world, { may_wait: true })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.may_wait === true, false)
+})
+
+// Adversarial pass 2 on CUL-2808: the presence write replaced a stored finding's kind and
+// description with this run's, where a finished read that drops another stored flag keeps the
+// stored columns whole. A dark, tarry stool became "blood, kind unread" on the vet report.
+Deno.test('pipeline CUL-2808 — a finding the row already holds keeps its own kind and description', async () => {
+  // Stored: old blood with its note, and foreign material. The run sees fresh blood and no
+  // foreign material, then fails its write.
+  const w = makeWorld({
+    row: { ...STORED_CALM, recommendation: 'worth_a_call', blood_col: 'old', blood_note: 'STORED KIND', foreign_col: 'yes' },
+    vision: () => ({ ...BLOODY, bloodNote: null, foreign: 'no' as const }),
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'old')
+  assertStrictEquals(w.row?.blood_note, 'STORED KIND')
+  assertStrictEquals(w.row?.foreign_col, 'yes')
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2808 — two findings, one already on the row: only the new one is written', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, blood_col: 'old', blood_note: 'STORED KIND', foreign_col: 'no', dismissed_at: '2026-09-26T08:10:00Z' },
+    vision: () => ({ ...BLOODY, foreign: 'yes' as const }),
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'old')
+  assertStrictEquals(w.row?.blood_note, 'STORED KIND')
+  assertStrictEquals(w.row?.foreign_col, 'yes')
+  assertEquals(structuredKeysWritten(w), ['foreign_col'])
+})
+
+Deno.test('pipeline CUL-2808 — a finding the row already holds is not new: a hide stays where the failure write left it', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, recommendation: 'worth_a_call', read_text: 'OLD CALL', blood_col: 'yes', dismissed_at: '2026-09-26T08:10:00Z' },
+    vision: () => BLOODY,
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.dismissed_at, '2026-09-26T08:10:00Z')
+})
+
+Deno.test('pipeline CUL-2808 — a sibling writing the same finding under the presence write keeps its kind', async () => {
+  // The catch's writes: 2 is the rescue, 3 the blood statement. The sibling's kind commits as
+  // 3 arrives; the database's own filter refuses it.
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: () => BLOODY,
+    aiWriteError: (n) => n === 1,
+    beforeAiWrite: (world, n) => { if (n === 3) commit(world, { blood_col: 'old', blood_note: 'SIBLING KIND' }) },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'old')
+  assertStrictEquals(w.row?.blood_note, 'SIBLING KIND')
 })

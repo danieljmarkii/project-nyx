@@ -31,7 +31,8 @@
 //   - Re-analysis never lowers a stored escalation; only the owner's own
 //     correction does (CUL-1201 part 2, resolveReanalysisWrite).
 //   - A run that fails keeps the escalation it had already computed (CUL-815,
-//     buildRescueRead), and no write is decided on an unanswered read of the
+//     buildRescueRead) and the red flags its photo read found present, on a row
+//     the owner has not edited (CUL-2808, presentRedFlagColumns); no write is decided on an unanswered read of the
 //     STORED ROW (CUL-817). The context and attachment reads still fail open
 //     (CUL-119, CUL-1327); this contract does not cover them yet.
 //   - Unreadable input degrades honestly — never 500s, never reassures (Pattern 5).
@@ -62,7 +63,7 @@ import { buildIncidentStamps, stampIncidentWrite, type IncidentStamps } from './
 // protects an escalation already in the RECORD reads it, so a verdict a later rule wrote
 // (EN-3's tiers, a flag rolled back) is protected like `worth_a_call`. The free-text gates
 // (Pattern 10) deliberately do NOT: see `selectReadText`.
-import { isEscalationVerdict, isQuietVerdict } from '../../../lib/incidentVerdict.ts'
+import { isEscalationVerdict, isQuietVerdict, QUIET_VERDICTS } from '../../../lib/incidentVerdict.ts'
 // The tier order (EN-3, CUL-1133; Engines v3 PR-26): one import-free module beside the quiet
 // list, shared with the phone. See "The tier" below for what this file does with it.
 import {
@@ -885,17 +886,51 @@ export async function applyAnalysisWriteBack(
 // moved without escalating) and treats a missed plain failed state as final (a newer read
 // stands over "couldn't finish").
 // The error-only note is not routed here: it decides nothing about the row's contents.
+//
+// THE LAST TRY (CUL-2808). A row whose version keeps moving must not cost the escalation this
+// run computed, so after WRITE_ATTEMPTS held misses the rescue stops asking "is this the
+// version I read" and asks the one thing a rescue needs to be true: THE ROW HOLDS NO CALL.
+// It is an UPDATE matching only a quiet or empty verdict AND a quiet or empty tier, so the
+// database answers at the moment of the write and there is no read-to-write gap for a
+// sibling's call now to land in (before this it was an unconditional upsert, and one did:
+// it came back as this run's call today). A miss means the row holds a call, or its leave
+// to wait moved; the caller reads again, and over a call that is the error-only note.
+export type QuietOnly = { quietOnly: true; mayWait: boolean | null }
+
+// The quiet tiers, as lib/incidentTier.ts ranks them (tierRank: these two, and no tier).
+// Pinned against TIER_RANK by the suite, so a tier added there cannot be missed here.
+export const QUIET_TIERS = ['logged', 'not_enough_to_say'] as const
+
+// PostgREST `or` filters for "this row holds no call". NULL is named on its own in each:
+// `in` never matches NULL, and a row with no verdict or no tier is quiet (lib/incidentTier.ts).
+export const QUIET_ROW_FILTERS = [
+  `recommendation.is.null,recommendation.in.(${QUIET_VERDICTS.join(',')})`,
+  `tier.is.null,tier.in.(${QUIET_TIERS.join(',')})`,
+] as const
+
 export async function applyFailureWrite(
   client: SupabaseClient,
   key: { eventId: string; petId: string },
   write: { mode: 'upsert' | 'rescue'; values: Record<string, unknown> },
-  // 'unheld' is the pre-CUL-2805 write, said at the call site: the catch's last resort once a
-  // rescue has missed WRITE_ATTEMPTS times, so no path is quieter than the build before it.
-  decidedOn: RowVersion | 'unheld',
+  decidedOn: RowVersion | QuietOnly,
 ): Promise<WriteOutcome> {
-  if (decidedOn === 'unheld') {
-    const { error } = await client.from('event_ai_analysis').upsert(write.values, { onConflict: 'event_id' })
-    return { error: error?.message ?? null, missed: false }
+  if (decidedOn !== null && 'quietOnly' in decidedOn) {
+    const { event_id: _e, pet_id: _p, ...values } = write.values
+    const quiet = client
+      .from('event_ai_analysis')
+      .update(values)
+      .eq('event_id', key.eventId)
+      .eq('pet_id', key.petId)
+      .or(QUIET_ROW_FILTERS[0])
+      .or(QUIET_ROW_FILTERS[1])
+    // The rescue's may_wait was worked out from the stored one (a stored FALSE is the photo's
+    // own evidence and is kept), so a write that names it lands only over the value it read.
+    const held = !('may_wait' in values)
+      ? quiet
+      : decidedOn.mayWait === null ? quiet.is('may_wait', null) : quiet.eq('may_wait', decidedOn.mayWait)
+    const { data, error } = await held.select('id')
+    if (error) return { error: error.message, missed: false }
+    return { error: null, missed: !data || data.length === 0 }
   }
   if (decidedOn !== null) {
     // The key columns are the filter, not values: pet_id is frozen on update (migration 074).
@@ -909,6 +944,95 @@ export async function applyFailureWrite(
     .select('id')
   if (error) return { error: error.message, missed: false }
   return { error: null, missed: !data || data.length === 0 }
+}
+
+// ── The presence write (CUL-2808) ─────────────────────────────────────────────
+//
+// A run that read the photo and then failed to write keeps its call and its words (the
+// rescue), and before CUL-2808 kept nothing else: the rescue carries read fields only, so
+// `visual_flags: ['blood']` landed beside a blood column still saying what the older read
+// said. Home, Ask and the vet report derive presence from the columns (Pattern 9), so the
+// report said no blood beside a call raised for blood. And when the row already held a call
+// for another reason the catch wrote the error note alone, and the finding reached nothing.
+//
+// So the catch also writes the red-flag columns THIS RUN'S PHOTO READ FOUND PRESENT, and
+// only those:
+//   · presence only. Never an absence, never ai_raw_payload, and no column but a present
+//     red flag and the columns that describe it (the descriptor's redFlagCompanions: which
+//     blood, what object), which go with it at THIS run's value, null included, so the
+//     finding never stands beside an older read's words for something else: an owner's later edit is still diffed against the last finished
+//     read's payload. The one reader that can quiet anything on that diff quiets a flag only
+//     when the owner's column reads NONE (lib/incidentAskWords.ts), and this never writes one.
+//   · only where `edited_at` is null, checked by the database in the UPDATE itself. Once
+//     edited the columns are the owner's (Pattern 7), exactly as a finished read treats them;
+//     a new photo's findings reaching an edited row is CUL-1110's design.
+//   · held to no version. "This photo showed blood" is true over every version of an
+//     unedited row, so there is nothing to re-decide and no retry to run out of.
+//   · only where the row does not already hold that finding, checked in the UPDATE too. A
+//     stored finding keeps its own kind and its own description (dark, tarry blood is not
+//     rewritten as "blood, kind unread" by a failed read that saw less), which is what a
+//     finished read does when it would otherwise take a stored flag off (resolveReanalysisWrite).
+//     So each present column is its own statement, with its own filter.
+//   · and the owner's hide goes (CUL-1323: every new read clears it). This puts a finding
+//     on the record the owner has not seen, and the failure write beside it may have
+//     written no words (the error-only note keeps a hide), so the clear is this write's own.
+//
+// The brand is the wiring: only presentRedFlagColumns can make the value this write takes,
+// so nothing but a present-only pick of red-flag columns can reach it.
+declare const PRESENT_ONLY: unique symbol
+export interface PresentRedFlagWrite {
+  // The red-flag column, and every value of it that reads as present.
+  column: string
+  presentValues: readonly string[]
+  // The column and the columns that describe it, at this run's values.
+  values: Record<string, unknown>
+}
+export type PresentRedFlagColumns = readonly PresentRedFlagWrite[] & { readonly [PRESENT_ONLY]: true }
+
+export function presentRedFlagColumns<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
+  descriptor: Pick<IncidentDescriptor<TAnalysis, TFlag>, 'redFlagColumns' | 'presentFlagsFromStructured' | 'redFlagCompanions' | 'redFlagPresentValues'>,
+  runColumns: Record<string, unknown> | null,
+): PresentRedFlagColumns {
+  const present: PresentRedFlagWrite[] = []
+  for (const column of runColumns ? descriptor.redFlagColumns : []) {
+    // One column at a time through the descriptor's own present-only read, so "present" here
+    // can never drift from what Home and the report will read off the column.
+    if (descriptor.presentFlagsFromStructured({ [column]: runColumns?.[column] }).length === 0) continue
+    const values: Record<string, unknown> = { [column]: runColumns?.[column] }
+    for (const companion of descriptor.redFlagCompanions?.[column] ?? []) {
+      values[companion] = runColumns?.[companion] ?? null
+    }
+    present.push({ column, presentValues: descriptor.redFlagPresentValues[column] ?? [], values })
+  }
+  return present as unknown as PresentRedFlagColumns
+}
+
+// `landed` false with no error: the row is the owner's (edited), already holds every finding
+// this run has, or there is none.
+export async function writePresentRedFlags(
+  client: SupabaseClient,
+  key: { eventId: string; petId: string },
+  presentColumns: PresentRedFlagColumns,
+): Promise<{ error: string | null; landed: boolean }> {
+  let landed = false
+  for (const write of presentColumns) {
+    const unedited = client
+      .from('event_ai_analysis')
+      .update({ ...write.values, dismissed_at: null })
+      .eq('event_id', key.eventId)
+      .eq('pet_id', key.petId)
+      .is('edited_at', null)
+    // NULL is named on its own: `not.in` never matches it. With no present values listed (a
+    // descriptor that left the column out) the finding is written wherever the row is
+    // unedited, which errs toward saying it.
+    const { data, error } = await (write.presentValues.length === 0
+      ? unedited
+      : unedited.or(`${write.column}.is.null,${write.column}.not.in.(${write.presentValues.join(',')})`)
+    ).select('id')
+    if (error) return { error: error.message, landed }
+    if (data && data.length > 0) landed = true
+  }
+  return { error: null, landed }
 }
 
 // ── The failure write (CUL-812 / CUL-539) ────────────────────────────────────
@@ -1479,6 +1603,17 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // these, so presentFlagsFromStructured must read nothing else (each descriptor's
   // suite pins that).
   redFlagColumns: readonly string[]
+  // Optional: the columns that only DESCRIBE a red-flag column (which blood, what object), by
+  // the red-flag column they describe. They travel with it in the presence write (CUL-2808): a
+  // present finding written alone would stand beside an older read's description of something
+  // else (a stored "hairball" note under this run's string). Never a red flag themselves, and
+  // never read by presentFlagsFromStructured.
+  redFlagCompanions?: Readonly<Record<string, readonly string[]>>
+  // The values of each red-flag column that presentFlagsFromStructured reads as PRESENT, by
+  // column. The presence write puts a finding only on a row whose column holds none of them,
+  // and the database checks that in the write (CUL-2808). Required: every red-flag column has
+  // an entry, and each descriptor's suite pins the list against presentFlagsFromStructured.
+  redFlagPresentValues: Readonly<Record<string, readonly string[]>>
   // Optional (EN-7): further stored columns step 3b selects for a ContextualRun.afterRead to
   // read (stool's owner-editable consistency). Never read by the red-flag derivation.
   afterReadColumns?: readonly string[]
@@ -1892,6 +2027,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   let contextualFlagsForFailure: TFlag[] = []
   let copyForFailure: IncidentCopy<TFlag> = descriptor.copy
   let computedRead: RescueRead<TFlag> | null = null
+  // The red-flag columns this run's photo read found present, for the catch's presence write
+  // (CUL-2808). Empty until a photo read stands, and after a read that found none.
+  let presentColumnsForFailure: PresentRedFlagColumns | null = null
   // The stamps this run's words carry (engineStamps.ts). Out here for the same reason as
   // the rescue's inputs: the catch's rescue writes words, so it writes their stamps.
   let stampsForFailure: IncidentStamps | null = null
@@ -2491,6 +2629,10 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           : analysis,
       )
 
+      // If no write below lands, the catch still puts this read's present red flags on the
+      // record (CUL-2808). Presence only: a read that found none hands the catch nothing.
+      presentColumnsForFailure = presentRedFlagColumns(descriptor, analysis ? structuredValues : null)
+
       // 8c. "May wait" (CUL-1628), on a call today only, decided over this run's read, the fresh
       //     stored row and the record around the incident (incidentMayWait.ts). Settled means every
       //     photo was read and shows the subject; a photo-less log is settled by having none.
@@ -2609,7 +2751,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // without escalating (a neighbour lowering may_wait, an owner's edit, a sibling's calm
     // read), and a final skip there would drop the escalation this run computed. Over an
     // escalated row the next decision is the error-only note; over a quiet one, the rescue again.
-    // After WRITE_ATTEMPTS held misses the next rescue is written unheld (below).
+    // After WRITE_ATTEMPTS held misses the rescue is held to the row's CONTENT instead: it lands
+    // only over a row that holds no call (applyFailureWrite, CUL-2808).
     for (let attempt = 1; ; attempt++) {
       let latest: StoredAnalysis | null = null
       let latestReadFailed = false
@@ -2657,18 +2800,50 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // Unconditional (null): it notes the error and decides nothing about the row's contents.
         await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values, null)
       } else if ((failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') && petIdForFailure) {
-        // Past WRITE_ATTEMPTS held misses, the decision just made over a fresh read is written
-        // unheld, as before CUL-2805: a row that keeps moving must not cost the escalation this
-        // run computed (adversarial pass 2). Its window is one round trip, as it always was.
-        const unheld = failureWrite.mode === 'rescue' && attempt > WRITE_ATTEMPTS
-        const wrote = await applyFailureWrite(adminClient, { eventId, petId: petIdForFailure }, failureWrite, unheld ? 'unheld' : latestVersion)
-        if (wrote.missed && failureWrite.mode === 'rescue') continue
-        if (wrote.missed) {
+        // Past WRITE_ATTEMPTS held misses over a row, the rescue is held to "no call on the
+        // row" (and the leave to wait it read), not to a version: a row that only keeps moving
+        // still gets it, and a call that landed since the read is never written over.
+        const quietOnly = failureWrite.mode === 'rescue' && attempt > WRITE_ATTEMPTS && latestVersion !== null
+        const wrote = await applyFailureWrite(
+          adminClient,
+          { eventId, petId: petIdForFailure },
+          failureWrite,
+          quietOnly ? { quietOnly: true, mayWait: latest?.mayWait ?? null } : latestVersion,
+        )
+        if (wrote.missed && failureWrite.mode === 'rescue') {
+          // Bounded: a row that still refuses after as many content-held tries as version-held
+          // ones was seen holding a call at each of them, and keeps what it holds.
+          if (attempt < WRITE_ATTEMPTS * 2) continue
+          console.warn(`${descriptor.functionName}: the stored row kept changing; the rescue was not written (CUL-2808)`)
+        } else if (wrote.missed) {
           // The plain failed state is final on a miss: a newer read stands over "couldn't finish".
           console.info(`${descriptor.functionName}: the stored row changed before the failure write; left it as it stands (CUL-2805)`)
         }
       }
       break
+    }
+
+    // The presence write (CUL-2808), after the failure write so a row that write just made
+    // takes it too, and whatever that write decided: the rescue, the error-only note over a
+    // call raised for another reason, a miss, a skip. Best-effort like the failure write.
+    if (petIdForFailure && presentColumnsForFailure && presentColumnsForFailure.length > 0) {
+      try {
+        const presence = await writePresentRedFlags(adminClient, { eventId, petId: petIdForFailure }, presentColumnsForFailure)
+        if (presence.error) console.error(`${descriptor.functionName}: the presence write failed: ${presence.error}`)
+        if (presence.landed) {
+          // A red flag on this row refuses leave to wait: take back a TRUE a sibling's read
+          // gave it in the gap, and re-check the neighbours against the row as it now stands.
+          await adminClient
+            .from('event_ai_analysis')
+            .update({ may_wait: null })
+            .eq('event_id', eventId)
+            .eq('pet_id', petIdForFailure)
+            .eq('may_wait', true)
+          if (revalidateForFailure) await revalidateForFailure()
+        }
+      } catch (presenceErr) {
+        console.error(`${descriptor.functionName}: the presence write failed:`, presenceErr instanceof Error ? presenceErr.message : String(presenceErr))
+      }
     }
 
     return Response.json(

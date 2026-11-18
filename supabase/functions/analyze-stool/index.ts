@@ -765,6 +765,21 @@ export const STRUCTURED_FIELD_KEYS = [
 // deriveIncidentFlags for the stool family; the parity test imports it (C-34).
 export const RED_FLAG_COLUMNS = ['stool_blood_present', 'foreign_material_present'] as const
 
+// What describes a red-flag column, and so travels with it when a failed read's present
+// findings are written on their own (CUL-2808): the kind of blood with the blood (fresh or
+// dark and tarry reads differently to a vet), the object's note with the object.
+export const RED_FLAG_COMPANIONS = {
+  stool_blood_present: ['stool_blood_type'],
+  foreign_material_present: ['foreign_material_note'],
+} as const
+
+// Every value presentFlagsFromStructured (below) reads as present, by column: the presence
+// write lands a finding only on a row holding none of them. The suite pins the two together.
+export const RED_FLAG_PRESENT_VALUES = {
+  stool_blood_present: ['yes'],
+  foreign_material_present: ['yes'],
+} as const
+
 export function presentFlagsFromStructured(row: Record<string, unknown>): string[] {
   const flags: string[] = []
   if (row.stool_blood_present === 'yes') flags.push('blood')
@@ -1010,6 +1025,8 @@ export const STOOL_DESCRIPTOR: IncidentDescriptor<StoolAnalysis, ContextualFlag>
   copy: STOOL_COPY,
   buildStructuredValues: buildStoolStructuredValues,
   redFlagColumns: RED_FLAG_COLUMNS,
+  redFlagCompanions: RED_FLAG_COMPANIONS,
+  redFlagPresentValues: RED_FLAG_PRESENT_VALUES,
   // EN-7's withdrawal defers to an owner-corrected consistency (ownerAgreesFormed).
   afterReadColumns: ['stool_consistency'],
   presentFlagsFromStructured,

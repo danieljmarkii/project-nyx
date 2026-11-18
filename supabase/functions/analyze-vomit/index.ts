@@ -769,6 +769,17 @@ export const STRUCTURED_FIELD_KEYS = [
 // deriveIncidentFlags for the vomit family; the parity test imports it (C-34).
 export const RED_FLAG_COLUMNS = ['blood_present', 'foreign_material_present'] as const
 
+// What describes a red-flag column, and so travels with it when a failed read's present
+// findings are written on their own (CUL-2808): the object's note goes with the object.
+export const RED_FLAG_COMPANIONS = { foreign_material_present: ['foreign_material_note'] } as const
+
+// Every value presentFlagsFromStructured (below) reads as present, by column: the presence
+// write lands a finding only on a row holding none of them. The suite pins the two together.
+export const RED_FLAG_PRESENT_VALUES = {
+  blood_present: ['fresh_red', 'coffee_ground'],
+  foreign_material_present: ['yes'],
+} as const
+
 export function presentFlagsFromStructured(row: Record<string, unknown>): string[] {
   const flags: string[] = []
   if (row.blood_present === 'fresh_red' || row.blood_present === 'coffee_ground') flags.push('blood')
@@ -1012,6 +1023,8 @@ export const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag>
   copy: VOMIT_COPY,
   buildStructuredValues: buildVomitStructuredValues,
   redFlagColumns: RED_FLAG_COLUMNS,
+  redFlagCompanions: RED_FLAG_COMPANIONS,
+  redFlagPresentValues: RED_FLAG_PRESENT_VALUES,
   presentFlagsFromStructured,
 }
 
