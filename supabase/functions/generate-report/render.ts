@@ -104,7 +104,7 @@ import type { ContaminationFact, TrialBlock, TrialMaskingTail, TrialMedicationOv
 import { proteinList } from '../../../lib/trialProtein.ts'
 // The off-diet chart's per-week floor mirrors the trial coverage floor (CUL-1779) — the same
 // question ("is this record dense enough to read an absence of off-diet food?"), one constant.
-import { CHALLENGE_WINDOW_DAYS, COVERAGE_FLOOR, offDietBreakOnRecord } from '../../../lib/dietTrial.ts'
+import { CHALLENGE_WINDOW_DAYS, COVERAGE_FLOOR, offDietBreakOnRecord, refusalDocumentedOn } from '../../../lib/dietTrial.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
 import { MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
 import { adHocRecordStartOf, withRecordOverlaps, type AdHocRecordStart } from './medicationFacts.ts'
@@ -4649,7 +4649,7 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     // the break; there it names the unlogged days only.
     caveats.push(
       offDietBroken
-        ? 'Sparse logging leaves the unlogged days unknown; it does not make the feedings above uncertain.'
+        ? 'Sparse logging leaves the unlogged days unknown; it does not make the logged off-diet feedings uncertain.'
         : 'A record this sparse cannot distinguish a clean elimination from an untracked one, in either direction.',
     )
   }
@@ -10842,8 +10842,7 @@ function refusalGradeBit(
  * denominator of refused bowls; where off-diet feedings are the majority the ratio stays.
  */
 export function trialRefusalDocumented(t: NonNullable<ReportSnapshot['trial']>): boolean {
-  const r = t.rangeRefusal
-  return !!r && r.refusedFeedings * 2 > r.ratedFeedings && t.exposures.offDiet * 2 < t.exposures.totalFeedings
+  return refusalDocumentedOn(t)
 }
 
 /**

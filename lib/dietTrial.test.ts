@@ -23,6 +23,7 @@ import {
   explainVerdict,
   interpretabilityStatement,
   offDietBreakOnRecord,
+  refusalDocumentedOn,
   isWithinChallengeWindow,
   mayClaimAllMatched,
   mayStateRecordClean,
@@ -645,7 +646,7 @@ describe('§5.2 — the floor gates the interpretability statement only', () => 
     const facts = factsWithCoverage(1, MIN_INTERPRETABLE_DAYS - 1);
     expect(facts.interpretability).toBe('not_yet');
     expect(facts.belowCoverageFloor).toBe(false);
-    expect(interpretabilityStatement(facts, false)).toBeNull();
+    expect(interpretabilityStatement(facts, 'none')).toBeNull();
   });
 
   it('reads does_not_support below the floor', () => {
@@ -686,25 +687,44 @@ describe('§5.2 — the floor gates the interpretability statement only', () => 
     const facts = sparseFacts([RIVAL]);
     expect(facts.belowCoverageFloor).toBe(true);
     expect(facts.exposures.offDiet).toBe(1);
-    expect(interpretabilityStatement(facts, true)).toBe(
+    expect(interpretabilityStatement(facts, 'break')).toBe(
       'This record covers 3 of 20 days of the trial window, which does not support ' +
-        'reading the elimination as clean — the gaps are larger than the record.',
+        'reading the elimination as clean, or this record as a trial result — the gaps are larger than the record.',
     );
-    expect(interpretabilityStatement(facts, true)).not.toMatch(/either way|either direction/);
+    expect(interpretabilityStatement(facts, 'break')).not.toMatch(/either way|either direction/);
   });
 
   it('CUL-2809 control — with no break the two-sided statement is unchanged', () => {
     const facts = sparseFacts([]);
-    expect(interpretabilityStatement(facts, false)).toBe(
+    expect(interpretabilityStatement(facts, 'none')).toBe(
       'This record covers 3 of 20 days of the trial window, which does not support ' +
         'interpreting this trial either way — the gaps are larger than the record.',
     );
   });
 
+  it('CUL-2809 pass 1 — beside a documented refusal the statement names no elimination', () => {
+    const s = interpretabilityStatement(sparseFacts([RIVAL]), 'beside_refusal')!;
+    expect(s).toBe(
+      'This record covers 3 of 20 days of the trial window, which does not support ' +
+        'reading this record as a trial result — the gaps are larger than the record.',
+    );
+    expect(s).not.toMatch(/elimination|either way|either direction/);
+  });
+
+  it('CUL-2809 pass 1 — the refusal rule: most rated bowls unfinished, off-diet not the majority', () => {
+    const on = (refused: number, rated: number, offDiet: number, total: number) =>
+      refusalDocumentedOn({ rangeRefusal: { refusedFeedings: refused, ratedFeedings: rated }, exposures: { offDiet, totalFeedings: total } });
+    expect(on(15, 18, 2, 20)).toBe(true);
+    expect(on(9, 18, 2, 20)).toBe(false);
+    expect(on(15, 18, 10, 20)).toBe(false);
+    expect(refusalDocumentedOn({ rangeRefusal: null, exposures: { offDiet: 2, totalFeedings: 20 } })).toBe(false);
+  });
+
   it('CUL-2809 — only the does_not_support rung changes: the other rungs ignore the break', () => {
     for (const [logged, elapsed] of [[19, 20], [12, 20]]) {
       const facts = factsWithCoverage(logged, elapsed);
-      expect(interpretabilityStatement(facts, true)).toBe(interpretabilityStatement(facts, false));
+      expect(interpretabilityStatement(facts, 'break')).toBe(interpretabilityStatement(facts, 'none'));
+      expect(interpretabilityStatement(facts, 'beside_refusal')).toBe(interpretabilityStatement(facts, 'none'));
     }
   });
 
@@ -730,7 +750,7 @@ describe('§5.2 — the floor gates the interpretability statement only', () => 
   // never about the owner (§6.9).
   it('every statement variant is about the record, not the pet or the owner', () => {
     for (const [logged, elapsed] of [[19, 20], [12, 20], [3, 20]]) {
-      const s = interpretabilityStatement(factsWithCoverage(logged, elapsed), false);
+      const s = interpretabilityStatement(factsWithCoverage(logged, elapsed), 'none');
       expect(s).toMatch(/This record/);
       expect(s).not.toMatch(/\byou\b|\byour\b/i);
       expect(s).not.toMatch(/%|\b(?:grade|score|streak)\b/i);
@@ -824,7 +844,7 @@ describe('B-600 — a truncated view of a trial is not the trial', () => {
   });
 
   it('§7.2 names the window, and the affirmative can never reach past it', () => {
-    const s = interpretabilityStatement(facts, false)!;
+    const s = interpretabilityStatement(facts, 'none')!;
     expect(s).toMatch(/covers \d+ of the \d+ trial days in this window/);
     expect(s).not.toMatch(/of this report’s window/);
     expect(s).not.toMatch(/of the trial window/);
@@ -842,7 +862,7 @@ describe('B-600 — a truncated view of a trial is not the trial', () => {
       scopeEnd: '2026-09-11',
     });
     expect(wellLogged.interpretability).toBe('supports');
-    const affirm = interpretabilityStatement(wellLogged, false)!;
+    const affirm = interpretabilityStatement(wellLogged, 'none')!;
     expect(affirm).toMatch(/supports interpreting that window — not the trial as a whole/);
     expect(affirm).not.toMatch(/supports interpreting it/);
   });
@@ -859,7 +879,7 @@ describe('B-600 — a truncated view of a trial is not the trial', () => {
     });
     expect(untruncated.trialDaysOutsideRange).toEqual({ before: 0, after: 0 });
     expect(untruncated.untrackedDaysBeforeFirstLog).toBe(14);
-    expect(interpretabilityStatement(untruncated, false)).toMatch(
+    expect(interpretabilityStatement(untruncated, 'none')).toMatch(
       /of the trial window and supports interpreting it/,
     );
   });
@@ -881,7 +901,7 @@ describe('B-600 — a truncated view of a trial is not the trial', () => {
     // render's "a trial that has run N" reads — deriving it from a window-bounded
     // counter is what made that sentence say 30.
     expect(early.trialDaysElapsed).toBe(73);
-    expect(interpretabilityStatement(early, false)).toMatch(/covers \d+ of the 32 trial days in this window/);
+    expect(interpretabilityStatement(early, 'none')).toMatch(/covers \d+ of the 32 trial days in this window/);
   });
 });
 
@@ -917,12 +937,12 @@ describe('§5.2 — a 14-day all-refused trial renders no clean-trial statement'
     // is on track, or is passing. The only judgement it carries is about the
     // RECORD.
     expect(Object.keys(facts)).not.toContain('clean');
-    expect(interpretabilityStatement(facts, false)).toMatch(/This record covers 14 of 14 days/);
+    expect(interpretabilityStatement(facts, 'none')).toMatch(/This record covers 14 of 14 days/);
   });
 
   it('no string this module can emit describes an absence in the world', () => {
     const strings = [
-      interpretabilityStatement(facts, false) ?? '',
+      interpretabilityStatement(facts, 'none') ?? '',
       contaminationNote(facts.contamination, 'Mochi')?.body ?? '',
       explainVerdict(classifyFeeding(buildTrialContext(TRIAL, ALLOWED), feeding({ eventId: 'a', foodItemId: 'z', foodKey: 'bz' })), 'A food')?.body ?? '',
     ];

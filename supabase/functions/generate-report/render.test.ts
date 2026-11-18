@@ -9499,7 +9499,7 @@ function sparseOffDietSnap(belowFloor: boolean): ReportSnapshot {
     interpretability: belowFloor ? 'does_not_support' : 'supports',
     interpretabilityStatement: belowFloor
       ? // The sentence `interpretabilityStatement` returns for this record (a break is on it, CUL-2809).
-        'This record covers 8 of 28 days of the trial window, which does not support reading the elimination as clean — the gaps are larger than the record.'
+        'This record covers 8 of 28 days of the trial window, which does not support reading the elimination as clean, or this record as a trial result — the gaps are larger than the record.'
       : 'This record covers 28 of 28 days of the trial — enough to read alongside the rest of the history and supports interpreting it.',
   })
 }
@@ -9544,13 +9544,11 @@ Deno.test('CUL-2809 — on a sub-floor trial with off-diet feedings, the box hed
   // The break is stated as a fact, and each sparsity sentence names the unlogged side only.
   assert.ok(/The trial diet was not fed exclusively: 7 feedings during the trial did not match it/.test(callout), callout)
   assert.ok(/so this record shows an elimination that was broken, not a clean one\./.test(callout), callout)
-  assert.ok(/does not support reading the elimination as clean/.test(callout), callout)
+  assert.ok(/does not support reading the elimination as clean, or this record as a trial result/.test(callout), callout)
   assert.ok(
-    /Sparse logging leaves the unlogged days unknown; it does not make the feedings above uncertain\./.test(callout),
+    /Sparse logging leaves the unlogged days unknown; it does not make the logged off-diet feedings uncertain\./.test(callout),
     callout,
   )
-  // "The feedings above": the break sentence precedes the sparse one.
-  assert.ok(callout.indexOf('not fed exclusively') < callout.indexOf('Sparse logging'), callout)
 })
 
 Deno.test('CUL-2809 control — with nothing logged off the diet, both two-sided sentences stand verbatim', () => {

@@ -50,6 +50,7 @@ import {
   feedingWasFinished,
   interpretabilityStatement,
   offDietBreakOnRecord,
+  refusalDocumentedOn,
   isTrialRunning,
   isWithinChallengeWindow,
   contaminationFindings,
@@ -1693,13 +1694,17 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     allowedSetChangedAfterStart: permittedFoods.some((f) => f.addedAfterStart || f.endedBeforeWindowEnd),
     allowedSetUnavailable,
     interpretability: facts.interpretability,
-    // CUL-2809: the one break predicate, over the same values the render's box reads.
+    // CUL-2809: the one break predicate and the one refusal rule, over the values the render's box reads.
     interpretabilityStatement: interpretabilityStatement(
       facts,
-      offDietBreakOnRecord({
+      !offDietBreakOnRecord({
         exposures: { offDiet: facts.exposures.offDiet, fedBeforePermitted },
         allowedSetUnavailable,
-      }),
+      })
+        ? 'none'
+        : refusalDocumentedOn({ rangeRefusal, exposures: facts.exposures })
+          ? 'beside_refusal'
+          : 'break',
     ),
     belowCoverageFloor: facts.belowCoverageFloor,
     mayClaimAllMatched: mayClaimAllMatched(facts),

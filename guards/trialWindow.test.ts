@@ -1394,8 +1394,8 @@ describe('G4 — the freeze reaches the module\'s own downstream surfaces (CUL-1
     // freeze it went from "covers 10 of 28 days … does not support interpreting
     // this trial either way" to "covers 32 of 50 days — enough to read alongside
     // the rest of the history".
-    const stmt = interpretabilityStatement(before, false);
-    expect(interpretabilityStatement(after, false)).toBe(stmt);
+    const stmt = interpretabilityStatement(before, 'none');
+    expect(interpretabilityStatement(after, 'none')).toBe(stmt);
     expect(stmt).toMatch(/covers 10 of 28 days/);
     expect(stmt).toMatch(/does not support/);
     // CUL-1038 also made it say WHICH window, because the day counter beside it on
@@ -1421,12 +1421,12 @@ describe('G4 — the freeze reaches the module\'s own downstream surfaces (CUL-1
       nowMs: trialDay(GATE_START, GATE_TARGET),
     });
     expect(inWindow.range?.closedByOverrun).toBe(false);
-    const stmt = interpretabilityStatement(inWindow, false)!;
+    const stmt = interpretabilityStatement(inWindow, 'none')!;
     expect(stmt).toMatch(/of the trial window/);
     expect(stmt).not.toMatch(/original/);
     // …and the overrun read of the same shape DOES carry it, so the two branches
     // are exercised against each other rather than each against a literal.
-    expect(interpretabilityStatement(before, false)!).toMatch(/original/);
+    expect(interpretabilityStatement(before, 'none')!).toMatch(/original/);
   });
 
   it('coveredDayIndices — the widget strip paints the same days across the tap', () => {
