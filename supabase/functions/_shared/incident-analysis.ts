@@ -1237,17 +1237,43 @@ export function rescueRank(rescue: Pick<RescueRead, 'recommendation' | 'tier'>):
 // floor-only raise leads with. So it is rebuilt the way the floor-only writer builds its own
 // write over a stored read (storedPhotoFinding): the cached visual flags are written back,
 // the stored contextual flags are kept, and the words lead with the photo finding.
-// A rescue that carries a photo finding of its own (this run read the photo) is left as it
-// is: those are the words for the photo the owner now sees, as a finished read would write.
+// A rescue that carries a photo finding of its own (this run read the photo) and was DECIDED
+// OVER THE ROW, in the write loop, is left as it is: those are the words for the photo the
+// owner now sees, as a finished read would write.
+// A photo finding HELD BEFORE ANY STORED ROW WAS READ (CUL-2812, step 6-hold) decided nothing
+// over this row, so it is added to what the row holds rather than written in its place: its
+// visual flags lead, the stored ones follow, the stored contextual flags are kept, and the
+// words are a template over both. Before the hold, a run that failed at those steps wrote
+// the record-only rescue, which kept the stored finding; the hold must not take it off.
 export function rescueOverStoredCall<TFlag extends string>(
   descriptor: Pick<IncidentDescriptor<IncidentAnalysisBase, TFlag>, 'presentFlagsFromStructured'>,
   copy: IncidentCopy<TFlag>,
   rescue: RescueRead<TFlag>,
   storedRow: StoredRow,
-  params: { petName: string; hasPhoto: boolean },
+  // heldBeforeRow: the rescue is step 6-hold's, not the write loop's. Required (C-37).
+  params: { petName: string; hasPhoto: boolean; heldBeforeRow: boolean },
 ): RescueRead<TFlag> {
-  if (rescue.visual_flags.length > 0 || rescue.contextual_flags.length === 0) return rescue
+  if (rescue.visual_flags.length > 0 && !params.heldBeforeRow) return rescue
+  if (rescue.visual_flags.length === 0 && rescue.contextual_flags.length === 0) return rescue
   const { visualFlags, leadFlags, storedContextual, contextual } = storedPhotoFinding(descriptor, storedRow, storedRow, rescue.contextual_flags)
+  if (rescue.visual_flags.length > 0) {
+    const own = rescue.visual_flags
+    return {
+      ...rescue,
+      visual_flags: [...own, ...visualFlags.filter((f) => !own.includes(f))],
+      contextual_flags: contextual,
+      read_text: selectReadText(copy, {
+        petName: params.petName,
+        recommendation: 'worth_a_call',
+        contextualFlags: contextual,
+        visualFlags: [...own, ...leadFlags.filter((f) => !own.includes(f))],
+        // Never the model's words: they describe this photo alone, not both findings.
+        modelReadText: null,
+        photoUnreadable: false,
+        hasPhoto: params.hasPhoto,
+      }),
+    }
+  }
   return {
     ...rescue,
     visual_flags: visualFlags,
@@ -2163,6 +2189,10 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   let contextualFlagsForFailure: TFlag[] = []
   let copyForFailure: IncidentCopy<TFlag> = descriptor.copy
   let computedRead: RescueRead<TFlag> | null = null
+  // Whether `computedRead` is step 6-hold's (worked out before any stored row was read) and
+  // not the write loop's own (CUL-2812). The catch adds a held read to a stored call's
+  // finding instead of writing it in its place (rescueOverStoredCall).
+  let computedReadIsHeld = false
   // The red-flag columns this run's photo read found present, for the catch's presence write
   // (CUL-2808). Empty until a photo read stands, and after a read that found none. Set as
   // soon as the parse stands, before any later step can throw (CUL-2812, step 6-hold).
@@ -2600,9 +2630,12 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //     with its own once it has decided over the row.
     const holdPhotoFinding = (): void => {
       if (!analysis) return
-      presentColumnsForFailure = presentRedFlagColumns(descriptor, descriptor.buildStructuredValues(analysis))
+      // Both worked out before either is handed over, so a throw here hands over neither.
+      const present = presentRedFlagColumns(descriptor, descriptor.buildStructuredValues(analysis))
       const held = parsedEscalation(descriptor, copy, { analysis, petName, hasPhoto, contextualFlags })
-      if (held) computedRead = withRescueTier(held, tiersOn, minTier)
+      presentColumnsForFailure = present
+      computedRead = held ? withRescueTier(held, tiersOn, minTier) : null
+      computedReadIsHeld = true
     }
     holdPhotoFinding()
 
@@ -2762,6 +2795,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         tiersOn,
         minTier,
       )
+      computedReadIsHeld = false
 
       // 9. Write-back. Never clobbers a human-edited row (Pattern 7), never lowers a
       // stored escalation, never takes a stored red flag off the record
@@ -2865,8 +2899,12 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       // row there now may be an owner's correction that keeps the call (adversarial pass 2:
       // three misses, the owner's "watery" landing last, and the failed frame carried no
       // call). So the rescue falls back to what the RECORD gave, which only ever says more.
+      // The same goes for the verdict this attempt kept for the catch: it carries the
+      // attempt's flags, withdrawal included, and buildRescueRead would prefer it. So the
+      // catch is handed the photo's own finding over the record's flags again (CUL-2812).
       contextualFlagsForFailure = recordFlags
       copyForFailure = recordCopy
+      holdPhotoFinding()
       if (attempt >= WRITE_ATTEMPTS) throw new Error('DB write failed: the stored row kept changing under this read')
       console.info(`${descriptor.functionName}: the stored row changed before the write; deciding again (CUL-2773)`)
       decidedRow = await readStoredRow()
@@ -2945,7 +2983,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       // What this row says now. Over a call, the rescue keeps the stored photo finding.
       const latestRank = latest ? effectiveTierRank(latest) : TIER_RANK.quiet
       const rescueForRow = rescueRead && latestStoredRow && latestRank !== TIER_RANK.quiet
-        ? rescueOverStoredCall(descriptor, copyForFailure, rescueRead, latestStoredRow, { petName: petNameForFailure, hasPhoto: hasPhotoForFailure })
+        ? rescueOverStoredCall(descriptor, copyForFailure, rescueRead, latestStoredRow, { petName: petNameForFailure, hasPhoto: hasPhotoForFailure, heldBeforeRow: computedReadIsHeld })
         : rescueRead
       const failureWrite = buildFailureWrite({
         existing: latest,

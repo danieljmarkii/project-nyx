@@ -1829,6 +1829,7 @@ Deno.test('pipeline CUL-2812 — the flags\' second look throws after a blood re
   assertBloodKept(w)
 })
 
+// Green with or without the hold as well: CUL-1203's refusal is what it pins.
 Deno.test('pipeline CUL-2812 — a row that turned into another pet\'s mid-run takes nothing, and nothing is made beside it', async () => {
   // The fourth step of the class. The finding is held, but there is no row of this event's
   // to put it on: every write is keyed on the event's own pet (CUL-1203), so none lands.
@@ -1903,6 +1904,7 @@ Deno.test('pipeline CUL-2812 — an owner\'s edit keeps its columns: the call la
   assertEquals(structuredKeysWritten(w), [])
 })
 
+// The three below are green with or without the hold: they pin what it must NOT do.
 Deno.test('pipeline CUL-2812 — absence is never held: a clean read that fails at the same steps is the plain failed state', async () => {
   for (const world of [
     makeWorld({ row: { ...STORED_CALM }, vision: () => CLEAN, aiReadError: (n) => n === 2 }),
@@ -1926,6 +1928,42 @@ Deno.test('pipeline CUL-2812 — a model failure holds nothing of a photo it nev
   assertEquals(structuredKeysWritten(w), [])
 })
 
+Deno.test('pipeline CUL-2812 — a held finding over a stored call is added to what the row holds, never written in its place', async () => {
+  // The stored call today holds a foreign-material finding and a record reason. This run's
+  // record earns call now, its photo reads blood, and the fresh read then fails. The louder
+  // call is written; the stored finding and reason stay in the flags and the words.
+  const w = makeWorld({
+    row: { ...STORED_CALL_TODAY, blood_col: 'no', foreign_col: 'yes', visual_flags: ['suspected_foreign_material'] },
+    ...CALL_NOW_RUN, vision: () => BLOODY, aiReadError: (n) => n === 2,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertEquals(w.row?.visual_flags, ['blood', 'suspected_foreign_material'])
+  assertEquals(w.row?.contextual_flags, ['stored_flag', 'ctx_flag'])
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:stored_flag,ctx_flag:blood,suspected_foreign_material')
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.foreign_col, 'yes')
+})
+
+Deno.test('pipeline CUL-2812 — a missed write gives the withdrawn flag back to the verdict the catch keeps, too', async () => {
+  // The second look withdraws the record's flag over a blood read; the write misses (the row
+  // moved), and the re-read that follows fails. The catch keeps the photo finding with the
+  // record's flag, never the missed attempt's withdrawal.
+  const w = makeWorld({
+    row: { ...STORED_CALM }, vision: () => BLOODY, contextFlags: ['ctx_flag'],
+    afterRead: () => [],
+    beforeAiWrite: moveVersionOnly(1),
+    aiReadError: (n) => n === 3, // 1: step 3b, 2: the fresh read, 3: the re-read after the miss
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+})
+
 Deno.test('CUL-2812 — parsedEscalation never returns a quiet verdict, and nothing without a photo finding', () => {
   const d = descriptorFor(makeWorld({ vision: () => CLEAN }))
   const of = (analysis: TestAnalysis, contextualFlags: Flag[] = []) =>
@@ -1937,6 +1975,8 @@ Deno.test('CUL-2812 — parsedEscalation never returns a quiet verdict, and noth
   for (const held of [of(BLOODY), of(BLOODY, ['ctx_flag']), of(MODEL_ONLY), of({ ...BLOODY, appears: false })]) {
     assertStrictEquals(isEscalationVerdict(held?.recommendation ?? null), true)
   }
+  // With no photo on the event the floor says not enough to say, whatever the model called.
+  assertStrictEquals(parsedEscalation(d, COPY, { analysis: MODEL_ONLY, petName: 'Mochi', hasPhoto: false, contextualFlags: [] }), null)
   assertStrictEquals(of(BLOODY)?.read_text, 'VISUAL:Mochi:blood') // the floor's template, never the model's words
   assertStrictEquals(of(BLOODY, ['ctx_flag'])?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
 })
