@@ -23,6 +23,7 @@ import type { FloorTier } from '../../../lib/incidentFloor.ts'
 import {
   applyFailureWrite,
   KNOWN_VERDICTS,
+  parsedEscalation,
   presentRedFlagColumns,
   quieterRowFilters,
   runIncidentAnalysis,
@@ -69,6 +70,13 @@ interface World {
   // The flags' second look, once the photo is read (ContextualRun.afterRead): which of the
   // record's flags stand, given the read and the stored row. Every flag is withdrawable.
   afterRead?: (analysis: TestAnalysis | null, stored: Row | null) => Flag[]
+  // The nth run of the record's contextual rules throws (1-based; the 2nd is the late pass
+  // after the photo read, which runs only with the floor on).
+  contextError?: (n: number) => boolean
+  contextCalls?: number
+  // The descriptor has a floor key (and the late pass with it). A key of its own, so "may
+  // wait" (engines_v3_en4) stays off and these runs read nothing this harness does not serve.
+  floorKey?: boolean
   // What app_config returns (Engines v3 flag + the gate config), or a read error.
   appConfig?: Row[] | 'error'
   // CUL-552 PR 2: the owner's ai_consent row as the service-role read sees it. Absent from
@@ -350,7 +358,10 @@ function descriptorFor(w: World): IncidentDescriptor<TestAnalysis, Flag> {
     ruleVersion: 'test1',
   parseToolResult: () => null, // the model is injected as a parsed result
     appearsToShowSubject: (a) => a.appears,
-    computeContextualFlags: () => Promise.resolve(
+    ...(w.floorKey ? { floorEngineKey: 'engines_v3_en5' as const } : {}),
+    computeContextualFlags: () => (w.contextCalls = (w.contextCalls ?? 0) + 1, w.contextError?.(w.contextCalls))
+      ? Promise.reject(new Error(`context read failed #${w.contextCalls}`))
+      : Promise.resolve(
       w.afterRead
         ? { flags: w.contextFlags, copy: COPY, withdrawable: w.contextFlags, afterRead: (a, stored) => ({ flags: w.afterRead!(a, stored), copy: COPY }) }
         : w.minTier ? { flags: w.contextFlags, copy: w.photoFindingCopy ? { ...COPY, contextualWithPhotoFinding: (pet, flags, visual) => `PHOTO_CTX:${pet}:${flags.join(',')}:${visual.join(',')}` } : COPY, minTier: w.minTier }
@@ -897,6 +908,7 @@ const MODEL_ONLY: TestAnalysis = {
   appears: true, blood: 'no', colour: 'yellow', visual_flags: [], recommendation: 'worth_a_call', read_text: 'MODEL: its own call', description: null,
 }
 const NOT_SUBJECT: TestAnalysis = { ...CLEAN, appears: false }
+const EN3_AND_FLOOR = [...EN3_FOR_OWNER, { key: 'engines_v3_en5', value: { enabled: false, allowlist: ['owner-1'] } }]
 const tierWritten = (w: World) => w.writes.filter((x) => 'tier' in x.values).map((x) => x.values.tier)
 
 Deno.test('pipeline EN-3 — flag-on, the full write-back carries the mapped tier beside the verdict', async () => {
@@ -1759,6 +1771,247 @@ Deno.test('pipeline CUL-2805 — the last try still decides over a fresh read: a
   assertEquals(w.writes.map((x) => Object.keys(x.values).sort()), [['error', 'may_wait']])
   assertStrictEquals(w.row?.tier, 'call_now')
   assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
+})
+
+// ── CUL-2812: a read that fails after the photo was read keeps what the photo showed ──
+// The parse stands, then a later step throws before the write loop has a verdict of its own.
+// Before, the catch held nothing of the photo for those steps and wrote the plain failed
+// state. One test per step; each ends with the present red-flag column written and a call.
+
+const assertBloodKept = (w: World, status: 'failed' | 'completed' = 'failed') => {
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.read_text, 'VISUAL:Mochi:blood')
+  assertStrictEquals(w.row?.status, status)
+  assertStrictEquals(w.row?.blood_col, 'yes')
+}
+
+Deno.test('pipeline CUL-2812 — the fresh stored-row read fails after a blood read: the call and the blood column are written', async () => {
+  // Read 1 is step 3b, read 2 the fresh read after the photo; the catch's own read answers.
+  const w = makeWorld({ row: { ...STORED_CALM }, vision: () => BLOODY, aiReadError: (n) => n === 2 })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.visionCalls, 1)
+  assertBloodKept(w)
+  // Presence only: nothing else of the parse lands, and the payload is the last finished read's.
+  assertStrictEquals(w.row?.colour, 'yellow')
+  assertEquals(w.row?.ai_raw_payload, STORED_CALM.ai_raw_payload)
+  assertEquals(structuredKeysWritten(w), ['blood_col', 'blood_note'])
+})
+
+Deno.test('pipeline CUL-2812 — the same failure on a first read leaves a row that says blood', async () => {
+  const w = makeWorld({ vision: () => BLOODY, aiReadError: (n) => n === 2 })
+  await run(w)
+  assertBloodKept(w)
+  assertStrictEquals(w.row?.ai_raw_payload ?? null, null)
+})
+
+Deno.test('pipeline CUL-2812 — the record\'s late pass throws after a blood read: the call and the blood column are written', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM }, vision: () => BLOODY, floorKey: true, appConfig: EN3_AND_FLOOR,
+    contextError: (n) => n === 2,
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.contextCalls, 2)
+  assertBloodKept(w)
+  assertStrictEquals(w.row?.tier, 'call_today')
+})
+
+Deno.test('pipeline CUL-2812 — the flags\' second look throws after a blood read: the call and the blood column are written', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM }, vision: () => BLOODY,
+    afterRead: () => { throw new Error('second look failed') },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertEquals(structuredKeysWritten(w), ['blood_col', 'blood_note']) // no step-9 write landed
+  assertBloodKept(w)
+})
+
+// Green with or without the hold as well: CUL-1203's refusal is what it pins.
+Deno.test('pipeline CUL-2812 — a row that turned into another pet\'s mid-run takes nothing, and nothing is made beside it', async () => {
+  // The fourth step of the class. The finding is held, but there is no row of this event's
+  // to put it on: every write is keyed on the event's own pet (CUL-1203), so none lands.
+  const w = makeWorld({
+    vision: () => BLOODY,
+    duringVision: (world) => {
+      world.row = { ...OWN, pet_id: 'someone-elses-pet', recommendation: 'monitor', status: 'completed', blood_col: 'no' }
+    },
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertEquals(w.writes, [])
+  assertStrictEquals(w.row?.blood_col, 'no')
+})
+
+Deno.test('pipeline CUL-2812 — the held read carries the record\'s flags and its tier with the photo finding', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM }, vision: () => BLOODY, contextFlags: ['ctx_flag'], minTier: 'call_now',
+    photoFindingCopy: true, appConfig: EN3_FOR_OWNER, aiReadError: (n) => n === 2,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:blood')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+})
+
+Deno.test('pipeline CUL-2812 — a flag the late pass added reaches the held read when a later step throws', async () => {
+  // The late pass answers with a new flag and a louder tier; the second look then throws.
+  const w = makeWorld({
+    row: { ...STORED_CALM }, vision: () => BLOODY, floorKey: true, appConfig: EN3_AND_FLOOR,
+    afterRead: () => { throw new Error('second look failed') },
+  })
+  w.duringVision = (world) => { world.contextFlags = ['ctx_flag'] }
+  await run(w)
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.blood_col, 'yes')
+})
+
+Deno.test('pipeline CUL-2812 — the model\'s own call with no flag is held too, in its own words', async () => {
+  const w = makeWorld({ row: { ...STORED_CALM }, vision: () => MODEL_ONLY, aiReadError: (n) => n === 2 })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.read_text, 'MODEL: its own call')
+  assertStrictEquals(w.row?.status, 'failed')
+  assertEquals(structuredKeysWritten(w), []) // no red flag present, so no column
+})
+
+Deno.test('pipeline CUL-2812 — over a stored call for another reason the note is written and the blood still reaches the column', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, recommendation: 'worth_a_call', read_text: 'STORED CTX', contextual_flags: ['stored_flag'] },
+    vision: () => BLOODY, aiReadError: (n) => n === 2,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.read_text, 'STORED CTX')
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(typeof w.row?.error, 'string')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+})
+
+Deno.test('pipeline CUL-2812 — an owner\'s edit keeps its columns: the call lands, the presence write does not', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, colour: 'brown', edited_at: EDITED_AT }, vision: () => BLOODY, aiReadError: (n) => n === 2,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.blood_col, 'no')
+  assertStrictEquals(w.row?.colour, 'brown')
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+// The three below are green with or without the hold: they pin what it must NOT do.
+Deno.test('pipeline CUL-2812 — absence is never held: a clean read that fails at the same steps is the plain failed state', async () => {
+  for (const world of [
+    makeWorld({ row: { ...STORED_CALM }, vision: () => CLEAN, aiReadError: (n) => n === 2 }),
+    makeWorld({ row: { ...STORED_CALM }, vision: () => CLEAN, afterRead: () => { throw new Error('second look failed') } }),
+    // A photo the model says is not the subject, with its own call beside it: not a finding.
+    makeWorld({ row: { ...STORED_CALM }, vision: () => ({ ...MODEL_ONLY, appears: false }), aiReadError: (n) => n === 2 }),
+  ]) {
+    await run(world)
+    assertStrictEquals(world.row?.status, 'failed')
+    assertStrictEquals(world.row?.recommendation, 'monitor') // the failed write names no verdict
+    assertStrictEquals(world.row?.read_text, 'OLD READ')
+    assertEquals(structuredKeysWritten(world), [])
+  }
+})
+
+Deno.test('pipeline CUL-2812 — a model failure holds nothing of a photo it never read', async () => {
+  const w = makeWorld({ row: { ...STORED_CALM }, vision: overloaded })
+  await run(w)
+  assertStrictEquals(w.row?.status, 'failed')
+  assertEquals(w.row?.visual_flags ?? null, null)
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2812 — a held finding over a stored call is added to what the row holds, never written in its place', async () => {
+  // The stored call today holds a foreign-material finding and a record reason. This run's
+  // record earns call now, its photo reads blood, and the fresh read then fails. The louder
+  // call is written; the stored finding and reason stay in the flags and the words.
+  const w = makeWorld({
+    row: { ...STORED_CALL_TODAY, blood_col: 'no', foreign_col: 'yes', visual_flags: ['suspected_foreign_material'] },
+    ...CALL_NOW_RUN, vision: () => BLOODY, aiReadError: (n) => n === 2,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertEquals(w.row?.visual_flags, ['blood', 'suspected_foreign_material'])
+  assertEquals(w.row?.contextual_flags, ['stored_flag', 'ctx_flag'])
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:stored_flag,ctx_flag:blood,suspected_foreign_material')
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.foreign_col, 'yes')
+})
+
+Deno.test('pipeline CUL-2812 — a missed write gives the withdrawn flag back to the verdict the catch keeps, too', async () => {
+  // The second look withdraws the record's flag over a blood read; the write misses (the row
+  // moved), and the re-read that follows fails. The catch keeps the photo finding with the
+  // record's flag, never the missed attempt's withdrawal.
+  const w = makeWorld({
+    row: { ...STORED_CALM }, vision: () => BLOODY, contextFlags: ['ctx_flag'],
+    afterRead: () => [],
+    beforeAiWrite: moveVersionOnly(1),
+    aiReadError: (n) => n === 3, // 1: step 3b, 2: the fresh read, 3: the re-read after the miss
+  })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+})
+
+Deno.test('pipeline CUL-2812 — a flag the second look ADDED survives a missed write, with or without a photo finding', async () => {
+  // Only withdrawals are given back on a miss. An addition was this run's own finding: with
+  // a clean photo it is the only reason for the call, and it must reach the catch.
+  for (const vision of [CLEAN, BLOODY]) {
+    for (const fails of [{ beforeAiWrite: moveVersionOnly(3) }, { beforeAiWrite: moveVersionOnly(1), aiReadError: (n: number) => n === 3 }]) {
+      const w = makeWorld({ row: { ...STORED_CALM }, vision: () => vision, afterRead: () => ['ctx_flag'], ...fails })
+      const r = await run(w)
+      assertStrictEquals(r.status, 500)
+      assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+      assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+      assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
+    }
+  }
+})
+
+Deno.test('pipeline CUL-2812 — the merge over a stored call names a finding once, and an edited row leads with the owner\'s columns', async () => {
+  // Blood held over stored blood: one flag, not two.
+  const same = makeWorld({ row: { ...STORED_CALL_TODAY }, ...CALL_NOW_RUN, vision: () => BLOODY, aiReadError: (n) => n === 2 })
+  await run(same)
+  assertEquals(same.row?.visual_flags, ['blood'])
+  assertStrictEquals(same.row?.read_text, 'PHOTO_CTX:Mochi:stored_flag,ctx_flag:blood')
+  // An edited row: the owner said a foreign object, the cache still says blood. The words
+  // lead with this photo's blood, then the owner's word; the cache is written back as it was.
+  const edited = makeWorld({
+    row: { ...STORED_CALL_TODAY, blood_col: 'no', foreign_col: 'yes', edited_at: EDITED_AT },
+    ...CALL_NOW_RUN, vision: () => BLOODY, aiReadError: (n) => n === 2,
+  })
+  await run(edited)
+  assertEquals(edited.row?.visual_flags, ['blood'])
+  assertStrictEquals(edited.row?.read_text, 'PHOTO_CTX:Mochi:stored_flag,ctx_flag:blood,suspected_foreign_material')
+  assertStrictEquals(edited.row?.blood_col, 'no') // the owner's column stands
+})
+
+Deno.test('CUL-2812 — parsedEscalation never returns a quiet verdict, and nothing without a photo finding', () => {
+  const d = descriptorFor(makeWorld({ vision: () => CLEAN }))
+  const of = (analysis: TestAnalysis, contextualFlags: Flag[] = []) =>
+    parsedEscalation(d, COPY, { analysis, petName: 'Mochi', hasPhoto: true, contextualFlags })
+  assertStrictEquals(of(CLEAN), null)
+  assertStrictEquals(of(CLEAN, ['ctx_flag']), null) // the record's alone: the contextual rescue's
+  assertStrictEquals(of(NOT_SUBJECT), null)
+  assertStrictEquals(of({ ...MODEL_ONLY, appears: false }), null)
+  for (const held of [of(BLOODY), of(BLOODY, ['ctx_flag']), of(MODEL_ONLY), of({ ...BLOODY, appears: false })]) {
+    assertStrictEquals(isEscalationVerdict(held?.recommendation ?? null), true)
+  }
+  // With no photo on the event the floor says not enough to say, whatever the model called.
+  assertStrictEquals(parsedEscalation(d, COPY, { analysis: MODEL_ONLY, petName: 'Mochi', hasPhoto: false, contextualFlags: [] }), null)
+  assertStrictEquals(of(BLOODY)?.read_text, 'VISUAL:Mochi:blood') // the floor's template, never the model's words
+  assertStrictEquals(of(BLOODY, ['ctx_flag'])?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
 })
 
 // ── CUL-2808: what a failed read still puts on the record ──────────────────────────────

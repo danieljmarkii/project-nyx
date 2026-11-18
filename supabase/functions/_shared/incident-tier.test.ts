@@ -292,7 +292,7 @@ const FINDING_COPY: IncidentCopy = { ...COPY, contextualWithPhotoFinding: (p, f,
 const BLOOD_DESCRIPTOR = { presentFlagsFromStructured: (row: Record<string, unknown>) => (row.blood_col === 'yes' ? ['blood'] : []) }
 const RECORD_RESCUE: RescueRead = { ...RESCUE_BASE, tier: 'call_now', read_text: 'CONTEXTUAL:Mochi:ctx' }
 const rebuilt = (row: Record<string, unknown>, rescue: RescueRead = RECORD_RESCUE) =>
-  rescueOverStoredCall(BLOOD_DESCRIPTOR, FINDING_COPY, rescue, row, { petName: 'Mochi', hasPhoto: true })
+  rescueOverStoredCall(BLOOD_DESCRIPTOR, FINDING_COPY, rescue, row, { petName: 'Mochi', hasPhoto: true, heldBeforeRow: false })
 
 Deno.test('CUL-2811 — a record-only rescue over a stored call keeps the cached flags and leads with the photo finding', () => {
   const r = rebuilt({ recommendation: 'worth_a_call', visual_flags: ['blood'], contextual_flags: ['old'], edited_at: null })

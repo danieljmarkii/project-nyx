@@ -1170,6 +1170,48 @@ export function buildRescueRead<TFlag extends string>(
   }
 }
 
+// The escalation a parsed photo read carries on its own, before any stored row is read
+// (CUL-2812), or null. The floor over the parse and the record's flags, and the words the
+// write loop would select for it: the same two functions, so the held read is the one a
+// finished read over no row would write. It is never a quiet verdict: a parse that does
+// not escalate returns null, and so does one whose escalation is the record's alone with
+// nothing from the photo, which the contextual rescue already carries. No partial-read
+// collapse is needed: only a quiet verdict collapses (shouldCollapsePartialRead).
+export function parsedEscalation<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
+  descriptor: Pick<IncidentDescriptor<TAnalysis, TFlag>, 'appearsToShowSubject'>,
+  copy: IncidentCopy<TFlag>,
+  params: { analysis: TAnalysis; petName: string; hasPhoto: boolean; contextualFlags: TFlag[] },
+): RescueRead<TFlag> | null {
+  const { analysis, petName, hasPhoto, contextualFlags } = params
+  const visualFlags = analysis.visual_flags ?? []
+  const showsSubject = descriptor.appearsToShowSubject(analysis)
+  const modelEscalated = showsSubject && analysis.recommendation === 'worth_a_call'
+  if (visualFlags.length === 0 && !modelEscalated) return null
+  const recommendation = applyEscalationFloor({
+    modelRecommendation: analysis.recommendation,
+    appearsToShowSubject: showsSubject,
+    hasPhoto,
+    visualFlags,
+    contextualFlags,
+  })
+  if (!isEscalationVerdict(recommendation)) return null
+  return {
+    recommendation,
+    read_text: selectReadText(copy, {
+      petName,
+      recommendation,
+      contextualFlags,
+      visualFlags,
+      modelReadText: analysis.read_text ?? null,
+      photoUnreadable: false,
+      hasPhoto,
+      modelEscalated,
+    }),
+    visual_flags: visualFlags,
+    contextual_flags: contextualFlags,
+  }
+}
+
 // The rescue's tier, under the key: the same map as every other write, from the verdict the
 // rescue carries (a computed read's tier, when it had one, is that same map's answer).
 export function withRescueTier<TFlag extends string>(
@@ -1195,17 +1237,43 @@ export function rescueRank(rescue: Pick<RescueRead, 'recommendation' | 'tier'>):
 // floor-only raise leads with. So it is rebuilt the way the floor-only writer builds its own
 // write over a stored read (storedPhotoFinding): the cached visual flags are written back,
 // the stored contextual flags are kept, and the words lead with the photo finding.
-// A rescue that carries a photo finding of its own (this run read the photo) is left as it
-// is: those are the words for the photo the owner now sees, as a finished read would write.
+// A rescue that carries a photo finding of its own (this run read the photo) and was DECIDED
+// OVER THE ROW, in the write loop, is left as it is: those are the words for the photo the
+// owner now sees, as a finished read would write.
+// A photo finding HELD BEFORE ANY STORED ROW WAS READ (CUL-2812, step 6-hold) decided nothing
+// over this row, so it is added to what the row holds rather than written in its place: its
+// visual flags lead, the stored ones follow, the stored contextual flags are kept, and the
+// words are a template over both. Before the hold, a run that failed at those steps wrote
+// the record-only rescue, which kept the stored finding; the hold must not take it off.
 export function rescueOverStoredCall<TFlag extends string>(
   descriptor: Pick<IncidentDescriptor<IncidentAnalysisBase, TFlag>, 'presentFlagsFromStructured'>,
   copy: IncidentCopy<TFlag>,
   rescue: RescueRead<TFlag>,
   storedRow: StoredRow,
-  params: { petName: string; hasPhoto: boolean },
+  // heldBeforeRow: the rescue is step 6-hold's, not the write loop's. Required (C-37).
+  params: { petName: string; hasPhoto: boolean; heldBeforeRow: boolean },
 ): RescueRead<TFlag> {
-  if (rescue.visual_flags.length > 0 || rescue.contextual_flags.length === 0) return rescue
+  if (rescue.visual_flags.length > 0 && !params.heldBeforeRow) return rescue
+  if (rescue.visual_flags.length === 0 && rescue.contextual_flags.length === 0) return rescue
   const { visualFlags, leadFlags, storedContextual, contextual } = storedPhotoFinding(descriptor, storedRow, storedRow, rescue.contextual_flags)
+  if (rescue.visual_flags.length > 0) {
+    const own = rescue.visual_flags
+    return {
+      ...rescue,
+      visual_flags: [...own, ...visualFlags.filter((f) => !own.includes(f))],
+      contextual_flags: contextual,
+      read_text: selectReadText(copy, {
+        petName: params.petName,
+        recommendation: 'worth_a_call',
+        contextualFlags: contextual,
+        visualFlags: [...own, ...leadFlags.filter((f) => !own.includes(f))],
+        // Never the model's words: they describe this photo alone, not both findings.
+        modelReadText: null,
+        photoUnreadable: false,
+        hasPhoto: params.hasPhoto,
+      }),
+    }
+  }
   return {
     ...rescue,
     visual_flags: visualFlags,
@@ -2121,8 +2189,13 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   let contextualFlagsForFailure: TFlag[] = []
   let copyForFailure: IncidentCopy<TFlag> = descriptor.copy
   let computedRead: RescueRead<TFlag> | null = null
+  // Whether `computedRead` is step 6-hold's (worked out before any stored row was read) and
+  // not the write loop's own (CUL-2812). The catch adds a held read to a stored call's
+  // finding instead of writing it in its place (rescueOverStoredCall).
+  let computedReadIsHeld = false
   // The red-flag columns this run's photo read found present, for the catch's presence write
-  // (CUL-2808). Empty until a photo read stands, and after a read that found none.
+  // (CUL-2808). Empty until a photo read stands, and after a read that found none. Set as
+  // soon as the parse stands, before any later step can throw (CUL-2812, step 6-hold).
   let presentColumnsForFailure: PresentRedFlagColumns | null = null
   // The stamps this run's words carry (engineStamps.ts). Out here for the same reason as
   // the rescue's inputs: the catch's rescue writes words, so it writes their stamps.
@@ -2543,6 +2616,30 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       }
     }
 
+    // 6-hold. What the photo itself showed, kept for the catch the moment the parse stands
+    //     (CUL-2812). Every step from here to the write can throw: the fresh stored-row read
+    //     (by design, CUL-817), a row that turned into another pet's, the record's late pass,
+    //     a descriptor's second look, the may-wait read. Before this the catch learned of the
+    //     photo's finding only inside the write loop, so any of those throws left the plain
+    //     failed state over a photo that showed blood. One rule for all of them: the finding
+    //     is held before the step runs.
+    //     Presence only, from the parse and the record's flags, with no stored row: the
+    //     present red-flag columns, and the read the floor gives when it ESCALATES. A read
+    //     that does not escalate is not held (absence is never carried, buildRescueRead), so
+    //     this can never put a calm verdict on a failed run. The write loop replaces both
+    //     with its own once it has decided over the row.
+    // `flags`: the record's flags the held read stands beside (a missed attempt passes its own).
+    const holdPhotoFinding = (flags: TFlag[] = contextualFlags): void => {
+      if (!analysis) return
+      // Both worked out before either is handed over, so a throw here hands over neither.
+      const present = presentRedFlagColumns(descriptor, descriptor.buildStructuredValues(analysis))
+      const held = parsedEscalation(descriptor, copy, { analysis, petName, hasPhoto, contextualFlags: flags })
+      presentColumnsForFailure = present
+      computedRead = held ? withRescueTier(held, tiersOn, minTier) : null
+      computedReadIsHeld = true
+    }
+    holdPhotoFinding()
+
     // 6a. The FRESH read of the stored row step 9 decides on (see readStoredRow for why the
     //     vision call's window matters). Read here, straight after that call, so the post-read
     //     hook below reads the same row step 9 does: an owner edit that landed during the
@@ -2577,6 +2674,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         contextualFlagsForFailure = contextualFlags
         copyForFailure = copy
         minTierForFailure = minTier
+        // The held finding takes the late flags and tier too: raise-only, like the pass.
+        holdPhotoFinding()
       }
     }
 
@@ -2697,6 +2796,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         tiersOn,
         minTier,
       )
+      computedReadIsHeld = false
 
       // 9. Write-back. Never clobbers a human-edited row (Pattern 7), never lowers a
       // stored escalation, never takes a stored red flag off the record
@@ -2796,12 +2896,19 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
 
       // Missed: the row moved between the decision and the write. Nothing was written.
       // Until the next attempt has taken its own second look, the catch must not rescue
-      // from this one's: a flag it withdrew was withdrawn over a row that is gone, and the
-      // row there now may be an owner's correction that keeps the call (adversarial pass 2:
-      // three misses, the owner's "watery" landing last, and the failed frame carried no
-      // call). So the rescue falls back to what the RECORD gave, which only ever says more.
-      contextualFlagsForFailure = recordFlags
+      // from this one's WITHDRAWAL: a flag it withdrew was withdrawn over a row that is gone,
+      // and the row there now may be an owner's correction that keeps the call (adversarial
+      // pass 2 on CUL-2773: three misses, the owner's "watery" landing last, and the failed
+      // frame carried no call). So every flag the RECORD gave comes back. A flag the second
+      // look ADDED stays (the hook may add, ContextualRun): dropping it could drop the call.
+      // The verdict this attempt kept for the catch carried its flags as well, and
+      // buildRescueRead prefers it, so the catch is handed the photo's own finding again,
+      // beside the same flags (CUL-2812).
+      const keptForCatch = [...recordFlags, ...contextualFlags.filter((f) => !recordFlags.includes(f))]
+      contextualFlagsForFailure = keptForCatch
       copyForFailure = recordCopy
+      computedRead = null
+      holdPhotoFinding(keptForCatch)
       if (attempt >= WRITE_ATTEMPTS) throw new Error('DB write failed: the stored row kept changing under this read')
       console.info(`${descriptor.functionName}: the stored row changed before the write; deciding again (CUL-2773)`)
       decidedRow = await readStoredRow()
@@ -2880,7 +2987,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       // What this row says now. Over a call, the rescue keeps the stored photo finding.
       const latestRank = latest ? effectiveTierRank(latest) : TIER_RANK.quiet
       const rescueForRow = rescueRead && latestStoredRow && latestRank !== TIER_RANK.quiet
-        ? rescueOverStoredCall(descriptor, copyForFailure, rescueRead, latestStoredRow, { petName: petNameForFailure, hasPhoto: hasPhotoForFailure })
+        ? rescueOverStoredCall(descriptor, copyForFailure, rescueRead, latestStoredRow, { petName: petNameForFailure, hasPhoto: hasPhotoForFailure, heldBeforeRow: computedReadIsHeld })
         : rescueRead
       const failureWrite = buildFailureWrite({
         existing: latest,
