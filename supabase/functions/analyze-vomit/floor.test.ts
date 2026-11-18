@@ -310,23 +310,54 @@ Deno.test('floor · a floor-only run never lowers: nothing louder to say writes 
   assertEquals(w.rows.get('v3'), stored)
 })
 
-Deno.test('floor · CUL-1509: a floor-only run that fails over a call writes no error (it read no photo)', async () => {
-  // A photographed call whose photo read finished; the refloor's floor run then fails on its
-  // own write. Noting `error` here would put "The latest read hit a problem" and "From the
-  // earlier read" over a photo read that finished, and no later non-raising floor run would
-  // clear it (adversarial pass on CUL-1509). The catch writes nothing; the call stands.
+Deno.test('floor · CUL-2811: a floor-only run that fails its louder call still lands it (a call now is never lost to a failed save)', async () => {
+  // A photographed call today whose photo read finished; the refloor's floor run works out
+  // call now and then fails on its own write, every attempt. Before CUL-2811 the catch wrote
+  // nothing here (CUL-1509: a floor-only failure notes no error over a call), and the call
+  // now was lost until another read ran. Now the catch's rescue lands the louder call, and
+  // still notes no error and no failed status.
   const w = world({ events: photolessTriple().map((e) => (e.id === 'v3' ? { ...e, photo: true } : e)) })
   const stored = {
     id: 'a-v3', event_id: 'v3', pet_id: PET_ID, status: 'completed', recommendation: 'worth_a_call', tier: 'call_today',
     read_text: 'earlier words', visual_flags: ['blood'], contextual_flags: [], blood_present: 'fresh_red',
     edited_at: null, dismissed_at: null, error: null,
-    updated_at: '2025-12-31T00:00:00+00:00', // unchanged below: no write moved the version
+    updated_at: '2025-12-31T00:00:00+00:00',
   }
   w.rows.set('v3', { ...stored })
   w.failUpdates = 3 // every attempt the run makes (WRITE_ATTEMPTS, CUL-2773)
   const r = await call(w, { event_id: 'v3', mode: 'floor' })
   assertStrictEquals(r.status, 500)
   assertStrictEquals(w.failUpdates, 0) // the floor's raise was attempted, and refused
+  const row = w.rows.get('v3')!
+  assertEquals([row.recommendation, row.tier], ['worth_a_call', 'call_now'])
+  // It read no photo, so the finished photo read stays a finished read with no error noted
+  // (CUL-1509), and what that read found stays on the card and leads the words, exactly as
+  // the floor's own write would have left it.
+  assertEquals([row.status, row.error], ['completed', null])
+  assertEquals(row.visual_flags, ['blood'])
+  assertEquals(row.contextual_flags, ['repeated_vomiting'])
+  assertStrictEquals(String(row.read_text).includes('blood'), true)
+  assertStrictEquals(row.blood_present, 'fresh_red')
+  noPhotoPathTouched(w)
+})
+
+Deno.test('floor · CUL-1509: a floor-only run that fails with nothing louder to say writes no error (it read no photo)', async () => {
+  // The same failure where the run's call is no louder than the stored one (it only adds a
+  // flag). Noting `error` here would put "The latest read hit a problem" and "From the
+  // earlier read" over a photo read that finished, and no later non-raising floor run would
+  // clear it (adversarial pass on CUL-1509). The catch writes nothing; the call stands.
+  const w = world({ events: photolessTriple().map((e) => (e.id === 'v3' ? { ...e, photo: true } : e)) })
+  const stored = {
+    id: 'a-v3', event_id: 'v3', pet_id: PET_ID, status: 'completed', recommendation: 'worth_a_call', tier: 'call_now',
+    read_text: 'earlier words', visual_flags: ['blood'], contextual_flags: [], blood_present: 'fresh_red',
+    edited_at: null, dismissed_at: null, error: null,
+    updated_at: '2025-12-31T00:00:00+00:00', // unchanged below: no write moved the version
+  }
+  w.rows.set('v3', { ...stored })
+  w.failUpdates = 3
+  const r = await call(w, { event_id: 'v3', mode: 'floor' })
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.failUpdates, 0)
   assertEquals(w.rows.get('v3'), stored)
   noPhotoPathTouched(w)
 })

@@ -18,12 +18,13 @@
 import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { isEscalationVerdict, QUIET_VERDICTS } from '../../../lib/incidentVerdict.ts'
-import { INCIDENT_TIERS, TIER_RANK, tierRank } from '../../../lib/incidentTier.ts'
+import { INCIDENT_TIERS, TIER_RANK, tierRank, verdictForTier, verdictRank } from '../../../lib/incidentTier.ts'
+import type { FloorTier } from '../../../lib/incidentFloor.ts'
 import {
   applyFailureWrite,
+  KNOWN_VERDICTS,
   presentRedFlagColumns,
-  QUIET_ROW_FILTERS,
-  QUIET_TIERS,
+  quieterRowFilters,
   runIncidentAnalysis,
   WRITE_ATTEMPTS,
   writePresentRedFlags,
@@ -50,6 +51,8 @@ interface TestAnalysis extends IncidentAnalysisBase {
 interface World {
   row: Row | null
   contextFlags: Flag[]
+  // The least call tier the record earns (ContextualRun.minTier, EN-4's floor).
+  minTier?: FloorTier
   dayCount: number
   // What the model returns (or throws) for this run.
   vision: () => TestAnalysis | null
@@ -132,6 +135,10 @@ function makeWorld(o: Partial<World> & Pick<World, 'vision'>): World {
     row: o.row ? { ...OWN, ...o.row } : null,
   }
 }
+
+// What a row says, as the shared module ranks it (kept apart from the code under test's import).
+const effectiveTierRankOf = (row: { recommendation: string | null; tier: string | null }): number =>
+  Math.max(verdictRank(row.recommendation), tierRank(row.tier))
 
 // ── The fake client ────────────────────────────────────────────────────────────────
 
@@ -346,6 +353,7 @@ function descriptorFor(w: World): IncidentDescriptor<TestAnalysis, Flag> {
     computeContextualFlags: () => Promise.resolve(
       w.afterRead
         ? { flags: w.contextFlags, copy: COPY, withdrawable: w.contextFlags, afterRead: (a, stored) => ({ flags: w.afterRead!(a, stored), copy: COPY }) }
+        : w.minTier ? { flags: w.contextFlags, copy: w.photoFindingCopy ? { ...COPY, contextualWithPhotoFinding: (pet, flags, visual) => `PHOTO_CTX:${pet}:${flags.join(',')}:${visual.join(',')}` } : COPY, minTier: w.minTier }
         : w.contextFlags,
     ),
     copy: w.photoFindingCopy
@@ -1964,10 +1972,43 @@ Deno.test('pipeline CUL-2808 — a call tier beside a verdict a client lowered i
 // The quiet filters name every quiet value and nothing else, read off the shared rank
 // functions rather than a second list (C-34): a tier or verdict added there reds this.
 Deno.test('CUL-2808 — the quiet-row filters are exactly the values the shared ranks call quiet', () => {
-  assertEquals(INCIDENT_TIERS.filter((t) => tierRank(t) === TIER_RANK.quiet), [...QUIET_TIERS])
-  assertEquals(QUIET_ROW_FILTERS[0], `recommendation.is.null,recommendation.in.(${QUIET_VERDICTS.join(',')})`)
-  assertEquals(QUIET_ROW_FILTERS[1], `tier.is.null,tier.in.(${QUIET_TIERS.join(',')})`)
+  const [verdicts, tiers] = quieterRowFilters(TIER_RANK.call_today)
+  assertEquals(verdicts, `recommendation.is.null,recommendation.in.(${QUIET_VERDICTS.join(',')})`)
+  assertEquals(tiers, 'tier.is.null,tier.in.(logged,not_enough_to_say)')
   for (const v of QUIET_VERDICTS) assertStrictEquals(isEscalationVerdict(v), false)
+})
+
+// CUL-2811. The filters are an allowlist per column, so the proof is by evaluation, not by
+// string: every value a row can hold in each column, the ones no build knows included, is
+// let through exactly when the shared ranks put it BELOW the rescue's rank.
+Deno.test('CUL-2811 — the content-held filters admit a row exactly when its call ranks below the rescue\'s', () => {
+  // Every verdict a writer can store is on the known list (a tier's verdict is one of them).
+  assertEquals(new Set(INCIDENT_TIERS.map(verdictForTier)), new Set<string>(KNOWN_VERDICTS))
+  const verdicts = [null, ...KNOWN_VERDICTS, 'a_verdict_from_a_later_build']
+  const tiers = [null, ...INCIDENT_TIERS, 'a_tier_from_a_later_build']
+  for (const rank of [TIER_RANK.call_today, TIER_RANK.call_now]) {
+    const [verdictFilter, tierFilter] = quieterRowFilters(rank).map((f) => splitTopLevel(f).map(parseOrTerm))
+    for (const recommendation of verdicts) {
+      for (const tier of tiers) {
+        const row = { recommendation, tier }
+        const admitted = verdictFilter.some((t) => t(row)) && tierFilter.some((t) => t(row))
+        assertStrictEquals(admitted, effectiveTierRankOf(row) < rank, `rank ${rank} over ${recommendation}/${tier}`)
+      }
+    }
+  }
+  // A call now is admitted over a stored call today, in either column, and never over a call now.
+  assertEquals(quieterRowFilters(TIER_RANK.call_now), [
+    'recommendation.is.null,recommendation.in.(monitor,not_enough_to_say,worth_a_call)',
+    'tier.is.null,tier.in.(call_today,logged,not_enough_to_say)',
+  ])
+})
+
+Deno.test('CUL-2811 — a content-held write that claims no call lands over nothing, and sends nothing', async () => {
+  let called = false
+  const client = { from: () => { called = true; throw new Error('no request expected') } } as unknown as SupabaseClient
+  const out = await applyFailureWrite(client, { eventId: 'evt-1', petId: 'pet-1' }, { mode: 'rescue', values: { recommendation: 'monitor' } }, { quieterThan: TIER_RANK.quiet, mayWait: null, raiseOnly: false })
+  assertEquals(out, { error: null, missed: true })
+  assertStrictEquals(called, false)
 })
 
 // The fake above evaluates `is` and `or`; this pins the REQUEST the real client builds from
@@ -1993,7 +2034,7 @@ async function requestFor(call: (client: SupabaseClient) => Promise<unknown>): P
 
 Deno.test('CUL-2808 — the content-held rescue sends both quiet filters and the leave to wait it read', async () => {
   const write = { mode: 'rescue' as const, values: { event_id: 'evt-1', pet_id: 'pet-1', recommendation: 'worth_a_call', tier: 'call_today', may_wait: null } }
-  const sent = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, write, { quietOnly: true, mayWait: null }))
+  const sent = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, write, { quieterThan: TIER_RANK.call_today, mayWait: null, raiseOnly: false }))
   assertStrictEquals(sent.method, 'PATCH')
   assertEquals(sent.params.getAll('or'), [
     '(recommendation.is.null,recommendation.in.(monitor,not_enough_to_say))',
@@ -2006,14 +2047,182 @@ Deno.test('CUL-2808 — the content-held rescue sends both quiet filters and the
   // The key columns are the filter, never values (pet_id is frozen on update, migration 074).
   assertEquals(Object.keys(sent.body as Row).sort(), ['may_wait', 'recommendation', 'tier'])
 
-  const kept = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, { ...write, values: { ...write.values, may_wait: false } }, { quietOnly: true, mayWait: false }))
+  const kept = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, { ...write, values: { ...write.values, may_wait: false } }, { quieterThan: TIER_RANK.call_today, mayWait: false, raiseOnly: false }))
   assertStrictEquals(kept.params.get('may_wait'), 'eq.false')
 
   // Flag-off the rescue names no may_wait, so it holds to none.
   const { tier: _t, may_wait: _m, ...flagOff } = write.values
-  const off = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, { mode: 'rescue', values: flagOff }, { quietOnly: true, mayWait: null }))
+  const off = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, { mode: 'rescue', values: flagOff }, { quieterThan: TIER_RANK.call_today, mayWait: null, raiseOnly: false }))
   assertStrictEquals(off.params.has('may_wait'), false)
   assertStrictEquals(off.params.getAll('or').length, 2)
+
+  // CUL-2811: a call now asks for a row whose call is quieter than a call now.
+  const now = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, { ...write, values: { ...write.values, tier: 'call_now' } }, { quieterThan: TIER_RANK.call_now, mayWait: true, raiseOnly: false }))
+  assertEquals(now.params.getAll('or'), [
+    '(recommendation.is.null,recommendation.in.(monitor,not_enough_to_say,worth_a_call))',
+    '(tier.is.null,tier.in.(call_today,logged,not_enough_to_say))',
+  ])
+  assertStrictEquals(now.params.get('may_wait'), 'eq.true')
+
+  // Decided over a stored call, the last try sends the call and nothing copied from the row.
+  const copied = { ...write.values, tier: 'call_now', read_text: 'COPIED', visual_flags: ['blood'], contextual_flags: ['ctx'], status: 'failed', error: 'boom', dismissed_at: null, rule_version: 'r1' }
+  const raise = await requestFor((c) => applyFailureWrite(c, { eventId: 'evt-1', petId: 'pet-1' }, { mode: 'rescue', values: copied }, { quieterThan: TIER_RANK.call_now, mayWait: true, raiseOnly: true }))
+  assertEquals(raise.body, { recommendation: 'worth_a_call', tier: 'call_now', may_wait: null, error: 'boom', dismissed_at: null })
+  assertStrictEquals(raise.params.get('may_wait'), 'eq.true')
+})
+
+// ── CUL-2811: a failed run's louder call replaces a quieter stored one ─────────────────
+// Before: any stored call got the error note only, so a run that worked out call now (the
+// record floor's minTier) and then failed left a stored call today standing.
+
+const STORED_CALL_TODAY = {
+  recommendation: 'worth_a_call', tier: 'call_today', status: 'completed', read_text: 'OLD CALL TODAY', edited_at: null,
+  may_wait: true, blood_col: 'yes', colour: 'red', visual_flags: ['blood'], contextual_flags: ['stored_flag'], ai_raw_payload: { blood: 'yes', colour: 'red' },
+  dismissed_at: '2026-09-26T07:00:00Z',
+}
+const CALL_NOW_RUN = { contextFlags: ['ctx_flag'] as Flag[], minTier: 'call_now' as const, vision: overloaded, appConfig: EN3_FOR_OWNER, photoFindingCopy: true }
+
+Deno.test('pipeline CUL-2811 — a failed run that worked out call now writes it over a stored call today', async () => {
+  const w = makeWorld({ row: { ...STORED_CALL_TODAY }, ...CALL_NOW_RUN })
+  const r = await run(w)
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  // A call now never carries leave to wait, and words the owner has not seen clear the hide.
+  assertStrictEquals(w.row?.may_wait, null)
+  assertStrictEquals(w.row?.dismissed_at, null)
+  // What the stored photo read found stays on the card: the cached flags are written back,
+  // the stored contextual flag is kept beside this run's, and the words lead with the finding.
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertEquals(w.row?.contextual_flags, ['stored_flag', 'ctx_flag'])
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:stored_flag,ctx_flag:blood')
+  // The photo read on the row finished, and still counts as one: the status stands, and the
+  // error beside it is what the phone discloses the failed attempt from.
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(typeof w.row?.error, 'string')
+  // Read fields only: the stored finding stays on the columns Home and the report read.
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertEquals(w.row?.ai_raw_payload, STORED_CALL_TODAY.ai_raw_payload)
+  assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2811 — a failed run that read the photo itself writes its own finding and words over the stored call today', async () => {
+  // The write-back fails every time, so the catch holds this run's own post-floor read.
+  const w = makeWorld({
+    row: { ...STORED_CALL_TODAY, visual_flags: ['foreign_material'] }, ...CALL_NOW_RUN, vision: () => BLOODY,
+    aiWriteError: (n) => n === 1, // the step-9 write
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:blood')
+  assertStrictEquals(w.row?.status, 'completed')
+})
+
+Deno.test('pipeline CUL-2811 — a call today landing under a call now rescue shaped for a quiet row is not written over blind', async () => {
+  // The rescue was decided over a calm row, so it carries no photo finding. A sibling's call
+  // today with blood lands under the last try: that write must miss (it would take the blood
+  // off the card and mark the read failed), and the next decision, made over the call today,
+  // keeps the finding.
+  const w = makeWorld({
+    row: { ...STORED_CALM }, ...CALL_NOW_RUN,
+    beforeAiWrite: (world, n) => {
+      if (n <= 3) commit(world, {})
+      // Its leave to wait matches what the rescue read (none), so only the rank can refuse it.
+      if (n === 4) commit(world, { ...STORED_CALL_TODAY, read_text: 'SIBLING CALL TODAY', contextual_flags: [], may_wait: null })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.status, 'completed')
+  // Decided again over the call today, on the last tries: the call rises, the words stay its own.
+  assertStrictEquals(w.row?.read_text, 'SIBLING CALL TODAY')
+})
+
+Deno.test('pipeline CUL-2811 — a failed call today over a stored call today is still the note only', async () => {
+  const w = makeWorld({ row: { ...STORED_CALL_TODAY }, ...CALL_NOW_RUN, minTier: 'call_today' })
+  await run(w)
+  assertEquals(w.writes.map((x) => Object.keys(x.values).sort()), [['error', 'may_wait']])
+  assertStrictEquals(w.row?.tier, 'call_today')
+  assertStrictEquals(w.row?.read_text, 'OLD CALL TODAY')
+  assertStrictEquals(w.row?.status, 'completed')
+})
+
+Deno.test('pipeline CUL-2811 — with the key off the failed run carries no tier and a stored call today stands', async () => {
+  const w = makeWorld({ row: { ...STORED_CALL_TODAY }, ...CALL_NOW_RUN, appConfig: [] })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_today')
+  assertStrictEquals(w.row?.read_text, 'OLD CALL TODAY')
+  assertStrictEquals(w.row?.status, 'completed')
+})
+
+Deno.test('pipeline CUL-2811 — a stored call today that keeps moving still takes the call now: the last try is held to "quieter than mine"', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALL_TODAY }, ...CALL_NOW_RUN,
+    // The version moves under every held try and under the last one.
+    beforeAiWrite: (world, n) => { if (n <= 4) commit(world, {}) },
+  })
+  await run(w)
+  assertStrictEquals(w.aiWriteAttempts, 4)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.may_wait, null)
+  assertStrictEquals(w.row?.dismissed_at, null)
+  // Held to no version, the last try writes the call and nothing a version could make stale:
+  // the row keeps its own flags, words and status.
+  assertEquals(Object.keys(w.writes[0].values).sort(), ['dismissed_at', 'error', 'may_wait', 'recommendation', 'tier'])
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertEquals(w.row?.contextual_flags, ['stored_flag'])
+  assertStrictEquals(w.row?.read_text, 'OLD CALL TODAY')
+  assertStrictEquals(w.row?.status, 'completed')
+})
+
+Deno.test('pipeline CUL-2811 — another finding landing under the last try over a call keeps its own flags and words', async () => {
+  // The catch read call today X (blood) and copied X's finding into the rescue. A sibling's
+  // finished read of a replaced photo commits call today Y (foreign material) under the last
+  // try, with the same leave to wait. The rank still admits the write, so it must carry
+  // nothing of X: Y's finding stays on the card, and the call still rises.
+  const w = makeWorld({
+    row: { ...STORED_CALL_TODAY }, ...CALL_NOW_RUN,
+    beforeAiWrite: (world, n) => {
+      if (n <= 3) commit(world, {})
+      if (n === 4) commit(world, { visual_flags: ['foreign_material'], contextual_flags: ['other_flag'], read_text: 'SIBLING: foreign material', foreign_col: 'yes', blood_col: 'no' })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.aiWriteAttempts, 4)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertEquals(w.row?.visual_flags, ['foreign_material'])
+  assertEquals(w.row?.contextual_flags, ['other_flag'])
+  assertStrictEquals(w.row?.read_text, 'SIBLING: foreign material')
+})
+
+Deno.test('pipeline CUL-2811 — a sibling\'s call now landing under the last try is not written over by this run\'s call now', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALL_TODAY }, ...CALL_NOW_RUN,
+    beforeAiWrite: (world, n) => {
+      if (n <= 3) commit(world, {})
+      if (n === 4) commit(world, SIBLING_CALL_NOW)
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertStrictEquals(w.row?.read_text, 'SIBLING CALL NOW')
+  assertStrictEquals(w.row?.status, 'completed')
+})
+
+Deno.test('pipeline CUL-2811 — a verdict from a later build beside a call today tier is never written over', async () => {
+  // It ranks as call now in the verdict column: the verdict allowlist alone has to refuse it.
+  const w = makeWorld({
+    row: { ...STORED_CALL_TODAY }, ...CALL_NOW_RUN,
+    beforeAiWrite: (world, n) => {
+      if (n <= 3) commit(world, {})
+      if (n === 4) commit(world, { recommendation: 'a_verdict_from_a_later_build', read_text: 'LATER BUILD' })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'a_verdict_from_a_later_build')
+  assertStrictEquals(w.row?.read_text, 'LATER BUILD')
 })
 
 Deno.test('CUL-2808 — the presence write is filtered on an unedited row, by the database', async () => {
