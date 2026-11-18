@@ -4251,6 +4251,27 @@ export function contaminationNote(
  * and none of them contains a percentage, a grade or a verdict on the trial.
  */
 /**
+ * CUL-2809 — IS A BREAK ON THE RECORD? A logged off-diet feeding is a presence, and a presence
+ * is a fact at any coverage; §5.2's two-sided hedge is about absence. One predicate, read by the
+ * §7.2 statement below and by the report's "Interpreting this record" box, so the sentence that
+ * states the break and the sentences that hedge beside it cannot disagree.
+ *
+ * Not a break: a trial with no allowed list (nothing was checked), and one whose only off-diet
+ * rows are foods permitted later (a record gap, not a breach). Both keep the two-sided hedge.
+ *
+ * It takes the report block's shape, not `TrialFacts`: the permitted-later count and the
+ * reconciled `allowedSetUnavailable` are the report adapter's, so the adapter asks and hands
+ * the answer to `interpretabilityStatement`.
+ */
+export function offDietBreakOnRecord(facts: {
+  exposures: { offDiet: number; fedBeforePermitted: number };
+  allowedSetUnavailable: boolean;
+}): boolean {
+  const { offDiet, fedBeforePermitted } = facts.exposures;
+  return offDiet > 0 && !facts.allowedSetUnavailable && fedBeforePermitted < offDiet;
+}
+
+/**
  * §7.2's one sentence.
  *
  * ⚠️ IT IS ABOUT THE RANGE, AND THE RANGE IS NOT ALWAYS THE TRIAL (B-600). Every
@@ -4267,7 +4288,7 @@ export function contaminationNote(
  * window only — never for the trial. Same rule the medication overlap and C5's
  * density line were both re-based onto: name the range, not the trial.
  */
-export function interpretabilityStatement(facts: TrialFacts): string | null {
+export function interpretabilityStatement(facts: TrialFacts, breakOnRecord: boolean): string | null {
   if (!facts.coverage || !facts.range) return null;
   // CUL-1038 R2 — THE VERDICT'S OWN WINDOW, not always the printed ratio's.
   //
@@ -4330,10 +4351,14 @@ export function interpretabilityStatement(facts: TrialFacts): string | null {
         'rest of the history, not enough to stand on its own.'
       );
     case 'does_not_support':
-      return (
-        `This record covers ${days} ${of}, which does not support ` +
-        `interpreting ${truncated ? 'that window' : 'this trial'} either way — the gaps are larger than the record.`
-      );
+      // CUL-2809 (QUIET): "either way" beside a logged break read the break as uncertain. With
+      // one on the record (`offDietBreakOnRecord`, asked by the caller) the sentence withholds
+      // the clean side only. Required, never defaulted: a default would be the quieter sentence.
+      return breakOnRecord
+        ? `This record covers ${days} ${of}, which does not support ` +
+            `reading the elimination${truncated ? ' in that window' : ''} as clean — the gaps are larger than the record.`
+        : `This record covers ${days} ${of}, which does not support ` +
+            `interpreting ${truncated ? 'that window' : 'this trial'} either way — the gaps are larger than the record.`;
     case 'not_yet':
     default:
       return null;

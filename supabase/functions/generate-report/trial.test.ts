@@ -1052,6 +1052,34 @@ Deno.test('§7.2 — the statement is about the RECORD, and its three tiers are 
   assert.ok(!/concern/i.test(text.slice(text.indexOf('Interpreting this record'))))
 })
 
+Deno.test('CUL-2809 — end to end: a sparse trial with a logged off-diet feeding never says "either way" in the box', () => {
+  const input = wellLoggedTrialInput()
+  input.events = input.events.filter((_, n) => n === 0 || n % 6 === 0)
+  // On a day already logged, so the coverage is the sparse record's own.
+  input.events.push(
+    meal({
+      date: '2026-06-01',
+      brand: 'Purina',
+      product: 'Pro Plan Chicken',
+      foodItemId: 'f-ppc',
+      foodType: 'meal',
+      proteins: ['chicken', 'rice'],
+      ingredientsNotes: 'Chicken, rice, corn gluten meal',
+      time: '18:00:00',
+    }),
+  )
+  const s = assembleReport(input)
+  assert.equal(s.trial?.belowCoverageFloor, true)
+  assert.equal(s.trial?.exposures.offDiet, 1)
+  const text = plain(renderReport(s))
+  const box = text.slice(text.indexOf('Interpreting this record'))
+  assert.ok(/The trial diet was not fed exclusively: 1 feeding/.test(box), box.slice(0, 900))
+  assert.ok(/does not support reading the elimination as clean/.test(box), box.slice(0, 900))
+  assert.ok(/Sparse logging leaves the unlogged days unknown; it does not make the feedings above uncertain\./.test(box))
+  const boxOnly = box.slice(0, box.indexOf('Sparse logging') + 120)
+  assert.ok(!/either way|either direction/i.test(boxOnly), boxOnly)
+})
+
 Deno.test('§7.2 — under MIN_INTERPRETABLE_DAYS the answer is silence, not an empty card', () => {
   // A ratio over three days is noise in both directions: on day 3 one missed
   // breakfast reads as 33% coverage.
