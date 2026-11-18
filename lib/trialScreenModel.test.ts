@@ -894,7 +894,7 @@ describe('the coverage-null projection never reads a logged record as empty, nor
     // CUL-1338: the screen no longer drops the facts here, because the card no longer
     // says "nothing" — it says what the record holds, and that is a limit, not a reading.
     const m = trialModel(buildTrialScreenModel(argsFor(l)));
-    expect(texts(m)).not.toContain('Nothing is on the record for this trial yet.');
+    expect(texts(m)).not.toContain('No meals or treats are on the record for this trial yet.');
     expect(texts(m).some((t) => /\d+ of \d+ days/.test(t))).toBe(false);
     expect(m.facts.filter((x) => x.role === 'fact').map((x) => x.text)).toEqual([
       '6 logged feedings don’t name a food, so they can’t be checked against the trial diet.',
@@ -919,9 +919,9 @@ describe('the coverage-null projection never reads a logged record as empty, nor
     };
     // Non-vacuity: resolved without coverage, the card WOULD say the record is empty.
     const projectedCard = resolveTrialCard({ ...residual.input, coverage: null });
-    expect(projectedCard.lines.map((x) => x.text)).toContain('Nothing is on the record for this trial yet.');
+    expect(projectedCard.lines.map((x) => x.text)).toContain('No meals or treats are on the record for this trial yet.');
     const m = trialModel(buildTrialScreenModel(argsFor(residual)));
-    expect(texts(m)).not.toContain('Nothing is on the record for this trial yet.');
+    expect(texts(m)).not.toContain('No meals or treats are on the record for this trial yet.');
     expect(m.facts.filter((x) => x.role === 'fact')).toEqual([]);
   });
 
@@ -1091,9 +1091,9 @@ describe('an eating check that threw withholds the screen’s reassurance and ra
     expect(isAnimalNotEating(l.input)).toBe(false);
     const residual: Loaded = { ...l, input: { ...l.input, exposures: { ...l.input.exposures!, unclassifiable: 0 } } };
     // Non-vacuity: resolved without coverage, the card WOULD say the record is empty.
-    expect(resolveTrialCard({ ...residual.input, coverage: null }).lines.map((x) => x.text)).toContain('Nothing is on the record for this trial yet.');
+    expect(resolveTrialCard({ ...residual.input, coverage: null }).lines.map((x) => x.text)).toContain('No meals or treats are on the record for this trial yet.');
     const m = trialModel(buildTrialScreenModel(argsFor(residual)));
-    expect(texts(m)).not.toContain('Nothing is on the record for this trial yet.');
+    expect(texts(m)).not.toContain('No meals or treats are on the record for this trial yet.');
     expect(m.facts.filter((x) => x.role === 'fact')).toEqual([]);
   });
 

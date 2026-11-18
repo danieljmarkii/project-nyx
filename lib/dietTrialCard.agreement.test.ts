@@ -252,7 +252,7 @@ describe('CUL-1338: the "so far" paragraph (below the floor)', () => {
       coverage: null,
       exposures: { mayStateRecordClean: false, totalFeedings: 0, offDiet: 0, unclassifiable: 6 },
     }));
-    expect(allText(m)).not.toContain('Nothing is on the record for this trial yet.');
+    expect(allText(m)).not.toContain('No meals or treats are on the record for this trial yet.');
     expect(allText(m)).toContain(
       '6 logged feedings don’t name a food, so they can’t be checked against the trial diet.',
     );
