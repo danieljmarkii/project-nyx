@@ -36,9 +36,11 @@ The PM ruled all three as recommended (typed `go`, 2026-11-18):
 
 The same pass confirmed the rest by counterexample: untrusted reads (a collapsed partial read, an unreadable photo, floor-only, capped, consent declined) never reach the presence write; an owner's edit committing under the write is refused by the database; a sibling's call now, a flag-off call, an unknown verdict, a verdict a client lowered under a frozen tier, and a stored refusal of leave to wait all survive the last try.
 
-Pass 2's result is in the PR body's Definition of Done, at the commit it read.
+**Adversarial pass 2 broke the fix, in a different direction.** With the description travelling with the finding, a failed read could now overwrite a finding the row already held. A stored dark, tarry stool blood (digested blood, which reads differently to a vet) beside a stored foreign object: the failed read sees blood of no stated kind and no object, and the presence write rewrote the kind to "unread". A finished read in the same position keeps the stored columns whole. No call, flag or tier moved, but the vet report lost the detail. The fix: each present column is its own statement, and the database writes it only onto a row whose column holds no present value. A finding already on the row keeps its own kind and words, and is not treated as new (the hide stays). Pass 1's fix survives, because a note stored under "unsure" is still replaced the first time "yes" is written.
 
-Nine mutants were run against the new code. Each one turned at least one test red.
+That was the second and last pass the two-pass rule allows. The pass-2 fix was verified by tests and mutation, not by a third reviewer; the PR body says so.
+
+Ten mutants were run against the new code. Each one turned at least one test red.
 
 ## Residuals
 
@@ -46,6 +48,7 @@ Nine mutants were run against the new code. Each one turned at least one test re
 - **A replaced photo.** A failed read of photo 1 can land its blood on the row after a finished read of photo 2. Loud, and consistent with the standing rule that presence carries across photos.
 - **The bound.** The catch tries six times in all. Exhausting it needs a call to land and be lowered again inside one round trip, twice.
 - **A louder failed call over a quieter stored one** is not this PR's: filed as [CUL-2811](https://linear.app/projectnyx/issue/CUL-2811).
+- **A failure between the photo read and the write decision** (the stored row cannot be re-read) still loses the read's finding, as before this PR. Filed separately; the issue is linked from CUL-2808's comments.
 
 ## Teach
 
