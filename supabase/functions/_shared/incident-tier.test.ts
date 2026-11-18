@@ -11,6 +11,8 @@ import {
   holdsOver,
   type IncidentCopy,
   keepLouderTier,
+  raiseOnlyValues,
+  rescueOverStoredCall,
   isRealAnalysis,
   mergeAfterRead,
   type RescueRead,
@@ -282,6 +284,55 @@ Deno.test('CUL-2811 — a floor-only run that fails still writes its louder call
   assertStrictEquals('error' in values, false)
   assertStrictEquals(values.tier, 'call_now')
   assertStrictEquals(floorOnly('call_today').mode, 'skip')
+})
+
+// rescueOverStoredCall: a record-only rescue written over a stored call keeps what the photo
+// read on that row found, by the same rules as the floor-only writer (storedPhotoFinding).
+const FINDING_COPY: IncidentCopy = { ...COPY, contextualWithPhotoFinding: (p, f, v) => `PHOTO_CTX:${p}:${f.join(',')}:${v.join(',')}` }
+const BLOOD_DESCRIPTOR = { presentFlagsFromStructured: (row: Record<string, unknown>) => (row.blood_col === 'yes' ? ['blood'] : []) }
+const RECORD_RESCUE: RescueRead = { ...RESCUE_BASE, tier: 'call_now', read_text: 'CONTEXTUAL:Mochi:ctx' }
+const rebuilt = (row: Record<string, unknown>, rescue: RescueRead = RECORD_RESCUE) =>
+  rescueOverStoredCall(BLOOD_DESCRIPTOR, FINDING_COPY, rescue, row, { petName: 'Mochi', hasPhoto: true })
+
+Deno.test('CUL-2811 — a record-only rescue over a stored call keeps the cached flags and leads with the photo finding', () => {
+  const r = rebuilt({ recommendation: 'worth_a_call', visual_flags: ['blood'], contextual_flags: ['old'], edited_at: null })
+  assertEquals(r.visual_flags, ['blood'])
+  assertEquals(r.contextual_flags, ['old', 'ctx'])
+  assertStrictEquals(r.read_text, 'PHOTO_CTX:Mochi:old,ctx:blood')
+  assertStrictEquals(r.tier, 'call_now')
+})
+
+Deno.test('CUL-2811 — over an edited row the words lead with the owner\'s columns, not the stale cache', () => {
+  // The owner corrected the read to blood; the cached visual_flags are left stale on purpose (Pattern 7).
+  const r = rebuilt({ recommendation: 'worth_a_call', visual_flags: [], contextual_flags: [], blood_col: 'yes', edited_at: '2026-09-26T08:30:00Z' })
+  assertStrictEquals(r.read_text, 'PHOTO_CTX:Mochi:ctx:blood')
+  assertEquals(r.visual_flags, [])
+  // And an owner who cleared the finding is not told about it again.
+  const cleared = rebuilt({ recommendation: 'worth_a_call', visual_flags: ['blood'], contextual_flags: [], blood_col: 'no', edited_at: '2026-09-26T08:30:00Z' })
+  assertStrictEquals(cleared.read_text, 'CONTEXTUAL:Mochi:ctx')
+})
+
+Deno.test('CUL-2811 — a stored call that was the model\'s own, with no flag behind it, still leads as a photo finding', () => {
+  const r = rebuilt({ recommendation: 'worth_a_call', visual_flags: [], contextual_flags: [], edited_at: null })
+  assertStrictEquals(r.read_text, 'PHOTO_CTX:Mochi:ctx:')
+  // A stored call with a contextual flag behind it was the record's: no photo finding is claimed.
+  assertStrictEquals(rebuilt({ recommendation: 'worth_a_call', visual_flags: [], contextual_flags: ['old'], edited_at: null }).read_text, 'CONTEXTUAL:Mochi:old,ctx')
+})
+
+Deno.test('CUL-2811 — a rescue with a photo finding of its own is written as it is', () => {
+  const own: RescueRead = { ...RECORD_RESCUE, visual_flags: ['foreign_material'], read_text: 'THIS RUN' }
+  assertStrictEquals(rebuilt({ recommendation: 'worth_a_call', visual_flags: ['blood'], contextual_flags: ['old'], edited_at: null }, own), own)
+})
+
+Deno.test('CUL-2811 — the last try over a call names the call and nothing a newer version could make stale', () => {
+  const full = {
+    event_id: 'e', pet_id: 'p', incident_type: 'vomit', recommendation: 'worth_a_call', tier: 'call_now', may_wait: null,
+    read_text: 'COPIED', visual_flags: ['blood'], contextual_flags: ['ctx'], error: 'boom', dismissed_at: null, rule_version: 'r1',
+  }
+  assertEquals(raiseOnlyValues(full), { recommendation: 'worth_a_call', tier: 'call_now', may_wait: null, dismissed_at: null, error: 'boom' })
+  // A floor-only rescue notes no error, and the raise names none.
+  const { error: _e, ...floorOnly } = full
+  assertStrictEquals('error' in raiseOnlyValues(floorOnly), false)
 })
 
 Deno.test('EN-3 — isRealAnalysis: a failed row holding a call tier is real (the cap never buries it)', () => {

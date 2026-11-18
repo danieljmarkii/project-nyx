@@ -903,7 +903,9 @@ export async function applyAnalysisWriteBack(
 // outranks. So a rescue shaped for a quiet row asks today's question (no call on the row).
 // Before CUL-2811 the question was "the row holds no call", which a call now asked of a
 // stored call today and was refused: the louder call fell to the note.
-export type QuieterOnly = { quieterThan: TierRank; mayWait: boolean | null }
+// `raiseOnly`: the write was decided over a stored call, so it names the call alone
+// (raiseOnlyValues). Required: which shape lands is a safety decision (C-37).
+export type QuieterOnly = { quieterThan: TierRank; mayWait: boolean | null; raiseOnly: boolean }
 
 // Every verdict a writer of this build can store (lib/incidentTier.ts, verdictForTier), in
 // the order the filters name them. Pinned by the suite against the shared ranks.
@@ -923,6 +925,19 @@ export function quieterRowFilters(rank: TierRank): readonly [string, string] {
   ]
 }
 
+// The last try over a stored CALL raises the call and writes nothing else (CUL-2811). The
+// rescue's flags and words over a call were copied from the row the catch read
+// (rescueOverStoredCall), and the content-held write is held to that row's RANK, not its
+// version: a sibling's call today with another finding, or an owner's edit, can land in the
+// gap, and the copied flags and words would be written over it. So this write names only
+// what is true over every version of a quieter row: the louder call, no leave to wait, the
+// hide cleared (a louder call the owner has not seen), and the error where the rescue notes
+// one. The row keeps its own flags and words until the next read.
+const RAISE_ONLY_COLUMNS = ['recommendation', 'tier', 'may_wait', 'dismissed_at', 'error'] as const
+export function raiseOnlyValues(values: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(RAISE_ONLY_COLUMNS.filter((c) => c in values).map((c) => [c, values[c]]))
+}
+
 export async function applyFailureWrite(
   client: SupabaseClient,
   key: { eventId: string; petId: string },
@@ -934,7 +949,8 @@ export async function applyFailureWrite(
     // is always a call (buildRescueRead); this is the closed answer if one ever is not.
     if (decidedOn.quieterThan === TIER_RANK.quiet) return { error: null, missed: true }
     const [quieterVerdict, quieterTier] = quieterRowFilters(decidedOn.quieterThan)
-    const { event_id: _e, pet_id: _p, ...values } = write.values
+    const { event_id: _e, pet_id: _p, ...decided } = write.values
+    const values = decidedOn.raiseOnly ? raiseOnlyValues(decided) : decided
     const quiet = client
       .from('event_ai_analysis')
       .update(values)
@@ -2893,11 +2909,13 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // louder that landed since the read is never written over; and a rescue shaped for a
         // quiet row never lands over a call, whose photo finding it does not carry.
         const contentHeld = failureWrite.mode === 'rescue' && attempt > WRITE_ATTEMPTS && latestVersion !== null
+        // Over a call, the content-held write raises the call only: the flags and words the
+        // rescue copied from the row it read are true of that version alone (raiseOnlyValues).
         const wrote = await applyFailureWrite(
           adminClient,
           { eventId, petId: petIdForFailure },
           failureWrite,
-          contentHeld ? { quieterThan: (latestRank + 1) as TierRank, mayWait: latest?.mayWait ?? null } : latestVersion,
+          contentHeld ? { quieterThan: (latestRank + 1) as TierRank, mayWait: latest?.mayWait ?? null, raiseOnly: latestRank !== TIER_RANK.quiet } : latestVersion,
         )
         if (wrote.missed && failureWrite.mode === 'rescue') {
           // Bounded: a row that still refuses after as many content-held tries as version-held
