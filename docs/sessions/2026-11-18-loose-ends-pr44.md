@@ -32,11 +32,14 @@ A photo read that found nothing hands over nothing. A failed run still never wri
 - Over a record that already holds a call, the newly held finding replaced the stored finding in the card's words. Before the fix, the failed run kept the stored words. Now a finding held before the record was read is added to what the record holds: its flag leads, the stored flag and the stored reason stay.
 - After a write that missed because the record moved, the handler was still holding that attempt's verdict, including a record flag the attempt had withdrawn. The code comment said the handler fell back to the record's flags; it did not. A miss now hands the photo's finding over again with the record's flags.
 
-**Pass 2** is recorded in the PR body with the commit it read.
+**Pass 2** read the second commit and broke it once more. My pass 1 fix for the missed write handed the handler the record's flags only. A flag the second look had *added* was dropped with the withdrawal, and when it was the only reason for the call, the call went too. No live read adds a flag today (stool's second look only withdraws), so nobody was exposed, but the contract allows it. A miss now gives back what was withdrawn and keeps what was added. Pass 2 also named two unpinned lines in the merge; both now have a test that reds when the line is broken.
+
+That was the second and last pass. Its fix is the one the reviewer checked in a scratch copy; the tests and mutation proofs stand in for a third read.
 
 ## Residuals
 
 - A record filed under another pet takes nothing, by design: every write is keyed on the event's own pet. The finding is held but has no record to land on. The run returns an error and the phone shows its retry line.
+- Over a record that already holds a call, the merged words name the stored finding beside this photo's as seen "in this photo". The stored one came from an earlier read. It errs loud.
 - If the database refuses the handler's own read as well, nothing is written. That was already so and is the safe answer.
 
 ## Teach

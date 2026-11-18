@@ -2628,11 +2628,12 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //     that does not escalate is not held (absence is never carried, buildRescueRead), so
     //     this can never put a calm verdict on a failed run. The write loop replaces both
     //     with its own once it has decided over the row.
-    const holdPhotoFinding = (): void => {
+    // `flags`: the record's flags the held read stands beside (a missed attempt passes its own).
+    const holdPhotoFinding = (flags: TFlag[] = contextualFlags): void => {
       if (!analysis) return
       // Both worked out before either is handed over, so a throw here hands over neither.
       const present = presentRedFlagColumns(descriptor, descriptor.buildStructuredValues(analysis))
-      const held = parsedEscalation(descriptor, copy, { analysis, petName, hasPhoto, contextualFlags })
+      const held = parsedEscalation(descriptor, copy, { analysis, petName, hasPhoto, contextualFlags: flags })
       presentColumnsForFailure = present
       computedRead = held ? withRescueTier(held, tiersOn, minTier) : null
       computedReadIsHeld = true
@@ -2895,16 +2896,19 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
 
       // Missed: the row moved between the decision and the write. Nothing was written.
       // Until the next attempt has taken its own second look, the catch must not rescue
-      // from this one's: a flag it withdrew was withdrawn over a row that is gone, and the
-      // row there now may be an owner's correction that keeps the call (adversarial pass 2:
-      // three misses, the owner's "watery" landing last, and the failed frame carried no
-      // call). So the rescue falls back to what the RECORD gave, which only ever says more.
-      // The same goes for the verdict this attempt kept for the catch: it carries the
-      // attempt's flags, withdrawal included, and buildRescueRead would prefer it. So the
-      // catch is handed the photo's own finding over the record's flags again (CUL-2812).
-      contextualFlagsForFailure = recordFlags
+      // from this one's WITHDRAWAL: a flag it withdrew was withdrawn over a row that is gone,
+      // and the row there now may be an owner's correction that keeps the call (adversarial
+      // pass 2 on CUL-2773: three misses, the owner's "watery" landing last, and the failed
+      // frame carried no call). So every flag the RECORD gave comes back. A flag the second
+      // look ADDED stays (the hook may add, ContextualRun): dropping it could drop the call.
+      // The verdict this attempt kept for the catch carried its flags as well, and
+      // buildRescueRead prefers it, so the catch is handed the photo's own finding again,
+      // beside the same flags (CUL-2812).
+      const keptForCatch = [...recordFlags, ...contextualFlags.filter((f) => !recordFlags.includes(f))]
+      contextualFlagsForFailure = keptForCatch
       copyForFailure = recordCopy
-      holdPhotoFinding()
+      computedRead = null
+      holdPhotoFinding(keptForCatch)
       if (attempt >= WRITE_ATTEMPTS) throw new Error('DB write failed: the stored row kept changing under this read')
       console.info(`${descriptor.functionName}: the stored row changed before the write; deciding again (CUL-2773)`)
       decidedRow = await readStoredRow()

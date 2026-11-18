@@ -1964,6 +1964,39 @@ Deno.test('pipeline CUL-2812 — a missed write gives the withdrawn flag back to
   assertStrictEquals(w.row?.blood_col, 'yes')
 })
 
+Deno.test('pipeline CUL-2812 — a flag the second look ADDED survives a missed write, with or without a photo finding', async () => {
+  // Only withdrawals are given back on a miss. An addition was this run's own finding: with
+  // a clean photo it is the only reason for the call, and it must reach the catch.
+  for (const vision of [CLEAN, BLOODY]) {
+    for (const fails of [{ beforeAiWrite: moveVersionOnly(3) }, { beforeAiWrite: moveVersionOnly(1), aiReadError: (n: number) => n === 3 }]) {
+      const w = makeWorld({ row: { ...STORED_CALM }, vision: () => vision, afterRead: () => ['ctx_flag'], ...fails })
+      const r = await run(w)
+      assertStrictEquals(r.status, 500)
+      assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+      assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+      assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
+    }
+  }
+})
+
+Deno.test('pipeline CUL-2812 — the merge over a stored call names a finding once, and an edited row leads with the owner\'s columns', async () => {
+  // Blood held over stored blood: one flag, not two.
+  const same = makeWorld({ row: { ...STORED_CALL_TODAY }, ...CALL_NOW_RUN, vision: () => BLOODY, aiReadError: (n) => n === 2 })
+  await run(same)
+  assertEquals(same.row?.visual_flags, ['blood'])
+  assertStrictEquals(same.row?.read_text, 'PHOTO_CTX:Mochi:stored_flag,ctx_flag:blood')
+  // An edited row: the owner said a foreign object, the cache still says blood. The words
+  // lead with this photo's blood, then the owner's word; the cache is written back as it was.
+  const edited = makeWorld({
+    row: { ...STORED_CALL_TODAY, blood_col: 'no', foreign_col: 'yes', edited_at: EDITED_AT },
+    ...CALL_NOW_RUN, vision: () => BLOODY, aiReadError: (n) => n === 2,
+  })
+  await run(edited)
+  assertEquals(edited.row?.visual_flags, ['blood'])
+  assertStrictEquals(edited.row?.read_text, 'PHOTO_CTX:Mochi:stored_flag,ctx_flag:blood,suspected_foreign_material')
+  assertStrictEquals(edited.row?.blood_col, 'no') // the owner's column stands
+})
+
 Deno.test('CUL-2812 — parsedEscalation never returns a quiet verdict, and nothing without a photo finding', () => {
   const d = descriptorFor(makeWorld({ vision: () => CLEAN }))
   const of = (analysis: TestAnalysis, contextualFlags: Flag[] = []) =>
