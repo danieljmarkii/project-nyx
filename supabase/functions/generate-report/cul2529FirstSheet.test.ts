@@ -83,14 +83,55 @@ Deno.test('CUL-2529 — the first sheet names the off-diet protein with its days
   assert.ok(html.indexOf('<div class="headline">') < html.indexOf('<h2>Diet trial'), 'the drugs are named before the trial block')
 })
 
-Deno.test('CUL-2529 — a feeding carrying no recorded off-trial protein is counted under its own words, never folded into a protein', () => {
+Deno.test('CUL-2810 — a feeding with no off-trial protein on file is said by why: unread says the ingredients were not read', () => {
   const s = withRecordOverlaps(fixture('nyx-live'))
   const t = s.trial!
   const off = t.exposures.items.filter((x) => x.classification.offDiet)
   off[0].classification = { ...off[0].classification, antigens: [] }
+  off[0].panelWasRead = false
   const out = plain(headlineOffDietCarried(t))
-  assert.match(out, /Chicken \(10\)/)
-  assert.match(out, /1 with no off-trial protein recorded on Oct \d+, 2026/)
+  assert.match(out, /^, carrying Chicken \(10\) on [^;]+; ingredients not read for 1 on Oct \d+, 2026$/, out)
+  assert.doesNotMatch(out, /no off-trial protein recorded/)
+})
+
+Deno.test('CUL-2810 — only a panel that was read AND checked may say nothing off-trial was named; either one missing falls to "not read"', () => {
+  const base = withRecordOverlaps(fixture('nyx-live'))
+  const shapes: [string, boolean, boolean, RegExp][] = [
+    ['read and checked', true, true, /ingredient list read, no off-trial protein named in it, for 1 on Oct \d+, 2026/],
+    ['read, check never ran', true, false, /ingredients not read for 1 on Oct \d+, 2026/],
+    ['unread, check ran', false, true, /ingredients not read for 1 on Oct \d+, 2026/],
+    ['neither', false, false, /ingredients not read for 1 on Oct \d+, 2026/],
+  ]
+  for (const [name, read, checked, want] of shapes) {
+    const t = structuredClone(base.trial!)
+    const off = t.exposures.items.filter((x) => x.classification.offDiet)
+    off[0].classification = { ...off[0].classification, antigens: [] }
+    off[0].panelWasRead = read
+    off[0].attributionChecked = checked
+    const out = plain(headlineOffDietCarried(t))
+    assert.match(out, want, `${name}: ${out}`)
+    assert.equal(/ingredient list read/.test(out), read && checked, `${name}: the read words only with both`)
+  }
+  // A stored copy from before either field: absent is not read.
+  const t = structuredClone(base.trial!)
+  const off = t.exposures.items.filter((x) => x.classification.offDiet)
+  off[0].classification = { ...off[0].classification, antigens: [] }
+  delete (off[0] as Partial<typeof off[0]>).panelWasRead
+  assert.match(plain(headlineOffDietCarried(t)), /ingredients not read for 1 on/)
+})
+
+Deno.test('CUL-2810 — every off-diet feeding of an unread food: the headline says so, carries nothing, and the old phrase is nowhere in the report', () => {
+  const s = fixture('nyx-live')
+  for (const x of s.trial!.exposures.items) {
+    if (!x.classification.offDiet) continue
+    x.classification = { ...x.classification, antigens: [] }
+    x.panelWasRead = false
+  }
+  const html = renderReport(s)
+  const head = headlineOf(html)
+  assert.match(head, /11 of 167 logged feedings did not match the trial diet, ingredients not read for 11 on Oct 18, Oct 19 and Oct 20, 2026 \(/, head)
+  assert.doesNotMatch(head, /carrying/, 'an unread food is never said to carry anything')
+  assert.doesNotMatch(plain(html), /no off-trial protein recorded/)
 })
 
 Deno.test('CUL-2529 — the drug clause is the trial block’s own rows: none recorded prints nothing; a record-only drug still prints', () => {

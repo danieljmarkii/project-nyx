@@ -3630,18 +3630,28 @@ function headline(snap: ReportSnapshot): string {
 /**
  * CUL-2529 instance 2 — the off-diet feedings' proteins, each with its count and days: ", carrying
  * Chicken (11) on Oct 18, Oct 19 and Oct 20". A food carrying several proteins counts once for each,
- * as the antigen tally does. Feedings carrying no recorded off-trial protein (an unread panel, or a
- * listed food fed before its date) are counted under their own words, never folded into a protein.
+ * as the antigen tally does.
+ *
+ * CUL-2810 (QUIET) — a feeding with no off-trial protein on file is said by WHY none is on file, never
+ * by the absence itself: "7 with no off-trial protein recorded" read as seven feedings checked and
+ * found harmless, over a food nobody read the label of. Unread (or a panel the protein check never
+ * ran on) says "ingredients not read"; only a panel that was read AND checked may say nothing
+ * off-trial was named in it, and anything short of both falls to the unread words, the louder ones.
+ * "carrying" opens the clause only when a protein is named, so an unread food carries nothing in print.
  */
 export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>): string {
   const off = t.exposures.items.filter((x) => x.classification.offDiet)
   if (off.length === 0) return ''
   const byProtein = new Map<string, { n: number; days: string[] }>()
-  const none: string[] = []
+  const unread: string[] = []
+  const readClear: string[] = []
   for (const x of off) {
     const day = dayKeyOfIndex(x.dayIndex)
     const antigens = [...new Set(x.classification.antigens.map((a) => a.toLowerCase()))]
-    if (antigens.length === 0) none.push(day)
+    if (antigens.length === 0) {
+      if (x.panelWasRead === true && x.attributionChecked === true) readClear.push(day)
+      else unread.push(day)
+    }
     for (const a of antigens) {
       const g = byProtein.get(a) ?? { n: 0, days: [] }
       g.n++
@@ -3652,10 +3662,15 @@ export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>):
   const named = [...byProtein.entries()]
     .sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]))
     .map(([p, g]) => `${h(capProtein(p))} (${num(g.n)}) ${dayListText(g.days)}`)
-  if (none.length > 0) {
-    named.push(`${num(none.length)} with no off-trial protein recorded ${dayListText(none)}`)
+  const clauses: string[] = []
+  if (named.length > 0) clauses.push(`carrying ${named.join('; ')}`)
+  if (unread.length > 0) clauses.push(`ingredients not read for ${num(unread.length)} ${dayListText(unread)}`)
+  if (readClear.length > 0) {
+    clauses.push(
+      `ingredient list read, no off-trial protein named in it, for ${num(readClear.length)} ${dayListText(readClear)}`,
+    )
   }
-  return `, carrying ${named.join('; ')}`
+  return `, ${clauses.join('; ')}`
 }
 
 /**
