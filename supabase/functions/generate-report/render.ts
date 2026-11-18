@@ -3632,11 +3632,12 @@ function headline(snap: ReportSnapshot): string {
  * Chicken (11) on Oct 18, Oct 19 and Oct 20". A food carrying several proteins counts once for each,
  * as the antigen tally does.
  *
- * CUL-2810 (QUIET) — a feeding with no off-trial protein on file is said by WHY none is on file, never
- * by the absence itself: "7 with no off-trial protein recorded" read as seven feedings checked and
- * found harmless, over a food nobody read the label of. Unread (or a panel the protein check never
- * ran on) says "ingredients not read"; only a panel that was read AND checked may say nothing
- * off-trial was named in it, and anything short of both falls to the unread words, the louder ones.
+ * CUL-2810 (QUIET) — a feeding with no off-trial protein on file is never described by that absence:
+ * "7 with no off-trial protein recorded" read as seven feedings checked and found harmless, over a
+ * food nobody read the label of. No panel on file says "ingredients not read". Proteins on file with
+ * none flagged says only "protein content not confirmed": `panelWasRead` is "some protein is on
+ * file", which a product name or an owner's typing also satisfies, and a bowl can be missing a food,
+ * so no wording here may say a list was read and came back clean (cold read + adversarial pass 1).
  * "carrying" opens the clause only when a protein is named, so an unread food carries nothing in print.
  */
 export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>): string {
@@ -3644,12 +3645,12 @@ export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>):
   if (off.length === 0) return ''
   const byProtein = new Map<string, { n: number; days: string[] }>()
   const unread: string[] = []
-  const readClear: string[] = []
+  const unconfirmed: string[] = []
   for (const x of off) {
     const day = dayKeyOfIndex(x.dayIndex)
     const antigens = [...new Set(x.classification.antigens.map((a) => a.toLowerCase()))]
     if (antigens.length === 0) {
-      if (x.panelWasRead === true && x.attributionChecked === true) readClear.push(day)
+      if (x.panelWasRead === true) unconfirmed.push(day)
       else unread.push(day)
     }
     for (const a of antigens) {
@@ -3665,10 +3666,8 @@ export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>):
   const clauses: string[] = []
   if (named.length > 0) clauses.push(`carrying ${named.join('; ')}`)
   if (unread.length > 0) clauses.push(`ingredients not read for ${num(unread.length)} ${dayListText(unread)}`)
-  if (readClear.length > 0) {
-    clauses.push(
-      `ingredient list read, no off-trial protein named in it, for ${num(readClear.length)} ${dayListText(readClear)}`,
-    )
+  if (unconfirmed.length > 0) {
+    clauses.push(`protein content not confirmed for ${num(unconfirmed.length)} ${dayListText(unconfirmed)}`)
   }
   return `, ${clauses.join('; ')}`
 }

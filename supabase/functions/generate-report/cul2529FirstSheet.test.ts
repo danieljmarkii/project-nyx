@@ -94,12 +94,12 @@ Deno.test('CUL-2810 — a feeding with no off-trial protein on file is said by w
   assert.doesNotMatch(out, /no off-trial protein recorded/)
 })
 
-Deno.test('CUL-2810 — only a panel that was read AND checked may say nothing off-trial was named; either one missing falls to "not read"', () => {
+Deno.test('CUL-2810 — proteins on file with none flagged says "not confirmed", never that a list was read and came back clean', () => {
   const base = withRecordOverlaps(fixture('nyx-live'))
   const shapes: [string, boolean, boolean, RegExp][] = [
-    ['read and checked', true, true, /ingredient list read, no off-trial protein named in it, for 1 on Oct \d+, 2026/],
-    ['read, check never ran', true, false, /ingredients not read for 1 on Oct \d+, 2026/],
-    ['unread, check ran', false, true, /ingredients not read for 1 on Oct \d+, 2026/],
+    ['proteins on file, checked', true, true, /protein content not confirmed for 1 on Oct \d+, 2026/],
+    ['proteins on file, check never ran', true, false, /protein content not confirmed for 1 on Oct \d+, 2026/],
+    ['no panel, check ran', false, true, /ingredients not read for 1 on Oct \d+, 2026/],
     ['neither', false, false, /ingredients not read for 1 on Oct \d+, 2026/],
   ]
   for (const [name, read, checked, want] of shapes) {
@@ -110,9 +110,10 @@ Deno.test('CUL-2810 — only a panel that was read AND checked may say nothing o
     off[0].attributionChecked = checked
     const out = plain(headlineOffDietCarried(t))
     assert.match(out, want, `${name}: ${out}`)
-    assert.equal(/ingredient list read/.test(out), read && checked, `${name}: the read words only with both`)
+    // Adversarial pass 1: no shape may print a finding of absence (a name-only "panel", an incomplete bowl).
+    assert.doesNotMatch(out, /\bno\b[^;]*protein|list read|none named|clear/i, `${name}: ${out}`)
   }
-  // A stored copy from before either field: absent is not read.
+  // A stored copy from before the field: absent is not read.
   const t = structuredClone(base.trial!)
   const off = t.exposures.items.filter((x) => x.classification.offDiet)
   off[0].classification = { ...off[0].classification, antigens: [] }
