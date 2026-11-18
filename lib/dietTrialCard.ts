@@ -2814,6 +2814,11 @@ function windowLineFor(endIndex: number, overrunDays: number, today: string): st
     : `Ends ${formatTrialDate(endIndex, today)}`;
 }
 
+/** State 4's empty line. Scoped to the population `soFarLine` reads (feedings:
+ *  meals and treats), never to the trial's whole record (CUL-1567, C-3). */
+export const SUB_FLOOR_NO_FEEDINGS_LINE =
+  'No meals or treats are on the record for this trial yet.';
+
 /** State 4's single combined sentence — deliberately one paragraph, because the
  *  sub-floor card leads with the record's limits and then discloses what IS on
  *  it, rather than opening with a ratio that reads as a score. */
@@ -2834,7 +2839,11 @@ function soFarLine(input: TrialCardInput): string {
   const unnamed = ex ? unclassifiableLine(ex, namesTotal) : null;
   const nothingLogged =
     (input.coverage?.daysLogged ?? 0) === 0 && (ex?.totalFeedings ?? 0) === 0 && !unnamed;
-  if (nothingLogged) return 'Nothing is on the record for this trial yet.';
+  // IT NAMES WHAT IT COUNTED (CUL-1567). Every input above is a feeding population
+  // (meals and treats), and the card cannot see a symptom or a daily look logged
+  // during the trial. "Nothing is on the record" claimed the whole record, so it
+  // rendered beside a logged vomit. Same class as `DAY_ONE_NO_MEALS_LINE`.
+  if (nothingLogged) return SUB_FLOOR_NO_FEEDINGS_LINE;
 
   const parts: string[] = [];
   if (input.coverage) {
@@ -2854,7 +2863,7 @@ function soFarLine(input: TrialCardInput): string {
       parts.push(`all ${ex.totalFeedings} matched the trial diet or a permitted food`);
     }
   }
-  if (parts.length === 0) return unnamed ?? 'Nothing is on the record for this trial yet.';
+  if (parts.length === 0) return unnamed ?? SUB_FLOOR_NO_FEEDINGS_LINE;
   const joined = parts.length === 1
     ? parts[0]
     : `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;

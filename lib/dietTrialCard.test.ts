@@ -39,6 +39,7 @@ import {
   type TrialCardLineRole,
   type TrialCardRegister,
   type TrialCardState,
+  SUB_FLOOR_NO_FEEDINGS_LINE,
 } from './dietTrialCard';
 import { getDietTrialProgress } from './analytics';
 import { localDayIndexOf } from './utils';
@@ -2612,9 +2613,31 @@ describe('B-533 PR A — round 9 regressions', () => {
       exposures: { mayStateRecordClean: false, totalFeedings: 0, offDiet: 0 },
     }));
     const all = allStrings(m).join(' ');
-    expect(all).toContain('Nothing is on the record for this trial yet.');
+    expect(all).toContain('No meals or treats are on the record for this trial yet.');
     expect(all).not.toMatch(/meals on 0 of \d+ days/);
     expect(all).not.toContain('0 feedings in total');
+  });
+
+  // CUL-1567: every input the line reads is a feeding population, and the card
+  // cannot see a symptom or a look logged during the trial. So no route to
+  // the empty line may claim the whole record.
+  it('the sub-floor empty line names what it counted, over zeroed or absent inputs', () => {
+    const early = resolveTrialCard(activeInput({
+      belowCoverageFloor: true,
+      coverage: { daysLogged: 0, daysElapsed: 12 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 0, offDiet: 0 },
+    }));
+    const fallback = resolveTrialCard(activeInput({
+      belowCoverageFloor: true,
+      coverage: null,
+      exposures: null,
+    }));
+    for (const m of [early, fallback]) {
+      const all = allStrings(m).join(' ');
+      expect(all).toContain(SUB_FLOOR_NO_FEEDINGS_LINE);
+      expect(all).not.toMatch(/Nothing is on the record/);
+    }
+    expect(SUB_FLOOR_NO_FEEDINGS_LINE).toMatch(/meals or treats/);
   });
 
   // The app declining to answer a question nobody asked. There is nothing to
