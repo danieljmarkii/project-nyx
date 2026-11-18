@@ -957,8 +957,10 @@ export async function applyFailureWrite(
 //
 // So the catch also writes the red-flag columns THIS RUN'S PHOTO READ FOUND PRESENT, and
 // only those:
-//   · presence only. Never an absence, never a column that is not a red flag, never
-//     ai_raw_payload: an owner's later edit is still diffed against the last finished
+//   · presence only. Never an absence, never ai_raw_payload, and no column but a present
+//     red flag and the columns that describe it (the descriptor's redFlagCompanions: which
+//     blood, what object), which go with it at THIS run's value, null included, so the
+//     finding never stands beside an older read's words for something else: an owner's later edit is still diffed against the last finished
 //     read's payload. The one reader that can quiet anything on that diff quiets a flag only
 //     when the owner's column reads NONE (lib/incidentAskWords.ts), and this never writes one.
 //   · only where `edited_at` is null, checked by the database in the UPDATE itself. Once
@@ -976,7 +978,7 @@ declare const PRESENT_ONLY: unique symbol
 export type PresentRedFlagColumns = Record<string, unknown> & { readonly [PRESENT_ONLY]: true }
 
 export function presentRedFlagColumns<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
-  descriptor: Pick<IncidentDescriptor<TAnalysis, TFlag>, 'redFlagColumns' | 'presentFlagsFromStructured'>,
+  descriptor: Pick<IncidentDescriptor<TAnalysis, TFlag>, 'redFlagColumns' | 'presentFlagsFromStructured' | 'redFlagCompanions'>,
   runColumns: Record<string, unknown> | null,
 ): PresentRedFlagColumns {
   const present: Record<string, unknown> = {}
@@ -985,6 +987,9 @@ export function presentRedFlagColumns<TAnalysis extends IncidentAnalysisBase, TF
     // can never drift from what Home and the report will read off the column.
     if (descriptor.presentFlagsFromStructured({ [column]: runColumns?.[column] }).length > 0) {
       present[column] = runColumns?.[column]
+      for (const companion of descriptor.redFlagCompanions?.[column] ?? []) {
+        present[companion] = runColumns?.[companion] ?? null
+      }
     }
   }
   return present as PresentRedFlagColumns
@@ -1576,6 +1581,12 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // these, so presentFlagsFromStructured must read nothing else (each descriptor's
   // suite pins that).
   redFlagColumns: readonly string[]
+  // Optional: the columns that only DESCRIBE a red-flag column (which blood, what object), by
+  // the red-flag column they describe. They travel with it in the presence write (CUL-2808): a
+  // present finding written alone would stand beside an older read's description of something
+  // else (a stored "hairball" note under this run's string). Never a red flag themselves, and
+  // never read by presentFlagsFromStructured.
+  redFlagCompanions?: Readonly<Record<string, readonly string[]>>
   // Optional (EN-7): further stored columns step 3b selects for a ContextualRun.afterRead to
   // read (stool's owner-editable consistency). Never read by the red-flag derivation.
   afterReadColumns?: readonly string[]

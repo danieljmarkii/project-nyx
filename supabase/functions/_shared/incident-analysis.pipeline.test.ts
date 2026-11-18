@@ -40,6 +40,8 @@ type Flag = 'ctx_flag'
 interface TestAnalysis extends IncidentAnalysisBase {
   appears: boolean
   blood: 'yes' | 'no' | null
+  // What kind of blood: a column that describes the red-flag column (redFlagCompanions).
+  bloodNote?: string | null
   colour: string | null
 }
 
@@ -344,10 +346,12 @@ function descriptorFor(w: World): IncidentDescriptor<TestAnalysis, Flag> {
     buildStructuredValues: (a) => ({
       ai_raw_payload: a,
       blood_col: a?.blood ?? null,
+      blood_note: a?.bloodNote ?? null,
       colour: a?.colour ?? null,
       description: a?.description ?? null,
     }),
     redFlagColumns: ['blood_col'],
+    redFlagCompanions: { blood_col: ['blood_note'] },
     presentFlagsFromStructured: (row) => (row.blood_col === 'yes' ? ['blood'] : []),
   }
 }
@@ -1307,7 +1311,7 @@ const STORED_CALM = {
 const EDITED_AT = '2026-09-26T08:30:00Z'
 // The owner's correction as the phone writes it: the fields, and the stamp.
 const OWNER_EDIT = { blood_col: 'yes', colour: 'red', edited_at: EDITED_AT }
-const STRUCTURED = ['blood_col', 'colour', 'description', 'ai_raw_payload']
+const STRUCTURED = ['blood_col', 'blood_note', 'colour', 'description', 'ai_raw_payload']
 const structuredKeysWritten = (w: World): string[] =>
   w.writes.flatMap((x) => Object.keys(x.values)).filter((k) => STRUCTURED.includes(k))
 
@@ -1755,7 +1759,7 @@ Deno.test('pipeline CUL-2808 — three missed writes of a blood read: the blood 
   assertStrictEquals(w.row?.colour, 'yellow')
   assertEquals(w.row?.ai_raw_payload, STORED_CALM.ai_raw_payload)
   assertStrictEquals(w.row?.edited_at, null)
-  assertEquals(structuredKeysWritten(w), ['blood_col'])
+  assertEquals(structuredKeysWritten(w), ['blood_col', 'blood_note'])
 })
 
 Deno.test('pipeline CUL-2808 — a sibling\'s call for another reason on the last miss: the note is written and the blood still reaches the column', async () => {
@@ -1915,6 +1919,8 @@ Deno.test('pipeline CUL-2808 — a stored refusal of leave to wait that lands un
 
 Deno.test('pipeline CUL-2808 — the content-held tries are bounded', async () => {
   // A row that reads quiet and refuses every write (its leave to wait flips under each one).
+  // No production writer takes a stored FALSE back to NULL, so this sequence cannot occur;
+  // it is here only to prove the loop ends whatever the row does.
   const w = makeWorld({
     row: { ...STORED_CALM },
     contextFlags: ['ctx_flag'], vision: overloaded, appConfig: EN3_FOR_OWNER,
@@ -2002,12 +2008,14 @@ Deno.test('CUL-2808 — the presence write is filtered on an unedited row, by th
   assertStrictEquals(sent.params.get('event_id'), 'eq.evt-1')
   assertStrictEquals(sent.params.get('pet_id'), 'eq.pet-1')
   // The present column and the hide's clear, and nothing else.
-  assertEquals(sent.body, { blood_col: 'yes', dismissed_at: null })
+  assertEquals(sent.body, { blood_col: 'yes', blood_note: null, dismissed_at: null })
 })
 
 Deno.test('CUL-2808 — presentRedFlagColumns carries presence only, one red-flag column at a time', () => {
   const d = descriptorFor(makeWorld({ vision: () => CLEAN }))
-  assertEquals({ ...presentRedFlagColumns(d, { blood_col: 'yes', colour: 'red', ai_raw_payload: { blood: 'yes' } }) }, { blood_col: 'yes' })
+  assertEquals({ ...presentRedFlagColumns(d, { blood_col: 'yes', blood_note: 'fresh', colour: 'red', ai_raw_payload: { blood: 'yes' } }) }, { blood_col: 'yes', blood_note: 'fresh' })
+  // A description travels only with its finding: none present, none written.
+  assertEquals({ ...presentRedFlagColumns(d, { blood_col: 'no', blood_note: 'STALE' }) }, {})
   assertEquals({ ...presentRedFlagColumns(d, { blood_col: 'no', colour: 'red' }) }, {})
   assertEquals({ ...presentRedFlagColumns(d, { blood_col: null }) }, {})
   assertEquals({ ...presentRedFlagColumns(d, null) }, {})
@@ -2042,4 +2050,56 @@ Deno.test('pipeline CUL-2808 — a failed clean read leaves a hide alone (no fin
   })
   await run(w)
   assertStrictEquals(w.row?.dismissed_at, '2026-09-26T08:10:00Z')
+})
+
+// Adversarial pass 1 on CUL-2808: the presence write carried the red-flag column alone, so a
+// stored description from an older read (a note the model wrote under 'unsure') became the
+// words shown beside this run's finding, on the card, the report and Ask.
+Deno.test('pipeline CUL-2808 — the finding takes its own description with it: an older read\'s note never stands beside it', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, blood_note: 'STALE NOTE FROM THE OLDER READ' },
+    vision: () => ({ ...BLOODY, bloodNote: 'THIS RUN' }),
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.blood_note, 'THIS RUN')
+})
+
+Deno.test('pipeline CUL-2808 — a finding with no description of its own clears the older one', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, blood_note: 'STALE NOTE FROM THE OLDER READ' },
+    vision: () => BLOODY,
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.blood_note, null)
+})
+
+Deno.test('pipeline CUL-2808 — a clean read that fails leaves the stored description alone', async () => {
+  const w = makeWorld({
+    row: { ...STORED_CALM, blood_col: 'yes', blood_note: 'STORED' },
+    vision: () => CLEAN,
+    aiWriteError: (n) => n === 1,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_note, 'STORED')
+})
+
+Deno.test('pipeline CUL-2808 — a landed presence write takes back a leave to wait a sibling gave in the gap', async () => {
+  // The run's write fails; a sibling's finished call today, with leave to wait, lands before
+  // the catch reads. The catch notes the error over that call, and the blood that then lands
+  // refuses the wait.
+  const w = makeWorld({
+    row: { ...STORED_CALM },
+    vision: () => BLOODY,
+    aiWriteError: (n) => n === 1,
+    beforeAiWrite: (world, n) => {
+      if (n === 3) commit(world, { may_wait: true })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  assertStrictEquals(w.row?.may_wait === true, false)
 })

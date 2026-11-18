@@ -19,6 +19,8 @@ import {
   buildAnalysisWriteBack,
   STRUCTURED_FIELD_KEYS,
   RED_FLAG_COLUMNS,
+  RED_FLAG_COMPANIONS,
+  VOMIT_DESCRIPTOR,
   presentFlagsFromStructured,
   detectImageMediaType,
   bytesToBase64,
@@ -34,7 +36,7 @@ import {
   type FunctionCaps,
 } from './index.ts'
 import { deriveIncidentFlags } from '../generate-signal/detection.ts'
-import { gatedStatus, selectReadText as selectSharedReadText, shouldCollapsePartialRead, type GateState } from '../_shared/incident-analysis.ts'
+import { gatedStatus, presentRedFlagColumns, selectReadText as selectSharedReadText, shouldCollapsePartialRead, type GateState } from '../_shared/incident-analysis.ts'
 import type { IntakeRecord } from './context.ts'
 
 // ── Cap + flag gate (T2-3) ────────────────────────────────────────────────────
@@ -1139,4 +1141,26 @@ Deno.test('presentFlagsFromStructured (vomit) — a stored ai_raw_payload maps t
     readFields: freshReadFields,
   })
   assertEquals(presentFlagsFromStructured(wb.values), ['blood', 'foreign_material'])
+})
+
+// CUL-2808: what a failed read's presence write carries, through the REAL descriptor. The
+// object's note travels with the object, at this run's value; nothing rides on an absence.
+Deno.test('CUL-2808 (vomit) — a present finding takes its own description; an absence takes nothing', () => {
+  const columns = (over: Record<string, unknown>): Record<string, unknown> => ({
+    ...presentRedFlagColumns(VOMIT_DESCRIPTOR, {
+      blood_present: 'none_visible', foreign_material_present: 'no', foreign_material_note: null, colour: 'yellow', description: 'x', ai_raw_payload: {}, ...over,
+    }),
+  })
+  assertEquals(columns({}), {})
+  assertEquals(columns({ foreign_material_present: 'unsure', foreign_material_note: 'maybe a hairball' }), {})
+  assertEquals(columns({ blood_present: 'fresh_red' }), { blood_present: 'fresh_red' })
+  assertEquals(columns({ blood_present: 'coffee_ground' }), { blood_present: 'coffee_ground' })
+  assertEquals(columns({ foreign_material_present: 'yes', foreign_material_note: 'string' }), { foreign_material_present: 'yes', foreign_material_note: 'string' })
+  // No note of its own: the stored one is cleared, never left to describe this finding.
+  assertEquals(columns({ foreign_material_present: 'yes' }), { foreign_material_present: 'yes', foreign_material_note: null })
+  // Every companion describes a red-flag column, and none is one.
+  for (const [column, companions] of Object.entries(RED_FLAG_COMPANIONS)) {
+    assertEquals((RED_FLAG_COLUMNS as readonly string[]).includes(column), true)
+    for (const c of companions) assertEquals((RED_FLAG_COLUMNS as readonly string[]).includes(c), false)
+  }
 })
