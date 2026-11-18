@@ -68,11 +68,14 @@ import { isEscalationVerdict, isQuietVerdict, QUIET_VERDICTS } from '../../../li
 // list, shared with the phone. See "The tier" below for what this file does with it.
 import {
   effectiveTierRank,
+  INCIDENT_TIERS,
   type IncidentTier,
   isIncidentTier,
   TIER_RANK,
+  type TierRank,
   tierForVerdict,
   tierRank,
+  verdictRank,
 } from '../../../lib/incidentTier.ts'
 // EN-4's floor (Engines v3 PR-28): only its tier type is named here; the rule itself runs in
 // the vomit descriptor, which hands its answer over as ContextualRun.minTier.
@@ -887,42 +890,56 @@ export async function applyAnalysisWriteBack(
 // stands over "couldn't finish").
 // The error-only note is not routed here: it decides nothing about the row's contents.
 //
-// THE LAST TRY (CUL-2808). A row whose version keeps moving must not cost the escalation this
-// run computed, so after WRITE_ATTEMPTS held misses the rescue stops asking "is this the
-// version I read" and asks the one thing a rescue needs to be true: THE ROW HOLDS NO CALL.
-// It is an UPDATE matching only a quiet or empty verdict AND a quiet or empty tier, so the
-// database answers at the moment of the write and there is no read-to-write gap for a
-// sibling's call now to land in (before this it was an unconditional upsert, and one did:
-// it came back as this run's call today). A miss means the row holds a call, or its leave
-// to wait moved; the caller reads again, and over a call that is the error-only note.
-export type QuietOnly = { quietOnly: true; mayWait: boolean | null }
+// THE LAST TRY (CUL-2808, CUL-2811). A row whose version keeps moving must not cost the
+// escalation this run computed, so after WRITE_ATTEMPTS held misses the rescue stops asking
+// "is this the version I read" and asks the one thing a rescue needs to be true: THE ROW'S
+// CALL IS QUIETER THAN MINE. It is an UPDATE matching only a verdict AND a tier that each
+// rank below the rescue's, so the database answers at the moment of the write and there is
+// no read-to-write gap for a sibling's call now to land in (before CUL-2808 it was an
+// unconditional upsert, and one did: it came back as this run's call today). A miss means
+// the row holds a call as loud as this one or louder, or its leave to wait moved; the caller
+// reads again, and over such a call that is the error-only note.
+// Before CUL-2811 the question was "the row holds no call", which a call now asked of a
+// stored call today and was refused: the louder call fell to the note.
+export type QuieterOnly = { quieterThan: TierRank; mayWait: boolean | null }
 
-// The quiet tiers, as lib/incidentTier.ts ranks them (tierRank: these two, and no tier).
-// Pinned against TIER_RANK by the suite, so a tier added there cannot be missed here.
-export const QUIET_TIERS = ['logged', 'not_enough_to_say'] as const
+// Every verdict a writer of this build can store (lib/incidentTier.ts, verdictForTier), in
+// the order the filters name them. Pinned by the suite against the shared ranks.
+export const KNOWN_VERDICTS = [...QUIET_VERDICTS, 'worth_a_call'] as const
 
-// PostgREST `or` filters for "this row holds no call". NULL is named on its own in each:
-// `in` never matches NULL, and a row with no verdict or no tier is quiet (lib/incidentTier.ts).
-export const QUIET_ROW_FILTERS = [
-  `recommendation.is.null,recommendation.in.(${QUIET_VERDICTS.join(',')})`,
-  `tier.is.null,tier.in.(${QUIET_TIERS.join(',')})`,
-] as const
+// PostgREST `or` filters for "this row's call ranks below `rank`", one per column, read off
+// the shared rank functions rather than a second list (C-34). Each is an ALLOWLIST: a value
+// this build does not know is on neither, so a row holding one is never written over (it
+// ranks as call now, lib/incidentTier.ts). NULL is named on its own in each: `in` never
+// matches NULL, and a row with no verdict or no tier is quiet.
+export function quieterRowFilters(rank: TierRank): readonly [string, string] {
+  const verdicts = KNOWN_VERDICTS.filter((v) => verdictRank(v) < rank)
+  const tiers = INCIDENT_TIERS.filter((t) => tierRank(t) < rank)
+  return [
+    `recommendation.is.null,recommendation.in.(${verdicts.join(',')})`,
+    `tier.is.null,tier.in.(${tiers.join(',')})`,
+  ]
+}
 
 export async function applyFailureWrite(
   client: SupabaseClient,
   key: { eventId: string; petId: string },
   write: { mode: 'upsert' | 'rescue'; values: Record<string, unknown> },
-  decidedOn: RowVersion | QuietOnly,
+  decidedOn: RowVersion | QuieterOnly,
 ): Promise<WriteOutcome> {
-  if (decidedOn !== null && 'quietOnly' in decidedOn) {
+  if (decidedOn !== null && 'quieterThan' in decidedOn) {
+    // Nothing ranks below quiet, so a write that claims no call lands over nothing. A rescue
+    // is always a call (buildRescueRead); this is the closed answer if one ever is not.
+    if (decidedOn.quieterThan === TIER_RANK.quiet) return { error: null, missed: true }
+    const [quieterVerdict, quieterTier] = quieterRowFilters(decidedOn.quieterThan)
     const { event_id: _e, pet_id: _p, ...values } = write.values
     const quiet = client
       .from('event_ai_analysis')
       .update(values)
       .eq('event_id', key.eventId)
       .eq('pet_id', key.petId)
-      .or(QUIET_ROW_FILTERS[0])
-      .or(QUIET_ROW_FILTERS[1])
+      .or(quieterVerdict)
+      .or(quieterTier)
     // The rescue's may_wait was worked out from the stored one (a stored FALSE is the photo's
     // own evidence and is kept), so a write that names it lands only over the value it read.
     const held = !('may_wait' in values)
@@ -1146,6 +1163,13 @@ export function withRescueTier<TFlag extends string>(
   return { ...rescue, tier: raisedTier(tierForVerdict(rescue.recommendation), rescue, minTier) }
 }
 
+// What a rescue says, in ranks: the louder of its two columns, read exactly as a stored row
+// is (effectiveTierRank). With the key off it carries no tier and ranks as its verdict does,
+// call today, so it can never outrank a call already on the row.
+export function rescueRank(rescue: Pick<RescueRead, 'recommendation' | 'tier'>): TierRank {
+  return effectiveTierRank(rescue)
+}
+
 // `existing` is the row read AT THE MOMENT OF THIS DECISION, not at step 3b — see
 // the call site for why the difference matters. `existingReadFailed` says that read
 // itself errored, which is NOT the same as "no row": the caller cannot tell an empty
@@ -1187,12 +1211,20 @@ export function buildFailureWrite(params: {
 
   // The louder of the two columns (lib/incidentTier.ts): with no tier on the row this is
   // exactly isEscalationVerdict(recommendation); a tier written under the key protects too.
-  if (params.existing && effectiveTierRank(params.existing) !== TIER_RANK.quiet) {
+  //
+  // A stored call stands over a failed run that worked out one no louder: a rescue there
+  // would only swap one escalation's words for another's. A STRICTLY LOUDER rescue is
+  // written (CUL-2811): a call now this run worked out, from the record floor's minTier say,
+  // must not be dropped because the row already says call today. That is the rule a
+  // finished read follows (holdsOver never holds a call over a call; keepLouderTier), and
+  // the rescue is the same read-fields-only shape it is over a quiet row, below.
+  const storedRank = params.existing ? effectiveTierRank(params.existing) : TIER_RANK.quiet
+  const rescueIsLouder = !!params.rescue && rescueRank(params.rescue) > storedRank
+  if (storedRank !== TIER_RANK.quiet && !rescueIsLouder) {
     // Record the error alongside for observability; leave status, recommendation
     // and read_text exactly as the record earned them. A later read that finishes
     // clears `error`: a louder or equal one via readFields (error: null), a calmer one
-    // through the hold (resolveReanalysisWrite, CUL-1509). A rescue would only swap one
-    // escalation's words for another's, so the stored one stands.
+    // through the hold (resolveReanalysisWrite, CUL-1509).
     return params.floorOnly ? { mode: 'skip' } : errorOnly(params)
   }
 
@@ -1202,8 +1234,8 @@ export function buildFailureWrite(params: {
     // a fresh row's are null, which is right for a read that never finished.
     //
     // And the owner's hide goes (CUL-1323). This is the one failure shape that writes
-    // WORDS: an escalation over a row that held none, so words the owner has not seen.
-    // A hide they made on the calm read before it would otherwise stand over them, and
+    // WORDS: an escalation over a row that held none or a quieter one, so words the owner
+    // has not seen. A hide they made on the read before it would otherwise stand over them, and
     // "AI note hidden" would sit where the warning belongs.
     const rescue: FailureWrite & { mode: 'rescue' } = {
       mode: 'rescue',
@@ -2749,10 +2781,11 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // Decided over the catch's own re-read and held to its version (CUL-2805). A rescue that
     // misses re-reads and decides again, as every held write does: the row may have moved
     // without escalating (a neighbour lowering may_wait, an owner's edit, a sibling's calm
-    // read), and a final skip there would drop the escalation this run computed. Over an
-    // escalated row the next decision is the error-only note; over a quiet one, the rescue again.
+    // read), and a final skip there would drop the escalation this run computed. Over a row
+    // whose call is as loud as the rescue's or louder the next decision is the error-only note;
+    // over a quieter one, the rescue again (CUL-2811).
     // After WRITE_ATTEMPTS held misses the rescue is held to the row's CONTENT instead: it lands
-    // only over a row that holds no call (applyFailureWrite, CUL-2808).
+    // only over a row whose call is quieter than its own (applyFailureWrite, CUL-2808).
     for (let attempt = 1; ; attempt++) {
       let latest: StoredAnalysis | null = null
       let latestReadFailed = false
@@ -2800,19 +2833,20 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // Unconditional (null): it notes the error and decides nothing about the row's contents.
         await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values, null)
       } else if ((failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') && petIdForFailure) {
-        // Past WRITE_ATTEMPTS held misses over a row, the rescue is held to "no call on the
-        // row" (and the leave to wait it read), not to a version: a row that only keeps moving
-        // still gets it, and a call that landed since the read is never written over.
-        const quietOnly = failureWrite.mode === 'rescue' && attempt > WRITE_ATTEMPTS && latestVersion !== null
+        // Past WRITE_ATTEMPTS held misses over a row, the rescue is held to "the row's call is
+        // quieter than mine" (and the leave to wait it read), not to a version: a row that only
+        // keeps moving still gets it, and a call as loud or louder that landed since the read
+        // is never written over.
+        const contentHeld = failureWrite.mode === 'rescue' && !!rescueRead && attempt > WRITE_ATTEMPTS && latestVersion !== null
         const wrote = await applyFailureWrite(
           adminClient,
           { eventId, petId: petIdForFailure },
           failureWrite,
-          quietOnly ? { quietOnly: true, mayWait: latest?.mayWait ?? null } : latestVersion,
+          contentHeld && rescueRead ? { quieterThan: rescueRank(rescueRead), mayWait: latest?.mayWait ?? null } : latestVersion,
         )
         if (wrote.missed && failureWrite.mode === 'rescue') {
           // Bounded: a row that still refuses after as many content-held tries as version-held
-          // ones was seen holding a call at each of them, and keeps what it holds.
+          // ones was seen holding a call no quieter at each of them, and keeps what it holds.
           if (attempt < WRITE_ATTEMPTS * 2) continue
           console.warn(`${descriptor.functionName}: the stored row kept changing; the rescue was not written (CUL-2808)`)
         } else if (wrote.missed) {

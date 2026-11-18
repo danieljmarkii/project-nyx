@@ -3,6 +3,7 @@
 // incident-analysis.pipeline.test.ts. Run with: deno test supabase/functions/_shared/
 
 import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
+import { effectiveTierRank, TIER_RANK } from '../../../lib/incidentTier.ts'
 import {
   type AnalysisReadFields,
   buildFailureWrite,
@@ -12,6 +13,8 @@ import {
   keepLouderTier,
   isRealAnalysis,
   mergeAfterRead,
+  type RescueRead,
+  rescueRank,
   resolveReanalysisWrite,
   type StoredAnalysis,
   tieredReadFields,
@@ -156,6 +159,116 @@ Deno.test('EN-3 — a stored call tier survives a failed run even beside a lower
     existingReadFailed: false, floorOnly: false, tiersOn: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom', rescue: null, stamps: null,
   })
   assertStrictEquals(untiered.mode, 'upsert')
+})
+
+// CUL-2811. THE RULE, over every pair: a failed run's rescue is written exactly when it is
+// STRICTLY LOUDER than what the row says; an equal or quieter one keeps the error note over a
+// stored call, and over a quiet row any rescue lands, as before. The expectation is read off
+// the shared ranks, and the six pairs the issue is about are also spelled out by hand below,
+// so the table cannot be green by agreeing with a wrong rank.
+const STORED_STATES: Array<{ name: string; row: { recommendation: string | null; tier?: string | null; presentFlags: string[] } | null }> = [
+  { name: 'no row', row: null },
+  { name: 'no verdict', row: { recommendation: null, tier: null, presentFlags: [] } },
+  { name: 'monitor', row: { recommendation: 'monitor', tier: null, presentFlags: [] } },
+  { name: 'monitor/logged', row: { recommendation: 'monitor', tier: 'logged', presentFlags: [] } },
+  { name: 'not_enough_to_say', row: { recommendation: 'not_enough_to_say', tier: 'not_enough_to_say', presentFlags: [] } },
+  { name: 'monitor over a stored red flag', row: { recommendation: 'monitor', tier: 'logged', presentFlags: ['blood'] } },
+  { name: 'worth_a_call, no tier', row: { recommendation: 'worth_a_call', presentFlags: [] } },
+  { name: 'call_today', row: { recommendation: 'worth_a_call', tier: 'call_today', presentFlags: [] } },
+  { name: 'call_today beside a lowered verdict', row: { recommendation: 'monitor', tier: 'call_today', presentFlags: [] } },
+  { name: 'call_now', row: { recommendation: 'worth_a_call', tier: 'call_now', presentFlags: [] } },
+  { name: 'call_now beside a lowered verdict', row: { recommendation: 'monitor', tier: 'call_now', presentFlags: [] } },
+  { name: 'an unknown verdict', row: { recommendation: 'from_a_later_build', tier: null, presentFlags: [] } },
+  { name: 'an unknown tier', row: { recommendation: 'worth_a_call', tier: 'from_a_later_build', presentFlags: [] } },
+]
+const RESCUE_BASE = { recommendation: 'worth_a_call' as const, read_text: 'RESCUE', visual_flags: [], contextual_flags: ['ctx'] }
+// `says` is the rank each run's call carries, written out here rather than asked of the code.
+const FAILED_RUNS: Array<{ name: string; rescue: RescueRead | null; tiersOn: boolean; says: number }> = [
+  { name: 'no rescue', rescue: null, tiersOn: true, says: TIER_RANK.quiet },
+  { name: 'a flag-off rescue', rescue: RESCUE_BASE, tiersOn: false, says: TIER_RANK.call_today },
+  { name: 'call_today', rescue: { ...RESCUE_BASE, tier: 'call_today' }, tiersOn: true, says: TIER_RANK.call_today },
+  { name: 'call_now', rescue: { ...RESCUE_BASE, tier: 'call_now' }, tiersOn: true, says: TIER_RANK.call_now },
+]
+const failureWriteOver = (row: (typeof STORED_STATES)[number]['row'], run: (typeof FAILED_RUNS)[number]) =>
+  buildFailureWrite({
+    existing: row, existingReadFailed: false, floorOnly: false, tiersOn: run.tiersOn,
+    eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom', rescue: run.rescue, stamps: null,
+  })
+
+Deno.test('CUL-2811 — every stored state by every failed run: a strictly louder rescue writes, an equal or quieter one keeps the note', () => {
+  for (const stored of STORED_STATES) {
+    const storedRank = stored.row ? effectiveTierRank(stored.row) : TIER_RANK.quiet
+    for (const run of FAILED_RUNS) {
+      const write = failureWriteOver(stored.row, run)
+      const label = `${run.name} over ${stored.name}`
+      const louder = !!run.rescue && run.says > storedRank
+      if (run.rescue) assertStrictEquals(rescueRank(run.rescue), run.says, label)
+      if (louder) {
+        assertStrictEquals(write.mode, 'rescue', label)
+        const values = (write as { values: Record<string, unknown> }).values
+        assertStrictEquals(values.recommendation, 'worth_a_call', label)
+        assertStrictEquals(values.tier, run.rescue?.tier, label)
+        assertStrictEquals(values.read_text, 'RESCUE', label)
+        assertStrictEquals(values.dismissed_at, null, label)
+        // The written row is never quieter than the one it replaces.
+        assertEquals(effectiveTierRank(values as { tier?: string; recommendation?: string }) > storedRank, true, label)
+      } else if (storedRank !== TIER_RANK.quiet) {
+        // A stored call, and nothing louder to say: the note, and the row keeps its words.
+        assertStrictEquals(write.mode, 'error-only', label)
+        assertEquals(Object.keys((write as { values: Record<string, unknown> }).values).filter((k) => k !== 'may_wait'), ['error'], label)
+      } else {
+        // A quiet row and no rescue: the retry frame, or the note over a stored red flag.
+        assertStrictEquals(run.rescue, null, label)
+        assertStrictEquals(write.mode, stored.row && stored.row.presentFlags.length > 0 ? 'error-only' : 'upsert', label)
+      }
+    }
+  }
+})
+
+Deno.test('CUL-2811 — the pairs by hand: call now over call today writes; equal or quieter keeps the note', () => {
+  const state = (name: string) => STORED_STATES.find((s) => s.name === name)!.row
+  const run = (name: string) => FAILED_RUNS.find((r) => r.name === name)!
+  // The defect: a stored call today, in either column, under a failed call now.
+  for (const stored of ['call_today', 'call_today beside a lowered verdict', 'worth_a_call, no tier']) {
+    const w = failureWriteOver(state(stored), run('call_now'))
+    assertStrictEquals(w.mode, 'rescue', stored)
+    assertStrictEquals((w as { values: Record<string, unknown> }).values.tier, 'call_now', stored)
+  }
+  // Equal: the stored words stand.
+  assertStrictEquals(failureWriteOver(state('call_today'), run('call_today')).mode, 'error-only')
+  assertStrictEquals(failureWriteOver(state('worth_a_call, no tier'), run('call_today')).mode, 'error-only')
+  assertStrictEquals(failureWriteOver(state('call_now'), run('call_now')).mode, 'error-only')
+  // Quieter: a stored call now is never replaced by a failed call today.
+  assertStrictEquals(failureWriteOver(state('call_now'), run('call_today')).mode, 'error-only')
+  assertStrictEquals(failureWriteOver(state('call_now beside a lowered verdict'), run('call_today')).mode, 'error-only')
+  // A value this build does not know ranks as call now: nothing a failed run carries outranks it.
+  assertStrictEquals(failureWriteOver(state('an unknown verdict'), run('call_now')).mode, 'error-only')
+  assertStrictEquals(failureWriteOver(state('an unknown tier'), run('call_now')).mode, 'error-only')
+  // The key off: no tier on the rescue, so it never outranks a stored call (flag-off is today).
+  for (const stored of ['worth_a_call, no tier', 'call_today', 'call_now']) {
+    assertStrictEquals(failureWriteOver(state(stored), run('a flag-off rescue')).mode, 'error-only', stored)
+  }
+})
+
+Deno.test('CUL-2811 — a call now written over a stored call today never carries its leave to wait, and keeps a stored refusal', () => {
+  const over = (mayWait: boolean | null) => (buildFailureWrite({
+    existing: { recommendation: 'worth_a_call', tier: 'call_today', presentFlags: [], mayWait },
+    existingReadFailed: false, floorOnly: false, tiersOn: true, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom',
+    rescue: { ...RESCUE_BASE, tier: 'call_now' }, stamps: null,
+  }) as { values: Record<string, unknown> }).values.may_wait
+  assertStrictEquals(over(true), null)
+  assertStrictEquals(over(null), null)
+  assertStrictEquals(over(false), false)
+})
+
+Deno.test('CUL-2811 — a floor-only run that fails still writes its louder call, and still notes nothing over an equal one', () => {
+  const floorOnly = (tier: 'call_today' | 'call_now') => buildFailureWrite({
+    existing: { recommendation: 'worth_a_call', tier: 'call_today', presentFlags: [] },
+    existingReadFailed: false, floorOnly: true, tiersOn: true, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom',
+    rescue: { ...RESCUE_BASE, tier }, stamps: null,
+  })
+  assertStrictEquals(floorOnly('call_now').mode, 'rescue')
+  assertStrictEquals(floorOnly('call_today').mode, 'skip')
 })
 
 Deno.test('EN-3 — isRealAnalysis: a failed row holding a call tier is real (the cap never buries it)', () => {
