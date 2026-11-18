@@ -1235,7 +1235,8 @@ Deno.test('CUL-1203 — every event_ai_analysis UPDATE under supabase/functions 
   // update was found", which a scan dropping every other chain would still pass.
   const helper = updates.filter((u) =>
     u.file.endsWith('/_shared/incident-analysis.ts') && /\.update\(values\)/.test(u.chain))
-  assertStrictEquals(helper.length, 1, 'the scan did not find updateAnalysisRow\'s own chain')
+  // Two since CUL-2808: updateAnalysisRow's, and applyFailureWrite's content-held last try.
+  assertStrictEquals(helper.length, 2, 'the scan did not find updateAnalysisRow\'s own chain and the content-held rescue\'s')
   for (const { file, chain } of updates) {
     assertStrictEquals(
       /\.eq\(\s*['"]pet_id['"]/.test(chain), true,
@@ -1396,7 +1397,9 @@ function boundTo(src: string, name: string, at: number): string {
 }
 
 const BUILT = /^(buildAnalysisWriteBack|resolveReanalysisWrite|buildFailureWrite)\(/
-const HIDE_WRITERS = new Set(['buildAnalysisWriteBack', 'buildFailureWrite', 'resolveReanalysisWrite'])
+// writePresentRedFlags (CUL-2808): a failed read's present red flags are a finding the owner has
+// not seen, so the write that lands them clears the hide itself.
+const HIDE_WRITERS = new Set(['buildAnalysisWriteBack', 'buildFailureWrite', 'resolveReanalysisWrite', 'writePresentRedFlags'])
 // A binding, with an optional type annotation: `const q = ` / `const q: Q = `.
 const BINDING = String.raw`\b(?:const|let|var)\s+(\w+)(?:\s*:[^=\n]+)?\s*=\s*`
 
@@ -1529,6 +1532,11 @@ function readWordSinks(raw: string, file?: string): { sanctioned: Sink[]; violat
     if (arg === 'values' && fn === 'updateAnalysisRow') sanctioned.push({ kind: 'updateAnalysisRow', at: open })
     else if (arg === 'writeBack.values' && fn === 'applyAnalysisWriteBack') sanctioned.push({ kind: 'applyAnalysisWriteBack', at: open })
     else if (arg === 'write.values' && fn === 'applyFailureWrite') sanctioned.push({ kind: 'applyFailureWrite', at: open })
+    // The content-held last try (CUL-2808): buildFailureWrite's values less the key columns.
+    else if (arg === 'values' && fn === 'applyFailureWrite') sanctioned.push({ kind: 'applyFailureWrite, content-held', at: open })
+    // The presence write (CUL-2808): present red-flag columns (the branded type lets nothing
+    // else in) and the hide's clear, and no words.
+    else if (arg === '{ ...presentColumns, dismissed_at: null }' && fn === 'writePresentRedFlags') sanctioned.push({ kind: 'presence write', at: open })
     else if (owner && /^buildFailureWrite\(/.test(boundTo(src, owner[1], open))) sanctioned.push({ kind: 'failure write', at: open })
     else if (isStateLiteral(arg)) sanctioned.push({ kind: 'state literal', at: open })
     else violations.push(`line ${lineOf(open)} (${fn}): event_ai_analysis .${method}(${arg.slice(0, 60)})`)
@@ -1602,7 +1610,7 @@ Deno.test('CUL-1323 — every write of read words under supabase/functions goes 
   const raw = await Deno.readTextFile(new URL('./incident-analysis.ts', import.meta.url))
   const { sanctioned } = readWordSinks(raw)
   const kinds = new Set(sanctioned.map((s) => s.kind))
-  for (const k of ['updateAnalysisRow', 'applyAnalysisWriteBack', 'applyFailureWrite', 'failure write', 'state literal', 'builder → apply', 'builder → update']) {
+  for (const k of ['updateAnalysisRow', 'applyAnalysisWriteBack', 'applyFailureWrite', 'applyFailureWrite, content-held', 'presence write', 'failure write', 'state literal', 'builder → apply', 'builder → update']) {
     assertStrictEquals(kinds.has(k), true, `the scan never saw a "${k}" sink`)
   }
   // Each writer still spells its clear (their values are pinned by the tests above).
