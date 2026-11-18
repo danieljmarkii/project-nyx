@@ -353,7 +353,7 @@ function descriptorFor(w: World): IncidentDescriptor<TestAnalysis, Flag> {
     computeContextualFlags: () => Promise.resolve(
       w.afterRead
         ? { flags: w.contextFlags, copy: COPY, withdrawable: w.contextFlags, afterRead: (a, stored) => ({ flags: w.afterRead!(a, stored), copy: COPY }) }
-        : w.minTier ? { flags: w.contextFlags, copy: COPY, minTier: w.minTier }
+        : w.minTier ? { flags: w.contextFlags, copy: w.photoFindingCopy ? { ...COPY, contextualWithPhotoFinding: (pet, flags, visual) => `PHOTO_CTX:${pet}:${flags.join(',')}:${visual.join(',')}` } : COPY, minTier: w.minTier }
         : w.contextFlags,
     ),
     copy: w.photoFindingCopy
@@ -2071,10 +2071,10 @@ Deno.test('CUL-2808 — the content-held rescue sends both quiet filters and the
 
 const STORED_CALL_TODAY = {
   recommendation: 'worth_a_call', tier: 'call_today', status: 'completed', read_text: 'OLD CALL TODAY', edited_at: null,
-  may_wait: true, blood_col: 'yes', colour: 'red', visual_flags: ['blood'], ai_raw_payload: { blood: 'yes', colour: 'red' },
+  may_wait: true, blood_col: 'yes', colour: 'red', visual_flags: ['blood'], contextual_flags: ['stored_flag'], ai_raw_payload: { blood: 'yes', colour: 'red' },
   dismissed_at: '2026-09-26T07:00:00Z',
 }
-const CALL_NOW_RUN = { contextFlags: ['ctx_flag'] as Flag[], minTier: 'call_now' as const, vision: overloaded, appConfig: EN3_FOR_OWNER }
+const CALL_NOW_RUN = { contextFlags: ['ctx_flag'] as Flag[], minTier: 'call_now' as const, vision: overloaded, appConfig: EN3_FOR_OWNER, photoFindingCopy: true }
 
 Deno.test('pipeline CUL-2811 — a failed run that worked out call now writes it over a stored call today', async () => {
   const w = makeWorld({ row: { ...STORED_CALL_TODAY }, ...CALL_NOW_RUN })
@@ -2082,15 +2082,55 @@ Deno.test('pipeline CUL-2811 — a failed run that worked out call now writes it
   assertStrictEquals(r.status, 500)
   assertStrictEquals(w.row?.tier, 'call_now')
   assertStrictEquals(w.row?.recommendation, 'worth_a_call')
-  assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
-  assertStrictEquals(w.row?.status, 'failed')
   // A call now never carries leave to wait, and words the owner has not seen clear the hide.
   assertStrictEquals(w.row?.may_wait, null)
   assertStrictEquals(w.row?.dismissed_at, null)
+  // What the stored photo read found stays on the card: the cached flags are written back,
+  // the stored contextual flag is kept beside this run's, and the words lead with the finding.
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertEquals(w.row?.contextual_flags, ['stored_flag', 'ctx_flag'])
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:stored_flag,ctx_flag:blood')
+  // The photo read on the row finished, and still counts as one: the status stands, and the
+  // error beside it is what the phone discloses the failed attempt from.
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(typeof w.row?.error, 'string')
   // Read fields only: the stored finding stays on the columns Home and the report read.
   assertStrictEquals(w.row?.blood_col, 'yes')
   assertEquals(w.row?.ai_raw_payload, STORED_CALL_TODAY.ai_raw_payload)
   assertEquals(structuredKeysWritten(w), [])
+})
+
+Deno.test('pipeline CUL-2811 — a failed run that read the photo itself writes its own finding and words over the stored call today', async () => {
+  // The write-back fails every time, so the catch holds this run's own post-floor read.
+  const w = makeWorld({
+    row: { ...STORED_CALL_TODAY, visual_flags: ['foreign_material'] }, ...CALL_NOW_RUN, vision: () => BLOODY,
+    aiWriteError: (n) => n === 1, // the step-9 write
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:blood')
+  assertStrictEquals(w.row?.status, 'completed')
+})
+
+Deno.test('pipeline CUL-2811 — a call today landing under a call now rescue shaped for a quiet row is not written over blind', async () => {
+  // The rescue was decided over a calm row, so it carries no photo finding. A sibling's call
+  // today with blood lands under the last try: that write must miss (it would take the blood
+  // off the card and mark the read failed), and the next decision, made over the call today,
+  // keeps the finding.
+  const w = makeWorld({
+    row: { ...STORED_CALM }, ...CALL_NOW_RUN,
+    beforeAiWrite: (world, n) => {
+      if (n <= 3) commit(world, {})
+      // Its leave to wait matches what the rescue read (none), so only the rank can refuse it.
+      if (n === 4) commit(world, { ...STORED_CALL_TODAY, read_text: 'SIBLING CALL TODAY', contextual_flags: [], may_wait: null })
+    },
+  })
+  await run(w)
+  assertStrictEquals(w.row?.tier, 'call_now')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:blood')
 })
 
 Deno.test('pipeline CUL-2811 — a failed call today over a stored call today is still the note only', async () => {
@@ -2119,7 +2159,7 @@ Deno.test('pipeline CUL-2811 — a stored call today that keeps moving still tak
   await run(w)
   assertStrictEquals(w.aiWriteAttempts, 4)
   assertStrictEquals(w.row?.tier, 'call_now')
-  assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
+  assertEquals(w.row?.visual_flags, ['blood'])
 })
 
 Deno.test('pipeline CUL-2811 — a sibling\'s call now landing under the last try is not written over by this run\'s call now', async () => {

@@ -166,20 +166,21 @@ Deno.test('EN-3 — a stored call tier survives a failed run even beside a lower
 // stored call, and over a quiet row any rescue lands, as before. The expectation is read off
 // the shared ranks, and the six pairs the issue is about are also spelled out by hand below,
 // so the table cannot be green by agreeing with a wrong rank.
-const STORED_STATES: Array<{ name: string; row: { recommendation: string | null; tier?: string | null; presentFlags: string[] } | null }> = [
-  { name: 'no row', row: null },
-  { name: 'no verdict', row: { recommendation: null, tier: null, presentFlags: [] } },
-  { name: 'monitor', row: { recommendation: 'monitor', tier: null, presentFlags: [] } },
-  { name: 'monitor/logged', row: { recommendation: 'monitor', tier: 'logged', presentFlags: [] } },
-  { name: 'not_enough_to_say', row: { recommendation: 'not_enough_to_say', tier: 'not_enough_to_say', presentFlags: [] } },
-  { name: 'monitor over a stored red flag', row: { recommendation: 'monitor', tier: 'logged', presentFlags: ['blood'] } },
-  { name: 'worth_a_call, no tier', row: { recommendation: 'worth_a_call', presentFlags: [] } },
-  { name: 'call_today', row: { recommendation: 'worth_a_call', tier: 'call_today', presentFlags: [] } },
-  { name: 'call_today beside a lowered verdict', row: { recommendation: 'monitor', tier: 'call_today', presentFlags: [] } },
-  { name: 'call_now', row: { recommendation: 'worth_a_call', tier: 'call_now', presentFlags: [] } },
-  { name: 'call_now beside a lowered verdict', row: { recommendation: 'monitor', tier: 'call_now', presentFlags: [] } },
-  { name: 'an unknown verdict', row: { recommendation: 'from_a_later_build', tier: null, presentFlags: [] } },
-  { name: 'an unknown tier', row: { recommendation: 'worth_a_call', tier: 'from_a_later_build', presentFlags: [] } },
+// `says` is the rank each row holds, written out by hand rather than asked of the code.
+const STORED_STATES: Array<{ name: string; says: number; row: { recommendation: string | null; tier?: string | null; presentFlags: string[] } | null }> = [
+  { name: 'no row', says: 0, row: null },
+  { name: 'no verdict', says: 0, row: { recommendation: null, tier: null, presentFlags: [] } },
+  { name: 'monitor', says: 0, row: { recommendation: 'monitor', tier: null, presentFlags: [] } },
+  { name: 'monitor/logged', says: 0, row: { recommendation: 'monitor', tier: 'logged', presentFlags: [] } },
+  { name: 'not_enough_to_say', says: 0, row: { recommendation: 'not_enough_to_say', tier: 'not_enough_to_say', presentFlags: [] } },
+  { name: 'monitor over a stored red flag', says: 0, row: { recommendation: 'monitor', tier: 'logged', presentFlags: ['blood'] } },
+  { name: 'worth_a_call, no tier', says: 1, row: { recommendation: 'worth_a_call', presentFlags: [] } },
+  { name: 'call_today', says: 1, row: { recommendation: 'worth_a_call', tier: 'call_today', presentFlags: [] } },
+  { name: 'call_today beside a lowered verdict', says: 1, row: { recommendation: 'monitor', tier: 'call_today', presentFlags: [] } },
+  { name: 'call_now', says: 2, row: { recommendation: 'worth_a_call', tier: 'call_now', presentFlags: [] } },
+  { name: 'call_now beside a lowered verdict', says: 2, row: { recommendation: 'monitor', tier: 'call_now', presentFlags: [] } },
+  { name: 'an unknown verdict', says: 2, row: { recommendation: 'from_a_later_build', tier: null, presentFlags: [] } },
+  { name: 'an unknown tier', says: 2, row: { recommendation: 'worth_a_call', tier: 'from_a_later_build', presentFlags: [] } },
 ]
 const RESCUE_BASE = { recommendation: 'worth_a_call' as const, read_text: 'RESCUE', visual_flags: [], contextual_flags: ['ctx'] }
 // `says` is the rank each run's call carries, written out here rather than asked of the code.
@@ -197,7 +198,8 @@ const failureWriteOver = (row: (typeof STORED_STATES)[number]['row'], run: (type
 
 Deno.test('CUL-2811 — every stored state by every failed run: a strictly louder rescue writes, an equal or quieter one keeps the note', () => {
   for (const stored of STORED_STATES) {
-    const storedRank = stored.row ? effectiveTierRank(stored.row) : TIER_RANK.quiet
+    const storedRank = stored.says
+    if (stored.row) assertStrictEquals(effectiveTierRank(stored.row), stored.says, stored.name)
     for (const run of FAILED_RUNS) {
       const write = failureWriteOver(stored.row, run)
       const label = `${run.name} over ${stored.name}`
@@ -210,6 +212,11 @@ Deno.test('CUL-2811 — every stored state by every failed run: a strictly loude
         assertStrictEquals(values.tier, run.rescue?.tier, label)
         assertStrictEquals(values.read_text, 'RESCUE', label)
         assertStrictEquals(values.dismissed_at, null, label)
+        // Over a quiet row the failed read is all the row has. Over a call the row's status
+        // is left as it stands, and the error is noted beside it.
+        assertStrictEquals(values.status, storedRank === TIER_RANK.quiet ? 'failed' : undefined, label)
+        assertStrictEquals('status' in values, storedRank === TIER_RANK.quiet, label)
+        assertStrictEquals(values.error, 'boom', label)
         // The written row is never quieter than the one it replaces.
         assertEquals(effectiveTierRank(values as { tier?: string; recommendation?: string }) > storedRank, true, label)
       } else if (storedRank !== TIER_RANK.quiet) {
@@ -267,7 +274,13 @@ Deno.test('CUL-2811 — a floor-only run that fails still writes its louder call
     existingReadFailed: false, floorOnly: true, tiersOn: true, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom',
     rescue: { ...RESCUE_BASE, tier }, stamps: null,
   })
-  assertStrictEquals(floorOnly('call_now').mode, 'rescue')
+  const louder = floorOnly('call_now')
+  assertStrictEquals(louder.mode, 'rescue')
+  // It read no photo, so it says nothing about a read failing (CUL-1509): no status, no error.
+  const values = (louder as { values: Record<string, unknown> }).values
+  assertStrictEquals('status' in values, false)
+  assertStrictEquals('error' in values, false)
+  assertStrictEquals(values.tier, 'call_now')
   assertStrictEquals(floorOnly('call_today').mode, 'skip')
 })
 

@@ -314,9 +314,8 @@ Deno.test('floor · CUL-2811: a floor-only run that fails its louder call still 
   // A photographed call today whose photo read finished; the refloor's floor run works out
   // call now and then fails on its own write, every attempt. Before CUL-2811 the catch wrote
   // nothing here (CUL-1509: a floor-only failure notes no error over a call), and the call
-  // now was lost until another read ran. A louder call outranks that rule: the catch's
-  // rescue lands it. It is the rescue's shape, so the row says the latest read did not
-  // finish; the photo finding stays on the column Home and the report read.
+  // now was lost until another read ran. Now the catch's rescue lands the louder call, and
+  // still notes no error and no failed status.
   const w = world({ events: photolessTriple().map((e) => (e.id === 'v3' ? { ...e, photo: true } : e)) })
   const stored = {
     id: 'a-v3', event_id: 'v3', pet_id: PET_ID, status: 'completed', recommendation: 'worth_a_call', tier: 'call_today',
@@ -330,8 +329,14 @@ Deno.test('floor · CUL-2811: a floor-only run that fails its louder call still 
   assertStrictEquals(r.status, 500)
   assertStrictEquals(w.failUpdates, 0) // the floor's raise was attempted, and refused
   const row = w.rows.get('v3')!
-  assertEquals([row.recommendation, row.tier, row.status], ['worth_a_call', 'call_now', 'failed'])
+  assertEquals([row.recommendation, row.tier], ['worth_a_call', 'call_now'])
+  // It read no photo, so the finished photo read stays a finished read with no error noted
+  // (CUL-1509), and what that read found stays on the card and leads the words, exactly as
+  // the floor's own write would have left it.
+  assertEquals([row.status, row.error], ['completed', null])
+  assertEquals(row.visual_flags, ['blood'])
   assertEquals(row.contextual_flags, ['repeated_vomiting'])
+  assertStrictEquals(String(row.read_text).includes('blood'), true)
   assertStrictEquals(row.blood_present, 'fresh_red')
   noPhotoPathTouched(w)
 })

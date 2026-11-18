@@ -899,6 +899,8 @@ export async function applyAnalysisWriteBack(
 // unconditional upsert, and one did: it came back as this run's call today). A miss means
 // the row holds a call as loud as this one or louder, or its leave to wait moved; the caller
 // reads again, and over such a call that is the error-only note.
+// The caller names the rank: one above the row the write was decided over, which the rescue
+// outranks. So a rescue shaped for a quiet row asks today's question (no call on the row).
 // Before CUL-2811 the question was "the row holds no call", which a call now asked of a
 // stored call today and was refused: the louder call fell to the note.
 export type QuieterOnly = { quieterThan: TierRank; mayWait: boolean | null }
@@ -1170,6 +1172,42 @@ export function rescueRank(rescue: Pick<RescueRead, 'recommendation' | 'tier'>):
   return effectiveTierRank(rescue)
 }
 
+// A rescue written over a stored CALL keeps what the photo read on that row found (CUL-2811).
+// A rescue built from the record alone carries no visual flags and only this run's contextual
+// flags; over a quiet row that loses nothing (a quiet row holds no finding), but over a call
+// it would take "blood" off the card's words and off the cached visual_flags every later
+// floor-only raise leads with. So it is rebuilt the way the floor-only writer builds its own
+// write over a stored read (storedPhotoFinding): the cached visual flags are written back,
+// the stored contextual flags are kept, and the words lead with the photo finding.
+// A rescue that carries a photo finding of its own (this run read the photo) is left as it
+// is: those are the words for the photo the owner now sees, as a finished read would write.
+export function rescueOverStoredCall<TFlag extends string>(
+  descriptor: Pick<IncidentDescriptor<IncidentAnalysisBase, TFlag>, 'presentFlagsFromStructured'>,
+  copy: IncidentCopy<TFlag>,
+  rescue: RescueRead<TFlag>,
+  storedRow: StoredRow,
+  params: { petName: string; hasPhoto: boolean },
+): RescueRead<TFlag> {
+  if (rescue.visual_flags.length > 0 || rescue.contextual_flags.length === 0) return rescue
+  const { visualFlags, leadFlags, storedContextual, contextual } = storedPhotoFinding(descriptor, storedRow, storedRow, rescue.contextual_flags)
+  return {
+    ...rescue,
+    visual_flags: visualFlags,
+    contextual_flags: contextual,
+    read_text: selectReadText(copy, {
+      petName: params.petName,
+      recommendation: 'worth_a_call',
+      contextualFlags: contextual,
+      visualFlags: leadFlags,
+      modelReadText: null,
+      photoUnreadable: false,
+      hasPhoto: params.hasPhoto,
+      // A stored call with no flag behind it was the model's own: the photo finding still leads.
+      modelEscalated: !storedRow.edited_at && storedContextual.length === 0 && visualFlags.length === 0 && storedRow.recommendation === 'worth_a_call',
+    }),
+  }
+}
+
 // `existing` is the row read AT THE MOMENT OF THIS DECISION, not at step 3b — see
 // the call site for why the difference matters. `existingReadFailed` says that read
 // itself errored, which is NOT the same as "no row": the caller cannot tell an empty
@@ -1251,8 +1289,16 @@ export function buildFailureWrite(params: {
         read_text: params.rescue.read_text,
         visual_flags: params.rescue.visual_flags,
         contextual_flags: params.rescue.contextual_flags,
-        status: 'failed',
-        error: params.message,
+        // Over a row that held no call the latest read is all the row has, and it failed.
+        // Over a stored call (CUL-2811) the row's status is left as it stands, as the note
+        // left it: a 'failed' written over a completed photo read would take that read's
+        // observations out of everything that counts assessed reads (the vet report's
+        // aggregates, the Signal's composition). The error is noted, and the phone discloses
+        // a call whose latest read hit a problem from it (heldCallDisclosureOf); a
+        // floor-only run notes none, because it read no photo (CUL-1509).
+        ...(storedRank === TIER_RANK.quiet
+          ? { status: 'failed', error: params.message }
+          : params.floorOnly ? {} : { error: params.message }),
         dismissed_at: null,
       },
     }
@@ -2790,6 +2836,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       let latest: StoredAnalysis | null = null
       let latestReadFailed = false
       let latestVersion: RowVersion = null
+      let latestStoredRow: StoredRow | null = null
       if (petIdForFailure && incidentTypeForFailure) {
         const { data: latestRow, error: latestErr } = await adminClient
           .from('event_ai_analysis')
@@ -2797,6 +2844,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           .eq('event_id', eventId)
           .maybeSingle<StoredRow>()
         latest = snapshotStoredAnalysis(descriptor, latestRow ?? null)
+        latestStoredRow = latestRow ?? null
         // CUL-1203, the same rule as step 3b: a row filed under another pet is not
         // this event's, so its recommendation must not steer the failure write. It
         // folds into "could not read" on purpose — buildFailureWrite then writes
@@ -2813,6 +2861,11 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         }
       }
 
+      // What this row says now. Over a call, the rescue keeps the stored photo finding.
+      const latestRank = latest ? effectiveTierRank(latest) : TIER_RANK.quiet
+      const rescueForRow = rescueRead && latestStoredRow && latestRank !== TIER_RANK.quiet
+        ? rescueOverStoredCall(descriptor, copyForFailure, rescueRead, latestStoredRow, { petName: petNameForFailure, hasPhoto: hasPhotoForFailure })
+        : rescueRead
       const failureWrite = buildFailureWrite({
         existing: latest,
         existingReadFailed: latestReadFailed,
@@ -2822,7 +2875,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         petId: petIdForFailure,
         incidentType: incidentTypeForFailure,
         message,
-        rescue: rescueRead,
+        rescue: rescueForRow,
         stamps: stampsForFailure,
       })
       // Best-effort, as before: a failure write that fails is not re-reported. It is
@@ -2833,16 +2886,18 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // Unconditional (null): it notes the error and decides nothing about the row's contents.
         await updateAnalysisRow(adminClient, { eventId, petId: petIdForFailure }, failureWrite.values, null)
       } else if ((failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') && petIdForFailure) {
-        // Past WRITE_ATTEMPTS held misses over a row, the rescue is held to "the row's call is
-        // quieter than mine" (and the leave to wait it read), not to a version: a row that only
-        // keeps moving still gets it, and a call as loud or louder that landed since the read
-        // is never written over.
-        const contentHeld = failureWrite.mode === 'rescue' && !!rescueRead && attempt > WRITE_ATTEMPTS && latestVersion !== null
+        // Past WRITE_ATTEMPTS held misses over a row, the rescue is held to the row's CONTENT
+        // (and the leave to wait it read), not to a version: a row that only keeps moving
+        // still gets it. The content is "no louder than the row this was decided over": the
+        // rescue outranks that row (buildFailureWrite), so a call as loud as the rescue or
+        // louder that landed since the read is never written over; and a rescue shaped for a
+        // quiet row never lands over a call, whose photo finding it does not carry.
+        const contentHeld = failureWrite.mode === 'rescue' && attempt > WRITE_ATTEMPTS && latestVersion !== null
         const wrote = await applyFailureWrite(
           adminClient,
           { eventId, petId: petIdForFailure },
           failureWrite,
-          contentHeld && rescueRead ? { quieterThan: rescueRank(rescueRead), mayWait: latest?.mayWait ?? null } : latestVersion,
+          contentHeld ? { quieterThan: (latestRank + 1) as TierRank, mayWait: latest?.mayWait ?? null } : latestVersion,
         )
         if (wrote.missed && failureWrite.mode === 'rescue') {
           // Bounded: a row that still refuses after as many content-held tries as version-held
