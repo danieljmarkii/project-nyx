@@ -19,14 +19,18 @@
 - **The critique's largest finding is a spec gap.** The shipped *Log a visit that already happened* button exists only while a pet has no visits (`VetVisitsCard.tsx:55-69`, `VetVisitsEmptyState.tsx`). The spec cites those lines as the entry without saying so. Nyx has a visit, so she had no way in at all.
 - **A second one is a wording trap.** History titles every visit record "Vet visit" (`lib/historyScreen.ts:404`). A phone contact through that path would say a visit happened. D4 draws the title following the channel.
 
-## Decisions waiting on the PM
+## Rulings (PM, 2026-11-19, typed in the session)
 
-Drawn or briefed on the page and posted on the issue:
+- **G1 A:** the Vet visits card of a pet that already has a visit gains the logging button, with or without a booking (A3, A4).
+- **G3 B:** a Home card that already says "You called on" gains the contact line only when its day or channel differs (E3, E4). Clinical surface.
+- **G4 A:** a saved contact's channel can be edited, all four chips, with a test that the report window follows the edit both ways.
 
-- **G1:** where a pet that already has a visit logs a call. Recommended: the non-empty card gains the button.
-- **G3:** what a contact adds to a Home card that already says "You called on". Recommended: a second line only when it says something different. Clinical surface.
-- **G4:** whether a saved contact's channel can be edited. Recommended: yes, all four chips, with a test that the report window follows the edit.
-- **The ear medication's real name.** Not on [CUL-2771](https://linear.app/projectnyx/issue/CUL-2771), and no Nov 9 course exists on the record.
+The losing option frames left the page; git keeps them at `4ad543125`.
+
+## Still open
+
+- **The ear medication's real name.** Not on [CUL-2771](https://linear.app/projectnyx/issue/CUL-2771), and no Nov 9 course exists on the record. The PM's reply left it blank.
+- **Proposed spec edit, awaiting the PM's word (Tier 2):** `docs/nyx-vet-contacts-requirements.md` §0.1 gains G1, G3 and G4 as R10 to R12, and §2's Vet visits card row says the shipped button renders only for a pet with no visits.
 
 ## Team calls (logged on the issue, the PM can reverse)
 

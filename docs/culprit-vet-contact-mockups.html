@@ -245,7 +245,7 @@
     <div class="ledger-row"><span class="k pm">R1–R9</span><div><b>Every ruling is drawn as ruled.</b> One entry (R7), four channels (R3), attachments (R2), the vet's "call me if" (R4), awareness only (R5), the report window at the last exam (R8). Nothing here re-opens one.</div></div>
     <div class="ledger-row"><span class="k">New</span><div><b>Four frames round 3.1 left undrawn:</b> the clinic field on a remote contact (B1), History's row (D4), a contact with no attachment and nothing started, which keeps the shipped check (C5), and a trial with no target, which shows no <i>Keep going until</i> (C3).</div></div>
     <div class="ledger-row"><span class="k">States</span><div><b>The state set:</b> empty (A1, A2, C6, D3), loading and failed read (D6), failed save (B4), offline (C5), 320pt (B5), largest text (B6, C7), two pets (B2, D5), VoiceOver order (the note under each section), the PM's real payload (every Nyx frame).</div></div>
-    <div class="ledger-row"><span class="k pm">Needs you</span><div><b>Three decisions the contract critique raised, each drawn or briefed below.</b> G1 (§A): a pet that already has a visit has no logging button today. G3 (§E): what a contact adds to a card that already says "You called on". G4 (§E): whether a saved contact's channel can be edited.</div></div>
+    <div class="ledger-row"><span class="k pm">Ruled</span><div><b>G1, G3 and G4, ruled by the PM on 2026-11-19.</b> <b>G1:</b> the Vet visits card of a pet that already has a visit gains the logging button, with or without a booking (A3, A4). <b>G3:</b> a card that already says "You called on" gains the contact line only when its day or channel differs (E3, E4). <b>G4:</b> a saved contact's channel can be edited, all four chips; the report window follows the corrected record. The option frames that lost left the page; git keeps them at <code>4ad543125</code>.</div></div>
     <div class="ledger-row"><span class="k">Critique</span><div><b>Redrawn to match the shipped parts</b> after the contract lens (light, 2026-11-19): primary buttons are indigo and secondary ones transparent; a plan row's action is the shipped 44pt box under its title and a started course is the shipped inert row; the sheet keeps the shipped <i>Where</i> block (Clinic, Vet, the hint); Home sits on <code>HomeCard</code> with <code>DoorMark</code>; loading is a silhouette. <b>Team calls, yours to reverse:</b> plan rows reused as shipped rather than new tappable parts; <i>Also about</i> is chips (<code>MultiChipGroup</code>) on the logging door while booking keeps its switches.</div></div>
     <div class="ledger-row"><span class="k">Fixed</span><div><b>Real dates.</b> Round 3.1 drew Nov 9, 2026 as a Sunday and Nyx as a dog. Nov 9 is a Monday, and Nyx is a cat whose last exam was Wed, Sep 16. Every weekday on this page is checked against the 2026 calendar.</div></div>
     <div class="ledger-row"><span class="k">Fixed</span><div><b>Actions are indigo.</b> Round 3.1 drew links and the lit chip in teal. The app's action colour is <code>colorAction</code> and a lit chip is <code>colorRoles.selected</code>; teal stays a good fact (the saved check).</div></div>
@@ -257,7 +257,7 @@
   <section>
     <span class="tag">§A · PR-04</span>
     <h2>One entry, renamed</h2>
-    <p class="sec-lede">Behind <code>vet_contacts_enabled</code> and the beta opt-in, the second button names every channel and opens the sheet on a past contact. Flag off: the shipped label, byte for byte. The shipped button exists in two places, and only for a pet with no visits. A pet that has one needs a ruling (G1, below).</p>
+    <p class="sec-lede">Behind <code>vet_contacts_enabled</code> and the beta opt-in, the second button names every channel and opens the sheet on a past contact. Flag off: the shipped label, byte for byte. The shipped button exists in two places, and only for a pet with no visits. Ruled 2026-11-19 (G1): the card of a pet that has a visit gains the same button (A3, A4).</p>
     <div class="row">
       <div class="frame">
         <div class="phone" data-kit="app/(tabs)/profile.tsx · colorNeutralLight">
@@ -286,11 +286,9 @@
       </div>
     </div>
 
-    <div class="optbox">
-      <div class="optbox-h">G1 · options, drawn for the decision, not the current proposal · a pet that already has a visit</div>
-      <div class="row">
+    <div class="row">
         <div class="frame">
-          <div class="phone" data-kit="app/(tabs)/profile.tsx · option A">
+          <div class="phone" data-kit="app/(tabs)/profile.tsx · has a visit">
             <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
               <div class="card pad" data-kit="VetVisitsCard · has visits · Card">
                 <div class="cardhead" data-kit="VetVisitsCard head View"><h4 data-kit="ThemedText · textLG, weightSemibold">Vet visits</h4><span class="meta" data-kit="ThemedText · count · model.countLabel, exams only">1 visit</span></div>
@@ -300,10 +298,10 @@
               </div>
             </div>
           </div>
-          <div class="cap"><b>Option A · The card gains the button (recommended)</b> <span class="tag real">real payload</span>. Nyx's card today: one visit, no booking. A new flag gated second button under <i>Open visits</i>; flag off, the card is byte identical.</div>
+          <div class="cap"><b>A3 · The card, with a visit</b> <span class="tag real">real payload</span>. Nyx's card today: one visit, no booking. A new flag gated second button under <i>Open visits</i>; flag off, the card is byte identical.</div>
         </div>
         <div class="frame">
-          <div class="phone" data-kit="app/(tabs)/profile.tsx · option A with a booking">
+          <div class="phone" data-kit="app/(tabs)/profile.tsx · has a booking">
             <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
               <div class="card pad" data-kit="VetVisitsCard · has a booking · Card">
                 <div class="cardhead" data-kit="VetVisitsCard head View"><h4 data-kit="ThemedText · textLG, weightSemibold">Vet visits</h4><span class="meta" data-kit="ThemedText · count">1 visit</span></div>
@@ -315,21 +313,9 @@
               </div>
             </div>
           </div>
-          <div class="cap"><b>Option A, with a booking.</b> A pet with a visit booked and a call still to log. The appointment block and its actions are shipped and untouched; the button sits last.</div>
+          <div class="cap"><b>A4 · The card, with a booking.</b> A pet with a visit booked and a call still to log. The appointment block and its actions are shipped and untouched; the button sits last.</div>
         </div>
-        <div class="frame">
-          <div class="phone" data-kit="app/vet-visits/index.tsx · option B">
-            <div class="hd" data-kit="Header leading=back · right: Add · colorAction"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span class="act" data-kit="HeaderAction · colorAction">Add</span></div>
-            <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
-              <div class="menu" data-kit="new: Add menu (two doors) · colorSurface, shadow-md"><div data-kit="menu row · hitTarget">Add the next visit</div><div data-kit="menu row · hitTarget · behind the flag">Log a visit, call, text or email</div></div>
-              <p class="ttl" data-kit="ThemedText · fontDisplay, textPageTitle">Nyx's vet visits</p>
-            </div>
-          </div>
-          <div class="cap"><b>Option B · The list's Add offers both doors.</b> The card stays as shipped. <i>Add</i> on the list, which opens booking today, opens a two row menu. One tap further from the Pet tab, and it changes what a shipped control does.</div>
-        </div>
-      </div>
     </div>
-    <div class="brief"><b>G1 · Where does a pet with a visit log a call?</b><br><b>Deciding:</b> whether PR-04 adds a button to the non-empty Vet visits card or changes what the list's <i>Add</i> opens. Today the logging button exists only while a pet has no visits, so Nyx could not log Nov 9 at all.<br><b>Options:</b> <b>A, recommended:</b> the card gains the button, with or without a booking; it keeps R7's "the card's second button" and leaves booking untouched. <b>B:</b> the list's Add opens a menu of both doors. <b>C:</b> both.<br><b>Consequence:</b> unblocks PR-04 and the list in PR-06. A adds one new card state; B changes a shipped control and adds a menu part. <b>Forecast:</b> no new row either way.</div>
   </section>
 
   <!-- ═══════════ §B · THE SHEET (PR-04) ═══════════ -->
@@ -810,11 +796,9 @@
         <div class="cap"><b>E2 · The next day.</b> The card still leads and still asks; its count grew because the logs did. The vet's instruction comes back as its own line under it, whatever the logs say (Vet instructions R7).</div>
       </div>
     </div>
-    <div class="optbox">
-      <div class="optbox-h">G3 · options, drawn for the decision, not the current proposal · the card already says "You called on"</div>
-      <div class="row">
+    <div class="row">
         <div class="frame">
-          <div class="phone" data-kit="app/(tabs)/index.tsx · SignalZone · option A">
+          <div class="phone" data-kit="app/(tabs)/index.tsx · SignalZone · called, same fact">
             <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
               <div class="ins" data-kit="HomeCard hosting InsightCard · a called card (care state), shipped"><span class="rl" data-kit="InsightCard rail · colorEventSymptom"></span><div data-kit="InsightCard body View">
                 <div class="c" data-kit="InsightCard clause · unchanged">Pixel has eaten much less than usual for 3 days.</div>
@@ -823,10 +807,10 @@
               </div></div>
             </div>
           </div>
-          <div class="cap"><b>Option A · The shipped line stands alone.</b> Sam tapped "I've called" on the card and also logged the call as a contact, both on Nov 13. The card already carries the shipped line, so the contact adds nothing. One fact, said once.</div>
+          <div class="cap"><b>E3 · The card already says it.</b> Sam tapped "I've called" on the card and also logged the call as a contact, both on Nov 13. The shipped line already carries that fact, so the contact adds nothing. One fact, said once.</div>
         </div>
         <div class="frame">
-          <div class="phone" data-kit="app/(tabs)/index.tsx · SignalZone · option B">
+          <div class="phone" data-kit="app/(tabs)/index.tsx · SignalZone · called, then emailed">
             <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
               <div class="ins" data-kit="HomeCard hosting InsightCard · a called card (care state), shipped"><span class="rl" data-kit="InsightCard rail · colorEventSymptom"></span><div data-kit="InsightCard body View">
                 <div class="c" data-kit="InsightCard clause · unchanged">Pixel has eaten much less than usual for 3 days.</div>
@@ -836,13 +820,9 @@
               </div></div>
             </div>
           </div>
-          <div class="cap"><b>Option B · Both lines, when they say different things (recommended).</b> The same card a day later, after an email. The contact line is added only when its day or channel differs from the shipped line; an identical fact is still said once.</div>
+          <div class="cap"><b>E4 · Both lines, when they say different things.</b> The same card a day later, after an email. Ruled 2026-11-19 (G3): the contact line is added only when its day or channel differs from the shipped "You called on" line.</div>
         </div>
       </div>
-    </div>
-    <div class="brief"><b>G3 · A card that already says "You called on": what does a logged contact add?</b><br><b>Deciding:</b> which lines a warning card shows when the owner has both answered it with "I've called" (the shipped care state record) and logged a contact. Neither option touches the sentence, the count, the ask or the order (R5).<br><b>Options:</b> <b>A:</b> the shipped line always stands alone on a called card. <b>B, recommended:</b> the contact line is added only when it says something the shipped line does not (another day or another channel). <b>C:</b> always both.<br><b>Consequence:</b> unblocks PR-07, which then proves the card identical in the double case with a fixture. This is a clinical surface, so it is yours to rule. The list and History need no ruling: the shipped <i>Calls</i> section and "Called the vet" row stay as they are beside the new contact (D1, D4).</div>
-    <div class="brief"><b>G4 · Can a saved contact's channel be edited?</b><br><b>Deciding:</b> whether <i>Edit</i> on a contact (D2) shows the channel chips. Changing Phone to At the clinic turns a call into an exam and moves the report's start; the reverse hides an exam.<br><b>Options:</b> <b>A, recommended:</b> editable, all four chips, with the footnote changing as the chip does; a mis-tap must be fixable, and every reader filters when it reads, so the window follows the corrected record. <b>B:</b> editable among Phone, Text and Email only; a wrong "clinic or not" means delete and log again. <b>C:</b> not editable.<br><b>Consequence:</b> unblocks the edit sheet in PR-04 or PR-06. A needs a test that the report window follows an edit in both directions; B and C trade a correctable record for a smaller surface.</div>
-
     <div class="note" style="margin-top:20px"><b>VoiceOver order, E1:</b> the card reads exactly as it does today (clause, count, ask), then the context line as a fourth, separate sentence. The line is not a control and adds no action. <b>What PR-07 must prove (AC 9):</b> string and index equality of the card with and without the contact, and no <code>care_acknowledgements</code>, <code>vet_calls</code> or follow-up row written.</div>
   </section>
 
@@ -880,7 +860,7 @@
         <tr><td><code>CourseSourceRow</code></td><td>PR-06</td><td>"Started after a call with the vet, Nov 9" on the course's page; a door to the contact.</td></tr>
         <tr><td><code>ContactContextLine</code></td><td>PR-07</td><td>The one line a warning card may gain. Not a control.</td></tr>
         <tr><td>Channel-worded History title</td><td>PR-06</td><td>"Phone call | Texts | Email with the vet" where a clinic visit reads "Vet visit" (D4). The shipped row shape is reused.</td></tr>
-        <tr><td>The logging button on the non-empty card, or the Add menu</td><td>PR-04</td><td>Whichever G1 rules. Not built until it does.</td></tr>
+        <tr><td>The logging button on the non-empty card</td><td>PR-04</td><td>Ruled (G1): a flag gated second button under <i>Open visits</i>, with or without a booking. Flag off, the card is byte identical.</td></tr>
         <tr><td><i>Time</i> on a past contact; <i>Where</i> under <i>What it was about</i></td><td>PR-04</td><td>New field and new position on the logging door only; the booking door is byte identical.</td></tr>
         <tr><td>Report: the section and its channel key</td><td>PR-08</td><td>"Vet contacts in this period" and the Visit | Phone | Text | Email key.</td></tr>
         <tr><td><code>WatchRow</code>, <code>SafetyLine</code>, the Home line</td><td>Vet instructions</td><td>That project's parts, reused. They render here only when <code>vet_instructions_enabled</code> is on too (AC 14).</td></tr>
@@ -905,7 +885,8 @@
         <li><b>PR-04:</b> the flag-on logging sheet, field by field against <code>BookVisitSheet.tsx</code>: <i>Day</i>, <i>Time</i> (new on a past contact), <i>What it was about</i>, then <i>Where</i> (Clinic, Vet, the hint) on Phone, Text and Email alike. A device check at 320pt and at the largest text size with every field and Save reachable.</li>
         <li><b>PR-05:</b> plan rows are <code>PlanRows.tsx</code> as shipped. The saved mark keeps the shipped 44pt. A document added offline shows Vet Files' shipped pending and failed states; the contact page's footnote about the report is true once the upload lands.</li>
         <li><b>PR-06:</b> the list and the after screen keep their shipped loading and failure states. <code>VisitRow</code>'s one line limits stay; "No exam" is the protected half.</li>
-        <li><b>PR-07:</b> the context line renders inside the shipped Home card surface and no line renders until the contact read has answered (C-12).</li>
+        <li><b>PR-07:</b> the context line renders inside the shipped Home card surface and no line renders until the contact read has answered (C-12). On a card that already carries the shipped "You called on" line, the contact line is added only when its day or channel differs (G3), and a fixture proves the sentence, count, ask and order identical in that double case.</li>
+        <li><b>Editing a contact (G4, PR-04 or PR-06):</b> <i>Edit</i> shows all four channel chips and the footnote follows the chip. A test proves the report window follows an edit in both directions: Phone to At the clinic moves the start to that day, and At the clinic to Phone moves it back to the last exam.</li>
       </ul>
     </div>
     <div class="note"><b>Rules under the frames (unchanged from round 3.1):</b>
