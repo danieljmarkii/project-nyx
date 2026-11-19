@@ -189,7 +189,7 @@ reads as (
       'prescribed_by', md.prescribed_by, 'started_at', md.started_at,
       'target_duration_days', md.target_duration_days,
       'target_duration_doses', md.target_duration_doses, 'status', md.status,
-      'ended_at', md.ended_at,
+      'ended_at', md.ended_at, 'vet_visit_id', md.vet_visit_id,
       'medication_items', (select json_build_object('is_prescription', mi.is_prescription, 'strength', mi.strength)
         from medication_items mi where mi.id = md.medication_item_id and mi.created_by_user_id = (select user_id from subj))
     ) order by md.created_at desc, md.id desc)::text, '[]')

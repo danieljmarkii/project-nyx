@@ -161,7 +161,10 @@ export const READS: readonly ReadSpec[] = [
     select:
       'id, medication_item_id, drug_name, dose_amount, route, doses_per_day, schedule_notes, ' +
       'indication, prescribed_by, started_at, target_duration_days, target_duration_doses, ' +
-      'status, ended_at, medication_items(is_prescription, strength)',
+      // CUL-2770 — vet_visit_id names a course's source on the report. The harness exports no
+      // vet_contacts_enabled row (export.sql reads engines_v3_% keys only), so it renders the
+      // flag-off report and the contacts pull is never made here.
+      'status, ended_at, vet_visit_id, medication_items(is_prescription, strength)',
     order: NEWEST,
     preApplied: [PET],
     single: false,
