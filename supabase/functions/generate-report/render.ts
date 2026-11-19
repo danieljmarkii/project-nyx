@@ -3643,7 +3643,7 @@ function headline(snap: ReportSnapshot): string {
  * CUL-2813 (QUIET) — a named protein never hides an unknown beside it. A mixed bowl with one food's
  * protein flagged and another off-diet food never read printed only "carrying Chicken". It counts
  * under its protein AND under its own clause, worded as a second food so the two do not read as one
- * feeding described twice; the bold lead takes `exposures.offDiet`, so no total doubles. Bowls only:
+ * feeding described twice, with its count in the protein clause's own form; the bold lead takes `exposures.offDiet`, so no total doubles. Bowls only:
  * a plain feeding with a flagged protein has proteins on file by construction.
  */
 export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>): string {
@@ -3673,7 +3673,7 @@ export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>):
   const clauses: string[] = []
   if (named.length > 0) clauses.push(`carrying ${named.join('; ')}`)
   if (partUnread.length > 0) {
-    clauses.push(`${BOWL_PART_UNREAD} for ${num(partUnread.length)} ${dayListText(partUnread)}`)
+    clauses.push(`${BOWL_PART_UNREAD} (${num(partUnread.length)}) ${dayListText(partUnread)}`)
   }
   if (unread.length > 0) clauses.push(`ingredients not read for ${num(unread.length)} ${dayListText(unread)}`)
   if (unconfirmed.length > 0) {
@@ -3682,8 +3682,13 @@ export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>):
   return `, ${clauses.join('; ')}`
 }
 
-/** CUL-2813 — the one wording for a bowl's unread food beside a named protein: headline, refusal line, appendix C. */
-const BOWL_PART_UNREAD = 'ingredients of another food in the same bowl not read'
+/**
+ * CUL-2813 — the one wording for a bowl's unknown food beside a named protein: headline, refusal
+ * line, appendix C. It states what the record holds (no protein on file) and never contrasts it with
+ * the named food as "not read": a protein on file is not a label read (cold read: the first wording,
+ * "ingredients of another food … not read", told a vet the chicken food's list HAD been read).
+ */
+const BOWL_PART_UNREAD = 'a second food in the same bowl has no protein on file'
 
 /**
  * CUL-2813 — a mixed bowl naming an off-trial protein while another off-diet food in it has no

@@ -6973,7 +6973,7 @@ Deno.test('CUL-2813 — beside a refusal, a bowl naming a protein also says its 
   off[0].panelWasRead = false
   const box = refusalCallout(snap)
   assert.ok(
-    box.includes('Also fed off the trial diet: 1 feeding of Hearth Chicken Jerky, carrying chicken; ingredients of another food in the same bowl not read, on May 10, 2026 (appendix C; a floor, not a total).'),
+    box.includes('Also fed off the trial diet: 1 feeding of Hearth Chicken Jerky, carrying chicken; a second food in the same bowl has no protein on file, on May 10, 2026 (appendix C; a floor, not a total).'),
     box,
   )
 })

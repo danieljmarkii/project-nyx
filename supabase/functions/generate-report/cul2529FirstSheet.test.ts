@@ -106,12 +106,12 @@ Deno.test('CUL-2813 — a bowl naming a protein beside an unread food counts und
   off[0].classification = { ...off[0].classification, components: [off[0].classification, off[0].classification] }
   off[0].panelWasRead = false
   const out = plain(headlineOffDietCarried(t))
-  assert.match(out, /^, carrying Chicken \(11\) on [^;]+; ingredients of another food in the same bowl not read for 1 on Oct \d+, 2026$/, out)
+  assert.match(out, /^, carrying Chicken \(11\) on [^;]+; a second food in the same bowl has no protein on file \(1\) on Oct \d+, 2026$/, out)
   // A wholly unread feeding keeps its own clause beside it: the two partition, neither absorbs the other.
   off[1].classification = { ...off[1].classification, antigens: [] }
   off[1].panelWasRead = false
   const both = plain(headlineOffDietCarried(t))
-  assert.match(both, /carrying Chicken \(10\) on [^;]+; ingredients of another food in the same bowl not read for 1 on [^;]+; ingredients not read for 1 on Oct \d+, 2026$/, both)
+  assert.match(both, /carrying Chicken \(10\) on [^;]+; a second food in the same bowl has no protein on file \(1\) on [^;]+; ingredients not read for 1 on Oct \d+, 2026$/, both)
   // Data Scientist: one feeding in two clauses never moves the bold lead.
   const after = headlineOf(renderReport(s))
   assert.equal(after.match(/\d+ of \d+ logged feedings did not match the trial diet/)?.[0], before.match(/\d+ of \d+ logged feedings did not match the trial diet/)?.[0])

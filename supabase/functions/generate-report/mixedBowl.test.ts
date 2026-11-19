@@ -284,16 +284,16 @@ Deno.test('CUL-2813 — a bowl naming chicken beside a food nobody read: the hea
   // One feeding in the bold lead, under its protein AND under the unread clause.
   assert.match(
     head,
-    /1 of 32 logged feedings did not match the trial diet, carrying Chicken \(1\) on Jun 20, 2026; ingredients of another food in the same bowl not read for 1 on Jun 20, 2026 \(/,
+    /1 of 32 logged feedings did not match the trial diet, carrying Chicken \(1\) on Jun 20, 2026; a second food in the same bowl has no protein on file \(1\) on Jun 20, 2026 \(/,
     head,
   )
   const p = plain(html)
-  assert.match(p, /in a mixed bowl[^|]*?Protein not in the trial diet; ingredients of another food in the same bowl not read/, 'appendix C says it in the same words')
+  assert.match(p, /in a mixed bowl[^|]*?Protein not in the trial diet; a second food in the same bowl has no protein on file/, 'appendix C says it in the same words')
 })
 
 Deno.test('CUL-2813 — a bowl whose every off-diet food was read prints no unread clause', () => {
   const events = [...dailyTrial(), mixMeal('2026-06-20', [part(CHICKEN, 0.5), part(RABBIT, 0.5)], { time: '18:00:00' })]
   const html = renderReport(assembleReport(trialInput(events)))
   assert.match(headlineOf(html), /carrying Chicken \(1\) on Jun 20, 2026; Rabbit \(1\) on Jun 20, 2026 \(/)
-  assert.ok(!plain(html).includes('in the same bowl not read'), 'no row or clause claims an unread food in the bowl')
+  assert.ok(!plain(html).includes('in the same bowl has no protein on file'), 'no row or clause claims an unread food in the bowl')
 })
