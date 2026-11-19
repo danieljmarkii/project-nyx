@@ -9,6 +9,13 @@ import {
   type LocalVetVisit,
 } from '../../lib/vetVisits';
 
+// Vet contacts (CUL-2766): the allowlist AND the opt-in, as one switch the test flips.
+let mockContactsOn = false;
+jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => mockContactsOn }));
+beforeEach(() => {
+  mockContactsOn = false;
+});
+
 // CUL-900 VV-2 — the Pet-tab card (mock A1), including its zero state.
 //
 // The model is contract-tested in lib/vetVisits.test.ts; what is pinned here is
@@ -26,6 +33,8 @@ const visit: LocalVetVisit = {
   notes: null,
   next_visit_at: null,
   deleted_at: null,
+  channel: 'in_clinic',
+  contacted_at: null,
 };
 
 const appointment: AppointmentDetail = {

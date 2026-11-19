@@ -5,6 +5,8 @@ import { theme } from '../../constants/theme';
 export interface ChipGroupOption {
   value: string;
   label: string;
+  /** Spoken in place of `label` when the visible word undersells the option. */
+  accessibilityLabel?: string;
 }
 
 interface Props {
@@ -64,6 +66,7 @@ export function ChipGroup({
         <FilterChip
           key={o.value}
           label={o.label}
+          accessibilityLabel={o.accessibilityLabel}
           active={value === o.value}
           variant={variant}
           accessibilityRole="radio"

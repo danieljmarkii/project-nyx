@@ -15,6 +15,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colorRoles, theme } from '../../constants/theme';
 import { ChipGroup } from '../ui/ChipGroup';
+import { MultiChipGroup } from '../ui/MultiChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { TextField } from '../ui/TextField';
 import { ThemedText } from '../ui/ThemedText';
@@ -23,8 +24,20 @@ import {
   composeScheduledAt,
   formatVisitWeekday,
   localDateKey,
+  type VisitChannel,
   type VisitPrefill,
 } from '../../lib/vetVisits';
+import {
+  CHANNEL_OPTIONS,
+  CHANNEL_QUESTION,
+  composeContactedAt,
+  contactFootnote,
+  contactSaveLabel,
+  contactSheetTitle,
+  isRemoteChannel,
+} from '../../lib/vetContactSheet';
+import { useVetContactsOn } from '../../hooks/useVetContacts';
+import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { useSheetCap } from '../../hooks/useLayoutClass';
 import type { VetReminderStatus } from '../../hooks/useVetReminders';
 import {
@@ -51,6 +64,23 @@ export interface BookVisitSubmit {
   /** Remind me was picked (`booked` only, and only while the switch is off on this
    *  phone). The host applies it AFTER the sheet closes (CUL-2728 T3, C-14). */
   remindMe: boolean;
+  /** Vet contacts (CUL-2766): how the owner heard from the vet. 'in_clinic' on every path
+   *  but the past contact, which is the only place the chips exist. */
+  channel: VisitChannel;
+  /** The optional time of a past contact, a UTC instant (C-10); null = the day only, and
+   *  always null outside the past contact. */
+  contactedAt: string | null;
+}
+
+/** A saved contact, opened for *Edit* (R12). The sheet seeds from it and writes no other pet. */
+export interface VisitEditSeed {
+  channel: VisitChannel;
+  /** 'YYYY-MM-DD'. */
+  day: string;
+  contactedAt: string | null;
+  clinicName: string | null;
+  vetName: string | null;
+  reason: string | null;
 }
 
 interface Props {
@@ -72,6 +102,9 @@ interface Props {
   /** Every live booking on the account, every pet, so the reminder line answers through
    *  the planner's own collapse (two visits one day share one notification). */
   liveBookings?: readonly ReminderAppointment[];
+  /** Vet contacts R12: open on a saved contact to edit it. Its chips, title and footnote
+   *  behave as on a new contact; *Also about* never shows (an edit is one pet's row). */
+  edit?: VisitEditSeed | null;
   onClose: () => void;
   onSubmit: (input: BookVisitSubmit) => void;
 }
@@ -102,11 +135,20 @@ export function BookVisitSheet({
   busy = false,
   reminderStatus = 'loading',
   liveBookings = NO_BOOKINGS,
+  edit = null,
   onClose,
   onSubmit,
 }: Props) {
   const sheetCap = useSheetCap();
   const insets = useSafeAreaInsets();
+  // Vet contacts (CUL-2766, spec §4.2): the logging door opens on a PAST CONTACT, behind the
+  // allowlist and the opt-in. It is the happened arm's door, so the host keeps opening
+  // `happened` and the sheet decides which sheet that is; an edit is always one. The booking
+  // door never reaches it: `Add the next visit` keeps its question and shows no chips.
+  const contactsOn = useVetContactsOn();
+  const past = edit !== null || (contactsOn && initialMode === 'happened');
+  const [channel, setChannel] = useState<VisitChannel>(edit?.channel ?? 'in_clinic');
+  const [channelTouched, setChannelTouched] = useState(false);
   const [mode, setMode] = useState<VisitMode>(initialMode);
   const [day, setDay] = useState<Date>(() => new Date());
   const [time, setTime] = useState<Date | null>(null);
@@ -127,6 +169,26 @@ export function BookVisitSheet({
   // every render is what lets them.
   useEffect(() => {
     if (!visible) return;
+    if (past) {
+      // A past contact seeds its own way. Day is TODAY (spec §4.2), never the last visit's
+      // "come back on" date, which is a booking's seed; an edit seeds the record as saved.
+      // Clinic and vet keep the shipped prefill (the hint says where it came from).
+      setMode('happened');
+      setChannel(edit?.channel ?? 'in_clinic');
+      setChannelTouched(false);
+      setClinicName(edit ? edit.clinicName ?? '' : prefill.clinicName ?? '');
+      setVetName(edit ? edit.vetName ?? '' : prefill.vetName ?? '');
+      setReason(edit ? edit.reason ?? '' : initialReason ?? '');
+      const editedDay = edit ? parseDayKey(edit.day) : null;
+      setDay(editedDay ?? new Date());
+      const editedTime = edit?.contactedAt ? new Date(edit.contactedAt) : null;
+      setTime(editedTime && !Number.isNaN(editedTime.getTime()) ? editedTime : null);
+      setAlsoFor(new Set());
+      setRemindMe(false);
+      setShowDayPicker(false);
+      setShowTimePicker(false);
+      return;
+    }
     setMode(initialMode);
     setClinicName(prefill.clinicName ?? '');
     setVetName(prefill.vetName ?? '');
@@ -154,7 +216,13 @@ export function BookVisitSheet({
     const seeded = prefill.suggestedDate ? parseDayKey(prefill.suggestedDate) : null;
     const today = new Date();
     setDay(seeded && isLegalForMode(seeded, initialMode, today) ? seeded : today);
-  }, [visible, initialMode, prefill.clinicName, prefill.vetName, prefill.suggestedDate, initialReason]);
+    // `edit` is read through its fields so a host that rebuilds the seed object each render
+    // does not wipe what the owner typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    visible, initialMode, prefill.clinicName, prefill.vetName, prefill.suggestedDate, initialReason, past,
+    edit?.channel, edit?.day, edit?.contactedAt, edit?.clinicName, edit?.vetName, edit?.reason,
+  ]);
 
   const dayLabel = useMemo(() => formatVisitWeekday(localDateKey(day)), [day]);
   const isBooked = mode === 'booked';
@@ -229,6 +297,24 @@ export function BookVisitSheet({
 
   function submit() {
     const key = localDateKey(day);
+    if (past) {
+      onSubmit({
+        mode: 'happened',
+        day: key,
+        scheduledAt: null,
+        clinicName,
+        vetName,
+        reason,
+        // Also about is a remote contact's (spec §0.3: one call about both cats). An exam is
+        // per animal: logging one for a pet nobody examined would move THAT pet's report
+        // window, so At the clinic writes the record's pet alone, as the shipped arm did.
+        alsoForPetIds: !edit && isRemoteChannel(channel) ? otherPets.filter((p) => alsoFor.has(p.id)).map((p) => p.id) : [],
+        remindMe: false,
+        channel,
+        contactedAt: composeContactedAt(day, time),
+      });
+      return;
+    }
     onSubmit({
       mode,
       day: key,
@@ -241,8 +327,63 @@ export function BookVisitSheet({
       reason,
       alsoForPetIds: isBooked ? [...alsoFor] : [],
       remindMe: isBooked && remindMe && remindMeApplies,
+      channel: 'in_clinic',
+      contactedAt: null,
     });
   }
+
+  // The past contact's words follow the chip (spec §4.2's table). Computed only on that
+  // path, so the flag-off sheet never reaches the contact module.
+  const alsoNames = past && !edit && isRemoteChannel(channel)
+    ? otherPets.filter((p) => alsoFor.has(p.id)).map((p) => p.name)
+    : [];
+  const pastTitle = past ? contactSheetTitle(channel) : null;
+  // A chip tap retitles the sheet; VoiceOver hears it (C-44). Not on open: the title is
+  // read as the sheet's first element then.
+  useLiveRegionAnnouncement(past && channelTouched ? pastTitle : null, channel);
+
+  function toggleAlso(petId: string) {
+    setAlsoFor((prev) => {
+      const out = new Set(prev);
+      if (out.has(petId)) out.delete(petId);
+      else out.add(petId);
+      return out;
+    });
+  }
+
+  const whereBlock = (
+    <>
+      <SectionLabel label="Where" style={styles.label} />
+      <TextField
+        value={clinicName}
+        onChangeText={setClinicName}
+        placeholder="Clinic"
+        accessibilityLabel="Clinic"
+      />
+      <TextField
+        value={vetName}
+        onChangeText={setVetName}
+        placeholder="Vet"
+        accessibilityLabel="Vet"
+        containerStyle={styles.stackedField}
+      />
+      {prefill.clinicName || prefill.vetName ? (
+        <ThemedText style={styles.hint}>From the last visit — change it if it moved.</ThemedText>
+      ) : null}
+    </>
+  );
+
+  const aboutBlock = (
+    <>
+      <SectionLabel label="What it was about" style={styles.label} />
+      <TextField
+        value={reason}
+        onChangeText={setReason}
+        placeholder="Optional"
+        accessibilityLabel="What it was about"
+      />
+    </>
+  );
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -256,7 +397,13 @@ export function BookVisitSheet({
           accessibilityViewIsModal
         >
           <View style={styles.grabber} />
-          <ThemedText style={styles.title}>{isBooked ? 'Next visit' : 'A visit that happened'}</ThemedText>
+          <ThemedText
+            style={styles.title}
+            accessibilityRole={past ? 'header' : undefined}
+            accessibilityLiveRegion={past ? 'polite' : undefined}
+          >
+            {past ? pastTitle : isBooked ? 'Next visit' : 'A visit that happened'}
+          </ThemedText>
           <ThemedText style={styles.subtitle}>For {petName}</ThemedText>
 
           <ScrollView
@@ -264,6 +411,140 @@ export function BookVisitSheet({
             contentContainerStyle={styles.scrollInner}
             keyboardShouldPersistTaps="handled"
           >
+            {past ? (
+              <>
+                {/* No "Has this visit happened?": from the logging door it has (the owner
+                    review, §0.2). The one question is how the owner heard. */}
+                <SectionLabel label={CHANNEL_QUESTION} style={styles.firstLabel} />
+                <ChipGroup
+                  options={CHANNEL_OPTIONS.map((o) => ({ value: o.value, label: o.label, accessibilityLabel: o.spoken }))}
+                  value={channel}
+                  onChange={(next) => {
+                    if (!next) return;
+                    setChannel(next as VisitChannel);
+                    setChannelTouched(true);
+                  }}
+                  // Required: one of the four is always true.
+                  allowDeselect={false}
+                  accessibilityLabel={CHANNEL_QUESTION}
+                  style={styles.modes}
+                />
+
+                {/* Day and Time side by side; they stack when the column is narrow or the
+                    text is large (mock B5, B6), never truncate. */}
+                <View style={styles.whenRow}>
+                  <View style={styles.whenCell}>
+                    <SectionLabel label="Day" style={styles.label} />
+                    <TouchableOpacity
+                      style={styles.value}
+                      onPress={() => setShowDayPicker((v) => !v)}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Day, ${pastDayLabel(day)}`}
+                      accessibilityHint="Opens a date picker"
+                    >
+                      <ThemedText style={styles.valueText}>{pastDayLabel(day)}</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.whenCell}>
+                    <SectionLabel label="Time" style={styles.label} />
+                    <View style={styles.timeRow}>
+                      <TouchableOpacity
+                        style={[styles.value, styles.timeValue]}
+                        onPress={toggleTimePicker}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={time ? `Time, ${formatTime(time)}` : 'Time, not set'}
+                        accessibilityHint="Opens a time picker"
+                      >
+                        <ThemedText style={time ? styles.valueText : styles.valuePlaceholder}>
+                          {time ? formatTime(time) : 'Optional'}
+                        </ThemedText>
+                      </TouchableOpacity>
+                      {time ? (
+                        <TouchableOpacity
+                          onPress={clearTime}
+                          style={styles.clearTime}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Clear the time"
+                        >
+                          <ThemedText style={styles.clearTimeText}>Clear</ThemedText>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  </View>
+                </View>
+                {showDayPicker && (
+                  <DateTimePicker
+                    value={day}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    themeVariant="light"
+                    accentColor={colorRoles.action.onLight}
+                    // A contact that happened is today or earlier, like a logged visit.
+                    maximumDate={new Date()}
+                    onChange={(_, picked) => {
+                      if (Platform.OS !== 'ios') setShowDayPicker(false);
+                      if (picked) setDay(picked);
+                    }}
+                  />
+                )}
+                {showTimePicker && (
+                  <DateTimePicker
+                    value={time ?? defaultTimeOfDay(day)}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    themeVariant="light"
+                    accentColor={colorRoles.action.onLight}
+                    onChange={(_, picked) => {
+                      if (Platform.OS !== 'ios') setShowTimePicker(false);
+                      if (picked) setTime(picked);
+                    }}
+                  />
+                )}
+
+                {/* At the clinic keeps the shipped order, Where then what it was about (B3);
+                    on a remote contact what it was about leads and Where is optional
+                    context beneath it (B1). */}
+                {isRemoteChannel(channel) ? (
+                  <>
+                    {aboutBlock}
+                    {whereBlock}
+                  </>
+                ) : (
+                  <>
+                    {whereBlock}
+                    {aboutBlock}
+                  </>
+                )}
+
+                {/* Also about (Sam, §0.2): one call about both cats writes one INDEPENDENT
+                    row per pet. Multi-pet homes only, remote contacts only, never on an
+                    edit. Chips, not the booking door's switches, which keep their wording. */}
+                {!edit && isRemoteChannel(channel) && otherPets.length > 0 ? (
+                  <>
+                    <SectionLabel label="Also about" style={styles.label} />
+                    <MultiChipGroup
+                      options={otherPets.map((p) => ({ value: p.id, label: p.name }))}
+                      values={[...alsoFor]}
+                      onToggle={toggleAlso}
+                      accessibilityLabel="Also about"
+                    />
+                  </>
+                ) : null}
+
+                <PrimaryButton
+                  label={contactSaveLabel(channel, petName, alsoNames)}
+                  onPress={submit}
+                  loading={busy}
+                  style={styles.submit}
+                />
+                {/* Never cut (mock B6): it carries "No exam". */}
+                <ThemedText style={styles.footnote}>{contactFootnote(channel, petName)}</ThemedText>
+              </>
+            ) : (
+            <>
             {/* The question is ASKED, out loud. The first draft rendered the two
                 chips bare, with the question only in `accessibilityLabel` — which
                 made it the one control on the sheet with no visible label while
@@ -475,6 +756,8 @@ export function BookVisitSheet({
                 ? 'Shows on Home five days before.'
                 : 'Your next vet report starts from this visit.'}
             </ThemedText>
+            </>
+            )}
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
@@ -508,6 +791,12 @@ function parseDayKey(key: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
   if (!m) return null;
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+/** The past contact's Day value: "Today" for today (spec §4.2), else the shipped weekday. */
+function pastDayLabel(day: Date): string {
+  const key = localDateKey(day);
+  return key === localDateKey(new Date()) ? 'Today' : formatVisitWeekday(key);
 }
 
 /** Where the time spinner opens when no time has been chosen: a clinic morning. */
@@ -605,6 +894,17 @@ const styles = StyleSheet.create({
   },
   timeValue: {
     flex: 1,
+  },
+  // Day and Time: side by side where both fit, stacked where they do not (320pt, large
+  // text). The floor is the narrowest a value box reads whole at the default size.
+  whenRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: theme.space2,
+  },
+  whenCell: {
+    flexGrow: 1,
+    flexBasis: 140,
   },
   clearTime: {
     minHeight: 44,

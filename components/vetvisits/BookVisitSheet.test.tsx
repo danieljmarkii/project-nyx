@@ -15,6 +15,13 @@ import {
 // switched the mode chip after opening. The date/arm interaction below is the
 // case that shipped unguarded.
 
+// Vet contacts (CUL-2766): the allowlist AND the opt-in, as one switch the test flips.
+let mockContactsOn = false;
+jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => mockContactsOn }));
+beforeEach(() => {
+  mockContactsOn = false;
+});
+
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));

@@ -141,8 +141,8 @@ const HOME: VetVisitsHome = {
   later: [appt('a2', 'Tue, Nov 17', 'Tue, Nov 17')],
   awaiting: [appt('a3', 'Friday', 'Friday')],
   visits: [
-    { id: VISIT, petId: PET, visitedAt: '2026-10-30', stamp: null, title: 'Recheck', where: 'Riverside · Dr. Chen', tags: [] },
-    { id: 'v2', petId: PET, visitedAt: '2026-09-16', stamp: null, title: 'Visit on Sep 16', where: '', tags: [] },
+    { id: VISIT, petId: PET, visitedAt: '2026-10-30', stamp: null, title: 'Recheck', where: 'Riverside · Dr. Chen', tags: [], channel: 'in_clinic' },
+    { id: 'v2', petId: PET, visitedAt: '2026-09-16', stamp: null, title: 'Visit on Sep 16', where: '', tags: [], channel: 'in_clinic' },
   ],
 };
 

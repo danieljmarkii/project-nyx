@@ -6,6 +6,8 @@ import { ThemedText } from '../ui/ThemedText';
 import { AppointmentBlock } from './AppointmentBlock';
 import { AppointmentActions } from './AppointmentActions';
 import type { VetVisitsCardModel } from '../../lib/vetVisits';
+import { LOG_CONTACT_LABEL } from '../../lib/vetContactSheet';
+import { useVetContactsOn } from '../../hooks/useVetContacts';
 
 interface Props {
   model: VetVisitsCardModel;
@@ -21,6 +23,8 @@ interface Props {
   onGetReady: (appointmentId: string) => void;
   /** E2's two doors, rendered here only at zero visits and zero bookings. */
   onBook: () => void;
+  /** The logging door. Flag off: the empty branch only, as shipped. Flag on (Vet contacts
+   *  R7, R10): renamed, and also under *Open visits* on a card that has a record. */
   onLogPast: () => void;
   style?: ViewStyle;
 }
@@ -51,6 +55,9 @@ interface Props {
 export function VetVisitsCard({
   model, petName, onOpen, onTakeNotes, onGetReady, onBook, onLogPast, style,
 }: Props) {
+  // Vet contacts (CUL-2766): the one door to a call, text or email, behind the allowlist
+  // and the opt-in. Flag off, both branches render exactly as shipped.
+  const contactsOn = useVetContactsOn();
   if (model.isEmpty) {
     return (
       <Card style={style}>
@@ -60,7 +67,7 @@ export function VetVisitsCard({
         </ThemedText>
         <PrimaryButton label="Add the next visit" onPress={onBook} variant="secondary" style={styles.button} />
         <PrimaryButton
-          label="Log a visit that already happened"
+          label={contactsOn ? LOG_CONTACT_LABEL : 'Log a visit that already happened'}
           onPress={onLogPast}
           variant="secondary"
           style={styles.buttonStacked}
@@ -105,6 +112,17 @@ export function VetVisitsCard({
       ) : null}
 
       <PrimaryButton label="Open visits" onPress={onOpen} variant="secondary" style={styles.button} />
+      {/* R10 (mock A3, A4): a pet that already has a record had no way to log a call, since
+          the shipped door renders only at zero visits. It sits last, under *Open visits*,
+          with or without a booking; the appointment block and its actions are untouched. */}
+      {contactsOn ? (
+        <PrimaryButton
+          label={LOG_CONTACT_LABEL}
+          onPress={onLogPast}
+          variant="secondary"
+          style={styles.buttonStacked}
+        />
+      ) : null}
     </Card>
   );
 }

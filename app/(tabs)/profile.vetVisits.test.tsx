@@ -135,7 +135,7 @@ import ProfileScreen from './profile';
 import { EMPTY_VET_VISITS_HOME, type VetVisitsHome, type VisitListRow } from '../../lib/vetVisits';
 
 function visit(id: string, petId: string): VisitListRow {
-  return { id, petId, visitedAt: '2026-07-30', stamp: null, title: 'Recheck', where: '', tags: [] };
+  return { id, petId, visitedAt: '2026-07-30', stamp: null, title: 'Recheck', where: '', tags: [], channel: 'in_clinic' };
 }
 const MOCHI_HOME: VetVisitsHome = { ...EMPTY_VET_VISITS_HOME, visits: [visit('v1', 'p1'), visit('v2', 'p1')] };
 const LUNA_HOME: VetVisitsHome = { ...EMPTY_VET_VISITS_HOME, visits: [visit('v3', 'p2')] };
