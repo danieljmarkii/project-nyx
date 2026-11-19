@@ -64,7 +64,7 @@ import { shiftDay } from '../lib/historyDays';
 import { dayKeyToLocalDate, toLocalDayKey } from '../lib/utils';
 import { usePetStore, type Pet } from './petStore';
 import { defaultHistoryScope, type HistoryScope } from './historyScopeStore';
-import { historyRequestKey, mergePages, snapshotForScope, useHistoryListStore } from './historyListStore';
+import { historyRequestKey, mergePages, snapshotForScope, useHistoryListStore, withoutChannel } from './historyListStore';
 import * as historyWindowFacts from '../lib/historyWindowFacts';
 import * as spineReads from '../lib/spineReads';
 import { dayStartMs } from '../lib/historyScreen';
@@ -787,5 +787,16 @@ describe('CUL-1760 — the timing read runs under a filter, a search and a month
     insertEvent('c-today', at(0, 8), 'cough');
     await expectTimingRead(scopeFor(PET_A.id, { window: { kind: 'month', month: monthOf(first) } }), 'v-hidden');
     expect(store().snapshot!.pages.span!.fromDay).toBe(first);
+  });
+});
+
+// Vet contacts PR-06 (CUL-2749): flag off, History's visit rows are the shipped shape, so a
+// call titles itself "Vet visit" exactly as main does (C-36); the gate is `vetContactsOnNow`.
+describe('withoutChannel', () => {
+  it('drops the channel and nothing else', () => {
+    const row = { id: 'v', petId: 'p', visitedAt: '2026-11-09', sortMs: 1, reason: 'Ear', where: '', channel: 'phone' as const };
+    const shipped = withoutChannel(row);
+    expect(shipped).toEqual({ id: 'v', petId: 'p', visitedAt: '2026-11-09', sortMs: 1, reason: 'Ear', where: '' });
+    expect(shipped).not.toHaveProperty('channel');
   });
 });

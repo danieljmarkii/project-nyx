@@ -51,7 +51,10 @@ import { PhotoViewer } from '../../components/ui';
 import { supabase } from '../../lib/supabase';
 import { getDb } from '../../lib/db';
 import { useAuthStore } from '../../store/authStore';
-import { usePetStore } from '../../store/petStore';
+import { resolveRecordPetName, usePetStore } from '../../store/petStore';
+import { useVetContactsOn } from '../../hooks/useVetContacts';
+import { readCourseVisitSources, type CourseVisitSource } from '../../lib/vetVisits';
+import { CourseSourceRow } from '../../components/vetvisits/CourseSourceRow';
 import { useSyncStore } from '../../store/syncStore';
 import {
   uploadPhoto, compressForUpload, getSignedUrl,
@@ -101,6 +104,14 @@ export default function MedicationDetailScreen() {
   // every other medication surface (strip, trial, History, rundown); an empty list simply
   // renders no history section.
   const [pastCourses, setPastCourses] = useState<MedicationCourse[]>([]);
+  // Vet contacts PR-06 (CUL-2749, spec §4.6 D5): the running course of this drug, read only to
+  // carry its source row (the course's own facts stay on the Pet tab, AC #3), and each course's
+  // source, the visit or contact named by `medications.vet_visit_id`. Both stay empty while the
+  // feature is off, so the page is the shipped one (C-36).
+  const contactsOn = useVetContactsOn();
+  const pets = usePetStore((s) => s.pets);
+  const [currentCourses, setCurrentCourses] = useState<MedicationCourse[]>([]);
+  const [sources, setSources] = useState<Map<string, CourseVisitSource>>(() => new Map());
 
   // Editable fields — seeded from the row once on load.
   const [genericName, setGenericName] = useState('');
@@ -180,13 +191,35 @@ export default function MedicationDetailScreen() {
     let cancelled = false;
     // timeZone omitted on purpose — the device zone IS the owner's midnight (B-514).
     loadMedicationCourses(petId)
-      .then((courses) => {
+      .then(async (courses) => {
         if (cancelled || courses == null) return;
-        setPastCourses(courses.filter((c) => c.medicationItemId === id && !c.isActive));
+        const ofDrug = courses.filter((c) => c.medicationItemId === id);
+        setPastCourses(ofDrug.filter((c) => !c.isActive));
+        if (!contactsOn) {
+          setCurrentCourses([]);
+          setSources(new Map());
+          return;
+        }
+        setCurrentCourses(ofDrug.filter((c) => c.isActive));
+        // A failed source read leaves the rows off; the course itself still renders.
+        const read = await readCourseVisitSources(
+          ofDrug.map((c) => c.regimenId).filter((r): r is string => r !== null),
+        ).catch((e: unknown) => {
+          console.warn('[medication-detail] course source read failed:', e);
+          return new Map<string, CourseVisitSource>();
+        });
+        if (!cancelled) setSources(read);
       })
       .catch((e) => { console.error('[medication-detail] course history load failed:', e); });
     return () => { cancelled = true; };
-  }, [id, activePet?.id, hydrationTick]);
+  }, [id, activePet?.id, hydrationTick, contactsOn]);
+
+  // The courses are read for the active pet, so that pet is the record's (C-9): its name is
+  // resolved from the record's id, never from the store's active name.
+  const coursePetName = resolveRecordPetName(pets, activePet?.id);
+  const sourceOf = (c: MedicationCourse) => (c.regimenId ? sources.get(c.regimenId) ?? null : null);
+  const openSource = (source: CourseVisitSource) => router.push(`/vet-visits/${source.visitId}`);
+  const currentWithSource = currentCourses.filter((c) => sourceOf(c) !== null);
 
   // The evidence link (§4.2) — History filtered to this course's doses. A registered door
   // (`lib/historyDoors.ts`, HV-11 / CUL-1168): `course` is the course's key (the vet report's
@@ -445,13 +478,33 @@ export default function MedicationDetailScreen() {
               facts over the event-grain evidence, with a route DOWN into History's dose
               list — never instead of it. Shown regardless of catalog ownership: this is
               the viewer's own pet's record, not the drug row's editability. */}
+          {/* Vet contacts PR-06 (D5): where the running course came from. Only the source row:
+              the course's doses and pace live on the Pet tab, never here (B-140 AC #3). */}
+          {currentWithSource.length > 0 && (
+            <View style={styles.historySection}>
+              <SectionLabel label={`${coursePetName}’s current course`} />
+              {currentWithSource.map((c) => {
+                const source = sourceOf(c) as CourseVisitSource;
+                return (
+                  <View key={c.key} style={styles.courseCard}>
+                    <CourseSourceRow source={source} onPress={() => openSource(source)} />
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
           {pastCourses.length > 0 && (
             <View style={styles.historySection}>
               <SectionLabel label="Medication history" />
               {pastCourses.map((c) => {
                 const { facts, hasEvidence } = buildPastCourseFacts(c);
+                const source = sourceOf(c);
                 return (
                   <View key={c.key} style={styles.courseCard}>
+                    {/* First in the card, so the facts sit between it and the evidence link's
+                        slop: two doors never share a hit area (C-5). */}
+                    {source ? <CourseSourceRow source={source} onPress={() => openSource(source)} /> : null}
                     {facts.map((f, i) => (
                       <View
                         key={f.label}

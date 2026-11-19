@@ -37,7 +37,7 @@ import { mealRowLabel } from './food';
 import { attributeDoses, type AttributableDose, type DoseAdherence, type RegimenWindow } from './medications';
 import type { MedicationCourse } from './medicationHistory';
 import { symptomOccurrenceLabel } from './metricDetail';
-import type { HistoryVisitRow } from './vetVisits';
+import type { HistoryVisitRow, VisitChannel } from './vetVisits';
 import type { HistoryCallRow } from './vetCallReads';
 import type { BoundaryMarker } from './feedingArrangements';
 import { collapseSameMinute } from './sameMinuteDuplicates';
@@ -1237,7 +1237,9 @@ export function dayHeaderOf(
 // ── Date-only items (§3.5, rule L) ───────────────────────────────────────────────
 
 export type DateOnlyItem =
-  | { kind: 'visit'; day: string; id: string; reason: string | null; where: string }
+  /** `channel` (Vet contacts PR-06, CUL-2749): present only when the feature is on and the
+   *  record's channel is known; a call, text or email then titles itself (D4). */
+  | { kind: 'visit'; day: string; id: string; reason: string | null; where: string; channel?: VisitChannel }
   | { kind: 'course-start'; day: string; courseKey: string; name: string }
   /** Engines v3 PR-36: "I've called" on an escalation (§6.4), a door to the call's record. */
   | { kind: 'call'; day: string; id: string; about: 'vomiting' | 'stool' | null }
@@ -1281,7 +1283,9 @@ export function dateOnlyItemsOf(input: DateOnlyItemsInput): Map<string, DateOnly
   }
   for (const v of visits) {
     const day = dayOfStored(v.visitedAt);
-    if (day !== null && inRange(day, range)) items.push({ kind: 'visit', day, id: v.id, reason: v.reason, where: v.where });
+    if (day !== null && inRange(day, range)) {
+      items.push({ kind: 'visit', day, id: v.id, reason: v.reason, where: v.where, ...(v.channel ? { channel: v.channel } : {}) });
+    }
   }
   for (const c of courses) {
     const day = c.startedDay;
