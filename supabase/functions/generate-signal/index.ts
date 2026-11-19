@@ -1070,11 +1070,13 @@ export async function readCareContextFacts(
 ): Promise<CareContextFacts | null> {
   try {
     const [visitRes, loggedPull] = await Promise.all([
+      // visit-read: exam — CUL-2765 AC 10: a call, text or email sets no visit date.
       supabase
         .from('vet_visits')
         .select('visited_at')
         .eq('pet_id', petId)
         .is('deleted_at', null)
+        .eq('channel', 'in_clinic')
         // Strictly before today: a visit dated today opens no window yet, and must not hide the
         // one before it (a recheck today over a Depo-Medrol visit ten days ago).
         .lt('visited_at', todayKey)

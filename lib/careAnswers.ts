@@ -148,9 +148,10 @@ export async function readCareQuestionRecord(petId: string): Promise<{
         ORDER BY started_at DESC, created_at DESC`,
       [petId],
     ),
+    // visit-read: exam
     db.getFirstAsync<{ id: string; visited_at: string }>(
       `SELECT id, visited_at FROM vet_visits
-        WHERE pet_id = ? AND deleted_at IS NULL
+        WHERE pet_id = ? AND deleted_at IS NULL AND channel = 'in_clinic'
         ORDER BY visited_at DESC, created_at DESC LIMIT 1`,
       [petId],
     ),

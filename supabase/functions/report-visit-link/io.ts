@@ -30,6 +30,7 @@ export function buildIO(admin: SupabaseClient, uid: string): LinkIO {
     async targetIsPets(petId, target: LinkTarget) {
       // The pet is the caller's (checked first, above), so "same pet" here is also "the caller's".
       if (target.kind === 'visit') {
+        // visit-read: anyContact — the same-pet link check; a report may link to any contact.
         const { data, error } = await admin
           .from('vet_visits')
           .select('id')

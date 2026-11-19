@@ -389,6 +389,9 @@ interface VetVisitRow {
   clinic_name: string | null
   vet_name: string | null
   reason: string | null
+  // CUL-2765 (migration 122) — selected so `mapVetVisitRows` can refuse a non-exam row a
+  // second time, behind the query's own filter.
+  channel: string | null
 }
 
 type ArrangementFoodJoin = FoodProteinCols & { brand: string; product_name: string; format: string | null }
@@ -877,8 +880,16 @@ export function mapDietTrialRows(rows: DietTrialRow[]): ReportDietTrialInput[] {
   })
 }
 
+/**
+ * The scope cascade's rung-1 input: EXAMS ONLY (CUL-2765, R8). A call, text or email the
+ * owner logged is not an exam and must never become "since the last visit", so a row whose
+ * channel is anything but 'in_clinic' (a missing one included: it fails closed, the window
+ * falls to the next rung rather than shortening to a contact) is dropped here, behind the
+ * pull's own `.eq('channel', 'in_clinic')`. Two filters on purpose: the query is what the
+ * visit-readers guard can see, and this is what the Deno suite can drive.
+ */
 export function mapVetVisitRows(rows: VetVisitRow[]): ReportVetVisitInput[] {
-  return rows.map((r) => ({
+  return rows.filter((r) => r.channel === 'in_clinic').map((r) => ({
     visitedAt: r.visited_at,
     clinicName: r.clinic_name ?? null,
     vetName: r.vet_name ?? null,
@@ -1309,9 +1320,10 @@ export async function buildReportSnapshotForPet(
     // which gains this reader as a third rider. That inertness is exactly why the
     // delete CONTROL waits for VV-6: shipping the control first would hide a visit
     // in the app while the deployed report still counted it.
+    // visit-read: exam — rung 1 and the composer's since-visit window (CUL-2765, R8).
     fetchAll<VetVisitRow>('vet_visits', (r) => r.id, (from, to) =>
-      supabase.from('vet_visits').select('id, visited_at, clinic_name, vet_name, reason', { count: 'exact' })
-        .eq('pet_id', petId).is('deleted_at', null)
+      supabase.from('vet_visits').select('id, visited_at, clinic_name, vet_name, reason, channel', { count: 'exact' })
+        .eq('pet_id', petId).is('deleted_at', null).eq('channel', 'in_clinic')
         .order('visited_at', { ascending: false }).order('id', { ascending: false })
         .range(from, to)),
     // A NOTE FOR WHOEVER ADDS THE NEXT COMMENT TO THIS CHAIN, not about the columns

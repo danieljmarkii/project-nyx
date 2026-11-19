@@ -446,6 +446,7 @@ export type VisitLinkedTable = (typeof VISIT_LINKED_TABLES)[number];
  * no visit, or a visit this phone does not hold, is unaffected.
  */
 export function visitLandedSql(table: VisitLinkedTable): string {
+  // visit-read: anyContact — the push-order gate reads only the parent's sync state.
   return `NOT EXISTS (SELECT 1 FROM vet_visits gate_v
      WHERE gate_v.id = ${table}.vet_visit_id
        AND gate_v.synced = 0 AND gate_v.sync_error IS NULL)`;
@@ -468,6 +469,7 @@ export function visitLandedSql(table: VisitLinkedTable): string {
  * The outer statement must read `diet_trials` unaliased, as `visitLandedSql`'s must.
  */
 export function petTrialsVisitLandedSql(): string {
+  // visit-read: anyContact — the push-order gate reads only the parent's sync state.
   return `NOT EXISTS (SELECT 1 FROM diet_trials gate_t
      JOIN vet_visits gate_tv ON gate_tv.id = gate_t.vet_visit_id
      WHERE gate_t.pet_id = diet_trials.pet_id

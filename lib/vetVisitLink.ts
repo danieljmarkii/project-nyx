@@ -54,6 +54,7 @@ export class VetVisitLinkRefused extends Error {
  * later from the record, where the bricked state costs the prescription.
  */
 export async function visitIsForPet(visitId: string, petId: string): Promise<boolean> {
+  // visit-read: anyContact — the same-pet link check: a course may be started from any contact.
   const rows = await getDb().getAllAsync<{ id: string }>(
     `SELECT id FROM vet_visits WHERE id = ? AND pet_id = ? AND deleted_at IS NULL LIMIT 1`,
     [visitId, petId],

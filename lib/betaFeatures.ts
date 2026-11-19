@@ -117,6 +117,22 @@ export const BETA_REGISTRY: BetaFeature[] = [
     serverCost: true,
     careSurface: true,
   },
+  // Vet contacts (CUL-2749; spec §5.2, CUL-2765). Seeded off (migration 122), so the card
+  // renders for no one until the PM allowlists a cohort; nothing reads the opt-in until
+  // PR-04 builds the entry behind it. Client-only (serverCost false): it spends nothing on
+  // the server, and the server's exam-only readers need no gate because they filter on the
+  // row's channel. A care surface: logging a contact is core logging, free (Pets > $, §6.4).
+  {
+    key: 'vet_contacts_enabled',
+    title: 'Calls, texts and emails with your vet',
+    blurb:
+      'Log a call, text or email from your vet beside your visits. Your vet report still starts from the last time your vet saw your pet.',
+    owner: 'Vet contacts (CUL-2749)',
+    addedDate: '2026-11-19',
+    reviewBy: '2027-02-17',
+    serverCost: false,
+    careSurface: true,
+  },
 ];
 
 // ── The shelf derivation (B-747 — the OR over the registry) ───────────────────

@@ -104,9 +104,12 @@ export interface VisitDaysDb {
  * `latestVisitBefore`, because a bound in SQL would be a text comparison (the header).
  * A pet holds a handful of visits over years, so there is nothing to win by bounding it.
  * `deleted_at IS NULL`: a removed visit must stop anchoring the window it started.
+ * `channel = 'in_clinic'` (CUL-2765, R8): a call, text or email is not an exam, so it never
+ * becomes "since the last visit". The window stays at the last time a vet saw the pet.
  */
+// visit-read: exam
 const VISIT_DAYS_SQL = `SELECT visited_at FROM vet_visits
-  WHERE pet_id = ? AND deleted_at IS NULL`;
+  WHERE pet_id = ? AND deleted_at IS NULL AND channel = 'in_clinic'`;
 
 /**
  * "Since the last vet visit" for one pet, read from the phone's copy of the record.

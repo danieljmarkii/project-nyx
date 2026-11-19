@@ -406,6 +406,7 @@ export async function clearLocalData(): Promise<void> {
 // only visit show "Catching up…" as though it were a fresh install.
 export async function isLocalDataEmpty(): Promise<boolean> {
   const db = getDb();
+  // visit-read: anyContact — "is this phone empty", the cold-start gate; any row is data.
   const row = await db.getFirstAsync<{ total: number }>(
     `SELECT (SELECT COUNT(*) FROM events) + (SELECT COUNT(*) FROM vet_visits) AS total`,
   );

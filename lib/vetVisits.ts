@@ -674,6 +674,7 @@ const LIVE_APPOINTMENT_SQL =
 export async function readVetVisitsHome(petId: string, now: Date = new Date()): Promise<VetVisitsHome> {
   const db = getDb();
 
+  // visit-read: anyContact — the Vet visits card and list show every contact the owner logged.
   const visits = await db.getAllAsync<LocalVetVisit>(
     `SELECT ${VISIT_COLUMNS} FROM vet_visits
       WHERE pet_id = ? AND deleted_at IS NULL
@@ -956,6 +957,7 @@ export interface HistoryVisitRow {
  */
 export async function readVisitsForHistory(petId: string): Promise<HistoryVisitRow[]> {
   const db = getDb();
+  // visit-read: anyContact — History lists every contact on its day; it anchors no window.
   const rows = await db.getAllAsync<LocalVetVisit>(
     `SELECT ${VISIT_COLUMNS} FROM vet_visits
       WHERE pet_id = ? AND deleted_at IS NULL
@@ -1003,6 +1005,7 @@ export interface VetVisitDetail {
 /** One visit as written (mock D3). Returns null for a missing or deleted row. */
 export async function readVetVisitDetail(visitId: string): Promise<VetVisitDetail | null> {
   const db = getDb();
+  // visit-read: anyContact — one row by id, the record's own page, whatever its channel.
   const rows = await db.getAllAsync<LocalVetVisit>(
     `SELECT ${VISIT_COLUMNS} FROM vet_visits WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
     [visitId],
@@ -1091,9 +1094,11 @@ export interface VisitPrefill {
  */
 export async function readVisitPrefill(petId: string): Promise<VisitPrefill> {
   const db = getDb();
+  // visit-read: exam — a booking is an exam by definition (spec §0.3), so it is prefilled from
+  // the last exam's clinic, vet and recheck date, never from a call that named no clinic.
   const rows = await db.getAllAsync<LocalVetVisit>(
     `SELECT ${VISIT_COLUMNS} FROM vet_visits
-      WHERE pet_id = ? AND deleted_at IS NULL
+      WHERE pet_id = ? AND deleted_at IS NULL AND channel = 'in_clinic'
       ORDER BY visited_at DESC, created_at DESC LIMIT 1`,
     [petId],
   );
@@ -1211,9 +1216,22 @@ export interface LogVisitInput {
   vetName?: string | null;
   reason?: string | null;
   notes?: string | null;
+  /** CUL-2765 — how the owner heard from the vet. Omitted = 'in_clinic' (an exam), the
+   *  only value a flag-off build ever writes. */
+  channel?: VisitChannel;
+  /** CUL-2765 — the optional time of the contact, an ISO instant (C-10). Omitted or null
+   *  = the day only. */
+  contactedAt?: string | null;
+  /** CUL-2765 — *Also about* (spec §0.3): one INDEPENDENT row per other pet, same fields,
+   *  its own id. Duplicates and the pet itself are dropped. Editing one never edits another. */
+  alsoForPetIds?: readonly string[];
   now?: Date;
   newId?: () => string;
 }
+
+/** CUL-2765 — the four channels migration 122's CHECK allows. Only 'in_clinic' is an exam. */
+export const VISIT_CHANNELS = ['in_clinic', 'phone', 'text', 'email'] as const;
+export type VisitChannel = (typeof VISIT_CHANNELS)[number];
 
 /**
  * Log a visit that already happened — E2's second door and E3's *Already happened*
@@ -1226,24 +1244,51 @@ export interface LogVisitInput {
  */
 export async function logVetVisit(input: LogVisitInput): Promise<string> {
   const { newId = uuid, now = new Date() } = input;
-  const id = newId();
+  const channel: VisitChannel = input.channel ?? 'in_clinic';
+  // A typed caller cannot pass anything else; a value from an untyped edge (a route param)
+  // is refused here rather than at the server's CHECK, where it would quarantine the row.
+  if (!(VISIT_CHANNELS as readonly string[]).includes(channel)) {
+    throw new Error(`logVetVisit: unknown channel ${String(channel)}`);
+  }
+  const contactedAt = input.contactedAt ?? null;
+  if (contactedAt !== null && Number.isNaN(new Date(contactedAt).getTime())) {
+    throw new Error('logVetVisit: contactedAt is not an instant');
+  }
   const nowIso = now.toISOString();
-  await getDb().runAsync(
-    `INSERT INTO vet_visits
-       (id, pet_id, visited_at, clinic_name, vet_name, reason, notes, created_at, updated_at, synced)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-    [
-      id,
-      input.petId,
-      input.visitedAt,
-      trimOrNull(input.clinicName),
-      trimOrNull(input.vetName),
-      trimOrNull(input.reason),
-      trimOrNull(input.notes),
-      nowIso,
-      nowIso,
-    ],
-  );
+  const petIds = [input.petId, ...(input.alsoForPetIds ?? []).filter((p) => p !== input.petId)];
+  const ids = [...new Set(petIds)].map((petId) => ({ petId, id: newId() }));
+  const db = getDb();
+  const insertOne = async (petId: string, id: string): Promise<void> => {
+    await db.runAsync(
+      `INSERT INTO vet_visits
+         (id, pet_id, visited_at, clinic_name, vet_name, reason, notes, channel, contacted_at,
+          created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        id,
+        petId,
+        input.visitedAt,
+        trimOrNull(input.clinicName),
+        trimOrNull(input.vetName),
+        trimOrNull(input.reason),
+        trimOrNull(input.notes),
+        channel,
+        contactedAt === null ? null : new Date(contactedAt).toISOString(),
+        nowIso,
+        nowIso,
+      ],
+    );
+  };
+  if (ids.length === 1) {
+    await insertOne(ids[0].petId, ids[0].id);
+  } else {
+    // Every pet's row, or none: a half-written *Also about* would tell the owner both pets
+    // were logged when one was not.
+    await db.withTransactionAsync(async () => {
+      for (const r of ids) await insertOne(r.petId, r.id);
+    });
+  }
+  const id = ids[0].id;
   // No reminder signal: a visit logged on its own links no booking, and since CUL-2728
   // (D1) no reminder names a visit's date.
   return id;
@@ -2125,6 +2170,7 @@ export async function repairRefusedVisitLinks(petId: string): Promise<number> {
           AND sync_error LIKE '23514:%'
           AND sync_error LIKE '%vet_visit_id%must reference a vet visit for the same pet%'
           AND NOT EXISTS (
+                -- visit-read: anyContact — link integrity: a course may name any contact.
                 SELECT 1 FROM vet_visits v
                  WHERE v.id = ${table}.vet_visit_id
                    AND v.pet_id = ${table}.pet_id
@@ -2378,9 +2424,10 @@ export async function readVisitConsequence(
   visit: Pick<LocalVetVisit, 'id' | 'pet_id' | 'visited_at'>,
   now: Date = new Date(),
 ): Promise<VisitConsequence> {
+  // visit-read: exam — "is this the latest visit" asks whether a later EXAM moved the window.
   const rows = await getDb().getAllAsync<{ later: number }>(
     `SELECT COUNT(*) AS later FROM vet_visits
-      WHERE pet_id = ? AND id != ? AND deleted_at IS NULL AND visited_at >= ?`,
+      WHERE pet_id = ? AND id != ? AND deleted_at IS NULL AND channel = 'in_clinic' AND visited_at >= ?`,
     [visit.pet_id, visit.id, visit.visited_at],
   );
   // Compared as DAY KEYS, both 'YYYY-MM-DD' and both fixed-width, which is the one
