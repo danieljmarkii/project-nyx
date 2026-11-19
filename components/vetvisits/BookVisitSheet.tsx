@@ -31,11 +31,11 @@ import {
   CHANNEL_OPTIONS,
   CHANNEL_QUESTION,
   composeContactedAt,
-  contactFootnote,
   contactSaveLabel,
+  contactSheetFootnote,
   contactSheetTitle,
-  isRemoteChannel,
 } from '../../lib/vetContactSheet';
+import { isRemoteChannel } from '../../lib/vetContacts';
 import { useVetContactsOn } from '../../hooks/useVetContacts';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { useSheetCap } from '../../hooks/useLayoutClass';
@@ -541,7 +541,7 @@ export function BookVisitSheet({
                   style={styles.submit}
                 />
                 {/* Never cut (mock B6): it carries "No exam". */}
-                <ThemedText style={styles.footnote}>{contactFootnote(channel, petName)}</ThemedText>
+                <ThemedText style={styles.footnote}>{contactSheetFootnote(channel, petName)}</ThemedText>
               </>
             ) : (
             <>

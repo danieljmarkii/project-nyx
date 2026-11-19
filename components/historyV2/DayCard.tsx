@@ -54,6 +54,7 @@ import {
 import type { HistoryRow } from '../../lib/historyQueries';
 import type { DayNode } from '../../lib/dayNodes';
 import { dateOnlyItemText, dayHeaderSpoken, visibleNodesOf } from '../../lib/historyScreen';
+import { recordNoun } from '../../lib/vetContacts';
 import { recordWeekday } from '../../lib/recordDates';
 import { DayNodeRow } from '../dayRow/DayNodeRow';
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
@@ -250,7 +251,8 @@ function DateOnlyItemRow({
     <Pressable
       onPress={() => onOpenVisit(item.id)}
       accessibilityRole="button"
-      accessibilityLabel={`${label}. Opens the visit`}
+      // A call, text or email opens as itself (Vet contacts PR-06, D4); a visit as shipped.
+      accessibilityLabel={`${label}. Opens the ${recordNoun(item.channel)}`}
       style={({ pressed }) => [styles.visitDoor, pressed && styles.pressed]}
       testID={`history-item-visit-${item.id}`}
     >

@@ -3,10 +3,16 @@ import { ChevronRight } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import type { PlanTag, VisitListRow } from '../../lib/vetVisits';
+import { CHANNEL_TAG, isRemoteChannel, NO_EXAM } from '../../lib/vetContacts';
 
 interface Props {
   row: VisitListRow;
   onPress: () => void;
+  /**
+   * Vet contacts on (CUL-2749 PR-06, mock D1): the row carries its channel tag, and a remote
+   * contact says "No exam". The caller decides; off (the default), the row is the shipped one.
+   */
+  showChannel?: boolean;
 }
 
 // One past visit in the list (mock E1).
@@ -16,7 +22,10 @@ interface Props {
 // visit. They say what came OUT of the visit; every number about those things
 // stays the thing's own (CUL-746: a visit is a provenance anchor, never a source
 // of numbers).
-export function VisitRow({ row, onPress }: Props) {
+export function VisitRow({ row, onPress, showChannel = false }: Props) {
+  const channel = showChannel ? row.channel ?? null : null;
+  const remote = isRemoteChannel(channel);
+  const title = remote && row.contactTitle ? row.contactTitle : row.title;
   return (
     <TouchableOpacity
       style={styles.row}
@@ -26,9 +35,14 @@ export function VisitRow({ row, onPress }: Props) {
       // The tags are part of the sentence, not a trailing list of chips: an owner
       // scanning by voice hears "Jul 30, GI follow-up, Riverside · Dr. Chen, trial
       // started, Cerenia" as one row.
+      //
+      // Vet contacts: the tag is inside that sentence too, after the date, as the mock's
+      // VoiceOver order reads it: "Nov 9, phone, no exam, Ear, still shaking her head".
       accessibilityLabel={[
         row.stamp ? `${row.stamp.month} ${row.stamp.day}` : null,
-        row.title,
+        channel ? CHANNEL_TAG[channel].toLowerCase() : null,
+        remote ? NO_EXAM.toLowerCase() : null,
+        title,
         row.where || null,
         ...row.tags.map((t) => t.label),
       ]
@@ -44,9 +58,26 @@ export function VisitRow({ row, onPress }: Props) {
 
       <View style={styles.main}>
         <ThemedText style={styles.title} numberOfLines={1}>
-          {row.title}
+          {title}
         </ThemedText>
-        {row.where ? (
+        {remote ? (
+          // "No exam" on its own line beside its tag, never sharing a clipped line with the
+          // clinic: it is the half this surface states once, so it is the half protected (C-8).
+          <View style={styles.channelLine}>
+            <ChannelTag label={CHANNEL_TAG[channel]} remote />
+            <ThemedText style={styles.noExam}>{NO_EXAM}</ThemedText>
+          </View>
+        ) : null}
+        {channel === 'in_clinic' ? (
+          <View style={styles.channelLine}>
+            <ChannelTag label={CHANNEL_TAG.in_clinic} />
+            {row.where ? (
+              <ThemedText style={[styles.where, styles.whereInline]} numberOfLines={1}>
+                {row.where}
+              </ThemedText>
+            ) : null}
+          </View>
+        ) : row.where ? (
           <ThemedText style={styles.where} numberOfLines={1}>
             {row.where}
           </ThemedText>
@@ -62,6 +93,18 @@ export function VisitRow({ row, onPress }: Props) {
 
       <ChevronRight size={18} color={theme.colorTextTertiary} strokeWidth={2} />
     </TouchableOpacity>
+  );
+}
+
+// The channel tag (mock D1's `via`). A remote contact's tag takes the neutral ground with the
+// secondary ink; a visit's is the quieter tertiary, since a visit is the shipped default.
+function ChannelTag({ label, remote = false }: { label: string; remote?: boolean }) {
+  return (
+    <View style={styles.channelTag}>
+      <ThemedText style={[styles.tagText, !remote && styles.channelTagTextVisit]} numberOfLines={1}>
+        {label}
+      </ThemedText>
+    </View>
   );
 }
 
@@ -133,6 +176,31 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextSecondary,
     marginTop: 2,
+  },
+  channelLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: theme.space0_75,
+    marginTop: theme.spaceMicro,
+  },
+  channelTag: {
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderRadius: theme.radiusXS,
+    paddingHorizontal: theme.space0_75,
+    paddingVertical: theme.spaceMicro,
+    flexShrink: 0,
+  },
+  channelTagTextVisit: {
+    color: theme.colorTextTertiary,
+  },
+  noExam: {
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
+    flexShrink: 0,
+  },
+  whereInline: {
+    marginTop: 0,
+    flexShrink: 1,
   },
   tags: {
     flexDirection: 'row',

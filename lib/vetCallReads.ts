@@ -342,9 +342,6 @@ export function callListRowOf(view: CallView, pronoun: string): VisitListRow {
     title: about ? `Called the vet about the ${about}` : 'Called the vet',
     where,
     tags: [],
-    // Not a `vet_visits` row, so it has no visit channel: null keeps it out of every reader
-    // that means an exam (CUL-2829), and leaves the shipped "Called the vet" row as it was.
-    channel: null,
   };
 }
 

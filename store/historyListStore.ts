@@ -41,7 +41,8 @@ import {
   readVomitOnsetsSince,
 } from '../lib/spineReads';
 import { toLocalDayKey } from '../lib/utils';
-import { readVisitsForHistory } from '../lib/vetVisits';
+import { readVisitsForHistory, type HistoryVisitRow } from '../lib/vetVisits';
+import { vetContactsOnNow } from '../hooks/useVetContacts';
 import {
   effectiveSearch,
   filterId,
@@ -473,7 +474,9 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
       // Every window is clipped to All time (`resolveWindow`), so it is a slice of the record.
       const facts = historyFactsFor(record.facts, resolved.bounds);
       const [visits, bowls, arrangements, firstPages, calls] = await Promise.all([
-        readVisitsForHistory(pet.id),
+        // Vet contacts (CUL-2749 PR-06): a row carries its channel into History only while the
+        // feature is on, so flag off every visit record titles itself as shipped (C-36).
+        readVisitsForHistory(pet.id).then((rows) => (vetContactsOnNow() ? rows : rows.map(withoutChannel))),
         getBoundaryMarkers(pet.id),
         getActiveArrangementsForPet(pet.id),
         readPagesThrough(pet.id, pageScope, keepTo),
@@ -658,3 +661,9 @@ usePetStore.subscribe((petState) => {
   const snap = useHistoryListStore.getState().snapshot;
   if (snap && snap.petId !== petId) useHistoryListStore.getState().reset();
 });
+
+/** A History visit row as it read before Vet contacts: the channel dropped, nothing else. */
+export function withoutChannel(row: HistoryVisitRow): HistoryVisitRow {
+  const { channel: _channel, ...shipped } = row;
+  return shipped;
+}

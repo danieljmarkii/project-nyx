@@ -45,6 +45,8 @@ jest.mock('../../lib/sync', () => ({
   syncPendingVetVisits: jest.fn(async () => undefined),
 }));
 
+// Vet contacts (CUL-2749 PR-06): off here, so these suites run the shipped screen.
+jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => false }));
 jest.mock('../../lib/vetVisits', () => {
   // `resolveRecordPetName` and the formatters are PURE, and the screen's whole job
   // here is to route the right id into them — so the real module is used for

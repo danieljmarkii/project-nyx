@@ -4,6 +4,8 @@ import type { VisitChannel } from './vetVisits';
 // §4.2; mock §A, §B). Pure, so every channel's title, Save label and footnote is pinned by
 // a unit test rather than read off a rendered sheet.
 //
+// `isRemoteChannel` is PR-06's (`lib/vetContacts.ts`); the page's own footnote lives there too.
+//
 // The flag-off sheet never reaches this module: its words stay in `BookVisitSheet` as
 // shipped, so turning the flag off is the absence of this file, not a second copy of it.
 
@@ -21,11 +23,6 @@ export const CHANNEL_OPTIONS: ReadonlyArray<{ value: VisitChannel; label: string
 
 /** The question the chips answer, on screen and as the radio group's label. */
 export const CHANNEL_QUESTION = 'How did you hear from the vet?';
-
-/** A remote contact: a call, texts or an email. Never an exam. */
-export function isRemoteChannel(channel: VisitChannel): boolean {
-  return channel !== 'in_clinic';
-}
 
 const TITLES: Record<VisitChannel, string> = {
   // Shipped, unchanged: the happened arm's title.
@@ -68,7 +65,7 @@ export function contactSaveLabel(channel: VisitChannel, petName: string, alsoNam
  * owner would otherwise assume wrongly. Never "from today": the report's rung 1 is strictly
  * before today (§4.1 D2 of the visits spec).
  */
-export function contactFootnote(channel: VisitChannel, petName: string): string {
+export function contactSheetFootnote(channel: VisitChannel, petName: string): string {
   switch (channel) {
     case 'in_clinic':
       return 'Your next vet report starts from this visit.';

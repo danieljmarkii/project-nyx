@@ -9,8 +9,19 @@ import {
   formatVisitDate,
   formatVisitWeekday,
   formatWhereLine,
+  channelOf,
   type VetVisitDetail,
 } from '../../lib/vetVisits';
+import {
+  contactBareLine,
+  contactClock,
+  contactFootnote,
+  contactPageHeader,
+  isRemoteChannel,
+  recordNoun,
+  startedPhrase,
+  type RemoteChannel,
+} from '../../lib/vetContacts';
 import type { VisitResultsSource } from '../../lib/visitPaperwork';
 
 interface Props {
@@ -30,6 +41,12 @@ interface Props {
   pdfAvailable: boolean;
   /** The results capture is in flight. */
   resultsBusy?: boolean;
+  /**
+   * Vet contacts on (CUL-2749 PR-06, spec §4.6, mock D2 / D3). A call, text or email then reads
+   * as itself: "{pet}'s call", "Phone · Mon, Nov 9 · no exam", *What the vet sent*, *What the
+   * vet started*. A clinic visit, and every record while this is off, renders as shipped.
+   */
+  contactsOn?: boolean;
 }
 
 // One visit as written (mock D3, read-only).
@@ -56,7 +73,13 @@ interface Props {
 //
 // *ADD TO THE PLAN* IS ALWAYS HERE (CUL-2754, §4.4 R1), on a visit with no plan above all:
 // the visit saved in a car park with nothing typed is the one that most needs the door.
-export function VisitDetailBody({
+export function VisitDetailBody(props: Props) {
+  const channel = props.contactsOn ? channelOf(props.detail.visit.channel) : null;
+  if (isRemoteChannel(channel)) return <ContactDetailBody {...props} channel={channel} />;
+  return <ClinicVisitBody {...props} />;
+}
+
+function ClinicVisitBody({
   detail, petName, onOpenDocument, onAddToPlan, courseDoor, trialDoor, onResultsArrived, pdfAvailable, resultsBusy,
 }: Props) {
   const { visit } = detail;
@@ -190,6 +213,116 @@ export function VisitDetailBody({
         <ThemedText style={styles.asked}>{asked} questions</ThemedText>
       ) : null}
 
+    </View>
+  );
+}
+
+// A call, text or email (CUL-2749 PR-06; spec §4.6, mock D2 and D3).
+//
+// The same record as a visit, read through its channel. The header says what it was and that
+// there was no exam, in one place, before anything else on the page: "No exam" is said, never
+// implied away (spec §6.1). The plan's rows are the shipped tappable `PlanRow`s under *What the
+// vet started*; the paperwork is *What the vet sent*, each document with its own date (one
+// contact spans days). The footnote names what reaches the report and what stays on the phone.
+//
+// Nothing renders before the record answers (C-12): the screen holds this body until the read
+// lands, so a phone call never flashes "Vet visit" first. *What your vet asked you to watch*
+// (Vet instructions R4) is that project's row and is not drawn here.
+function ContactDetailBody({
+  detail, petName, onOpenDocument, onAddToPlan, courseDoor, trialDoor, onResultsArrived, pdfAvailable, resultsBusy,
+  channel,
+}: Props & { channel: RemoteChannel }) {
+  const { visit } = detail;
+  const header = contactPageHeader(petName, channel, visit.visited_at, visit.contacted_at);
+  const about = [visit.reason?.trim(), formatWhereLine({ clinicName: visit.clinic_name, vetName: visit.vet_name })]
+    .filter((s): s is string => !!s && s.length > 0)
+    .join(' · ');
+  const started = startedPhrase({ medications: detail.medications, trials: detail.trials });
+  const hasStarted = detail.medications.length > 0 || detail.trials.length > 0 || !!visit.next_visit_at;
+  const bare = !visit.notes?.trim() && !hasStarted && detail.documents.length === 0;
+  const noun = recordNoun(channel);
+
+  return (
+    <View>
+      {/* One header for VoiceOver, as the mock orders it: "Nyx's call. Phone, Mon, Nov 9, no exam". */}
+      <View accessible accessibilityRole="header" accessibilityLabel={`${header.title}. ${header.subtitle.split(' · ').join(', ')}`}>
+        <ThemedText style={styles.pageTitle}>{header.title}</ThemedText>
+        <ThemedText style={styles.pageSub}>{header.subtitle}</ThemedText>
+      </View>
+      {about ? <ThemedText style={styles.pageSub}>{about}</ThemedText> : null}
+
+      {visit.notes?.trim() ? (
+        <View style={styles.block}>
+          <SectionLabel label="Notes" header style={styles.sectionLabel} />
+          <ThemedText style={styles.notes}>{visit.notes.trim()}</ThemedText>
+        </View>
+      ) : null}
+
+      {bare ? (
+        <ThemedText style={styles.bare}>
+          {contactBareLine(channel, contactClock(visit.visited_at, visit.contacted_at) !== null)}
+        </ThemedText>
+      ) : null}
+
+      <View style={styles.block}>
+        <SectionLabel label="What the vet sent" header style={styles.sectionLabel} />
+        <View style={styles.rows}>
+          {detail.documents.map((doc) => (
+            <PlanRow
+              key={doc.groupId}
+              title={doc.title?.trim() || (doc.kind === 'lab_result' ? 'Results' : 'Document')}
+              sub={doc.documentDate ? formatVisitDate(doc.documentDate) : ''}
+              onPress={() => onOpenDocument(doc.groupId)}
+            />
+          ))}
+          <PlanActionRow
+            glyph={<FileText size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+            title="Results arrived?"
+            subtitle={`A printout or a PDF, filed under this ${noun}`}
+            actionLabel="Photograph"
+            onPress={() => onResultsArrived('camera')}
+            busy={resultsBusy}
+            secondaryLabel={pdfAvailable ? 'PDF' : undefined}
+            onSecondaryPress={pdfAvailable ? () => onResultsArrived('files') : undefined}
+          />
+        </View>
+      </View>
+
+      <View style={styles.block}>
+        <SectionLabel label="What the vet started" header style={styles.sectionLabel} />
+        <View style={styles.rows}>
+          {detail.medications.map((med) => (
+            <PlanRow
+              key={med.id}
+              title={med.drugName}
+              sub={[med.doseAmount, med.status === 'active' ? 'Still on it' : 'Ended']
+                .filter(Boolean)
+                .join(' · ')}
+              onPress={courseDoor(med)}
+            />
+          ))}
+          {detail.trials.map((trial) => (
+            <PlanRow
+              key={trial.id}
+              title={trial.label}
+              sub={trial.status === 'active' ? 'Trial running' : 'Trial ended'}
+              onPress={trialDoor(trial)}
+            />
+          ))}
+          {visit.next_visit_at ? (
+            <PlanRow title="Next visit" sub={`Recheck around ${formatVisitDate(visit.next_visit_at)}`} />
+          ) : null}
+          <PlanActionRow
+            glyph={<Plus size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
+            title="Add to the plan"
+            subtitle="A med, a trial, a recheck, paperwork"
+            actionLabel="Add"
+            onPress={onAddToPlan}
+          />
+        </View>
+      </View>
+
+      <ThemedText style={styles.asked}>{contactFootnote(channel, started, detail.documents.length > 0)}</ThemedText>
     </View>
   );
 }

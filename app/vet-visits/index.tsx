@@ -10,6 +10,7 @@ import { AppointmentBlock } from '../../components/vetvisits/AppointmentBlock';
 import { AppointmentActions } from '../../components/vetvisits/AppointmentActions';
 import { VisitRow } from '../../components/vetvisits/VisitRow';
 import { useEn14 } from '../../hooks/useFollowUps';
+import { useVetContactsOn } from '../../hooks/useVetContacts';
 import { callListRowOf, readCallsForPet, type CallView } from '../../lib/vetCallReads';
 import { petPronouns } from '../../lib/utils';
 import { VetVisitsEmptyState } from '../../components/vetvisits/VetVisitsEmptyState';
@@ -95,6 +96,7 @@ export default function VetVisitsScreen() {
 
   const [home, setHome] = useState<VetVisitsHome>(EMPTY_VET_VISITS_HOME);
   const en14 = useEn14();
+  const contactsOn = useVetContactsOn();
   const [calls, setCalls] = useState<CallView[]>([]);
   const pronoun = petPronouns(pets.find((p) => p.id === petId)?.sex ?? 'unknown').object;
   const [prefill, setPrefill] = useState<VisitPrefill>(NO_PREFILL);
@@ -284,6 +286,11 @@ export default function VetVisitsScreen() {
         clinicName: input.clinicName,
         vetName: input.vetName,
         reason: input.reason,
+        // Vet contacts (CUL-2766): the past contact's channel, optional time and *Also about*.
+        // The flag-off sheet sends 'in_clinic', null and no other pet: the shipped write.
+        channel: input.channel,
+        contactedAt: input.contactedAt,
+        alsoForPetIds: input.alsoForPetIds,
       });
       syncPendingVetVisits().catch(console.error);
       setSheetMode(null);
@@ -550,6 +557,11 @@ export default function VetVisitsScreen() {
                   <VisitRow
                     key={row.id}
                     row={row}
+                    // Vet contacts (CUL-2749 PR-06, mock D1): a call, text or email is a visit
+                    // record, so it sits here in Past with its tag and "No exam". The Calls
+                    // section below is a different record (the "I've called" answer) and is
+                    // untouched.
+                    showChannel={contactsOn}
                     onPress={() => router.push(`/vet-visits/${row.id}`)}
                   />
                 ))}

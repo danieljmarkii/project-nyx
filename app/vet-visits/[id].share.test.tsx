@@ -31,14 +31,15 @@ jest.mock('../../store/petStore', () => ({
     (id ? pets.find((p) => p.id === id)?.name : null) || 'your pet',
 }));
 
-// Vet contacts (CUL-2766): the flag-off page, as shipped.
-jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => false }));
+// Vet contacts (CUL-2766): the contact edit's sync, never reached here.
 jest.mock('../../lib/sync', () => ({ syncPendingVetVisits: jest.fn(() => Promise.resolve()) }));
 jest.mock('../../components/vetvisits/VisitReports', () => ({ VisitReports: () => null }));
 jest.mock('../../lib/visitPaperwork', () => ({ captureVisitResults: jest.fn() }));
 jest.mock('../../lib/vetDocumentCapture', () => ({ isDocumentPickerAvailable: () => true }));
 
 let mockDetail: VetVisitDetail | null = null;
+// Vet contacts (CUL-2749 PR-06): off here, so these suites run the shipped screen.
+jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => false }));
 jest.mock('../../lib/vetVisits', () => {
   const actual = jest.requireActual('../../lib/vetVisits');
   return {

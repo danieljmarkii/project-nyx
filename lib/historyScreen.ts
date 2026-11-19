@@ -38,6 +38,7 @@ import type { ResolvedWindow, WindowFacts } from './historyWindows';
 import { foodFormatWord } from './foodFormat';
 import { recordDay, recordRange, recordWeekday } from './recordDates';
 import { dayKeyFromIndex, dayKeyToLocalDate } from './utils';
+import { historyContactPhrase, historyContactText, isRemoteChannel } from './vetContacts';
 import { spokenLine } from './spokenLine';
 import type { ActiveArrangementView } from './feedingArrangements';
 
@@ -404,6 +405,8 @@ export function bowlChangeText(item: Extract<DateOnlyItem, { kind: 'bowl' }>): s
 export function dateOnlyItemText(item: DateOnlyItem): { title: string; detail: string | null } {
   switch (item.kind) {
     case 'visit': {
+      // Vet contacts (CUL-2749 PR-06, D4): a call, text or email never reads "Vet visit".
+      if (isRemoteChannel(item.channel)) return historyContactText(item.channel, item.reason, item.where);
       const parts = [item.reason, item.where].filter((s): s is string => !!s && s.trim().length > 0);
       return { title: 'Vet visit', detail: parts.length > 0 ? parts.join(' · ') : null };
     }
@@ -420,6 +423,7 @@ export function dateOnlyItemText(item: DateOnlyItem): { title: string; detail: s
 function itemPhrase(item: DateOnlyItem): string {
   switch (item.kind) {
     case 'visit':
+      if (isRemoteChannel(item.channel)) return historyContactPhrase(item.channel, item.reason);
       return item.reason && item.reason.trim() ? `Vet visit, ${item.reason.trim()}` : 'Vet visit';
     case 'call':
       return item.about ? `Called the vet about the ${item.about}` : 'Called the vet';
