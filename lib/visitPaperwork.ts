@@ -230,3 +230,39 @@ export async function captureVisitResults(
 
   return { groupId: rows[0]?.document_group_id ?? null, skipped };
 }
+
+// ── What the vet sent, on a call, text or email (CUL-2767) ─────────────────────
+//
+// Vet contacts §4.3: a contact's *What the vet sent* takes what arrived on the owner's phone.
+// Mostly SCREENSHOTS of a text thread, so the Photos multi-select leads, and Vet Files' own
+// grouping holds (§4.4): one pick of screenshots is ONE document, each PDF its own, a photo of a
+// printed sheet one. Each document keeps the date its pages carry (`document_date`, from EXIF,
+// else today), because one contact spans days: the call Monday, the drug name texted Tuesday.
+//
+// LINKED AT INSERT, like results: the contact exists and the owner is standing on it, so the rows
+// carry `vet_visit_id` from the first write. D7 still holds: the link names a record the owner
+// created and touches `vet_visits` in no way. Kind stays the D11 default: the owner told us
+// nothing about what it is, and a screenshot is not a lab result.
+export type ContactDocumentSource = 'photo_library' | 'files' | 'camera';
+
+export async function captureContactDocuments(
+  petId: string,
+  visitId: string,
+  source: ContactDocumentSource,
+): Promise<PaperworkCapture> {
+  const picked = source === 'files' ? await pickVetPdfs() : await pickVetImages(source);
+  if (picked.length === 0) return { groupId: null, skipped: null };
+
+  const screened = screenPickedFiles(picked);
+  const skipped = rejectedPickMessage(screened);
+  if (screened.accepted.length === 0) return { groupId: null, skipped };
+
+  const groups = source === 'files' ? screened.accepted.map((file) => [file]) : [screened.accepted];
+  const rows = groups
+    .flatMap((pages) => buildVetDocumentRows({ petId, source, pages }))
+    .map((row) => ({ ...row, vet_visit_id: visitId }));
+  await insertVetDocumentRows(rows);
+  syncPendingVetDocuments().catch((e) => console.warn('[visitPaperwork] contact document push failed:', e));
+
+  return { groupId: rows[0]?.document_group_id ?? null, skipped };
+}

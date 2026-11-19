@@ -1,4 +1,4 @@
-import { captureVisitResults, VISIT_RESULTS_KIND } from './visitPaperwork';
+import { captureContactDocuments, captureVisitResults, VISIT_RESULTS_KIND } from './visitPaperwork';
 import { pickVetImages, pickVetPdfs } from './vetDocumentPickers';
 import { insertVetDocumentRows } from './vetDocumentCapture';
 import { syncPendingVetDocuments } from './sync';
@@ -82,5 +82,46 @@ describe('captureVisitResults', () => {
       expect(row.kind).toBe('lab_result');
       expect(row.source).toBe('files');
     }
+  });
+});
+
+// CUL-2767: a contact's *What the vet sent*. Screenshots from Photos are ONE document; each PDF is
+// its own; every row is linked to the contact at insert and keeps the default kind.
+describe('captureContactDocuments', () => {
+  it('groups a Photos multi-select into one document under the contact, untyped', async () => {
+    pick.mockResolvedValue([
+      { localUri: 'file:///s1.png', pickedMimeType: 'image/png', fileSizeBytes: 1000 },
+      { localUri: 'file:///s2.png', pickedMimeType: 'image/png', fileSizeBytes: 1000 },
+    ]);
+    const out = await captureContactDocuments('pet-a', 'call-1', 'photo_library');
+    expect(pick).toHaveBeenCalledWith('photo_library');
+    const rows = insert.mock.calls[0][0];
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.document_group_id)).size).toBe(1);
+    for (const row of rows) {
+      expect(row.vet_visit_id).toBe('call-1');
+      expect(row.kind).toBe('other');
+      expect(row.source).toBe('photo_library');
+      expect(row.document_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+    expect(out.groupId).toBe(rows[0].document_group_id);
+    expect(syncPendingVetDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it('files each PDF as its own document under the contact', async () => {
+    pickPdfs.mockResolvedValue([
+      { localUri: 'file:///a.pdf', pickedMimeType: 'application/pdf', fileSizeBytes: 1000, fileName: 'a.pdf' },
+      { localUri: 'file:///b.pdf', pickedMimeType: 'application/pdf', fileSizeBytes: 1000, fileName: 'b.pdf' },
+    ]);
+    await captureContactDocuments('pet-a', 'call-1', 'files');
+    const rows = insert.mock.calls[0][0];
+    expect(new Set(rows.map((r) => r.document_group_id)).size).toBe(2);
+    expect(rows.every((r) => r.vet_visit_id === 'call-1')).toBe(true);
+  });
+
+  it('writes nothing when the picker is cancelled', async () => {
+    pick.mockResolvedValue([]);
+    expect(await captureContactDocuments('pet-a', 'call-1', 'camera')).toEqual({ groupId: null, skipped: null });
+    expect(insert).not.toHaveBeenCalled();
   });
 });
