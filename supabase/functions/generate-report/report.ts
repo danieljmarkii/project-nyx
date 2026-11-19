@@ -180,6 +180,15 @@ export type {
 // CUL-1979 — lives in trial.ts (which this file imports) so both can stamp a food's source.
 export { proteinSourceOf, type ProteinSource } from './trial.ts'
 import { proteinSourceOf, type ProteinSource } from './trial.ts'
+// CUL-2770 (Vet contacts PR-08) — the contacts list and a course's source. Pure, like `trial.ts`.
+import {
+  courseSourceOf,
+  vetContactRowsOf,
+  type ContactSource,
+  type ReportVetContactInput,
+  type VetContactsBlock,
+} from './vetContacts.ts'
+export type { ContactSource, ReportVetContactInput, VetContactRow, VetContactsBlock } from './vetContacts.ts'
 // CUL-875 (Noticed N-6) — the daily look's block. Pure assembly, like `trial.ts`.
 // The types are re-exported below so the I/O shell has one import surface for the
 // report's inputs, exactly as it does for every other row shape.
@@ -569,6 +578,9 @@ export interface ReportMedicationInput {
   endedAt: string | null // DATE
   isPrescription?: boolean | null // false ⇒ treated as a supplement (concurrent intervention)
   strength?: string | null
+  /** CUL-2770 — `medications.vet_visit_id`: the visit or contact the course was started from.
+   *  Provenance only (guards/visitReaders.test.ts): it names a source line and moves no date. */
+  vetVisitId?: string | null
 }
 
 /**
@@ -775,6 +787,14 @@ export interface ReportInput {
   medicationItems?: ReportMedicationItemInput[]
   dietTrials: ReportDietTrialInput[]
   vetVisits: ReportVetVisitInput[]
+  /**
+   * CUL-2770 (Vet contacts PR-08) — every live `vet_visits` row of ANY channel, for the "Vet
+   * contacts in this period" list and a course's source line. NEVER a window input: `vetVisits`
+   * above (exams only) is the scope cascade's rung 1 and nothing here reaches it. ABSENT or null ⇒
+   * `vet_contacts_enabled` is off for the owner (or this is an older fixture) ⇒ no section and no
+   * source line, the report every owner got before PR-08 (spec AC 1).
+   */
+  vetContacts?: ReportVetContactInput[] | null
   feedingArrangements: ReportFeedingArrangementInput[]
   conditions: ReportConditionInput[]
   /**
@@ -2632,6 +2652,9 @@ export interface MedicationAdherence {
   regimenId: string
   drugName: string
   strength: string | null
+  /** CUL-2770 — set only when the course was started from a call, texts or an email (and the
+   *  vet contacts flag is on). Absent or null ⇒ no source line. */
+  sourceContact?: ContactSource | null
   doseAmount: string | null
   route: string | null
   dosesPerDay: number | null
@@ -3617,6 +3640,12 @@ export interface ReportSnapshot {
   provenance: Provenance
   /** CUL-975 — `ReportInput.incompletePulls`, carried through for the page-1 disclosure. */
   incompletePulls: string[]
+  /**
+   * CUL-2770 — the "Vet contacts in this period" list. Null when `ReportInput.vetContacts` is
+   * absent (the flag is off). Optional so a copy stored before PR-08 reads as "no section", never
+   * as "no contacts".
+   */
+  vetContacts?: VetContactsBlock | null
   /**
    * PR 7 — every photographed in-window incident, most-recent-first (Appendix E). `dataUri` is
    * populated by the index.ts I/O shell after assembly.
@@ -5190,7 +5219,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       tz,
     )
     const vehicles = partialDoseVehiclesOf(attributed, mealIntakeOf)
-    return vehicles ? { ...adherence, partialDoseVehicles: vehicles } : adherence
+    const withVehicles = vehicles ? { ...adherence, partialDoseVehicles: vehicles } : adherence
+    // CUL-2770 — the source line, only with the flag on (input.vetContacts present). Spread only
+    // when there IS a source, so a flag-off snapshot carries no new key at all.
+    const source = input.vetContacts ? courseSourceOf({ vetVisitId: m.vetVisitId ?? null, startedAt: m.startedAt }, input.vetContacts, scope) : null
+    return source ? { ...withVehicles, sourceContact: source } : withVehicles
   })
   // Ad-hoc / OTC doses that belong to no configured regimen — surfaced separately so a drug the
   // owner logged (but never set up as a regimen) is still reported, not silently dropped (§3.8).
@@ -7522,6 +7555,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     proteinTimeline,
     provenance,
     incompletePulls: input.incompletePulls ?? [],
+    // CUL-2770 — spread only when the flag is on, so a flag-off snapshot (and every copy saved from
+    // it) is key-for-key the snapshot before PR-08.
+    ...(input.vetContacts
+      ? {
+          vetContacts: {
+            rows: vetContactRowsOf(
+              input.vetContacts,
+              input.medications.map((m) => ({ id: m.id, drugName: m.drugName, startedAt: m.startedAt, vetVisitId: m.vetVisitId ?? null })),
+              scope,
+            ),
+            complete: !(input.incompletePulls ?? []).some((t) => t === 'vet_contacts' || t === 'vet_documents' || t === 'medications'),
+          } satisfies VetContactsBlock,
+        }
+      : {}),
     incidentPhotos,
     incidentPhotosRemoved,
     incidentPhotosLeftOut: [],

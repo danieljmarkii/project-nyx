@@ -32,4 +32,5 @@ Leaves, into the session: a superset of the rows the report reads. Events and lo
 - A photo placeholder sorts by its withheld path, so two photos on one incident with the same `sort_order` may render in a different order from production.
 - No caller JWT: a profile with no display name renders "Owner: not recorded" where production falls back to the account email.
 - The run uses the stored profile time zone; production prefers the device's (B-443).
+- No `vet_contacts_enabled` row is exported, so the run renders the report with vet contacts off: no "Vet contacts in this period" section and no course source line (CUL-2770).
 - Timestamps serialise as Postgres `json` does, which is what PostgREST returns; a different session `TimeZone` changes the offset printed, never the instant.

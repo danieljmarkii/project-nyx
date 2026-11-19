@@ -108,6 +108,7 @@ import { CHALLENGE_WINDOW_DAYS, COVERAGE_FLOOR, offDietBreakOnRecord, refusalDoc
 import { dateTimeFormat } from '../../../lib/utils.ts'
 import { MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
 import { adHocRecordStartOf, withRecordOverlaps, type AdHocRecordStart } from './medicationFacts.ts'
+import { CHANNEL_KEY, CONSULT_NOUN, DOCUMENTS_NOUN, type ContactSource, type VetContactRow } from './vetContacts.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
 // The snapshot carries owner-entered free text (pet name, food labels, notes, drug
@@ -2050,6 +2051,10 @@ const TRUNCATION_NOUNS: Record<string, string> = {
   conditions: 'recorded conditions',
   diet_trials: 'diet trials',
   vet_visits: 'vet visits',
+  // CUL-2770 — the contacts list's two pulls. A short read here can drop a "no exam" line, so it
+  // is disclosed like any other (the section also says so in place).
+  vet_contacts: 'vet contacts',
+  vet_documents: 'vet document links',
   // CUL-979 — the household pull. A short read here is not an under-count of anything on
   // the page, it is a MISSING CONFOUNDER (the second animal), which is exactly the class the
   // sentence above names as "context which would qualify a finding".
@@ -9113,7 +9118,10 @@ export function dietMeds(snap: ReportSnapshot): string {
         // overlapping supplement now, so the phrasing holds when it renders without asserting it.
         `${h(m.drugName)}${m.scheduleNotes ? ` &middot; ${h(m.scheduleNotes)}` : ''} &middot; started ${h(
           fmtDay(m.startedAt),
-        )} (owner-reported, OTC) — a concurrent change over this window.`,
+        )} (owner-reported, OTC)${
+          // CUL-2770 — a supplement started from a call names it too (pass 1 residual 4).
+          m.sourceContact ? `, ${courseSourceClause(m.sourceContact)}` : ''
+        } — a concurrent change over this window.`,
       ),
     )
   }
@@ -9132,6 +9140,74 @@ export function dietMeds(snap: ReportSnapshot): string {
       mealsAppendixVisible(snap) ? ', medications &amp; meals: appendices A&ndash;E' : ' &amp; medications: appendices A&ndash;D'
     }.</p>
   </div>`
+}
+
+/**
+ * CUL-2770 — "started after the Nov 9 phone consult". The year rule is `courseSourceOf`'s
+ * (`stampYear`): outside the window, a window crossing a year, or a course from another year.
+ */
+function courseSourceClause(src: ContactSource): string {
+  return `started after the ${h(src.stampYear ? fmtDayYear(src.date) : fmtDay(src.date))} ${CONSULT_NOUN[src.channel]}`
+}
+
+/** A sentence from an owner-typed fragment: trimmed, with one closing full stop when it has none. */
+function asSentence(text: string): string {
+  return /[.!?]$/.test(text) ? h(text) : `${h(text)}.`
+}
+
+/** One row of the contacts list, as the plain-HTML fragment both layouts print. */
+export function vetContactRowHtml(r: VetContactRow, stampYear: boolean): string {
+  const lead = r.channel === 'in_clinic' ? 'Exam.' : 'Consult, no exam.'
+  const parts = [lead]
+  if (r.reason) parts.push(asSentence(r.reason))
+  if (r.channel === 'in_clinic') {
+    const who = [r.clinicName, r.vetName].filter((x): x is string => x !== null).map(h).join(', ')
+    if (who) parts.push(`${who}.`)
+  }
+  // Each name as stored, never re-cased (the record's spelling is the vet's own).
+  if (r.started.length > 0) parts.push(`Started: ${r.started.map(h).join(', ')}.`)
+  // Documents never render (Vet Files D14); the line says where they are instead.
+  if (r.hasDocuments) parts.push(`${DOCUMENTS_NOUN[r.channel]} on the owner&rsquo;s phone, not attached.`)
+  const day = stampYear ? fmtDayYear(r.date) : fmtDay(r.date)
+  return kv(h(day), `<b>${CHANNEL_KEY[r.channel]}</b> &middot; ${parts.join(' ')}`)
+}
+
+/**
+ * CUL-2770 (spec §4.7, F1) — "Vet contacts in this period": every exam, call, text and email inside
+ * the window, in date order. Empty when the flag is off (no block) or the window holds none, except
+ * that a short read says so: an empty list over a pull that did not finish is not "none".
+ */
+export function vetContactsSection(snap: ReportSnapshot): string {
+  const body = vetContactsBody(snap)
+  if (body === '') return ''
+  return `
+  <div class="sec">
+    <h2>${VET_CONTACTS_HEADING}</h2>
+    ${body}
+  </div>`
+}
+
+export const VET_CONTACTS_HEADING = 'Vet contacts in this period'
+
+/** The section's body without its heading: v2's Medications sheet prints it under its own. */
+export function vetContactsBody(snap: ReportSnapshot): string {
+  const b = snap.vetContacts
+  if (!b) return ''
+  if (b.rows.length === 0 && b.complete) return ''
+  const stampYear = snap.scope.startDate.slice(0, 4) !== snap.scope.endDate.slice(0, 4)
+  const rows = b.rows.map((r) => vetContactRowHtml(r, stampYear))
+  // Names what was short: a contact, a course it started, or the note that documents exist.
+  const shortWhat = [
+    snap.incompletePulls.includes('vet_contacts') ? 'a contact in this window' : null,
+    snap.incompletePulls.includes('medications') ? 'a course a contact started' : null,
+    snap.incompletePulls.includes('vet_documents') ? 'a note that the vet sent documents' : null,
+  ].filter((x): x is string => x !== null)
+  const short = b.complete
+    ? ''
+    : `<p class="ref">The vet contact record could not be read in full; ${
+        shortWhat.length > 0 ? joinList(shortWhat) : 'a contact in this window'
+      } may be missing.</p>`
+  return `<div class="kvcol">${rows.join('')}</div>${short}`
 }
 
 function kv(k: string, v: string): string {
@@ -9197,6 +9273,7 @@ function medicationLine(m: MedicationAdherence): string {
     m.dosesPerDay != null ? `${m.dosesPerDay}×/day` : 'as needed',
     m.indication ? `for ${h(m.indication)}` : null,
     regimenDates(m),
+    m.sourceContact ? courseSourceClause(m.sourceContact) : null,
   ]
     .filter(Boolean)
     .join(' &middot; ')
@@ -12850,7 +12927,9 @@ export function renderReport(input: ReportSnapshot): string {
     // on the `completed` fixture, a one-line anchor still opened a sheet holding that line and
     // the footer, which is the thin sheet with one more line on it. The block is bounded (a
     // key-value list), so the white it can leave behind is bounded too.
-    sectionTail(dietMeds(snap), footer(snap, 'Clinical summary'))
+    // CUL-2770 — the contacts list sits directly above the block whose courses it names. Joined
+    // into this expression, not given a line of its own, so a flag-off page is byte-identical.
+    vetContactsSection(snap) + sectionTail(dietMeds(snap), footer(snap, 'Clinical summary'))
   }
 </section>`
 

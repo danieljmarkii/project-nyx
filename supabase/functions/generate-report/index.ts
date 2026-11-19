@@ -36,9 +36,11 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { readEngineFlags } from '../_shared/engineFlagsRead.ts'
+import { resolveAllowlistFlagFromRows } from '../_shared/flags.ts'
+import { isVetChannel, type ReportVetContactInput } from './vetContacts.ts'
 // CUL-975's paged reader, lifted to _shared/ by Engines v3 PR-09 (CUL-989) so generate-signal
 // and ask read their records the same way. Re-exported for index.test.ts, which drives it.
-import { fetchAll, rowsOrThrow } from '../_shared/pull.ts'
+import { fetchAll, rowsOrThrow, type Pull } from '../_shared/pull.ts'
 import { bowlFoodType, bowlOf, MEAL_BOWL_SELECT, type MealComponentJoin } from '../_shared/mealBowl.ts'
 export { fetchAll, PULL_MAX_PAGES, PULL_PAGE } from '../_shared/pull.ts'
 import {
@@ -332,6 +334,8 @@ interface MedicationRow {
   status: string
   ended_at: string | null
   medication_items: MedItemJoin | MedItemJoin[] | null
+  // CUL-2770 — the visit or contact the course was started from (migration 066). Provenance only.
+  vet_visit_id?: string | null
 }
 
 /** `diet_trial_foods` (migration 040 §3.2) embedded under its parent trial — the
@@ -823,6 +827,7 @@ export function mapMedicationRows(rows: MedicationRow[]): ReportMedicationInput[
       endedAt: r.ended_at ?? null,
       isPrescription: item?.is_prescription ?? null,
       strength: item?.strength ?? null,
+      vetVisitId: r.vet_visit_id ?? null,
     }
   })
 }
@@ -895,6 +900,95 @@ export function mapVetVisitRows(rows: VetVisitRow[]): ReportVetVisitInput[] {
     vetName: r.vet_name ?? null,
     reason: r.reason ?? null,
   }))
+}
+
+/** CUL-2770 — a `vet_visits` row of ANY channel, for the contacts list (never the window). */
+export interface VetContactRowIn {
+  id: string
+  visited_at: string
+  channel: string | null
+  reason: string | null
+  clinic_name: string | null
+  vet_name: string | null
+}
+
+/** CUL-2770 — a `vet_documents` link, and only the link: no title, date, path or file (Vet Files D14). */
+export interface VetDocumentLinkRow {
+  id: string
+  vet_visit_id: string | null
+}
+
+/**
+ * CUL-2770 — the contacts list's rows. A channel outside migration 122's CHECK cannot exist on the
+ * server; one that somehow did is dropped rather than printed as anything, because printing it as
+ * an exam is the one error this feature exists to prevent and printing it as a contact names a
+ * channel the record does not hold.
+ */
+export function mapVetContactRows(rows: VetContactRowIn[], docs: VetDocumentLinkRow[]): ReportVetContactInput[] {
+  const linked = new Set(docs.map((d) => d.vet_visit_id).filter((v): v is string => typeof v === 'string'))
+  const out: ReportVetContactInput[] = []
+  for (const r of rows) {
+    if (!isVetChannel(r.channel)) continue
+    out.push({
+      id: r.id,
+      visitedAt: r.visited_at,
+      channel: r.channel,
+      reason: r.reason ?? null,
+      clinicName: r.clinic_name ?? null,
+      vetName: r.vet_name ?? null,
+      hasDocuments: linked.has(r.id),
+    })
+  }
+  return out
+}
+
+/** The rollout flag (migration 122's seed; `lib/appConfig.ts` holds the client's copy of the key). */
+export const VET_CONTACTS_FLAG = 'vet_contacts_enabled'
+
+/**
+ * CUL-2770 — the contacts list's two pulls, only when `vet_contacts_enabled` resolves on for the
+ * pet's OWNER (the verified row's user_id, never a body value). Fails CLOSED: a failed read, a
+ * missing key or a malformed value is "off", and off is the report every owner got before PR-08
+ * (spec AC 1). `contacts: null` is off; an empty array is on with nothing to list.
+ */
+export async function pullVetContacts(
+  supabase: SupabaseClient,
+  petId: string,
+  ownerUid: string,
+): Promise<{ contacts: ReportVetContactInput[] | null; incomplete: string[] }> {
+  let on = false
+  try {
+    const res = await supabase.from('app_config').select('key, value').eq('key', VET_CONTACTS_FLAG)
+    on = !res.error && resolveAllowlistFlagFromRows(res.data as { key: string; value: unknown }[] | null, VET_CONTACTS_FLAG, ownerUid, false)
+  } catch {
+    on = false
+  }
+  if (!on) return { contacts: null, incomplete: [] }
+  // A failed read is DISCLOSED, never thrown: it is not one of the window's pulls, so it cannot move
+  // the window, and refusing a clinic its report over a provenance list is the wrong trade. The
+  // section then says in place that the record could not be read in full (render.ts).
+  const settle = <T,>(p: Promise<Pull<T>>): Promise<{ rows: T[]; complete: boolean }> =>
+    p.catch((e: unknown) => {
+      console.error('generate-report vet contacts pull failed:', e instanceof Error ? e.message : String(e))
+      return { rows: [] as T[], complete: false }
+    })
+  const [contactsPull, docsPull] = await Promise.all([
+    // visit-read: anyContact — the "Vet contacts in this period" list and a course's source line name every call, text and email as such; the window never reads this pull (it reads the exam-only one above).
+    settle(fetchAll<VetContactRowIn>('vet_visits', (r) => r.id, (from, to) =>
+      supabase.from('vet_visits').select('id, visited_at, channel, reason, clinic_name, vet_name', { count: 'exact' })
+        .eq('pet_id', petId).is('deleted_at', null)
+        .order('visited_at', { ascending: false }).order('id', { ascending: false })
+        .range(from, to))),
+    settle(fetchAll<VetDocumentLinkRow>('vet_documents', (r) => r.id, (from, to) =>
+      supabase.from('vet_documents').select('id, vet_visit_id', { count: 'exact' })
+        .eq('pet_id', petId).is('deleted_at', null).not('vet_visit_id', 'is', null)
+        .order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(from, to))),
+  ])
+  const incomplete: string[] = []
+  if (!contactsPull.complete) incomplete.push('vet_contacts')
+  if (!docsPull.complete) incomplete.push('vet_documents')
+  return { contacts: mapVetContactRows(contactsPull.rows, docsPull.rows), incomplete }
 }
 
 export function mapFeedingArrangementRows(rows: ArrangementRow[]): ReportFeedingArrangementInput[] {
@@ -1405,6 +1499,8 @@ export async function buildReportSnapshotForPet(
   // user_id, never a body value), failing closed. Required on ReportInput and read by
   // nothing yet, so the report is unchanged; see ReportInput.engineFlags.
   const engineFlags = await readEngineFlags(supabase, petRow.user_id)
+  // CUL-2770 — started here, awaited after the main pulls: it reads nothing they need.
+  const vetContactsP = pullVetContacts(supabase, petId, petRow.user_id)
 
   // CUL-2676 — the card Home showed: the pet's latest Signal row, read with the caller's JWT
   // like every read here (RLS scopes it to the owner), the query generate-signal reads its prior
@@ -1577,7 +1673,7 @@ export async function buildReportSnapshotForPet(
       .select(
         'id, medication_item_id, drug_name, dose_amount, route, doses_per_day, schedule_notes, ' +
           'indication, prescribed_by, started_at, target_duration_days, target_duration_doses, ' +
-          'status, ended_at, medication_items(is_prescription, strength)',
+          'status, ended_at, vet_visit_id, medication_items(is_prescription, strength)',
         { count: 'exact' },
       )
       .eq('pet_id', petId)
@@ -1766,6 +1862,8 @@ export async function buildReportSnapshotForPet(
   )
     .filter(([, complete]) => !complete)
     .map(([table]) => table)
+  const vetContactsRead = await vetContactsP
+  incompletePulls.push(...vetContactsRead.incomplete)
 
   if (incompletePulls.length > 0) {
     // Server-side only: the owner sees the page-1 disclosure, and we see WHICH pull, which
@@ -1847,6 +1945,8 @@ export async function buildReportSnapshotForPet(
     medicationItems,
     dietTrials,
     vetVisits,
+    // CUL-2770 — absent (not null) when the flag is off, so the input is key-for-key the old one.
+    ...(vetContactsRead.contacts ? { vetContacts: vetContactsRead.contacts } : {}),
     feedingArrangements: mapFeedingArrangementRows(arrangementsPull.rows),
     conditions: mapConditionRows(conditionsPull.rows),
     attachments: mapAttachmentRows(attachmentsPull.rows),
