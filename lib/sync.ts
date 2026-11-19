@@ -1788,7 +1788,7 @@ async function drainVetVisitsQueue(): Promise<void> {
     clinic_name: string | null; vet_name: string | null;
     reason: string | null; notes: string | null;
     next_visit_at: string | null; deleted_at: string | null;
-    channel: string; contacted_at: string | null;
+    channel: string | null; contacted_at: string | null;
     created_at: string; updated_at: string;
   }>(
     // visit-read: anyContact — the push moves every unsynced row verbatim; it decides nothing about exams.
@@ -1807,10 +1807,22 @@ async function drainVetVisitsQueue(): Promise<void> {
       deleted_at: v.deleted_at,
       // CUL-2765 — both columns, or the server keeps its default and a phone contact
       // becomes an EXAM there: the report's window would start at a call (the CUL-1184
-      // class). Pinned by lib/vetContacts.test.ts.
-      channel: v.channel, contacted_at: v.contacted_at,
+      // class). A NULL channel is a row this phone never learned the channel of (pulled by an
+      // older build): both are OMITTED, so the server keeps its own and a contact is never
+      // re-stamped as an exam (the adversarial pass). Pinned by lib/vetContacts.test.ts.
+      ...(v.channel === null ? {} : { channel: v.channel, contacted_at: v.contacted_at }),
       created_at: v.created_at, updated_at: v.updated_at,
     }));
+    // A row that landed without its channel still reads NULL here. Re-arm the full re-pull, so
+    // the next hydrate's fill learns it from the server (its updated_at may sit below the
+    // watermark, where an incremental pull would never fetch it again).
+    if (unsyncedVisits.some((v) => v.channel === null && landed.has(v.id))) {
+      try {
+        await db.runAsync('DELETE FROM sync_watermarks WHERE table_name = ?', ['vet_visits']);
+      } catch (e) {
+        console.warn('[sync] could not re-arm the vet_visits re-pull after an unknown-channel push:', e);
+      }
+    }
     // Before the photos below: what waits on the visit should not also wait on them.
     if (landed.size > 0) sendWhatWaitedOnVisits();
   }
@@ -3148,9 +3160,9 @@ interface RemoteVetVisit {
   id: string; pet_id: string; visited_at: string; clinic_name: string | null;
   vet_name: string | null; reason: string | null; notes: string | null;
   next_visit_at: string | null; deleted_at: string | null; // CUL-899 (migration 066)
-  // CUL-2765 (migration 122). NOT NULL server-side; a row arriving without it fails the
-  // local NOT NULL loudly rather than defaulting to an exam.
-  channel: string; contacted_at: string | null;
+  // CUL-2765 (migration 122). NOT NULL server-side. A row arriving without it is stored NULL,
+  // "unknown", which every exam reader skips: never defaulted to an exam.
+  channel: string | null; contacted_at: string | null;
   created_at: string; updated_at: string;
 }
 interface RemoteVetAppointment {
@@ -3636,8 +3648,7 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<boolean> 
   // an unpushed edit is never touched, nothing is queued, updated_at is not written.
   if (stale()) return false;
   for (const v of rows) {
-    // A row without a channel already failed the INSERT above loudly (local NOT NULL); here it
-    // is skipped rather than written, so the fill can never stamp an exam it did not read.
+    // A row without a channel stays as it is: the fill never stamps a value it did not read.
     if (typeof v.channel !== 'string') continue;
     await db.runAsync(
       `UPDATE vet_visits SET channel = ?, contacted_at = ? WHERE id = ? AND synced = 1`,

@@ -175,5 +175,6 @@ export function careFactsAt(record: SyntheticRecord, petKey: string, T: number):
     ...record.events.filter((e) => e.petKey === petKey && visibleAt(e, T, LOOKBACK_DAYS)).map((e) => e.at),
     ...record.meals.filter((m) => m.petKey === petKey && visibleAt(m, T, LOOKBACK_DAYS)).map((m) => m.at),
   ]
-  return { lastVisitOn: lastVisit, loggedAt, readSinceIso: new Date(T - LOOKBACK_DAYS * 86_400_000).toISOString() }
+  // Synthetic visits are exams, so the last contact is the last visit (CUL-2765).
+  return { lastVisitOn: lastVisit, lastContactOn: lastVisit, loggedAt, readSinceIso: new Date(T - LOOKBACK_DAYS * 86_400_000).toISOString() }
 }

@@ -708,7 +708,14 @@ describe('the Signal shell reads a vet table only by its sanctioned columns', ()
   const reads = vetTableSelects(src);
 
   it('finds the shell\'s read (non-vacuity)', () => {
-    expect(reads.map((r) => r.table).sort()).toEqual(['care_acknowledgements', 'vet_appointments', 'vet_visits']);
+    // Two vet_visits reads since CUL-2765: the exam's day and the last contact's (masking only),
+    // both `visited_at` alone.
+    expect(reads.map((r) => r.table).sort()).toEqual([
+      'care_acknowledgements',
+      'vet_appointments',
+      'vet_visits',
+      'vet_visits',
+    ]);
   });
 
   it('every read names exactly the columns the amendment allows, never `*`', () => {
@@ -1004,6 +1011,7 @@ export interface VisitReadSite {
 /** The exam readers, by file and number of sites. A change here is a clinical decision. */
 const EXAM_SITES: Record<string, number> = {
   // The report window's visit days on the phone; Rundown's "since the last visit" reads it.
+  // (Its masking sibling, CONTACT_DAYS_SQL, is anyContact: a call can start a masking drug.)
   'lib/visitWindow.ts': 1,
   // The care questions' latest visit.
   'lib/careAnswers.ts': 1,

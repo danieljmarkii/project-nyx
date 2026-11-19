@@ -102,7 +102,7 @@ function insertLook(id: string, at: string, localDay: string) {
 
 function insertVisit(id: string, visitedAt: string, opts: { deleted?: boolean; pet?: string } = {}) {
   mockRaw
-    .prepare(`INSERT INTO vet_visits (id, pet_id, visited_at, deleted_at) VALUES (?, ?, ?, ?)`)
+    .prepare(`INSERT INTO vet_visits (id, pet_id, visited_at, deleted_at, channel) VALUES (?, ?, ?, ?, 'in_clinic')`)
     .run(id, opts.pet ?? PET, visitedAt, opts.deleted ? '2026-09-21T00:00:00Z' : null);
 }
 

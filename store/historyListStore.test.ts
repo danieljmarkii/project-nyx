@@ -267,7 +267,7 @@ describe('a load: one snapshot, every read together', () => {
     // A visit today anchors nothing today; tomorrow it is "the last vet visit". Facts read
     // for the real clock's day would carry today's visit under today's key.
     seedDays(1, 1);
-    const visit = mockRaw.prepare('INSERT INTO vet_visits (id, pet_id, visited_at) VALUES (?, ?, ?)');
+    const visit = mockRaw.prepare("INSERT INTO vet_visits (id, pet_id, visited_at, channel) VALUES (?, ?, ?, 'in_clinic')");
     visit.run('vv-old', PET_A.id, dayAgo(10));
     visit.run('vv-today', PET_A.id, TODAY);
     const tomorrow = dayKeyToLocalDate(shiftDay(TODAY, 1)) as Date;

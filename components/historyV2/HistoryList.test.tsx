@@ -210,7 +210,7 @@ function insertMeal(id: string, occurredAt: string, foodId: string, rating: stri
 
 function insertVisit(id: string, day: string, reason: string, clinic: string, pet = PET_A.id) {
   mockRaw
-    .prepare(`INSERT INTO vet_visits (id, pet_id, visited_at, clinic_name, reason) VALUES (?, ?, ?, ?, ?)`)
+    .prepare(`INSERT INTO vet_visits (id, pet_id, visited_at, clinic_name, reason, channel) VALUES (?, ?, ?, ?, ?, 'in_clinic')`)
     .run(id, pet, day, clinic, reason);
 }
 

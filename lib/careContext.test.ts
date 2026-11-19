@@ -93,6 +93,7 @@ describe('careContextLinesOf', () => {
     const args = (symptoms: SymptomEvent[]): CareContextArgs => ({
       facts: {
         lastVisitOn: '2026-09-16',
+        lastContactOn: '2026-09-16',
         loggedAt: Array.from({ length: 61 }, (_, i) => `${dayKey(60 - i)}T07:00:00.000Z`),
         readSinceIso: new Date(NOW - 180 * DAY).toISOString(),
       },

@@ -112,7 +112,7 @@ import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 import { getDb } from './db';
 import { hydrateFromCloud, syncPendingVetVisits } from './sync';
 import { logVetVisit, readVisitConsequence, readVisitPrefill } from './vetVisits';
-import { latestVisitBefore, readLatestVisitBefore } from './visitWindow';
+import { latestVisitBefore, readLatestVisitBefore, readVisitDaysBefore } from './visitWindow';
 import { readCareQuestionRecord } from './careAnswers';
 
 const PET = 'pet-1';
@@ -156,14 +156,14 @@ afterEach(() => {
 });
 
 describe('the local mirror (§5.1)', () => {
-  it('a fresh install and an upgraded one both carry channel (default in_clinic) and contacted_at', () => {
+  it('a fresh install carries channel (nullable, NO default: unknown is never an exam) and contacted_at', () => {
     const cols = (mockLocal.db!.prepare('PRAGMA table_info(vet_visits)').all() as { name: string; dflt_value: string | null; notnull: number }[]);
     const channel = cols.find((c) => c.name === 'channel');
-    expect(channel).toMatchObject({ notnull: 1, dflt_value: "'in_clinic'" });
+    expect(channel).toMatchObject({ notnull: 0, dflt_value: null });
     expect(cols.some((c) => c.name === 'contacted_at')).toBe(true);
   });
 
-  it('AC 5: a row written before the column reads in_clinic', async () => {
+  it('AC 5 on an upgrading phone: a row written before the column reads UNKNOWN until the re-pull', async () => {
     // An upgrading phone: the table as an earlier build made it, holding a visit, then the
     // upgrade path adds the column.
     const old = new DatabaseSync(':memory:');
@@ -177,15 +177,17 @@ describe('the local mirror (§5.1)', () => {
     expect(added.filter((u) => u.table === 'vet_visits').map((u) => [u.column, u.rehydrate])).toEqual(
       expect.arrayContaining([['channel', true], ['contacted_at', true]]),
     );
+    // Not 'in_clinic': the phone has not learned it. The server row reads in_clinic (migration
+    // 122's default), and the rehydrate this upgrade re-arms writes that back (below).
     expect(old.prepare(`SELECT channel, contacted_at FROM vet_visits WHERE id = 'old'`).get()).toEqual({
-      channel: 'in_clinic', contacted_at: null,
+      channel: null, contacted_at: null,
     });
     old.close();
   });
 });
 
 describe('the write (logVetVisit)', () => {
-  it('defaults to an exam: no channel given is in_clinic, no time', async () => {
+  it('names the channel on every write: no channel given is in_clinic, no time', async () => {
     const id = await logVetVisit({ petId: PET, visitedAt: '2026-09-18', now: NOV_14 });
     expect(localRow(id)).toMatchObject({ channel: 'in_clinic', contacted_at: null, synced: 0 });
   });
@@ -278,6 +280,38 @@ describe('the sync (§5.1: the push enumerates columns)', () => {
     // The unpushed edit is the owner's newer word on this phone: untouched, still queued.
     expect(localRow('edited')).toMatchObject({ channel: 'in_clinic', synced: 0, notes: 'my edit' });
   });
+
+  it('an unknown-channel edit never re-stamps a phone contact as an exam (the adversarial pass)', async () => {
+    // An older build pulled another device's phone contact without the column, the owner edited
+    // it offline, and the phone upgraded: the row is unsynced and its channel is UNKNOWN (NULL).
+    mockServerTable('vet_visits').set('pulled-call', {
+      id: 'pulled-call', pet_id: PET, visited_at: '2026-11-09', clinic_name: null, vet_name: 'Dr. Chen',
+      reason: 'Ear drops', notes: null, next_visit_at: null, deleted_at: null, channel: 'phone',
+      contacted_at: '2026-11-09T21:40:00.000Z',
+      created_at: '2026-11-09T21:41:00.000Z', updated_at: '2026-11-09T21:41:00.000Z',
+    });
+    seedVisit({
+      id: 'pulled-call', visited_at: '2026-11-09', channel: null, clinic_name: null, next_visit_at: null,
+      notes: 'my edit', updated_at: '2026-11-12T08:00:00.000Z', synced: 0,
+    });
+    mockLocal.db!.prepare(`INSERT INTO sync_watermarks (table_name, watermark) VALUES ('vet_visits', '2026-11-13T00:00:00.000Z')`).run();
+    // Unknown is not an exam: it anchors nothing on this phone meanwhile.
+    expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBeNull();
+
+    await syncPendingVetVisits();
+    const sent = mockServer.upserts.filter((u) => u.table === 'vet_visits').flatMap((u) => u.rows);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).not.toHaveProperty('channel');
+    expect(sent[0]).not.toHaveProperty('contacted_at');
+    expect(sent[0]).toMatchObject({ notes: 'my edit' });
+    // The server keeps what it knew: still a phone contact, with the owner's edit.
+    expect(mockServerTable('vet_visits').get('pulled-call')).toMatchObject({ channel: 'phone', notes: 'my edit' });
+    // The re-pull is re-armed, and the next hydrate teaches this phone the channel.
+    expect(mockLocal.db!.prepare(`SELECT * FROM sync_watermarks WHERE table_name = 'vet_visits'`).get()).toBeUndefined();
+    await hydrateFromCloud();
+    expect(localRow('pulled-call')).toMatchObject({ channel: 'phone', synced: 1, notes: 'my edit' });
+    expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBeNull();
+  });
 });
 
 describe('AC 6: the exam readers on the phone, a Sep 18 visit and a Nov 9 phone contact', () => {
@@ -303,6 +337,13 @@ describe('AC 6: the exam readers on the phone, a Sep 18 visit and a Nov 9 phone 
     // Non-vacuity: the same row as an exam anchors the window, so the filter is what skipped it.
     mockLocal.db!.prepare(`UPDATE vet_visits SET channel = 'in_clinic' WHERE id = 'call'`).run();
     expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBe('2026-11-09');
+  });
+
+  it('masking reads every CONTACT (R5): the call withholds zeros near it like an exam', async () => {
+    expect(await readVisitDaysBefore(getDb(), PET, TODAY)).toEqual(['2026-09-18', '2026-11-09']);
+    // Unknown counts for masking too: the louder side.
+    mockLocal.db!.prepare(`UPDATE vet_visits SET channel = NULL WHERE id = 'call'`).run();
+    expect(await readVisitDaysBefore(getDb(), PET, TODAY)).toEqual(['2026-09-18', '2026-11-09']);
   });
 
   it('the care questions’ latest visit is the exam', async () => {

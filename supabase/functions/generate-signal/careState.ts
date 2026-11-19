@@ -223,6 +223,9 @@ export interface CareStateArgs {
   readSinceIso: string
   /** The last visit before today, a DATE (EN-10's read), or null. A zero is withheld near it. */
   lastVisitOn: string | null
+  /** CUL-2765 — the last contact of any channel before today, a DATE, or null. Masking only: a
+   *  zero is withheld near it as near an exam (R5); it is never a visit day. */
+  lastContactOn: string | null
   courses: readonly MaskCourse[]
   timezone: string | undefined
   nowMs: number
@@ -1100,7 +1103,7 @@ function sinceLine(sign: SymptomType, ack: AckFact, ix: DayIndex, args: CareStat
   const c: SinceCount = { n, count: countIn(ix.onsets(sign), from, today), logged: loggedIn(ix.logged, from, today), fromDay: from }
   // A zero reads as "it worked": withheld beside a drug that can mask the sign, within 42 days of a
   // visit (an answer's own visit day included), and over thin logging (§5.1, PR-22's ruling).
-  const visits = [args.lastVisitOn, ack.source === 'at_vet_tick' || ack.source === 'visit_answer' ? ack.anchorOn : null]
+  const visits = [args.lastVisitOn, args.lastContactOn, ack.source === 'at_vet_tick' || ack.source === 'visit_answer' ? ack.anchorOn : null]
     .filter((v): v is string => typeof v === 'string')
   const spans = maskingSpansFor(sign as Parameters<typeof maskingSpansFor>[0], { courses: args.courses, visitsOn: visits, todayIndex: today, timeZone: tz })
   const zeroWithheld = c.count === 0 && (windowTouchesSpan(spans, from, today) || (c.logged as number) < ZERO_COVERAGE_FLOOR * n)

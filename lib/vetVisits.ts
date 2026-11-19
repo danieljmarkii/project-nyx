@@ -2232,8 +2232,8 @@ export async function logVisitFromAppointment(input: VisitFromAppointmentInput):
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT INTO vet_visits
-         (id, pet_id, visited_at, clinic_name, vet_name, reason, notes, created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+         (id, pet_id, visited_at, clinic_name, vet_name, reason, notes, channel, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'in_clinic', ?, ?, 0)`,
       [
         id,
         // FROM THE APPOINTMENT. The retired `app/vet-visit.tsx` read `activePet` at

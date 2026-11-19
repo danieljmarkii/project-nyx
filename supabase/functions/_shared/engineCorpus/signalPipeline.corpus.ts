@@ -484,6 +484,8 @@ export { EMPTY_CARE_RECORD }
 // flag-off guard hands these in with every flag state, so a gate that leaked would show.
 export const POPULATED_CARE_CONTEXT_FACTS: CareContextFacts = {
   lastVisitOn: ago(10).slice(0, 10),
+  // The visit is a contact too (CUL-2765): the last contact of any channel is the same day.
+  lastContactOn: ago(10).slice(0, 10),
   loggedAt: Array.from({ length: 170 }, (_, i) => ago(i, 8)),
   readSinceIso: new Date(NOW_MS - 180 * DAY).toISOString(),
 }

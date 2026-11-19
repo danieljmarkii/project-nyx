@@ -112,6 +112,16 @@ const VISIT_DAYS_SQL = `SELECT visited_at FROM vet_visits
   WHERE pet_id = ? AND deleted_at IS NULL AND channel = 'in_clinic'`;
 
 /**
+ * Every live CONTACT day for one pet, any channel (CUL-2765). Masking only: a vet who phones in
+ * a steroid is an unrecorded masking drug exactly as an exam is, so a contact withholds a zero
+ * as an exam does (R5: a contact never quiets a warning). It never anchors a window, so it is a
+ * separate statement from the exam days above, never the same one widened.
+ */
+// visit-read: anyContact — masking: a call, text or email can start an unrecorded masking drug.
+const CONTACT_DAYS_SQL = `SELECT visited_at FROM vet_visits
+  WHERE pet_id = ? AND deleted_at IS NULL`;
+
+/**
  * "Since the last vet visit" for one pet, read from the phone's copy of the record.
  *
  * THROWS on a failed read rather than returning null, because null here is a FACT (this
@@ -144,12 +154,14 @@ export async function readLatestVisitBefore(
  * spans on the Signal screen and Get ready take each visit as an unrecorded masking drug for 42
  * days, and their charts reach back weeks, so the last visit alone is not enough. Days only:
  * never a visit row, never a count. THROWS on a failed read, as `readLatestVisitBefore` does.
+ * Every CONTACT counts here, not only exams (CUL-2765, R5): the masking question is "may a vet
+ * have started a drug the record does not hold", and a phone call can.
  */
 export async function readVisitDaysBefore(db: VisitDaysDb, petId: string, today: string): Promise<string[]> {
   const todayIndex = todayIndexOf(today);
   let rows: { visited_at: string | null }[];
   try {
-    rows = await db.getAllAsync<{ visited_at: string | null }>(VISIT_DAYS_SQL, [petId]);
+    rows = await db.getAllAsync<{ visited_at: string | null }>(CONTACT_DAYS_SQL, [petId]);
   } catch (e) {
     console.error('[visitWindow] reading the visit days failed:', e);
     throw e;
