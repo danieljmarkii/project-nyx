@@ -30,7 +30,7 @@ The losing option frames left the page; git keeps them at `4ad543125`.
 ## Still open
 
 - **The ear medication is Motazol** (PM, 2026-11-19). Drawn in every Nyx frame; noted on [CUL-2771](https://linear.app/projectnyx/issue/CUL-2771).
-- **Proposed spec edit, awaiting the PM's word (Tier 2):** `docs/nyx-vet-contacts-requirements.md` §0.1 gains G1, G3 and G4 as R10 to R12, and §2's Vet visits card row says the shipped button renders only for a pet with no visits.
+- **The spec is v1.1** (written on the PM's word, 2026-11-19): R10 to R12, §2 corrected, §4.1, §4.2, §4.5, §4.6, AC 17 to 19.
 
 ## Team calls (logged on the issue, the PM can reverse)
 
