@@ -94,6 +94,30 @@ Deno.test('CUL-2810 — a feeding with no off-trial protein on file is said by w
   assert.doesNotMatch(out, /no off-trial protein recorded/)
 })
 
+Deno.test('CUL-2813 — a bowl naming a protein beside an unread food counts under both clauses; the bold lead does not move', () => {
+  const s = withRecordOverlaps(fixture('nyx-live'))
+  const t = s.trial!
+  const off = t.exposures.items.filter((x) => x.classification.offDiet)
+  const before = headlineOf(renderReport(s))
+  // A plain feeding with a named protein and no `panelWasRead` on file (a stored copy): never unread.
+  delete (off[0] as Partial<typeof off[0]>).panelWasRead
+  assert.doesNotMatch(plain(headlineOffDietCarried(t)), /not read/)
+  // The same feeding as a bowl whose other off-diet food has no ingredients on file.
+  off[0].classification = { ...off[0].classification, components: [off[0].classification, off[0].classification] }
+  off[0].panelWasRead = false
+  const out = plain(headlineOffDietCarried(t))
+  assert.match(out, /^, carrying Chicken \(11\) on [^;]+; a second food in the same bowl has no protein on file \(1\) on Oct \d+, 2026$/, out)
+  // A wholly unread feeding keeps its own clause beside it: the two partition, neither absorbs the other.
+  off[1].classification = { ...off[1].classification, antigens: [] }
+  off[1].panelWasRead = false
+  const both = plain(headlineOffDietCarried(t))
+  assert.match(both, /carrying Chicken \(10\) on [^;]+; a second food in the same bowl has no protein on file \(1\) on [^;]+; ingredients not read for 1 on Oct \d+, 2026$/, both)
+  // Data Scientist: one feeding in two clauses never moves the bold lead.
+  const after = headlineOf(renderReport(s))
+  assert.equal(after.match(/\d+ of \d+ logged feedings did not match the trial diet/)?.[0], before.match(/\d+ of \d+ logged feedings did not match the trial diet/)?.[0])
+  assert.match(after, /11 of 167 logged feedings did not match the trial diet, carrying Chicken \(10\)/, after)
+})
+
 Deno.test('CUL-2810 — proteins on file with none flagged says "not confirmed", never that a list was read and came back clean', () => {
   const base = withRecordOverlaps(fixture('nyx-live'))
   const shapes: [string, boolean, boolean, RegExp][] = [

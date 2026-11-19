@@ -3639,6 +3639,13 @@ function headline(snap: ReportSnapshot): string {
  * file", which a product name or an owner's typing also satisfies, and a bowl can be missing a food,
  * so no wording here may say a list was read and came back clean (cold read + adversarial pass 1).
  * "carrying" opens the clause only when a protein is named, so an unread food carries nothing in print.
+ *
+ * CUL-2813 (QUIET) — a named protein never hides an off-diet food with no protein on file beside it
+ * (a food MISSING from an incomplete bowl is not covered here). A mixed bowl with one food's
+ * protein flagged and another off-diet food never read printed only "carrying Chicken". It counts
+ * under its protein AND under its own clause, worded as a second food so the two do not read as one
+ * feeding described twice, with its count in the protein clause's own form; the bold lead takes `exposures.offDiet`, so no total doubles. Bowls only:
+ * a plain feeding with a flagged protein has proteins on file by construction.
  */
 export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>): string {
   const off = t.exposures.items.filter((x) => x.classification.offDiet)
@@ -3646,13 +3653,14 @@ export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>):
   const byProtein = new Map<string, { n: number; days: string[] }>()
   const unread: string[] = []
   const unconfirmed: string[] = []
+  const partUnread: string[] = []
   for (const x of off) {
     const day = dayKeyOfIndex(x.dayIndex)
     const antigens = [...new Set(x.classification.antigens.map((a) => a.toLowerCase()))]
     if (antigens.length === 0) {
       if (x.panelWasRead === true) unconfirmed.push(day)
       else unread.push(day)
-    }
+    } else if (bowlPartUnread(x)) partUnread.push(day)
     for (const a of antigens) {
       const g = byProtein.get(a) ?? { n: 0, days: [] }
       g.n++
@@ -3665,11 +3673,34 @@ export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>):
     .map(([p, g]) => `${h(capProtein(p))} (${num(g.n)}) ${dayListText(g.days)}`)
   const clauses: string[] = []
   if (named.length > 0) clauses.push(`carrying ${named.join('; ')}`)
+  if (partUnread.length > 0) {
+    clauses.push(`${BOWL_PART_UNREAD} (${num(partUnread.length)}) ${dayListText(partUnread)}`)
+  }
   if (unread.length > 0) clauses.push(`ingredients not read for ${num(unread.length)} ${dayListText(unread)}`)
   if (unconfirmed.length > 0) {
     clauses.push(`protein content not confirmed for ${num(unconfirmed.length)} ${dayListText(unconfirmed)}`)
   }
   return `, ${clauses.join('; ')}`
+}
+
+/**
+ * CUL-2813 — the one wording for a bowl's unknown food beside a named protein: headline, refusal
+ * line, appendix C. It states what the record holds (no protein on file) and never contrasts it with
+ * the named food as "not read": a protein on file is not a label read (cold read: the first wording,
+ * "ingredients of another food … not read", told a vet the chicken food's list HAD been read).
+ */
+const BOWL_PART_UNREAD = 'a second food in the same bowl has no protein on file'
+
+/**
+ * CUL-2813 — a mixed bowl naming an off-trial protein while another off-diet food in it has no
+ * ingredients on file (`panelWasRead` on a bowl is "every off-diet component's were", trial.ts).
+ * Absent on a stored copy counts as not read: the louder reading.
+ */
+function bowlPartUnread(x: {
+  classification: { antigens: readonly string[]; components?: unknown }
+  panelWasRead?: boolean
+}): boolean {
+  return x.classification.antigens.length > 0 && !!x.classification.components && x.panelWasRead !== true
 }
 
 /**
@@ -10788,13 +10819,22 @@ function offDietFoodsBit(snap: ReportSnapshot): string {
   const t = snap.trial!
   const off = t.exposures.items.filter((x) => x.classification.offDiet)
   if (off.length === 0 || off.length !== t.exposures.offDiet) return ''
-  const groups = new Map<string, { label: string | null; count: number; proteins: Set<string>; unread: boolean }>()
+  // CUL-2813 (QUIET): a named protein never hides an off-diet food with nothing on file. `partUnread` is a bowl's other food;
+  // `wholeUnread` counts feedings under this label with nothing read, which a sibling's protein hid.
+  const groups = new Map<
+    string,
+    { label: string | null; count: number; proteins: Set<string>; unread: boolean; partUnread: boolean; wholeUnread: number }
+  >()
   for (const x of off) {
     const key = x.label ?? ''
-    const g = groups.get(key) ?? { label: x.label, count: 0, proteins: new Set<string>(), unread: false }
+    const g =
+      groups.get(key) ??
+      { label: x.label, count: 0, proteins: new Set<string>(), unread: false, partUnread: false, wholeUnread: 0 }
     g.count += 1
     for (const a of x.classification.antigens) g.proteins.add(a.toLowerCase())
     if (!x.panelWasRead) g.unread = true
+    if (bowlPartUnread(x)) g.partUnread = true
+    if (x.classification.antigens.length === 0 && !x.panelWasRead) g.wholeUnread += 1
     groups.set(key, g)
   }
   const ordered = [...groups.values()].sort((a, b) => b.count - a.count)
@@ -10802,7 +10842,9 @@ function offDietFoodsBit(snap: ReportSnapshot): string {
     const what = g.label ? h(g.label) : 'a food with no name logged'
     const carried =
       g.proteins.size > 0
-        ? `, carrying ${h(proteinList([...g.proteins].sort()))}`
+        ? `, carrying ${h(proteinList([...g.proteins].sort()))}${g.partUnread ? `; ${BOWL_PART_UNREAD}` : ''}${
+            g.wholeUnread > 0 ? `; ingredient list not read for ${num(g.wholeUnread)} of these feedings` : ''
+          }`
         : g.unread
           ? ', ingredient list not read'
           : ''
@@ -11639,7 +11681,9 @@ function confounderRowHtml(
         reason === 'fed_before_permitted'
           ? `Fed before it was permitted (allowed from ${h(day(r.permittedLaterFrom!))})`
           : reason === 'derived_protein'
-            ? 'Protein not in the trial diet'
+            ? // CUL-2813 (QUIET): a bowl row on the protein rung whose other off-diet food was never
+              // read says so, in the headline's words; `panelWasRead` is AND-folded over the row.
+              `Protein not in the trial diet${r.bowlIntake != null && !r.panelWasRead ? `; ${BOWL_PART_UNREAD}` : ''}`
             : // B-529/R7(c). THREE ROUTES REACH RUNG 3, NOT TWO. This branch read
               // "read, and nothing in it is outside the trial diet" whenever a
               // panel existed — an affirmative all-clear. The silence rule added a
