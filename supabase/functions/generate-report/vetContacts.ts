@@ -61,8 +61,11 @@ export interface VetContactRow {
 export interface ContactSource {
   date: string
   channel: RemoteChannel
-  /** The contact's day sits inside the report's window (a year-less date is then safe, C-19). */
+  /** The contact's day sits inside the report's window. */
   inWindow: boolean
+  /** Print the contact's day with its year (C-19, by band): it sits outside the window, the window
+   *  crosses a year, or the course started in another year than the contact. */
+  stampYear: boolean
 }
 
 export interface VetContactsBlock {
@@ -97,11 +100,24 @@ export function vetContactRowsOf(
       clinicName: trimmed(c.clinicName),
       vetName: trimmed(c.vetName),
       started: courses
-        .filter((m) => m.vetVisitId === c.id)
+        .filter((m) => m.vetVisitId === c.id && contactPrecedesCourse(c.visitedAt, m.startedAt, scope.endDate))
         .sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.drugName.localeCompare(b.drugName, 'en') || a.id.localeCompare(b.id))
         .map((m) => m.drugName),
       hasDocuments: c.hasDocuments,
     }))
+}
+
+/**
+ * "Started after the {day} …" is a claim about ORDER: the contact came first and the course followed.
+ * It holds only when the contact's day is on or before the course's start AND on or before the
+ * report's last day. A course the owner began on Nov 2 and later linked to a Nov 9 call, or a link
+ * to a contact dated after the report, would otherwise read as vet-directed when the record says
+ * the opposite (adversarial pass 1 on CUL-2770). Such a link prints nothing, in the source line and
+ * in the contact's "Started:" list alike, because the record cannot say the vet started it.
+ */
+export function contactPrecedesCourse(contactDate: string, courseStartedAt: string, reportEnd: string): boolean {
+  const day = contactDate.slice(0, 10)
+  return day <= courseStartedAt.slice(0, 10) && day <= reportEnd
 }
 
 /**
@@ -112,7 +128,7 @@ export function vetContactRowsOf(
  * not return (deleted) gets nothing rather than a guess.
  */
 export function courseSourceOf(
-  course: { vetVisitId: string | null },
+  course: { vetVisitId: string | null; startedAt: string },
   contacts: readonly ReportVetContactInput[],
   scope: { startDate: string; endDate: string },
 ): ContactSource | null {
@@ -120,7 +136,11 @@ export function courseSourceOf(
   const c = contacts.find((x) => x.id === course.vetVisitId)
   if (!c || c.channel === 'in_clinic') return null
   const date = c.visitedAt.slice(0, 10)
-  return { date, channel: c.channel, inWindow: date >= scope.startDate && date <= scope.endDate }
+  if (!contactPrecedesCourse(date, course.startedAt, scope.endDate)) return null
+  const inWindow = date >= scope.startDate && date <= scope.endDate
+  const stampYear =
+    !inWindow || scope.startDate.slice(0, 4) !== scope.endDate.slice(0, 4) || date.slice(0, 4) !== course.startedAt.slice(0, 4)
+  return { date, channel: c.channel, inWindow, stampYear }
 }
 
 /** The channel key the section prints (spec §4.7: Visit | Phone | Text | Email). */

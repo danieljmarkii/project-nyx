@@ -94,8 +94,12 @@ export function headingOf(div: string): string {
     .toLowerCase()
 }
 
-/** Sections v2 carries elsewhere on sheet 1, by heading: the trial (`trial_reading`), the characteristics (`episodes`). */
-const SECTIONS_ELSEWHERE = [/^diet trial\b/, /^vomit characteristics\b/, /^stool characteristics\b/]
+/**
+ * Sections v2 carries elsewhere, by heading: the trial (`trial_reading`), the characteristics
+ * (`episodes`), and the vet contacts list, which leads the Medications sheet instead (CUL-2770,
+ * plan decision 2: sheet 1's line budget is for signs, and a contact is provenance).
+ */
+const SECTIONS_ELSEWHERE = [/^diet trial\b/, /^vomit characteristics\b/, /^stool characteristics\b/, /^vet contacts in this period\b/]
 
 /** Stable ids for v1's page-1 sections, by heading; the back sheets' must-carry rows name `diet-meds`. */
 const SECTION_IDS: ReadonlyArray<readonly [RegExp, string]> = [

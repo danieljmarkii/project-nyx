@@ -334,7 +334,7 @@ interface MedicationRow {
   status: string
   ended_at: string | null
   medication_items: MedItemJoin | MedItemJoin[] | null
-  // CUL-2770 — the visit or contact the course was started from (migration 038). Provenance only.
+  // CUL-2770 — the visit or contact the course was started from (migration 066). Provenance only.
   vet_visit_id?: string | null
 }
 

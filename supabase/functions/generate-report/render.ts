@@ -9118,7 +9118,10 @@ export function dietMeds(snap: ReportSnapshot): string {
         // overlapping supplement now, so the phrasing holds when it renders without asserting it.
         `${h(m.drugName)}${m.scheduleNotes ? ` &middot; ${h(m.scheduleNotes)}` : ''} &middot; started ${h(
           fmtDay(m.startedAt),
-        )} (owner-reported, OTC) — a concurrent change over this window.`,
+        )} (owner-reported, OTC)${
+          // CUL-2770 — a supplement started from a call names it too (pass 1 residual 4).
+          m.sourceContact ? `, ${courseSourceClause(m.sourceContact)}` : ''
+        } — a concurrent change over this window.`,
       ),
     )
   }
@@ -9140,14 +9143,11 @@ export function dietMeds(snap: ReportSnapshot): string {
 }
 
 /**
- * CUL-2770 — "started after the Nov 9 phone consult". The contact's day is year-stamped when it sits
- * outside the window or the window crosses a year (C-19: a year-less date is safe only inside a
- * bounded range), and also when the course's own start is in another year, so the two dates on one
- * line can never be read as the same year when they are not.
+ * CUL-2770 — "started after the Nov 9 phone consult". The year rule is `courseSourceOf`'s
+ * (`stampYear`): outside the window, a window crossing a year, or a course from another year.
  */
-function courseSourceClause(src: ContactSource, courseStartedAt: string): string {
-  const stamp = !src.inWindow || src.date.slice(0, 4) !== courseStartedAt.slice(0, 4)
-  return `started after the ${h(stamp ? fmtDayYear(src.date) : fmtDay(src.date))} ${CONSULT_NOUN[src.channel]}`
+function courseSourceClause(src: ContactSource): string {
+  return `started after the ${h(src.stampYear ? fmtDayYear(src.date) : fmtDay(src.date))} ${CONSULT_NOUN[src.channel]}`
 }
 
 /** A sentence from an owner-typed fragment: trimmed, with one closing full stop when it has none. */
@@ -9196,9 +9196,17 @@ export function vetContactsBody(snap: ReportSnapshot): string {
   if (b.rows.length === 0 && b.complete) return ''
   const stampYear = snap.scope.startDate.slice(0, 4) !== snap.scope.endDate.slice(0, 4)
   const rows = b.rows.map((r) => vetContactRowHtml(r, stampYear))
+  // Names what was short: a contact, a course it started, or the note that documents exist.
+  const shortWhat = [
+    snap.incompletePulls.includes('vet_contacts') ? 'a contact in this window' : null,
+    snap.incompletePulls.includes('medications') ? 'a course a contact started' : null,
+    snap.incompletePulls.includes('vet_documents') ? 'a note that the vet sent documents' : null,
+  ].filter((x): x is string => x !== null)
   const short = b.complete
     ? ''
-    : `<p class="ref">The vet contact record could not be read in full; a contact in this window may be missing.</p>`
+    : `<p class="ref">The vet contact record could not be read in full; ${
+        shortWhat.length > 0 ? joinList(shortWhat) : 'a contact in this window'
+      } may be missing.</p>`
   return `<div class="kvcol">${rows.join('')}</div>${short}`
 }
 
@@ -9265,7 +9273,7 @@ function medicationLine(m: MedicationAdherence): string {
     m.dosesPerDay != null ? `${m.dosesPerDay}×/day` : 'as needed',
     m.indication ? `for ${h(m.indication)}` : null,
     regimenDates(m),
-    m.sourceContact ? courseSourceClause(m.sourceContact, m.startedAt) : null,
+    m.sourceContact ? courseSourceClause(m.sourceContact) : null,
   ]
     .filter(Boolean)
     .join(' &middot; ')

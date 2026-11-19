@@ -5222,7 +5222,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     const withVehicles = vehicles ? { ...adherence, partialDoseVehicles: vehicles } : adherence
     // CUL-2770 — the source line, only with the flag on (input.vetContacts present). Spread only
     // when there IS a source, so a flag-off snapshot carries no new key at all.
-    const source = input.vetContacts ? courseSourceOf({ vetVisitId: m.vetVisitId ?? null }, input.vetContacts, scope) : null
+    const source = input.vetContacts ? courseSourceOf({ vetVisitId: m.vetVisitId ?? null, startedAt: m.startedAt }, input.vetContacts, scope) : null
     return source ? { ...withVehicles, sourceContact: source } : withVehicles
   })
   // Ad-hoc / OTC doses that belong to no configured regimen — surfaced separately so a drug the

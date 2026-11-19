@@ -122,7 +122,7 @@ Deno.test('a hand-picked past window lists only its own days; the course source 
 
 Deno.test('AC 7 — a course started from the call reads "started after the Nov 9 phone consult"', () => {
   const snap = assembleReport(input())
-  assert.deepEqual(snap.medications[0].sourceContact, { date: '2026-11-09', channel: 'phone', inWindow: true })
+  assert.deepEqual(snap.medications[0].sourceContact, { date: '2026-11-09', channel: 'phone', inWindow: true, stampYear: false })
   assert.match(renderReport(snap), /Motazol<\/span><span>[^<]*started after the Nov 9 phone consult/)
 })
 
@@ -136,7 +136,7 @@ Deno.test('AC 7 — each remote channel has its consult noun; a course from an e
 })
 
 Deno.test('AC 7 — a link to a row the pull did not return (deleted) prints no source, never a guess', () => {
-  assert.equal(courseSourceOf({ vetVisitId: 'gone' }, mapVetContactRows(visitRows('phone'), []), { startDate: '2026-09-18', endDate: '2026-11-14' }), null)
+  assert.equal(courseSourceOf({ vetVisitId: 'gone', startedAt: '2026-11-09' }, mapVetContactRows(visitRows('phone'), []), { startDate: '2026-09-18', endDate: '2026-11-14' }), null)
 })
 
 Deno.test('the longest name prints whole and as stored, never re-cased; a dose line prints only what the course holds', () => {
@@ -289,4 +289,58 @@ Deno.test('v2 — the list leads the Medications sheet when on, and is absent wh
   assert.match(b.html, /Consult, no exam\./)
   const off = sheetOf(assembleReport(input({ flagOn: false })))
   assert.ok(off?.blocks.every((x) => x.id !== 'vet-contacts'))
+})
+
+// ── Adversarial pass 1 (CUL-2770): the breaks, pinned ───────────────────────────────────────────
+
+Deno.test('pass 1 — v2 sheet 1 never carries the list (decision 2); the Medications sheet does, and sheet 1 keeps the source line', async () => {
+  const { carriedSectionsOf } = await import('./sheet1CarryV2.ts')
+  const snap = assembleReport(input())
+  const carried = carriedSectionsOf(snap, null)
+  assert.ok(carried.length > 0, 'non-vacuous: sheet 1 carries v1 sections')
+  assert.ok(carried.every((c) => !/vet contacts in this period/i.test(c.html)), 'no contacts list on sheet 1')
+  const dietMeds = carried.find((c) => c.id === 'diet-meds')
+  assert.ok(dietMeds && /started after the Nov 9 phone consult/.test(dietMeds.html), 'the course line keeps its source on sheet 1')
+})
+
+Deno.test('pass 1 — a course begun BEFORE the call it is linked to never reads "started after", nor "Started:" under the call', () => {
+  const snap = assembleReport(input({ medications: [{ ...MOTAZOL, startedAt: '2026-11-02' }] }))
+  assert.equal(snap.medications[0].sourceContact, undefined)
+  assert.deepEqual(snap.vetContacts?.rows.find((r) => r.id === 'v-nov9')?.started, [])
+  assert.doesNotMatch(renderReport(snap), /started after|Started: Motazol/)
+  // Same day is "after" (the call came first on the record's day grain).
+  assert.ok(assembleReport(input()).medications[0].sourceContact)
+})
+
+Deno.test('pass 1 — a link to a contact dated after the report prints no source', () => {
+  const rows = [...visitRows('phone'), { id: 'v-nov20', visited_at: '2026-11-20', channel: 'phone', reason: null, clinic_name: null, vet_name: null }]
+  const snap = assembleReport({
+    ...input({ medications: [{ ...MOTAZOL, startedAt: '2026-11-20', vetVisitId: 'v-nov20' }] }),
+    vetContacts: mapVetContactRows(rows, []),
+  })
+  assert.equal(snap.medications[0].sourceContact, undefined)
+  assert.doesNotMatch(renderReport(snap), /started after/)
+})
+
+Deno.test('pass 1 — a window crossing a year stamps the source line by band, like the list', () => {
+  const contacts: ReportVetContactInput[] = [
+    { id: 'ex', visitedAt: '2025-12-20', channel: 'in_clinic', reason: null, clinicName: null, vetName: null, hasDocuments: false },
+    { id: 'tx', visitedAt: '2025-12-28', channel: 'text', reason: null, clinicName: null, vetName: null, hasDocuments: false },
+  ]
+  const snap = assembleReport({
+    ...input({ contacts, medications: [{ ...MOTAZOL, startedAt: '2025-12-28', vetVisitId: 'tx' }] }),
+    now: '2026-01-10T15:00:00.000Z',
+    vetVisits: [{ visitedAt: '2025-12-20', clinicName: null, vetName: null, reason: null }],
+  })
+  assert.match(renderReport(snap), /started after the Dec 28, 2025 text consult/)
+})
+
+Deno.test('pass 1 — a supplement started from a call names its source too', () => {
+  const snap = assembleReport(input({ medications: [{ ...MOTAZOL, drugName: 'Fish oil', isPrescription: false }] }))
+  assert.match(renderReport(snap), /Fish oil[\s\S]*\(owner-reported, OTC\), started after the Nov 9 phone consult — a concurrent change/)
+})
+
+Deno.test('pass 1 — the short-read note names what was short', () => {
+  const html = renderReport(assembleReport(input({ incompletePulls: ['vet_documents'] })))
+  assert.match(html, /could not be read in full; a note that the vet sent documents may be missing\./)
 })
