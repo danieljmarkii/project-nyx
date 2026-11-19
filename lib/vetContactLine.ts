@@ -101,12 +101,14 @@ export function cardStart(finding: SignalFinding, anchor: CardAnchor): CardStart
       return ms === null ? null : { day: toLocalDayKey(new Date(ms)), instant: ms };
     }
     case 'incident_red_flag': {
-      const ms = [finding.callOnly ? null : finding.mostRecentFlaggedIso, finding.tierIso]
+      // The NEWEST event the card asks about (adversarial pass 2): an older photo flag beside a
+      // call-now read from this afternoon must not let this morning's call stand under the call.
+      const ms = [finding.callOnly ? null : finding.mostRecentFlaggedIso, finding.tierIso, finding.laterCallTodayIso]
         .map(msOf)
         .filter((m): m is number => m !== null);
       if (ms.length === 0) return null;
-      const first = Math.min(...ms);
-      return { day: toLocalDayKey(new Date(first)), instant: first };
+      const latest = Math.max(...ms);
+      return { day: toLocalDayKey(new Date(latest)), instant: latest };
     }
     default:
       return null;

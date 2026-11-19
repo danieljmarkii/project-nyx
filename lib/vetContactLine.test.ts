@@ -80,7 +80,7 @@ describe('the card’s first day: the latest start its own words defend', () => 
     ['burden: a 3-day run that ended yesterday', burden, '2026-11-11'],
     ['chronicity: its first onset', chronic, '2026-10-01'],
     ['worsening: its current window', worsening, '2026-11-08'],
-    ['red flag: the earliest read it speaks of', redFlag, '2026-11-12'],
+    ['red flag: the newest event it asks about', redFlag, '2026-11-13'],
     ['red flag, call only: the call’s read', { ...redFlag, flags: [], callOnly: true } as SignalFinding, '2026-11-13'],
   ])('%s', (_name, f, day) => {
     expect(cardFirstDay(f, A(TODAY))).toBe(day);
@@ -164,6 +164,20 @@ describe('the first day itself: a contact must come after the problem (adversari
   it('a card that began before the count’s day has no instant on its first day: that day says nothing', () => {
     expect(cardStart(intake, A(TODAY, at(2026, 11, 14, 7, 0)))).toEqual({ day: '2026-11-13', instant: null });
     expect(contactLineFor(intake, [c('a', '2026-11-13', 'phone', at(2026, 11, 13, 23, 0))], TODAY, A(TODAY))).toBeNull();
+  });
+  it('G: an older photo flag beside a call-now read this afternoon: a morning call is not about it', () => {
+    const g = { ...redFlag, tier: 'call_now', mostRecentFlaggedIso: at(2026, 11, 9, 8, 0), tierIso: at(2026, 11, 14, 15, 0) } as SignalFinding;
+    expect(contactLineFor(g, [c('a', TODAY, 'phone', at(2026, 11, 14, 9, 0))], TODAY, A(TODAY))).toBeNull();
+    expect(contactLineFor(g, [c('a', '2026-11-10', 'phone')], TODAY, A(TODAY))).toBeNull();
+    expect(contactLineFor(g, [c('a', TODAY, 'phone', at(2026, 11, 14, 15, 30))], TODAY, A(TODAY))).toBe('You called the vet today, 3:30 pm.');
+  });
+  it('H: a blood photo this afternoon beside an older call-now read: a morning call is not about it', () => {
+    const h = { ...redFlag, tier: 'call_now', mostRecentFlaggedIso: at(2026, 11, 14, 15, 0), tierIso: at(2026, 11, 9, 8, 0) } as SignalFinding;
+    expect(contactLineFor(h, [c('a', TODAY, 'phone', at(2026, 11, 14, 9, 0))], TODAY, A(TODAY))).toBeNull();
+  });
+  it('a later call-today read counts as the newest event', () => {
+    const l = { ...redFlag, mostRecentFlaggedIso: at(2026, 11, 9, 8, 0), tierIso: at(2026, 11, 9, 8, 0), laterCallTodayIso: at(2026, 11, 14, 12, 0) } as SignalFinding;
+    expect(contactLineFor(l, [c('a', TODAY, 'phone', at(2026, 11, 14, 9, 0))], TODAY, A(TODAY))).toBeNull();
   });
   it('chronicity: a call later on the onset day counts, an earlier one does not', () => {
     const onset = '2026-10-01';
