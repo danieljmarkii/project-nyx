@@ -31,6 +31,9 @@ jest.mock('../../store/petStore', () => ({
     (id ? pets.find((p) => p.id === id)?.name : null) || 'your pet',
 }));
 
+// Vet contacts (CUL-2766): the flag-off page, as shipped.
+jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => false }));
+jest.mock('../../lib/sync', () => ({ syncPendingVetVisits: jest.fn(() => Promise.resolve()) }));
 jest.mock('../../components/vetvisits/VisitReports', () => ({ VisitReports: () => null }));
 jest.mock('../../lib/visitPaperwork', () => ({ captureVisitResults: jest.fn() }));
 jest.mock('../../lib/vetDocumentCapture', () => ({ isDocumentPickerAvailable: () => true }));
