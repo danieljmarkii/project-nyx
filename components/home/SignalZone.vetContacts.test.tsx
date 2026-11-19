@@ -246,7 +246,7 @@ describe('C-36 — flag off, or not opted in: no read and no line', () => {
 describe('AC 18 — the double line (R11), on a row handed the shipped "You called on" day', () => {
   const calledOn = dayBefore;
   const rowFor = (contacts: Parameters<typeof contactLineFor>[1]) => {
-    const line = contactLineFor(intake.finding, contacts, today, today, calledOn);
+    const line = contactLineFor(intake.finding, contacts, today, { day: today, iso: null }, calledOn);
     return render(<SignalRow cached={intake} petId="pet-1" onOpen={() => {}} generatedAt={now.toISOString()} contactLine={line} />);
   };
   const bare = () => render(<SignalRow cached={intake} petId="pet-1" onOpen={() => {}} generatedAt={now.toISOString()} />);

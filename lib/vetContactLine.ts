@@ -43,12 +43,6 @@ function dayKeyOf(value: string | null | undefined): string | null {
 }
 
 /** The local day of an instant, or null when it is not one. */
-function dayOfInstant(iso: string | null | undefined): string | null {
-  if (typeof iso !== 'string' || iso.length === 0) return null;
-  const ms = new Date(iso).getTime();
-  return Number.isNaN(ms) ? null : toLocalDayKey(new Date(ms));
-}
-
 /** `key` moved by `delta` local days. */
 function shiftDay(key: string, delta: number): string {
   const d = dayKeyToLocalDate(key) as Date;
@@ -60,39 +54,78 @@ function wholeAtLeast(n: unknown, floor: number): number {
   return typeof n === 'number' && Number.isFinite(n) ? Math.max(floor, Math.floor(n)) : floor;
 }
 
+/** Where the card's problem begins: its first local day, and the instant on that day it began
+ *  when the record can say (else null). */
+export interface CardStart {
+  day: string;
+  instant: number | null;
+}
+
+/** The engine's count, anchored: its local day and `generated_at`. */
+export interface CardAnchor {
+  day: string;
+  iso: string | null;
+}
+
+function msOf(iso: string | null | undefined): number | null {
+  if (typeof iso !== 'string' || iso.length === 0) return null;
+  const ms = new Date(iso).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
 /**
- * The first local day the card speaks about, or null when this build cannot say (the card then
- * gains no line: silence, never a guess). `anchorDay` is the day the engine counted (the cache
- * row's `generated_at`), since the card's day counts run back from there.
+ * Where the card's problem begins, or null when this build cannot say (the card then gains no
+ * line: silence, never a guess). The card's day counts run back from `anchor`, the engine's count.
  *
  * Each type takes the LATEST start its own words defend, so a contact from before the problem
- * the card states is never set under it as if it were about this.
+ * the card states is never set under it as if it were about this. The instant matters on the
+ * first day itself (the adversarial pass on CUL-2769): a 9:00 am call is not about a 3:00 pm red
+ * flag. A type whose words name no instant takes the engine's count as its instant when the card
+ * began on the count's own day, and none otherwise.
  */
-export function cardFirstDay(finding: SignalFinding, anchorDay: string): string | null {
+export function cardStart(finding: SignalFinding, anchor: CardAnchor): CardStart | null {
   if (finding.priorityClass !== 'safety') return null;
+  const counted = (day: string): CardStart => ({ day, instant: day === anchor.day ? msOf(anchor.iso) : null });
   switch (finding.type) {
     case 'intake_decline':
       // "for 2 days": today and the day before. A trigger with no day count starts on the anchor.
-      return shiftDay(anchorDay, -(wholeAtLeast(finding.daysBelowBaseline, 1) - 1));
+      return counted(shiftDay(anchor.day, -(wholeAtLeast(finding.daysBelowBaseline, 1) - 1)));
     case 'symptom_burden':
-      return shiftDay(
-        anchorDay,
-        -(wholeAtLeast(finding.daysSinceRunEnd, 0) + wholeAtLeast(finding.runDays, 1) - 1),
+      return counted(
+        shiftDay(anchor.day, -(wholeAtLeast(finding.daysSinceRunEnd, 0) + wholeAtLeast(finding.runDays, 1) - 1)),
       );
-    case 'symptom_chronicity':
-      return dayOfInstant(finding.firstOnsetIso);
     case 'symptom_worsening':
-      return shiftDay(anchorDay, -(wholeAtLeast(finding.windowDays, 1) - 1));
+      return counted(shiftDay(anchor.day, -(wholeAtLeast(finding.windowDays, 1) - 1)));
+    case 'symptom_chronicity': {
+      const ms = msOf(finding.firstOnsetIso);
+      return ms === null ? null : { day: toLocalDayKey(new Date(ms)), instant: ms };
+    }
     case 'incident_red_flag': {
-      const days = [finding.callOnly ? null : finding.mostRecentFlaggedIso, finding.tierIso]
-        .map(dayOfInstant)
-        .filter((d): d is string => d !== null)
-        .sort();
-      return days[0] ?? null;
+      const ms = [finding.callOnly ? null : finding.mostRecentFlaggedIso, finding.tierIso]
+        .map(msOf)
+        .filter((m): m is number => m !== null);
+      if (ms.length === 0) return null;
+      const first = Math.min(...ms);
+      return { day: toLocalDayKey(new Date(first)), instant: first };
     }
     default:
       return null;
   }
+}
+
+/** The card's first day alone (see `cardStart`). */
+export function cardFirstDay(finding: SignalFinding, anchor: CardAnchor): string | null {
+  return cardStart(finding, anchor)?.day ?? null;
+}
+
+/** A contact after the card's problem began. On the first day itself only a contact the owner
+ *  timed at or after the problem's instant counts: an untimed one, or one before, may be about
+ *  something else, and the line is never a guess. */
+function isAfterStart(c: RemoteContact, start: CardStart): boolean {
+  if (c.day > start.day) return true;
+  if (c.day < start.day || start.instant === null) return false;
+  const at = msOf(c.contactedAt);
+  return at !== null && toLocalDayKey(new Date(at)) === c.day && at >= start.instant;
 }
 
 /** "Fri, Nov 13", with the year when it is not this year's. */
@@ -126,7 +159,8 @@ export function contactSentence(contact: RemoteContact, today: string): string {
 /**
  * The card's context line, or null.
  *
- * - From the newest remote contact dated on or after the card's first day and not after today.
+ * - From the newest remote contact made after the card's problem began (`cardStart`) and not
+ *   after today.
  * - R11: `calledOn` is the day of a shipped "You called on {day}." line the card already draws.
  *   A phone contact on that same day is the same fact, said once: null. Another day or another
  *   channel says something new and gets its line. No Home card draws that line today (PM ruling
@@ -136,12 +170,12 @@ export function contactLineFor(
   finding: SignalFinding,
   contacts: readonly RemoteContact[],
   today: string,
-  anchorDay: string,
+  anchor: CardAnchor,
   calledOn: string | null = null,
 ): string | null {
-  const first = cardFirstDay(finding, anchorDay);
-  if (first === null) return null;
-  const newest = contacts.filter((c) => c.day >= first && c.day <= today).sort(newerFirst)[0];
+  const start = cardStart(finding, anchor);
+  if (start === null) return null;
+  const newest = contacts.filter((c) => c.day <= today && isAfterStart(c, start)).sort(newerFirst)[0];
   if (!newest) return null;
   if (calledOn !== null && newest.channel === 'phone' && newest.day === calledOn) return null;
   return contactSentence(newest, today);

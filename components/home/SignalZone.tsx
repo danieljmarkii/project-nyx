@@ -1042,7 +1042,9 @@ function LiveStack({
   const ordered = visible.filter((f) => hasSignalTitleRule(f.finding));
   const today = toLocalDayKey(new Date());
   const anchorMs = generatedAt ? new Date(generatedAt).getTime() : NaN;
-  const anchorDay = Number.isNaN(anchorMs) ? today : toLocalDayKey(new Date(anchorMs));
+  const anchor = Number.isNaN(anchorMs)
+    ? { day: today, iso: null }
+    : { day: toLocalDayKey(new Date(anchorMs)), iso: generatedAt ?? null };
   // CUL-1216 (BRK-6): the SAME register for the pairs a card carries inside it — the lead
   // card's week line and a vomit chronicity card's compare — with the Signal's own
   // `intake_decline` OR'd in, exactly as `visibleFindings` reads it, so the card a stack drops
@@ -1094,7 +1096,7 @@ function LiveStack({
                 onOpen={onOpen}
                 isLead={i === leadIndex}
                 generatedAt={generatedAt}
-                contactLine={contacts ? contactLineFor(f.finding, contacts, today, anchorDay) : null}
+                contactLine={contacts ? contactLineFor(f.finding, contacts, today, anchor) : null}
               />
             )}
           </>

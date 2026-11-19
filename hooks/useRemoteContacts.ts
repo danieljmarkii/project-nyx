@@ -20,7 +20,12 @@ export function useRemoteContacts(petId: string | null): readonly RemoteContact[
   // A contact is logged on another screen and Home stays mounted under the tabs, so coming back
   // to Home re-reads: the line appears on return, never a sync later.
   const [focusTick, setFocusTick] = useState(0);
-  useFocusEffect(useCallback(() => setFocusTick((t) => t + 1), []));
+  useFocusEffect(
+    useCallback(() => {
+      // Flag off, a focus re-renders nothing (the adversarial pass: no work for an unused feature).
+      if (on) setFocusTick((t) => t + 1);
+    }, [on]),
+  );
 
   useEffect(() => {
     if (!on || !petId) {
