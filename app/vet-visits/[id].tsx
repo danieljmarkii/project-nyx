@@ -9,7 +9,14 @@ import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { VisitDetailBody } from '../../components/vetvisits/VisitDetailBody';
 import { VisitReports } from '../../components/vetvisits/VisitReports';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
-import { readAppointmentForVisit, readVetVisitDetail, type VetVisitDetail } from '../../lib/vetVisits';
+import {
+  readAppointmentForVisit,
+  readVetVisitDetail,
+  updateVisitDetails,
+  type VetVisitDetail,
+} from '../../lib/vetVisits';
+import { syncPendingVetVisits } from '../../lib/sync';
+import { BookVisitSheet, type BookVisitSubmit } from '../../components/vetvisits/BookVisitSheet';
 import { visitCourseHref, visitTrialHref } from '../../lib/visitPlanDoors';
 import { captureVisitResults, type VisitResultsSource } from '../../lib/visitPaperwork';
 import { isDocumentPickerAvailable } from '../../lib/vetDocumentCapture';
@@ -31,6 +38,11 @@ export default function VetVisitScreen() {
   // pet (`lib/visitPlanDoors.ts`); the page itself names the RECORD's pet.
   const activePetId = usePetStore((s) => s.activePet?.id ?? null);
   const [resultsBusy, setResultsBusy] = useState(false);
+  // Vet contacts R12 (CUL-2766): *Edit* on a saved call, text or email opens the logging
+  // sheet on it, all four chips, so a wrong channel can be put right. A clinic visit's *Edit*
+  // is How did it go?, as shipped. Flag off, *Edit* is what it was for every row.
+  const [editing, setEditing] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
   // Probed once per mount, as Vet Files does (B-548): an older binary has no Files picker.
   const [pdfAvailable] = useState(() => isDocumentPickerAvailable());
 
@@ -117,6 +129,43 @@ export default function VetVisitScreen() {
   // no one. Built from the RECORD the screen just read, never from what is on screen, and
   // under the record's pet. A dismissed sheet is not an error; a sheet that cannot open is
   // said, never swallowed.
+  // A failed local write keeps the sheet open with every field (mock B4), and is said.
+  async function handleEditSubmit(input: BookVisitSubmit) {
+    if (!detail || editSaving) return;
+    setEditSaving(true);
+    try {
+      await updateVisitDetails(detail.visit.id, {
+        visitedAt: input.day,
+        clinicName: input.clinicName,
+        vetName: input.vetName,
+        reason: input.reason,
+        channel: input.channel,
+        contactedAt: input.contactedAt,
+      });
+      syncPendingVetVisits().catch(console.error);
+      setEditing(false);
+      await load();
+    } catch (err) {
+      console.warn('[vet-visit] contact edit failed:', err);
+      // A row removed meanwhile (another device) can never take the edit, so "try again"
+      // would be a promise the retry cannot keep: close and say what happened. A failed or
+      // unreadable re-read keeps the sheet open, as any other failed write does.
+      const still = await readVetVisitDetail(detail.visit.id).catch(() => undefined);
+      if (still === null) {
+        setEditing(false);
+        await load();
+        Alert.alert('That didn’t save', 'This one is no longer on the record.');
+      } else {
+        Alert.alert('That didn’t save', 'Try that again in a moment.');
+      }
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  // An unknown channel (a row this phone never learned) keeps the shipped *Edit*.
+  const editsAsContact = contactsOn && detail !== null && isRemoteChannel(channelOf(detail.visit.channel));
+
   async function handleShare(read: VetVisitDetail) {
     try {
       const channel = contactsOn ? channelOf(read.visit.channel) : null;
@@ -155,7 +204,9 @@ export default function VetVisitScreen() {
                 <ThemedText style={styles.editLabel}>Share</ThemedText>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => router.push(`/vet-visits/after?visit=${detail.visit.id}`)}
+                onPress={() =>
+                  editsAsContact ? setEditing(true) : router.push(`/vet-visits/after?visit=${detail.visit.id}`)
+                }
                 activeOpacity={0.7}
                 hitSlop={HEADER_HIT}
                 accessibilityRole="button"
@@ -226,6 +277,27 @@ export default function VetVisitScreen() {
         <View style={styles.centre}>
           <ThemedText style={styles.missing}>This visit is no longer on the record.</ThemedText>
         </View>
+      ) : null}
+
+      {editing && detail && editsAsContact ? (
+        <BookVisitSheet
+          visible
+          initialMode="happened"
+          petName={petName}
+          otherPets={[]}
+          prefill={{ clinicName: null, vetName: null, suggestedDate: null }}
+          edit={{
+            channel: channelOf(detail.visit.channel) ?? 'in_clinic',
+            day: detail.visit.visited_at,
+            contactedAt: detail.visit.contacted_at ?? null,
+            clinicName: detail.visit.clinic_name,
+            vetName: detail.visit.vet_name,
+            reason: detail.visit.reason,
+          }}
+          busy={editSaving}
+          onClose={() => setEditing(false)}
+          onSubmit={(input) => void handleEditSubmit(input)}
+        />
       ) : null}
     </SafeAreaView>
   );

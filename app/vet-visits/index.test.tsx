@@ -14,7 +14,13 @@ import type { VetVisitsHome } from '../../lib/vetVisits';
 // Typed by their real signatures so `mock.calls[0][0]` is the input object rather
 // than an empty tuple — the assertions below are ABOUT that object's `petId`.
 type BookArgs = { petId: string; scheduledAt: string };
-type LogArgs = { petId: string; visitedAt: string };
+type LogArgs = {
+  petId: string;
+  visitedAt: string;
+  channel?: string;
+  contactedAt?: string | null;
+  alsoForPetIds?: readonly string[];
+};
 const mockBook = jest.fn(async (_input: BookArgs) => 'new-appointment');
 const mockLog = jest.fn(async (_input: LogArgs) => 'new-visit');
 const mockCancel = jest.fn(async (_id: string) => undefined);
@@ -46,7 +52,9 @@ jest.mock('../../lib/sync', () => ({
 }));
 
 // Vet contacts (CUL-2749 PR-06): off here, so these suites run the shipped screen.
-jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => false }));
+// PR-04 (CUL-2766) flips it on for the logging door's wiring tests below.
+let mockContactsOn = false;
+jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => mockContactsOn }));
 jest.mock('../../lib/vetVisits', () => {
   // `resolveRecordPetName` and the formatters are PURE, and the screen's whole job
   // here is to route the right id into them — so the real module is used for
@@ -114,6 +122,7 @@ beforeEach(() => {
   // `mockImplementation` would leak into the next file-order-dependent test.
   mockBook.mockImplementation(async () => 'new-appointment');
   mockLog.mockImplementation(async () => 'new-visit');
+  mockContactsOn = false;
   mockParams = {};
   mockHome = { next: null, later: [], awaiting: [], visits: [] };
   mockDetail = null;
@@ -749,5 +758,44 @@ describe('a door that carries the recheck date seeds the booking with it', () =>
     fireEvent.press(await screen.findByText('Add the appointment'));
     await waitFor(() => expect(mockBook).toHaveBeenCalledTimes(1));
     expect(dayKey(new Date(mockBook.mock.calls[0][0].scheduledAt))).toBe(dayKey(new Date()));
+  });
+});
+
+// ── Vet contacts PR-04 (CUL-2766): the host carries what the sheet picked ───────────
+// The sheet's tests prove what it SENDS; these prove the screen hands it to the write. Without
+// them, dropping `channel` here would write every logged call as an exam with every test green
+// (the adversarial pass's mutation).
+describe('the logging door’s write', () => {
+  it('flag off: the shipped write, an exam for this pet alone', async () => {
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('Log a visit that already happened'));
+    fireEvent.press(await screen.findByText(/Save .*’s visit/));
+    await waitFor(() => expect(mockLog).toHaveBeenCalledTimes(1));
+    expect(mockLog.mock.calls[0][0]).toMatchObject({ channel: 'in_clinic', contactedAt: null, alsoForPetIds: [] });
+  });
+
+  it('flag on: Phone with Also about writes the call for both pets', async () => {
+    mockContactsOn = true;
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('Log a visit, call, text or email'));
+    fireEvent.press(await screen.findByText('Phone'));
+    fireEvent.press(screen.getByText('Juniper'));
+    fireEvent.press(screen.getByText('Save for Nyx and Juniper'));
+    await waitFor(() => expect(mockLog).toHaveBeenCalledTimes(1));
+    expect(mockLog.mock.calls[0][0]).toMatchObject({ petId: 'pet-a', channel: 'phone', alsoForPetIds: ['pet-b'] });
+  });
+
+  it('a second tap while the first save is in flight writes nothing more', async () => {
+    let release: (v: string) => void = () => undefined;
+    mockLog.mockImplementation(() => new Promise<string>((r) => { release = r; }));
+    mockContactsOn = true;
+    render(<VetVisitsScreen />);
+    fireEvent.press(await screen.findByText('Log a visit, call, text or email'));
+    fireEvent.press(await screen.findByText('Phone'));
+    const save = screen.getByText('Save Nyx’s call');
+    fireEvent.press(save);
+    fireEvent.press(save);
+    await act(async () => release('new-visit'));
+    expect(mockLog).toHaveBeenCalledTimes(1);
   });
 });

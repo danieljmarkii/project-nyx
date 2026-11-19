@@ -111,7 +111,7 @@ import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 import { getDb } from './db';
 import { hydrateFromCloud, syncPendingVetVisits } from './sync';
-import { logVetVisit, readVisitConsequence, readVisitPrefill } from './vetVisits';
+import { logVetVisit, readVisitConsequence, readVisitPrefill, updateVisitDetails } from './vetVisits';
 import { latestVisitBefore, readLatestVisitBefore, readVisitDaysBefore } from './visitWindow';
 import { readCareQuestionRecord } from './careAnswers';
 
@@ -434,5 +434,46 @@ describe('the flag-off differential (C-36): over exam-only rows, the filter is i
     expect(await readVisitPrefill(PET)).toEqual({
       clinicName: last.clinic_name, vetName: last.vet_name, suggestedDate: last.next_visit_at,
     });
+  });
+});
+
+// PR-04 (CUL-2766), spec AC 19 / R12: editing a saved contact's channel. The exam readers
+// filter when they READ, so the window follows the corrected record both ways, and the push
+// carries the corrected channel so the server's composer reads the same row.
+describe('AC 19: an edited channel moves the report window both ways', () => {
+  beforeEach(() => {
+    seedVisit({ id: 'exam', visited_at: '2026-09-18' });
+    seedVisit({ id: 'call', visited_at: '2026-11-09', channel: 'phone', next_visit_at: null });
+  });
+
+  it('Phone to At the clinic starts the window Nov 9; back to Phone returns it to Sep 18', async () => {
+    expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBe('2026-09-18');
+
+    await updateVisitDetails('call', { channel: 'in_clinic' });
+    expect(localRow('call').channel).toBe('in_clinic');
+    expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBe('2026-11-09');
+
+    await updateVisitDetails('call', { channel: 'phone' });
+    expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBe('2026-09-18');
+  });
+
+  it('the edit re-queues the row and the push carries the corrected channel and time', async () => {
+    const at = new Date(2026, 10, 9, 9, 30, 0).toISOString();
+    await updateVisitDetails('call', { channel: 'in_clinic', contactedAt: at });
+    expect(localRow('call').synced).toBe(0);
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get('call')).toMatchObject({ channel: 'in_clinic', contacted_at: at });
+  });
+
+  it('refuses a channel the server would refuse and a time that is not an instant, writing nothing', async () => {
+    await expect(updateVisitDetails('call', { channel: 'fax' as never })).rejects.toThrow();
+    await expect(updateVisitDetails('call', { contactedAt: 'teatime' })).rejects.toThrow();
+    expect(localRow('call')).toMatchObject({ channel: 'phone', synced: 1 });
+  });
+
+  it('clearing the time writes NULL: the record holds the day only', async () => {
+    mockLocal.db!.prepare(`UPDATE vet_visits SET contacted_at = '2026-11-09T21:40:00.000Z' WHERE id = 'call'`).run();
+    await updateVisitDetails('call', { contactedAt: null });
+    expect(localRow('call').contacted_at).toBeNull();
   });
 });

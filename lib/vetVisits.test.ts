@@ -41,6 +41,8 @@ function visit(over: Partial<LocalVetVisit> = {}): LocalVetVisit {
     notes: null,
     next_visit_at: null,
     deleted_at: null,
+    channel: 'in_clinic',
+    contacted_at: null,
     ...over,
   };
 }

@@ -21,10 +21,13 @@ interface Props {
   // disabled state. Used while a chip-tap's write is in flight (B-555), so a
   // second tap can't queue a duplicate write before the first re-renders.
   disabled?: boolean;
+  // What VoiceOver says when the visible word alone undersells the option (Vet contacts'
+  // "Text", spoken "Text or clinic app"). Absent: the visible label, as before.
+  accessibilityLabel?: string;
 }
 
 export function FilterChip({
-  label, active, onPress, variant = 'default', accessibilityRole, disabled = false,
+  label, active, onPress, variant = 'default', accessibilityRole, disabled = false, accessibilityLabel,
 }: Props) {
   const set = STYLE_BY_VARIANT[variant];
   return (
@@ -34,6 +37,7 @@ export function FilterChip({
       disabled={disabled}
       activeOpacity={0.7}
       accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel}
       // The active state is announced for EVERY chip, not just the ones a group
       // gives a role to (B-168). It used to be gated on `accessibilityRole`, so a
       // standalone FilterChip — the Rx/OTC pair on the medication detail screen,

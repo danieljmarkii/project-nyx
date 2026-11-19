@@ -208,6 +208,9 @@ export default function VetVisitsScreen() {
   async function handleSubmit(input: BookVisitSubmit) {
     // The screen's pet, not the store's current one — see `screenPetId` above.
     if (!petId) return;
+    // One write per Save: a second tap during the first would log the contact twice, once
+    // per pet under Also about (adversarial pass, PR-04).
+    if (saving) return;
     setSaving(true);
     try {
       if (input.mode === 'booked' && input.scheduledAt) {
@@ -286,6 +289,11 @@ export default function VetVisitsScreen() {
         clinicName: input.clinicName,
         vetName: input.vetName,
         reason: input.reason,
+        // Vet contacts (CUL-2766): the past contact's channel, optional time and *Also about*.
+        // The flag-off sheet sends 'in_clinic', null and no other pet: the shipped write.
+        channel: input.channel,
+        contactedAt: input.contactedAt,
+        alsoForPetIds: input.alsoForPetIds,
       });
       syncPendingVetVisits().catch(console.error);
       setSheetMode(null);

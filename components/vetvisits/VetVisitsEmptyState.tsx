@@ -2,6 +2,8 @@ import { StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
+import { LOG_CONTACT_LABEL } from '../../lib/vetContactSheet';
+import { useVetContactsOn } from '../../hooks/useVetContacts';
 
 interface Props {
   /** The RECORD's pet, resolved by the caller (never `activePet`) — CUL-574. */
@@ -24,6 +26,8 @@ interface Props {
 // most recent visit on file (the report's scope cascade, rung 1). It is stated in
 // the present tense because that is the tense it is true in.
 export function VetVisitsEmptyState({ petName, onBook, onLogPast }: Props) {
+  // Vet contacts (CUL-2766, R7): the second door names every channel. Flag off, as shipped.
+  const contactsOn = useVetContactsOn();
   return (
     <View style={styles.wrap}>
       <ThemedText style={styles.title}>{petName}’s visits, in one place</ThemedText>
@@ -35,7 +39,7 @@ export function VetVisitsEmptyState({ petName, onBook, onLogPast }: Props) {
       <View style={styles.actions}>
         <PrimaryButton label="Add the next visit" onPress={onBook} />
         <PrimaryButton
-          label="Log a visit that already happened"
+          label={contactsOn ? LOG_CONTACT_LABEL : 'Log a visit that already happened'}
           onPress={onLogPast}
           variant="secondary"
           style={styles.secondAction}

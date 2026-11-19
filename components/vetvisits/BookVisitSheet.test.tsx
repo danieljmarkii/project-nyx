@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+// The rendered node, typed off the query that returns one.
+type ReactTestInstance = ReturnType<typeof screen.getByText>;
 import { BookVisitSheet, type BookVisitSubmit } from './BookVisitSheet';
 import {
   APPOINTMENT_WINDOW_DAYS,
@@ -14,6 +16,13 @@ import {
 // have caught: the sheet had no test at all, and the screen-level tests never
 // switched the mode chip after opening. The date/arm interaction below is the
 // case that shipped unguarded.
+
+// Vet contacts (CUL-2766): the allowlist AND the opt-in, as one switch the test flips.
+let mockContactsOn = false;
+jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => mockContactsOn }));
+beforeEach(() => {
+  mockContactsOn = false;
+});
 
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
@@ -355,5 +364,269 @@ describe('Remind me', () => {
   it('is not offered on a visit that already happened', () => {
     renderSheet({ reminderStatus: 'off', initialMode: 'happened' });
     expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+});
+
+// ── Vet contacts PR-04 (CUL-2766): the past contact (spec §4.2; mock §B) ─────────────
+
+describe('the past contact, flag on', () => {
+  beforeEach(() => {
+    mockContactsOn = true;
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('AC 2: the logging door opens on a past contact with no "Has this visit happened?"', () => {
+    renderSheet({ initialMode: 'happened' });
+    expect(screen.queryByText('Has this visit happened?')).toBeNull();
+    expect(screen.queryByText('Booked')).toBeNull();
+    expect(screen.getByText('How did you hear from the vet?')).toBeTruthy();
+    // Default At the clinic: the shipped title, Save and footnote.
+    expect(screen.getByText('A visit that happened')).toBeTruthy();
+    expect(screen.getByText('Save Nyx’s visit')).toBeTruthy();
+    expect(screen.getByText('Your next vet report starts from this visit.')).toBeTruthy();
+    // Day defaults to Today; Time is optional.
+    expect(screen.getByLabelText('Day, Today')).toBeTruthy();
+    expect(screen.getByLabelText('Time, not set')).toBeTruthy();
+  });
+
+  it.each([
+    ['Phone', 'A call with the vet', 'Save Nyx’s call', 'Goes on Nyx’s vet report as a phone call. No exam.', 'phone'],
+    ['Text', 'Texts from the vet', 'Save Nyx’s texts', 'Goes on Nyx’s vet report as texts with the vet. No exam.', 'text'],
+    ['Email', 'An email from the vet', 'Save Nyx’s email', 'Goes on Nyx’s vet report as an email. No exam.', 'email'],
+    ['At the clinic', 'A visit that happened', 'Save Nyx’s visit', 'Your next vet report starts from this visit.', 'in_clinic'],
+  ])('%s: the title, Save and footnote follow the chip, and Save writes the channel', (chip, title, save, footnote, channel) => {
+    const onSubmit = renderSheet({ initialMode: 'happened' });
+    // Start elsewhere so the At the clinic row is a real tap too.
+    fireEvent.press(screen.getByText(chip === 'Phone' ? 'Email' : 'Phone'));
+    fireEvent.press(screen.getByText(chip));
+    expect(screen.getByText(title)).toBeTruthy();
+    expect(screen.getByText(footnote)).toBeTruthy();
+    fireEvent.press(screen.getByText(save));
+    const sent = onSubmit.mock.calls[0][0];
+    expect(sent).toMatchObject({ mode: 'happened', channel, contactedAt: null, scheduledAt: null, remindMe: false });
+    expect(sent.day).toBe(localDateKey(new Date()));
+  });
+
+  it('Text is spoken "Text or clinic app"', () => {
+    renderSheet({ initialMode: 'happened' });
+    expect(screen.getByLabelText('Text or clinic app')).toBeTruthy();
+  });
+
+  it('a remote contact leads with what it was about, then Where; At the clinic keeps Where first', () => {
+    renderSheet({ initialMode: 'happened' });
+    const order = () => {
+      const about = screen.getByText('What it was about');
+      const where = screen.getByText('Where');
+      const all = screen.UNSAFE_root.findAll((n: ReactTestInstance) => n === about || n === where);
+      return all.map((n: ReactTestInstance) => (n === about ? 'about' : 'where'));
+    };
+    expect(order()).toEqual(['where', 'about']);
+    fireEvent.press(screen.getByText('Phone'));
+    expect(order()).toEqual(['about', 'where']);
+    // The shipped prefill and its hint on a remote contact too.
+    expect(screen.getByDisplayValue('Riverside Animal Hospital')).toBeTruthy();
+    expect(screen.getByText('From the last visit — change it if it moved.')).toBeTruthy();
+  });
+
+  it('AC 3: a time set writes contacted_at as a UTC instant; no time writes none', () => {
+    // Pinned to a local evening (C-29, CUL-831): on the real clock a 16:10 pick is still to
+    // come before 16:10, and the sheet rightly saves now instead.
+    jest.useFakeTimers({ now: new Date(2026, 10, 19, 20, 0), doNotFake: ['nextTick', 'setImmediate'] });
+    const onSubmit = renderSheet({ initialMode: 'happened' });
+    fireEvent.press(screen.getByText('Phone'));
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    pick(new Date(2026, 0, 1, 16, 10));
+    fireEvent.press(screen.getByText('Save Nyx’s call'));
+    const at = onSubmit.mock.calls[0][0].contactedAt;
+    expect(at).not.toBeNull();
+    const back = new Date(at!);
+    expect([back.getHours(), back.getMinutes()]).toEqual([16, 10]);
+    expect(localDateKey(back)).toBe(localDateKey(new Date()));
+  });
+
+  it('Day never seeds the last visit’s recheck date: a past contact opens on Today', () => {
+    renderSheet({ initialMode: 'happened', prefill: { ...PREFILL, suggestedDate: localDateKey(daysFromToday(-3)) } });
+    expect(screen.getByLabelText('Day, Today')).toBeTruthy();
+  });
+});
+
+describe('Also about (spec §4.2; mock B2)', () => {
+  const PETS = [
+    { id: 'p2', name: 'Juniper' },
+    { id: 'p3', name: 'Moss' },
+  ];
+  beforeEach(() => {
+    mockContactsOn = true;
+  });
+
+  it('AC 4: one lit writes two rows’ worth (the record’s pet plus Juniper)', () => {
+    const onSubmit = renderSheet({ initialMode: 'happened', petName: 'Pixel', otherPets: PETS });
+    fireEvent.press(screen.getByText('Email'));
+    expect(screen.getByText('Save Pixel’s email')).toBeTruthy();
+    fireEvent.press(screen.getByText('Juniper'));
+    fireEvent.press(screen.getByText('Save for Pixel and Juniper'));
+    expect(onSubmit.mock.calls[0][0].alsoForPetIds).toEqual(['p2']);
+  });
+
+  it('the Save label for one, two and three pets', () => {
+    renderSheet({ initialMode: 'happened', petName: 'Pixel', otherPets: PETS });
+    fireEvent.press(screen.getByText('Phone'));
+    expect(screen.getByText('Save Pixel’s call')).toBeTruthy();
+    fireEvent.press(screen.getByText('Juniper'));
+    expect(screen.getByText('Save for Pixel and Juniper')).toBeTruthy();
+    fireEvent.press(screen.getByText('Moss'));
+    expect(screen.getByText('Save for Pixel and 2 others')).toBeTruthy();
+    // Each chip is a checkbox, and says whether it is lit.
+    expect(screen.getByLabelText('Also about')).toBeTruthy();
+  });
+
+  it('renders only in a multi-pet home', () => {
+    renderSheet({ initialMode: 'happened', otherPets: [] });
+    fireEvent.press(screen.getByText('Phone'));
+    expect(screen.queryByText('Also about')).toBeNull();
+  });
+
+  it('never on At the clinic: an exam is one animal’s, and a lit pet is not written', () => {
+    const onSubmit = renderSheet({ initialMode: 'happened', petName: 'Pixel', otherPets: PETS });
+    fireEvent.press(screen.getByText('Phone'));
+    fireEvent.press(screen.getByText('Juniper'));
+    fireEvent.press(screen.getByText('At the clinic'));
+    expect(screen.queryByText('Also about')).toBeNull();
+    fireEvent.press(screen.getByText('Save Pixel’s visit'));
+    expect(onSubmit.mock.calls[0][0].alsoForPetIds).toEqual([]);
+  });
+});
+
+describe('the booking door is unchanged with the flag on', () => {
+  beforeEach(() => {
+    mockContactsOn = true;
+  });
+
+  it('keeps its question, its switches and "Also for", and shows no channel chips', () => {
+    const onSubmit = renderSheet({ otherPets: [{ id: 'p2', name: 'Juniper' }] });
+    expect(screen.getByText('Has this visit happened?')).toBeTruthy();
+    expect(screen.getByText('Next visit')).toBeTruthy();
+    expect(screen.queryByText('How did you hear from the vet?')).toBeNull();
+    expect(screen.queryByText('Phone')).toBeNull();
+    expect(screen.getByText('Also for Juniper')).toBeTruthy();
+    fireEvent.press(screen.getByText('Add the appointment'));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ mode: 'booked', channel: 'in_clinic', contactedAt: null });
+  });
+});
+
+describe('editing a saved contact (R12)', () => {
+  const EDIT = {
+    channel: 'phone' as const,
+    day: '2026-11-09',
+    contactedAt: new Date(2026, 10, 9, 16, 40).toISOString(),
+    clinicName: 'Completely Cat Clinic',
+    vetName: null,
+    reason: 'Ear, still shaking her head',
+  };
+
+  it('opens on the record, all four chips, and the words follow the chip', () => {
+    // The flag is the host's question (the page opens Edit this way only while it is on);
+    // the edit seed alone opens the contact sheet.
+    const onSubmit = renderSheet({ initialMode: 'happened', edit: EDIT, otherPets: [{ id: 'p2', name: 'Juniper' }] });
+    expect(screen.getByText('A call with the vet')).toBeTruthy();
+    expect(screen.getByLabelText('Day, Monday, Nov 9')).toBeTruthy();
+    expect(screen.getByLabelText('Time, 4:40 pm')).toBeTruthy();
+    expect(screen.getByDisplayValue('Ear, still shaking her head')).toBeTruthy();
+    for (const chip of ['At the clinic', 'Phone', 'Text', 'Email']) expect(screen.getByText(chip)).toBeTruthy();
+    // No Also about on an edit: it is one pet's row.
+    expect(screen.queryByText('Also about')).toBeNull();
+
+    fireEvent.press(screen.getByText('At the clinic'));
+    expect(screen.getByText('A visit that happened')).toBeTruthy();
+    expect(screen.getByText('Your next vet report starts from this visit.')).toBeTruthy();
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      channel: 'in_clinic',
+      day: '2026-11-09',
+      contactedAt: EDIT.contactedAt,
+      alsoForPetIds: [],
+    });
+  });
+});
+
+describe('a past contact never saves a time still to come (code-reviewer, PR-04)', () => {
+  const realOS = Platform.OS;
+  beforeEach(() => {
+    mockContactsOn = true;
+    // 8:15 on a local morning: the clinic-morning seed (9:00) would be 45 minutes ahead.
+    jest.useFakeTimers({ now: new Date(2026, 10, 19, 8, 15), doNotFake: ['nextTick', 'setImmediate'] });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    Platform.OS = realOS;
+  });
+
+  it('iOS: opening the wheel at 8:15 seeds 8:15, not 9:00, and Save writes no future instant', () => {
+    Platform.OS = 'ios';
+    const onSubmit = renderSheet({ initialMode: 'happened' });
+    fireEvent.press(screen.getByText('Phone'));
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    expect(screen.getByText('8:15 am')).toBeTruthy();
+    fireEvent.press(screen.getByText('Save Nyx’s call'));
+    const at = new Date(onSubmit.mock.calls[0][0].contactedAt!);
+    expect(at.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('a later time picked on today saves as now', () => {
+    const onSubmit = renderSheet({ initialMode: 'happened' });
+    fireEvent.press(screen.getByText('Phone'));
+    fireEvent.press(screen.getByLabelText('Time, not set'));
+    pick(new Date(2026, 10, 19, 16, 40));
+    fireEvent.press(screen.getByText('Save Nyx’s call'));
+    expect(onSubmit.mock.calls[0][0].contactedAt).toBe(new Date(2026, 10, 19, 8, 15).toISOString());
+  });
+});
+
+describe('the sheet holds while a past contact saves (mock B4)', () => {
+  beforeEach(() => {
+    mockContactsOn = true;
+  });
+
+  it('the scrim does not close it mid-write; once the write settles, it does', () => {
+    const onClose = jest.fn();
+    const { rerender } = render(
+      <BookVisitSheet visible initialMode="happened" petName="Nyx" otherPets={[]} prefill={PREFILL} busy onClose={onClose} onSubmit={jest.fn()} />,
+    );
+    fireEvent.press(screen.getByLabelText('Close', { includeHiddenElements: true }));
+    expect(onClose).not.toHaveBeenCalled();
+    rerender(
+      <BookVisitSheet visible initialMode="happened" petName="Nyx" otherPets={[]} prefill={PREFILL} busy={false} onClose={onClose} onSubmit={jest.fn()} />,
+    );
+    fireEvent.press(screen.getByLabelText('Close', { includeHiddenElements: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the flag is read at open (code-reviewer, PR-04)', () => {
+  it('a flag that resolves while the sheet is open does not swap the body or wipe the fields', () => {
+    mockContactsOn = false;
+    const props = { visible: true, initialMode: 'happened' as const, petName: 'Nyx', otherPets: [], prefill: PREFILL, onClose: jest.fn(), onSubmit: jest.fn() };
+    const { rerender } = render(<BookVisitSheet {...props} />);
+    fireEvent.changeText(screen.getByLabelText('Reason'), 'Ear');
+    mockContactsOn = true;
+    rerender(<BookVisitSheet {...props} />);
+    expect(screen.getByText('Has this visit happened?')).toBeTruthy();
+    expect(screen.getByDisplayValue('Ear')).toBeTruthy();
+  });
+});
+
+describe('an edit that only changes the channel keeps the saved instant', () => {
+  it('the stored contacted_at is sent back exactly, whatever this phone’s zone reads it as', () => {
+    mockContactsOn = true;
+    const stored = '2026-11-10T04:30:00.000Z';
+    const onSubmit = renderSheet({
+      initialMode: 'happened',
+      edit: { channel: 'phone', day: '2026-11-09', contactedAt: stored, clinicName: null, vetName: null, reason: null },
+    });
+    fireEvent.press(screen.getByText('Text'));
+    fireEvent.press(screen.getByText('Save Nyx’s texts'));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ channel: 'text', day: '2026-11-09', contactedAt: stored });
   });
 });

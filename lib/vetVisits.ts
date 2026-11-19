@@ -607,10 +607,15 @@ export interface VetVisitsCardModel {
 }
 
 export function buildVetVisitsCardModel(home: VetVisitsHome, now: Date = new Date()): VetVisitsCardModel {
-  const last = home.visits[0] ?? null;
+  // CUL-2829 instance 3: the card's "Last visit" line and its "N visits" count both mean
+  // an EXAM. A call, text or email (or a row whose channel this phone never learned) is
+  // neither, so it never titles the line and never joins the count: "Last visit Nov 9"
+  // over a phone call is the claim the report's window was built to refuse (R8).
+  const exams = home.visits.filter((v) => v.channel === 'in_clinic');
+  const last = exams[0] ?? null;
   return {
-    countLabel: home.visits.length
-      ? `${home.visits.length} ${home.visits.length === 1 ? 'visit' : 'visits'}`
+    countLabel: exams.length
+      ? `${exams.length} ${exams.length === 1 ? 'visit' : 'visits'}`
       : null,
     next: home.next,
     lastVisitLine: last ? lastVisitLine(last, now) : null,
@@ -622,6 +627,10 @@ export function buildVetVisitsCardModel(home: VetVisitsHome, now: Date = new Dat
     // the Pet tab with it would answer the first question with something that is
     // not next. The LIST is where that row is shown (see `VetVisitsHome.awaiting`),
     // and its own emptiness test does count it.
+    //
+    // ANY logged row keeps the card out of its empty branch, a contact included: the
+    // empty branch tells the owner nothing is on file, and *Open visits* is the door to
+    // the call they logged.
     isEmpty: home.visits.length === 0 && home.next === null,
   };
 }
@@ -2343,6 +2352,12 @@ export interface VisitDetailsPatch {
   notes?: string | null;
   /** 'YYYY-MM-DD' — the date the vet said to come back on, or null to clear it. */
   nextVisitAt?: string | null;
+  /** CUL-2766 (R12) — a saved contact's channel, edited. Phone to At the clinic makes the
+   *  record an exam and the reverse a contact; every exam reader filters when it reads, so
+   *  the report window follows the corrected record in both directions. */
+  channel?: VisitChannel;
+  /** CUL-2766 — the optional time, an ISO instant, or null to clear it. */
+  contactedAt?: string | null;
 }
 
 /**
@@ -2362,6 +2377,21 @@ export async function updateVisitDetails(visitId: string, patch: VisitDetailsPat
   if (patch.reason !== undefined) { sets.push('reason = ?'); args.push(trimOrNull(patch.reason)); }
   if (patch.notes !== undefined) { sets.push('notes = ?'); args.push(trimOrNull(patch.notes)); }
   if (patch.nextVisitAt !== undefined) { sets.push('next_visit_at = ?'); args.push(patch.nextVisitAt); }
+  if (patch.channel !== undefined) {
+    // Refused here rather than at the server's CHECK, where it would quarantine the row.
+    if (!(VISIT_CHANNELS as readonly string[]).includes(patch.channel)) {
+      throw new Error(`updateVisitDetails: unknown channel ${String(patch.channel)}`);
+    }
+    sets.push('channel = ?');
+    args.push(patch.channel);
+  }
+  if (patch.contactedAt !== undefined) {
+    if (patch.contactedAt !== null && Number.isNaN(new Date(patch.contactedAt).getTime())) {
+      throw new Error('updateVisitDetails: contactedAt is not an instant');
+    }
+    sets.push('contacted_at = ?');
+    args.push(patch.contactedAt === null ? null : new Date(patch.contactedAt).toISOString());
+  }
   // Nothing to write is not an error and must not become a bare `SET updated_at`:
   // moving the version of a row nothing changed re-queues it for no reason and,
   // under LWW, lets it win over a real edit from another device.
