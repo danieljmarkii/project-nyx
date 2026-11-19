@@ -122,7 +122,9 @@ export function contactBareLine(channel: RemoteChannel, hasClock: boolean): stri
 }
 
 /** A course's source row (D5): "Started after a call with the vet, Nov 9" or "…a visit, Sep 16". */
-export function courseSourceLine(channel: VisitChannel | null, visitedAt: string, now: Date = new Date()): string {
+// Takes a KNOWN channel only: a course whose source's channel this phone never learned draws no
+// row, because "a visit" would claim an exam the record may not hold.
+export function courseSourceLine(channel: VisitChannel, visitedAt: string, now: Date = new Date()): string {
   const date = formatVisitDate(visitedAt, now);
   return isRemoteChannel(channel)
     ? `Started after ${A_CONTACT[channel]} with the vet, ${date}`

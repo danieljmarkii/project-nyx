@@ -6,7 +6,8 @@ import { courseSourceLine, recordNoun } from '../../lib/vetContacts';
 import type { CourseVisitSource } from '../../lib/vetVisits';
 
 interface Props {
-  source: CourseVisitSource;
+  /** A source of KNOWN channel; the caller draws no row for an unknown one. */
+  source: CourseVisitSource & { channel: NonNullable<CourseVisitSource['channel']> };
   onPress: () => void;
 }
 

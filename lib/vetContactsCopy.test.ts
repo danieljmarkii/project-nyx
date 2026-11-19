@@ -54,7 +54,6 @@ describe('a course’s source line', () => {
     ['text', 'Started after a text with the vet, Nov 9'],
     ['email', 'Started after an email with the vet, Nov 9'],
     ['in_clinic', 'Started after a visit, Nov 9'],
-    [null, 'Started after a visit, Nov 9'],
   ] as const)('%s', (channel, line) => {
     expect(courseSourceLine(channel, '2026-11-09', NOW)).toBe(line);
   });

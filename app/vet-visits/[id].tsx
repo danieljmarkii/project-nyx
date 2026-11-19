@@ -15,7 +15,7 @@ import { captureVisitResults, type VisitResultsSource } from '../../lib/visitPap
 import { isDocumentPickerAvailable } from '../../lib/vetDocumentCapture';
 import { visitToPlainText } from '../../lib/visitShareText';
 import { useVetContactsOn } from '../../hooks/useVetContacts';
-import { recordNoun } from '../../lib/vetContacts';
+import { isRemoteChannel, recordNoun } from '../../lib/vetContacts';
 import { channelOf } from '../../lib/vetVisits';
 
 // One visit as written (CUL-900 VV-2; mock D3). *Edit* and *Add to the plan* both open
@@ -119,7 +119,8 @@ export default function VetVisitScreen() {
   // said, never swallowed.
   async function handleShare(read: VetVisitDetail) {
     try {
-      await Share.share({ message: visitToPlainText(read, petName) });
+      const channel = contactsOn ? channelOf(read.visit.channel) : null;
+      await Share.share({ message: visitToPlainText(read, petName, new Date(), isRemoteChannel(channel) ? channel : null) });
     } catch (err) {
       console.warn('[vet-visit] share failed:', err);
       Alert.alert('Couldn’t open sharing', 'Give it another try in a moment.');

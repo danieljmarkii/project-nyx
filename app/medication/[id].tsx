@@ -71,6 +71,9 @@ import type { MedicationCourse } from '../../lib/medicationHistory';
 import { historyHref } from '../../lib/historyDoors';
 import { ThemedText } from '../../components/ui/ThemedText';
 
+/** A course's source whose channel this phone knows: the only kind that draws a row. */
+type KnownSource = CourseVisitSource & { channel: NonNullable<CourseVisitSource['channel']> };
+
 interface MedicationItemRow {
   id: string;
   generic_name: string;
@@ -217,7 +220,12 @@ export default function MedicationDetailScreen() {
   // The courses are read for the active pet, so that pet is the record's (C-9): its name is
   // resolved from the record's id, never from the store's active name.
   const coursePetName = resolveRecordPetName(pets, activePet?.id);
-  const sourceOf = (c: MedicationCourse) => (c.regimenId ? sources.get(c.regimenId) ?? null : null);
+  // A source whose channel this phone never learned draws no row: "Started after a visit" would
+  // claim an exam the record may not hold (PR-06's product review).
+  const sourceOf = (c: MedicationCourse): KnownSource | null => {
+    const source = c.regimenId ? sources.get(c.regimenId) ?? null : null;
+    return source && source.channel !== null ? { ...source, channel: source.channel } : null;
+  };
   const openSource = (source: CourseVisitSource) => router.push(`/vet-visits/${source.visitId}`);
   const currentWithSource = currentCourses.filter((c) => sourceOf(c) !== null);
 
@@ -484,7 +492,7 @@ export default function MedicationDetailScreen() {
             <View style={styles.historySection}>
               <SectionLabel label={`${coursePetName}’s current course`} />
               {currentWithSource.map((c) => {
-                const source = sourceOf(c) as CourseVisitSource;
+                const source = sourceOf(c) as KnownSource;
                 return (
                   <View key={c.key} style={styles.courseCard}>
                     <CourseSourceRow source={source} onPress={() => openSource(source)} />
