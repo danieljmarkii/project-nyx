@@ -1,0 +1,378 @@
+// Vet contacts PR-03 (CUL-2765): the local mirror, the sync and the exam-only readers, driven
+// for real over node:sqlite built from the app's own schema constants and column upgrades,
+// with the production write path, push and hydrate (C-39: no mock narrower than the API).
+//
+// What it pins (spec AC 3, 4, 5, 6 and §5.1):
+//   • a phone contact is written, pushed and hydrated WITH its channel and time: a push
+//     that dropped the column would land the row as the server's default, an EXAM;
+//   • the rehydrate fill corrects a synced row an older build stored as 'in_clinic';
+//   • *Also about* writes one independent row per pet;
+//   • every exam reader on the phone answers Sep 18 for a Sep 18 visit plus a Nov 9 phone
+//     contact, on Nov 14;
+//   • the flag-off differential (C-36): over the rows a flag-off build can write (every row
+//     'in_clinic'), each filtered reader answers exactly what the unfiltered query does, so
+//     the filter is invisible until a contact exists.
+//
+// Day keys are local calendar days and every `now` is built from LOCAL components (C-29), so
+// each case means the same under the non-UTC CI clocks.
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { DatabaseSync } = require('node:sqlite');
+
+type Row = Record<string, unknown>;
+
+const mockLocal = { db: null as InstanceType<typeof DatabaseSync> | null };
+const mockServer = {
+  /** Every row the server holds, by table and id. */
+  rows: new Map<string, Map<string, Row>>(),
+  /** Every upsert payload the server received, in order. */
+  upserts: [] as { table: string; rows: Row[] }[],
+};
+
+function mockServerTable(table: string): Map<string, Row> {
+  if (!mockServer.rows.has(table)) mockServer.rows.set(table, new Map());
+  return mockServer.rows.get(table)!;
+}
+
+/** A PostgREST builder: `upsert().select()` lands rows; a read chain answers the table. */
+function mockServerFrom(table: string) {
+  const read: Record<string, unknown> = {};
+  for (const m of ['select', 'order', 'range', 'gte', 'eq', 'is', 'in', 'not', 'lte', 'lt', 'limit', 'neq']) {
+    read[m] = () => read;
+  }
+  read.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
+    Promise.resolve({ data: [...mockServerTable(table).values()], error: null }).then(res, rej);
+  read.maybeSingle = async () => ({ data: null, error: null });
+  read.upsert = (payload: Row | Row[]) => {
+    const rows = Array.isArray(payload) ? payload : [payload];
+    const land = () => {
+      mockServer.upserts.push({ table, rows });
+      for (const r of rows) {
+        const prior = mockServerTable(table).get(String(r.id));
+        // A column absent from the payload keeps its value, or the server default for a new
+        // row: exactly what migration 122's DEFAULT 'in_clinic' does to a push that omits it.
+        mockServerTable(table).set(String(r.id), {
+          ...(table === 'vet_visits' ? { channel: 'in_clinic', contacted_at: null } : {}),
+          ...prior,
+          ...r,
+        });
+      }
+      return { data: rows.map((r) => ({ id: String(r.id) })), error: null };
+    };
+    return { select: async () => land(), then: (res: (v: unknown) => unknown) => Promise.resolve(land()).then(res) };
+  };
+  return read;
+}
+
+function mockAdapter() {
+  const db = () => {
+    if (!mockLocal.db) throw new Error('no local database');
+    return mockLocal.db;
+  };
+  return {
+    runAsync: async (sql: string, params: unknown[] = []) => {
+      const r = db().prepare(sql).run(...(params as never[]));
+      return { changes: Number(r.changes), lastInsertRowId: Number(r.lastInsertRowid) };
+    },
+    getAllAsync: async (sql: string, params: unknown[] = []) => db().prepare(sql).all(...(params as never[])),
+    getFirstAsync: async (sql: string, params: unknown[] = []) => db().prepare(sql).get(...(params as never[])) ?? null,
+    execAsync: async (sql: string) => {
+      db().exec(sql);
+    },
+    withTransactionAsync: async (cb: () => Promise<void>) => {
+      db().exec('BEGIN');
+      try {
+        await cb();
+        db().exec('COMMIT');
+      } catch (e) {
+        db().exec('ROLLBACK');
+        throw e;
+      }
+    },
+  };
+}
+
+jest.mock('expo-sqlite', () => ({ openDatabaseSync: () => mockAdapter() }));
+jest.mock('./supabase', () => ({
+  supabase: {
+    auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
+    from: (table: string) => mockServerFrom(table),
+    storage: { from: () => ({ download: async () => ({ data: null, error: { message: 'n/a' } }) }) },
+  },
+}));
+jest.mock('./storage', () => ({ uploadPhoto: jest.fn(), compressForUpload: jest.fn() }));
+jest.mock('./dailyRecapOffer', () => ({
+  surfaceOfferForValueMoment: jest.fn().mockResolvedValue(undefined),
+}));
+
+import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
+import { MEDICATION_SCHEMA_SQL } from './medications';
+import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
+import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
+import { getDb } from './db';
+import { hydrateFromCloud, syncPendingVetVisits } from './sync';
+import { logVetVisit, readVisitConsequence, readVisitPrefill } from './vetVisits';
+import { latestVisitBefore, readLatestVisitBefore } from './visitWindow';
+import { readCareQuestionRecord } from './careAnswers';
+
+const PET = 'pet-1';
+const OTHER_PET = 'pet-2';
+/** Nov 14, midday, built from LOCAL components (C-29). */
+const NOV_14 = new Date(2026, 10, 14, 12, 0, 0);
+const TODAY = '2026-11-14';
+
+const localRow = (id: string) => mockLocal.db!.prepare('SELECT * FROM vet_visits WHERE id = ?').get(id) as Row;
+const localRows = () =>
+  mockLocal.db!.prepare('SELECT * FROM vet_visits ORDER BY pet_id, visited_at').all() as Row[];
+
+/** Insert a synced visit row directly, as a hydrate from an earlier day would have left it. */
+function seedVisit(over: Row): void {
+  const r: Row = {
+    id: 'v', pet_id: PET, visited_at: '2026-09-18', clinic_name: 'Riverside', vet_name: 'Dr. Chen',
+    reason: 'GI', notes: null, next_visit_at: '2026-12-01', deleted_at: null, channel: 'in_clinic',
+    contacted_at: null, created_at: '2026-09-18T15:00:00.000Z', updated_at: '2026-09-18T15:00:00.000Z',
+    synced: 1, ...over,
+  };
+  const cols = Object.keys(r);
+  mockLocal.db!.prepare(`INSERT INTO vet_visits (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
+    .run(...(cols.map((c) => r[c]) as never[]));
+}
+
+beforeEach(async () => {
+  mockLocal.db = new DatabaseSync(':memory:');
+  for (const sql of [BASE_SCHEMA_SQL, MEDICATION_SCHEMA_SQL, DIET_TRIAL_SCHEMA_SQL, NOTIFICATION_SCHEMA_SQL]) {
+    mockLocal.db.exec(sql);
+  }
+  await applyColumnUpgrades(async (sql) => mockLocal.db!.exec(sql));
+  mockServer.rows.clear();
+  mockServer.upserts.length = 0;
+  jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+  mockLocal.db?.close();
+  mockLocal.db = null;
+});
+
+describe('the local mirror (§5.1)', () => {
+  it('a fresh install and an upgraded one both carry channel (default in_clinic) and contacted_at', () => {
+    const cols = (mockLocal.db!.prepare('PRAGMA table_info(vet_visits)').all() as { name: string; dflt_value: string | null; notnull: number }[]);
+    const channel = cols.find((c) => c.name === 'channel');
+    expect(channel).toMatchObject({ notnull: 1, dflt_value: "'in_clinic'" });
+    expect(cols.some((c) => c.name === 'contacted_at')).toBe(true);
+  });
+
+  it('AC 5: a row written before the column reads in_clinic', async () => {
+    // An upgrading phone: the table as an earlier build made it, holding a visit, then the
+    // upgrade path adds the column.
+    const old = new DatabaseSync(':memory:');
+    old.exec(`CREATE TABLE vet_visits (id TEXT PRIMARY KEY, pet_id TEXT NOT NULL, visited_at TEXT NOT NULL,
+      clinic_name TEXT, vet_name TEXT, reason TEXT, notes TEXT, next_visit_at TEXT, deleted_at TEXT,
+      created_at TEXT, updated_at TEXT, synced INTEGER NOT NULL DEFAULT 0, sync_attempts INTEGER NOT NULL DEFAULT 0, sync_error TEXT)`);
+    old.prepare(`INSERT INTO vet_visits (id, pet_id, visited_at) VALUES ('old', ?, '2026-03-02')`).run(PET);
+    const added = await applyColumnUpgrades(async (sql) => {
+      if (/vet_visits/.test(sql)) old.exec(sql);
+    });
+    expect(added.filter((u) => u.table === 'vet_visits').map((u) => [u.column, u.rehydrate])).toEqual(
+      expect.arrayContaining([['channel', true], ['contacted_at', true]]),
+    );
+    expect(old.prepare(`SELECT channel, contacted_at FROM vet_visits WHERE id = 'old'`).get()).toEqual({
+      channel: 'in_clinic', contacted_at: null,
+    });
+    old.close();
+  });
+});
+
+describe('the write (logVetVisit)', () => {
+  it('defaults to an exam: no channel given is in_clinic, no time', async () => {
+    const id = await logVetVisit({ petId: PET, visitedAt: '2026-09-18', now: NOV_14 });
+    expect(localRow(id)).toMatchObject({ channel: 'in_clinic', contacted_at: null, synced: 0 });
+  });
+
+  it('AC 3: a phone contact writes its channel and the time as a UTC instant', async () => {
+    const at = new Date(2026, 10, 9, 16, 40, 0); // 4:40pm local on Nov 9
+    const id = await logVetVisit({
+      petId: PET, visitedAt: '2026-11-09', channel: 'phone', contactedAt: at.toISOString(), now: NOV_14,
+    });
+    expect(localRow(id)).toMatchObject({ channel: 'phone', contacted_at: at.toISOString(), visited_at: '2026-11-09' });
+  });
+
+  it('refuses a channel the server would refuse, and a time that is not an instant', async () => {
+    await expect(
+      logVetVisit({ petId: PET, visitedAt: '2026-11-09', channel: 'fax' as never }),
+    ).rejects.toThrow(/unknown channel/);
+    await expect(
+      logVetVisit({ petId: PET, visitedAt: '2026-11-09', channel: 'phone', contactedAt: 'teatime' }),
+    ).rejects.toThrow(/not an instant/);
+    expect(localRows()).toEqual([]);
+  });
+
+  it('AC 4: *Also about* writes one independent row per pet, and an edit to one leaves the other', async () => {
+    const id = await logVetVisit({
+      petId: PET, visitedAt: '2026-11-09', channel: 'email', reason: 'Both cats scratching',
+      alsoForPetIds: [OTHER_PET, PET, OTHER_PET], now: NOV_14,
+    });
+    const rows = localRows();
+    expect(rows.map((r) => [r.pet_id, r.channel, r.reason])).toEqual([
+      [PET, 'email', 'Both cats scratching'],
+      [OTHER_PET, 'email', 'Both cats scratching'],
+    ]);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(2);
+    expect(rows.find((r) => r.pet_id === PET)!.id).toBe(id);
+    const other = rows.find((r) => r.pet_id === OTHER_PET)!;
+    mockLocal.db!.prepare(`UPDATE vet_visits SET notes = 'Juniper is fine' WHERE id = ?`).run(other.id);
+    expect(localRow(id).notes).toBeNull();
+  });
+
+  it('writes every pet’s row or none: a failed second insert leaves no first', async () => {
+    let n = 0;
+    await expect(
+      logVetVisit({
+        petId: PET, visitedAt: '2026-11-09', channel: 'phone', alsoForPetIds: [OTHER_PET],
+        // The second id collides with the first: the primary key refuses the second insert.
+        newId: () => (n++ === 0 ? 'same' : 'same'),
+      }),
+    ).rejects.toThrow();
+    expect(localRows()).toEqual([]);
+  });
+});
+
+describe('the sync (§5.1: the push enumerates columns)', () => {
+  it('AC 3: the push carries channel and contacted_at, so the server row reads phone', async () => {
+    const at = new Date(2026, 10, 9, 16, 40, 0).toISOString();
+    const id = await logVetVisit({ petId: PET, visitedAt: '2026-11-09', channel: 'phone', contactedAt: at });
+    await syncPendingVetVisits();
+    const sent = mockServer.upserts.filter((u) => u.table === 'vet_visits').flatMap((u) => u.rows);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ id, channel: 'phone', contacted_at: at });
+    expect(mockServerTable('vet_visits').get(id)).toMatchObject({ channel: 'phone', contacted_at: at });
+    expect(localRow(id).synced).toBe(1);
+  });
+
+  it('hydration maps both columns back onto a fresh phone', async () => {
+    mockServerTable('vet_visits').set('srv-call', {
+      id: 'srv-call', pet_id: PET, visited_at: '2026-11-09', clinic_name: null, vet_name: 'Dr. Chen',
+      reason: 'Ear drops', notes: null, next_visit_at: null, deleted_at: null, channel: 'text',
+      contacted_at: '2026-11-09T21:40:00+00:00',
+      created_at: '2026-11-09T21:41:00+00:00', updated_at: '2026-11-09T21:41:00+00:00',
+    });
+    await hydrateFromCloud();
+    expect(localRow('srv-call')).toMatchObject({
+      channel: 'text', contacted_at: '2026-11-09T21:40:00+00:00', synced: 1,
+    });
+  });
+
+  it('the rehydrate fill corrects a SYNCED row an older build stored as an exam, never an unpushed edit', async () => {
+    // Both rows were pulled by a build without the column: the local default says exam.
+    const same = '2026-11-09T21:41:00.000Z';
+    seedVisit({ id: 'pulled', visited_at: '2026-11-09', updated_at: same, synced: 1 });
+    seedVisit({ id: 'edited', visited_at: '2026-11-10', updated_at: same, synced: 0, notes: 'my edit' });
+    for (const id of ['pulled', 'edited']) {
+      mockServerTable('vet_visits').set(id, {
+        ...localRow(id), channel: 'phone', contacted_at: '2026-11-09T21:40:00.000Z', updated_at: same,
+      });
+    }
+    await hydrateFromCloud();
+    expect(localRow('pulled')).toMatchObject({ channel: 'phone', contacted_at: '2026-11-09T21:40:00.000Z' });
+    // The unpushed edit is the owner's newer word on this phone: untouched, still queued.
+    expect(localRow('edited')).toMatchObject({ channel: 'in_clinic', synced: 0, notes: 'my edit' });
+  });
+});
+
+describe('AC 6: the exam readers on the phone, a Sep 18 visit and a Nov 9 phone contact', () => {
+  beforeEach(() => {
+    seedVisit({ id: 'exam', visited_at: '2026-09-18' });
+    seedVisit({
+      id: 'call', visited_at: '2026-11-09', channel: 'phone', clinic_name: null, next_visit_at: null,
+      contacted_at: '2026-11-09T21:40:00.000Z', created_at: '2026-11-09T21:41:00.000Z',
+      updated_at: '2026-11-09T21:41:00.000Z',
+    });
+  });
+
+  it('the report window and Rundown’s "since the last visit" start Sep 18 on Nov 14', async () => {
+    expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBe('2026-09-18');
+  });
+
+  it('every remote channel is skipped; a contact alone anchors nothing', async () => {
+    mockLocal.db!.prepare(`DELETE FROM vet_visits WHERE id = 'exam'`).run();
+    for (const channel of ['phone', 'text', 'email']) {
+      mockLocal.db!.prepare(`UPDATE vet_visits SET channel = ? WHERE id = 'call'`).run(channel);
+      expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBeNull();
+    }
+    // Non-vacuity: the same row as an exam anchors the window, so the filter is what skipped it.
+    mockLocal.db!.prepare(`UPDATE vet_visits SET channel = 'in_clinic' WHERE id = 'call'`).run();
+    expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBe('2026-11-09');
+  });
+
+  it('the care questions’ latest visit is the exam', async () => {
+    const rec = await readCareQuestionRecord(PET);
+    expect(rec.latestVisit).toEqual({ id: 'exam', visitedAt: '2026-09-18' });
+  });
+
+  it('a later phone contact does not make the exam stop being the latest visit', async () => {
+    const c = await readVisitConsequence({ id: 'exam', pet_id: PET, visited_at: '2026-09-18' }, NOV_14);
+    expect(c.isLatest).toBe(true);
+  });
+
+  it('a booking prefills from the exam, never from the call', async () => {
+    expect(await readVisitPrefill(PET)).toEqual({
+      clinicName: 'Riverside', vetName: 'Dr. Chen', suggestedDate: '2026-12-01',
+    });
+  });
+});
+
+describe('the flag-off differential (C-36): over exam-only rows, the filter is invisible', () => {
+  // A flag-off build writes only 'in_clinic' (logVetVisit's default; no surface passes a
+  // channel). So over such a record each filtered reader must answer EXACTLY what its query
+  // answered before this PR, which is the same query without the filter, run here against the
+  // same database. The fixtures are varied on purpose: two visits on a day, a deleted one, a
+  // future one, another pet's.
+  beforeEach(() => {
+    seedVisit({ id: 'a', visited_at: '2026-06-02', next_visit_at: null });
+    seedVisit({ id: 'b', visited_at: '2026-09-18', created_at: '2026-09-18T15:00:00.000Z' });
+    seedVisit({ id: 'c', visited_at: '2026-09-18', created_at: '2026-09-18T18:00:00.000Z', clinic_name: 'Second' });
+    seedVisit({ id: 'd', visited_at: '2026-10-30', deleted_at: '2026-10-31T00:00:00.000Z' });
+    seedVisit({ id: 'e', visited_at: '2026-12-05' });
+    seedVisit({ id: 'f', pet_id: OTHER_PET, visited_at: '2026-11-12' });
+  });
+
+  const unfiltered = (sql: string, ...params: unknown[]) =>
+    mockLocal.db!.prepare(sql).all(...(params as never[])) as Row[];
+
+  it('the window', async () => {
+    const days = unfiltered('SELECT visited_at FROM vet_visits WHERE pet_id = ? AND deleted_at IS NULL', PET)
+      .map((r) => String(r.visited_at));
+    const before = latestVisitBefore(days, TODAY);
+    expect(before).toBe('2026-09-18'); // non-vacuity: the fixture has an answer
+    expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBe(before);
+  });
+
+  it('the care questions’ latest visit', async () => {
+    const [top] = unfiltered(
+      `SELECT id, visited_at FROM vet_visits WHERE pet_id = ? AND deleted_at IS NULL
+        ORDER BY visited_at DESC, created_at DESC LIMIT 1`, PET,
+    );
+    expect((await readCareQuestionRecord(PET)).latestVisit).toEqual({ id: top.id, visitedAt: top.visited_at });
+  });
+
+  it('the consequence and the prefill', async () => {
+    for (const v of ['a', 'b', 'c', 'e']) {
+      const row = localRow(v);
+      const [{ later }] = unfiltered(
+        `SELECT COUNT(*) AS later FROM vet_visits
+          WHERE pet_id = ? AND id != ? AND deleted_at IS NULL AND visited_at >= ?`,
+        PET, v, row.visited_at,
+      ) as { later: number }[];
+      const c = await readVisitConsequence({ id: v, pet_id: PET, visited_at: String(row.visited_at) }, NOV_14);
+      expect(c.isLatest).toBe(later === 0);
+    }
+    const [last] = unfiltered(
+      `SELECT clinic_name, vet_name, next_visit_at FROM vet_visits WHERE pet_id = ? AND deleted_at IS NULL
+        ORDER BY visited_at DESC, created_at DESC LIMIT 1`, PET,
+    );
+    expect(await readVisitPrefill(PET)).toEqual({
+      clinicName: last.clinic_name, vetName: last.vet_name, suggestedDate: last.next_visit_at,
+    });
+  });
+});

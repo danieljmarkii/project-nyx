@@ -54,8 +54,13 @@ describe('BETA_REGISTRY', () => {
   it('holds the report flow and the report layout (CUL-2288, CUL-2347); the widget stays graduated', () => {
     // The shelf was empty at 1.2.0 (CUL-1842: the ten earlier betas graduated, the
     // widget last). The report flow is the first row since; the layout joined with its
-    // server check (PR-10) in place (PM ruling (a) on CUL-2290).
-    expect(BETA_REGISTRY.map((b) => b.key)).toEqual(['report_composer_v2', 'report_document_v2']);
+    // server check (PR-10) in place (PM ruling (a) on CUL-2290). Vet contacts joined dark
+    // (CUL-2765, migration 122's empty allowlist).
+    expect(BETA_REGISTRY.map((b) => b.key)).toEqual([
+      'report_composer_v2',
+      'report_document_v2',
+      'vet_contacts_enabled',
+    ]);
     expect(ALLOWLIST_FLAG_KEYS as readonly string[]).not.toContain('widget_enabled');
   });
 
