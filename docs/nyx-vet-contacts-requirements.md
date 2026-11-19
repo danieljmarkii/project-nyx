@@ -1,6 +1,6 @@
 # Nyx Vet Contacts: a call, text or email that was not an exam — Requirements
 
-**Version:** 1.0 — **BUILD-READY on PM approval of this file** | **Date:** 2026-11-14 | **Issue:** CUL-2749 (discovery) | **Linear project:** *Vet contacts: a call, text or email that wasn't an exam* | **Design authority:** mock round 3.1, https://claude.ai/artifact/97ohC4DfPN2sUa2Cf9kyqV (canonical file `docs/culprit-vet-contact-mockups.html`; the repo file wins on divergence). PR-01 republishes it as a build-ready round.
+**Version:** 1.1 | **Last Updated:** 2026-11-19 | **Issue:** CUL-2749 (discovery) | **Linear project:** *Vet contacts: a call, text or email that wasn't an exam* | **Design authority:** the build-ready mock round (PR-01, 2026-11-19), https://claude.ai/artifact/97ohC4DfPN2sUa2Cf9kyqV (canonical file `docs/culprit-vet-contact-mockups.html`; the repo file wins on divergence). It supersedes round 3.1.
 
 **Read with:** `docs/nyx-vet-visits-requirements.md` (the visit lifecycle this extends; §5.6's reader bound), `docs/nyx-care-state-requirements.md` (the awareness-only rule rides its §6 shapes), `docs/nyx-vet-files-requirements.md` (attachments; D7, D8, D14), the Vet instructions spec once it lands (`docs/nyx-vet-instructions-requirements.md`, project *Vet instructions*, CUL-2731), `docs/nyx-diet-trial-requirements.md` (the trial row), `docs/nyx-beta-features-requirements.md` (the flag).
 
@@ -27,6 +27,9 @@ Owners hear from the vet by phone, text and email far more often than in the exa
 | R7 | **One entry:** the Vet visits card's second button becomes *Log a visit, call, text or email*. No second door. | 2026-11-14 |
 | R8 | **The report window stays at the last exam.** A contact is listed in the period it falls in; it never becomes "since the last visit". | 2026-11-14 |
 | R9 | **A channel field on `vet_visits`**, not a contacts table. Engineering's condition rides it: every `vet_visits` reader declares *exams only* or *any contact*, held by a guard. | 2026-11-14 |
+| R10 | **The card of a pet that already has a visit gains the logging button**, with or without a booking (the critique's G1, option A). The shipped button renders only while a pet has no visits; without this, a pet with a visit has no way to log a contact. | 2026-11-19 |
+| R11 | **A card that already says "You called on" gains the contact line only when its day or channel differs** from that shipped line (G3, option B). An identical fact is said once. R5 holds in both cases. | 2026-11-19 |
+| R12 | **A saved contact's channel can be edited**, all four chips (G4, option A). The report window follows the corrected record in both directions. | 2026-11-19 |
 
 ### 0.2 The owner review (Jordan, Sam; isolated `pm-feature-review` on round 2) — folded in as rules
 
@@ -68,7 +71,7 @@ Owners hear from the vet by phone, text and email far more often than in the exa
 
 | Surface | Where | What this feature does to it |
 |---|---|---|
-| Vet visits card | `components/vetvisits/VetVisitsCard.tsx:61–67` (*Add the next visit*, *Log a visit that already happened*) | R7 renames the second button behind the flag |
+| Vet visits card | `components/vetvisits/VetVisitsCard.tsx:55–69` (*Add the next visit*, *Log a visit that already happened*): **the empty branch only**, rendered while the pet has no visits. `VetVisitsEmptyState.tsx:36–42` carries the same pair on the list. With a visit or a booking the card shows *Open visits* alone (:72–108), and the list's *Add* opens booking only | R7 renames the second button in both places behind the flag; R10 adds it to the non-empty card |
 | The sheet | `components/vetvisits/BookVisitSheet.tsx`: *Has this visit happened?* `ChipGroup` (`MODE_OPTIONS`, :64); title :221; footnote :418–422; `alsoForPetIds` sent only when booked (:205) | §4.2 |
 | The write | `lib/vetVisits.ts:1066` `logVetVisit` (local first; "never 'from today'") | gains `channel`, `contacted_at` |
 | After screen | `app/vet-visits/after.tsx`, `components/vetvisits/AfterVisitBody.tsx` (title :141; trial verdicts :102–110; *Paperwork* :338–351) | §4.3 |
@@ -112,7 +115,7 @@ INSERT INTO app_config (key, value) VALUES
 ## 4. The proposal (mock round 3.1)
 
 ### 4.1 The way in (A1)
-Behind `vet_contacts_enabled && useBetaOptIn('vet_contacts')`: the card's second button reads **Log a visit, call, text or email** and opens the sheet on a past contact. Flag off: byte-identical (C-36).
+Behind `vet_contacts_enabled && useBetaOptIn('vet_contacts')`: the second button reads **Log a visit, call, text or email** and opens the sheet on a past contact, in three places: the card's empty branch, `VetVisitsEmptyState` on the list, and (R10) the non-empty card, under *Open visits*, with or without a booking. Flag off: byte-identical (C-36), so the non-empty card shows no second button.
 
 ### 4.2 The sheet (B1–B3)
 - **No "Has this visit happened?"** on this path. The booking door (*Add the next visit*) keeps it and keeps clinic only.
@@ -130,6 +133,8 @@ Behind `vet_contacts_enabled && useBetaOptIn('vet_contacts')`: the card's second
 | Email | An email from the vet | Save {pet}'s email | Goes on {pet}'s vet report as an email. No exam. |
 
 Every string passes `nyx-voice`. Never "from today" (the shipped rule).
+
+**Editing a saved contact (R12).** *Edit* shows all four channel chips; the title and footnote follow the chip as they do on a new contact. Changing Phone, Text or Email to At the clinic makes the record an exam, and the reverse makes it a contact; every exam reader filters when it reads (§5.3), so the report window follows the corrected record.
 
 ### 4.3 "What did the vet say?" (C1–C3)
 The shipped after screen, with a fixed order on a remote contact:
@@ -149,6 +154,7 @@ Title: *How did it go?* on a visit (shipped); **What did the vet say?** on a rem
 ### 4.5 Home (E1–E2) — awareness only (R5)
 - A live concern, intake or escalation card for the pet keeps its sentence, count, ask and slot **byte for byte**.
 - It may gain **one** context line: "You {called | texted | emailed} the vet {today, h:mm | on Ddd, Mon d}." — the care state spec's "You called on" shape (its mock 4b), from the newest remote contact in the card's own window, dated at or after the card's first day.
+- **On a card that already carries the shipped "You called on {day}." line** (`calledOnLine`, `lib/vetCallState.ts`; the owner answered the warning with "I've called"), that line is unchanged, and the contact line is added beneath it only when its day or channel differs (R11). A phone contact on the same day adds nothing.
 - No care state answer, acknowledgement, follow-up or `vet_calls` row is written by a contact. `care_acknowledgements.source` gains nothing.
 - A contact is never an exam to `generate-signal`'s care context (§2: filtered to `in_clinic` in PR-03).
 
@@ -156,7 +162,7 @@ Title: *How did it go?* on a visit (shipped); **What did the vet say?** on a rem
 - **Vet visits list:** one list; each row carries a channel tag (Visit | Phone | Text | Email) and "No exam" on a remote one. Watching (Vet instructions R4) stays above.
 - **The contact's page:** subtitle "{Channel} · {Ddd, Mon d} · no exam"; *What your vet asked you to watch* leads (Vet instructions R4); *What the vet sent* with dates; *What the vet started*; footnote "Your vet report shows this {call} and {what it started}. Screenshots stay in Vet Files; share them from there."
 - **A course's page:** one source row, "Started after a {call | text | email} with the vet, {Mon d}" or "…a visit, {Mon d}", tapping to the contact.
-- **History:** the contact's day shows the shipped visit row with the channel tag.
+- **History:** the contact's day shows the shipped date-only visit row (square mark, no time, a door to the record), with its title following the channel: "Phone call | Texts | Email with the vet · {reason} · no exam". A clinic visit keeps "Vet visit"; the shipped "Called the vet" row (`vet_calls`) is unchanged. The day's count stays over logged events only.
 
 ### 4.7 The vet report (F1)
 - **Window:** unchanged rung 1 = the last `in_clinic` visit strictly before today (R8).
@@ -217,6 +223,9 @@ Contacts, attachments, instructions and the report line are core logging: free f
 14. *Anything to watch for?* appears on a remote contact only when both flags are on, and writes a `vet_instructions` row whose parent is the contact.
 15. The visit-readers guard reds on an unregistered reader and on an `exam` reader without the filter (planted violations).
 16. Theme tokens only; `ChipGroup` for the chips; hit areas ≥44pt; `ThemedText`; every surface names the record's pet (C-9); VoiceOver reads the channel tag.
+17. **The non-empty card (R10):** flag on, a pet with a visit, with and without a booking, shows the logging button under *Open visits* and it opens the sheet on a past contact; flag off, that card is byte-identical to `main`.
+18. **The double line (R11):** a card with a shipped "You called on Nov 13." line plus a phone contact on Nov 13 shows one line; plus an email contact on Nov 14 it shows both; the card's sentence, count, ask and order are identical in each case.
+19. **Editing the channel (R12):** editing a Nov 9 contact from Phone to At the clinic moves the report's rung 1 to Nov 9, on device and server; editing it back returns rung 1 to Sep 18.
 
 ---
 
@@ -258,3 +267,4 @@ Designer ✓ (one entry, the order on the after screen, no closure on C4) · Dir
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-11-14 | First version, from CUL-2749's discovery: rulings R1–R9, the owner review, mock round 3.1. |
+| 1.1 | 2026-11-19 | PR-01's build-ready round and its contract critique (CUL-2763): rulings R10–R12; §2 corrected (the shipped logging button renders only for a pet with no visits); §4.1, §4.2 (editing), §4.5 (the double line), §4.6 (History's title); AC 17–19. |
