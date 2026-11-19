@@ -55,6 +55,10 @@
   .tag { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:999px; background:var(--accent-tint); color:var(--accent); }
   .tag.state { background:var(--line-soft); color:var(--ink-faint); }
   .tag.real { background:var(--amber-tint); color:var(--amber); }
+  .optbox { border:1.5px dashed var(--amber); border-radius:20px; padding:16px; margin-top:28px; }
+  .optbox-h { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--amber); margin-bottom:14px; }
+  .brief { border:1px solid var(--line); border-left:3px solid var(--amber); border-radius:12px; background:var(--panel); padding:14px 16px; font-size:13.5px; color:var(--ink-soft); line-height:1.55; max-width:74ch; margin-top:14px; }
+  .brief b { color:var(--ink); font-weight:600; }
   .row { display:flex; flex-wrap:wrap; gap:28px; align-items:flex-start; }
   .row + .row { margin-top:28px; }
   .frame { display:flex; flex-direction:column; gap:10px; width:300px; max-width:100%; min-width:0; }
@@ -90,12 +94,12 @@
   .cardhead { display:flex; justify-content:space-between; align-items:baseline; gap:var(--space1); }
   .dim { opacity:var(--opacityDisabled); }
 
-  .btn { background:var(--colorNeutralDark); color:var(--colorTextOnDark); border-radius:var(--radiusMedium); text-align:center; padding:var(--space1_5); min-height:var(--hitTarget); font-weight:var(--weightSemibold); font-size:var(--textMD); line-height:var(--lineHeightBody); }
-  .btn.sec { background:var(--colorSurface); color:var(--colorTextPrimary); border:1px solid var(--colorBorderStrong); font-weight:var(--weightMedium); }
+  .btn { background:var(--colorAction); color:var(--colorTextOnDark); border-radius:var(--radiusMedium); text-align:center; padding:var(--space2); min-height:var(--hitTarget); font-weight:var(--weightSemibold); font-size:var(--textMD); line-height:var(--lineHeightBody); }
+  .btn.sec { background:transparent; color:var(--colorTextSecondary); border:1px solid var(--colorBorder); }
   .btn.busy { opacity:var(--opacityDisabled); }
 
   /* plan rows (components/vetvisits/PlanRows.tsx) */
-  .pr { display:flex; gap:var(--space1_5); align-items:flex-start; padding:var(--space1_5) var(--space2); border-bottom:1px solid var(--colorBorder); }
+  .pr { display:flex; flex-wrap:wrap; gap:var(--space1_5); align-items:flex-start; padding:var(--space1_5) var(--space2); border-bottom:1px solid var(--colorBorder); }
   .pr:last-child { border-bottom:0; }
   .pr .g { width:var(--space3); height:var(--space3); flex:none; border-radius:var(--radiusXS); background:var(--colorSurfaceSubtle); color:var(--colorTextTertiary); font-size:var(--textXS); display:grid; place-items:center; }
   .pr .g.med { background:var(--colorEventMedicationLight); color:var(--colorEventMedicationInk); }
@@ -103,10 +107,9 @@
   .pr .t { flex:1; min-width:0; }
   .pr .t b { display:block; font-size:var(--textMD); font-weight:var(--weightMedium); line-height:var(--lineHeightBody); color:var(--colorTextPrimary); }
   .pr .t > span { display:block; font-size:var(--textXS); color:var(--colorTextSecondary); line-height:var(--lineHeightXS); margin-top:var(--spaceMicro); }
-  .pr .a { font-size:var(--textSM); font-weight:var(--weightMedium); color:var(--colorAction); flex:none; padding:var(--space0_5) 0; }
+  .pr:has(> .a) > .t { flex-basis:calc(100% - var(--space3) - var(--space1_5)); }
+  .pr .a { font-size:var(--textSM); font-weight:var(--weightMedium); color:var(--colorAction); flex:none; min-height:var(--hitTarget); display:inline-flex; align-items:center; padding:0 var(--space2); border:1px solid var(--colorBorder); border-radius:var(--radiusSmall); margin-left:calc(var(--space3) + var(--space1_5)); }
   .pr .chev { color:var(--colorTextTertiary); flex:none; }
-  .pr.wrap-a { flex-wrap:wrap; }
-  .pr.wrap-a .a { width:100%; padding-left:calc(var(--space3) + var(--space1_5)); }
 
   /* chips (ChipGroup, colorRoles.selected) */
   .chips { display:flex; flex-wrap:wrap; gap:var(--space1); }
@@ -124,7 +127,7 @@
   .field.ph { color:var(--colorTextDisabled); }
   .two { display:flex; gap:var(--space1); }
   .two > div { flex:1; min-width:0; display:flex; flex-direction:column; gap:var(--space0_5); }
-  .stack > .two, .big .two { flex-direction:column; }
+  .stack .two, .big .two { flex-direction:column; }
   .foot { font-size:var(--textXS); line-height:var(--lineHeightXS); color:var(--colorTextTertiary); text-align:center; }
   .alert { position:absolute; left:var(--space3); right:var(--space3); top:38%; background:var(--colorSurface); border-radius:var(--radiusMedium); box-shadow:var(--shadow-lg); padding:var(--space2); text-align:center; display:flex; flex-direction:column; gap:var(--space0_5); }
   .alert b { font-size:var(--textLG); font-weight:var(--weightSemibold); }
@@ -153,11 +156,11 @@
   /* trial row: Keep going until */
   .until { display:flex; flex-wrap:wrap; gap:var(--space0_75); align-items:baseline; margin-top:var(--space1); font-size:var(--textSM); line-height:var(--lineHeightSM); color:var(--colorTextSecondary); background:var(--colorSurfaceSubtle); border-radius:var(--radiusSmall); padding:var(--space1) var(--space1_5); }
   .pr .t .until b { display:inline; font-size:var(--textSM); line-height:var(--lineHeightSM); }
-  .pr .t .until .a { padding:0; margin-left:auto; }
+  .pr .t .until .a { margin-left:auto; border:0; padding:0; min-height:0; }
 
   /* saved moment (VisitSavedMoment) */
   .saved { min-height:340px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--space1_5); padding:var(--space3); text-align:center; }
-  .mark { width:var(--space5); height:var(--space5); border-radius:var(--radiusFull); background:var(--colorAccentInk); color:var(--colorSurface); display:grid; place-items:center; font-size:var(--textXL); }
+  .mark { width:var(--hitTarget); height:var(--hitTarget); border-radius:var(--radiusFull); background:var(--colorAccentInk); color:var(--colorSurface); display:grid; place-items:center; font-size:var(--textXL); }
   .mark.neutral { background:var(--colorSurfaceSubtle); border:1px solid var(--colorBorder); color:var(--colorTextSecondary); }
   .saved-h { font-size:var(--textXL); font-weight:var(--weightSemibold); line-height:var(--lineHeightXL); }
   .saved-p { font-size:var(--textMD); line-height:var(--lineHeightBody); color:var(--colorTextSecondary); }
@@ -175,7 +178,7 @@
   .homehd { display:flex; align-items:center; justify-content:space-between; }
   .homehd .n { display:flex; align-items:center; gap:var(--space1); font-size:var(--textLG); font-weight:var(--weightSemibold); }
   .av { width:var(--space4); height:var(--space4); border-radius:var(--radiusFull); background:var(--colorSurfaceSubtle); border:1px solid var(--colorBorder); }
-  .ins { background:var(--colorSurface); border-radius:var(--radiusMedium); box-shadow:var(--shadow-card); padding:var(--space1_5) var(--space2) var(--space1_5) var(--space1_5); display:flex; gap:var(--space1_5); }
+  .ins { background:var(--colorSurface); border-radius:var(--radiusMedium); padding:var(--space1_5) var(--space2) var(--space1_5) var(--space1_5); display:flex; gap:var(--space1_5); }
   .ins .rl { width:var(--railWidth); border-radius:var(--railWidth); background:var(--colorEventSymptom); flex:none; }
   .ins .c { font-size:var(--textMD); line-height:var(--lineHeightBody); }
   .ins .n { font-size:var(--textSM); line-height:var(--lineHeightSM); color:var(--colorTextTertiary); margin-top:var(--space0_5); }
@@ -191,12 +194,21 @@
   .day .dh span { color:var(--colorTextTertiary); font-weight:var(--weightRegular); }
   .hr { display:flex; gap:var(--space1_5); align-items:center; padding:var(--space1) var(--space2); min-height:var(--hitTarget); border-top:1px solid var(--colorBorder); font-size:var(--textMD); }
   .hr .tm { width:var(--space5); flex:none; font-size:var(--textXS); color:var(--colorTextTertiary); }
+  .hr .sq { width:var(--space1_5); height:var(--space1_5); flex:none; border-radius:var(--radiusXS); border:var(--spaceMicro) solid var(--colorTextSecondary); }
+  .hint { font-size:var(--textXS); line-height:var(--lineHeightXS); color:var(--colorTextTertiary); }
+  .sk { height:var(--space2); border-radius:var(--radiusXS); background:var(--colorSurfaceSubtle); align-self:stretch; }
+  .sk.short { width:60%; align-self:flex-start; }
+  .apb { background:var(--colorSurfaceSubtle); border-radius:var(--radiusSmall); padding:var(--space1_5); font-size:var(--textSM); line-height:var(--lineHeightSM); }
+  .apb b { display:block; font-size:var(--textMD); font-weight:var(--weightMedium); }
+  .listhd { display:flex; justify-content:space-between; align-items:center; }
+  .menu { background:var(--colorSurface); border-radius:var(--radiusMedium); box-shadow:var(--shadow-md); overflow:hidden; align-self:flex-end; }
+  .menu div { padding:var(--space1_5) var(--space2); min-height:var(--hitTarget); font-size:var(--textMD); border-bottom:1px solid var(--colorBorder); }
+  .menu div:last-child { border-bottom:0; }
   .hr .x { flex:1; min-width:0; display:flex; flex-wrap:wrap; gap:var(--space0_75); align-items:center; }
 
   /* loading + failed */
   .centre { min-height:240px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--space1); padding:var(--space3); text-align:center; }
-  .spin { width:var(--space4); height:var(--space4); border-radius:var(--radiusFull); border:var(--railWidth) solid var(--colorBorder); border-top-color:var(--colorAccent); }
-
+  
   /* largest Dynamic Type: the kit's own larger steps, no typed sizes */
   .big .ttl { font-size:var(--text2XL); line-height:var(--lineHeightSignal); }
   .big .sheet-h, .big .saved-h { font-size:var(--textSignal); line-height:var(--lineHeightSignal); }
@@ -232,7 +244,9 @@
     <div class="ledger-h">What this round settles, and what moved since round 3.1</div>
     <div class="ledger-row"><span class="k pm">R1–R9</span><div><b>Every ruling is drawn as ruled.</b> One entry (R7), four channels (R3), attachments (R2), the vet's "call me if" (R4), awareness only (R5), the report window at the last exam (R8). Nothing here re-opens one.</div></div>
     <div class="ledger-row"><span class="k">New</span><div><b>Four frames round 3.1 left undrawn:</b> the clinic field on a remote contact (B1), History's row (D4), a contact with no attachment and nothing started, which keeps the shipped check (C5), and a trial with no target, which shows no <i>Keep going until</i> (C3).</div></div>
-    <div class="ledger-row"><span class="k">States</span><div><b>The state set:</b> empty (A2, C6, D3), loading and failed read (D6), failed save (B4), offline (C5), 320pt (B5), largest text (B6, C7), two pets (B2, D5), VoiceOver order (the note under each section), the PM's real payload (every Nyx frame).</div></div>
+    <div class="ledger-row"><span class="k">States</span><div><b>The state set:</b> empty (A1, A2, C6, D3), loading and failed read (D6), failed save (B4), offline (C5), 320pt (B5), largest text (B6, C7), two pets (B2, D5), VoiceOver order (the note under each section), the PM's real payload (every Nyx frame).</div></div>
+    <div class="ledger-row"><span class="k pm">Needs you</span><div><b>Three decisions the contract critique raised, each drawn or briefed below.</b> G1 (§A): a pet that already has a visit has no logging button today. G3 (§E): what a contact adds to a card that already says "You called on". G4 (§E): whether a saved contact's channel can be edited.</div></div>
+    <div class="ledger-row"><span class="k">Critique</span><div><b>Redrawn to match the shipped parts</b> after the contract lens (light, 2026-11-19): primary buttons are indigo and secondary ones transparent; a plan row's action is the shipped 44pt box under its title and a started course is the shipped inert row; the sheet keeps the shipped <i>Where</i> block (Clinic, Vet, the hint); Home sits on <code>HomeCard</code> with <code>DoorMark</code>; loading is a silhouette. <b>Team calls, yours to reverse:</b> plan rows reused as shipped rather than new tappable parts; <i>Also about</i> is chips (<code>MultiChipGroup</code>) on the logging door while booking keeps its switches.</div></div>
     <div class="ledger-row"><span class="k">Fixed</span><div><b>Real dates.</b> Round 3.1 drew Nov 9, 2026 as a Sunday and Nyx as a dog. Nov 9 is a Monday, and Nyx is a cat whose last exam was Wed, Sep 16. Every weekday on this page is checked against the 2026 calendar.</div></div>
     <div class="ledger-row"><span class="k">Fixed</span><div><b>Actions are indigo.</b> Round 3.1 drew links and the lit chip in teal. The app's action colour is <code>colorAction</code> and a lit chip is <code>colorRoles.selected</code>; teal stays a good fact (the saved check).</div></div>
     <div class="ledger-row"><span class="k">Left</span><div><b>Share into Culprit (A3, A4)</b> left the page: it is the follow up CUL-2762, outside this run order (R6). <b>The capture screen (C3 in round 3.1)</b> left too: it is the Vet instructions project's screen, reused unchanged, and its own build ready round draws it. Only its back label and subline change, named in §C's note.</div></div>
@@ -243,36 +257,79 @@
   <section>
     <span class="tag">§A · PR-04</span>
     <h2>One entry, renamed</h2>
-    <p class="sec-lede">Behind <code>vet_contacts_enabled</code> and the beta opt-in, the card's second button names every channel and opens the sheet on a past contact. Flag off: the shipped label, byte for byte.</p>
+    <p class="sec-lede">Behind <code>vet_contacts_enabled</code> and the beta opt-in, the second button names every channel and opens the sheet on a past contact. Flag off: the shipped label, byte for byte. The shipped button exists in two places, and only for a pet with no visits. A pet that has one needs a ruling (G1, below).</p>
     <div class="row">
       <div class="frame">
-        <div class="phone" data-kit="app/(tabs)/pet.tsx · colorNeutralLight">
+        <div class="phone" data-kit="app/(tabs)/profile.tsx · colorNeutralLight">
           <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
-            <div class="card pad" data-kit="VetVisitsCard · Card · colorSurface, radiusMedium">
-              <div class="cardhead" data-kit="VetVisitsCard header"><h4 data-kit="ThemedText · textLG, weightSemibold, colorNeutralDark">Vet visits</h4><span class="meta" data-kit="ThemedText · textSM, colorTextTertiary">Last visit Sep 16</span></div>
-              <div class="blurb" data-kit="ThemedText · textSM, colorTextSecondary">Keep the next appointment here, and what the vet said after.</div>
-              <div class="btn sec" data-kit="PrimaryButton variant=secondary · colorSurface, colorBorderStrong">Add the next visit</div>
+            <div class="card pad" data-kit="VetVisitsCard · model.isEmpty · Card · colorSurface, radiusMedium">
+              <h4 data-kit="ThemedText · textLG, weightSemibold, colorNeutralDark">Vet visits</h4>
+              <div class="blurb" data-kit="ThemedText · textSM, colorTextSecondary · shipped copy, unchanged">Juniper’s next appointment, what each visit changed, and everything to bring.</div>
+              <div class="btn sec" data-kit="PrimaryButton variant=secondary · transparent, colorBorder">Add the next visit</div>
               <div class="btn sec" data-kit="PrimaryButton variant=secondary · label behind the flag">Log a visit, call, text or email</div>
             </div>
-            <div class="card pad dim" data-kit="Medications card · existing, schematic"><h4 data-kit="ThemedText · textLG, weightSemibold">Medications</h4></div>
           </div>
         </div>
-        <div class="cap"><b>A1 · The card.</b> "Last visit" stays the last exam: a call never moves it (R8). The button wraps to two lines at 320pt and at large text; it never truncates (C-8).</div>
+        <div class="cap"><b>A1 · The card, no visits yet</b> <span class="tag state">empty</span>. The shipped empty branch of <code>VetVisitsCard</code>: its blurb and both secondary buttons as shipped, the second one renamed. The label wraps to two lines at 320pt and at large text; it never truncates (C-8).</div>
       </div>
       <div class="frame">
-        <div class="phone" data-kit="app/(tabs)/pet.tsx · no visits yet">
-          <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
-            <div class="card pad" data-kit="VetVisitsEmptyState · Card · colorSurface, radiusMedium">
-              <h4 data-kit="ThemedText · textLG, weightSemibold, colorNeutralDark">Vet visits</h4>
-              <div class="blurb" data-kit="ThemedText · textSM, colorTextSecondary · shipped copy, unchanged">Keep the next appointment here, and what the vet said after.</div>
-              <div class="btn" data-kit="PrimaryButton · colorNeutralDark, colorTextOnDark">Add the next visit</div>
-              <div class="btn sec" data-kit="PrimaryButton variant=secondary · label behind the flag">Log a visit, call, text or email</div>
-            </div>
+        <div class="phone" data-kit="app/vet-visits/index.tsx · no visits yet">
+          <div class="hd" data-kit="Header leading=back · title 'Vet visits'"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
+          <div class="body" data-kit="VetVisitsEmptyState · a bare View on the list">
+            <div class="sheet-h" data-kit="ThemedText · title · shipped copy">Juniper’s visits, in one place</div>
+            <div class="blurb prose" data-kit="ThemedText · body · shipped copy, unchanged">The next appointment, what each visit changed, and everything to bring — so the 15 minutes in the room count.</div>
+            <div class="btn" data-kit="PrimaryButton · colorRoles.action.fill (colorAction), colorTextOnDark">Add the next visit</div>
+            <div class="btn sec" data-kit="PrimaryButton variant=secondary · label behind the flag">Log a visit, call, text or email</div>
           </div>
         </div>
-        <div class="cap"><b>A2 · No visits yet</b> <span class="tag state">empty</span>. The same rename in <code>VetVisitsEmptyState</code>. A home whose first record is a phone call starts here.</div>
+        <div class="cap"><b>A2 · The list, no visits yet</b> <span class="tag state">empty</span>. <code>VetVisitsEmptyState</code>, the other place the shipped button lives: first button primary, second secondary and renamed.</div>
       </div>
     </div>
+
+    <div class="optbox">
+      <div class="optbox-h">G1 · options, drawn for the decision, not the current proposal · a pet that already has a visit</div>
+      <div class="row">
+        <div class="frame">
+          <div class="phone" data-kit="app/(tabs)/profile.tsx · option A">
+            <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
+              <div class="card pad" data-kit="VetVisitsCard · has visits · Card">
+                <div class="cardhead" data-kit="VetVisitsCard head View"><h4 data-kit="ThemedText · textLG, weightSemibold">Vet visits</h4><span class="meta" data-kit="ThemedText · count · model.countLabel, exams only">1 visit</span></div>
+                <div class="blurb" data-kit="ThemedText · model.lastVisitLine · the last exam, never a call (R8)">Last visit Sep 16 · Completely Cat Clinic</div>
+                <div class="btn sec" data-kit="PrimaryButton variant=secondary · shipped">Open visits</div>
+                <div class="btn sec" data-kit="new: second button on the non-empty card · PrimaryButton variant=secondary · behind the flag">Log a visit, call, text or email</div>
+              </div>
+            </div>
+          </div>
+          <div class="cap"><b>Option A · The card gains the button (recommended)</b> <span class="tag real">real payload</span>. Nyx's card today: one visit, no booking. A new flag gated second button under <i>Open visits</i>; flag off, the card is byte identical.</div>
+        </div>
+        <div class="frame">
+          <div class="phone" data-kit="app/(tabs)/profile.tsx · option A with a booking">
+            <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
+              <div class="card pad" data-kit="VetVisitsCard · has a booking · Card">
+                <div class="cardhead" data-kit="VetVisitsCard head View"><h4 data-kit="ThemedText · textLG, weightSemibold">Vet visits</h4><span class="meta" data-kit="ThemedText · count">1 visit</span></div>
+                <div class="apb" data-kit="AppointmentBlock variant=inset · shipped, unchanged"><b data-kit="ThemedText · appointment title">Sat, Nov 14 · 9:30 am</b>Completely Cat Clinic</div>
+                <div class="blurb" data-kit="AppointmentActions · shipped, schematic">Take notes at the vet</div>
+                <div class="blurb" data-kit="ThemedText · model.lastVisitLine">Last visit Sep 16 · Completely Cat Clinic</div>
+                <div class="btn sec" data-kit="PrimaryButton variant=secondary · shipped">Open visits</div>
+                <div class="btn sec" data-kit="new: second button on the non-empty card · behind the flag">Log a visit, call, text or email</div>
+              </div>
+            </div>
+          </div>
+          <div class="cap"><b>Option A, with a booking.</b> A pet with a visit booked and a call still to log. The appointment block and its actions are shipped and untouched; the button sits last.</div>
+        </div>
+        <div class="frame">
+          <div class="phone" data-kit="app/vet-visits/index.tsx · option B">
+            <div class="hd" data-kit="Header leading=back · right: Add · colorAction"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span class="act" data-kit="HeaderAction · colorAction">Add</span></div>
+            <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
+              <div class="menu" data-kit="new: Add menu (two doors) · colorSurface, shadow-md"><div data-kit="menu row · hitTarget">Add the next visit</div><div data-kit="menu row · hitTarget · behind the flag">Log a visit, call, text or email</div></div>
+              <p class="ttl" data-kit="ThemedText · fontDisplay, textPageTitle">Nyx's vet visits</p>
+            </div>
+          </div>
+          <div class="cap"><b>Option B · The list's Add offers both doors.</b> The card stays as shipped. <i>Add</i> on the list, which opens booking today, opens a two row menu. One tap further from the Pet tab, and it changes what a shipped control does.</div>
+        </div>
+      </div>
+    </div>
+    <div class="brief"><b>G1 · Where does a pet with a visit log a call?</b><br><b>Deciding:</b> whether PR-04 adds a button to the non-empty Vet visits card or changes what the list's <i>Add</i> opens. Today the logging button exists only while a pet has no visits, so Nyx could not log Nov 9 at all.<br><b>Options:</b> <b>A, recommended:</b> the card gains the button, with or without a booking; it keeps R7's "the card's second button" and leaves booking untouched. <b>B:</b> the list's Add opens a menu of both doors. <b>C:</b> both.<br><b>Consequence:</b> unblocks PR-04 and the list in PR-06. A adds one new card state; B changes a shipped control and adds a menu part. <b>Forecast:</b> no new row either way.</div>
   </section>
 
   <!-- ═══════════ §B · THE SHEET (PR-04) ═══════════ -->
@@ -290,19 +347,21 @@
             <div class="sub" data-kit="ThemedText · textSM, colorTextTertiary · the record's pet (C-9)">For Nyx</div>
             <div class="lbl" data-kit="SectionLabel">How did you hear from the vet?</div>
             <div class="chips" data-kit="ChipGroup · colorRoles.selected (ground colorTextOnNight, edge and ink colorAction)"><span class="chip" data-kit="ChipGroup option">At the clinic</span><span class="chip on" data-kit="ChipGroup option, selected">Phone</span><span class="chip" data-kit="ChipGroup option · spoken 'Text or clinic app'">Text</span><span class="chip" data-kit="ChipGroup option">Email</span></div>
-            <div class="two">
-              <div><div class="lbl" data-kit="SectionLabel">Day</div><div class="field" data-kit="date row · DateTimePicker · colorBorder, radiusSmall">Today</div></div>
-              <div><div class="lbl" data-kit="SectionLabel">Time</div><div class="field ph" data-kit="time row · DateTimePicker · colorTextDisabled when unset">Optional</div></div>
+            <div class="two" data-kit="row View">
+              <div data-kit="View"><div class="lbl" data-kit="SectionLabel">Day</div><div class="field" data-kit="date row · DateTimePicker · colorBorder, radiusSmall">Today</div></div>
+              <div data-kit="View"><div class="lbl" data-kit="SectionLabel">Time</div><div class="field ph" data-kit="time row · DateTimePicker · colorTextDisabled when unset">Optional</div></div>
             </div>
             <div class="lbl" data-kit="SectionLabel">What it was about</div>
             <div class="field" data-kit="TextField · colorSurface, colorBorder, radiusSmall">Ear, still shaking her head</div>
-            <div class="lbl" data-kit="SectionLabel">Clinic</div>
-            <div class="field" data-kit="TextField · seeded from the last visit, optional">Completely Cat Clinic</div>
-            <div class="btn" data-kit="PrimaryButton · colorNeutralDark">Save Nyx's call</div>
+            <div class="lbl" data-kit="SectionLabel · shipped 'Where', kept">Where</div>
+            <div class="field" data-kit="new position: TextField 'Clinic' · under What it was about on a remote contact · seeded from the last visit">Completely Cat Clinic</div>
+            <div class="field ph" data-kit="TextField 'Vet' · shipped, kept beside Clinic">Vet</div>
+            <div class="hint" data-kit="ThemedText · hint · shipped copy, unchanged">From the last visit — change it if it moved.</div>
+            <div class="btn" data-kit="PrimaryButton">Save Nyx's call</div>
             <div class="foot" data-kit="ThemedText · textXS, colorTextTertiary">Goes on Nyx's vet report as a phone call. No exam.</div>
           </div>
         </div>
-        <div class="cap"><b>B1 · Phone, with the clinic field</b> <span class="tag real">real payload</span>. New since round 3.1: <i>Clinic</i> sits under <i>What it was about</i> on a remote contact, optional, seeded from the last visit as the shipped field is. At the clinic keeps the shipped field order.</div>
+        <div class="cap"><b>B1 · Phone, with the clinic field</b> <span class="tag real">real payload</span>. New since round 3.1: on a remote contact the shipped <i>Where</i> block (Clinic, Vet and its hint) moves under <i>What it was about</i>, all optional. <i>Time</i> on a past contact is new. At the clinic keeps the shipped field order (B3).</div>
       </div>
 
       <div class="frame">
@@ -314,19 +373,21 @@
             <div class="sub" data-kit="ThemedText · textSM, colorTextTertiary · the record's pet (C-9)">For Pixel</div>
             <div class="lbl" data-kit="SectionLabel">How did you hear from the vet?</div>
             <div class="chips" data-kit="ChipGroup · colorRoles.selected"><span class="chip" data-kit="ChipGroup option">At the clinic</span><span class="chip" data-kit="ChipGroup option">Phone</span><span class="chip" data-kit="ChipGroup option">Text</span><span class="chip on" data-kit="ChipGroup option, selected">Email</span></div>
-            <div class="two">
-              <div><div class="lbl" data-kit="SectionLabel">Day</div><div class="field" data-kit="date row · DateTimePicker">Today</div></div>
-              <div><div class="lbl" data-kit="SectionLabel">Time</div><div class="field" data-kit="time row · DateTimePicker">4:10 pm</div></div>
+            <div class="two" data-kit="row View">
+              <div data-kit="View"><div class="lbl" data-kit="SectionLabel">Day</div><div class="field" data-kit="date row · DateTimePicker">Today</div></div>
+              <div data-kit="View"><div class="lbl" data-kit="SectionLabel">Time</div><div class="field" data-kit="time row · DateTimePicker">4:10 pm</div></div>
             </div>
             <div class="lbl" data-kit="SectionLabel">What it was about</div>
             <div class="field" data-kit="TextField">Barely eating since Thursday</div>
+            <div class="lbl" data-kit="SectionLabel · shipped 'Where', kept">Where</div>
+            <div class="field ph" data-kit="TextField 'Clinic' · optional on every remote channel">Clinic</div>
             <div class="lbl" data-kit="SectionLabel">Also about</div>
-            <div class="chips" data-kit="MultiChipGroup · the household's other pets · alsoForPetIds"><span class="chip" data-kit="MultiChipGroup option, unselected">Juniper</span></div>
-            <div class="btn" data-kit="PrimaryButton · colorNeutralDark">Save Pixel's email</div>
+            <div class="chips" data-kit="MultiChipGroup · the household's other pets · alsoForPetIds"><span class="chip on" data-kit="MultiChipGroup option, selected · colorRoles.selected">Juniper</span></div>
+            <div class="btn" data-kit="PrimaryButton · label names every pet it saves for">Save for Pixel and Juniper</div>
             <div class="foot" data-kit="ThemedText · textXS, colorTextTertiary">Goes on Pixel's vet report as an email. No exam.</div>
           </div>
         </div>
-        <div class="cap"><b>B2 · Email, two cats</b> <span class="tag state">two pets</span>. <i>Also about</i> renders only in a multi pet home. Lit, the Save label reads "Save for Pixel and Juniper" and each cat gets its own row, which Sam can edit apart.</div>
+        <div class="cap"><b>B2 · Email, two cats</b> <span class="tag state">two pets</span>. <i>Also about</i> renders only in a multi pet home, as chips (the booking door keeps its shipped switches and "Also for" wording). Unlit, Save reads "Save Pixel's email"; with one lit, "Save for Pixel and Juniper"; with two or more, "Save for Pixel and 2 others". Each cat gets its own row, which Sam can edit apart.</div>
       </div>
 
       <div class="frame">
@@ -338,15 +399,16 @@
             <div class="sub" data-kit="ThemedText · textSM, colorTextTertiary">For Nyx</div>
             <div class="lbl" data-kit="SectionLabel">How did you hear from the vet?</div>
             <div class="chips" data-kit="ChipGroup · colorRoles.selected · default At the clinic"><span class="chip on" data-kit="ChipGroup option, selected">At the clinic</span><span class="chip" data-kit="ChipGroup option">Phone</span><span class="chip" data-kit="ChipGroup option">Text</span><span class="chip" data-kit="ChipGroup option">Email</span></div>
-            <div class="two">
-              <div><div class="lbl" data-kit="SectionLabel">Day</div><div class="field" data-kit="date row · DateTimePicker">Wed, Sep 16</div></div>
-              <div><div class="lbl" data-kit="SectionLabel">Time</div><div class="field ph" data-kit="time row · DateTimePicker">Optional</div></div>
+            <div class="two" data-kit="row View">
+              <div data-kit="View"><div class="lbl" data-kit="SectionLabel">Day</div><div class="field" data-kit="date row · DateTimePicker">Wed, Sep 16</div></div>
+              <div data-kit="View"><div class="lbl" data-kit="SectionLabel">Time</div><div class="field ph" data-kit="time row · DateTimePicker">Optional</div></div>
             </div>
-            <div class="lbl" data-kit="SectionLabel">Clinic</div>
-            <div class="field" data-kit="TextField · shipped position">Completely Cat Clinic</div>
+            <div class="lbl" data-kit="SectionLabel · shipped">Where</div>
+            <div class="field" data-kit="TextField 'Clinic' · shipped position">Completely Cat Clinic</div>
+            <div class="field" data-kit="TextField 'Vet' · shipped">Dr Miller</div>
             <div class="lbl" data-kit="SectionLabel">What it was about</div>
             <div class="field" data-kit="TextField">Potential ear infection</div>
-            <div class="btn" data-kit="PrimaryButton · colorNeutralDark">Save Nyx's visit</div>
+            <div class="btn" data-kit="PrimaryButton">Save Nyx's visit</div>
             <div class="foot" data-kit="ThemedText · textXS, colorTextTertiary · shipped line, unchanged">Your next vet report starts from this visit.</div>
           </div>
         </div>
@@ -381,15 +443,20 @@
             <div class="sub" data-kit="ThemedText · textSM, colorTextTertiary">For Nyx</div>
             <div class="lbl" data-kit="SectionLabel">How did you hear from the vet?</div>
             <div class="chips" data-kit="ChipGroup · wraps to a second line"><span class="chip" data-kit="ChipGroup option">At the clinic</span><span class="chip" data-kit="ChipGroup option">Phone</span><span class="chip on" data-kit="ChipGroup option, selected">Text</span><span class="chip" data-kit="ChipGroup option">Email</span></div>
-            <div class="two">
-              <div><div class="lbl" data-kit="SectionLabel">Day</div><div class="field" data-kit="date row · DateTimePicker">Mon, Nov 9</div></div>
-              <div><div class="lbl" data-kit="SectionLabel">Time</div><div class="field ph" data-kit="time row · DateTimePicker">Optional</div></div>
+            <div class="two" data-kit="row View">
+              <div data-kit="View"><div class="lbl" data-kit="SectionLabel">Day</div><div class="field" data-kit="date row · DateTimePicker">Mon, Nov 9</div></div>
+              <div data-kit="View"><div class="lbl" data-kit="SectionLabel">Time</div><div class="field ph" data-kit="time row · DateTimePicker">Optional</div></div>
             </div>
-            <div class="btn" data-kit="PrimaryButton · colorNeutralDark">Save Nyx's texts</div>
+            <div class="lbl" data-kit="SectionLabel">What it was about</div>
+            <div class="field" data-kit="TextField">Ear, still shaking her head</div>
+            <div class="lbl" data-kit="SectionLabel">Where</div>
+            <div class="field" data-kit="TextField 'Clinic'">Completely Cat Clinic</div>
+            <div class="field ph" data-kit="TextField 'Vet'">Vet</div>
+            <div class="btn" data-kit="PrimaryButton">Save Nyx's texts</div>
             <div class="foot" data-kit="ThemedText · textXS, colorTextTertiary">Goes on Nyx's vet report as texts with the vet. No exam.</div>
           </div>
         </div>
-        <div class="cap"><span class="tag state">320pt</span> <b>B5.</b> Four chips wrap to two lines at their full size. Day and Time stack. The sheet scrolls inside its cap, with Save reachable.</div>
+        <div class="cap"><span class="tag state">320pt</span> <b>B5.</b> The full field set at the narrowest width, drawn to the same scale as the other frames. Four chips wrap to two lines at their full size; Day and Time stack; the sheet scrolls inside its cap. Whether Save stays reachable with the keyboard up is a device check PR-04 names, not something this frame proves.</div>
       </div>
 
       <div class="frame">
@@ -401,15 +468,15 @@
             <div class="sub" data-kit="ThemedText · scales">For Nyx</div>
             <div class="lbl" data-kit="SectionLabel">How did you hear from the vet?</div>
             <div class="chips" data-kit="ChipGroup · one or two chips a line"><span class="chip" data-kit="ChipGroup option">At the clinic</span><span class="chip on" data-kit="ChipGroup option, selected">Phone</span><span class="chip" data-kit="ChipGroup option">Text</span><span class="chip" data-kit="ChipGroup option">Email</span></div>
-            <div class="two">
-              <div><div class="lbl" data-kit="SectionLabel">Day</div><div class="field" data-kit="date row · DateTimePicker">Today</div></div>
-              <div><div class="lbl" data-kit="SectionLabel">Time</div><div class="field ph" data-kit="time row · DateTimePicker">Optional</div></div>
+            <div class="two" data-kit="row View">
+              <div data-kit="View"><div class="lbl" data-kit="SectionLabel">Day</div><div class="field" data-kit="date row · DateTimePicker">Today</div></div>
+              <div data-kit="View"><div class="lbl" data-kit="SectionLabel">Time</div><div class="field ph" data-kit="time row · DateTimePicker">Optional</div></div>
             </div>
             <div class="btn" data-kit="PrimaryButton · label wraps">Save Nyx's call</div>
             <div class="foot" data-kit="ThemedText · scales, wraps">Goes on Nyx's vet report as a phone call. No exam.</div>
           </div>
         </div>
-        <div class="cap"><span class="tag state">largest text</span> <b>B6.</b> Chips grow to 44pt and wrap; Day and Time stack; the footnote wraps and is never cut, because it carries "No exam".</div>
+        <div class="cap"><span class="tag state">largest text</span> <b>B6.</b> Drawn at about one and a half times; the app scales further. The rules the frame shows: chips grow and wrap, Day and Time stack, and the footnote wraps and is never cut, because it carries "No exam". PR-04 names a device check at the largest accessibility size.</div>
       </div>
     </div>
 
@@ -426,7 +493,7 @@
     <div class="row">
       <div class="frame">
         <div class="phone" data-kit="app/vet-visits/after.tsx · AfterVisitBody · channel phone">
-          <div class="hd" data-kit="Header leading=back"><span class="back">‹</span><span></span></div>
+          <div class="hd" data-kit="Header leading=back"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <div data-kit="title block View">
               <div class="ey" data-kit="ThemedText · textXS, trackingWidest">Phone · Mon, Nov 9 · Ear</div>
@@ -434,17 +501,17 @@
             </div>
             <div class="lbl" data-kit="SectionLabel header">What the vet sent</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="VetDocumentRow · VetDocumentThumb · document_date"><span class="thumb" data-kit="VetDocumentThumb · colorSurfaceSubtle, colorBorderStrong"></span><span class="t"><b>Texts</b><span>Nov 9 · 2 screenshots</span></span><span class="chev">›</span></div>
-              <div class="pr" data-kit="VetDocumentRow · its own document_date"><span class="thumb" data-kit="VetDocumentThumb"></span><span class="t"><b>Text with the drug name</b><span>Nov 10 · 1 screenshot</span></span><span class="chev">›</span></div>
-              <div class="pr" data-kit="PlanActionRow 'Add more' · opens AddDocumentSheet with vet_visit_id"><span class="g">+</span><span class="t"><b>Add more</b><span>Screenshots, a PDF, a photo</span></span><span class="a">Add</span></div>
+              <div class="pr" data-kit="VetDocumentRow · VetDocumentThumb · document_date"><span class="thumb" data-kit="VetDocumentThumb · colorSurfaceSubtle, colorBorderStrong"></span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Texts</b><span data-kit="ThemedText · subtitle or inline text">Nov 9 · 2 screenshots</span></span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
+              <div class="pr" data-kit="VetDocumentRow · its own document_date"><span class="thumb" data-kit="VetDocumentThumb"></span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Text with the drug name</b><span data-kit="ThemedText · subtitle or inline text">Nov 10 · 1 screenshot</span></span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
+              <div class="pr" data-kit="PlanActionRow 'Add more' · opens AddDocumentSheet with vet_visit_id"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">+</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Add more</b><span data-kit="ThemedText · subtitle or inline text">Screenshots, a PDF, a photo</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
             </div>
             <div class="lbl" data-kit="SectionLabel header">The plan</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanSettledRow · course carries vet_visit_id"><span class="g med" data-kit="Pill glyph · colorEventMedicationLight, colorEventMedicationInk">Rx</span><span class="t"><b>Ear medication</b><span>Started Nov 9 · linked to this call</span></span><span class="chev">›</span></div>
-              <div class="pr" data-kit="PlanActionRow · title renamed on this screen"><span class="g">+</span><span class="t"><b>Start a medicine or supplement</b><span>Anything else the vet started</span></span><span class="a">Add</span></div>
-              <div class="pr" data-kit="new: WatchRow (the Vet instructions project's row; renders only with vet_instructions_enabled)"><span class="g watch" data-kit="glyph · colorAttentionLight, colorAttentionInk">!</span><span class="t"><b>Anything to watch for?</b><span>Still shaking her head · asks you on Thu, Nov 12</span></span><span class="a">Edit</span></div>
+              <div class="pr" data-kit="PlanSettledRow · inert as shipped (C-7) · course carries vet_visit_id"><span class="g med" data-kit="Pill glyph · colorEventMedicationLight, colorEventMedicationInk">Rx</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Ear medication</b><span data-kit="ThemedText · subtitle or inline text">Started Nov 9 · linked to this call</span></span></div>
+              <div class="pr" data-kit="PlanActionRow · title renamed on this screen"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">+</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Start a medicine or supplement</b><span data-kit="ThemedText · subtitle or inline text">Anything else the vet started</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
+              <div class="pr" data-kit="new: WatchRow (the Vet instructions project's row; renders only with vet_instructions_enabled)"><span class="g watch" data-kit="glyph · colorAttentionLight, colorAttentionInk">!</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Anything to watch for?</b><span data-kit="ThemedText · subtitle or inline text">Still shaking her head · asks you on Thu, Nov 12</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Edit</span></div>
             </div>
-            <div class="btn" data-kit="PrimaryButton 'Done' · colorNeutralDark">Done</div>
+            <div class="btn" data-kit="PrimaryButton 'Done'">Done</div>
           </div>
         </div>
         <div class="cap"><b>C1 · Nov 9, as it happened</b> <span class="tag real">real payload</span> <span class="tag real">name pending</span>. The call Monday and the text Tuesday stay one contact; each thing the vet sent has its own date. The vet's "call back if still shaking" is the watched sign. Food and recheck rows follow as shipped.</div>
@@ -452,7 +519,7 @@
 
       <div class="frame">
         <div class="phone" data-kit="AfterVisitBody · channel phone · a running trial with a target">
-          <div class="hd" data-kit="Header leading=back"><span class="back">‹</span><span></span></div>
+          <div class="hd" data-kit="Header leading=back"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <div data-kit="title block View">
               <div class="ey" data-kit="ThemedText · textXS, trackingWidest">Phone · Wed, Nov 4 · Trial check in</div>
@@ -460,15 +527,15 @@
             </div>
             <div class="lbl" data-kit="SectionLabel header">What the vet sent</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanActionRow 'What the vet sent' · the shipped Paperwork row, renamed, first"><span class="g">▤</span><span class="t"><b>Add what the vet sent</b><span>Screenshots, a PDF, a photo</span></span><span class="a">Add</span></div>
+              <div class="pr" data-kit="PlanActionRow 'What the vet sent' · the shipped Paperwork row, renamed, first"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">▤</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Add what the vet sent</b><span data-kit="ThemedText · subtitle or inline text">Screenshots, a PDF, a photo</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
             </div>
             <div class="lbl" data-kit="SectionLabel header">The plan</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanChipRow trial · first among plan rows"><span class="g">◐</span><span class="t"><b>Hydrolyzed salmon</b><span>Day 23 of 42</span>
+              <div class="pr" data-kit="PlanChipRow trial · first among plan rows"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">◐</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Hydrolyzed salmon</b><span data-kit="ThemedText · subtitle or inline text">Day 23 of 42</span>
                 <span class="chips" data-kit="ChipGroup · colorRoles.selected"><span class="chip on" data-kit="ChipGroup option, selected">Keep</span><span class="chip" data-kit="ChipGroup option">Changed</span><span class="chip" data-kit="ChipGroup option">Stopped</span></span>
-                <span class="until" data-kit="new: KeepGoingUntil · colorSurfaceSubtle, radiusSmall · writes target_duration_days, vet_directed">Keep going until <b>Tue, Dec 1</b> · was Nov 23 <span class="a" data-kit="TextLink 'Change' · colorAction, hitTarget by hitSlop">Change</span></span></span></div>
-              <div class="pr" data-kit="PlanSettledRow · course started during the trial"><span class="g med" data-kit="Pill glyph · colorEventMedicationLight, colorEventMedicationInk">Rx</span><span class="t"><b>Probiotic</b><span>Started Nov 4 · shown on the trial</span></span><span class="chev">›</span></div>
-              <div class="pr" data-kit="PlanActionRow · title renamed on this screen"><span class="g">+</span><span class="t"><b>Start a medicine or supplement</b><span>Anything else the vet started</span></span><span class="a">Add</span></div>
+                <span class="until" data-kit="new: KeepGoingUntil · colorSurfaceSubtle, radiusSmall · writes target_duration_days, vet_directed">Keep going until <b data-kit="ThemedText · title weight">Tue, Dec 1</b> · was Nov 23 <span class="a" data-kit="TextLink 'Change' · colorAction, hitTarget by hitSlop">Change</span></span></span></div>
+              <div class="pr" data-kit="PlanSettledRow · course started during the trial"><span class="g med" data-kit="Pill glyph · colorEventMedicationLight, colorEventMedicationInk">Rx</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Probiotic</b><span data-kit="ThemedText · subtitle or inline text">Started Nov 4 · shown on the trial</span></span></div>
+              <div class="pr" data-kit="PlanActionRow · title renamed on this screen"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">+</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Start a medicine or supplement</b><span data-kit="ThemedText · subtitle or inline text">Anything else the vet started</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
             </div>
           </div>
         </div>
@@ -477,7 +544,7 @@
 
       <div class="frame">
         <div class="phone" data-kit="AfterVisitBody · channel phone · a running trial with no target">
-          <div class="hd" data-kit="Header leading=back"><span class="back">‹</span><span></span></div>
+          <div class="hd" data-kit="Header leading=back"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <div data-kit="title block View">
               <div class="ey" data-kit="ThemedText · textXS, trackingWidest">Phone · Wed, Nov 4 · Trial check in</div>
@@ -485,9 +552,9 @@
             </div>
             <div class="lbl" data-kit="SectionLabel header">The plan</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanChipRow trial · target_duration_days null"><span class="g">◐</span><span class="t"><b>Hydrolyzed salmon</b><span>Day 23</span>
+              <div class="pr" data-kit="PlanChipRow trial · target_duration_days null"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">◐</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Hydrolyzed salmon</b><span data-kit="ThemedText · subtitle or inline text">Day 23</span>
                 <span class="chips" data-kit="ChipGroup · colorRoles.selected"><span class="chip on" data-kit="ChipGroup option, selected">Keep</span><span class="chip" data-kit="ChipGroup option">Changed</span><span class="chip" data-kit="ChipGroup option">Stopped</span></span></span></div>
-              <div class="pr" data-kit="PlanActionRow · title renamed on this screen"><span class="g">+</span><span class="t"><b>Start a medicine or supplement</b><span>Anything else the vet started</span></span><span class="a">Add</span></div>
+              <div class="pr" data-kit="PlanActionRow · title renamed on this screen"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">+</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Start a medicine or supplement</b><span data-kit="ThemedText · subtitle or inline text">Anything else the vet started</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
             </div>
           </div>
         </div>
@@ -499,11 +566,11 @@
       <div class="frame">
         <div class="phone" data-kit="VisitSavedMoment · a live warning or a watched sign">
           <div class="saved" data-kit="VisitSavedMoment container · space3">
-            <div class="mark neutral" data-kit="new: NeutralSavedMark (a bookmark glyph, never Check) · colorSurfaceSubtle, colorBorder, colorTextSecondary"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" data-kit="lucide Bookmark · stroke colorTextSecondary"><path d="M7 4h10v16l-5-3.5L7 20V4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>
+            <div class="mark neutral" data-kit="new: NeutralSavedMark (a bookmark glyph, never Check) · colorSurfaceSubtle, colorBorder, colorTextSecondary"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true" data-kit="lucide Bookmark · stroke colorTextSecondary"><path d="M7 4h10v16l-5-3.5L7 20V4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/ data-kit="icon path"></svg></div>
             <div class="saved-h" data-kit="ThemedText · textXL, weightSemibold">Pixel's email is saved</div>
             <div class="saved-p" data-kit="ThemedText · textMD, colorTextSecondary">Culprit will ask you about her eating on Sat, Nov 14. Nothing on Home changes because you emailed.</div>
-            <div class="safety" data-kit="new: SafetyLine (the Vet instructions spec's species line) · colorBorderStrong, radiusSmall"><b>If Pixel stops eating entirely, hides, or you're worried, don't wait.</b> Call your vet today.</div>
-            <div class="btn" data-kit="PrimaryButton 'Done' · colorNeutralDark">Done</div>
+            <div class="safety" data-kit="new: SafetyLine (the Vet instructions spec's species line) · colorBorderStrong, radiusSmall"><b data-kit="ThemedText · title weight">If Pixel stops eating entirely, hides, or you're worried, don't wait.</b> Call your vet today.</div>
+            <div class="btn" data-kit="PrimaryButton 'Done'">Done</div>
           </div>
         </div>
         <div class="cap"><b>C4 · Saved, not settled.</b> With a live warning for the pet, or a watched sign from this contact: no check mark, the date Culprit asks again, and the safety line. Never "handled", "done" or "all set" in the copy; <i>Done</i> is the shipped button that leaves the screen.</div>
@@ -516,7 +583,7 @@
             <div class="saved-h" data-kit="ThemedText · textXL, weightSemibold">Nyx's call is saved</div>
             <div class="saved-p" data-kit="ThemedText · textMD, colorTextSecondary">It goes on Nyx's vet report as a phone call. No exam.</div>
             <div class="saved-off" data-kit="ThemedText · textXS, colorTextTertiary · VISIT_OFFLINE_LINE, shipped">On this phone now — backs up when you’re online</div>
-            <div class="btn" data-kit="PrimaryButton 'Done' · colorNeutralDark">Done</div>
+            <div class="btn" data-kit="PrimaryButton 'Done'">Done</div>
           </div>
         </div>
         <div class="cap"><b>C5 · Nothing sent, nothing started</b> <span class="tag state">offline</span>. New since round 3.1. A contact with no attachment, nothing started, no watched sign and no live warning keeps the shipped check. Offline, the shipped line says where the record is; the save itself never waits for a connection.</div>
@@ -524,7 +591,7 @@
 
       <div class="frame">
         <div class="phone" data-kit="AfterVisitBody · channel text · nothing added yet">
-          <div class="hd" data-kit="Header leading=back"><span class="back">‹</span><span></span></div>
+          <div class="hd" data-kit="Header leading=back"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <div data-kit="title block View">
               <div class="ey" data-kit="ThemedText · textXS, trackingWidest">Text · Mon, Nov 9</div>
@@ -532,14 +599,14 @@
             </div>
             <div class="lbl" data-kit="SectionLabel header">What the vet sent</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanActionRow · the shipped Paperwork row, renamed, first"><span class="g">▤</span><span class="t"><b>Add what the vet sent</b><span>Screenshots, a PDF, a photo</span></span><span class="a">Add</span></div>
+              <div class="pr" data-kit="PlanActionRow · the shipped Paperwork row, renamed, first"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">▤</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Add what the vet sent</b><span data-kit="ThemedText · subtitle or inline text">Screenshots, a PDF, a photo</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
             </div>
             <div class="lbl" data-kit="SectionLabel header">The plan</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanActionRow · title renamed on this screen"><span class="g">+</span><span class="t"><b>Start a medicine or supplement</b><span>Anything the vet started</span></span><span class="a">Add</span></div>
-              <div class="pr" data-kit="new: WatchRow · unset"><span class="g watch" data-kit="glyph · colorAttentionLight, colorAttentionInk">!</span><span class="t"><b>Anything to watch for?</b><span>What the vet said to call back about</span></span><span class="a">Add</span></div>
+              <div class="pr" data-kit="PlanActionRow · title renamed on this screen"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">+</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Start a medicine or supplement</b><span data-kit="ThemedText · subtitle or inline text">Anything the vet started</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
+              <div class="pr" data-kit="new: WatchRow · unset"><span class="g watch" data-kit="glyph · colorAttentionLight, colorAttentionInk">!</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Anything to watch for?</b><span data-kit="ThemedText · subtitle or inline text">What the vet said to call back about</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
             </div>
-            <div class="btn" data-kit="PrimaryButton 'Done' · colorNeutralDark">Done</div>
+            <div class="btn" data-kit="PrimaryButton 'Done'">Done</div>
           </div>
         </div>
         <div class="cap"><b>C6 · Nothing added yet</b> <span class="tag state">empty</span>. Every row is an offer and none is required. <i>Done</i> here leads to C5's check.</div>
@@ -547,21 +614,21 @@
 
       <div class="frame">
         <div class="phone big" data-kit="AfterVisitBody · largest Dynamic Type">
-          <div class="hd" data-kit="Header leading=back"><span class="back">‹</span><span></span></div>
+          <div class="hd" data-kit="Header leading=back"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <p class="ttl" data-kit="ThemedText · fontDisplay, scales">What did the vet say?</p>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanSettledRow"><span class="g med" data-kit="Pill glyph">Rx</span><span class="t"><b>Ear medication</b><span>Started Nov 9 · linked to this call</span></span></div>
-              <div class="pr wrap-a" data-kit="PlanActionRow · action drops under the title"><span class="g">+</span><span class="t"><b>Start a medicine or supplement</b><span>Anything else the vet started</span></span><span class="a">Add</span></div>
+              <div class="pr" data-kit="PlanSettledRow"><span class="g med" data-kit="Pill glyph">Rx</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Ear medication</b><span data-kit="ThemedText · subtitle or inline text">Started Nov 9 · linked to this call</span></span></div>
+              <div class="pr" data-kit="PlanActionRow · action box under the title, as shipped"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">+</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Start a medicine or supplement</b><span data-kit="ThemedText · subtitle or inline text">Anything else the vet started</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
             </div>
           </div>
         </div>
-        <div class="cap"><span class="tag state">largest text</span> <b>C7.</b> <span class="tag real">name pending</span> The longest title on the screen wraps to three lines and its action drops beneath it (C-8). Nothing ellipsises.</div>
+        <div class="cap"><span class="tag state">largest text</span> <b>C7.</b> <span class="tag real">name pending</span> Titles wrap; nothing ellipsises (C-8). The action sits in its box under the title at every size, as shipped. The course row prints the drug name as stored, so PR-05 carries a longest name fixture.</div>
       </div>
     </div>
 
     <div class="note" style="margin-top:20px"><b>VoiceOver order, C1:</b>
-      <ol><li>Back</li><li>"Phone, Monday, November 9, Ear. What did the vet say?" (header)</li><li>"What the vet sent" (header), then each document as one button: "Texts, November 9, 2 screenshots"; then "Add more, button"</li><li>"The plan" (header); on a pet with a trial, the trial row first, its chips as a radio group, then "Keep going until Tuesday, December 1, was November 23" with "Change, button"</li><li>Each course as one button; "Start a medicine or supplement, Add, button"</li><li>"Anything to watch for? Still shaking her head, asks you on Thursday, November 12. Edit, button"</li><li>Done</li></ol>
+      <ol><li>Back</li><li>"Phone, Monday, November 9, Ear. What did the vet say?" (header)</li><li>"What the vet sent" (header), then each document as one button: "Texts, November 9, 2 screenshots"; then "Add more, button"</li><li>"The plan" (header); on a pet with a trial, the trial row first, its chips as a radio group, then "Keep going until Tuesday, December 1, was November 23" with "Change, button"</li><li>Each started course as one sentence, not a button (the shipped settled row has no control); then "Add — Start a medicine or supplement", button</li><li>"Anything to watch for? Still shaking her head, asks you on Thursday, November 12. Edit, button"</li><li>Done</li></ol>
       <p style="margin:8px 0 0"><b>The capture screen</b> is the Vet instructions project's, unchanged. Opened from a contact, its back label is the channel ("Call", "Texts", "Email") and its subline reads "For Nyx · from the Nov 9 call | texts | email".</p>
       <p style="margin:8px 0 0"><b>The saved moment (C4):</b> the neutral mark is decorative and silent; the heading, the ask-again line and the safety line read in that order, then Done. C5 reads the heading, the report line, the offline line, then Done.</p>
     </div>
@@ -575,26 +642,30 @@
     <div class="row">
       <div class="frame">
         <div class="phone" data-kit="app/vet-visits/index.tsx">
-          <div class="hd" data-kit="Header leading=back"><span class="back">‹</span><span></span></div>
+          <div class="hd" data-kit="Header leading=back"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <p class="ttl" data-kit="ThemedText · fontDisplay, textPageTitle">Nyx's vet visits</p>
             <div class="lbl" data-kit="SectionLabel header">Watching</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="new: WatchRow (Vet instructions R4) · source line"><span class="g watch" data-kit="glyph · colorAttentionLight, colorAttentionInk">!</span><span class="t"><b>Still shaking her head</b><span>Asks on Thu, Nov 12 · from the Nov 9 call</span></span><span class="chev">›</span></div>
+              <div class="pr" data-kit="new: WatchRow (Vet instructions R4) · source line"><span class="g watch" data-kit="glyph · colorAttentionLight, colorAttentionInk">!</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Still shaking her head</b><span data-kit="ThemedText · subtitle or inline text">Asks on Thu, Nov 12 · from the Nov 9 call</span></span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
             </div>
             <div class="lbl" data-kit="SectionLabel header">Past</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="vr" data-kit="VisitRow · channel phone"><div class="d" data-kit="VisitRow stamp"><b>9</b><span>Nov</span></div><div class="m"><b data-kit="ThemedText · title, colorTextPrimary">Ear, still shaking her head</b><div class="w" data-kit="VisitRow where line · colorTextSecondary"><span class="via remote" data-kit="new: ChannelTag remote · colorEventMedicationLight, colorEventMedicationInk">Phone</span> No exam</div><div class="pills" data-kit="VisitRow tags"><span class="pill med" data-kit="PlanTagPill med">Ear medication</span><span class="pill" data-kit="PlanTagPill · documents">3 screenshots</span></div></div><span class="chev">›</span></div>
-              <div class="vr" data-kit="VisitRow · channel in_clinic"><div class="d" data-kit="VisitRow stamp"><b>16</b><span>Sep</span></div><div class="m"><b data-kit="ThemedText · title">Potential ear infection</b><div class="w" data-kit="VisitRow where line"><span class="via" data-kit="new: ChannelTag visit · colorSurfaceSubtle, colorTextSecondary">Visit</span> Completely Cat Clinic · Dr Miller</div></div><span class="chev">›</span></div>
+              <div class="vr" data-kit="VisitRow · channel phone"><div class="d" data-kit="VisitRow stamp"><b data-kit="ThemedText · title weight">9</b><span data-kit="ThemedText · subtitle or inline text">Nov</span></div><div class="m" data-kit="VisitRow main View"><b data-kit="ThemedText · title, colorTextPrimary">Ear, still shaking her head</b><div class="w" data-kit="VisitRow where line · colorTextSecondary"><span class="via remote" data-kit="new: ChannelTag remote · colorEventMedicationLight, colorEventMedicationInk">Phone</span> No exam</div><div class="pills" data-kit="VisitRow tags"><span class="pill med" data-kit="PlanTagPill med">Ear medication</span><span class="pill" data-kit="PlanTagPill · documents">3 screenshots</span></div></div><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
+              <div class="vr" data-kit="VisitRow · channel in_clinic"><div class="d" data-kit="VisitRow stamp"><b data-kit="ThemedText · title weight">16</b><span data-kit="ThemedText · subtitle or inline text">Sep</span></div><div class="m" data-kit="VisitRow main View"><b data-kit="ThemedText · title">Potential ear infection</b><div class="w" data-kit="VisitRow where line"><span class="via" data-kit="new: ChannelTag visit · colorSurfaceSubtle, colorTextSecondary">Visit</span> Completely Cat Clinic · Dr Miller</div></div><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
+            </div>
+            <div class="lbl" data-kit="SectionLabel header · shipped section (vet_calls), unchanged">Calls</div>
+            <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
+              <div class="vr" data-kit="VisitRow · callListRowOf · shipped, unchanged"><div class="d" data-kit="VisitRow stamp"><b data-kit="ThemedText · title weight">21</b><span data-kit="ThemedText · subtitle or inline text">Oct</span></div><div class="m" data-kit="VisitRow main View"><b data-kit="ThemedText · title · shipped copy">Called the vet about the vomiting</b><div class="w" data-kit="VisitRow where line · shipped">Your note is on it.</div></div><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
             </div>
           </div>
         </div>
-        <div class="cap"><b>D1 · The list</b> <span class="tag real">real payload</span> <span class="tag real">name pending</span>. One list, newest first. Flag on, every row carries its tag; a remote row says "No exam" where a visit names the clinic.</div>
+        <div class="cap"><b>D1 · The list</b> <span class="tag real">real payload</span> <span class="tag real">name pending</span>. A contact is a visit record, so it sits in <i>Past</i> with visits, newest first, with its tag and "No exam". The shipped <i>Calls</i> section stays below, unchanged: those rows are the "I've called" answer to a warning, a different record that opens its own page. The Oct 21 row is schematic. <code>VisitRow</code> clips its title at one line as shipped; "No exam" sits on its own line so it is never the half that is cut (C-8).</div>
       </div>
 
       <div class="frame">
         <div class="phone" data-kit="app/vet-visits/[id].tsx · VisitDetailBody · channel phone">
-          <div class="hd" data-kit="Header leading=back · HeaderAction 'Edit' · colorAction"><span class="back">‹</span><span class="act">Edit</span></div>
+          <div class="hd" data-kit="Header leading=back · HeaderAction 'Edit' · colorAction"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span class="act" data-kit="HeaderAction · colorAction">Edit</span></div>
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <div data-kit="title block View">
               <p class="ttl" data-kit="ThemedText · fontDisplay, textPageTitle">Nyx's call</p>
@@ -602,16 +673,16 @@
             </div>
             <div class="lbl" data-kit="SectionLabel header">What your vet asked you to watch</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="new: WatchRow (Vet instructions R4)"><span class="g watch" data-kit="glyph · colorAttentionLight, colorAttentionInk">!</span><span class="t"><b>Still shaking her head</b><span>Asks on Thu, Nov 12 · then call the vet</span></span><span class="chev">›</span></div>
+              <div class="pr" data-kit="new: WatchRow (Vet instructions R4)"><span class="g watch" data-kit="glyph · colorAttentionLight, colorAttentionInk">!</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Still shaking her head</b><span data-kit="ThemedText · subtitle or inline text">Asks on Thu, Nov 12 · then call the vet</span></span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
             </div>
             <div class="lbl" data-kit="SectionLabel header">What the vet sent</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="VetDocumentRow · document_date"><span class="thumb" data-kit="VetDocumentThumb"></span><span class="t"><b>Texts</b><span>Nov 9 · 2 screenshots</span></span><span class="chev">›</span></div>
-              <div class="pr" data-kit="VetDocumentRow · document_date"><span class="thumb" data-kit="VetDocumentThumb"></span><span class="t"><b>Text with the drug name</b><span>Nov 10 · 1 screenshot</span></span><span class="chev">›</span></div>
+              <div class="pr" data-kit="VetDocumentRow · document_date"><span class="thumb" data-kit="VetDocumentThumb"></span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Texts</b><span data-kit="ThemedText · subtitle or inline text">Nov 9 · 2 screenshots</span></span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
+              <div class="pr" data-kit="VetDocumentRow · document_date"><span class="thumb" data-kit="VetDocumentThumb"></span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Text with the drug name</b><span data-kit="ThemedText · subtitle or inline text">Nov 10 · 1 screenshot</span></span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
             </div>
             <div class="lbl" data-kit="SectionLabel header">What the vet started</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanRow · opens the course"><span class="g med" data-kit="Pill glyph · colorEventMedicationLight, colorEventMedicationInk">Rx</span><span class="t"><b>Ear medication</b><span>Started Nov 9 · still on it</span></span><span class="chev">›</span></div>
+              <div class="pr" data-kit="PlanRow · opens the course"><span class="g med" data-kit="Pill glyph · colorEventMedicationLight, colorEventMedicationInk">Rx</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Ear medication</b><span data-kit="ThemedText · subtitle or inline text">Started Nov 9 · still on it</span></span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
             </div>
             <div class="foot" data-kit="ThemedText · textXS, colorTextTertiary" style="text-align:left">Your vet report shows this call and the ear medication. Screenshots stay in Vet Files; share them from there.</div>
           </div>
@@ -621,7 +692,7 @@
 
       <div class="frame">
         <div class="phone" data-kit="VisitDetailBody · channel email · nothing sent, nothing started">
-          <div class="hd" data-kit="Header leading=back · HeaderAction 'Edit'"><span class="back">‹</span><span class="act">Edit</span></div>
+          <div class="hd" data-kit="Header leading=back · HeaderAction 'Edit'"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span class="act" data-kit="HeaderAction · colorAction">Edit</span></div>
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <div data-kit="title block View">
               <p class="ttl" data-kit="ThemedText · fontDisplay, textPageTitle">Juniper's email</p>
@@ -629,7 +700,7 @@
             </div>
             <div class="prose" data-kit="ThemedText · textSM, colorTextSecondary">This email has a day and a time so far. Add what the vet sent or started whenever you have it.</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanActionRow 'Add to the plan' (After the visit PR-02's row)"><span class="g">+</span><span class="t"><b>Add what the vet said</b><span>What they sent, started, or asked you to watch</span></span><span class="a">Add</span></div>
+              <div class="pr" data-kit="PlanActionRow 'Add to the plan' (After the visit PR-02's row)"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">+</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Add what the vet said</b><span data-kit="ThemedText · subtitle or inline text">What they sent, started, or asked you to watch</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
             </div>
             <div class="foot" data-kit="ThemedText · textXS, colorTextTertiary" style="text-align:left">Your vet report shows this email. No exam.</div>
           </div>
@@ -643,30 +714,34 @@
         <div class="phone" data-kit="app/(tabs)/history.tsx · components/historyV2/DayCard">
           <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <div class="day" data-kit="DayCard · colorSurface, radiusMedium">
-              <div class="dh" data-kit="DayCard header · ThemedText textSM">Mon, Nov 9 <span>4 logged</span></div>
-              <div class="hr" data-kit="the shared History row · meal"><span class="tm">7:40 am</span><span class="x">Rabbit pâté · ate all</span></div>
-              <div class="hr" data-kit="the shared History row · the shipped visit row"><span class="tm">2:15 pm</span><span class="x"><span class="via remote" data-kit="new: ChannelTag remote · colorEventMedicationLight, colorEventMedicationInk">Phone</span> Ear, still shaking her head · no exam</span><span class="chev" data-kit="ChevronRight · colorTextTertiary" style="color:var(--colorTextTertiary)">›</span></div>
-              <div class="hr" data-kit="the shared History row · meal"><span class="tm">6:05 pm</span><span class="x">Rabbit pâté · ate all</span></div>
+              <div class="dh" data-kit="DayCard header · ThemedText textSM">Mon, Nov 9 <span data-kit="CountLine · logged events only">2 logged</span></div>
+              <div class="hr" data-kit="DateOnlyItemRow kind=visit · shipped shape: no time, square mark, a door"><span class="tm" data-kit="itemTime · empty for a date only row"></span><span class="sq" data-kit="ItemMark · markSquare (the vet family)"></span><span class="x" data-kit="ThemedText · visitTitle, visitDetail">Phone call with the vet · Ear, still shaking her head · no exam</span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
+              <div class="hr" data-kit="the shared History row · meal · existing"><span class="tm" data-kit="ThemedText · time">7:40 am</span><span class="x" data-kit="ThemedText · row text">Rabbit pâté · ate all</span></div>
+              <div class="hr" data-kit="the shared History row · meal · existing"><span class="tm" data-kit="ThemedText · time">6:05 pm</span><span class="x" data-kit="ThemedText · row text">Rabbit pâté · ate all</span></div>
             </div>
             <div class="day" data-kit="DayCard · colorSurface, radiusMedium">
-              <div class="dh" data-kit="DayCard header">Wed, Sep 16 <span>3 logged</span></div>
-              <div class="hr" data-kit="the shared History row · the shipped visit row"><span class="tm">10:30 am</span><span class="x"><span class="via" data-kit="new: ChannelTag visit">Visit</span> Potential ear infection</span><span class="chev" style="color:var(--colorTextTertiary)">›</span></div>
+              <div class="dh" data-kit="DayCard header">Wed, Oct 21 <span data-kit="CountLine">1 logged</span></div>
+              <div class="hr" data-kit="DateOnlyItemRow kind=call · shipped, unchanged (vet_calls)"><span class="tm" data-kit="itemTime · empty"></span><span class="sq" data-kit="ItemMark · markSquare"></span><span class="x" data-kit="ThemedText · shipped copy">Called the vet · about the vomiting</span><span class="chev" data-kit="ChevronRight">›</span></div>
+            </div>
+            <div class="day" data-kit="DayCard · colorSurface, radiusMedium">
+              <div class="dh" data-kit="DayCard header">Wed, Sep 16 <span data-kit="CountLine">3 logged</span></div>
+              <div class="hr" data-kit="DateOnlyItemRow kind=visit · shipped, unchanged"><span class="tm" data-kit="itemTime · empty"></span><span class="sq" data-kit="ItemMark · markSquare"></span><span class="x" data-kit="ThemedText · shipped copy">Vet visit · Potential ear infection · Completely Cat Clinic</span><span class="chev" data-kit="ChevronRight">›</span></div>
             </div>
           </div>
         </div>
-        <div class="cap"><b>D4 · History's row.</b> New since round 3.1. The shipped visit row, with the channel tag before the title and "no exam" after it on a remote contact. A contact with no time sorts as the shipped visit row does and shows no time. It is not a count: the day's "logged" number is unchanged by it (the reader bound).</div>
+        <div class="cap"><b>D4 · History's row.</b> New since round 3.1. The shipped date only vet row (square mark, no time, a door to the record), with one change: the title follows the channel. Shipped, every visit record reads "Vet visit"; unchanged, a phone call would say a visit happened. A contact reads "Phone call | Texts | Email with the vet · {reason} · no exam". A clinic visit and the shipped "Called the vet" row keep their words. The day's count is logged events only, as shipped.</div>
       </div>
 
       <div class="frame">
         <div class="phone" data-kit="app/medication/[id].tsx · two pets, active pet Pixel">
-          <div class="hd" data-kit="Header leading=back"><span class="back">‹</span><span></span></div>
+          <div class="hd" data-kit="Header leading=back"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <div data-kit="title block View">
               <p class="ttl" data-kit="ThemedText · fontDisplay, textPageTitle · resolveRecordPetName">Nyx's ear medication</p>
               <div class="sub" data-kit="ThemedText · textSM, colorTextTertiary">Started Mon, Nov 9</div>
             </div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="src" data-kit="new: CourseSourceRow · DoorRow to the contact · hitTarget"><span class="via remote" data-kit="new: ChannelTag remote">Phone</span><span>Started after <b>a call with the vet, Nov 9</b></span><span class="chev">›</span></div>
+              <div class="src" data-kit="new: CourseSourceRow · DoorRow to the contact · hitTarget"><span class="via remote" data-kit="new: ChannelTag remote">Phone</span><span data-kit="ThemedText · subtitle or inline text">Started after <b data-kit="ThemedText · title weight">a call with the vet, Nov 9</b></span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
             </div>
             <div class="card pad" data-kit="Doses card · existing, schematic"><h4 data-kit="ThemedText · textLG, weightSemibold">Doses</h4></div>
           </div>
@@ -675,16 +750,16 @@
       </div>
 
       <div class="frame narrow">
-        <div class="phone w320" data-kit="app/vet-visits/[id].tsx · loading · WhorlSpinner md, ground day">
-          <div class="hd" data-kit="Header leading=back"><span class="back">‹</span><span></span></div>
-          <div class="centre" data-kit="centred state View · space3"><div class="spin" data-kit="WhorlSpinner size=md ground=day"></div></div>
+        <div class="phone w320" data-kit="app/vet-visits/[id].tsx · loading · silhouette">
+          <div class="hd" data-kit="Header leading=back"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
+          <div class="body" data-kit="Silhouette (components/surfaces/waits) · the screen's own shape, never a spinner"><div class="sk short" data-kit="Silhouette bar · colorSurfaceSubtle"></div><div class="sk" data-kit="Silhouette bar"></div><div class="sk" data-kit="Silhouette bar"></div><div class="sk short" data-kit="Silhouette bar"></div></div>
         </div>
         <div class="cap"><span class="tag state">loading</span> <b>D6a.</b> No title renders before the record answers: "Nyx's visit" for a second on a phone call would say an exam happened (C-12).</div>
         <div class="phone w320" data-kit="app/vet-visits/[id].tsx · failed read">
-          <div class="hd" data-kit="Header leading=back"><span class="back">‹</span><span></span></div>
+          <div class="hd" data-kit="Header leading=back"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
           <div class="centre" data-kit="centred state View · space3">
             <div class="sub" data-kit="ThemedText · textSM, colorTextSecondary · shipped sentence">This visit could not be read just now.</div>
-            <div class="hd" style="padding:0" data-kit="retry row · hitTarget"><span class="act" data-kit="RetryLink (shipped inline in [id].tsx) · colorAction">Try again</span></div>
+            <div class="hd" style="padding:0" data-kit="retry row · hitTarget"><span class="act" data-kit="retry, shipped inline in [id].tsx (not a kit part) · colorAction">Try again</span></div>
           </div>
         </div>
         <div class="cap"><span class="tag state">failed</span> <b>D6b.</b> The shipped sentence, kept: the channel is unknown when the read fails, so the page cannot say "call".</div>
@@ -692,8 +767,8 @@
     </div>
 
     <div class="note" style="margin-top:20px"><b>VoiceOver order, the record:</b>
-      <ol><li><b>VisitRow (D1):</b> one button, the tag inside the sentence: "November 9, phone, no exam, Ear, still shaking her head, ear medication, 3 screenshots". A visit reads "September 16, visit, Potential ear infection, Completely Cat Clinic, Dr Miller".</li><li><b>The contact's page (D2):</b> Back, Edit, "Nyx's call. Phone, Monday, November 9, no exam" (header), then each section header and its rows, then the footnote.</li><li><b>History's row (D4):</b> "2:15 pm, phone, no exam, Ear, still shaking her head, button".</li><li><b>CourseSourceRow (D5):</b> one button, "Started after a call with the vet, November 9. Opens the call."</li></ol>
-      <p style="margin:8px 0 0"><b>Hit areas:</b> chips are drawn at 32pt and rows' trailing actions at their text height; each meets 44pt through hitSlop inside a 44pt row, as <code>PlanRows.tsx</code> does today (C-5).</p>
+      <ol><li><b>VisitRow (D1):</b> one button, the tag inside the sentence: "November 9, phone, no exam, Ear, still shaking her head, ear medication, 3 screenshots". A visit reads "September 16, visit, Potential ear infection, Completely Cat Clinic, Dr Miller".</li><li><b>The contact's page (D2):</b> Back, Edit, "Nyx's call. Phone, Monday, November 9, no exam" (header), then each section header and its rows, then the footnote.</li><li><b>History's row (D4):</b> one button, "Phone call with the vet, Ear, still shaking her head, no exam. Opens the call".</li><li><b>CourseSourceRow (D5):</b> one button, "Started after a call with the vet, November 9. Opens the call."</li></ol>
+      <p style="margin:8px 0 0"><b>Hit areas:</b> a plan row's action is the shipped 44pt bordered box under the title (<code>PlanRows.tsx</code>, no hitSlop). Chips are <code>ChipGroup</code>'s own size. A started course on the after screen is the shipped settled row: no control, no chevron (C-7). On the contact's page it is the shipped tappable <code>PlanRow</code> with its chevron.</p>
     </div>
   </section>
 
@@ -706,8 +781,8 @@
       <div class="frame">
         <div class="phone" data-kit="app/(tabs)/index.tsx · SignalZone">
           <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
-            <div class="homehd" data-kit="HomeHeader · existing, schematic"><span class="n"><span class="av" data-kit="pet avatar · colorSurfaceSubtle, colorBorder"></span>Pixel</span></div>
-            <div class="ins" data-kit="InsightCard · intake · colorSurface, radiusMedium, shadow-card"><span class="rl" data-kit="InsightCard rail · railWidth, colorEventSymptom"></span><div data-kit="InsightCard body View">
+            <div class="homehd" data-kit="HomeHeader · existing, schematic"><span class="n" data-kit="HomeHeader name"><span class="av" data-kit="pet avatar · colorSurfaceSubtle, colorBorder"></span>Pixel</span></div>
+            <div class="ins" data-kit="HomeCard (components/surfaces/home) hosting InsightCard · intake · rail in the gutter"><span class="rl" data-kit="InsightCard rail · railWidth, colorEventSymptom"></span><div data-kit="InsightCard body View">
               <div class="c" data-kit="InsightCard clause · unchanged">Pixel has eaten much less than usual for 2 days.</div>
               <div class="n" data-kit="InsightCard count · unchanged">3 of 7 meals left untouched since Thursday</div>
               <div class="a" data-kit="InsightCard ask · colorEventSymptomInk · unchanged">Worth a call to your vet today</div>
@@ -721,20 +796,53 @@
       <div class="frame">
         <div class="phone" data-kit="app/(tabs)/index.tsx · SignalZone · the watched day">
           <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
-            <div class="homehd" data-kit="HomeHeader · existing, schematic"><span class="n"><span class="av" data-kit="pet avatar"></span>Pixel</span></div>
-            <div class="ins" data-kit="InsightCard · intake · same slot"><span class="rl" data-kit="InsightCard rail · colorEventSymptom"></span><div data-kit="InsightCard body View">
+            <div class="homehd" data-kit="HomeHeader · existing, schematic"><span class="n" data-kit="HomeHeader name"><span class="av" data-kit="pet avatar"></span>Pixel</span></div>
+            <div class="ins" data-kit="HomeCard hosting InsightCard · intake · same slot"><span class="rl" data-kit="InsightCard rail · colorEventSymptom"></span><div data-kit="InsightCard body View">
               <div class="c" data-kit="InsightCard clause · the engine's own, grown">Pixel has eaten much less than usual for 3 days.</div>
               <div class="n" data-kit="InsightCard count">5 of 10 meals left untouched since Thursday</div>
               <div class="a" data-kit="InsightCard ask · colorEventSymptomInk">Worth a call to your vet today</div>
               <div class="ctx" data-kit="new: ContactContextLine">You emailed the vet on Fri, Nov 13.</div>
             </div></div>
-            <div class="line" data-kit="the Vet instructions Home line (that project's part; below every safety and intake card) · hitTarget"><span>A note about Pixel for today</span><span class="a" data-kit="TextLink · colorAction">Open ›</span></div>
+            <div class="line" data-kit="new: the Vet instructions Home line (that project's part; below every safety and intake card) · hitTarget"><span data-kit="ThemedText · subtitle or inline text">A note about Pixel for today</span><span class="a" data-kit="DoorMark (components/surfaces/home) · never a raw chevron">Open ›</span></div>
             <div class="today" data-kit="Today band · existing, schematic">Today · 1 logged</div>
           </div>
         </div>
         <div class="cap"><b>E2 · The next day.</b> The card still leads and still asks; its count grew because the logs did. The vet's instruction comes back as its own line under it, whatever the logs say (Vet instructions R7).</div>
       </div>
     </div>
+    <div class="optbox">
+      <div class="optbox-h">G3 · options, drawn for the decision, not the current proposal · the card already says "You called on"</div>
+      <div class="row">
+        <div class="frame">
+          <div class="phone" data-kit="app/(tabs)/index.tsx · SignalZone · option A">
+            <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
+              <div class="ins" data-kit="HomeCard hosting InsightCard · a called card (care state), shipped"><span class="rl" data-kit="InsightCard rail · colorEventSymptom"></span><div data-kit="InsightCard body View">
+                <div class="c" data-kit="InsightCard clause · unchanged">Pixel has eaten much less than usual for 3 days.</div>
+                <div class="n" data-kit="InsightCard count · unchanged">5 of 10 meals left untouched since Thursday</div>
+                <div class="ctx" data-kit="calledOnLine (lib/vetCallState.ts) · shipped, unchanged">You called on Nov 13.</div>
+              </div></div>
+            </div>
+          </div>
+          <div class="cap"><b>Option A · The shipped line stands alone.</b> Sam tapped "I've called" on the card and also logged the call as a contact, both on Nov 13. The card already carries the shipped line, so the contact adds nothing. One fact, said once.</div>
+        </div>
+        <div class="frame">
+          <div class="phone" data-kit="app/(tabs)/index.tsx · SignalZone · option B">
+            <div class="body top" data-kit="ScrollView content · space2 gutters, space1_5 gap">
+              <div class="ins" data-kit="HomeCard hosting InsightCard · a called card (care state), shipped"><span class="rl" data-kit="InsightCard rail · colorEventSymptom"></span><div data-kit="InsightCard body View">
+                <div class="c" data-kit="InsightCard clause · unchanged">Pixel has eaten much less than usual for 3 days.</div>
+                <div class="n" data-kit="InsightCard count · unchanged">5 of 10 meals left untouched since Thursday</div>
+                <div class="ctx" data-kit="calledOnLine · shipped, unchanged">You called on Nov 13.</div>
+                <div class="ctx" data-kit="new: ContactContextLine">You emailed the vet today, 4:10 pm.</div>
+              </div></div>
+            </div>
+          </div>
+          <div class="cap"><b>Option B · Both lines, when they say different things (recommended).</b> The same card a day later, after an email. The contact line is added only when its day or channel differs from the shipped line; an identical fact is still said once.</div>
+        </div>
+      </div>
+    </div>
+    <div class="brief"><b>G3 · A card that already says "You called on": what does a logged contact add?</b><br><b>Deciding:</b> which lines a warning card shows when the owner has both answered it with "I've called" (the shipped care state record) and logged a contact. Neither option touches the sentence, the count, the ask or the order (R5).<br><b>Options:</b> <b>A:</b> the shipped line always stands alone on a called card. <b>B, recommended:</b> the contact line is added only when it says something the shipped line does not (another day or another channel). <b>C:</b> always both.<br><b>Consequence:</b> unblocks PR-07, which then proves the card identical in the double case with a fixture. This is a clinical surface, so it is yours to rule. The list and History need no ruling: the shipped <i>Calls</i> section and "Called the vet" row stay as they are beside the new contact (D1, D4).</div>
+    <div class="brief"><b>G4 · Can a saved contact's channel be edited?</b><br><b>Deciding:</b> whether <i>Edit</i> on a contact (D2) shows the channel chips. Changing Phone to At the clinic turns a call into an exam and moves the report's start; the reverse hides an exam.<br><b>Options:</b> <b>A, recommended:</b> editable, all four chips, with the footnote changing as the chip does; a mis-tap must be fixable, and every reader filters when it reads, so the window follows the corrected record. <b>B:</b> editable among Phone, Text and Email only; a wrong "clinic or not" means delete and log again. <b>C:</b> not editable.<br><b>Consequence:</b> unblocks the edit sheet in PR-04 or PR-06. A needs a test that the report window follows an edit in both directions; B and C trade a correctable record for a smaller surface.</div>
+
     <div class="note" style="margin-top:20px"><b>VoiceOver order, E1:</b> the card reads exactly as it does today (clause, count, ask), then the context line as a fourth, separate sentence. The line is not a control and adds no action. <b>What PR-07 must prove (AC 9):</b> string and index equality of the card with and without the contact, and no <code>care_acknowledgements</code>, <code>vet_calls</code> or follow-up row written.</div>
   </section>
 
@@ -745,14 +853,14 @@
     <p class="sec-lede">The report is the vet's, so it keeps clinical words. The default start stays at the last exam (R8). The fragment is schematic: the section and its lines are the contract, the report's own type and layout are the report's.</p>
     <div class="row">
       <div class="frame wide">
-        <div class="paper" data-kit="generate-report · new section 'Vet contacts in this period' · colorSurface, colorBorder">
-          <div class="ph" data-kit="report header · existing"><b>Nyx · Feline, 3 y</b><span>Report · Nov 13</span></div>
-          <div class="win" data-kit="report window line · rung 1 unchanged (R8)">Covers <b>Sep 16 (last exam) to Nov 13</b></div>
+        <div class="paper" data-kit="new: generate-report section 'Vet contacts in this period' · colorSurface, colorBorder">
+          <div class="ph" data-kit="report header · existing"><b data-kit="ThemedText · title weight">Nyx · Feline, 3 y</b><span data-kit="ThemedText · subtitle or inline text">Report · Nov 13</span></div>
+          <div class="win" data-kit="report window line · rung 1 unchanged (R8)">Covers <b data-kit="ThemedText · title weight">Sep 16 (last exam) to Nov 13</b></div>
           <h5 data-kit="report section heading">Vet contacts in this period</h5>
-          <div class="r" data-kit="report row · in_clinic"><span class="d">Sep 16</span><span><span class="k" data-kit="report channel key · colorBorderStrong">Visit</span>Exam. Potential ear infection. Completely Cat Clinic, Dr Miller.</span></div>
-          <div class="r hl" data-kit="report row · phone (highlight is this page's, not the report's) · colorAttentionLight"><span class="d">Nov 9</span><span><span class="k" data-kit="report channel key">Phone</span>Consult, no exam. Ear, still shaking her head.<small>Started: ear medication. Texts on the owner's phone, not attached.</small></span></div>
+          <div class="r" data-kit="report row · in_clinic"><span class="d" data-kit="date column">Sep 16</span><span data-kit="ThemedText · subtitle or inline text"><span class="k" data-kit="new: report channel key · colorBorderStrong">Visit</span>Exam. Potential ear infection. Completely Cat Clinic, Dr Miller.</span></div>
+          <div class="r hl" data-kit="report row · phone (highlight is this page's, not the report's) · colorAttentionLight"><span class="d" data-kit="date column">Nov 9</span><span data-kit="ThemedText · subtitle or inline text"><span class="k" data-kit="new: report channel key">Phone</span>Consult, no exam. Ear, still shaking her head.<small data-kit="ThemedText · textXS">Started: ear medication. Texts on the owner's phone, not attached.</small></span></div>
           <h5 data-kit="report section heading · existing">Medications</h5>
-          <div class="r" data-kit="report medication row · gains the source line"><span class="d">Nov 9</span><span>Ear medication<small>Started after the Nov 9 phone consult</small></span></div>
+          <div class="r" data-kit="report medication row · gains the source line"><span class="d" data-kit="date column">Nov 9</span><span data-kit="ThemedText · subtitle or inline text">Ear medication<small data-kit="ThemedText · textXS">Started after the Nov 9 phone consult</small></span></div>
         </div>
         <div class="cap"><b>F1 · Window stays at the exam</b> <span class="tag real">real payload</span> <span class="tag real">name pending</span>. Every visit and contact inside the window, in date order. No dose line is drawn because the record holds none for this course yet; the report prints what the course holds. Documents never render (Vet Files D14); typed instructions never reach the report (Vet instructions R8).</div>
       </div>
@@ -771,21 +879,34 @@
         <tr><td><code>NeutralSavedMark</code></td><td>PR-05</td><td>The saved moment's mark when a warning is live or a sign is watched. Never a check.</td></tr>
         <tr><td><code>CourseSourceRow</code></td><td>PR-06</td><td>"Started after a call with the vet, Nov 9" on the course's page; a door to the contact.</td></tr>
         <tr><td><code>ContactContextLine</code></td><td>PR-07</td><td>The one line a warning card may gain. Not a control.</td></tr>
+        <tr><td>Channel-worded History title</td><td>PR-06</td><td>"Phone call | Texts | Email with the vet" where a clinic visit reads "Vet visit" (D4). The shipped row shape is reused.</td></tr>
+        <tr><td>The logging button on the non-empty card, or the Add menu</td><td>PR-04</td><td>Whichever G1 rules. Not built until it does.</td></tr>
+        <tr><td><i>Time</i> on a past contact; <i>Where</i> under <i>What it was about</i></td><td>PR-04</td><td>New field and new position on the logging door only; the booking door is byte identical.</td></tr>
+        <tr><td>Report: the section and its channel key</td><td>PR-08</td><td>"Vet contacts in this period" and the Visit | Phone | Text | Email key.</td></tr>
         <tr><td><code>WatchRow</code>, <code>SafetyLine</code>, the Home line</td><td>Vet instructions</td><td>That project's parts, reused. They render here only when <code>vet_instructions_enabled</code> is on too (AC 14).</td></tr>
       </table>
     </div>
     <div class="note"><b>The state set:</b>
       <table class="tbl">
         <tr><th>State</th><th>Frame</th></tr>
-        <tr><td>Empty</td><td>A2 (no visits yet), C6 (nothing added), D3 (a contact with nothing on it)</td></tr>
+        <tr><td>Empty</td><td>A1 and A2 (no visits yet), C6 (nothing added), D3 (a contact with nothing on it)</td></tr>
         <tr><td>Loading</td><td>D6a</td></tr>
         <tr><td>Failed or offline</td><td>B4 (the save failed), D6b (the read failed), C5 (saved offline)</td></tr>
         <tr><td>320pt</td><td>B5; D6a and D6b are drawn at that width</td></tr>
-        <tr><td>Largest text</td><td>B6, C7</td></tr>
+        <tr><td>Largest text</td><td>B6, C7 (drawn at about one and a half times; the largest accessibility size is a device check)</td></tr>
         <tr><td>Two pets</td><td>B2 (<i>Also about</i>), D3 (Juniper's copy), D5 (the record's pet, not the active one)</td></tr>
         <tr><td>VoiceOver order</td><td>The note under §B, §C, §D and §E</td></tr>
         <tr><td>The PM's real payload</td><td>B1, C1, D1, D2, D4, D5, F1: Nyx, Mon Nov 9, the call and the texts, the ear medication, "call back if still shaking"</td></tr>
       </table>
+    </div>
+    <div class="note"><b>Rules the build notes carry (from the critique; none needs a ruling):</b>
+      <ul>
+        <li><b>The drug name is printed as stored,</b> never the words "Ear medication" and never re-cased. No fixture or copy string hard codes the placeholder; each surface that prints a name has a longest name fixture (the tag pill is one line).</li>
+        <li><b>PR-04:</b> the flag-on logging sheet, field by field against <code>BookVisitSheet.tsx</code>: <i>Day</i>, <i>Time</i> (new on a past contact), <i>What it was about</i>, then <i>Where</i> (Clinic, Vet, the hint) on Phone, Text and Email alike. A device check at 320pt and at the largest text size with every field and Save reachable.</li>
+        <li><b>PR-05:</b> plan rows are <code>PlanRows.tsx</code> as shipped. The saved mark keeps the shipped 44pt. A document added offline shows Vet Files' shipped pending and failed states; the contact page's footnote about the report is true once the upload lands.</li>
+        <li><b>PR-06:</b> the list and the after screen keep their shipped loading and failure states. <code>VisitRow</code>'s one line limits stay; "No exam" is the protected half.</li>
+        <li><b>PR-07:</b> the context line renders inside the shipped Home card surface and no line renders until the contact read has answered (C-12).</li>
+      </ul>
     </div>
     <div class="note"><b>Rules under the frames (unchanged from round 3.1):</b>
       <ul>
