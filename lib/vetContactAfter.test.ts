@@ -25,6 +25,10 @@ const cacheWith = (classes: Array<'safety' | 'insight'>): SignalCacheRow =>
   }) as unknown as SignalCacheRow;
 
 const BANNED = /handled|\bdone\b|all set/i;
+// clinical-guardrails Pattern 8: the analyze-* suites' reassurance vocabulary, word for word.
+const REASSURE_VOCAB = /\b(fine|okay|ok|healthy|normal|unremarkable|all clear|nothing (?:to worry|concerning|alarming))\b/i;
+// Pattern 11's Never column: no condition on the owner's sense of normal, no "can wait".
+const NEVER_ASK = /isn.t like|if you.re not worried|can wait|no rush|when convenient/i;
 
 describe('hasLiveWarning', () => {
   it('is true for any safety card, and for an unread cache (C-12: unread is not empty)', () => {
@@ -46,7 +50,12 @@ describe('describeContactSave', () => {
     expect(s.mark).toBe('neutral');
     expect(s.safety).toEqual({ lead: 'If Pixel is worse, don’t wait.', rest: 'Call your vet today.' });
     expect(s.reportLine).toMatch(/^Nothing on Home changes because you (called|texted|emailed)\.$/);
-    for (const line of [s.heading, s.reportLine, s.safety?.lead, s.safety?.rest]) expect(line ?? '').not.toMatch(BANNED);
+    for (const line of [s.heading, s.reportLine, s.safety?.lead, s.safety?.rest]) {
+      expect(line ?? '').not.toMatch(BANNED);
+      expect(line ?? '').not.toMatch(REASSURE_VOCAB);
+      expect(line ?? '').not.toMatch(NEVER_ASK);
+      expect(line ?? '').not.toContain('!');
+    }
   });
 
   it('a watched sign alone also takes the neutral moment', () => {
@@ -56,6 +65,10 @@ describe('describeContactSave', () => {
 
   it('nothing open keeps the shipped check with the no-exam report line (C5)', () => {
     const s = describeContactSave({ petName: 'Nyx', channel: 'phone', liveWarning: false, watchedSign: false, linked: [] });
+    for (const line of [s.heading, s.reportLine]) {
+      expect(line ?? '').not.toMatch(REASSURE_VOCAB);
+      expect(line ?? '').not.toMatch(BANNED);
+    }
     expect(s).toMatchObject({
       mark: 'check',
       heading: 'Nyx’s call is saved',
