@@ -1796,7 +1796,13 @@ async function drainVetVisitsQueue(): Promise<void> {
   );
 
   if (unsyncedVisits.length > 0) {
-    const landed = await pushRows(db, 'vet_visits', unsyncedVisits, (v) => ({
+    // Two batches, never one (adversarial pass 2): PostgREST builds a batch's column list from
+    // the union of every row's keys and sends a missing key as NULL, so a row that OMITS its
+    // channel, batched beside one that names it, would be sent `channel: null`. Today that is a
+    // 23502 and the per-row retry rescues it; under `missing=default` it would silently write
+    // 'in_clinic' over the server's 'phone'. So the unknown-channel rows travel alone.
+    type QueuedVisit = (typeof unsyncedVisits)[number];
+    const toRemote = (v: QueuedVisit) => ({
       id: v.id, pet_id: v.pet_id, visited_at: v.visited_at,
       clinic_name: v.clinic_name, vet_name: v.vet_name,
       reason: v.reason, notes: v.notes, next_visit_at: v.next_visit_at,
@@ -1812,11 +1818,18 @@ async function drainVetVisitsQueue(): Promise<void> {
       // re-stamped as an exam (the adversarial pass). Pinned by lib/vetContacts.test.ts.
       ...(v.channel === null ? {} : { channel: v.channel, contacted_at: v.contacted_at }),
       created_at: v.created_at, updated_at: v.updated_at,
-    }));
+    });
+    const known = unsyncedVisits.filter((v) => v.channel !== null);
+    const unknown = unsyncedVisits.filter((v) => v.channel === null);
+    const landed = new Set<string>();
+    for (const batch of [known, unknown]) {
+      if (batch.length === 0) continue;
+      for (const id of await pushRows(db, 'vet_visits', batch, toRemote)) landed.add(id);
+    }
     // A row that landed without its channel still reads NULL here. Re-arm the full re-pull, so
     // the next hydrate's fill learns it from the server (its updated_at may sit below the
     // watermark, where an incremental pull would never fetch it again).
-    if (unsyncedVisits.some((v) => v.channel === null && landed.has(v.id))) {
+    if (unknown.some((v) => landed.has(v.id))) {
       try {
         await db.runAsync('DELETE FROM sync_watermarks WHERE table_name = ?', ['vet_visits']);
       } catch (e) {
@@ -3641,9 +3654,8 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<boolean> 
   }
   // CUL-2765 — the CUL-1396 shape: the re-pull after the channel column upgrade
   // (COLUMN_UPGRADES `rehydrate`) returns rows whose updated_at equals the local copy, which
-  // reconcileBatch leaves alone, so an upgraded phone would keep the local default
-  // 'in_clinic' on another device's phone contact: an exam on this phone, anchoring its report
-  // window, and pushed back over the server's 'phone' on the next edit. So every fetched
+  // reconcileBatch leaves alone, so an upgraded phone would keep NULL ("unknown") on every row
+  // an older build pulled: an exam the window then skips, and a contact it cannot name. So every fetched
   // row's channel and time are copied onto a SYNCED local row (its content is the server's);
   // an unpushed edit is never touched, nothing is queued, updated_at is not written.
   if (stale()) return false;

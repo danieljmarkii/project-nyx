@@ -2434,9 +2434,18 @@ export async function readVisitConsequence(
   // shape where a string comparison is the right tool (C-40 is about INSTANTS in two
   // spellings; a DATE column has one). `localDateKey` reads the device's own
   // calendar, never `toISOString()`.
+  // A contact (or a row whose channel this phone never learned) anchors no window, so it is
+  // never "the latest visit" whatever comes after it (adversarial pass 2, CUL-2765): reopening
+  // a call must not say that moving its date moves where the report starts.
+  // visit-read: anyContact — the subject's OWN channel, read to refuse a contact the exam claim.
+  const own = await getDb().getAllAsync<{ channel: string | null }>(
+    `SELECT channel FROM vet_visits WHERE id = ? LIMIT 1`,
+    [visit.id],
+  );
+  const isExam = own[0]?.channel === 'in_clinic';
   const todayKey = localDateKey(now);
   return {
-    isLatest: (rows[0]?.later ?? 0) === 0,
+    isLatest: isExam && (rows[0]?.later ?? 0) === 0,
     dayRelation:
       visit.visited_at < todayKey ? 'before_today'
       : visit.visited_at === todayKey ? 'today'

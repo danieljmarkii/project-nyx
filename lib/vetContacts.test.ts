@@ -281,6 +281,14 @@ describe('the sync (§5.1: the push enumerates columns)', () => {
     expect(localRow('edited')).toMatchObject({ channel: 'in_clinic', synced: 0, notes: 'my edit' });
   });
 
+  it('unknown-channel rows travel in their own batch, never beside a row that names its channel', async () => {
+    seedVisit({ id: 'known', visited_at: '2026-11-01', channel: 'email', synced: 0 });
+    seedVisit({ id: 'unknown', visited_at: '2026-11-02', channel: null, synced: 0 });
+    await syncPendingVetVisits();
+    const batches = mockServer.upserts.filter((u) => u.table === 'vet_visits').map((u) => u.rows.map((r) => r.id));
+    expect(batches).toEqual([['known'], ['unknown']]);
+  });
+
   it('an unknown-channel edit never re-stamps a phone contact as an exam (the adversarial pass)', async () => {
     // An older build pulled another device's phone contact without the column, the owner edited
     // it offline, and the phone upgraded: the row is unsynced and its channel is UNKNOWN (NULL).
@@ -354,6 +362,17 @@ describe('AC 6: the exam readers on the phone, a Sep 18 visit and a Nov 9 phone 
   it('a later phone contact does not make the exam stop being the latest visit', async () => {
     const c = await readVisitConsequence({ id: 'exam', pet_id: PET, visited_at: '2026-09-18' }, NOV_14);
     expect(c.isLatest).toBe(true);
+  });
+
+  it('a contact is never "the latest visit": reopening it claims no window (adversarial pass 2)', async () => {
+    const c = await readVisitConsequence({ id: 'call', pet_id: PET, visited_at: '2026-11-09' }, NOV_14);
+    expect(c.isLatest).toBe(false);
+    // Unknown is not an exam either.
+    mockLocal.db!.prepare(`UPDATE vet_visits SET channel = NULL WHERE id = 'call'`).run();
+    expect((await readVisitConsequence({ id: 'call', pet_id: PET, visited_at: '2026-11-09' }, NOV_14)).isLatest).toBe(false);
+    // Non-vacuity: the same row as an exam is the latest.
+    mockLocal.db!.prepare(`UPDATE vet_visits SET channel = 'in_clinic' WHERE id = 'call'`).run();
+    expect((await readVisitConsequence({ id: 'call', pet_id: PET, visited_at: '2026-11-09' }, NOV_14)).isLatest).toBe(true);
   });
 
   it('a booking prefills from the exam, never from the call', async () => {
