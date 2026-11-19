@@ -1,8 +1,11 @@
 import {
   CHANNEL_OPTIONS,
   LOG_CONTACT_LABEL,
+  WHEN_ROW_MIN_WIDTH,
   composeContactedAt,
   contactSaveLabel,
+  latestTimeOn,
+  whenFieldsStack,
   contactSheetFootnote,
   contactSheetTitle,
 } from './vetContactSheet';
@@ -68,5 +71,42 @@ describe('composeContactedAt: the optional time as a UTC instant (C-10)', () => 
       2026, 10, 9, 16, 10,
     ]);
     expect(at!.endsWith('Z')).toBe(true);
+  });
+});
+
+describe('a past contact is never in the future (code-reviewer, PR-04)', () => {
+  const NOW = new Date(2026, 10, 19, 8, 15);
+  it('a time later than now on today saves as now', () => {
+    const at = composeContactedAt(new Date(2026, 10, 19), new Date(2000, 0, 1, 9, 0), NOW);
+    expect(at).toBe(NOW.toISOString());
+  });
+  it('an earlier time on today, and any time on an earlier day, saves as picked', () => {
+    expect(composeContactedAt(new Date(2026, 10, 19), new Date(2000, 0, 1, 7, 30), NOW)).toBe(
+      new Date(2026, 10, 19, 7, 30).toISOString(),
+    );
+    expect(composeContactedAt(new Date(2026, 10, 18), new Date(2000, 0, 1, 23, 50), NOW)).toBe(
+      new Date(2026, 10, 18, 23, 50).toISOString(),
+    );
+  });
+  it('the picker’s bound is now on today, none on an earlier day', () => {
+    expect(latestTimeOn(new Date(2026, 10, 19, 0, 0), NOW)).toBe(NOW);
+    expect(latestTimeOn(new Date(2026, 10, 18, 12, 0), NOW)).toBeUndefined();
+  });
+});
+
+describe('Day and Time stack where they cannot both read whole (mock B5, B6)', () => {
+  it('side by side on a standard phone at the default size', () => {
+    expect(whenFieldsStack(390 - 48, 1)).toBe(false);
+  });
+  it('stacked at 320pt', () => {
+    expect(whenFieldsStack(320 - 48, 1)).toBe(true);
+  });
+  it('stacked at large text on a standard phone; the floor scales with the text', () => {
+    expect(whenFieldsStack(390 - 48, 1.3)).toBe(true);
+    expect(whenFieldsStack(WHEN_ROW_MIN_WIDTH, 1)).toBe(false);
+    expect(whenFieldsStack(WHEN_ROW_MIN_WIDTH - 1, 1)).toBe(true);
+  });
+  it('a text size below the default never un-stacks a narrow column', () => {
+    expect(whenFieldsStack(272, 0.8)).toBe(true);
   });
 });

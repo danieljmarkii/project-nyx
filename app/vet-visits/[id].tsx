@@ -147,7 +147,17 @@ export default function VetVisitScreen() {
       await load();
     } catch (err) {
       console.warn('[vet-visit] contact edit failed:', err);
-      Alert.alert('That didn’t save', 'Try that again in a moment.');
+      // A row removed meanwhile (another device) can never take the edit, so "try again"
+      // would be a promise the retry cannot keep: close and say what happened. A failed or
+      // unreadable re-read keeps the sheet open, as any other failed write does.
+      const still = await readVetVisitDetail(detail.visit.id).catch(() => undefined);
+      if (still === null) {
+        setEditing(false);
+        await load();
+        Alert.alert('That didn’t save', 'This one is no longer on the record.');
+      } else {
+        Alert.alert('That didn’t save', 'Try that again in a moment.');
+      }
     } finally {
       setEditSaving(false);
     }

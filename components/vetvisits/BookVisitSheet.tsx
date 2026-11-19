@@ -10,6 +10,7 @@ import {
   Switch,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,11 +35,13 @@ import {
   contactSaveLabel,
   contactSheetFootnote,
   contactSheetTitle,
+  latestTimeOn,
+  whenFieldsStack,
 } from '../../lib/vetContactSheet';
 import { isRemoteChannel } from '../../lib/vetContacts';
 import { useVetContactsOn } from '../../hooks/useVetContacts';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
-import { useSheetCap } from '../../hooks/useLayoutClass';
+import { useColumnWidth, useSheetCap } from '../../hooks/useLayoutClass';
 import type { VetReminderStatus } from '../../hooks/useVetReminders';
 import {
   describeReminderInstant,
@@ -146,7 +149,15 @@ export function BookVisitSheet({
   // `happened` and the sheet decides which sheet that is; an edit is always one. The booking
   // door never reaches it: `Add the next visit` keeps its question and shows no chips.
   const contactsOn = useVetContactsOn();
-  const past = edit !== null || (contactsOn && initialMode === 'happened');
+  const wantsPast = edit !== null || (contactsOn && initialMode === 'happened');
+  // LATCHED at open: a flag that resolves while the sheet is up (a cold start onto the
+  // `?add=happened` door) must not swap the body under the owner and wipe what they typed.
+  // The seed effect below re-latches it on each open.
+  const [past, setPast] = useState(wantsPast);
+  const columnWidth = useColumnWidth();
+  const { fontScale } = useWindowDimensions();
+  // Read only on the contact path, so the flag-off sheet never reaches the contact module.
+  const whenStacks = past && whenFieldsStack(columnWidth - 2 * theme.space3, fontScale);
   const [channel, setChannel] = useState<VisitChannel>(edit?.channel ?? 'in_clinic');
   const [channelTouched, setChannelTouched] = useState(false);
   const [mode, setMode] = useState<VisitMode>(initialMode);
@@ -169,7 +180,8 @@ export function BookVisitSheet({
   // every render is what lets them.
   useEffect(() => {
     if (!visible) return;
-    if (past) {
+    setPast(wantsPast);
+    if (wantsPast) {
       // A past contact seeds its own way. Day is TODAY (spec §4.2), never the last visit's
       // "come back on" date, which is a booking's seed; an edit seeds the record as saved.
       // Clinic and vet keep the shipped prefill (the hint says where it came from).
@@ -217,10 +229,10 @@ export function BookVisitSheet({
     const today = new Date();
     setDay(seeded && isLegalForMode(seeded, initialMode, today) ? seeded : today);
     // `edit` is read through its fields so a host that rebuilds the seed object each render
-    // does not wipe what the owner typed.
+    // does not wipe what the owner typed; the flag (`wantsPast`) is read at open only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    visible, initialMode, prefill.clinicName, prefill.vetName, prefill.suggestedDate, initialReason, past,
+    visible, initialMode, prefill.clinicName, prefill.vetName, prefill.suggestedDate, initialReason,
     edit?.channel, edit?.day, edit?.contactedAt, edit?.clinicName, edit?.vetName, edit?.reason,
   ]);
 
@@ -287,7 +299,26 @@ export function BookVisitSheet({
   function toggleTimePicker() {
     const opening = !showTimePicker;
     setShowTimePicker(opening);
-    if (opening && Platform.OS === 'ios' && !time) setTime(defaultTimeOfDay(day));
+    if (opening && Platform.OS === 'ios' && !time) setTime(timeSeed(day));
+  }
+
+  // The wheel's seed. A past contact never seeds a time still to come: before 9am today the
+  // clinic-morning seed would be a future instant, so it opens on now instead.
+  function timeSeed(d: Date): Date {
+    const seed = defaultTimeOfDay(d);
+    if (!past) return seed;
+    const latest = latestTimeOn(d);
+    return latest && seed.getTime() > latest.getTime() ? latest : seed;
+  }
+
+  // An edit that left Day and Time as they opened keeps the stored instant exactly. Re-composing
+  // it would re-read the saved instant in THIS phone's zone and could move it by up to a day
+  // (a call saved in New York, re-channelled in London); only the owner's own change moves it.
+  function editKeepsInstant(): boolean {
+    if (!edit) return false;
+    const opened = edit.contactedAt ? new Date(edit.contactedAt).getTime() : null;
+    const now = time ? time.getTime() : null;
+    return localDateKey(day) === edit.day && opened === now;
   }
 
   function clearTime() {
@@ -311,7 +342,7 @@ export function BookVisitSheet({
         alsoForPetIds: !edit && isRemoteChannel(channel) ? otherPets.filter((p) => alsoFor.has(p.id)).map((p) => p.id) : [],
         remindMe: false,
         channel,
-        contactedAt: composeContactedAt(day, time),
+        contactedAt: editKeepsInstant() ? edit!.contactedAt : composeContactedAt(day, time),
       });
       return;
     }
@@ -341,6 +372,13 @@ export function BookVisitSheet({
   // A chip tap retitles the sheet; VoiceOver hears it (C-44). Not on open: the title is
   // read as the sheet's first element then.
   useLiveRegionAnnouncement(past && channelTouched ? pastTitle : null, channel);
+
+  // A past contact holds its sheet while the write is in flight, so a failure lands on the
+  // fields it failed with (mock B4) rather than on an alert over nothing. Flag off: as shipped.
+  function closeUnlessSaving() {
+    if (past && busy) return;
+    onClose();
+  }
 
   function toggleAlso(petId: string) {
     setAlsoFor((prev) => {
@@ -386,12 +424,12 @@ export function BookVisitSheet({
   );
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={closeUnlessSaving}>
       <KeyboardAvoidingView
         style={styles.backdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
+        <Pressable style={styles.scrim} onPress={closeUnlessSaving} accessibilityLabel="Close" />
         <View
           style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }, sheetCap]}
           accessibilityViewIsModal
@@ -432,8 +470,8 @@ export function BookVisitSheet({
 
                 {/* Day and Time side by side; they stack when the column is narrow or the
                     text is large (mock B5, B6), never truncate. */}
-                <View style={styles.whenRow}>
-                  <View style={styles.whenCell}>
+                <View style={whenStacks ? undefined : styles.whenRow}>
+                  <View style={whenStacks ? undefined : styles.whenCell}>
                     <SectionLabel label="Day" style={styles.label} />
                     <TouchableOpacity
                       style={styles.value}
@@ -446,7 +484,7 @@ export function BookVisitSheet({
                       <ThemedText style={styles.valueText}>{pastDayLabel(day)}</ThemedText>
                     </TouchableOpacity>
                   </View>
-                  <View style={styles.whenCell}>
+                  <View style={whenStacks ? undefined : styles.whenCell}>
                     <SectionLabel label="Time" style={styles.label} />
                     <View style={styles.timeRow}>
                       <TouchableOpacity
@@ -492,11 +530,14 @@ export function BookVisitSheet({
                 )}
                 {showTimePicker && (
                   <DateTimePicker
-                    value={time ?? defaultTimeOfDay(day)}
+                    value={time ?? timeSeed(day)}
                     mode="time"
                     display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                     themeVariant="light"
                     accentColor={colorRoles.action.onLight}
+                    // On today, nothing later than now (a contact that happened); the save
+                    // clamps too, for a day moved back to today under a set time.
+                    maximumDate={latestTimeOn(day)}
                     onChange={(_, picked) => {
                       if (Platform.OS !== 'ios') setShowTimePicker(false);
                       if (picked) setTime(picked);
@@ -895,16 +936,15 @@ const styles = StyleSheet.create({
   timeValue: {
     flex: 1,
   },
-  // Day and Time: side by side where both fit, stacked where they do not (320pt, large
-  // text). The floor is the narrowest a value box reads whole at the default size.
+  // Day and Time side by side where both read whole (`whenFieldsStack` decides, from the
+  // column and the text size); stacked otherwise.
   whenRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     columnGap: theme.space2,
   },
   whenCell: {
-    flexGrow: 1,
-    flexBasis: 140,
+    flex: 1,
+    minWidth: 0,
   },
   clearTime: {
     minHeight: 44,

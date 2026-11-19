@@ -208,6 +208,9 @@ export default function VetVisitsScreen() {
   async function handleSubmit(input: BookVisitSubmit) {
     // The screen's pet, not the store's current one — see `screenPetId` above.
     if (!petId) return;
+    // One write per Save: a second tap during the first would log the contact twice, once
+    // per pet under Also about (adversarial pass, PR-04).
+    if (saving) return;
     setSaving(true);
     try {
       if (input.mode === 'booked' && input.scheduledAt) {

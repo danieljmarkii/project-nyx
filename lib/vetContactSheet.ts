@@ -82,9 +82,33 @@ export function contactSheetFootnote(channel: VisitChannel, petName: string): st
  * The optional time, as the UTC instant `contacted_at` stores (C-10), composed from the
  * LOCAL day and the local wall-clock time the owner picked. Null when no time was set: the
  * record then holds the day only, and nothing invents a precision it does not have.
+ *
+ * Never later than `now`. A contact that happened cannot be in the future, and the time
+ * picker's 9:00 seed (iOS commits what the wheel shows, CUL-984) would otherwise save
+ * 9:00 at 8:15 with no touch: the same "future record on the happened arm" the sheet's day
+ * clamp already refuses (code-reviewer, PR-04).
  */
-export function composeContactedAt(day: Date, time: Date | null): string | null {
+export function composeContactedAt(day: Date, time: Date | null, now: Date = new Date()): string | null {
   if (!time) return null;
   const out = new Date(day.getFullYear(), day.getMonth(), day.getDate(), time.getHours(), time.getMinutes(), 0, 0);
-  return out.toISOString();
+  return (out.getTime() > now.getTime() ? now : out).toISOString();
+}
+
+/** The latest time the picker may offer on `day`: now on today, none on an earlier day. */
+export function latestTimeOn(day: Date, now: Date = new Date()): Date | undefined {
+  const sameDay =
+    day.getFullYear() === now.getFullYear() && day.getMonth() === now.getMonth() && day.getDate() === now.getDate();
+  return sameDay ? now : undefined;
+}
+
+/**
+ * The narrowest content width, at the default text size, that holds Day and Time side by
+ * side with each value whole: "Wednesday, Sep 16" in one box, "10:45 pm" plus *Clear* in the
+ * other, and the gap. It scales with the owner's text size, so large text stacks them.
+ */
+export const WHEN_ROW_MIN_WIDTH = 316;
+
+/** Whether Day and Time stack (mock B5 at 320pt, B6 at large text). */
+export function whenFieldsStack(contentWidth: number, fontScale: number): boolean {
+  return contentWidth < WHEN_ROW_MIN_WIDTH * Math.max(1, fontScale);
 }
