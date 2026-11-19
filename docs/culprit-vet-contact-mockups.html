@@ -250,7 +250,7 @@
     <div class="ledger-row"><span class="k">Fixed</span><div><b>Real dates.</b> Round 3.1 drew Nov 9, 2026 as a Sunday and Nyx as a dog. Nov 9 is a Monday, and Nyx is a cat whose last exam was Wed, Sep 16. Every weekday on this page is checked against the 2026 calendar.</div></div>
     <div class="ledger-row"><span class="k">Fixed</span><div><b>Actions are indigo.</b> Round 3.1 drew links and the lit chip in teal. The app's action colour is <code>colorAction</code> and a lit chip is <code>colorRoles.selected</code>; teal stays a good fact (the saved check).</div></div>
     <div class="ledger-row"><span class="k">Left</span><div><b>Share into Culprit (A3, A4)</b> left the page: it is the follow up CUL-2762, outside this run order (R6). <b>The capture screen (C3 in round 3.1)</b> left too: it is the Vet instructions project's screen, reused unchanged, and its own build ready round draws it. Only its back label and subline change, named in §C's note.</div></div>
-    <div class="ledger-row"><span class="k pm">Open</span><div><b>The ear medication's name.</b> The PM's real payload needs it and CUL-2771 does not hold it yet. Frames marked <span class="tag real">name pending</span> read "Ear medication" until the PM gives it.</div></div>
+    <div class="ledger-row"><span class="k pm">Name</span><div><b>The ear medication is Motazol,</b> given by the PM on 2026-11-19. Every Nyx frame prints it as the PM typed it; the app prints a course's name as stored.</div></div>
   </div>
 
   <!-- ═══════════ §A · THE WAY IN (PR-04) ═══════════ -->
@@ -493,14 +493,14 @@
             </div>
             <div class="lbl" data-kit="SectionLabel header">The plan</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanSettledRow · inert as shipped (C-7) · course carries vet_visit_id"><span class="g med" data-kit="Pill glyph · colorEventMedicationLight, colorEventMedicationInk">Rx</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Ear medication</b><span data-kit="ThemedText · subtitle or inline text">Started Nov 9 · linked to this call</span></span></div>
+              <div class="pr" data-kit="PlanSettledRow · inert as shipped (C-7) · course carries vet_visit_id"><span class="g med" data-kit="Pill glyph · colorEventMedicationLight, colorEventMedicationInk">Rx</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Motazol</b><span data-kit="ThemedText · subtitle or inline text">Started Nov 9 · linked to this call</span></span></div>
               <div class="pr" data-kit="PlanActionRow · title renamed on this screen"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">+</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Start a medicine or supplement</b><span data-kit="ThemedText · subtitle or inline text">Anything else the vet started</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
               <div class="pr" data-kit="new: WatchRow (the Vet instructions project's row; renders only with vet_instructions_enabled)"><span class="g watch" data-kit="glyph · colorAttentionLight, colorAttentionInk">!</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Anything to watch for?</b><span data-kit="ThemedText · subtitle or inline text">Still shaking her head · asks you on Thu, Nov 12</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Edit</span></div>
             </div>
             <div class="btn" data-kit="PrimaryButton 'Done'">Done</div>
           </div>
         </div>
-        <div class="cap"><b>C1 · Nov 9, as it happened</b> <span class="tag real">real payload</span> <span class="tag real">name pending</span>. The call Monday and the text Tuesday stay one contact; each thing the vet sent has its own date. The vet's "call back if still shaking" is the watched sign. Food and recheck rows follow as shipped.</div>
+        <div class="cap"><b>C1 · Nov 9, as it happened</b> <span class="tag real">real payload</span>. The call Monday and the text Tuesday stay one contact; each thing the vet sent has its own date. The vet's "call back if still shaking" is the watched sign. Food and recheck rows follow as shipped.</div>
       </div>
 
       <div class="frame">
@@ -604,12 +604,12 @@
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <p class="ttl" data-kit="ThemedText · fontDisplay, scales">What did the vet say?</p>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanSettledRow"><span class="g med" data-kit="Pill glyph">Rx</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Ear medication</b><span data-kit="ThemedText · subtitle or inline text">Started Nov 9 · linked to this call</span></span></div>
+              <div class="pr" data-kit="PlanSettledRow"><span class="g med" data-kit="Pill glyph">Rx</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Motazol</b><span data-kit="ThemedText · subtitle or inline text">Started Nov 9 · linked to this call</span></span></div>
               <div class="pr" data-kit="PlanActionRow · action box under the title, as shipped"><span class="g" data-kit="glyph column · colorSurfaceSubtle, colorTextTertiary">+</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Start a medicine or supplement</b><span data-kit="ThemedText · subtitle or inline text">Anything else the vet started</span></span><span class="a" data-kit="row action · 44pt box, colorBorder, colorAction label">Add</span></div>
             </div>
           </div>
         </div>
-        <div class="cap"><span class="tag state">largest text</span> <b>C7.</b> <span class="tag real">name pending</span> Titles wrap; nothing ellipsises (C-8). The action sits in its box under the title at every size, as shipped. The course row prints the drug name as stored, so PR-05 carries a longest name fixture.</div>
+        <div class="cap"><span class="tag state">largest text</span> <b>C7.</b> Titles wrap; nothing ellipsises (C-8). The action sits in its box under the title at every size, as shipped. The course row prints the drug name as stored, so PR-05 carries a longest name fixture.</div>
       </div>
     </div>
 
@@ -637,7 +637,7 @@
             </div>
             <div class="lbl" data-kit="SectionLabel header">Past</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="vr" data-kit="VisitRow · channel phone"><div class="d" data-kit="VisitRow stamp"><b data-kit="ThemedText · title weight">9</b><span data-kit="ThemedText · subtitle or inline text">Nov</span></div><div class="m" data-kit="VisitRow main View"><b data-kit="ThemedText · title, colorTextPrimary">Ear, still shaking her head</b><div class="w" data-kit="VisitRow where line · colorTextSecondary"><span class="via remote" data-kit="new: ChannelTag remote · colorEventMedicationLight, colorEventMedicationInk">Phone</span> No exam</div><div class="pills" data-kit="VisitRow tags"><span class="pill med" data-kit="PlanTagPill med">Ear medication</span><span class="pill" data-kit="PlanTagPill · documents">3 screenshots</span></div></div><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
+              <div class="vr" data-kit="VisitRow · channel phone"><div class="d" data-kit="VisitRow stamp"><b data-kit="ThemedText · title weight">9</b><span data-kit="ThemedText · subtitle or inline text">Nov</span></div><div class="m" data-kit="VisitRow main View"><b data-kit="ThemedText · title, colorTextPrimary">Ear, still shaking her head</b><div class="w" data-kit="VisitRow where line · colorTextSecondary"><span class="via remote" data-kit="new: ChannelTag remote · colorEventMedicationLight, colorEventMedicationInk">Phone</span> No exam</div><div class="pills" data-kit="VisitRow tags"><span class="pill med" data-kit="PlanTagPill med">Motazol</span><span class="pill" data-kit="PlanTagPill · documents">3 screenshots</span></div></div><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
               <div class="vr" data-kit="VisitRow · channel in_clinic"><div class="d" data-kit="VisitRow stamp"><b data-kit="ThemedText · title weight">16</b><span data-kit="ThemedText · subtitle or inline text">Sep</span></div><div class="m" data-kit="VisitRow main View"><b data-kit="ThemedText · title">Potential ear infection</b><div class="w" data-kit="VisitRow where line"><span class="via" data-kit="new: ChannelTag visit · colorSurfaceSubtle, colorTextSecondary">Visit</span> Completely Cat Clinic · Dr Miller</div></div><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
             </div>
             <div class="lbl" data-kit="SectionLabel header · shipped section (vet_calls), unchanged">Calls</div>
@@ -646,7 +646,7 @@
             </div>
           </div>
         </div>
-        <div class="cap"><b>D1 · The list</b> <span class="tag real">real payload</span> <span class="tag real">name pending</span>. A contact is a visit record, so it sits in <i>Past</i> with visits, newest first, with its tag and "No exam". The shipped <i>Calls</i> section stays below, unchanged: those rows are the "I've called" answer to a warning, a different record that opens its own page. The Oct 21 row is schematic. <code>VisitRow</code> clips its title at one line as shipped; "No exam" sits on its own line so it is never the half that is cut (C-8).</div>
+        <div class="cap"><b>D1 · The list</b> <span class="tag real">real payload</span>. A contact is a visit record, so it sits in <i>Past</i> with visits, newest first, with its tag and "No exam". The shipped <i>Calls</i> section stays below, unchanged: those rows are the "I've called" answer to a warning, a different record that opens its own page. The Oct 21 row is schematic. <code>VisitRow</code> clips its title at one line as shipped; "No exam" sits on its own line so it is never the half that is cut (C-8).</div>
       </div>
 
       <div class="frame">
@@ -668,12 +668,12 @@
             </div>
             <div class="lbl" data-kit="SectionLabel header">What the vet started</div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
-              <div class="pr" data-kit="PlanRow · opens the course"><span class="g med" data-kit="Pill glyph · colorEventMedicationLight, colorEventMedicationInk">Rx</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Ear medication</b><span data-kit="ThemedText · subtitle or inline text">Started Nov 9 · still on it</span></span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
+              <div class="pr" data-kit="PlanRow · opens the course"><span class="g med" data-kit="Pill glyph · colorEventMedicationLight, colorEventMedicationInk">Rx</span><span class="t" data-kit="row main View"><b data-kit="ThemedText · title weight">Motazol</b><span data-kit="ThemedText · subtitle or inline text">Started Nov 9 · still on it</span></span><span class="chev" data-kit="ChevronRight · colorTextTertiary">›</span></div>
             </div>
-            <div class="foot" data-kit="ThemedText · textXS, colorTextTertiary" style="text-align:left">Your vet report shows this call and the ear medication. Screenshots stay in Vet Files; share them from there.</div>
+            <div class="foot" data-kit="ThemedText · textXS, colorTextTertiary" style="text-align:left">Your vet report shows this call and the Motazol. Screenshots stay in Vet Files; share them from there.</div>
           </div>
         </div>
-        <div class="cap"><b>D2 · The call</b> <span class="tag real">real payload</span> <span class="tag real">name pending</span>. Watching leads (Vet instructions R4). The footnote names what reaches the report and what does not.</div>
+        <div class="cap"><b>D2 · The call</b> <span class="tag real">real payload</span>. Watching leads (Vet instructions R4). The footnote names what reaches the report and what does not.</div>
       </div>
 
       <div class="frame">
@@ -723,7 +723,7 @@
           <div class="hd" data-kit="Header leading=back"><span class="back" data-kit="Header back · ChevronLeft · colorTextTertiary">‹</span><span data-kit="ThemedText · subtitle or inline text"></span></div>
           <div class="body" data-kit="ScrollView content · space2 gutters, space1_5 gap">
             <div data-kit="title block View">
-              <p class="ttl" data-kit="ThemedText · fontDisplay, textPageTitle · resolveRecordPetName">Nyx's ear medication</p>
+              <p class="ttl" data-kit="ThemedText · fontDisplay, textPageTitle · resolveRecordPetName">Nyx's Motazol</p>
               <div class="sub" data-kit="ThemedText · textSM, colorTextTertiary">Started Mon, Nov 9</div>
             </div>
             <div class="card" data-kit="Card noPadding · colorSurface, radiusMedium">
@@ -732,7 +732,7 @@
             <div class="card pad" data-kit="Doses card · existing, schematic"><h4 data-kit="ThemedText · textLG, weightSemibold">Doses</h4></div>
           </div>
         </div>
-        <div class="cap"><b>D5 · The course's source</b> <span class="tag state">two pets</span> <span class="tag real">name pending</span>. One row: "Started after a call | a text | an email with the vet, Nov 9", or "…a visit, Sep 16". It names the record's pet, never the active one (C-9), and opens Nyx's contact.</div>
+        <div class="cap"><b>D5 · The course's source</b> <span class="tag state">two pets</span>. One row: "Started after a call | a text | an email with the vet, Nov 9", or "…a visit, Sep 16". It names the record's pet, never the active one (C-9), and opens Nyx's contact.</div>
       </div>
 
       <div class="frame narrow">
@@ -753,7 +753,7 @@
     </div>
 
     <div class="note" style="margin-top:20px"><b>VoiceOver order, the record:</b>
-      <ol><li><b>VisitRow (D1):</b> one button, the tag inside the sentence: "November 9, phone, no exam, Ear, still shaking her head, ear medication, 3 screenshots". A visit reads "September 16, visit, Potential ear infection, Completely Cat Clinic, Dr Miller".</li><li><b>The contact's page (D2):</b> Back, Edit, "Nyx's call. Phone, Monday, November 9, no exam" (header), then each section header and its rows, then the footnote.</li><li><b>History's row (D4):</b> one button, "Phone call with the vet, Ear, still shaking her head, no exam. Opens the call".</li><li><b>CourseSourceRow (D5):</b> one button, "Started after a call with the vet, November 9. Opens the call."</li></ol>
+      <ol><li><b>VisitRow (D1):</b> one button, the tag inside the sentence: "November 9, phone, no exam, Ear, still shaking her head, Motazol, 3 screenshots". A visit reads "September 16, visit, Potential ear infection, Completely Cat Clinic, Dr Miller".</li><li><b>The contact's page (D2):</b> Back, Edit, "Nyx's call. Phone, Monday, November 9, no exam" (header), then each section header and its rows, then the footnote.</li><li><b>History's row (D4):</b> one button, "Phone call with the vet, Ear, still shaking her head, no exam. Opens the call".</li><li><b>CourseSourceRow (D5):</b> one button, "Started after a call with the vet, November 9. Opens the call."</li></ol>
       <p style="margin:8px 0 0"><b>Hit areas:</b> a plan row's action is the shipped 44pt bordered box under the title (<code>PlanRows.tsx</code>, no hitSlop). Chips are <code>ChipGroup</code>'s own size. A started course on the after screen is the shipped settled row: no control, no chevron (C-7). On the contact's page it is the shipped tappable <code>PlanRow</code> with its chevron.</p>
     </div>
   </section>
@@ -838,11 +838,11 @@
           <div class="win" data-kit="report window line · rung 1 unchanged (R8)">Covers <b data-kit="ThemedText · title weight">Sep 16 (last exam) to Nov 13</b></div>
           <h5 data-kit="report section heading">Vet contacts in this period</h5>
           <div class="r" data-kit="report row · in_clinic"><span class="d" data-kit="date column">Sep 16</span><span data-kit="ThemedText · subtitle or inline text"><span class="k" data-kit="new: report channel key · colorBorderStrong">Visit</span>Exam. Potential ear infection. Completely Cat Clinic, Dr Miller.</span></div>
-          <div class="r hl" data-kit="report row · phone (highlight is this page's, not the report's) · colorAttentionLight"><span class="d" data-kit="date column">Nov 9</span><span data-kit="ThemedText · subtitle or inline text"><span class="k" data-kit="new: report channel key">Phone</span>Consult, no exam. Ear, still shaking her head.<small data-kit="ThemedText · textXS">Started: ear medication. Texts on the owner's phone, not attached.</small></span></div>
+          <div class="r hl" data-kit="report row · phone (highlight is this page's, not the report's) · colorAttentionLight"><span class="d" data-kit="date column">Nov 9</span><span data-kit="ThemedText · subtitle or inline text"><span class="k" data-kit="new: report channel key">Phone</span>Consult, no exam. Ear, still shaking her head.<small data-kit="ThemedText · textXS">Started: Motazol. Texts on the owner's phone, not attached.</small></span></div>
           <h5 data-kit="report section heading · existing">Medications</h5>
-          <div class="r" data-kit="report medication row · gains the source line"><span class="d" data-kit="date column">Nov 9</span><span data-kit="ThemedText · subtitle or inline text">Ear medication<small data-kit="ThemedText · textXS">Started after the Nov 9 phone consult</small></span></div>
+          <div class="r" data-kit="report medication row · gains the source line"><span class="d" data-kit="date column">Nov 9</span><span data-kit="ThemedText · subtitle or inline text">Motazol<small data-kit="ThemedText · textXS">Started after the Nov 9 phone consult</small></span></div>
         </div>
-        <div class="cap"><b>F1 · Window stays at the exam</b> <span class="tag real">real payload</span> <span class="tag real">name pending</span>. Every visit and contact inside the window, in date order. No dose line is drawn because the record holds none for this course yet; the report prints what the course holds. Documents never render (Vet Files D14); typed instructions never reach the report (Vet instructions R8).</div>
+        <div class="cap"><b>F1 · Window stays at the exam</b> <span class="tag real">real payload</span>. Every visit and contact inside the window, in date order. No dose line is drawn because the record holds none for this course yet; the report prints what the course holds. Documents never render (Vet Files D14); typed instructions never reach the report (Vet instructions R8).</div>
       </div>
     </div>
   </section>
@@ -876,12 +876,12 @@
         <tr><td>Largest text</td><td>B6, C7 (drawn at about one and a half times; the largest accessibility size is a device check)</td></tr>
         <tr><td>Two pets</td><td>B2 (<i>Also about</i>), D3 (Juniper's copy), D5 (the record's pet, not the active one)</td></tr>
         <tr><td>VoiceOver order</td><td>The note under §B, §C, §D and §E</td></tr>
-        <tr><td>The PM's real payload</td><td>B1, C1, D1, D2, D4, D5, F1: Nyx, Mon Nov 9, the call and the texts, the ear medication, "call back if still shaking"</td></tr>
+        <tr><td>The PM's real payload</td><td>B1, C1, D1, D2, D4, D5, F1: Nyx, Mon Nov 9, the call and the texts, Motazol, "call back if still shaking"</td></tr>
       </table>
     </div>
     <div class="note"><b>Rules the build notes carry (from the critique; none needs a ruling):</b>
       <ul>
-        <li><b>The drug name is printed as stored,</b> never the words "Ear medication" and never re-cased. No fixture or copy string hard codes the placeholder; each surface that prints a name has a longest name fixture (the tag pill is one line).</li>
+        <li><b>The drug name is printed as stored,</b> never a generic stand-in and never re-cased. No fixture or copy string hard codes the placeholder; each surface that prints a name has a longest name fixture (the tag pill is one line).</li>
         <li><b>PR-04:</b> the flag-on logging sheet, field by field against <code>BookVisitSheet.tsx</code>: <i>Day</i>, <i>Time</i> (new on a past contact), <i>What it was about</i>, then <i>Where</i> (Clinic, Vet, the hint) on Phone, Text and Email alike. A device check at 320pt and at the largest text size with every field and Save reachable.</li>
         <li><b>PR-05:</b> plan rows are <code>PlanRows.tsx</code> as shipped. The saved mark keeps the shipped 44pt. A document added offline shows Vet Files' shipped pending and failed states; the contact page's footnote about the report is true once the upload lands.</li>
         <li><b>PR-06:</b> the list and the after screen keep their shipped loading and failure states. <code>VisitRow</code>'s one line limits stay; "No exam" is the protected half.</li>
