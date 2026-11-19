@@ -87,9 +87,14 @@ interface Props {
    *  finding counted THIS trial. Required, so a row can never title an older trial's finding
    *  with the running trial's name by leaving it out; null only when the row carried none. */
   generatedAt: string | null;
+  /** Vet contacts PR-07 (CUL-2769, R5): "You emailed the vet today, 4:10 pm." Drawn LAST, after
+   *  everything the row already draws, and spoken last as its own sentence. It is decided from
+   *  the finding by the stack (`contactLineFor`) and never read back: nothing the row's sentence,
+   *  count, ask or rail is made from depends on it. Absent or null draws the row as it was. */
+  contactLine?: string | null;
 }
 
-export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }: Props) {
+export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt, contactLine = null }: Props) {
   const { finding } = cached;
   // The trial card names the local trial's identity and day, as its screen does; every
   // other claim is the same claim on a trial day, so no other row reads it.
@@ -175,7 +180,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
   // the row stays one door and writes nothing (Home's three write classes, C-33).
   const care = careStateViewOf(finding);
   if (care && (care.state === 'with_vet' || care.state === 'recheck_booked')) {
-    return <WatchedRow care={care} onOpen={() => onOpen(finding)} isLead={isLead} />;
+    return <WatchedRow care={care} onOpen={() => onOpen(finding)} isLead={isLead} contactLine={contactLine} />;
   }
   const backLine = care ? careBackLine(care) : null;
   // CUL-2652: a booked visit. Quiet (the ask is gone, the line stands in its place, the rail goes
@@ -202,7 +207,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
     <Pressable
       onPress={open}
       accessibilityRole="button"
-      accessibilityLabel={[backLine, signalHomeLabel(spoken), booked?.text].filter((x): x is string => !!x).join(' ')}
+      accessibilityLabel={[backLine, signalHomeLabel(spoken), booked?.text, contactLine].filter((x): x is string => !!x).join(' ')}
       accessibilityHint={howDidItGo !== null ? HOW_DID_IT_GO_A11Y_HINT : DOOR_A11Y_HINT}
       style={styles.row}
       testID="signal-row"
@@ -225,6 +230,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
         {thumbnail}
         <SubLine count={subCount} ask={line.ask} />
         {booked ? <BookedVisitLine line={booked} /> : null}
+        {contactLine ? <ContactLine text={contactLine} /> : null}
       </View>
       {/* G1 A (CUL-1525): the well on the zone's lead row only, a plain › on every other. */}
       <DoorMark well={isLead} />
@@ -240,13 +246,23 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
  * call 3), and colour never carries the state alone (§7) — the tag says it in words.
  * No ask: the server quiets it, and `signalHomeLine` already drops it for this state.
  */
-function WatchedRow({ care, onOpen, isLead }: { care: CareStateView; onOpen: () => void; isLead: boolean }) {
+function WatchedRow({
+  care,
+  onOpen,
+  isLead,
+  contactLine,
+}: {
+  care: CareStateView;
+  onOpen: () => void;
+  isLead: boolean;
+  contactLine: string | null;
+}) {
   const sign = symptomWord(care.sign);
   const title = sign.charAt(0).toUpperCase() + sign.slice(1);
   const body = careStateBody(care);
   const tail = care.state === 'with_vet' ? CARE_WATCHED_LINE : null;
   // One sentence, read whole (§7): "Vomiting, your vet knows. {sentence}. {what it does}"
-  const label = [`${title}, your vet knows.`, body, tail].filter((x): x is string => !!x).join(' ');
+  const label = [`${title}, your vet knows.`, body, tail, contactLine].filter((x): x is string => !!x).join(' ');
   return (
     <Pressable
       onPress={onOpen}
@@ -274,10 +290,21 @@ function WatchedRow({ care, onOpen, isLead }: { care: CareStateView; onOpen: () 
             {tail}
           </ThemedText>
         ) : null}
+        {contactLine ? <ContactLine text={contactLine} /> : null}
       </View>
       {/* G1 A (CUL-1525): the well on the zone's lead row only, a plain › on every other. */}
       <DoorMark well={isLead} />
     </Pressable>
+  );
+}
+
+// Vet contacts PR-07 (mock §E, `ContactContextLine`): a fact the owner logged, in the secondary
+// register under the card's own words. Not a control: the row stays one door with one verb.
+function ContactLine({ text }: { text: string }) {
+  return (
+    <ThemedText style={styles.contactLine} testID="signal-row-contact">
+      {text}
+    </ThemedText>
   );
 }
 
@@ -408,6 +435,11 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     lineHeight: theme.lineHeightSM,
     color: theme.colorTextTertiary,
+  },
+  contactLine: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextSecondary,
   },
   // DF-8's "Back because …" line, above the lane's own headline and ask.
   backLine: {

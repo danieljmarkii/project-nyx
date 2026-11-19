@@ -48,6 +48,10 @@ import { insightArrival } from '../../lib/haptics';
 // D2-3 (CUL-1065, Design v2; GA by CUL-1071): the namespace the drawing lives in.
 import { SignalLeadCard } from '../../components/surfaces/signal/SignalLeadCard';
 import { SignalRow } from '../../components/surfaces/signal/SignalRow';
+import { useRemoteContacts } from '../../hooks/useRemoteContacts';
+import { useMinuteNow } from '../../hooks/useIncidentFloorFacts';
+import { contactLineFor } from '../../lib/vetContactLine';
+import { toLocalDayKey } from '../../lib/utils';
 import { SIGNAL_RAIL } from '../../components/surfaces/signal/railTint';
 import { leadTakesChartCard } from '../../lib/signalWindows';
 import { SignalZoneFoot, type SignalVetDoor } from '../../components/surfaces/signal/SignalZoneFoot';
@@ -1030,8 +1034,21 @@ function LiveStack({
   // CUL-1218 (G10 extended): a type this build cannot title is not in the stack at all —
   // dropped BEFORE the lead is chosen, so the next card takes the lead canvas and no
   // divider is left above an empty slot (adversarial pass).
+  // Vet contacts PR-07 (CUL-2769, R5): read AFTER the stack's set and order are decided, and
+  // handed to each row as one string. Nothing above or below reads it, so a contact can add a
+  // line and can never drop, reorder or reword a card. Null (flag off, in flight, failed) draws
+  // every row exactly as before.
+  const contacts = useRemoteContacts(petId);
+  // The minute clock keeps "today" true past midnight on a Home left open: a contact from last
+  // night never reads as today's (adversarial pass, CUL-2769).
+  const minuteNow = useMinuteNow();
   const visible = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor);
   const ordered = visible.filter((f) => hasSignalTitleRule(f.finding));
+  const today = toLocalDayKey(new Date(minuteNow));
+  const anchorMs = generatedAt ? new Date(generatedAt).getTime() : NaN;
+  const anchor = Number.isNaN(anchorMs)
+    ? { day: today, iso: null }
+    : { day: toLocalDayKey(new Date(anchorMs)), iso: generatedAt ?? null };
   // CUL-1216 (BRK-6): the SAME register for the pairs a card carries inside it — the lead
   // card's week line and a vomit chronicity card's compare — with the Signal's own
   // `intake_decline` OR'd in, exactly as `visibleFindings` reads it, so the card a stack drops
@@ -1077,7 +1094,14 @@ function LiveStack({
               // a row: headline, the ask, a chevron, a door to its own screen. A safety row
               // stays words (S1) and always carries its ask. There is no fold (CUL-1285): every
               // card is already a row.
-              <SignalRow cached={f} petId={petId} onOpen={onOpen} isLead={i === leadIndex} generatedAt={generatedAt} />
+              <SignalRow
+                cached={f}
+                petId={petId}
+                onOpen={onOpen}
+                isLead={i === leadIndex}
+                generatedAt={generatedAt}
+                contactLine={contacts ? contactLineFor(f.finding, contacts, today, anchor) : null}
+              />
             )}
           </>
         );
