@@ -117,6 +117,11 @@ export const ALLOWLIST_FLAG_KEYS = [
   'engines_v3_en5',
   'report_composer_v2',
   'report_document_v2',
+  // CUL-2765 Vet contacts — a call, text or email that was not an exam. Seeded off with an
+  // empty allowlist (migration 122). Gates the SURFACES only: the exam-only readers filter
+  // on `channel` whatever this says, so a contact from an allowlisted device can never
+  // anchor a window on any device (spec §5.2).
+  'vet_contacts_enabled',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -137,6 +142,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   engines_v3_en5: undefined,
   report_composer_v2: undefined,
   report_document_v2: undefined,
+  vet_contacts_enabled: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

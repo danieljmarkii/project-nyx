@@ -92,8 +92,8 @@ function freshDb(): RawDb {
 
 function insertVisit(db: RawDb, id: string, petId: string, visitedAt: string, deletedAt: string | null = null) {
   db.prepare(
-    `INSERT INTO vet_visits (id, pet_id, visited_at, deleted_at, created_at, updated_at, synced)
-     VALUES (?, ?, ?, ?, ?, ?, 1)`,
+    `INSERT INTO vet_visits (id, pet_id, visited_at, deleted_at, channel, created_at, updated_at, synced)
+     VALUES (?, ?, ?, ?, 'in_clinic', ?, ?, 1)`,
   ).run(id, petId, visitedAt, deletedAt, '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z');
 }
 

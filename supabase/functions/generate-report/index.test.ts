@@ -44,6 +44,7 @@ import {
   type ScopeResolutionInput,
 } from './report.ts'
 import { renderReport } from './render.ts'
+import { composerWindowsOf } from './composer.ts'
 import type { ReportAudience } from './noticed.ts'
 import type { SaveCopy } from './index.ts'
 
@@ -421,12 +422,68 @@ Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared
 })
 
 Deno.test('mapVetVisitRows / mapConditionRows: straight field renames', () => {
-  const v = mapVetVisitRows([{ id: 'vv1', visited_at: '2026-05-01', clinic_name: 'Vets', vet_name: 'Chen', reason: 'GI' }])
+  const v = mapVetVisitRows([{ id: 'vv1', visited_at: '2026-05-01', clinic_name: 'Vets', vet_name: 'Chen', reason: 'GI', channel: 'in_clinic' }])
   assert.equal(v[0].visitedAt, '2026-05-01')
   assert.equal(v[0].clinicName, 'Vets')
   const c = mapConditionRows([{ id: 'c1', condition_name: 'IBD', status: 'active', diagnosed_at: '2025-01-01' }])
   assert.equal(c[0].conditionName, 'IBD')
   assert.equal(c[0].diagnosedAt, '2025-01-01')
+})
+
+// ── CUL-2765 Vet contacts AC 6 — the report window stays at the last exam (R8) ──────────
+//
+// A Sep 18 visit and a Nov 9 phone contact, the report run on Nov 14. The rows go through the
+// shell's own mapper into the cascade and the composer, so the test drives what production
+// drives: delete the mapper's channel filter and both windows start on Nov 9.
+
+const AC6_ROWS = [
+  { id: 'vv-exam', visited_at: '2026-09-18', clinic_name: 'Riverside', vet_name: 'Chen', reason: 'GI', channel: 'in_clinic' },
+  { id: 'vv-call', visited_at: '2026-11-09', clinic_name: null, vet_name: 'Chen', reason: 'Ear drops', channel: 'phone' },
+]
+const AC6_NOW = '2026-11-14T15:00:00.000Z'
+
+Deno.test('CUL-2765 AC 6 — the mapper keeps exams only; every remote channel and a missing one are dropped', () => {
+  for (const channel of ['phone', 'text', 'email', null, 'IN_CLINIC', '']) {
+    assert.deepEqual(mapVetVisitRows([{ ...AC6_ROWS[1], channel }]), [], String(channel))
+  }
+  assert.deepEqual(mapVetVisitRows(AC6_ROWS).map((v) => v.visitedAt), ['2026-09-18'])
+})
+
+Deno.test('CUL-2765 AC 6 — rung 1 on Nov 14 is Sep 18, not the Nov 9 phone contact (cascade)', () => {
+  for (const timezone of [null, 'America/Los_Angeles', 'Pacific/Kiritimati']) {
+    const scope = resolveScope({
+      now: AC6_NOW, timezone, requestedWindow: null, dietTrials: [], vetVisits: mapVetVisitRows(AC6_ROWS),
+    })
+    assert.equal(scope.basis, 'since_visit', String(timezone))
+    assert.equal(scope.startDate, '2026-09-18', String(timezone))
+    assert.equal(scope.lastVisitDate, '2026-09-18', String(timezone))
+  }
+  // A phone contact alone anchors nothing: the window falls to the next rung, never to the call.
+  const alone = resolveScope({
+    now: AC6_NOW, timezone: null, requestedWindow: null, dietTrials: [], vetVisits: mapVetVisitRows([AC6_ROWS[1]]),
+  })
+  assert.notEqual(alone.basis, 'since_visit')
+  assert.equal(alone.lastVisitDate, null)
+})
+
+Deno.test('CUL-2765 AC 6 — the composer offers since-visit from Sep 18 and never from Nov 9', () => {
+  const vetVisits = mapVetVisitRows(AC6_ROWS)
+  const defaultScope = resolveScope({ now: AC6_NOW, timezone: null, requestedWindow: null, dietTrials: [], vetVisits })
+  const windows = composerWindowsOf({
+    today: '2026-11-14', timezone: null, vetVisits, dietTrials: [], firstEntryDate: '2026-01-01', defaultScope,
+  })
+  const sinceVisit = windows.filter((w) => w.kind === 'since_visit')
+  assert.deepEqual(sinceVisit.map((w) => w.startDate), ['2026-09-18'])
+  assert.ok(windows.every((w) => w.startDate !== '2026-11-09'), 'no window starts on the call')
+})
+
+Deno.test('CUL-2765 AC 6 — the pull itself filters to exams and selects the channel the mapper checks', () => {
+  const src = Deno.readTextFileSync(new URL('./index.ts', import.meta.url))
+  const at = src.indexOf("supabase.from('vet_visits')")
+  assert.ok(at > 0, 'finds the pull')
+  const chain = src.slice(at, src.indexOf('.range(from, to)', at))
+  assert.match(chain, /\.select\('[^']*\bchannel\b[^']*'/)
+  assert.match(chain, /\.eq\('channel', 'in_clinic'\)/)
 })
 
 // ── computeLookbackIso ──────────────────────────────────────────────────────

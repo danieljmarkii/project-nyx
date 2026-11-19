@@ -190,6 +190,7 @@ export interface VetVisitOption {
 // offerable as a filing target. Without it a lab result could be linked to a deleted
 // visit, and because the link is ON DELETE SET NULL rather than a hard constraint,
 // the document would simply lose its link later with nothing to explain why.
+// visit-read: anyContact — a document can be filed under any contact (spec §4.3, R2).
 export const VET_VISIT_OPTIONS_QUERY =
   `SELECT id, visited_at, clinic_name, vet_name, reason
    FROM vet_visits

@@ -708,7 +708,14 @@ describe('the Signal shell reads a vet table only by its sanctioned columns', ()
   const reads = vetTableSelects(src);
 
   it('finds the shell\'s read (non-vacuity)', () => {
-    expect(reads.map((r) => r.table).sort()).toEqual(['care_acknowledgements', 'vet_appointments', 'vet_visits']);
+    // Two vet_visits reads since CUL-2765: the exam's day and the last contact's (masking only),
+    // both `visited_at` alone.
+    expect(reads.map((r) => r.table).sort()).toEqual([
+      'care_acknowledgements',
+      'vet_appointments',
+      'vet_visits',
+      'vet_visits',
+    ]);
   });
 
   it('every read names exactly the columns the amendment allows, never `*`', () => {
@@ -952,5 +959,306 @@ describe('the allow-set, by kind', () => {
     expect(
       unexcusedReaders([{ file: 'lib/sync.ts', kinds: ['table', 'column', 'dynamic'] }], ALLOWED),
     ).toEqual([]);
+  });
+});
+
+// ── Exam or any contact (CUL-2765, Vet contacts R9; spec §5.3, AC 15) ─────────────────
+//
+// WHAT THE RULE IS. Since migration 122 a `vet_visits` row is not always an exam: `channel`
+// says whether the owner saw the vet ('in_clinic') or heard from them by phone, text or email.
+// Every reader that means "an exam happened" — the report window's rung 1, "since the last
+// visit", the care context's visit date — must filter to 'in_clinic', or a Nov 9 call tells
+// the next vet the pet was examined on Nov 9 and cuts the report to five days (R8).
+//
+// WHY A GUARD AND NOT A SENTENCE. Every one of those readers was written, correctly, before
+// the column existed, so each looks right in isolation, and the next one will be written by
+// copying one of them. The guard makes each READ SITE declare which question it answers, on
+// the line above it:
+//
+//     // visit-read: exam
+//     // visit-read: anyContact — <why any contact is the right population here>
+//
+// (a `-- visit-read: …` SQL comment inside the statement works the same way). Then:
+//   1. a read with no marker reds (an unregistered reader);
+//   2. an `exam` read whose statement lacks the filter reds: `channel = 'in_clinic'` in SQL,
+//      `.eq('channel', 'in_clinic')` in a PostgREST chain;
+//   3. an `anyContact` marker with no reason reds (C-32: an exemption pays for itself);
+//   4. the EXAM sites are pinned by file and count below, so relabelling an exam reader as
+//      `anyContact` — the quiet way to get green — reds too, and has to be argued in review.
+//
+// BLIND SPOTS, stated (C-38). Reads through a helper that takes the table NAME as a value
+// (`lib/sync.ts`'s `fetchAllRows('vet_visits', …)` and `loadLocalRowMeta`) are invisible here;
+// they are sync fabric, already excused by `DYNAMIC_FROM_ALLOWED` above, and move rows
+// verbatim. The filter check is a substring test over the statement: it does not prove the
+// filter binds the `vet_visits` alias in a multi-table JOIN, and its bounds are the nearest
+// backtick or double quote (a single-quoted SQL string would borrow a wider span) or, for a
+// PostgREST chain, 1,500 characters up to the next `.from(`. A `vet_visits` embed inside
+// another table's select is invisible, as it is to the table detector above. `scripts/` is not
+// scanned: the report-preview harness mirrors generate-report's pull in
+// `scripts/report-preview/reads.ts` and `export.sql`, held instead by its e2e run (the stand-in
+// refuses a select it does not list) and `exportPin.test.ts`.
+
+type VisitReadClass = 'exam' | 'anyContact';
+
+export interface VisitReadSite {
+  readonly file: string;
+  readonly line: number;
+  readonly cls: VisitReadClass | null;
+  readonly reason: string | null;
+  readonly filtered: boolean;
+}
+
+/** The exam readers, by file and number of sites. A change here is a clinical decision. */
+const EXAM_SITES: Record<string, number> = {
+  // The report window's visit days on the phone; Rundown's "since the last visit" reads it.
+  // (Its masking sibling, CONTACT_DAYS_SQL, is anyContact: a call can start a masking drug.)
+  'lib/visitWindow.ts': 1,
+  // The care questions' latest visit.
+  'lib/careAnswers.ts': 1,
+  // `readVisitPrefill` (a booking is clinic only) and `readVisitConsequence` ("is this the
+  // latest visit", the window's question).
+  'lib/vetVisits.ts': 2,
+  // The scope cascade's rung 1 and the composer's since-visit window.
+  'supabase/functions/generate-report/index.ts': 1,
+  // The care context's visit date (AC 10).
+  'supabase/functions/generate-signal/index.ts': 1,
+};
+
+const SQL_READ = /\b(?:FROM|JOIN)\s+vet_visits\b/gi;
+const REST_READ = /\.from\(\s*['"`]vet_visits['"`]\s*\)/g;
+const SQL_EXAM_FILTER = /\bchannel\s*=\s*'in_clinic'/;
+const REST_EXAM_FILTER = /\.eq\(\s*['"`]channel['"`]\s*,\s*['"`]in_clinic['"`]\s*\)/;
+const MARKER = /visit-read:\s*(exam|anyContact)\b\s*(?:[—–-]+\s*(.*?))?\s*(?:\*\/)?\s*$/;
+/** How far above a read its marker may sit. */
+const MARKER_WINDOW = 5;
+/** A reason shorter than this is a placeholder, not a reason. */
+const MIN_REASON = 12;
+
+/** SQL `--` comments that START a line (inside a template literal, so `blankComments` keeps
+ *  them), blanked same-length: `lib/localSchema.ts` writes "A SEPARATE TABLE FROM vet_visits"
+ *  in one. Only at a line's start, so a `--` operator in code is never touched. */
+function blankSqlLineComments(src: string): string {
+  return src.replace(/^([ \t]*)--[^\n]*/gm, (m, lead: string) => lead + ' '.repeat(m.length - lead.length));
+}
+
+function lineOf(src: string, index: number): number {
+  let n = 1;
+  for (let i = 0; i < index; i++) if (src.charCodeAt(i) === 10) n += 1;
+  return n;
+}
+
+/** The SQL statement around a match: back to the string's opening quote, on to its close. */
+function sqlStatementAt(src: string, index: number): string {
+  const open = Math.max(src.lastIndexOf('`', index), src.lastIndexOf('"', index));
+  const closes = [src.indexOf('`', index), src.indexOf('"', index)].filter((i) => i !== -1);
+  const close = closes.length > 0 ? Math.min(...closes) : src.length;
+  return src.slice(open + 1, close);
+}
+
+/** The PostgREST chain after `.from('vet_visits')`, up to the next `.from(`. */
+function restChainAt(src: string, index: number, matchLength: number): string {
+  const rest = src.slice(index + matchLength, index + matchLength + 1500);
+  const next = rest.search(/\.from\(/);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
+/** Every `vet_visits` READ in the scanned trees, with the marker that declares it. Writes
+ *  (`INSERT INTO`, `UPDATE`, `DELETE FROM`, a chain that upserts) are not reads. */
+export function scanVisitReadSites(root: string): VisitReadSite[] {
+  const files = SCAN_DIRS.flatMap((d) => walk(path.join(root, d)));
+  const out: VisitReadSite[] = [];
+  for (const abs of files) {
+    const raw = fs.readFileSync(abs, 'utf8');
+    if (!raw.includes('vet_visits')) continue;
+    const src = blankSqlLineComments(blankComments(raw));
+    const rel = path.relative(root, abs).split(path.sep).join('/');
+    const rawLines = raw.split('\n');
+    const reads: { index: number; filtered: boolean }[] = [];
+    for (const m of src.matchAll(SQL_READ)) {
+      const index = m.index ?? 0;
+      if (/\bDELETE\s+$/i.test(src.slice(Math.max(0, index - 20), index))) continue;
+      reads.push({ index, filtered: SQL_EXAM_FILTER.test(sqlStatementAt(src, index)) });
+    }
+    for (const m of src.matchAll(REST_READ)) {
+      const index = m.index ?? 0;
+      const chain = restChainAt(src, index, m[0].length);
+      if (/^\s*\.(?:upsert|insert|update|delete)\(/.test(chain)) continue;
+      reads.push({ index, filtered: REST_EXAM_FILTER.test(chain) });
+    }
+    reads.sort((a, b) => a.index - b.index);
+    const claimed = new Set<number>();
+    for (const r of reads) {
+      const line = lineOf(src, r.index);
+      let cls: VisitReadClass | null = null;
+      let reason: string | null = null;
+      // The nearest unclaimed marker at or above the read, within the window: one marker
+      // declares one read, so two reads under one comment cannot share a declaration.
+      for (let l = line; l >= Math.max(1, line - MARKER_WINDOW); l--) {
+        if (claimed.has(l)) continue;
+        const m = MARKER.exec(rawLines[l - 1] ?? '');
+        if (!m) continue;
+        claimed.add(l);
+        cls = m[1] as VisitReadClass;
+        reason = m[2]?.trim() || null;
+        break;
+      }
+      out.push({ file: rel, line, cls, reason, filtered: r.filtered });
+    }
+  }
+  return out;
+}
+
+/** What is wrong with a set of read sites: rules 1–3 above. */
+export function visitReadViolations(sites: readonly VisitReadSite[]): string[] {
+  const out: string[] = [];
+  for (const s of sites) {
+    const at = `${s.file}:${s.line}`;
+    if (s.cls === null) out.push(`${at} reads vet_visits with no visit-read marker`);
+    else if (s.cls === 'exam' && !s.filtered) out.push(`${at} is an exam reader without the in_clinic filter`);
+    else if (s.cls === 'anyContact' && (s.reason ?? '').length < MIN_REASON) {
+      out.push(`${at} is anyContact without a reason`);
+    }
+  }
+  return out;
+}
+
+/** Rule 4: the exam sites, counted per file, against the pinned set. */
+export function examSiteCounts(sites: readonly VisitReadSite[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const s of sites) if (s.cls === 'exam') out[s.file] = (out[s.file] ?? 0) + 1;
+  return out;
+}
+
+describe('CUL-2765 AC 15 — every vet_visits read declares exam or any contact', () => {
+  const sites = scanVisitReadSites(ROOT);
+
+  it('finds the reads it must find (non-vacuity, C-36)', () => {
+    const files = new Set(sites.map((s) => s.file));
+    for (const f of Object.keys(EXAM_SITES)) expect(files.has(f)).toBe(true);
+    expect(files.has('lib/sync.ts')).toBe(true);
+    expect(files.has('supabase/functions/report-visit-link/io.ts')).toBe(true);
+    expect(sites.length).toBeGreaterThanOrEqual(15);
+    // The DDL's own comment line is not a read; the localSchema file reads no row.
+    expect(files.has('lib/localSchema.ts')).toBe(false);
+  });
+
+  it('every read carries a marker, every exam read filters, every anyContact says why', () => {
+    expect(visitReadViolations(sites)).toEqual([]);
+  });
+
+  it('the exam readers are exactly the pinned set: none relabelled, none added unseen', () => {
+    expect(examSiteCounts(sites)).toEqual(EXAM_SITES);
+  });
+});
+
+describe('the read-class detector, proven by planted violations (C-18)', () => {
+  let root = '';
+  beforeEach(() => {
+    root = createFixtureRoot('visit-read-class', ['lib', 'supabase/functions/generate-report']);
+  });
+  afterEach(() => {
+    removeFixtureRoot(root);
+    root = '';
+  });
+  const violations = () => visitReadViolations(scanVisitReadSites(root));
+
+  it('REDS an unregistered reader (SQL and PostgREST)', () => {
+    writeFixture(root, 'lib/a.ts', 'const q = `SELECT visited_at FROM vet_visits WHERE pet_id = ?`;\n');
+    writeFixture(
+      root,
+      'supabase/functions/generate-report/b.ts',
+      "const r = await sb.from('vet_visits').select('visited_at').eq('pet_id', p);\n",
+    );
+    expect(violations()).toEqual([
+      'lib/a.ts:1 reads vet_visits with no visit-read marker',
+      'supabase/functions/generate-report/b.ts:1 reads vet_visits with no visit-read marker',
+    ]);
+  });
+
+  it('REDS an exam reader without the filter, and passes it with the filter', () => {
+    writeFixture(root, 'lib/a.ts', [
+      '// visit-read: exam',
+      'const q = `SELECT visited_at FROM vet_visits',
+      '  WHERE pet_id = ? AND deleted_at IS NULL`;',
+      '',
+    ].join('\n'));
+    writeFixture(root, 'lib/b.ts', [
+      '// visit-read: exam',
+      "const r = await sb.from('vet_visits').select('visited_at').eq('pet_id', p).is('deleted_at', null);",
+      '',
+    ].join('\n'));
+    expect(violations()).toEqual([
+      'lib/a.ts:2 is an exam reader without the in_clinic filter',
+      'lib/b.ts:2 is an exam reader without the in_clinic filter',
+    ]);
+    writeFixture(root, 'lib/a.ts', [
+      '// visit-read: exam',
+      'const q = `SELECT visited_at FROM vet_visits',
+      "  WHERE pet_id = ? AND deleted_at IS NULL AND channel = 'in_clinic'`;",
+      '',
+    ].join('\n'));
+    writeFixture(root, 'lib/b.ts', [
+      '// visit-read: exam',
+      "const r = await sb.from('vet_visits').select('visited_at').eq('pet_id', p).eq('channel', 'in_clinic');",
+      '',
+    ].join('\n'));
+    expect(violations()).toEqual([]);
+  });
+
+  it('REDS an anyContact marker with no reason', () => {
+    writeFixture(root, 'lib/a.ts', '// visit-read: anyContact\nconst q = `SELECT id FROM vet_visits`;\n');
+    expect(violations()).toEqual(['lib/a.ts:2 is anyContact without a reason']);
+  });
+
+  it('does NOT let one marker declare two reads', () => {
+    writeFixture(root, 'lib/a.ts', [
+      '// visit-read: anyContact — the list shows every contact the owner logged',
+      'const a = `SELECT id FROM vet_visits`;',
+      'const b = `SELECT visited_at FROM vet_visits`;',
+      '',
+    ].join('\n'));
+    expect(violations()).toEqual(['lib/a.ts:3 reads vet_visits with no visit-read marker']);
+  });
+
+  it('does NOT accept a marker further than the window above the read', () => {
+    writeFixture(root, 'lib/a.ts', [
+      '// visit-read: exam',
+      '', '', '', '', '', '',
+      "const q = `SELECT visited_at FROM vet_visits WHERE channel = 'in_clinic'`;",
+      '',
+    ].join('\n'));
+    expect(violations()).toEqual(['lib/a.ts:8 reads vet_visits with no visit-read marker']);
+  });
+
+  it('IGNORES writes, comments and a DDL comment line, and reads an SQL-comment marker', () => {
+    writeFixture(root, 'lib/a.ts', [
+      '// SELECT visited_at FROM vet_visits, in a comment',
+      'const w = `INSERT INTO vet_visits (id) VALUES (?)`;',
+      'const u = `UPDATE vet_visits SET notes = ? WHERE id = ?`;',
+      'const d = `DELETE FROM vet_visits WHERE id = ?`;',
+      'const ddl = `',
+      '  -- A SEPARATE TABLE FROM vet_visits',
+      '  CREATE TABLE x (id TEXT)`;',
+      "await sb.from('vet_visits').upsert(rows);",
+      'const n = `NOT EXISTS (',
+      '  -- visit-read: anyContact — link integrity: a course may name any contact',
+      '  SELECT 1 FROM vet_visits v WHERE v.id = ?)`;',
+      '',
+    ].join('\n'));
+    const sites = scanVisitReadSites(root);
+    expect(sites.map((s) => `${s.file}:${s.line}:${s.cls}`)).toEqual(['lib/a.ts:11:anyContact']);
+    expect(violations()).toEqual([]);
+  });
+
+  it('pins the exam set: relabelling an exam reader as anyContact changes the count', () => {
+    writeFixture(root, 'lib/a.ts', [
+      '// visit-read: anyContact — relabelled to get green, the move rule 4 exists to catch',
+      'const q = `SELECT visited_at FROM vet_visits WHERE pet_id = ?`;',
+      '',
+    ].join('\n'));
+    const sites = scanVisitReadSites(root);
+    expect(visitReadViolations(sites)).toEqual([]);
+    expect(examSiteCounts(sites)).toEqual({});
+    expect(examSiteCounts(sites)).not.toEqual({ 'lib/a.ts': 1 });
   });
 });

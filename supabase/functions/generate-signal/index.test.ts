@@ -320,12 +320,15 @@ Deno.test('EN-10 reads — one column of the last visit before today, and every 
     c.table === 'vet_visits' ? { data: [{ visited_at: '2026-09-16' }], error: null } : { data: LOGGED, error: null, count: 2 },
   )
   const facts = await readCareContextFacts(client, 'pet-1', LOOKBACK, '2026-09-27')
-  assertEquals(facts, { lastVisitOn: '2026-09-16', loggedAt: LOGGED.map((r) => r.occurred_at), readSinceIso: LOOKBACK })
+  assertEquals(facts, {
+    lastVisitOn: '2026-09-16', lastContactOn: '2026-09-16', loggedAt: LOGGED.map((r) => r.occurred_at), readSinceIso: LOOKBACK,
+  })
   const visit = calls.find((c) => c.table === 'vet_visits')!
   assertEquals(visit.ops, [
     ['select', ['visited_at']],
     ['eq', ['pet_id', 'pet-1']],
     ['is', ['deleted_at', null]],
+    ['eq', ['channel', 'in_clinic']],
     ['lt', ['visited_at', '2026-09-27']],
     ['order', ['visited_at', { ascending: false }]],
     ['limit', [1]],
@@ -338,7 +341,59 @@ Deno.test('EN-10 reads — one column of the last visit before today, and every 
     ['is', ['deleted_at', null]],
     ['gte', ['occurred_at', LOOKBACK]],
   ])
-  assertEquals(calls.map((c) => c.table).sort(), ['events', 'vet_visits'])
+  // CUL-2765: the second vet_visits read is the contact read for masking, every channel.
+  const contact = calls.filter((c) => c.table === 'vet_visits')[1]
+  assertEquals(contact.ops, [
+    ['select', ['visited_at']],
+    ['eq', ['pet_id', 'pet-1']],
+    ['is', ['deleted_at', null]],
+    ['lt', ['visited_at', '2026-09-27']],
+    ['order', ['visited_at', { ascending: false }]],
+    ['limit', [1]],
+  ])
+  assertEquals(calls.map((c) => c.table).sort(), ['events', 'vet_visits', 'vet_visits'])
+})
+
+// CUL-2765 Vet contacts AC 10 — the care context's visit date is an EXAM's. A phone call
+// yesterday sets no visit date. The fake EVALUATES the chain's filters over a table that holds
+// both rows, so the test drives the read's real predicate rather than a canned answer: delete
+// the `.eq('channel', 'in_clinic')` and the call's day comes back.
+function evaluatingClient(rows: Record<string, unknown>[]) {
+  return fakeClient((c) => {
+    if (c.table !== 'vet_visits') return { data: LOGGED, error: null, count: 2 }
+    let out = rows.slice()
+    for (const [op, args] of c.ops) {
+      const [col, val] = args as [string, unknown]
+      if (op === 'eq') out = out.filter((r) => r[col] === val)
+      if (op === 'is') out = out.filter((r) => (r[col] ?? null) === val)
+      if (op === 'lt') out = out.filter((r) => String(r[col]) < String(val))
+      if (op === 'order') out.sort((a, b) => (String(a[col]) < String(b[col]) ? 1 : -1))
+      if (op === 'limit') out = out.slice(0, Number(args[0]))
+    }
+    return { data: out.map((r) => ({ visited_at: r.visited_at })), error: null }
+  })
+}
+
+Deno.test('CUL-2765 AC 10 — a phone contact yesterday sets no visit date; the exam before it does', async () => {
+  const exam = { pet_id: 'pet-1', visited_at: '2026-09-18', deleted_at: null, channel: 'in_clinic' }
+  const call = { pet_id: 'pet-1', visited_at: '2026-11-13', deleted_at: null, channel: 'phone' }
+  const facts = await readCareContextFacts(evaluatingClient([exam, call]).client, 'pet-1', LOOKBACK, '2026-11-14')
+  assertStrictEquals(facts?.lastVisitOn, '2026-09-18')
+  // ...and the call still masks (R5): it is the last CONTACT, read for masking only.
+  assertStrictEquals(facts?.lastContactOn, '2026-11-13')
+  // Every remote channel, and nothing else on record: no visit date at all.
+  for (const channel of ['phone', 'text', 'email']) {
+    const only = await readCareContextFacts(
+      evaluatingClient([{ ...call, channel }]).client, 'pet-1', LOOKBACK, '2026-11-14',
+    )
+    assertStrictEquals(only?.lastVisitOn, null, channel)
+    assertStrictEquals(only?.lastContactOn, '2026-11-13', channel)
+  }
+  // Non-vacuity: the same fake hands back an exam yesterday, so the filter is what dropped the call.
+  const examYesterday = await readCareContextFacts(
+    evaluatingClient([{ ...call, channel: 'in_clinic' }]).client, 'pet-1', LOOKBACK, '2026-11-14',
+  )
+  assertStrictEquals(examYesterday?.lastVisitOn, '2026-11-13')
 })
 
 Deno.test('EN-10 reads — no visit on record is an answer; a failed visit read or a short pull is no lines', async () => {
@@ -352,6 +407,16 @@ Deno.test('EN-10 reads — no visit on record is an answer; a failed visit read 
     'pet-1', LOOKBACK, '2026-09-27',
   )
   assertStrictEquals(failed, null)
+  // CUL-2765: the CONTACT read failing alone is no lines too, never lines without its masking.
+  const contactFailed = await readCareContextFacts(
+    fakeClient((c) => {
+      if (c.table !== 'vet_visits') return { data: LOGGED, error: null, count: 2 }
+      const exam = c.ops.some(([op, args]) => op === 'eq' && (args as unknown[])[0] === 'channel')
+      return exam ? { data: [{ visited_at: '2026-09-16' }], error: null } : { data: null, error: { message: 'x' } }
+    }).client,
+    'pet-1', LOOKBACK, '2026-09-27',
+  )
+  assertStrictEquals(contactFailed, null)
   // The count says 5 rows exist and the read returned 2: incomplete, so no lines.
   const short = await readCareContextFacts(
     fakeClient((c) => (c.table === 'vet_visits' ? { data: [], error: null } : { data: LOGGED, error: null, count: 5 })).client,
@@ -497,10 +562,12 @@ Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the
     true,
     'the fingerprint no longer hashes the config the pipeline detects with',
   )
-  // vet_visits is read inside readCareContextFacts and nowhere else in the shell.
-  const fn = src.slice(src.indexOf('export async function readCareContextFacts('))
-  assertStrictEquals(src.split(".from('vet_visits')").length - 1, 1)
-  assertStrictEquals(fn.includes(".from('vet_visits')"), true)
+  // vet_visits is read inside readCareContextFacts and nowhere else in the shell: twice since
+  // CUL-2765, the exam's day (the visit line) and the last contact's (masking only).
+  const start = src.indexOf('export async function readCareContextFacts(')
+  const fn = src.slice(start, src.indexOf('\nexport ', start + 1))
+  assertStrictEquals(src.split(".from('vet_visits')").length - 1, 2)
+  assertStrictEquals(fn.split(".from('vet_visits')").length - 1, 2)
 })
 
 Deno.test('EN-10 — Ask\'s rule 10 is in the phrasing and summary prompts', async () => {

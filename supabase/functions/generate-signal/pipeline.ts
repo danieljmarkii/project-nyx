@@ -918,6 +918,7 @@ export function runSignalPipeline(
         loggedAt: careFacts.loggedAt,
         readSinceIso: careFacts.readSinceIso,
         lastVisitOn: careFacts.lastVisitOn,
+        lastContactOn: careFacts.lastContactOn,
         courses: regimenRows.map(courseFactOf),
         timezone,
         nowMs,

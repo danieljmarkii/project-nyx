@@ -74,6 +74,7 @@ interface Case {
   priorGeneratedAtMs?: number | null
   courses?: CareStateArgs['courses']
   lastVisitOn?: string | null
+  lastContactOn?: string | null
   nowMs?: number
 }
 
@@ -94,6 +95,7 @@ function args(c: Case): CareStateArgs {
     loggedAt: (c.loggedDaysAgo ?? range(175, nowDaysAgo)).map((d) => at(d, 8)),
     readSinceIso: new Date(now - 180 * DAY).toISOString(),
     lastVisitOn: c.lastVisitOn ?? null,
+    lastContactOn: c.lastContactOn ?? c.lastVisitOn ?? null,
     courses: c.courses ?? [],
     timezone: 'UTC',
     nowMs: now,
@@ -455,6 +457,10 @@ Deno.test('no zero on the row beside a masking drug or within 42 days of a visit
   // With neither, the honest zero stands (a count over full logging, never "it worked").
   const plain = stateOf({ symptoms: quiet, acks: [ack({ daysAgo: 14 })] })
   assert(plain.text!.includes(': 0 episodes, with something logged on 14 of 14.'), plain.text!)
+  // CUL-2765 (R5): a phone contact 10 days ago, no exam on record, withholds the zero as an exam
+  // does: the vet may have phoned in a drug the record does not hold.
+  const call = stateOf({ symptoms: quiet, acks: [ack({ daysAgo: 14 })], lastVisitOn: null, lastContactOn: dayOf(10) })
+  assertStrictEquals(/\b0 episodes\b/.test(call.text!), false, call.text!)
 })
 
 // ── Ranking (§3.3) and copy (AC 8, AC 19) ──

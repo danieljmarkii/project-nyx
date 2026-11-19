@@ -76,6 +76,12 @@ export interface CareContextFacts {
   /** `vet_visits.visited_at` (a DATE) of the most recent non-deleted visit before
    *  today, or null. A DAY: no clinic, vet, reason or note ever reaches the engine. */
   lastVisitOn: string | null
+  /** CUL-2765 — the most recent non-deleted CONTACT of any channel before today (a call, text
+   *  or email as well as a visit), or null. Read for MASKING ONLY: a vet who phones in a steroid
+   *  is an unrecorded masking drug exactly as an exam is, so a contact widens where a zero is
+   *  withheld (R5: it never quiets a warning). It never anchors a window or names a visit; the
+   *  "Since the {date} visit" line reads `lastVisitOn`, an exam's day, alone (R8, AC 10). */
+  lastContactOn: string | null
   /** `occurred_at` of every non-deleted event in the read window, of every type but the
    *  daily look's `check_in` parent (a look never enters another surface's coverage). The
    *  logging behind each line: "something logged", never "logged on" a sign. */
@@ -238,7 +244,9 @@ export function linesForSign(sign: SymptomType, args: CareContextArgs): CareCont
   // partly under a steroid never reads as "none since".
   const visitOn = args.facts.lastVisitOn
   const v = visitOn ? localDayIndexOf(visitOn, tz) : null
-  const maskSpans = maskingSpansFor(sign, { courses: args.courses, visitsOn: visitOn ? [visitOn] : [], todayIndex: today, timeZone: tz })
+  // The masking days: the last exam and the last contact of any channel (CUL-2765), both.
+  const maskVisits = [...new Set([visitOn, args.facts.lastContactOn].filter((d): d is string => typeof d === 'string'))]
+  const maskSpans = maskingSpansFor(sign, { courses: args.courses, visitsOn: maskVisits, todayIndex: today, timeZone: tz })
 
   // A zero is withheld (§5.1, the header): in a window a masking span overlaps, or on a thinly
   // logged window.

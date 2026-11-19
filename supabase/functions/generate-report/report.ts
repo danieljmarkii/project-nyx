@@ -661,7 +661,9 @@ export interface ReportDietTrialInput extends ReportFoodProteinInput {
   allowedFoods?: ReportDietTrialFoodInput[]
 }
 
-/** vet_visits row (schema migration 001) — feeds the scope cascade rung 1. */
+/** vet_visits row (schema migration 001) — feeds the scope cascade rung 1. EXAMS ONLY
+ *  (CUL-2765, R8): `mapVetVisitRows` drops every call, text and email, so nothing here can
+ *  anchor the window on a contact. A future printed list of contacts is a separate input. */
 export interface ReportVetVisitInput {
   visitedAt: string // DATE
   clinicName: string | null

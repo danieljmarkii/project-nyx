@@ -316,6 +316,19 @@ export const BASE_SCHEMA_SQL = `
       -- already ran an earlier build, this reaches a fresh one and anything building
       -- from the DDL constants — the source_filename precedent (migration 048).
       deleted_at      TEXT,
+      -- CUL-2765 Vet contacts PR-03 / migration 122 — how the owner heard from the vet.
+      -- Only 'in_clinic' is an exam: every reader that means "an exam happened" filters
+      -- to it (guards/visitReaders.test.ts holds every read to a declared class).
+      -- contacted_at is the optional time of a remote contact, a UTC instant (C-10);
+      -- NULL = day only. Declared here AND in COLUMN_UPGRADES.
+      -- channel is NULLABLE with NO DEFAULT on purpose (the adversarial pass on CUL-2765): NULL
+      -- means "this phone never learned it", a row an older build stored without the column.
+      -- A default of 'in_clinic' would be a CLAIM the phone cannot make, and its push would
+      -- stamp a phone contact as an exam on the server. Every writer names the channel
+      -- (logVetVisit, logVisitFromAppointment, hydrate); the exam readers skip NULL (the window
+      -- falls back, never shortens); the push omits a NULL channel so the server keeps its own.
+      channel         TEXT,
+      contacted_at    TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
       synced          INTEGER NOT NULL DEFAULT 0,
@@ -874,6 +887,14 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   { table: 'vet_visits', column: 'deleted_at', type: 'TEXT' },
   { table: 'medications', column: 'vet_visit_id', type: 'TEXT', rehydrate: true },
   { table: 'diet_trials', column: 'vet_visit_id', type: 'TEXT', rehydrate: true },
+  // CUL-2765 Vet contacts PR-03 / migration 122 — the contact's channel and optional time.
+  // `rehydrate` on both: an older build may have pulled another device's phone contact without
+  // the column. The re-pull plus hydrateVetVisits' fill (synced rows) learns its channel; an
+  // UNSYNCED row stays NULL, its push omits the channel, and the drain re-arms the re-pull.
+  // Nullable, no default: the rows already on the phone are UNKNOWN until the re-pull fills them
+  // (see the CREATE above for why a default would be a false claim).
+  { table: 'vet_visits', column: 'channel', type: 'TEXT', rehydrate: true },
+  { table: 'vet_visits', column: 'contacted_at', type: 'TEXT', rehydrate: true },
   // Engines v3 PR-12 (CUL-1267) / migration 075 — the read copy's three stamps. The copy
   // shipped in HV-5 without them, so an installed phone has the table and only this path
   // can add them. Nullable, no default: NULL is "written before the stamps", which is

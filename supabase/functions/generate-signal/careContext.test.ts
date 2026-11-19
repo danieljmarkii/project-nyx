@@ -40,6 +40,7 @@ const PRED: CourseFact = { drugLabel: 'Prednisone', names: [], startedOn: '2026-
 const argsOf = (over: Partial<CareContextArgs> = {}, facts: Partial<CareContextArgs['facts']> = {}): CareContextArgs => ({
   facts: {
     lastVisitOn: '2026-09-16',
+    lastContactOn: null,
     loggedAt: everyDay(60),
     readSinceIso: new Date(NOW - 180 * DAY).toISOString(),
     ...facts,
@@ -191,6 +192,30 @@ Deno.test('a recent visit withholds the zero on EVERY line, not only its own (Cy
   ])
   const doxy: CourseFact = { drugLabel: 'Doxycycline', names: [], startedOn: dayKey(5), endedOn: null, status: 'active' }
   assertStrictEquals(texts('vomit', argsOf({ courses: [doxy] }, { lastVisitOn: dayKey(5) }))[0], 'Doxycycline since Sep 22, 5 days, with something logged on 5 of 5.')
+})
+
+// CUL-2765 Vet contacts — a phone contact is never a visit (AC 10: no "Since the visit" line,
+// no window), but a vet who phones in a drug is an unrecorded masking drug like an exam (R5:
+// a contact never quiets a warning). So the contact withholds zeros and draws no visit line.
+Deno.test('CUL-2765: a recent phone contact withholds the zero on every line and names no visit', () => {
+  const doxy: CourseFact = { drugLabel: 'Doxycycline', names: [], startedOn: dayKey(5), endedOn: null, status: 'active' }
+  // No exam on record, no contact: the zero prints.
+  const bare = texts('vomit', argsOf({ courses: [doxy] }, { lastVisitOn: null, lastContactOn: null }))
+  assertEquals(bare, ['Doxycycline since Sep 22, 5 days: 0 episodes, with something logged on 5 of 5.'])
+  // A phone contact five days ago: the zero is withheld, and no line calls it a visit.
+  const call = texts('vomit', argsOf({ courses: [doxy] }, { lastVisitOn: null, lastContactOn: dayKey(5) }))
+  assertEquals(call, ['Doxycycline since Sep 22, 5 days, with something logged on 5 of 5.'])
+  assertStrictEquals(call.some((t) => /visit/.test(t)), false)
+  // An exam two months ago and a call last week, with a course started three days ago: the
+  // exam's 42 days have passed, so only the CALL can withhold the course's zero. The visit line
+  // still names the exam, never the call.
+  const recentDoxy: CourseFact = { ...doxy, startedOn: dayKey(3) }
+  const examOnly = texts('vomit', argsOf({ courses: [recentDoxy] }, { lastVisitOn: dayKey(60), lastContactOn: dayKey(60) }))
+  assertStrictEquals(examOnly[0], 'Doxycycline since Sep 24, 3 days: 0 episodes, with something logged on 3 of 3.')
+  const both = texts('vomit', argsOf({ courses: [recentDoxy] }, { lastVisitOn: dayKey(60), lastContactOn: dayKey(5) }))
+  assertStrictEquals(both[0], 'Doxycycline since Sep 24, 3 days, with something logged on 3 of 3.')
+  assertStrictEquals(both.filter((t) => t.startsWith('Since the ')).length, 1)
+  assertStrictEquals(both.some((t) => t.startsWith('Since the Jul 29 visit')), true)
 })
 
 Deno.test('a window older than the read states its span and no count', () => {

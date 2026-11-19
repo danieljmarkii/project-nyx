@@ -200,6 +200,7 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
         engines_v3_en5: undefined,
         report_composer_v2: undefined,
         report_document_v2: undefined,
+        vet_contacts_enabled: undefined,
       },
     });
     expect(await loadCachedAppConfig()).not.toBeNull();

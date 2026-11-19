@@ -1069,14 +1069,25 @@ export async function readCareContextFacts(
   todayKey: string,
 ): Promise<CareContextFacts | null> {
   try {
-    const [visitRes, loggedPull] = await Promise.all([
+    const [visitRes, contactRes, loggedPull] = await Promise.all([
+      // visit-read: exam — CUL-2765 AC 10: a call, text or email sets no visit date.
       supabase
         .from('vet_visits')
         .select('visited_at')
         .eq('pet_id', petId)
         .is('deleted_at', null)
+        .eq('channel', 'in_clinic')
         // Strictly before today: a visit dated today opens no window yet, and must not hide the
         // one before it (a recheck today over a Depo-Medrol visit ten days ago).
+        .lt('visited_at', todayKey)
+        .order('visited_at', { ascending: false })
+        .limit(1),
+      // visit-read: anyContact — masking only (CUL-2765, R5): a call can start an unrecorded drug.
+      supabase
+        .from('vet_visits')
+        .select('visited_at')
+        .eq('pet_id', petId)
+        .is('deleted_at', null)
         .lt('visited_at', todayKey)
         .order('visited_at', { ascending: false })
         .limit(1),
@@ -1096,6 +1107,12 @@ export async function readCareContextFacts(
       console.warn('generate-signal: vet_visits read failed, no context lines:', visitRes.error.message)
       return null
     }
+    if (contactRes.error) {
+      // No lines rather than lines without the contact's masking: a zero beside a phoned-in drug
+      // is the line this read exists to withhold.
+      console.warn('generate-signal: vet contact read failed, no context lines:', contactRes.error.message)
+      return null
+    }
     if (incompletePullNames({ logged: loggedPull }).length > 0) {
       console.warn('generate-signal: the logging pull was incomplete, no context lines:', petId)
       return null
@@ -1104,6 +1121,10 @@ export async function readCareContextFacts(
     const visit = (visitRes.data as { visited_at: string | null }[] | null)?.[0]
     return {
       lastVisitOn: typeof visit?.visited_at === 'string' ? visit.visited_at : null,
+      lastContactOn: (() => {
+        const c = (contactRes.data as { visited_at: string | null }[] | null)?.[0]
+        return typeof c?.visited_at === 'string' ? c.visited_at : null
+      })(),
       loggedAt: loggedPull.rows.map((r) => r.occurred_at),
       readSinceIso: lookbackIso,
     }

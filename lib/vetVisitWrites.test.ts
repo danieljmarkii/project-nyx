@@ -115,8 +115,9 @@ function seedVisit(id: string, over: Record<string, unknown> = {}): void {
   const row = { pet_id: PET, visited_at: '2026-09-16', deleted_at: null, next_visit_at: null, ...over };
   mockDb
     .prepare(
-      `INSERT INTO vet_visits (id, pet_id, visited_at, next_visit_at, deleted_at, created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, ?, '2026-09-16T00:00:00.000Z', '2026-09-16T00:00:00.000Z', 1)`,
+      // An exam, as every visit was before CUL-2765: the channel is named, never left unknown.
+      `INSERT INTO vet_visits (id, pet_id, visited_at, next_visit_at, deleted_at, channel, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, 'in_clinic', '2026-09-16T00:00:00.000Z', '2026-09-16T00:00:00.000Z', 1)`,
     )
     .run(id, row.pet_id, row.visited_at, row.next_visit_at, row.deleted_at);
 }

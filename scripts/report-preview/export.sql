@@ -78,8 +78,9 @@ reads as (
   union all
   select 'vet_visits', count(*), coalesce(json_agg(json_build_object(
       'id', v.id, 'visited_at', v.visited_at, 'clinic_name', v.clinic_name, 'vet_name', v.vet_name,
-      'reason', v.reason) order by v.visited_at desc, v.id desc)::text, '[]')
+      'reason', v.reason, 'channel', v.channel) order by v.visited_at desc, v.id desc)::text, '[]')
     from vet_visits v where v.pet_id = (select id from subj) and v.deleted_at is null
+      and v.channel = 'in_clinic'
   union all
   select 'diet_trials', count(*), coalesce(json_agg(json_build_object(
       'id', t.id, 'food_item_id', t.food_item_id, 'started_at', t.started_at,

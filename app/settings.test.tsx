@@ -174,17 +174,22 @@ describe('Settings — the shipped registry: the widget graduated (CUL-1842), th
       Object.fromEntries(Object.keys(ALLOWLIST_FLAGS_UNSET).map((k) => [k, open])) as Partial<AllowlistFlagValues>,
     );
     const { getByText, queryByText } = render(<SettingsScreen />);
-    expect(BETA_REGISTRY.map((b) => b.key)).toEqual(['report_composer_v2', 'report_document_v2']);
+    expect(BETA_REGISTRY.map((b) => b.key)).toEqual([
+      'report_composer_v2',
+      'report_document_v2',
+      'vet_contacts_enabled',
+    ]);
     expect(getByText('Early access')).toBeTruthy();
     expect(queryByText('Home screen widget')).toBeNull();
   });
 
-  it('shows no Early access row under the dark seed (migration 111), whatever else is open', () => {
+  it('shows no Early access row under the dark seeds (migrations 111, 122), whatever else is open', () => {
     const open = { enabled: true, allowlist: [] };
     setAllowlist({
       ...(Object.fromEntries(Object.keys(ALLOWLIST_FLAGS_UNSET).map((k) => [k, open])) as Partial<AllowlistFlagValues>),
       report_composer_v2: { enabled: false, allowlist: [] },
       report_document_v2: { enabled: false, allowlist: [] },
+      vet_contacts_enabled: { enabled: false, allowlist: [] },
     });
     const { queryByText } = render(<SettingsScreen />);
     expect(queryByText('Early access')).toBeNull();

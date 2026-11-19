@@ -18,8 +18,9 @@ import { READS } from './reads'
 // subject pet and its owner, or carry a column no render needs?), then paste the new hash
 // with that review's issue and date. A comment edit does not change the hash.
 const PIN: ExportPin = {
-  sha256: '35ffab6096e2e8cd6009f9d22e8963304514bd781f4c7ea16dad781348f2bd69',
+  sha256: '2cb4fc6dcc38aaed1ba33930f1e36f2b488c926e627c432216f2a3e58fe2f143',
   review:
+    'rls-privacy-reviewer, CUL-2765, 2026-11-19: vet_visits gains channel and `and v.channel = \'in_clinic\'` (mirrors generate-report\'s exam-only pull). Tried to make the changed read return another pet\'s or account\'s row, or a column no render needs: held. Scoping unchanged (v.pet_id = (select id from subj), deleted_at is null); the filter only removes rows and joins nothing; channel is read by mapVetVisitRows as its fail-closed exam filter and every returned row holds the constant; contacted_at stays out. Prior: ' +
     'rls-privacy-reviewer, CUL-2676, 2026-11-08: ai_signals added (one row, the subj pet\'s newest by expires_at, scoped only by (select id from subj), no join; findings cut to symptom_burden cards projected to type/symptomType/tier/carriedFrom plus generated_at, the four keys burdenTierFromCard reads; only tier and a closed tierSource reach the snapshot). Prior: ' +
     'rls-privacy-reviewer, CUL-2509, 2026-11-04: medication_administrations.how_given added (a closed enum on the same subj-scoped row, no new join); the parent-event embed still pet-scoped; only a count reaches the snapshot. Prior: CUL-2308, 2026-10-31, every read and embed traced through subj',
 }
