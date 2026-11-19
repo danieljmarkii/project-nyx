@@ -983,8 +983,13 @@ describe('the allow-set, by kind', () => {
 // (`lib/sync.ts`'s `fetchAllRows('vet_visits', …)` and `loadLocalRowMeta`) are invisible here;
 // they are sync fabric, already excused by `DYNAMIC_FROM_ALLOWED` above, and move rows
 // verbatim. The filter check is a substring test over the statement: it does not prove the
-// filter binds the `vet_visits` alias in a multi-table JOIN. A `vet_visits` embed inside
-// another table's select is invisible, as it is to the table detector above.
+// filter binds the `vet_visits` alias in a multi-table JOIN, and its bounds are the nearest
+// backtick or double quote (a single-quoted SQL string would borrow a wider span) or, for a
+// PostgREST chain, 1,500 characters up to the next `.from(`. A `vet_visits` embed inside
+// another table's select is invisible, as it is to the table detector above. `scripts/` is not
+// scanned: the report-preview harness mirrors generate-report's pull in
+// `scripts/report-preview/reads.ts` and `export.sql`, held instead by its e2e run (the stand-in
+// refuses a select it does not list) and `exportPin.test.ts`.
 
 type VisitReadClass = 'exam' | 'anyContact';
 

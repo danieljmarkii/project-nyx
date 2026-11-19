@@ -1807,7 +1807,7 @@ async function drainVetVisitsQueue(): Promise<void> {
       deleted_at: v.deleted_at,
       // CUL-2765 — both columns, or the server keeps its default and a phone contact
       // becomes an EXAM there: the report's window would start at a call (the CUL-1184
-      // class). Pinned by lib/sync.vetContacts.test.ts.
+      // class). Pinned by lib/vetContacts.test.ts.
       channel: v.channel, contacted_at: v.contacted_at,
       created_at: v.created_at, updated_at: v.updated_at,
     }));
@@ -3636,6 +3636,8 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<boolean> 
   // an unpushed edit is never touched, nothing is queued, updated_at is not written.
   if (stale()) return false;
   for (const v of rows) {
+    // A row without a channel already failed the INSERT above loudly (local NOT NULL); here it
+    // is skipped rather than written, so the fill can never stamp an exam it did not read.
     if (typeof v.channel !== 'string') continue;
     await db.runAsync(
       `UPDATE vet_visits SET channel = ?, contacted_at = ? WHERE id = ? AND synced = 1`,

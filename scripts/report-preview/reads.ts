@@ -70,9 +70,15 @@ export const READS: readonly ReadSpec[] = [
   {
     name: 'vet_visits',
     table: 'vet_visits',
-    select: 'id, visited_at, clinic_name, vet_name, reason',
+    // CUL-2765 — exams only, as production pulls them: export.sql selects `channel` and filters
+    // to 'in_clinic' too, so the mapper's second check has the column it reads.
+    select: 'id, visited_at, clinic_name, vet_name, reason, channel',
     order: ['visited_at', 'id'],
-    preApplied: [PET, { op: 'is', column: 'deleted_at', value: null }],
+    preApplied: [
+      PET,
+      { op: 'is', column: 'deleted_at', value: null },
+      { op: 'eq', column: 'channel', value: 'in_clinic' },
+    ],
     single: false,
   },
   {
