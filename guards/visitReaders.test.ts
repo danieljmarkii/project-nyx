@@ -196,6 +196,15 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'Home\'s import closure) do not have to pull lib/vetVisits.ts in with them — ' +
       'guards/homeWrites.test.ts measured that when they did.',
   },
+  'lib/vetContactLine.ts': {
+    kinds: ['table'],
+    why:
+      'Vet contacts PR-07 (CUL-2769, R5): Home\'s awareness line. Reads the pet\'s remote ' +
+      'contacts (day, channel, optional time) to print ONE sentence under a live safety card, ' +
+      '"You emailed the vet today, 4:10 pm." A display string only: it returns no count, ' +
+      'enters no coverage line or engine input, and nothing the card\'s sentence, count, ask ' +
+      'or rank is made from reads it back.',
+  },
 
   // ── Vet Files: a document may LINK to a visit (B-478 D7) ──
   'lib/vetDocumentDetail.ts': {
