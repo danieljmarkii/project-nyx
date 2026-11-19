@@ -122,12 +122,12 @@ const styles = StyleSheet.create({
   },
   safetyText: {
     fontSize: theme.textMD,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
     color: theme.colorTextPrimary,
   },
   safetyLead: {
     fontSize: theme.textMD,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
   },

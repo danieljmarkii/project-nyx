@@ -13,6 +13,7 @@ import { CHANNEL_TAG, formatShortWeekday, type RemoteChannel } from './vetContac
 import type { SignalCacheRow } from './signal';
 import type { LinkedLine, VisitSaveSummary } from './vetVisitPlan';
 import { VISIT_OFFLINE_LINE } from './vetVisitPlan';
+import { FLOOR_ASK } from './incidentAskWords';
 
 /** The screen's title on a remote contact (§4.3). A visit keeps *How did it go?*. */
 export const CONTACT_AFTER_TITLE = 'What did the vet say?';
@@ -85,7 +86,8 @@ const REPORT_AS: Record<RemoteChannel, string> = {
  * first sentence can carry the title weight the mock gives it.
  */
 export function contactSafetyLine(petName: string): { lead: string; rest: string } {
-  return { lead: `If ${petName} is worse, don’t wait.`, rest: 'Call your vet today.' };
+  // The floor's own words (`lib/incidentAskWords.ts`): no surface mints its own floor.
+  return { lead: `If ${petName} is worse, don’t wait.`, rest: `${FLOOR_ASK.label}.` };
 }
 
 export interface ContactSaveSummary extends VisitSaveSummary {
