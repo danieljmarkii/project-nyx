@@ -6958,6 +6958,38 @@ Deno.test('CUL-2715 — the CUL-1823 refusal box states the eaten grade, the mis
   assert.ok(box.indexOf('finished') < box.indexOf('No weigh-in') && box.indexOf('No weigh-in') < box.indexOf('Also fed'), box)
 })
 
+Deno.test('CUL-2813 — beside a refusal, a bowl naming a protein also says its other food was not read; a plain feeding never does', () => {
+  idSeq = 0
+  const snap = cul1823RefusalSnap()
+  const off = snap.trial!.exposures.items.filter((x) => x.classification.offDiet)
+  assert.equal(off.length, 1)
+  // A plain feeding with a named protein and no stored `panelWasRead` (a copy from before the field):
+  // it has proteins on file by construction, so nothing is said to be unread.
+  delete (off[0] as Partial<typeof off[0]>).panelWasRead
+  assert.ok(!refusalCallout(snap).includes('not read'), refusalCallout(snap))
+  // The same feeding as a bowl whose second off-diet food has no ingredients on file (the shape
+  // `mixedBowl.test.ts` builds through the pipeline): both halves print.
+  off[0].classification = { ...off[0].classification, components: [off[0].classification, off[0].classification] }
+  off[0].panelWasRead = false
+  const box = refusalCallout(snap)
+  assert.ok(
+    box.includes('Also fed off the trial diet: 1 feeding of Hearth Chicken Jerky, carrying chicken; ingredients of another food in the same bowl not read, on May 10, 2026 (appendix C; a floor, not a total).'),
+    box,
+  )
+})
+
+Deno.test('CUL-2813 — beside a refusal, a food named by one feeding\'s protein still counts its unread feedings', () => {
+  idSeq = 0
+  const snap = cul1823RefusalSnap()
+  const ex = snap.trial!.exposures
+  const off = ex.items.filter((x) => x.classification.offDiet)
+  // A second feeding under the same label with nothing on file (two library rows sharing a label).
+  ex.items.push({ ...structuredClone(off[0]), eventId: 'unread-twin', classification: { ...off[0].classification, antigens: [] }, panelWasRead: false })
+  ex.offDiet += 1
+  const box = refusalCallout(snap)
+  assert.ok(box.includes('2 feedings of Hearth Chicken Jerky, carrying chicken; ingredient list not read for 1 of these feedings,'), box)
+})
+
 Deno.test('CUL-2715 — mixed grades are listed, never collapsed to one word', () => {
   idSeq = 0
   const events = [
