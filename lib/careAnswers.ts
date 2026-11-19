@@ -62,6 +62,21 @@ export async function pushCareAnswers(): Promise<void> {
  * terminal 23514 (quarantined on its first try): a visit source with no visit, a date
  * that is not a local day.
  */
+/**
+ * A visit-sourced answer named a call, text or email (CUL-2829 instance 1, Vet contacts R5).
+ * "Talked about it" against a contact would tell the care state "you talked about it at the
+ * Nov 9 visit" about a phone call, and a contact never answers a warning. Refused before any
+ * row is written; the caller writes nothing in its place (§4.5: a contact writes no answer).
+ */
+export class CareAnswerRefused extends Error {
+  constructor(readonly vetVisitId: string, readonly channel: string) {
+    super(`care answer: ${vetVisitId} is a ${channel} contact, not an exam`);
+    this.name = 'CareAnswerRefused';
+  }
+}
+
+const REMOTE_CHANNELS: ReadonlySet<string> = new Set(['phone', 'text', 'email']);
+
 export async function recordCareAnswer(input: CareAnswerInput, newId: () => string = uuid): Promise<string> {
   if (!DAY_RE.test(input.anchorOn)) throw new Error('care answer: anchorOn must be a local day (YYYY-MM-DD)');
   const id = newId();
@@ -70,6 +85,16 @@ export async function recordCareAnswer(input: CareAnswerInput, newId: () => stri
   const medicationId = input.source === 'vet_started_course' ? input.medicationId : null;
   if ((input.source === 'at_vet_tick' || input.source === 'visit_answer') && !vetVisitId) {
     throw new Error('care answer: a visit source must name its visit');
+  }
+  if (vetVisitId) {
+    // visit-read: anyContact — the one row this answer names, read to refuse a contact.
+    const visit = await getDb().getFirstAsync<{ channel: string | null }>(
+      `SELECT channel FROM vet_visits WHERE id = ? LIMIT 1`,
+      [vetVisitId],
+    );
+    // A KNOWN remote channel refuses here. A row this phone has not learned the channel of
+    // (NULL) is left to the screens, which write nothing unless the record says in_clinic.
+    if (visit?.channel && REMOTE_CHANNELS.has(visit.channel)) throw new CareAnswerRefused(vetVisitId, visit.channel);
   }
   await getDb().runAsync(
     `INSERT INTO care_acknowledgements

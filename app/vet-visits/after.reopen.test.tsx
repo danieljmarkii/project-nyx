@@ -29,6 +29,19 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => mockParams,
 }));
 
+// Vet contacts (CUL-2767): the flag is OFF unless a test turns it on, so every shipped case
+// below is the flag-off screen. The Signal cache is the saved moment's live-warning read.
+let mockContactsOn = false;
+jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => mockContactsOn }));
+let mockSignalRow: unknown = null;
+let mockSignalThrows = false;
+jest.mock('../../lib/signal', () => ({
+  readSignalCacheOrLast: jest.fn(async () => {
+    if (mockSignalThrows) throw new Error('offline');
+    return { row: mockSignalRow, fromLast: false };
+  }),
+}));
+
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
@@ -44,6 +57,7 @@ jest.mock('../../lib/storage', () => ({ getSignedUrls: jest.fn(async () => new M
 jest.mock('../../lib/haptics', () => ({ commitVisit: jest.fn(), destructiveConfirm: jest.fn() }));
 jest.mock('../../lib/visitPaperwork', () => ({
   captureVisitPaperwork: jest.fn(async () => ({ groupId: null, skipped: null })),
+  captureContactDocuments: (...args: unknown[]) => mockCaptureContact(...args),
   forgetPaperwork: jest.fn(async () => undefined),
   readPaperworkFor: jest.fn(async () => []),
 }));
@@ -57,10 +71,19 @@ jest.mock('../../components/profile/StartTrialModal', () => ({ StartTrialModal: 
 let mockActiveTrial: { id: string; startedAt: string; targetDurationDays: number; foodLabel: string | null } | null = null;
 jest.mock('../../lib/dietTrialSetup', () => {
   const actual = jest.requireActual('../../lib/dietTrialSetup');
-  return { ...actual, getActiveTrialForPet: jest.fn(async () => mockActiveTrial), endActiveTrial: jest.fn(async () => undefined) };
+  return {
+    ...actual,
+    getActiveTrialForPet: jest.fn(async () => mockActiveTrial),
+    endActiveTrial: jest.fn(async () => undefined),
+    extendTrial: (input: unknown) => mockExtendTrial(input),
+  };
 });
 
 let mockVisit: LocalVetVisit | null = null;
+let mockDocs: Array<{ groupId: string; title: string | null; kind: string; documentDate: string | null }> = [];
+let mockTicks = new Set<string>();
+const mockExtendTrial = jest.fn(async (_input: unknown) => undefined);
+const mockCaptureContact = jest.fn(async (..._args: unknown[]) => ({ groupId: null as string | null, skipped: null }));
 let mockBooking: AppointmentDetail | null = null;
 let mockCourses: ActiveCourse[] = [];
 let mockPlan: { courses: VisitLinkedCourse[]; trials: VisitLinkedTrial[] } = { courses: [], trials: [] };
@@ -90,7 +113,7 @@ jest.mock('../../lib/vetVisits', () => {
             questions: [],
             medications: [],
             trials: [],
-            documents: [{ groupId: 'doc-1', title: null, kind: 'other', documentDate: null }],
+            documents: mockDocs,
           }
         : null,
     ),
@@ -122,7 +145,7 @@ let mockAnswered = new Set<string>();
 const mockRecordCareAnswer = jest.fn(async (_input: Record<string, unknown>) => 'answer-1');
 jest.mock('../../lib/careVisitConcerns', () => ({
   readHomeConcerns: jest.fn(async () => mockConcerns),
-  readCareVisitTicks: jest.fn(async () => new Set<string>()),
+  readCareVisitTicks: jest.fn(async () => mockTicks),
   clearCareVisitTicksFor: jest.fn(async () => undefined),
 }));
 jest.mock('../../lib/careAnswers', () => ({
@@ -215,6 +238,11 @@ beforeEach(() => {
   mockConcerns = [];
   mockAnswered = new Set();
   mockStoreState = { pets: [PET_A, PET_B], activePet: PET_A };
+  mockDocs = [{ groupId: 'doc-1', title: null, kind: 'other', documentDate: null }];
+  mockTicks = new Set();
+  mockContactsOn = false;
+  mockSignalRow = null;
+  mockSignalThrows = false;
 });
 
 describe('AC 14 — a saved visit reopens, and never makes a second row', () => {
@@ -629,5 +657,236 @@ describe('R2 — the recheck row', () => {
     await openReopen();
     await waitFor(() => expect(mockReadRecheckBooking).toHaveBeenCalled());
     expect(screen.queryByText(/· Booked/)).toBeNull();
+  });
+});
+
+
+// ── Vet contacts PR-05 (CUL-2767): "What did the vet say?" and the saved moment ────────────────
+//
+// Spec §4.3–4.4, AC 8 and 11 to 14; mock §C. A call, text or email, reopened by its id. The
+// shipped cases above are all flag-off; these turn it on unless they say otherwise.
+
+const safetyCache = { findings: [{ rank: 0, finding: { type: 'intake_decline', priorityClass: 'safety' } }] };
+const insightCache = { findings: [{ rank: 0, finding: { type: 'reflection', priorityClass: 'insight' } }] };
+
+function dayKeyAhead(n: number): string {
+  return dayKeyBack(-n);
+}
+
+describe('C1 — a call opens as What did the vet say?', () => {
+  beforeEach(() => {
+    mockContactsOn = true;
+    mockParams = { visit: 'c-nov9', fresh: '1' };
+    mockVisit = savedVisit({ id: 'c-nov9', channel: 'phone', reason: 'Ear', notes: null, visited_at: dayKeyBack(3) });
+    mockDocs = [
+      { groupId: 'texts', title: 'Texts', kind: 'other', documentDate: dayKeyBack(3) },
+      { groupId: 'drug', title: 'Text with the drug name', kind: 'other', documentDate: dayKeyBack(2) },
+    ];
+  });
+
+  it('titles the screen, leads with what the vet sent, and drops the visit’s own fields', async () => {
+    await openReopen();
+    expect(screen.getByText('What did the vet say?')).toBeTruthy();
+    expect(screen.queryByText('How did it go?')).toBeNull();
+    expect(screen.getByText(/^Phone · \w{3}, \w{3} \d{1,2} · Ear$/)).toBeTruthy();
+    // The sheet's Edit owns the day and the place (R12).
+    expect(screen.queryByText('When')).toBeNull();
+    expect(screen.queryByLabelText('Clinic')).toBeNull();
+    // One row per document, each with its own date, then Add more.
+    expect(screen.getByLabelText(new RegExp(`^Texts, `))).toBeTruthy();
+    expect(screen.getByText('Text with the drug name')).toBeTruthy();
+    expect(screen.getByText('Add more')).toBeTruthy();
+    expect(screen.queryByText('Paperwork')).toBeNull();
+    // What the vet sent comes before The plan, and the notes box after it.
+    const tree = JSON.stringify(screen.toJSON());
+    expect(tree.indexOf('What the vet sent')).toBeLessThan(tree.indexOf('The plan'));
+    expect(tree.indexOf('The plan')).toBeLessThan(tree.indexOf('What the vet said'));
+    expect(screen.getByText('Start a medicine or supplement')).toBeTruthy();
+    expect(screen.getByText('Leave any time. What you typed stays on this call.')).toBeTruthy();
+  });
+
+  it('a document opens Vet Files’ own page', async () => {
+    await openReopen();
+    fireEvent.press(screen.getByText('Texts'));
+    expect(router.push).toHaveBeenCalledWith('/vet-document/texts');
+  });
+
+  it('a document added here is filed under the contact (AC 8)', async () => {
+    mockCaptureContact.mockResolvedValueOnce({ groupId: 'shot', skipped: null });
+    const alert = jest.spyOn(require('react-native').Alert, 'alert').mockImplementation(
+      (...args: unknown[]) =>
+        (args[2] as Array<{ text: string; onPress?: () => void }> | undefined)
+          ?.find((b) => b.text === 'Screenshots from Photos')
+          ?.onPress?.(),
+    );
+    await openReopen();
+    fireEvent.press(screen.getByLabelText('Add — Add more'));
+    await waitFor(() => expect(mockCaptureContact).toHaveBeenCalledWith('pet-a', 'c-nov9', 'photo_library'));
+    expect(mockLogVetVisit).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
+  it('prints the drug name as stored, whole, at any length', async () => {
+    const LONGEST = 'Mometasone furoate / gentamicin / clotrimazole otic suspension (Mometamax) 15 g';
+    mockCourses = [course({ drugName: LONGEST, vetVisitId: null, startedAt: dayKeyBack(3) })];
+    await openReopen();
+    expect(screen.getByText(LONGEST)).toBeTruthy();
+  });
+
+  it('asks nothing about what Home was raising: a contact answers no warning (R5)', async () => {
+    mockConcerns = [{ sign: 'vomit', title: 'Vomiting', state: 'raised', answerableFrom: null }];
+    await openReopen();
+    expect(screen.queryByTestId('after-visit-home-concerns')).toBeNull();
+  });
+});
+
+describe('C2, C3 — the running trial leads, and Keep going until moves its end (AC 13)', () => {
+  beforeEach(() => {
+    mockContactsOn = true;
+    mockParams = { visit: 'c-nov4', fresh: '1' };
+    mockVisit = savedVisit({ id: 'c-nov4', channel: 'phone', reason: 'Trial check in', visited_at: dayKeyBack(1) });
+    mockCourses = [course({ id: 'probiotic', drugName: 'Probiotic', vetVisitId: null, startedAt: dayKeyBack(1) })];
+  });
+
+  it('puts the trial first, seeds the line from its current end, and writes only a changed day', async () => {
+    const start = dayBack(22);
+    mockActiveTrial = { id: 't1', startedAt: start.toISOString(), targetDurationDays: 42, foodLabel: 'Hydrolyzed salmon' };
+    await openReopen();
+    const tree = JSON.stringify(screen.toJSON());
+    expect(tree.indexOf('Hydrolyzed salmon')).toBeLessThan(tree.indexOf('Probiotic'));
+    // On a contact Keep going until IS the extend door; no Extended chip beside it.
+    expect(screen.queryByText('Extended')).toBeNull();
+    const endKey = dayKeyAhead(42 - 23);
+    const line = screen.getByText(/^Keep going until /);
+    expect(mockExtendTrial).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByLabelText(`Change — ${line.props.children}`));
+    const later = dayBack(-(42 - 23 + 7));
+    await act(async () => {
+      fireEvent(screen.getByTestId('picker'), 'pickerPick', { type: 'set' }, later);
+    });
+    await waitFor(() =>
+      expect(mockExtendTrial).toHaveBeenCalledWith({ trialId: 't1', targetDurationDays: 49, vetDirected: true }),
+    );
+    expect(endKey).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // The row settles to the new end and names the old one.
+    await waitFor(() => expect(screen.getByText(/Keep going until .* · was /)).toBeTruthy());
+  });
+
+  it('a trial with no readable window offers no Keep going until (C3)', async () => {
+    mockActiveTrial = { id: 't1', startedAt: 'not a date', targetDurationDays: 42, foodLabel: 'Hydrolyzed salmon' };
+    await openReopen();
+    expect(screen.getByText('Hydrolyzed salmon')).toBeTruthy();
+    expect(screen.queryByText(/^Keep going until /)).toBeNull();
+  });
+});
+
+describe('C4, C5 — the saved moment never closes what is open (AC 12)', () => {
+  beforeEach(() => {
+    mockContactsOn = true;
+    mockParams = { visit: 'c-1', fresh: '1' };
+    mockVisit = savedVisit({ id: 'c-1', channel: 'email', pet_id: 'pet-a', notes: null });
+  });
+
+  const BANNED = /handled|\bdone\b|all set/i;
+
+  async function finish() {
+    await openReopen();
+    fireEvent.press(screen.getByText('Done'));
+    await screen.findByText('Nyx’s email is saved');
+  }
+
+  it('a live warning: no check, Home unchanged, the safety line', async () => {
+    mockSignalRow = safetyCache;
+    await finish();
+    expect(screen.getByTestId('saved-mark-neutral', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.queryByTestId('saved-mark-check')).toBeNull();
+    expect(screen.getByText('Nothing on Home changes because you emailed.')).toBeTruthy();
+    expect(screen.getByLabelText('If Nyx is worse, don’t wait. Call your vet today.')).toBeTruthy();
+    const words = JSON.stringify(screen.toJSON()).replace(/"Done"/g, '');
+    expect(words).not.toMatch(BANNED);
+    expect(router.back).not.toHaveBeenCalled();
+  });
+
+  it('an unread Signal is not an absence: the neutral moment', async () => {
+    mockSignalThrows = true;
+    await finish();
+    expect(screen.getByTestId('saved-mark-neutral', { includeHiddenElements: true })).toBeTruthy();
+  });
+
+  it('nothing open keeps the shipped check and the no-exam line (C5)', async () => {
+    mockSignalRow = insightCache;
+    await finish();
+    expect(screen.getByTestId('saved-mark-check')).toBeTruthy();
+    expect(screen.getByText('It goes on Nyx’s vet report as an email. No exam.')).toBeTruthy();
+    expect(screen.getByText('On this phone now — backs up when you’re online')).toBeTruthy();
+  });
+
+  it('an older contact reopened without fresh goes back, with no moment', async () => {
+    mockParams = { visit: 'c-1' };
+    await openReopen();
+    fireEvent.press(screen.getByText('Done'));
+    await waitFor(() => expect(router.back).toHaveBeenCalled());
+    expect(screen.queryByText('Nyx’s email is saved')).toBeNull();
+  });
+});
+
+describe('CUL-2829 instance 1 — a care answer never names a call, text or email', () => {
+  it('writes no answer against a phone record, even flag-off with a tick waiting', async () => {
+    mockContactsOn = false;
+    mockVisit = savedVisit({ channel: 'phone' });
+    mockBooking = {
+      id: 'appt-1', pet_id: 'pet-a', scheduled_at: new Date(2026, 8, 16, 10, 30).toISOString(),
+      clinic_name: null, vet_name: null, reason: null, notes_draft: null,
+      questions: null, vet_visit_id: 'v-sep', cancelled_at: null, deleted_at: null,
+    };
+    mockTicks = new Set(['vomit']);
+    mockConcerns = [{ sign: 'vomit', title: 'Vomiting', state: 'raised', answerableFrom: null }];
+    await openReopen();
+    expect(screen.queryByTestId('after-visit-home-concerns')).toBeNull();
+    fireEvent.press(screen.getByText('Done'));
+    await waitFor(() => expect(router.back).toHaveBeenCalled());
+    expect(mockRecordCareAnswer).not.toHaveBeenCalled();
+  });
+
+  it('an exam with the same tick still writes its answer (the shipped path)', async () => {
+    mockVisit = savedVisit({ channel: 'in_clinic' });
+    mockBooking = {
+      id: 'appt-1', pet_id: 'pet-a', scheduled_at: new Date(2026, 8, 16, 10, 30).toISOString(),
+      clinic_name: null, vet_name: null, reason: null, notes_draft: null,
+      questions: null, vet_visit_id: 'v-sep', cancelled_at: null, deleted_at: null,
+    };
+    mockTicks = new Set(['vomit']);
+    mockConcerns = [{ sign: 'vomit', title: 'Vomiting', state: 'raised', answerableFrom: null }];
+    await openReopen();
+    fireEvent.press(screen.getByText('Done'));
+    await waitFor(() => expect(mockRecordCareAnswer).toHaveBeenCalledWith(expect.objectContaining({ vetVisitId: 'v-sep' })));
+  });
+});
+
+describe('CUL-2835 — a visit can say it was a call (AC 19’s in-app return trip)', () => {
+  it('flag on: the channel chips write the record’s channel and the screen becomes the contact’s', async () => {
+    mockContactsOn = true;
+    mockVisit = savedVisit({ channel: 'in_clinic' });
+    await openReopen();
+    expect(screen.getByText('How did you hear from the vet?')).toBeTruthy();
+    fireEvent.press(screen.getByText('Phone'));
+    await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { channel: 'phone' }));
+    await screen.findByText('What did the vet say?');
+  });
+
+  it('flag off: no chips, and a phone record still reads as shipped', async () => {
+    mockVisit = savedVisit({ channel: 'phone' });
+    await openReopen();
+    expect(screen.queryByText('How did you hear from the vet?')).toBeNull();
+    expect(screen.getByText('How did it go?')).toBeTruthy();
+    expect(screen.queryByText('What did the vet say?')).toBeNull();
+  });
+
+  it('flag on, a contact shows no chips (its own Edit owns the channel)', async () => {
+    mockContactsOn = true;
+    mockVisit = savedVisit({ channel: 'text' });
+    await openReopen();
+    expect(screen.queryByText('How did you hear from the vet?')).toBeNull();
   });
 });

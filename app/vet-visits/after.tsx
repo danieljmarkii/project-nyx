@@ -16,7 +16,7 @@ import {
 } from '../../components/vetvisits/AfterVisitBody';
 import { VisitSavedMoment } from '../../components/vetvisits/VisitSavedMoment';
 import type { HomeConcernAnswer } from '../../components/vetvisits/AfterVisitBody';
-import { pushCareAnswers, readVisitCareAnswers, recordCareAnswer } from '../../lib/careAnswers';
+import { CareAnswerRefused, pushCareAnswers, readVisitCareAnswers, recordCareAnswer } from '../../lib/careAnswers';
 import {
   clearCareVisitTicksFor,
   readCareVisitTicks,
@@ -47,7 +47,25 @@ import {
 import { getDietTrialProgress } from '../../lib/analytics';
 import { trialEndDayKey, trialStartDayKey } from '../../lib/trialWindowDates';
 import { windowRefusedLine } from '../../lib/trialWindowSheet';
-import { captureVisitPaperwork, forgetPaperwork, readPaperworkFor } from '../../lib/visitPaperwork';
+import {
+  captureContactDocuments,
+  captureVisitPaperwork,
+  forgetPaperwork,
+  readPaperworkFor,
+  type ContactDocumentSource,
+} from '../../lib/visitPaperwork';
+import { useVetContactsOn } from '../../hooks/useVetContacts';
+import { isRemoteChannel, recordNoun } from '../../lib/vetContacts';
+import {
+  contactAfterEyebrow,
+  contactLeaveNote,
+  describeContactSave,
+  hasLiveWarning,
+  thisContact,
+  type ContactSaveSummary,
+} from '../../lib/vetContactAfter';
+import { readSignalCacheOrLast } from '../../lib/signal';
+import { isDocumentPickerAvailable } from '../../lib/vetDocumentCapture';
 import {
   courseVerdictLabel,
   describeVisitSave,
@@ -93,6 +111,8 @@ import {
   type AppointmentDetail,
   type LocalVetVisit,
   type RecheckBooking,
+  type VetVisitDetail,
+  type VisitChannel,
 } from '../../lib/vetVisits';
 
 /**
@@ -147,9 +167,27 @@ type Sheet =
 // paperwork (by visit) and the care answers rebuild from the record; and the plan offers
 // only this visit's own items (R3). `&at=plan` lands on The plan (*Add to the plan*).
 export default function AfterVisitScreen() {
-  const { appointment: appointmentId, visit: reopenId, at } =
-    useLocalSearchParams<{ appointment?: string; visit?: string; at?: string }>();
+  const { appointment: appointmentId, visit: reopenId, at, fresh } =
+    useLocalSearchParams<{ appointment?: string; visit?: string; at?: string; fresh?: string }>();
   const reopened = !!reopenId;
+  // Vet contacts (CUL-2767): the record's channel, as the RECORD holds it. A visit this screen
+  // creates is 'in_clinic' (both create paths write it); a reopen reads it from the row, and a
+  // row this phone never learned the channel of stays null. `contactsOn` gates the SURFACE
+  // only: the care-answer refusal below reads the record whatever the flag says.
+  const contactsOn = useVetContactsOn();
+  const [recordChannel, setRecordChannel] = useState<VisitChannel | null>(reopenId ? null : 'in_clinic');
+  const isContact = contactsOn && isRemoteChannel(recordChannel);
+  // `&fresh=1`: the sheet just saved this contact, so *Done* plays the saved moment (C4, C5)
+  // rather than returning, as a reopen of an older record does.
+  const justSaved = fresh === '1';
+  // The reopen's R3 scoping (an old record offers only its own items, so *Keep*'s first-wins
+  // link cannot claim another's) is for a record saved EARLIER. A contact the sheet saved a
+  // moment ago has nothing linked yet: its plan is a fresh visit's, every running course and
+  // the running trial, which is the whole point of *Keep going until* (C2).
+  const scopedReopen = !!reopenId && !justSaved;
+  const [contactDocs, setContactDocs] = useState<VetVisitDetail['documents']>([]);
+  const [channelBusy, setChannelBusy] = useState(false);
+  const [pdfAvailable] = useState(() => isDocumentPickerAvailable());
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
 
@@ -214,7 +252,7 @@ export default function AfterVisitScreen() {
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [summary, setSummary] = useState<VisitSaveSummary | null>(null);
+  const [summary, setSummary] = useState<VisitSaveSummary | ContactSaveSummary | null>(null);
   // EN-9 (Engines v3 PR-35): what Home was raising, the owner's answer per sign, and the
   // signs ticked in the room (they arrive as *Talked about it*). Empty flag-off.
   const [homeConcerns, setHomeConcerns] = useState<HomeConcernRow[]>([]);
@@ -269,17 +307,17 @@ export default function AfterVisitScreen() {
    *  naming this visit (R3, AC 15), so *Keep*'s first-wins link cannot claim another's. */
   const ownCourses = useCallback(
     (active: ActiveCourse[]) =>
-      reopenId ? active.filter((c) => c.vetVisitId === reopenId) : active,
-    [reopenId],
+      scopedReopen ? active.filter((c) => c.vetVisitId === reopenId) : active,
+    [scopedReopen, reopenId],
   );
 
   const loadPlan = useCallback(async (forPetId: string) => {
     const [nextCourses, activeTrial, record] = await Promise.all([
       readActiveCourses(forPetId),
       getActiveTrialForPet(forPetId),
-      reopenId ? readVisitPlanRecord(reopenId) : Promise.resolve(null),
+      scopedReopen && reopenId ? readVisitPlanRecord(reopenId) : Promise.resolve(null),
     ]);
-    if (!reopenId || !record) {
+    if (!scopedReopen || !record) {
       setCourses((prev) => mergePlanCourses(prev, nextCourses, settledCourseIds.current));
       setTrial(activeTrial);
       return;
@@ -305,7 +343,7 @@ export default function AfterVisitScreen() {
     setHeldTrialLabel(activeTrial && !linked ? activeTrial.foodLabel?.trim() || 'Diet trial' : null);
     const endedHere = record.trials.find((t) => t.status !== 'active');
     if (endedHere) setEndedTrial((prev) => prev ?? { label: endedHere.label, endedOn: endedHere.endedAt });
-  }, [reopenId, ownCourses]);
+  }, [reopenId, scopedReopen, ownCourses]);
 
   /**
    * Write what the owner changed since the record last moved, and nothing else (R5).
@@ -368,6 +406,8 @@ export default function AfterVisitScreen() {
     await loadPlan(forPetId);
     // By visit, not by appointment: a document filed under the visit from anywhere counts.
     setPaperwork(detail.documents.map((d) => d.groupId));
+    setContactDocs(detail.documents);
+    setRecordChannel((detail.visit.channel ?? null) as VisitChannel | null);
     if (!seeded.current) {
       seeded.current = true;
       const seed: AfterVisitFields = {
@@ -1014,6 +1054,7 @@ export default function AfterVisitScreen() {
         // The same helper every reader uses for the same total, so the row and the trial
         // screen name one day.
         endDayKey: trialEndDayKey(trialStartDayKey(trial.startedAt), totalDays),
+        wasEndDayKey: trialEndDayKey(trialStartDayKey(trial.startedAt), trial.targetDurationDays),
         linkedHere: linkedHereNow,
       });
       note({
@@ -1150,7 +1191,11 @@ export default function AfterVisitScreen() {
       // `note` is state, read by the moment below from this render's closure, so the lines
       // written here are also carried into the moment directly.
       const careLines: LinkedLine[] = [];
-      for (const c of answerableConcerns(homeConcerns, visitedOn)) {
+      // CUL-2829 instance 1 (Vet contacts R5): a call, text or email answers no warning. Not on
+      // the flag: a contact's channel is a fact of the record, and `recordCareAnswer` refuses
+      // the same write behind this.
+      const answerable = isRemoteChannel(recordChannel) ? [] : answerableConcerns(homeConcerns, visitedOn);
+      for (const c of answerable) {
         if (concernAnswers[c.sign] !== 'talked' || answeredSigns.current.has(c.sign)) continue;
         // Claimed BEFORE the await: a second Save in the same frame passes the `saving` state
         // guard, and must not write the answer twice (code review). Released if the write fails.
@@ -1165,6 +1210,9 @@ export default function AfterVisitScreen() {
           });
         } catch (e) {
           answeredSigns.current.delete(c.sign);
+          // The record became a contact on another phone after this screen read it: nothing is
+          // written, and nothing is said as written.
+          if (e instanceof CareAnswerRefused) continue;
           throw e;
         }
         const line: LinkedLine = { key: `care:${c.sign}`, title: c.title, note: 'talked about it' };
@@ -1174,6 +1222,30 @@ export default function AfterVisitScreen() {
       if (appointment && answeredSigns.current.size > 0) void clearCareVisitTicksFor(appointment.id);
       syncPendingVetVisits().catch(console.error);
       if (answeredSigns.current.size > 0) void pushCareAnswers();
+
+      // A contact the sheet just saved: its saved moment (C4, C5). The check is earned only
+      // when nothing is open for the pet; an unread Signal counts as open (C-12).
+      if (reopenId && justSaved && isContact && isRemoteChannel(recordChannel)) {
+        let cache: Awaited<ReturnType<typeof readSignalCacheOrLast>>['row'] | 'unread';
+        try {
+          cache = (await readSignalCacheOrLast(petId)).row;
+        } catch (e) {
+          console.warn('[after-visit] signal read failed:', e);
+          cache = 'unread';
+        }
+        setSummary(
+          describeContactSave({
+            petName: resolveRecordPetName(pets, petId),
+            channel: recordChannel,
+            liveWarning: hasLiveWarning(cache),
+            // Vet instructions R4 wires this when its row lands (whichever merges second).
+            watchedSign: false,
+            linked: linkedLinesAsOf(linked, localDateKey(new Date()), (day) => formatVisitDate(day)),
+          }),
+        );
+        commitVisit();
+        return;
+      }
 
       // A reopen goes back to the visit with no saved moment (R5: the moment plays on the
       // first save only). The date note above the field already said what a moved date does.
@@ -1217,6 +1289,61 @@ export default function AfterVisitScreen() {
     }
   }
 
+  /** *What the vet sent* on a contact (CUL-2767, §4.3 item 1): Vet Files' own pickers, the
+   *  rows filed under the contact at insert, then the list re-read from the record. */
+  function handleAddContactDocument() {
+    if (busyRow || !petId) return;
+    const pick = (source: ContactDocumentSource) => void addContactDocument(source);
+    Alert.alert('What the vet sent', undefined, [
+      { text: 'Screenshots from Photos', onPress: () => pick('photo_library') },
+      ...(pdfAvailable ? [{ text: 'A PDF from Files', onPress: () => pick('files') }] : []),
+      { text: 'Take a photo', onPress: () => pick('camera') },
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
+  }
+
+  async function addContactDocument(source: ContactDocumentSource) {
+    if (busyRow || !petId) return;
+    setBusyRow('paperwork');
+    try {
+      const id = await ensureVisit();
+      const { groupId, skipped } = await captureContactDocuments(petId, id, source);
+      if (groupId) {
+        setPaperwork((prev) => (prev.includes(groupId) ? prev : [...prev, groupId]));
+        const detail = await readVetVisitDetail(id);
+        if (detail) setContactDocs(detail.documents);
+        note({ key: 'paperwork', title: 'What the vet sent', note: 'in Vet Files' });
+      }
+      if (skipped) Alert.alert('Some files were skipped', skipped);
+    } catch (err) {
+      sayFailed(err, 'contact document');
+    } finally {
+      setBusyRow(null);
+    }
+  }
+
+  /**
+   * CUL-2835 (spec AC 19, R12): a saved visit's channel, from How did it go?. Phone, Text or
+   * Email turns the record into a contact and every exam reader stops counting it (PR-03); At
+   * the clinic turns it back. What was typed is written first, then the channel alone.
+   */
+  async function handleChannelChange(next: VisitChannel) {
+    const id = visitIdRef.current;
+    if (!id || channelBusy || busyRow) return;
+    setChannelBusy(true);
+    try {
+      await flushFields();
+      await updateVisitDetails(id, { channel: next });
+      if (recordRef.current) recordRef.current = { ...recordRef.current, channel: next };
+      setRecordChannel(next);
+      syncPendingVetVisits().catch(console.error);
+    } catch (err) {
+      sayFailed(err, 'channel');
+    } finally {
+      setChannelBusy(false);
+    }
+  }
+
   async function handleRegimenAdded(regimen: Regimen) {
     setSheet(null);
     // ASKED OF THE RECORD, not asserted (CUL-825). `startRegimen` throws when the
@@ -1231,7 +1358,7 @@ export default function AfterVisitScreen() {
     if (!petId) return;
     const courses = await readActiveCourses(petId);
     const written = courses.find((c) => c.id === regimen.id);
-    if (reopenId) {
+    if (scopedReopen) {
       // The new course names this visit, so it joins the reopened plan; nothing else does.
       const own = ownCourses(courses);
       setLinkedCourseIds(new Set(own.map((c) => c.id)));
@@ -1370,7 +1497,8 @@ export default function AfterVisitScreen() {
                   busyRow={busyRow}
                   saving={saving}
                   onSave={handleSave}
-                  homeConcerns={answerableConcerns(homeConcerns, localDateKey(fields.visitedAt))}
+                  // A call, text or email answers no warning (R5): nothing to ask about here.
+                  homeConcerns={isRemoteChannel(recordChannel) ? [] : answerableConcerns(homeConcerns, localDateKey(fields.visitedAt))}
                   concernAnswers={concernAnswers}
                   onConcernAnswer={(c, answer) => setConcernAnswers((prev) => ({ ...prev, [c.sign]: answer }))}
                   answeredOnRecord={answeredOnRecord}
@@ -1382,6 +1510,24 @@ export default function AfterVisitScreen() {
                   dateNote={
                     reopened && anchors === true
                       ? `Moving this date moves where ${petName}’s vet report starts.`
+                      : null
+                  }
+                  contact={
+                    isContact && isRemoteChannel(recordChannel)
+                      ? {
+                          eyebrow: contactAfterEyebrow(recordChannel, localDateKey(fields.visitedAt), fields.reason),
+                          documents: contactDocs,
+                          onOpenDocument: (groupId) => router.push(`/vet-document/${groupId}`),
+                          onAddDocument: handleAddContactDocument,
+                          noun: recordNoun(recordChannel),
+                          thisNoun: thisContact(recordChannel),
+                          leaveNote: contactLeaveNote(recordChannel),
+                        }
+                      : null
+                  }
+                  channelChips={
+                    contactsOn && reopened && recordChannel === 'in_clinic' && visitId
+                      ? { value: recordChannel, onChange: (c) => void handleChannelChange(c), busy: channelBusy }
                       : null
                   }
                   onPlanLayout={(y) => {

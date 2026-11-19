@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ChevronRight } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { ChipGroup, type ChipGroupOption } from '../ui/ChipGroup';
 import { ThemedText } from '../ui/ThemedText';
@@ -35,9 +36,11 @@ interface ChipRowProps {
   busy?: boolean;
   /** The chips' group label, when "What happened with {title}" is not the question. */
   accessibilityLabel?: string;
+  /** Drawn under the chips, inside the row (the trial's *Keep going until*, CUL-2767). */
+  footer?: ReactNode;
 }
 
-export function PlanChipRow({ glyph, title, subtitle, options, value, onChange, busy, accessibilityLabel }: ChipRowProps) {
+export function PlanChipRow({ glyph, title, subtitle, options, value, onChange, busy, accessibilityLabel, footer }: ChipRowProps) {
   return (
     <View style={styles.row}>
       <View style={styles.head}>
@@ -60,6 +63,7 @@ export function PlanChipRow({ glyph, title, subtitle, options, value, onChange, 
         accessibilityLabel={accessibilityLabel ?? `What happened with ${title}`}
         style={styles.chips}
       />
+      {footer ?? null}
     </View>
   );
 }
@@ -138,10 +142,44 @@ export function PlanSettledRow({ glyph, title, subtitle }: { glyph: ReactNode; t
   );
 }
 
+/**
+ * A row that OPENS something the record already holds: a document the vet sent (CUL-2767,
+ * mock C1, "Texts · Nov 9 ›"). The whole row is the button, with the shipped chevron; it
+ * draws no action box because it starts nothing. One sentence for VoiceOver: title, then date.
+ */
+export function PlanDoorRow({ glyph, title, subtitle, onPress }: {
+  glyph: ReactNode;
+  title: string;
+  subtitle?: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.row, styles.doorRow]}
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title}
+    >
+      <View style={styles.head}>
+        <View style={styles.glyph}>{glyph}</View>
+        <View style={styles.headMain}>
+          <ThemedText style={styles.title}>{title}</ThemedText>
+          {subtitle ? <ThemedText style={styles.subtitle}>{subtitle}</ThemedText> : null}
+        </View>
+        <ChevronRight size={18} color={theme.colorTextTertiary} strokeWidth={2} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 // Two touchable siblings in `actions` need `gap >= facing hitSlop(a) + facing
 // hitSlop(b)` (C-5). Neither carries any hitSlop — each is a real box at the 44pt
 // floor — so the gap only has to separate two boxes that already meet the target.
 const ACTION_GAP = theme.space2;
+
+/** The glyph column's width plus its gap: where a row's content under the title starts. */
+export const PLAN_GLYPH_INSET = 22 + theme.space2;
 
 const styles = StyleSheet.create({
   row: {
@@ -150,6 +188,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colorBorder,
     gap: theme.space2,
+  },
+  doorRow: {
+    // The shipped row's padding already clears 44pt with one line; pinned so a short title
+    // never shrinks the target (C-5).
+    minHeight: theme.hitTarget,
   },
   head: {
     flexDirection: 'row',
@@ -178,12 +221,12 @@ const styles = StyleSheet.create({
   },
   chips: {
     // Clears the glyph column so the chips line up under the title, not the icon.
-    marginLeft: 22 + theme.space2,
+    marginLeft: PLAN_GLYPH_INSET,
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 22 + theme.space2,
+    marginLeft: PLAN_GLYPH_INSET,
     columnGap: ACTION_GAP,
     rowGap: theme.space1,
     flexWrap: 'wrap',

@@ -51,7 +51,7 @@ jest.mock('./dietTrialSetup', () => ({ getActiveTrialForPet: jest.fn(async () =>
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
-import { careAnswerLanded, pushCareAnswers, readVisitCareAnswers, recordCareAnswer, retractCareAnswer } from './careAnswers';
+import { CareAnswerRefused, careAnswerLanded, pushCareAnswers, readVisitCareAnswers, recordCareAnswer, retractCareAnswer } from './careAnswers';
 import { notifySignedOut } from './sync';
 
 const PET = 'pet-a';
@@ -72,6 +72,24 @@ afterEach(() => mockDb.close());
 const row = (id: string) => mockDb.prepare('SELECT * FROM care_acknowledgements WHERE id = ?').get(id) as Record<string, unknown>;
 
 describe('recordCareAnswer', () => {
+  // CUL-2829 instance 1 (Vet contacts R5): a visit-sourced answer never names a call, text or
+  // email. An exam (and a row whose channel this phone has not learned) still takes one.
+  it.each(['phone', 'text', 'email'])('refuses a visit answer naming a %s contact, writing nothing', async (channel) => {
+    mockDb.prepare(`INSERT INTO vet_visits (id, pet_id, visited_at, channel) VALUES ('c1', ?, '2026-11-09', ?)`).run(PET, channel);
+    for (const source of ['visit_answer', 'at_vet_tick'] as const) {
+      await expect(
+        recordCareAnswer({ petId: PET, sign: 'vomit', source, anchorOn: '2026-11-09', vetVisitId: 'c1' }, nextId),
+      ).rejects.toBeInstanceOf(CareAnswerRefused);
+    }
+    expect(mockDb.prepare('SELECT COUNT(*) AS n FROM care_acknowledgements').get()).toEqual({ n: 0 });
+  });
+
+  it('still writes a visit answer naming an exam', async () => {
+    mockDb.prepare(`INSERT INTO vet_visits (id, pet_id, visited_at, channel) VALUES ('e1', ?, '2026-11-09', 'in_clinic')`).run(PET);
+    const id = await recordCareAnswer({ petId: PET, sign: 'vomit', source: 'visit_answer', anchorOn: '2026-11-09', vetVisitId: 'e1' }, nextId);
+    expect(row(id).vet_visit_id).toBe('e1');
+  });
+
   it('writes one sign, its source and its anchor, queued for the push', async () => {
     const id = await recordCareAnswer({ petId: PET, sign: 'vomit', source: 'my_vet_knows', anchorOn: '2026-09-30' }, nextId);
     expect(row(id)).toEqual(expect.objectContaining({

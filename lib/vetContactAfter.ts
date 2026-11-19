@@ -71,6 +71,13 @@ export function hasLiveWarning(cache: SignalCacheRow | null | 'unread'): boolean
   return cache.findings.some((f) => f.finding.priorityClass === 'safety');
 }
 
+const THIS_CONTACT: Record<RemoteChannel, string> = { phone: 'this call', text: 'these texts', email: 'this email' };
+
+/** "this call", "these texts", "this email": where a plan row says what it is linked to. */
+export function thisContact(channel: RemoteChannel): string {
+  return THIS_CONTACT[channel];
+}
+
 const SAVED_NOUN: Record<RemoteChannel, string> = { phone: 'call is', text: 'texts are', email: 'email is' };
 const VERB: Record<RemoteChannel, string> = { phone: 'called', text: 'texted', email: 'emailed' };
 const REPORT_AS: Record<RemoteChannel, string> = {
@@ -111,7 +118,12 @@ export function describeContactSave(args: {
   watchedSign: boolean;
   linked: LinkedLine[];
 }): ContactSaveSummary {
-  const { petName, channel, linked } = args;
+  const { petName, channel } = args;
+  // The plan's lines were written as a visit's ("linked to this visit"); a contact's say what
+  // the record is.
+  const linked = args.linked.map((l) =>
+    l.note === 'linked to this visit' ? { ...l, note: `linked to ${THIS_CONTACT[channel]}` } : l,
+  );
   const open = args.liveWarning || args.watchedSign;
   const heading = `${petName}’s ${SAVED_NOUN[channel]} saved`;
   if (open) {
@@ -134,4 +146,9 @@ export function describeContactSave(args: {
     linked,
     offlineLine: VISIT_OFFLINE_LINE,
   };
+}
+
+/** The line under *Done* on a contact: it already exists, so everything typed is kept. */
+export function contactLeaveNote(channel: RemoteChannel): string {
+  return `Leave any time. What you typed stays on ${THIS_CONTACT[channel]}.`;
 }

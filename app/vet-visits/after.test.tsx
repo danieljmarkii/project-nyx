@@ -42,6 +42,19 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ appointment: 'appt-1' }),
 }));
 
+// Vet contacts (CUL-2767): the flag is OFF unless a test turns it on, so every shipped case
+// below is the flag-off screen. The Signal cache is the saved moment's live-warning read.
+let mockContactsOn = false;
+jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => mockContactsOn }));
+let mockSignalRow: unknown = null;
+let mockSignalThrows = false;
+jest.mock('../../lib/signal', () => ({
+  readSignalCacheOrLast: jest.fn(async () => {
+    if (mockSignalThrows) throw new Error('offline');
+    return { row: mockSignalRow, fromLast: false };
+  }),
+}));
+
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
