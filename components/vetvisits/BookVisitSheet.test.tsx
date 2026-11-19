@@ -373,6 +373,9 @@ describe('the past contact, flag on', () => {
   beforeEach(() => {
     mockContactsOn = true;
   });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
 
   it('AC 2: the logging door opens on a past contact with no "Has this visit happened?"', () => {
     renderSheet({ initialMode: 'happened' });
@@ -428,6 +431,9 @@ describe('the past contact, flag on', () => {
   });
 
   it('AC 3: a time set writes contacted_at as a UTC instant; no time writes none', () => {
+    // Pinned to a local evening (C-29, CUL-831): on the real clock a 16:10 pick is still to
+    // come before 16:10, and the sheet rightly saves now instead.
+    jest.useFakeTimers({ now: new Date(2026, 10, 19, 20, 0), doNotFake: ['nextTick', 'setImmediate'] });
     const onSubmit = renderSheet({ initialMode: 'happened' });
     fireEvent.press(screen.getByText('Phone'));
     fireEvent.press(screen.getByLabelText('Time, not set'));
