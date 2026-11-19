@@ -3640,7 +3640,8 @@ function headline(snap: ReportSnapshot): string {
  * so no wording here may say a list was read and came back clean (cold read + adversarial pass 1).
  * "carrying" opens the clause only when a protein is named, so an unread food carries nothing in print.
  *
- * CUL-2813 (QUIET) — a named protein never hides an unknown beside it. A mixed bowl with one food's
+ * CUL-2813 (QUIET) — a named protein never hides an off-diet food with no protein on file beside it
+ * (a food MISSING from an incomplete bowl is not covered here). A mixed bowl with one food's
  * protein flagged and another off-diet food never read printed only "carrying Chicken". It counts
  * under its protein AND under its own clause, worded as a second food so the two do not read as one
  * feeding described twice, with its count in the protein clause's own form; the bold lead takes `exposures.offDiet`, so no total doubles. Bowls only:
@@ -10818,7 +10819,7 @@ function offDietFoodsBit(snap: ReportSnapshot): string {
   const t = snap.trial!
   const off = t.exposures.items.filter((x) => x.classification.offDiet)
   if (off.length === 0 || off.length !== t.exposures.offDiet) return ''
-  // CUL-2813 (QUIET): a named protein never hides an unknown. `partUnread` is a bowl's other food;
+  // CUL-2813 (QUIET): a named protein never hides an off-diet food with nothing on file. `partUnread` is a bowl's other food;
   // `wholeUnread` counts feedings under this label with nothing read, which a sibling's protein hid.
   const groups = new Map<
     string,
