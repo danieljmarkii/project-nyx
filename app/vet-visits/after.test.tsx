@@ -46,13 +46,12 @@ jest.mock('expo-router', () => ({
 // below is the flag-off screen. The Signal cache is the saved moment's live-warning read.
 let mockContactsOn = false;
 jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => mockContactsOn }));
-let mockSignalRow: unknown = null;
-let mockSignalThrows = false;
-jest.mock('../../lib/signal', () => ({
-  readSignalCacheOrLast: jest.fn(async () => {
-    if (mockSignalThrows) throw new Error('offline');
-    return { row: mockSignalRow, fromLast: false };
-  }),
+// The moment's "anything open?" read is its own module (lib/vetContactMoment, unit-tested there);
+// here it answers what each test sets, and records which pets it was asked about.
+let mockOpenWarning = true;
+const mockContactOpen = jest.fn(async (_petIds: readonly string[]) => mockOpenWarning);
+jest.mock('../../lib/vetContactMoment', () => ({
+  contactHasOpenWarning: (petIds: readonly string[]) => mockContactOpen(petIds),
 }));
 
 jest.mock('react-native-safe-area-context', () => {
@@ -132,7 +131,12 @@ jest.mock('../../lib/careVisitConcerns', () => ({
   readCareVisitTicks: jest.fn(async () => mockTicks),
   clearCareVisitTicksFor: jest.fn(async () => undefined),
 }));
+let mockRetracted: string[] = [];
+const mockRetractVisit = jest.fn(async (_id: string) => mockRetracted);
 jest.mock('../../lib/careAnswers', () => ({
+  // The refusal class the screen catches (CUL-2829), and the retraction a channel flip runs.
+  CareAnswerRefused: class CareAnswerRefused extends Error {},
+  retractVisitCareAnswers: (id: string) => mockRetractVisit(id),
   recordCareAnswer: (input: Record<string, unknown>) => mockRecordCareAnswer(input),
   pushCareAnswers: jest.fn(async () => undefined),
 }));

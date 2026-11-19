@@ -51,7 +51,7 @@ jest.mock('./dietTrialSetup', () => ({ getActiveTrialForPet: jest.fn(async () =>
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
-import { CareAnswerRefused, careAnswerLanded, pushCareAnswers, readVisitCareAnswers, recordCareAnswer, retractCareAnswer } from './careAnswers';
+import { CareAnswerRefused, careAnswerLanded, retractVisitCareAnswers, pushCareAnswers, readVisitCareAnswers, recordCareAnswer, retractCareAnswer } from './careAnswers';
 import { notifySignedOut } from './sync';
 
 const PET = 'pet-a';
@@ -82,6 +82,20 @@ describe('recordCareAnswer', () => {
       ).rejects.toBeInstanceOf(CareAnswerRefused);
     }
     expect(mockDb.prepare('SELECT COUNT(*) AS n FROM care_acknowledgements').get()).toEqual({ n: 0 });
+  });
+
+  it('a visit turned into a call takes back every answer still standing on it, and only those', async () => {
+    mockDb.prepare(`INSERT INTO vet_visits (id, pet_id, visited_at, channel) VALUES ('e2', ?, '2026-11-09', 'in_clinic')`).run(PET);
+    const a = await recordCareAnswer({ petId: PET, sign: 'vomit', source: 'visit_answer', anchorOn: '2026-11-09', vetVisitId: 'e2' }, nextId);
+    const b = await recordCareAnswer({ petId: PET, sign: 'cough', source: 'at_vet_tick', anchorOn: '2026-11-09', vetVisitId: 'e2' }, nextId);
+    await retractCareAnswer(b, nextId);
+    const mine = await recordCareAnswer({ petId: PET, sign: 'itch', source: 'my_vet_knows', anchorOn: '2026-11-09' }, nextId);
+    expect(await retractVisitCareAnswers('e2', nextId)).toEqual(['vomit']);
+    expect(await readVisitCareAnswers('e2')).toEqual(new Set());
+    expect(mockDb.prepare('SELECT COUNT(*) AS n FROM care_acknowledgements WHERE retracts = ?').get(a)).toEqual({ n: 1 });
+    expect(mockDb.prepare('SELECT COUNT(*) AS n FROM care_acknowledgements WHERE retracts = ?').get(mine)).toEqual({ n: 0 });
+    // Run twice, it takes back nothing more.
+    expect(await retractVisitCareAnswers('e2', nextId)).toEqual([]);
   });
 
   it('still writes a visit answer naming an exam', async () => {

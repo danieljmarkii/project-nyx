@@ -302,12 +302,14 @@ export default function VetVisitsScreen() {
       // the vet say?* for the record's own pet, where what the vet sent and started is added and
       // the saved moment plays. A visit closes onto the list as shipped, and flag-off never
       // reaches here with another channel.
-      if (contactsOn && isRemoteChannel(input.channel)) {
-        router.push(`/vet-visits/after?visit=${encodeURIComponent(savedId)}&fresh=1`);
-        void load();
-        return;
-      }
+      // Pushed AFTER the list re-reads, so the sheet's Modal has finished leaving before a new
+      // screen arrives over it (C-14: a push during a Modal's dismissal can be dropped on iOS).
       await load();
+      if (contactsOn && isRemoteChannel(input.channel)) {
+        // The other pets it was about ride along, so the saved moment reads every one (B3).
+        const also = input.alsoForPetIds.length > 0 ? `&also=${input.alsoForPetIds.map(encodeURIComponent).join(',')}` : '';
+        router.push(`/vet-visits/after?visit=${encodeURIComponent(savedId)}&fresh=1${also}`);
+      }
     } catch (err) {
       console.warn('[vet-visits] save failed:', err);
       // Plain cause, one action, no error string from the exception (the

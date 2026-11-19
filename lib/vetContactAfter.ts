@@ -53,6 +53,13 @@ export function keepGoingLine(endDayKey: string | null, wasDayKey: string | null
   return was ? `Keep going until ${end} · was ${was}` : `Keep going until ${end}`;
 }
 
+/** The line for a trial whose end is already behind today: it ran its window, and "keep going
+ *  until" a past day would read wrong. */
+export function trialEndPassedLine(endDayKey: string): string | null {
+  const end = formatShortWeekday(endDayKey);
+  return end ? `The trial’s window ended ${end}` : null;
+}
+
 /**
  * Is a warning live for this pet in its cached Signal (§4.4)? Read only, no engine read.
  *
@@ -92,9 +99,12 @@ const REPORT_AS: Record<RemoteChannel, string> = {
  * frame 17), so every pet gets a line that is true for every species. Split in two so the
  * first sentence can carry the title weight the mock gives it.
  */
-export function contactSafetyLine(petName: string): { lead: string; rest: string } {
+export function contactSafetyLine(petName: string, alsoNames: readonly string[] = []): { lead: string; rest: string } {
+  // Every pet the contact was about, so *Also about Juniper* never leaves Juniper out (B3).
+  const names = [petName, ...alsoNames];
+  const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`;
   // The floor's own words (`lib/incidentAskWords.ts`): no surface mints its own floor.
-  return { lead: `If ${petName} is worse, don’t wait.`, rest: `${FLOOR_ASK.label}.` };
+  return { lead: `If ${who} is worse, don’t wait.`, rest: `${FLOOR_ASK.label}.` };
 }
 
 export interface ContactSaveSummary extends VisitSaveSummary {
@@ -117,6 +127,8 @@ export function describeContactSave(args: {
    *  that project's row is wired here (whichever of the two merges second). */
   watchedSign: boolean;
   linked: LinkedLine[];
+  /** The other pets the contact was about (*Also about*). */
+  alsoNames?: readonly string[];
 }): ContactSaveSummary {
   const { petName, channel } = args;
   // The plan's lines were written as a visit's ("linked to this visit"); a contact's say what
@@ -132,7 +144,7 @@ export function describeContactSave(args: {
       mark: 'neutral',
       reportLine: `Nothing on Home changes because you ${VERB[channel]}.`,
       homeLine: null,
-      safety: contactSafetyLine(petName),
+      safety: contactSafetyLine(petName, args.alsoNames ?? []),
       linked,
       offlineLine: VISIT_OFFLINE_LINE,
     };

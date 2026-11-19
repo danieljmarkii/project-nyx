@@ -88,6 +88,8 @@ export interface ContactLayout {
   thisNoun: string;
   /** The line under *Done*: "Leave any time. What you typed stays on this call." */
   leaveNote: string;
+  /** Courses started on THIS screen: settled rows, inert (C-7), never asked about again. */
+  startedHereCourseIds: ReadonlySet<string>;
 }
 
 /** CUL-2835: on a saved visit, flag on, how the owner heard. Null flag-off and on a contact. */
@@ -323,7 +325,8 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
   // no notes field, so a contact keeps the box, below its plan.
   const notesBlock = (
     <>
-      <SectionLabel label="What the vet said" style={styles.label} />
+      {/* On a contact the title already asks "What did the vet say?"; the box is the owner's own. */}
+      <SectionLabel label={contact ? 'Your notes' : 'What the vet said'} style={styles.label} />
       <TextInput
         style={styles.notes}
         value={fields.notes}
@@ -351,8 +354,9 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
         endDayKey={keepEnd}
         minEndDayKey={keepBounds.minEndDayKey}
         maxEndDayKey={keepBounds.maxEndDayKey}
+        todayKey={today}
         busy={busyRow === 'trial'}
-        onPick={(day) => {
+        onExtend={(day) => {
           const total = trialTotalForEndDay(keepWindow.startDayKey, day);
           if (total) onExtendTrial(total);
         }}
@@ -363,8 +367,17 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
   // keeps the shipped order exactly.
   const courseRows = (
     <>
-          {courses.map((course) =>
-        settledCourses[course.id] ? (
+      {courses.map((course) =>
+        contact?.startedHereCourseIds.has(course.id) && !settledCourses[course.id] ? (
+          // Started on this screen (C1, C7): what the record now says, inert, no chips. It was
+          // just started; asking whether it was kept, changed or stopped makes no sense yet.
+          <PlanSettledRow
+            key={course.id}
+            glyph={<Pill size={16} color={theme.colorEventMedication} strokeWidth={2} />}
+            title={course.drugName}
+            subtitle={[course.startedAt ? `Started ${formatVisitDate(course.startedAt)}` : 'Started', `linked to ${contact.thisNoun}`].join(' · ')}
+          />
+        ) : settledCourses[course.id] ? (
           // Where the chips were, so the owner's eye finds the answer in the place
           // they gave it. The glyph goes quiet: the course is no longer running.
           <PlanSettledRow

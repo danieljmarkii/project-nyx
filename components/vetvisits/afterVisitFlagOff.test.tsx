@@ -71,7 +71,7 @@ describe('flag off: How did it go? never reads the contact namespaces', () => {
   it('non-vacuity: handed a contact, the body does reach the namespace', () => {
     const contact = {
       eyebrow: 'Phone · Mon, Nov 9', documents: [], onOpenDocument: noop, onAddDocument: noop,
-      noun: 'call', thisNoun: 'this call', leaveNote: 'Leave any time.',
+      noun: 'call', thisNoun: 'this call', leaveNote: 'Leave any time.', startedHereCourseIds: new Set<string>(),
     };
     jest.spyOn(console, 'error').mockImplementation(noop);
     expect(() => render(<AfterVisitBody {...base} contact={contact} />)).toThrow(/flag-off render read lib\/vetContactAfter/);

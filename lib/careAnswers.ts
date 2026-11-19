@@ -93,7 +93,9 @@ export async function recordCareAnswer(input: CareAnswerInput, newId: () => stri
       [vetVisitId],
     );
     // A KNOWN remote channel refuses here. A row this phone has not learned the channel of
-    // (NULL) is left to the screens, which write nothing unless the record says in_clinic.
+    // (NULL) is left to the screen, which writes only when the record says in_clinic. Local
+    // only: a flip on another phone not yet pulled is not seen here (CUL-2767's server filter
+    // issue, filed from adversarial pass 1).
     if (visit?.channel && REMOTE_CHANNELS.has(visit.channel)) throw new CareAnswerRefused(vetVisitId, visit.channel);
   }
   await getDb().runAsync(
@@ -145,6 +147,24 @@ export async function readVisitCareAnswers(vetVisitId: string): Promise<Set<stri
     [vetVisitId],
   );
   return new Set(rows.map((r) => r.symptom_type));
+}
+
+/**
+ * Take back every answer that still stands on this record (CUL-2767, Vet contacts R5). Run when a
+ * saved visit is turned into a call, text or email: "Talked about it at this visit" stops being
+ * true, and a contact never answers a warning, so the concerns are raised again on the server's
+ * next run. The LOUDER direction by construction: it only adds retractions. Returns the signs
+ * taken back, so the screen can say so.
+ */
+export async function retractVisitCareAnswers(vetVisitId: string, newId: () => string = uuid): Promise<string[]> {
+  const standing = await getDb().getAllAsync<{ id: string; symptom_type: string }>(
+    `SELECT a.id, a.symptom_type FROM care_acknowledgements a
+      WHERE a.vet_visit_id = ? AND a.retracts IS NULL
+        AND NOT EXISTS (SELECT 1 FROM care_acknowledgements r WHERE r.retracts = a.id)`,
+    [vetVisitId],
+  );
+  for (const row of standing) await retractCareAnswer(row.id, newId);
+  return standing.map((r) => r.symptom_type);
 }
 
 /** Has this answer reached the server? False while it waits (offline, or behind a parent). */

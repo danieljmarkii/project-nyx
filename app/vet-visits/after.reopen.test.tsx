@@ -33,13 +33,12 @@ jest.mock('expo-router', () => ({
 // below is the flag-off screen. The Signal cache is the saved moment's live-warning read.
 let mockContactsOn = false;
 jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => mockContactsOn }));
-let mockSignalRow: unknown = null;
-let mockSignalThrows = false;
-jest.mock('../../lib/signal', () => ({
-  readSignalCacheOrLast: jest.fn(async () => {
-    if (mockSignalThrows) throw new Error('offline');
-    return { row: mockSignalRow, fromLast: false };
-  }),
+// The moment's "anything open?" read is its own module (lib/vetContactMoment, unit-tested there);
+// here it answers what each test sets, and records which pets it was asked about.
+let mockOpenWarning = true;
+const mockContactOpen = jest.fn(async (_petIds: readonly string[]) => mockOpenWarning);
+jest.mock('../../lib/vetContactMoment', () => ({
+  contactHasOpenWarning: (petIds: readonly string[]) => mockContactOpen(petIds),
 }));
 
 jest.mock('react-native-safe-area-context', () => {
@@ -148,7 +147,12 @@ jest.mock('../../lib/careVisitConcerns', () => ({
   readCareVisitTicks: jest.fn(async () => mockTicks),
   clearCareVisitTicksFor: jest.fn(async () => undefined),
 }));
+let mockRetracted: string[] = [];
+const mockRetractVisit = jest.fn(async (_id: string) => mockRetracted);
 jest.mock('../../lib/careAnswers', () => ({
+  // The refusal class the screen catches (CUL-2829), and the retraction a channel flip runs.
+  CareAnswerRefused: class CareAnswerRefused extends Error {},
+  retractVisitCareAnswers: (id: string) => mockRetractVisit(id),
   recordCareAnswer: (input: Record<string, unknown>) => mockRecordCareAnswer(input),
   readVisitCareAnswers: jest.fn(async () => mockAnswered),
   pushCareAnswers: jest.fn(async () => undefined),
@@ -195,6 +199,8 @@ function savedVisit(over: Partial<LocalVetVisit> = {}): LocalVetVisit {
     notes: 'Left ear has dirt in it.',
     next_visit_at: null,
     deleted_at: null,
+    // Every writer names the channel (PR-03); NULL is an older build's row, pinned on its own.
+    channel: 'in_clinic',
     ...over,
   };
 }
@@ -241,8 +247,8 @@ beforeEach(() => {
   mockDocs = [{ groupId: 'doc-1', title: null, kind: 'other', documentDate: null }];
   mockTicks = new Set();
   mockContactsOn = false;
-  mockSignalRow = null;
-  mockSignalThrows = false;
+  mockOpenWarning = true;
+  mockRetracted = [];
 });
 
 describe('AC 14 — a saved visit reopens, and never makes a second row', () => {
@@ -666,8 +672,6 @@ describe('R2 — the recheck row', () => {
 // Spec §4.3–4.4, AC 8 and 11 to 14; mock §C. A call, text or email, reopened by its id. The
 // shipped cases above are all flag-off; these turn it on unless they say otherwise.
 
-const safetyCache = { findings: [{ rank: 0, finding: { type: 'intake_decline', priorityClass: 'safety' } }] };
-const insightCache = { findings: [{ rank: 0, finding: { type: 'reflection', priorityClass: 'insight' } }] };
 
 function dayKeyAhead(n: number): string {
   return dayKeyBack(-n);
@@ -700,7 +704,8 @@ describe('C1 — a call opens as What did the vet say?', () => {
     // What the vet sent comes before The plan, and the notes box after it.
     const tree = JSON.stringify(screen.toJSON());
     expect(tree.indexOf('What the vet sent')).toBeLessThan(tree.indexOf('The plan'));
-    expect(tree.indexOf('The plan')).toBeLessThan(tree.indexOf('What the vet said'));
+    expect(tree.indexOf('The plan')).toBeLessThan(tree.indexOf('Your notes'));
+    expect(tree.indexOf('What the vet said')).toBe(-1);
     expect(screen.getByText('Start a medicine or supplement')).toBeTruthy();
     expect(screen.getByText('Leave any time. What you typed stays on this call.')).toBeTruthy();
   });
@@ -765,12 +770,41 @@ describe('C2, C3 — the running trial leads, and Keep going until moves its end
     await act(async () => {
       fireEvent(screen.getByTestId('picker'), 'pickerPick', { type: 'set' }, later);
     });
+    // A pick STAGES the day: nothing is written until the explicit press (R6's shape).
+    expect(mockExtendTrial).not.toHaveBeenCalled();
+    expect(screen.getByText(/Keep going until .* · was /)).toBeTruthy();
+    fireEvent.press(screen.getByText('Extend the trial'));
     await waitFor(() =>
       expect(mockExtendTrial).toHaveBeenCalledWith({ trialId: 't1', targetDurationDays: 49, vetDirected: true }),
     );
     expect(endKey).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     // The row settles to the new end and names the old one.
     await waitFor(() => expect(screen.getByText(/Keep going until .* · was /)).toBeTruthy());
+  });
+
+  it('a refused end is said, never silent (code review: no panel on a contact)', async () => {
+    const { TrialWindowRefused } = jest.requireActual('../../lib/dietTrialSetup');
+    mockActiveTrial = { id: 't1', startedAt: dayBack(22).toISOString(), targetDurationDays: 42, foodLabel: 'Hydrolyzed salmon' };
+    mockExtendTrial.mockRejectedValueOnce(
+      new TrialWindowRefused({ reason: 'not_forward', requestedDays: 49, floorDays: 56, currentTargetDays: 56, dayCounter: 23 }),
+    );
+    const alert = jest.spyOn(require('react-native').Alert, 'alert').mockImplementation(() => undefined);
+    await openReopen();
+    const line = screen.getByText(/^Keep going until /);
+    fireEvent.press(screen.getByLabelText(`Change — ${line.props.children}`));
+    await act(async () => {
+      fireEvent(screen.getByTestId('picker'), 'pickerPick', { type: 'set' }, dayBack(-(42 - 23 + 7)));
+    });
+    fireEvent.press(screen.getByText('Extend the trial'));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('The trial didn’t change', expect.any(String)));
+    alert.mockRestore();
+  });
+
+  it('a trial whose end has passed says so rather than "keep going until" a past day', async () => {
+    mockActiveTrial = { id: 't1', startedAt: dayBack(50).toISOString(), targetDurationDays: 42, foodLabel: 'Hydrolyzed salmon' };
+    await openReopen();
+    expect(screen.getByText(/^The trial’s window ended /)).toBeTruthy();
+    expect(screen.queryByText(/^Keep going until /)).toBeNull();
   });
 
   it('a trial with no readable window offers no Keep going until (C3)', async () => {
@@ -797,7 +831,7 @@ describe('C4, C5 — the saved moment never closes what is open (AC 12)', () => 
   }
 
   it('a live warning: no check, Home unchanged, the safety line', async () => {
-    mockSignalRow = safetyCache;
+    mockOpenWarning = true;
     await finish();
     expect(screen.getByTestId('saved-mark-neutral', { includeHiddenElements: true })).toBeTruthy();
     expect(screen.queryByTestId('saved-mark-check')).toBeNull();
@@ -808,14 +842,15 @@ describe('C4, C5 — the saved moment never closes what is open (AC 12)', () => 
     expect(router.back).not.toHaveBeenCalled();
   });
 
-  it('an unread Signal is not an absence: the neutral moment', async () => {
-    mockSignalThrows = true;
+  it('asks about every pet the contact was about (Also about, B3), and names them in the safety line', async () => {
+    mockParams = { visit: 'c-1', fresh: '1', also: 'pet-b' };
     await finish();
-    expect(screen.getByTestId('saved-mark-neutral', { includeHiddenElements: true })).toBeTruthy();
+    expect(mockContactOpen).toHaveBeenCalledWith(['pet-a', 'pet-b']);
+    expect(screen.getByLabelText('If Nyx or Juniper is worse, don’t wait. Call your vet today.')).toBeTruthy();
   });
 
   it('nothing open keeps the shipped check and the no-exam line (C5)', async () => {
-    mockSignalRow = insightCache;
+    mockOpenWarning = false;
     await finish();
     expect(screen.getByTestId('saved-mark-check')).toBeTruthy();
     expect(screen.getByText('It goes on Nyx’s vet report as an email. No exam.')).toBeTruthy();
@@ -864,6 +899,19 @@ describe('CUL-2829 instance 1 — a care answer never names a call, text or emai
   });
 });
 
+describe('a visit whose channel this phone never learned answers nothing (louder than guessing)', () => {
+  it('asks nothing about what Home was raising and writes no answer', async () => {
+    mockVisit = savedVisit({ channel: null });
+    mockConcerns = [{ sign: 'vomit', title: 'Vomiting', state: 'raised', answerableFrom: null }];
+    mockAnswered = new Set();
+    await openReopen();
+    expect(screen.queryByTestId('after-visit-home-concerns')).toBeNull();
+    fireEvent.press(screen.getByText('Done'));
+    await waitFor(() => expect(router.back).toHaveBeenCalled());
+    expect(mockRecordCareAnswer).not.toHaveBeenCalled();
+  });
+});
+
 describe('CUL-2835 — a visit can say it was a call (AC 19’s in-app return trip)', () => {
   it('flag on: the channel chips write the record’s channel and the screen becomes the contact’s', async () => {
     mockContactsOn = true;
@@ -873,6 +921,22 @@ describe('CUL-2835 — a visit can say it was a call (AC 19’s in-app return tr
     fireEvent.press(screen.getByText('Phone'));
     await waitFor(() => expect(mockUpdateVisit).toHaveBeenCalledWith('v-sep', { channel: 'phone' }));
     await screen.findByText('What did the vet say?');
+    // Any answer the visit gave is taken back BEFORE the record stops being an exam (R5).
+    expect(mockRetractVisit).toHaveBeenCalledWith('v-sep');
+    expect(mockRetractVisit.mock.invocationCallOrder[0]).toBeLessThan(
+      mockUpdateVisit.mock.invocationCallOrder[mockUpdateVisit.mock.calls.findIndex((c) => 'channel' in c[1])],
+    );
+  });
+
+  it('says so when the flip took back an answer the visit gave', async () => {
+    mockContactsOn = true;
+    mockVisit = savedVisit({ channel: 'in_clinic' });
+    mockRetracted = ['vomit'];
+    const alert = jest.spyOn(require('react-native').Alert, 'alert').mockImplementation(() => undefined);
+    await openReopen();
+    fireEvent.press(screen.getByText('Text'));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('Home will keep asking', expect.any(String)));
+    alert.mockRestore();
   });
 
   it('flag off: no chips, and a phone record still reads as shipped', async () => {
