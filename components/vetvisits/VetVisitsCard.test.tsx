@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+// The rendered node, typed off the query that returns one.
+type ReactTestInstance = ReturnType<typeof screen.getByText>;
 import { VetVisitsCard } from './VetVisitsCard';
 import {
   buildAppointmentView,
@@ -206,5 +208,109 @@ describe('the appointment block opens Get ready (CUL-987 D1)', () => {
     expect(props.onGetReady).toHaveBeenCalledWith(appointment.id);
     // Not the notes door, which is its own control under the block.
     expect(props.onTakeNotes).not.toHaveBeenCalled();
+  });
+});
+
+// ── Vet contacts PR-04 (CUL-2766): the entry (R7, R10; mock A1, A3, A4) ─────────────
+
+const call: LocalVetVisit = {
+  ...visit,
+  id: 'c1',
+  visited_at: '2026-09-10',
+  reason: 'Ear, still shaking her head',
+  channel: 'phone',
+};
+
+describe('the logging door, flag on', () => {
+  beforeEach(() => {
+    mockContactsOn = true;
+  });
+
+  it('A1: the empty card’s second button names every channel and opens the sheet', () => {
+    const props = renderCard(buildVetVisitsCardModel({ next: null, later: [], awaiting: [], visits: [] }, NOW));
+    expect(screen.queryByText('Log a visit that already happened')).toBeNull();
+    fireEvent.press(screen.getByText('Log a visit, call, text or email'));
+    expect(props.onLogPast).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Add the next visit')).toBeTruthy();
+  });
+
+  it('A3 (R10): a card with a visit and no booking gains the button under Open visits', () => {
+    const model = buildVetVisitsCardModel(
+      { next: null, later: [], awaiting: [], visits: [buildVisitListRow(visit, NO_LINKS, NOW)] },
+      NOW,
+    );
+    const props = renderCard(model);
+    const labels = screen.UNSAFE_root
+      .findAll((n: ReactTestInstance) => typeof n.props.label === 'string' && typeof n.type !== 'string' && n.props.onPress)
+      .map((n: ReactTestInstance) => n.props.label as string)
+      .filter((l: string, i: number, a: string[]) => a.indexOf(l) === i);
+    expect(labels.slice(-2)).toEqual(['Open visits', 'Log a visit, call, text or email']);
+    fireEvent.press(screen.getByText('Log a visit, call, text or email'));
+    expect(props.onLogPast).toHaveBeenCalledTimes(1);
+    expect(props.onOpen).not.toHaveBeenCalled();
+  });
+
+  it('A4 (R10): with a booking too, the appointment and its actions stay and the button sits last', () => {
+    const model = buildVetVisitsCardModel(
+      {
+        next: buildAppointmentView(appointment, NOW),
+        later: [],
+        awaiting: [],
+        visits: [buildVisitListRow(visit, NO_LINKS, NOW)],
+      },
+      NOW,
+    );
+    const props = renderCard(model);
+    expect(screen.getByText('Wednesday · 3:00 pm')).toBeTruthy();
+    fireEvent.press(screen.getByText('Log a visit, call, text or email'));
+    expect(props.onLogPast).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the logging door, flag off (R10 is gated)', () => {
+  it('a card with a visit carries Open visits alone, as shipped', () => {
+    const model = buildVetVisitsCardModel(
+      { next: null, later: [], awaiting: [], visits: [buildVisitListRow(visit, NO_LINKS, NOW)] },
+      NOW,
+    );
+    renderCard(model);
+    expect(screen.getByText('Open visits')).toBeTruthy();
+    expect(screen.queryByText(/call, text or email/)).toBeNull();
+    expect(screen.queryByText('Log a visit that already happened')).toBeNull();
+  });
+});
+
+describe('CUL-2829 instance 3: a call is never the card’s "Last visit", nor counted', () => {
+  it('a newer phone contact does not title the line or join the count', () => {
+    const later = { ...call, visited_at: '2026-08-20' };
+    const model = buildVetVisitsCardModel(
+      {
+        next: null,
+        later: [],
+        awaiting: [],
+        // Newest first, as the read orders them: the call leads the list.
+        visits: [buildVisitListRow(later, NO_LINKS, NOW), buildVisitListRow(visit, NO_LINKS, NOW)],
+      },
+      NOW,
+    );
+    expect(model.countLabel).toBe('1 visit');
+    expect(model.lastVisitLine).toBe('Last visit Jul 30 — GI follow-up.');
+  });
+
+  it('a pet with only contacts has no count and no last-visit line, and is not the empty card', () => {
+    const model = buildVetVisitsCardModel(
+      { next: null, later: [], awaiting: [], visits: [buildVisitListRow(call, NO_LINKS, NOW)] },
+      NOW,
+    );
+    expect(model).toMatchObject({ countLabel: null, lastVisitLine: null, isEmpty: false });
+  });
+
+  it('a row whose channel this phone never learned is not an exam either', () => {
+    const unknown = { ...visit, channel: null };
+    const model = buildVetVisitsCardModel(
+      { next: null, later: [], awaiting: [], visits: [buildVisitListRow(unknown, NO_LINKS, NOW)] },
+      NOW,
+    );
+    expect(model.lastVisitLine).toBeNull();
   });
 });
