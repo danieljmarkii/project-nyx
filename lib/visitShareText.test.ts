@@ -93,3 +93,18 @@ describe('visitToPlainText', () => {
     expect(visitToPlainText(detail({ next_visit_at: '2027-01-09' }), 'Nyx', NOW)).toMatch('• Recheck around Jan 9, 2027');
   });
 });
+
+// Vet contacts PR-06 (CUL-2749): a call shared to a second vet says what it was and "no exam";
+// it never travels as "vet visit".
+describe('visitToPlainText — a call, text or email', () => {
+  it('a call names its channel and "no exam" in the heading, and its empty line says "call"', () => {
+    const text = visitToPlainText(detail({ reason: null, notes: null, next_visit_at: null }, { medications: [], trials: [] }), 'Nyx', NOW, 'phone');
+    expect(text.split('\n')[0]).toMatch(/^Nyx · phone call with the vet · .* · no exam$/);
+    expect(text).toContain('No notes or plan on this call yet.');
+    expect(text).not.toMatch(/vet visit/);
+  });
+
+  it('without a channel the text is the shipped one', () => {
+    expect(visitToPlainText(detail(), 'Nyx', NOW, null)).toEqual(visitToPlainText(detail(), 'Nyx', NOW));
+  });
+});

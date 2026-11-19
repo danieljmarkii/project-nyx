@@ -14,6 +14,9 @@ import { visitCourseHref, visitTrialHref } from '../../lib/visitPlanDoors';
 import { captureVisitResults, type VisitResultsSource } from '../../lib/visitPaperwork';
 import { isDocumentPickerAvailable } from '../../lib/vetDocumentCapture';
 import { visitToPlainText } from '../../lib/visitShareText';
+import { useVetContactsOn } from '../../hooks/useVetContacts';
+import { isRemoteChannel, recordNoun } from '../../lib/vetContacts';
+import { channelOf } from '../../lib/vetVisits';
 
 // One visit as written (CUL-900 VV-2; mock D3). *Edit* and *Add to the plan* both open
 // How did it go? for this visit (CUL-2754, §4.4 R1); the five-field edit screen retired.
@@ -87,6 +90,10 @@ export default function VetVisitScreen() {
   // There is no `?? activePet?.name` rung — `resolveRecordPetName` already falls
   // back to an anonymous label, and correct-but-anonymous beats confidently wrong.
   const petName = resolveRecordPetName(pets, detail?.visit.pet_id);
+  // Vet contacts (CUL-2749 PR-06): what the record is, in one word, for the header's labels.
+  // "visit" for a clinic visit, an unknown channel, and every record while the feature is off.
+  const contactsOn = useVetContactsOn();
+  const noun = contactsOn ? recordNoun(channelOf(detail?.visit.channel)) : 'visit';
 
   // *Results arrived?* (CUL-2759): the paperwork capture, filed under this visit and typed as
   // results at insert. A refusal or a failure is said, never swallowed; a save re-reads the
@@ -112,7 +119,8 @@ export default function VetVisitScreen() {
   // said, never swallowed.
   async function handleShare(read: VetVisitDetail) {
     try {
-      await Share.share({ message: visitToPlainText(read, petName) });
+      const channel = contactsOn ? channelOf(read.visit.channel) : null;
+      await Share.share({ message: visitToPlainText(read, petName, new Date(), isRemoteChannel(channel) ? channel : null) });
     } catch (err) {
       console.warn('[vet-visit] share failed:', err);
       Alert.alert('Couldn’t open sharing', 'Give it another try in a moment.');
@@ -142,7 +150,7 @@ export default function VetVisitScreen() {
                 activeOpacity={0.7}
                 hitSlop={HEADER_HIT}
                 accessibilityRole="button"
-                accessibilityLabel={`Share ${petName}’s visit`}
+                accessibilityLabel={`Share ${petName}’s ${noun}`}
               >
                 <ThemedText style={styles.editLabel}>Share</ThemedText>
               </TouchableOpacity>
@@ -151,7 +159,7 @@ export default function VetVisitScreen() {
                 activeOpacity={0.7}
                 hitSlop={HEADER_HIT}
                 accessibilityRole="button"
-                accessibilityLabel={`Edit ${petName}’s visit`}
+                accessibilityLabel={`Edit ${petName}’s ${noun}`}
               >
                 <ThemedText style={styles.editLabel}>Edit</ThemedText>
               </TouchableOpacity>
@@ -186,6 +194,7 @@ export default function VetVisitScreen() {
             onResultsArrived={(source) => void handleResultsArrived(source)}
             pdfAvailable={pdfAvailable}
             resultsBusy={resultsBusy}
+            contactsOn={contactsOn}
           />
           <VisitReports
             petId={detail.visit.pet_id}

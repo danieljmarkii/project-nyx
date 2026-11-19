@@ -1,4 +1,5 @@
 import { formatVisitDate, formatVisitWeekday, formatWhereLine, type VetVisitDetail } from './vetVisits';
+import { historyContactText, recordNoun, type RemoteChannel } from './vetContacts';
 
 // *Share* on a saved visit (R8·6, CUL-2760): the visit as plain text, for the partner who
 // feeds the dog too.
@@ -17,10 +18,23 @@ import { formatVisitDate, formatVisitWeekday, formatWhereLine, type VetVisitDeta
 // shared sentence that guessed would travel further than the screen it came from). A
 // visit with no notes and no plan says exactly that (paperwork may exist and is not this
 // text's to summarise), rather than sharing a bare date that reads as "nothing was decided".
-export function visitToPlainText(detail: VetVisitDetail, petName: string, now: Date = new Date()): string {
+//
+// A CALL, TEXT OR EMAIL (Vet contacts PR-06, CUL-2749) travels as itself: `contact` is the
+// record's remote channel while the feature is on, and the text then says what it was and
+// "no exam" in its first line. Shared to a second vet, "vet visit" would claim an exam.
+export function visitToPlainText(
+  detail: VetVisitDetail,
+  petName: string,
+  now: Date = new Date(),
+  contact: RemoteChannel | null = null,
+): string {
   const { visit } = detail;
   const where = formatWhereLine({ clinicName: visit.clinic_name, vetName: visit.vet_name });
-  const heading = [petName, visit.reason?.trim() || 'vet visit', formatVisitWeekday(visit.visited_at), where]
+  const heading = (
+    contact
+      ? [petName, historyContactText(contact, null, '').title.toLowerCase(), visit.reason?.trim(), formatVisitWeekday(visit.visited_at), where, 'no exam']
+      : [petName, visit.reason?.trim() || 'vet visit', formatVisitWeekday(visit.visited_at), where]
+  )
     .filter(Boolean)
     .join(' · ');
 
@@ -40,7 +54,7 @@ export function visitToPlainText(detail: VetVisitDetail, petName: string, now: D
   if (plan.length > 0) blocks.push(['The plan:', ...plan.map((line) => `• ${line}`)].join('\n'));
 
   if (!notes && plan.length === 0) {
-    blocks.push('No notes or plan on this visit yet.');
+    blocks.push(`No notes or plan on this ${recordNoun(contact)} yet.`);
   }
 
   return blocks.join('\n\n');

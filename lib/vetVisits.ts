@@ -29,6 +29,11 @@ export interface LocalVetVisit {
   notes: string | null;
   next_visit_at: string | null;
   deleted_at: string | null;
+  /** CUL-2765: how the owner heard from the vet. NULL on a row this phone never learned the
+   *  channel of (pulled before the column existed); optional so older fixtures still type. */
+  channel?: string | null;
+  /** The optional time of a contact, a UTC instant (C-10). NULL = day only. */
+  contacted_at?: string | null;
 }
 
 /** A booking. `scheduled_at` is an INSTANT (ISO/UTC), not a calendar date. */
@@ -401,6 +406,12 @@ export interface VisitListRow {
   /** Clinic · vet. Empty when neither was recorded. */
   where: string;
   tags: PlanTag[];
+  /** CUL-2749 PR-06: the row's channel, when this phone knows it. Absent on a row of unknown
+   *  channel and on rows that are not visit records (the Calls section's). */
+  channel?: VisitChannel;
+  /** A contact with no reason typed: "Call on Nov 9". The list shows it in place of `title`
+   *  while the feature is on, so a call never reads "Visit on Nov 9". */
+  contactTitle?: string;
 }
 
 export interface AppointmentView {
@@ -514,7 +525,18 @@ export function buildVisitListRow(
     title: visit.reason?.trim() || `Visit on ${formatVisitDate(visit.visited_at, now)}`,
     where: formatWhereLine({ clinicName: visit.clinic_name, vetName: visit.vet_name }),
     tags: derivePlanTags(links),
+    // Spread only when known, so a row of unknown channel is exactly the shipped shape.
+    ...channelFields(visit, now),
   };
+}
+
+function channelFields(visit: LocalVetVisit, now: Date): Pick<VisitListRow, 'channel' | 'contactTitle'> {
+  const channel = channelOf(visit.channel);
+  if (!channel) return {};
+  if (channel === 'in_clinic' || visit.reason?.trim()) return { channel };
+  // Inline rather than imported from lib/vetContacts.ts, which imports this module's formatters.
+  const noun = channel === 'phone' ? 'Call' : channel === 'text' ? 'Texts' : 'Email';
+  return { channel, contactTitle: `${noun} on ${formatVisitDate(visit.visited_at, now)}` };
 }
 
 /** The recheck row's subtitle, shared so the two surfaces cannot drift apart. */
@@ -647,7 +669,7 @@ function lastVisitLine(last: VisitListRow, now: Date): string {
 // ── Reads ───────────────────────────────────────────────────────────────────────
 
 const VISIT_COLUMNS =
-  'id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, deleted_at';
+  'id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, deleted_at, channel, contacted_at';
 const APPOINTMENT_COLUMNS =
   'id, pet_id, scheduled_at, clinic_name, vet_name, reason, vet_visit_id, cancelled_at, deleted_at';
 
@@ -934,6 +956,8 @@ export interface HistoryVisitRow {
   reason: string | null;
   /** 'Riverside Animal Hospital · Dr. Chen'. Empty when neither was recorded. */
   where: string;
+  /** CUL-2749 PR-06: the row's channel, when this phone knows it (absent otherwise). */
+  channel?: VisitChannel;
 }
 
 /**
@@ -981,6 +1005,7 @@ export async function readVisitsForHistory(petId: string): Promise<HistoryVisitR
       sortMs: day.getTime(),
       reason: v.reason?.trim() || null,
       where: formatWhereLine({ clinicName: v.clinic_name, vetName: v.vet_name }),
+      ...(channelOf(v.channel) ? { channel: channelOf(v.channel) as VisitChannel } : {}),
     });
   }
   return out;
@@ -1232,6 +1257,12 @@ export interface LogVisitInput {
 /** CUL-2765 — the four channels migration 122's CHECK allows. Only 'in_clinic' is an exam. */
 export const VISIT_CHANNELS = ['in_clinic', 'phone', 'text', 'email'] as const;
 export type VisitChannel = (typeof VISIT_CHANNELS)[number];
+
+/** A stored channel as one of the four, or null: NULL (never learned) and anything the CHECK
+ *  would refuse both read as unknown, which every record surface renders as shipped. */
+export function channelOf(raw: unknown): VisitChannel | null {
+  return typeof raw === 'string' && (VISIT_CHANNELS as readonly string[]).includes(raw) ? (raw as VisitChannel) : null;
+}
 
 /**
  * Log a visit that already happened — E2's second door and E3's *Already happened*
@@ -2271,6 +2302,39 @@ export async function logVisitFromAppointment(input: VisitFromAppointmentInput):
 /** The fields the after-visit screen and Edit both write. Every one is optional; an
  *  omitted key leaves the column alone, because these three callers each own a
  *  different subset of the row. */
+/** Where a course came from (CUL-2749 PR-06, spec §4.6 D5): the visit or contact it names. */
+export interface CourseVisitSource {
+  visitId: string;
+  /** NULL when this phone never learned the record's channel: the row then says nothing about it. */
+  channel: VisitChannel | null;
+  visitedAt: string;
+}
+
+/**
+ * The record each course names through `medications.vet_visit_id`, for a medication page's
+ * source row. Keyed by the course (regimen) id; a course naming no record, or a deleted one,
+ * is absent, so its page shows no source rather than a door to nothing.
+ *
+ * PROVENANCE, never a number (the reader bound, CUL-746): it returns a date and a channel to
+ * print beside the course and is read by no count, window or engine.
+ */
+export async function readCourseVisitSources(courseIds: readonly string[]): Promise<Map<string, CourseVisitSource>> {
+  const out = new Map<string, CourseVisitSource>();
+  if (courseIds.length === 0) return out;
+  const marks = courseIds.map(() => '?').join(', ');
+  const rows = await getDb().getAllAsync<{ course_id: string; visit_id: string; channel: string | null; visited_at: string }>(
+    // visit-read: anyContact — a course's source row names the visit OR the contact that started it.
+    `SELECT m.id AS course_id, v.id AS visit_id, v.channel, v.visited_at
+       FROM medications m JOIN vet_visits v ON v.id = m.vet_visit_id
+      WHERE m.id IN (${marks}) AND v.deleted_at IS NULL AND v.pet_id = m.pet_id`,
+    [...courseIds],
+  );
+  for (const r of rows) {
+    out.set(r.course_id, { visitId: r.visit_id, channel: channelOf(r.channel), visitedAt: r.visited_at });
+  }
+  return out;
+}
+
 export interface VisitDetailsPatch {
   visitedAt?: string;
   clinicName?: string | null;

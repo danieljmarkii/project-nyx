@@ -36,6 +36,8 @@ jest.mock('../../lib/visitPaperwork', () => ({ captureVisitResults: jest.fn() })
 jest.mock('../../lib/vetDocumentCapture', () => ({ isDocumentPickerAvailable: () => true }));
 
 let mockDetail: VetVisitDetail | null = null;
+// Vet contacts (CUL-2749 PR-06): off here, so these suites run the shipped screen.
+jest.mock('../../hooks/useVetContacts', () => ({ useVetContactsOn: () => false }));
 jest.mock('../../lib/vetVisits', () => {
   const actual = jest.requireActual('../../lib/vetVisits');
   return {
