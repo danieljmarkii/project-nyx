@@ -55,14 +55,6 @@ export async function pushCareAnswers(): Promise<void> {
 }
 
 /**
- * Write one answer. Returns its id once it is on this phone; the push follows and is not
- * awaited here (`pushCareAnswers`, or `careAnswerLanded` to ask afterwards).
- *
- * Throws on a malformed input rather than writing a row the server would refuse with a
- * terminal 23514 (quarantined on its first try): a visit source with no visit, a date
- * that is not a local day.
- */
-/**
  * A visit-sourced answer named a call, text or email (CUL-2829 instance 1, Vet contacts R5).
  * "Talked about it" against a contact would tell the care state "you talked about it at the
  * Nov 9 visit" about a phone call, and a contact never answers a warning. Refused before any
@@ -77,6 +69,14 @@ export class CareAnswerRefused extends Error {
 
 const REMOTE_CHANNELS: ReadonlySet<string> = new Set(['phone', 'text', 'email']);
 
+/**
+ * Write one answer. Returns its id once it is on this phone; the push follows and is not
+ * awaited here (`pushCareAnswers`, or `careAnswerLanded` to ask afterwards).
+ *
+ * Throws on a malformed input rather than writing a row the server would refuse with a
+ * terminal 23514 (quarantined on its first try): a visit source with no visit, a date
+ * that is not a local day.
+ */
 export async function recordCareAnswer(input: CareAnswerInput, newId: () => string = uuid): Promise<string> {
   if (!DAY_RE.test(input.anchorOn)) throw new Error('care answer: anchorOn must be a local day (YYYY-MM-DD)');
   const id = newId();

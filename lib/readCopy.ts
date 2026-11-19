@@ -355,6 +355,20 @@ export async function readNearBuild(petId: string, sinceIso: string, marginMs: n
   return r ? { updatedAt: r.updated_at, afterBuild: r.after_build === 1 } : null;
 }
 
+/**
+ * Whether any per-incident read for the pet is still in flight (CUL-2767, Vet contacts PR-05):
+ * its verdict may yet be a red flag the Signal row cannot hold, so a surface that would close
+ * on "no warning" treats it as open. Local only; throws on a local read failure.
+ */
+export async function hasPendingReadFor(petId: string): Promise<boolean> {
+  const rows = await getDb().getAllAsync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM event_ai_verdicts v JOIN events e ON e.id = v.event_id
+      WHERE e.pet_id = ? AND e.deleted_at IS NULL AND v.status = 'pending'`,
+    [petId],
+  );
+  return (rows[0]?.n ?? 0) > 0;
+}
+
 /** The server's hash form of `photo_set_key` (engineStamps.ts): 64 hex, no comma, no
  *  hyphen, so it can never be mistaken for a list of UUIDs. The phone cannot compare it. */
 const PHOTO_SET_HASH = /^[0-9a-f]{64}$/;

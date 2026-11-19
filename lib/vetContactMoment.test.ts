@@ -11,6 +11,7 @@ let mockDb: {
   close(): void;
 };
 let mockDbFails = false;
+let mockGaps = { unsent: 0, refused: 0 };
 jest.mock('./db', () => ({
   getDb: () => ({
     getAllAsync: jest.fn(async (sql: string, params: unknown[] = []) => {
@@ -18,7 +19,7 @@ jest.mock('./db', () => ({
       return mockDb.prepare(sql).all(...(params as never[]));
     }),
   }),
-  countRecordGaps: jest.fn(),
+  countRecordGaps: jest.fn(async () => mockGaps),
 }));
 jest.mock('./supabase', () => ({ supabase: {} }));
 jest.mock('./sync', () => ({ syncPendingEvents: jest.fn(), syncPendingMeals: jest.fn() }));
@@ -55,6 +56,7 @@ beforeEach(async () => {
   mockDb.exec(BASE_SCHEMA_SQL);
   await applyColumnUpgrades(async (sql: string) => mockDb.exec(sql));
   mockDbFails = false;
+  mockGaps = { unsent: 0, refused: 0 };
   for (const k of Object.keys(mockReads)) delete mockReads[k];
   useSyncStore.setState({ signalAcknowledging: {} });
 });
@@ -71,7 +73,7 @@ function logEvent(petId: string, updatedAt: string) {
 describe('petHasOpenWarning', () => {
   it('a current cache with no safety card, and nothing logged since, is the one sure no', async () => {
     mockReads['pet-a'] = { row: row(['insight']), fromLast: false };
-    logEvent('pet-a', '2026-11-14 16:00:00'); // SQLite's own spelling, before the cache
+    logEvent('pet-a', '2026-11-14 16:50:00'); // SQLite's own spelling, before the cache's margin
     expect(await petHasOpenWarning('pet-a', NOW)).toBe(false);
   });
 
@@ -117,6 +119,50 @@ describe('petHasOpenWarning', () => {
     mockReads['pet-a'] = { row: row([]), fromLast: false };
     mockDbFails = true;
     expect(await petHasOpenWarning('pet-a', NOW)).toBe(true);
+  });
+});
+
+describe('pass 2: the cache can be current and still not have read the record', () => {
+  beforeEach(() => {
+    mockReads['pet-a'] = { row: row([]), fromLast: false };
+  });
+
+  it('a row on this phone the server has not seen (unsent or refused) is open', async () => {
+    mockGaps = { unsent: 1, refused: 0 };
+    expect(await petHasOpenWarning('pet-a', NOW)).toBe(true);
+    mockGaps = { unsent: 0, refused: 1 };
+    expect(await petHasOpenWarning('pet-a', NOW)).toBe(true);
+  });
+
+  it('a write stamped just BEFORE the build, inside the clock margin, is open (phone clock behind the server)', async () => {
+    logEvent('pet-a', '2026-11-14T16:59:00.000Z'); // a minute before generatedAt
+    expect(await petHasOpenWarning('pet-a', NOW)).toBe(true);
+  });
+
+  function readOn(eventId: string, status: string, updatedAt: string) {
+    mockDb
+      .prepare(`INSERT INTO events (id, pet_id, event_type, occurred_at, created_at, updated_at) VALUES (?, 'pet-a', 'vomit', ?, ?, ?)`)
+      .run(eventId, '2026-11-14T10:00:00.000Z', '2026-11-14 10:00:00', '2026-11-14 10:00:00');
+    const cols = (mockDb.prepare(`PRAGMA table_info(event_ai_verdicts)`).all() as Array<{ name: string; notnull: number; dflt_value: unknown }>)
+      .filter((c) => c.notnull === 1 && c.dflt_value === null && !['event_id', 'status', 'updated_at'].includes(c.name));
+    const names = ['event_id', 'status', 'updated_at', ...cols.map((c) => c.name)];
+    const values = [eventId, status, updatedAt, ...cols.map(() => 'x')];
+    mockDb.prepare(`INSERT INTO event_ai_verdicts (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})`).run(...values);
+  }
+
+  it('an incident read that landed after the build is open', async () => {
+    readOn('v1', 'completed', '2026-11-14T17:20:00+00:00');
+    expect(await petHasOpenWarning('pet-a', NOW)).toBe(true);
+  });
+
+  it('an incident read still pending is open', async () => {
+    readOn('v2', 'pending', '2026-11-14T10:00:05+00:00');
+    expect(await petHasOpenWarning('pet-a', NOW)).toBe(true);
+  });
+
+  it('an old settled read is not', async () => {
+    readOn('v3', 'completed', '2026-11-14T10:00:05+00:00');
+    expect(await petHasOpenWarning('pet-a', NOW)).toBe(false);
   });
 });
 

@@ -1377,6 +1377,14 @@ export default function AfterVisitScreen() {
       syncPendingVetVisits().catch(console.error);
     } catch (err) {
       sayFailed(err, 'channel');
+      // A retraction that failed part-way withdrew some answers: the screen re-reads what still
+      // stands, so it never shows "talked about it" over an answer already taken back.
+      readVisitCareAnswers(id)
+        .then((standing) => {
+          answeredSigns.current = new Set(standing);
+          setAnsweredOnRecord(standing);
+        })
+        .catch((e) => console.warn('[after-visit] care answers re-read failed:', e));
     } finally {
       setChannelBusy(false);
     }

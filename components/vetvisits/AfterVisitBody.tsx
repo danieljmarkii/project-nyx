@@ -341,8 +341,9 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
     </>
   );
 
-  // *Keep going until* (C2): seeded from the trial's current end, writing nothing until the day
-  // moves, and then through *Extended*'s own write (a TOTAL from the start, the vet's call).
+  // *Keep going until* (C2): seeded from the trial's current end, writing nothing until the owner
+  // picks a day AND presses *Extend the trial*, then through *Extended*'s own write (a TOTAL
+  // from the start, the vet's call).
   // Absent with no readable window or nothing forward under the ceiling: a date here would
   // invent a target (C3).
   const keepWindow = contact && trial?.window ? trial.window : null;

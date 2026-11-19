@@ -1,5 +1,12 @@
 import { getDb } from './db';
-import { isSignalCacheStale, readSignalCacheOrLast, type SignalCacheRow } from './signal';
+import {
+  isSignalCacheStale,
+  LANDED_READ_RACE_MS,
+  readSignalCacheOrLast,
+  readSignalRecordGaps,
+  type SignalCacheRow,
+} from './signal';
+import { hasPendingReadFor, readNearBuild } from './readCopy';
 import { useSyncStore } from '../store/syncStore';
 import { hasLiveWarning } from './vetContactAfter';
 
@@ -14,7 +21,12 @@ import { hasLiveWarning } from './vetContactAfter';
 //   • the row is past its TTL (`isSignalCacheStale`);
 //   • a rebuild for the pet is in flight (`signalAcknowledging`);
 //   • the pet's record moved after the row was generated: an event or a meal written later, so
-//     the engine has not read it yet.
+//     the engine has not read it yet. The row's time is the SERVER's clock and the write's is
+//     the phone's, so a write inside `LANDED_READ_RACE_MS` before the build counts too (pass 2);
+//   • a row on this phone the server has not seen (unsent or refused): the build read an
+//     incomplete record (pass 2; the gap read `generate-signal` itself is told about);
+//   • a per-incident read that landed after (or just before) the build, or one still pending:
+//     a red flag the row cannot hold yet (pass 2; the Signal's own `readNearBuild`).
 // And EVERY pet the contact was about (B3: *Also about Juniper*, whose intake card is live, must
 // not get a check because Nyx's cache is quiet). Read only: no engine read, no write.
 
@@ -34,11 +46,13 @@ async function newestRecordWriteMs(petId: string): Promise<number | null> {
   const db = getDb();
   const rows = await Promise.all([
     db.getAllAsync<{ updated_at: string | null; created_at: string | null }>(
-      `SELECT updated_at, created_at FROM events WHERE pet_id = ? ORDER BY replace(substr(updated_at, 1, 19), 'T', ' ') DESC LIMIT 1`,
+      `SELECT updated_at, created_at FROM events WHERE pet_id = ?
+        ORDER BY max(replace(substr(coalesce(updated_at, ''), 1, 19), 'T', ' '), replace(substr(coalesce(created_at, ''), 1, 19), 'T', ' ')) DESC LIMIT 1`,
       [petId],
     ),
     db.getAllAsync<{ updated_at: string | null; created_at: string | null }>(
-      `SELECT updated_at, created_at FROM meals WHERE pet_id = ? ORDER BY replace(substr(updated_at, 1, 19), 'T', ' ') DESC LIMIT 1`,
+      `SELECT updated_at, created_at FROM meals WHERE pet_id = ?
+        ORDER BY max(replace(substr(coalesce(updated_at, ''), 1, 19), 'T', ' '), replace(substr(coalesce(created_at, ''), 1, 19), 'T', ' ')) DESC LIMIT 1`,
       [petId],
     ),
   ]);
@@ -66,10 +80,14 @@ export async function petHasOpenWarning(petId: string, nowMs: number = Date.now(
   if (useSyncStore.getState().signalAcknowledging[petId]) return true;
   if (hasLiveWarning(row)) return true;
   const generated = instantMs(row.generatedAt);
-  if (generated === null) return true;
+  if (generated === null || !row.generatedAt) return true;
+  // The gap read fails closed on its own (an unreadable count is "unsent").
+  if ((await readSignalRecordGaps()).unsentRows) return true;
   try {
     const newest = await newestRecordWriteMs(petId);
-    return newest !== null && newest > generated;
+    if (newest !== null && newest >= generated - LANDED_READ_RACE_MS) return true;
+    if (await readNearBuild(petId, row.generatedAt, LANDED_READ_RACE_MS)) return true;
+    return await hasPendingReadFor(petId);
   } catch (e) {
     console.warn('[vetContactMoment] record read failed:', e);
     return true;
