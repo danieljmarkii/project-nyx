@@ -478,12 +478,20 @@ Deno.test('CUL-2765 AC 6 — the composer offers since-visit from Sep 18 and nev
 })
 
 Deno.test('CUL-2765 AC 6 — the pull itself filters to exams and selects the channel the mapper checks', () => {
+  // CUL-2770 added a second `vet_visits` pull (the contacts list, `anyContact`), so the window's
+  // pull is found by its own `exam` marker, not by being the first in the file.
   const src = Deno.readTextFileSync(new URL('./index.ts', import.meta.url))
-  const at = src.indexOf("supabase.from('vet_visits')")
+  const marker = src.indexOf('// visit-read: exam — rung 1')
+  assert.ok(marker > 0, 'finds the exam marker')
+  const at = src.indexOf("supabase.from('vet_visits')", marker)
   assert.ok(at > 0, 'finds the pull')
   const chain = src.slice(at, src.indexOf('.range(from, to)', at))
   assert.match(chain, /\.select\('[^']*\bchannel\b[^']*'/)
   assert.match(chain, /\.eq\('channel', 'in_clinic'\)/)
+  // The window's rows come from that pull and only that pull: `resolveScope` is handed the mapped
+  // exam rows, never the contacts list.
+  assert.match(src, /const vetVisits = mapVetVisitRows\(vetVisitsPull\.rows\)/)
+  assert.doesNotMatch(src, /resolveScope\(\{[^}]*vetContacts/)
 })
 
 // ── computeLookbackIso ──────────────────────────────────────────────────────

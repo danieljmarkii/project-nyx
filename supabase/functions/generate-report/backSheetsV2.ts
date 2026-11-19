@@ -81,6 +81,8 @@ import {
   stoolCharacteristics,
   symptomLabel,
   vomitCharacteristics,
+  VET_CONTACTS_HEADING,
+  vetContactsBody,
   type FlagPointers,
   type SectionPointers,
 } from './render.ts'
@@ -142,6 +144,7 @@ export type BackBlockV2 =
 export type SectionBlockId =
   | 'noticed-line'
   | 'event-log'
+  | 'vet-contacts'
   | 'medication-history'
   | 'medication-log'
   | 'diet-meds'
@@ -787,7 +790,11 @@ function eventLogBlock(snap: ReportSnapshot): BackBlockV2 {
 function medicationBlocks(snap: ReportSnapshot): BackBlockV2[] {
   // The lifetime table first (spec §6.1): its coverage note and H1 disclosure lead the data, and it
   // answers "has she ever been on steroids?" before the window's dose detail narrows the view.
+  // CUL-2770 (decision 2 on the plan): the vet contacts list leads this sheet, above the courses
+  // it names, and never sheet 1 (its ranker holds a fixed line budget, and a contact is provenance,
+  // not a sign). Flag off ⇒ the body is empty ⇒ no block, the sheet as before.
   return [
+    sectionBlock('vet-contacts', VET_CONTACTS_HEADING, vetContactsBody(snap), snap, MEDICATION_SHEET_TITLE),
     sectionBlock('medication-history', null, medicationHistoryTable(snap), snap, MEDICATION_SHEET_TITLE),
     sectionBlock('medication-log', null, medicationAppendix(snap), snap, MEDICATION_SHEET_TITLE),
   ].filter(

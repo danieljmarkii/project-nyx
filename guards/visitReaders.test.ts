@@ -304,12 +304,17 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
 
   // ── The report ──
   'supabase/functions/generate-report/index.ts': {
-    kinds: ['table'],
+    kinds: ['table', 'column'],
     why:
       'The scope cascade\'s rung 1 (§6): the report window may START at the last ' +
       'visit. That is the ONE sanctioned use of a visit as an input, it is a ' +
       'BOUNDARY rather than a count, and CUL-899 gave the pull `deleted_at IS NULL`. ' +
-      'No visit is ever counted as a logged day.',
+      'No visit is ever counted as a logged day. CUL-2770 (Vet contacts PR-08) adds a ' +
+      'LIST: "Vet contacts in this period" prints each visit, call, text and email inside ' +
+      'the window by date, and reads medications.vet_visit_id and vet_documents.vet_visit_id ' +
+      '(the link alone) to name a course\'s source and to say documents are "on the owner\'s ' +
+      'phone, not attached". Provenance printed as words; nothing is counted, and the list ' +
+      'never reaches the window, a denominator or an engine input.',
   },
 
   // ── A saved report filed under its visit (Vet report v2 PR-22, CUL-2302; spec §11.3) ──
