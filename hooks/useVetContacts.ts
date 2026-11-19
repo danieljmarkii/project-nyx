@@ -1,15 +1,21 @@
-import { useAllowlistFlag } from './useAppConfig';
-import { useBetaOptIn } from '../lib/betaFeatures';
+// Vet contacts' client gate (CUL-2749, spec §4.1 / §5.2): the server allowlist AND the owner's
+// Early access switch, both fail-closed. On its own so the record surfaces (the list, the
+// contact's page, a course's source, History) ask one question in one place.
+//
+// It gates the SURFACES only. The exam-only readers filter on `channel` whatever this says
+// (PR-03), so a phone contact never anchors a window on any device.
+import { useAllowlistFlag, allowlistFlagNow } from './useAppConfig';
+import { useBetaOptIn, useBetaOptInStore } from '../lib/betaFeatures';
 
-/**
- * CUL-2766 — the Vet contacts surfaces' one gate: the server allowlist (`vet_contacts_enabled`,
- * fail-closed) AND this account's opt-in on the Beta page (spec §4.1, §5.2). Both, never
- * either: eligibility without the opt-in is a beta the owner has not chosen.
- *
- * It gates SURFACES only. The exam readers filter on `channel` whatever this says.
- */
+export const VET_CONTACTS_FLAG = 'vet_contacts_enabled' as const;
+
 export function useVetContactsOn(): boolean {
-  const eligible = useAllowlistFlag('vet_contacts_enabled');
-  const optedIn = useBetaOptIn('vet_contacts_enabled');
+  const eligible = useAllowlistFlag(VET_CONTACTS_FLAG);
+  const optedIn = useBetaOptIn(VET_CONTACTS_FLAG);
   return eligible && optedIn;
+}
+
+/** The same answer read once, for a store's load. Not reactive: the store re-reads on its next load. */
+export function vetContactsOnNow(): boolean {
+  return allowlistFlagNow(VET_CONTACTS_FLAG) && (useBetaOptInStore.getState().optIns[VET_CONTACTS_FLAG] ?? false);
 }
