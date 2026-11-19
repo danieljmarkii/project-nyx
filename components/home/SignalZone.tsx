@@ -49,6 +49,7 @@ import { insightArrival } from '../../lib/haptics';
 import { SignalLeadCard } from '../../components/surfaces/signal/SignalLeadCard';
 import { SignalRow } from '../../components/surfaces/signal/SignalRow';
 import { useRemoteContacts } from '../../hooks/useRemoteContacts';
+import { useMinuteNow } from '../../hooks/useIncidentFloorFacts';
 import { contactLineFor } from '../../lib/vetContactLine';
 import { toLocalDayKey } from '../../lib/utils';
 import { SIGNAL_RAIL } from '../../components/surfaces/signal/railTint';
@@ -1038,9 +1039,12 @@ function LiveStack({
   // line and can never drop, reorder or reword a card. Null (flag off, in flight, failed) draws
   // every row exactly as before.
   const contacts = useRemoteContacts(petId);
+  // The minute clock keeps "today" true past midnight on a Home left open: a contact from last
+  // night never reads as today's (adversarial pass, CUL-2769).
+  const minuteNow = useMinuteNow();
   const visible = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor);
   const ordered = visible.filter((f) => hasSignalTitleRule(f.finding));
-  const today = toLocalDayKey(new Date());
+  const today = toLocalDayKey(new Date(minuteNow));
   const anchorMs = generatedAt ? new Date(generatedAt).getTime() : NaN;
   const anchor = Number.isNaN(anchorMs)
     ? { day: today, iso: null }
