@@ -67,6 +67,7 @@ import {
   contactLeaveNote,
   describeContactSave,
   thisContact,
+  VISIT_CHANNEL_CHIPS_ON,
   type ContactSaveSummary,
 } from '../../lib/vetContactAfter';
 import { contactHasOpenWarning } from '../../lib/vetContactMoment';
@@ -1574,7 +1575,7 @@ export default function AfterVisitScreen() {
                       : null
                   }
                   channelChips={
-                    contactsOn && reopened && recordChannel === 'in_clinic' && visitId
+                    VISIT_CHANNEL_CHIPS_ON && contactsOn && reopened && recordChannel === 'in_clinic' && visitId
                       ? { value: recordChannel, onChange: (c) => void handleChannelChange(c), busy: channelBusy || saving || !!busyRow }
                       : null
                   }

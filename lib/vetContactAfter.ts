@@ -15,6 +15,18 @@ import type { LinkedLine, VisitSaveSummary } from './vetVisitPlan';
 import { VISIT_OFFLINE_LINE } from './vetVisitPlan';
 import { FLOOR_ASK } from './incidentAskWords';
 
+/**
+ * CUL-2835's channel chips on a saved visit are BUILT AND HELD OFF (adversarial pass 2, B1d).
+ * Turning a visit into a call must take back every "Talked about it" the visit gave, and care
+ * answers are push-only: one written on another phone, or before a reinstall, is not on this
+ * phone to retract, and `generate-signal` reads answers without checking the visit's channel.
+ * So a flip could leave a phone call answering a warning (QUIET). They switch on when the
+ * server's care read ignores answers on a non-exam visit (CUL-2828 option 2, a clinical ruling),
+ * or when the PM rules to ship them dark behind the allowlist. One constant, so the switch is one
+ * line and the tests drive both states.
+ */
+export const VISIT_CHANNEL_CHIPS_ON = false;
+
 /** The screen's title on a remote contact (§4.3). A visit keeps *How did it go?*. */
 export const CONTACT_AFTER_TITLE = 'What did the vet say?';
 
