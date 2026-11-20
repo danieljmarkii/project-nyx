@@ -19,7 +19,7 @@ import { syncPendingEvents, syncPendingMeals } from './sync';
 import { countRecordGaps } from './db';
 import { readNearBuild } from './readCopy';
 import { visitMovedNearBuild } from './vetVisits';
-import { clearSignalUnseen, markSignalUnseen, readSignalUnseenToken } from './signalUnseen';
+import { clearSignalUnseen, markSignalUnseen, readSignalUnseenToken, visitPushInFlight } from './signalUnseen';
 import { currentSignOutEpoch } from './signOutEpoch';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
@@ -1101,7 +1101,9 @@ async function runRegen(petId: string, reason: SignalRegenReason): Promise<{ err
     if (!error && !capped) {
       // Settled before the tick below, so the re-read it starts does not find the debt still
       // there and rebuild again. A row still unsent keeps it owed (`clearSignalUnseen`).
-      if (owed) {
+      // Not while a visits push runs (pass 2): this build did not flush it, and a visit that
+      // lands after its read started is one it never saw. The drain re-owes or nudges.
+      if (owed && !visitPushInFlight()) {
         await clearSignalUnseen(petId, owed).catch((e: unknown) => {
           console.warn('[signal] could not settle the owed rebuild (one extra rebuild next open):', e);
         });

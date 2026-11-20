@@ -13,8 +13,10 @@ import { uuid } from './utils';
 //   · SET (a fresh token) by every write that arms a rebuild (`triggerSignalRegenDebounced`);
 //   · SET IF ABSENT just before the events or meals drain pushes a row, so a kill between
 //     the write and the first marker cannot leave a landed row nobody owes a rebuild for;
-//   · SET (a fresh token) just before the visits drain pushes a row that may quiet Home: no
-//     rebuild flushes visits, so a token a running rebuild captured must not cover one;
+//   · the visits drain does the same, and while it is pushing NO rebuild may settle a debt
+//     (`visitPushInFlight`): no rebuild flushes visits, so one could otherwise read before a
+//     visit landed and settle the token after (adversarial passes 1 and 2, B1). It writes a
+//     fresh token once a correction lands, before the rebuild it arms;
 //   · CLEARED only by a rebuild that succeeded, only for the token it captured before it
 //     flushed the queue (a write made mid-rebuild sets a new token and survives), and only
 //     while nothing for the pet is still unsent (the build could not have read it).
@@ -32,15 +34,13 @@ export async function markSignalUnseen(petId: string): Promise<void> {
   );
 }
 
-/** The events or meals drain is about to push rows for these pets: owe a rebuild unless one is
- *  already owed. Keeps an existing token, so a rebuild that captured it (and flushes these very
- *  rows, as `runRegen` does for events and meals) still clears it. Returns the pets it newly
- *  owed: nothing armed a rebuild for those (the write's own mark was lost to a kill), so the
- *  caller nudges Home to re-read once the rows land.
- *
- *  NOT for visits: no rebuild flushes the visits queue, so a kept token could be settled by a
- *  build that never read the visit (adversarial pass 1, B1). The visits drain owes a FRESH
- *  token (`markSignalUnseen`). */
+/** A drain is about to push rows for these pets: owe a rebuild unless one is already owed.
+ *  Keeps an existing token, so a rebuild that captured it (and flushes these very rows, as
+ *  `runRegen` does for events and meals) still clears it, and a push that keeps failing mints
+ *  nothing new to rebuild for (CUL-2845's class). Returns the pets it newly owed: nothing armed
+ *  a rebuild for those (the write's own mark was lost to a kill), so the caller nudges Home to
+ *  re-read once the rows land. The visits drain calls it inside `beginVisitPush`, since no
+ *  rebuild flushes visits. */
 export async function markSignalUnseenIfAbsent(petIds: readonly string[]): Promise<string[]> {
   const pets = [...new Set(petIds.filter((p) => typeof p === 'string' && p.length > 0))];
   const owed: string[] = [];
@@ -78,4 +78,29 @@ export async function clearSignalUnseen(petId: string, token: string): Promise<v
         AND NOT EXISTS (SELECT 1 FROM vet_visits WHERE pet_id = ? AND synced = 0 AND sync_error IS NULL)`,
     [petId, token, petId, petId, petId],
   );
+}
+
+// ── A visits push in progress (adversarial pass 2, B1) ──────────────────────────────────
+// `runRegen` flushes events and meals, never visits. So a rebuild that read the server before a
+// visit landed could settle the pet's debt after it landed, and a kill before the drain wrote
+// its post-landing token would lose the correction. While any visits push runs, no rebuild
+// settles a debt; the drain ends by owing a fresh token (a correction landed) or nudging Home
+// (one landed and armed nothing), so the cost is at most one extra rebuild. Memory only: a
+// killed app has no push in progress, and the debt stays on disk.
+let visitPushesInFlight = 0;
+
+/** A visits push starts; call the returned function once it ends (it is idempotent). */
+export function beginVisitPush(): () => void {
+  visitPushesInFlight += 1;
+  let ended = false;
+  return () => {
+    if (ended) return;
+    ended = true;
+    visitPushesInFlight -= 1;
+  };
+}
+
+/** True while a visits push is running in this process. */
+export function visitPushInFlight(): boolean {
+  return visitPushesInFlight > 0;
 }

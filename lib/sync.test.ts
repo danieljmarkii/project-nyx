@@ -51,6 +51,7 @@ const mockOweSignal = jest.fn(async (_petIds: readonly string[]): Promise<string
 jest.mock('./signalUnseen', () => ({
   markSignalUnseenIfAbsent: (petIds: readonly string[]) => mockOweSignal(petIds),
   markSignalUnseen: async () => {},
+  beginVisitPush: () => () => {},
 }));
 jest.mock('./hydration', () => ({
   reconcileBatch: jest.fn(),

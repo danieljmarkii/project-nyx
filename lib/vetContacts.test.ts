@@ -1037,6 +1037,35 @@ describe('a visit push owes its own rebuild, which a rebuild already running can
     expect(useSyncStore.getState().signalTick).toBeGreaterThan(tick);
   });
 
+  it('pass 2: while the push runs no rebuild may settle a debt, and a landed correction owes a fresh token before it ends', async () => {
+    const { visitPushInFlight } = jest.requireActual('./signalUnseen') as typeof import('./signalUnseen');
+    seedSyncedExam('race');
+    await updateVisitDetails('race', { channel: 'phone' });
+    let pushingAtLanding: boolean | null = null;
+    let tokenAtLanding: string | null = null;
+    mockServer.beforeLand = (table) => {
+      if (table !== 'vet_visits') return;
+      pushingAtLanding = visitPushInFlight();
+      tokenAtLanding = owed();
+    };
+    await syncPendingVetVisits();
+    expect(pushingAtLanding).toBe(true);
+    expect(tokenAtLanding).not.toBeNull(); // owed before it went
+    expect(owed()).not.toBe(tokenAtLanding); // a rebuild holding the pre-push token cannot settle this one
+    expect(visitPushInFlight()).toBe(false);
+  });
+
+  it('pass 2 (CUL-2845’s class): a push that keeps failing keeps one token, so it mints no new rebuild each cycle', async () => {
+    seedSyncedExam('stuck');
+    await updateVisitDetails('stuck', { channel: 'phone' });
+    mockServer.upsertFails.add('vet_visits');
+    await syncPendingVetVisits();
+    const first = owed();
+    await syncPendingVetVisits();
+    expect(first).not.toBeNull();
+    expect(owed()).toBe(first);
+  });
+
   it('an exam whose channel did not move owes nothing', async () => {
     seedSyncedExam('notes-only');
     await updateVisitDetails('notes-only', { notes: 'ears look better' });

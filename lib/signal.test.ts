@@ -63,7 +63,9 @@ jest.mock('./signalUnseen', () => ({
   clearSignalUnseen: async (petId: string, token: string) => {
     if (mockOwed.get(petId) === token && !mockPetUnsent.has(petId)) mockOwed.delete(petId);
   },
+  visitPushInFlight: () => mockVisitPushing,
 }));
+let mockVisitPushing = false;
 
 const mockedFrom = supabase.from as jest.Mock;
 const mockedInvoke = supabase.functions.invoke as jest.Mock;
@@ -654,6 +656,21 @@ describe('a rebuild the phone still owes is caught on the next open, whatever it
     await regenerateForLandedRead('nyx', key);
     expect(mockOwed.has('nyx')).toBe(true);
     expect(await landedReadRebuildKey('nyx', fresh())).toBe(key);
+  });
+
+  it('pass 2: a rebuild that succeeds while a visits push runs settles nothing (it did not flush visits)', async () => {
+    triggerSignalRegenDebounced('nyx');
+    await jest.advanceTimersByTimeAsync(0);
+    killApp();
+    mockVisitPushing = true;
+    try {
+      const key = (await landedReadRebuildKey('nyx', fresh())) as string;
+      await regenerateForLandedRead('nyx', key);
+      expect(mockedInvoke).toHaveBeenCalledTimes(1);
+      expect(mockOwed.has('nyx')).toBe(true);
+    } finally {
+      mockVisitPushing = false;
+    }
   });
 
   it('a rebuild refused by the cap settles nothing', async () => {
