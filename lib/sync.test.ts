@@ -45,6 +45,12 @@ jest.mock('./db', () => ({
   getWatermark: jest.fn(),
   setWatermark: jest.fn(),
 }));
+// CUL-2846: the drains' "rebuild owed" mark is its own module (tested on real SQLite in
+// lib/signalUnseen.test.ts); stood in here so the DB call counts below stay the queue's own.
+const mockOweSignal = jest.fn(async (_petIds: readonly string[]) => {});
+jest.mock('./signalUnseen', () => ({
+  markSignalUnseenIfAbsent: (petIds: readonly string[]) => mockOweSignal(petIds),
+}));
 jest.mock('./hydration', () => ({
   reconcileBatch: jest.fn(),
   advanceWatermark: jest.fn(),

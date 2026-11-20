@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getDb, getWatermark, setWatermark } from './db';
+import { markSignalUnseenIfAbsent } from './signalUnseen';
 import { markRecordHydrated } from './coldStart';
 import { isUploadInFlight, markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
@@ -1233,6 +1234,21 @@ export function syncPendingMeals(): Promise<void> {
   return serializeQueuePush('meals', drainMealsQueue);
 }
 
+/**
+ * CUL-2846: before a push, owe each pet a Signal rebuild unless one is owed already (a kept
+ * token stays settleable by the rebuild that captured it). The write that queued the row armed
+ * one, but its marker is written a moment after the row; this closes the window where an app
+ * kill between the two leaves a landed row nobody owes a rebuild for. Best effort: a failure
+ * leaves the time checks as the backstop.
+ */
+async function oweSignalBeforePush(petIds: readonly string[], table: string): Promise<void> {
+  try {
+    await markSignalUnseenIfAbsent(petIds);
+  } catch (e) {
+    console.warn(`[sync] could not record the owed Signal rebuild before the ${table} push:`, e);
+  }
+}
+
 async function drainMealsQueue(): Promise<void> {
   // Ensure the JWT is fresh before writing. getSession() triggers a refresh
   // if the access token has expired, and returns null if the session is gone.
@@ -1286,6 +1302,7 @@ async function drainMealsQueue(): Promise<void> {
   await presyncFoodItems(db, session.user.id, foodIds, 'meals');
 
   const childCtx = await childPushContext(db, 'meals', unsyncedMeals, mark);
+  await oweSignalBeforePush(unsyncedMeals.map((m) => m.pet_id), 'meals');
   await pushRows(db, 'meals', unsyncedMeals, (m) => ({
     id: m.id,
     event_id: m.event_id,
@@ -1610,6 +1627,7 @@ async function drainEventsQueue(): Promise<void> {
 
   if (unsyncedEvents.length === 0) return;
 
+  await oweSignalBeforePush(unsyncedEvents.map((e) => e.pet_id), 'events');
   const landedEvents = await pushRows(db, 'events', unsyncedEvents, (e) => ({
     id: e.id,
     pet_id: e.pet_id,
@@ -2037,6 +2055,15 @@ async function drainVetVisitsQueue(): Promise<void> {
       const key = `${sent.channel ? 'c' : '-'}${sent.deleted ? 'd' : '-'}`;
       batches.set(key, [...(batches.get(key) ?? []), v]);
     }
+    // CUL-2846: a row that may quiet Home once it lands (a contact, an unknown channel, a
+    // delete) is owed a rebuild BEFORE it goes, so a kill between the landing and the rebuild
+    // armed below still leaves the debt on disk. An exam's own edit owes nothing here.
+    await oweSignalBeforePush(
+      unsyncedVisits
+        .filter((v) => v.channel === null || v.channel !== 'in_clinic' || v.deleted_at !== null)
+        .map((v) => v.pet_id),
+      'vet_visits',
+    );
     const landed = new Set<string>();
     for (const batch of batches.values()) {
       for (const id of await pushRows(db, 'vet_visits', batch, toRemote)) landed.add(id);

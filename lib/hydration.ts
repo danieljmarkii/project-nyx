@@ -303,6 +303,10 @@ export const LOCAL_WIPE_TABLES = [
   // phone ran a given build from a given day. Left behind, the next account's writer
   // would also find "already written" for pet ids it does not own (harmless, but wrong).
   'capture_changes',
+  // CUL-2846 signal_unseen_writes — a pet whose Signal this phone owes a rebuild. Names only
+  // its pet, so its position is free. Wiped because it is account state about the owner's
+  // pets: left behind, the next account would rebuild (and be refused) a pet it does not own.
+  'signal_unseen_writes',
   // Engines v3 PR-28b (CUL-1436) EN-4's re-check marker and the tiers this phone showed.
   // Both name an event (no local FK), so they lead 'events'.
   //

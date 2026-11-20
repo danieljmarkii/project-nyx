@@ -104,6 +104,14 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'medication and trial mirrors. Moves rows verbatim between devices and the ' +
       'server; computes nothing over them.',
   },
+  'lib/signalUnseen.ts': {
+    kinds: ['table'],
+    why:
+      'clearSignalUnseen (CUL-2846): a yes/no inside a DELETE of its own bookkeeping row, ' +
+      'asking only whether the pet has a visit not yet pushed (`synced = 0`), so a rebuild ' +
+      'that could not have read it leaves the debt owed. Returns no visit column and ' +
+      'reaches no count.',
+  },
   'lib/syncQueue.ts': {
     kinds: ['table', 'column'],
     why:
