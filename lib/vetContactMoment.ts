@@ -21,8 +21,9 @@ import { hasLiveWarning } from './vetContactAfter';
 //   • the row is past its TTL (`isSignalCacheStale`);
 //   • a rebuild for the pet is in flight (`signalAcknowledging`);
 //   • the pet's record moved after the row was generated: an event or a meal written later, so
-//     the engine has not read it yet. The row's time is the SERVER's clock and the write's is
-//     the phone's, so a write inside `LANDED_READ_RACE_MS` before the build counts too (pass 2);
+//     the engine has not read it yet. The row's time is the instant the build started reading
+//     (CUL-2844), on the SERVER's clock, and the write's is the phone's, so a write inside
+//     `LANDED_READ_RACE_MS` before the build counts too (pass 2);
 //   • a row on this phone the server has not seen (unsent or refused): the build read an
 //     incomplete record (pass 2; the gap read `generate-signal` itself is told about);
 //   • a per-incident read that landed after (or just before) the build, or one still pending:

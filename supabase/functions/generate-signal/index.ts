@@ -984,6 +984,12 @@ const handler = async (req: Request): Promise<Response> => {
     await supabase.from('ai_signals').delete().eq('pet_id', petId)
     const { error: insertError } = await supabase.from('ai_signals').insert({
       pet_id: petId,
+      // CUL-2844: stamped with the instant taken BEFORE the build's first read, never the column's
+      // NOW() at this insert. Home's backstops (`landedReadRebuildKey`, `visitMovedNearBuild`,
+      // `petHasOpenWarning`) treat a change at or after this stamp as unseen; an end-of-build
+      // stamp let a change landing early in a slow build (over LANDED_READ_RACE_MS) sort as seen.
+      // It is also the instant the pipeline counted at (`nowMs`), which every other reader means.
+      generated_at: new Date(nowMs).toISOString(),
       signal_text: signalText,
       is_building: isBuilding,
       findings: cachedEntries,
