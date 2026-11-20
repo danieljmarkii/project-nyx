@@ -137,6 +137,7 @@ export function careAt(record: SyntheticRecord, petKey: string, T: number): Care
       retracts: null,
       trial: null,
       course: null,
+      visit: null,
     })
   }
   for (const v of record.visits) {
@@ -153,6 +154,8 @@ export function careAt(record: SyntheticRecord, petKey: string, T: number): Care
         retracts: null,
         trial: null,
         course: null,
+        // The corpus's visits are all exams (it predates contacts, CUL-2841).
+        visit: { channel: 'in_clinic', deleted: false },
       })
     }
   }

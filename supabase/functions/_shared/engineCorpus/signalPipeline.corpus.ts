@@ -467,9 +467,9 @@ export const SIGNAL_PIPELINE_CORPUS: SignalPipelineCase[] = [
 // flag-off guard hands it in with every flag state, so a gate that leaked would show.
 export const POPULATED_CARE_RECORD: CareRecord = {
   acknowledgements: [
-    { id: 'ack-1', sign: 'vomit', source: 'my_vet_knows', anchorOn: ago(3).slice(0, 10), createdAt: ago(3, 19), retracts: null, trial: null, course: null },
-    { id: 'ack-2', sign: 'diarrhea', source: 'my_vet_knows', anchorOn: ago(9).slice(0, 10), createdAt: ago(9, 19), retracts: null, trial: null, course: null },
-    { id: 'ack-3', sign: 'diarrhea', source: 'my_vet_knows', anchorOn: ago(8).slice(0, 10), createdAt: ago(8, 19), retracts: 'ack-2', trial: null, course: null },
+    { id: 'ack-1', sign: 'vomit', source: 'my_vet_knows', anchorOn: ago(3).slice(0, 10), createdAt: ago(3, 19), retracts: null, trial: null, course: null, visit: null },
+    { id: 'ack-2', sign: 'diarrhea', source: 'my_vet_knows', anchorOn: ago(9).slice(0, 10), createdAt: ago(9, 19), retracts: null, trial: null, course: null, visit: null },
+    { id: 'ack-3', sign: 'diarrhea', source: 'my_vet_knows', anchorOn: ago(8).slice(0, 10), createdAt: ago(8, 19), retracts: 'ack-2', trial: null, course: null, visit: null },
   ],
   appointments: [
     { id: 'appt-1', scheduledAt: ago(-4, 15), cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false },

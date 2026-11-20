@@ -158,6 +158,31 @@ export interface AckFact {
   retracts: string | null
   trial: AckTrialScope | null
   course: AckCourseScope | null
+  /** The visit a visit-sourced answer names, as the shell found it, or null when the read found
+   *  none (no link, a hard-deleted visit, another pet's). Required so no caller can leave it out:
+   *  only `answerStandsOnAnExam` reads it. Ignored on every other source. */
+  visit: AckVisitFact | null
+}
+
+/** The visit behind an `at_vet_tick` / `visit_answer` (vet_visits, by `id, channel, deleted_at`). */
+export interface AckVisitFact {
+  /** `vet_visits.channel`: 'in_clinic' is an exam; 'phone', 'text', 'email' are contacts. */
+  channel: string | null
+  deleted: boolean
+}
+
+/**
+ * CUL-2841 (PM ruling A on CUL-2835): a visit answer stands only on an EXAM. "Talked about it" on a
+ * visit later corrected to a call, text or email is no longer an answer about an exam, so it never
+ * stands a concern down. The phone retracts what it still holds; this covers the answers it does
+ * not (another phone, a reinstall). Every unknown fails loud: no visit, a deleted one, a NULL or
+ * unrecognised channel. A `my_vet_knows`, trial or course answer names no visit and is untouched.
+ * The ONE predicate: `lapseReason` and the re-raise replay both read it, so the two cannot drift.
+ */
+export function answerStandsOnAnExam(ack: Pick<AckFact, 'source' | 'visit'>): boolean {
+  if (ack.source !== 'at_vet_tick' && ack.source !== 'visit_answer') return true
+  const v = ack.visit
+  return v !== null && v !== undefined && !v.deleted && v.channel === 'in_clinic'
 }
 
 /** An appointment, reduced to its dates (§4.7; AC 10 as amended allows exactly these columns)
@@ -483,6 +508,10 @@ export function lapseReason(ack: AckFact, args: CareStateArgs, retracted: Readon
   if ((ack.source === 'at_vet_tick' || ack.source === 'visit_answer') && anchor < localDayIndex(courseStart, tz)) {
     return 'visit_before_onset'
   }
+  // CUL-2841: a visit answer whose visit is not an exam (corrected to a call, deleted, unknown).
+  // Not in NEVER_LIVE: the answer may have stood before the correction, so the re-raise replay
+  // still walks it (its re-raise is kept, louder), and `supersededOn` never lets it cover another.
+  if (!answerStandsOnAnExam(ack)) return 'not_an_exam'
   // §4.2's reference is rebuilt from the record on every run (adversarial D7): the only other store
   // is the previous cache row, which the owner can write. The shell reads the history behind the
   // lookback back to this answer's anchor (CareHistory), so this fires only for an anchor older
@@ -1004,6 +1033,9 @@ function rebuiltMarker(sign: SymptomType, args: CareStateArgs, ix: DayIndex, cfg
     scopeLapseReason(endUnknown(a) ? { ...a, course: { ...(a.course as AckCourseScope), status: null } } : a, d, Date.parse(a.createdAt), cfg, tz)
   const ownScopeEnded = (a: AckFact, d: number) => scopeAsOf(a, d) !== null
   const coveredOn = (b: AckFact, d: number) => {
+    // CUL-2841: an answer that does not stand on an exam never covered anything, so it can never
+    // hide an older answer's re-raise (the corrected call keeping a "back again" quiet).
+    if (!answerStandsOnAnExam(b)) return false
     if (scopeAsOf(b, d) !== null) return false
     if (!endUnknown(b)) return true
     const last = b.course?.lastDoseAt ? Date.parse(b.course.lastDoseAt) : NaN
