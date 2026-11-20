@@ -112,6 +112,13 @@ function cardWindow(finding: SignalFinding, anchor: CardAnchor, nowMs: number): 
   if (askMs === null) return null;
   let start = laterStart(problem, { day: toLocalDayKey(new Date(askMs)), instant: askMs });
   instants.push(askMs);
+  // A card back from "your vet knows" asks again from its re-raise (adversarial pass 2, B4): the
+  // engine's stamp covers it, and the card's own instant holds even where a stamp does not.
+  const backMs = msOf(raisedAgainAtOf(finding));
+  if (backMs !== null && backMs <= nowMs) {
+    start = laterStart(start, { day: toLocalDayKey(new Date(backMs)), instant: backMs });
+    instants.push(backMs);
+  }
   // The phone's own rise: an intake card firms up to the floor 24 hours after its last good meal
   // (`intakeMeetsCatFloor`), with no engine run to stamp it. Once that has happened, it is a start.
   const floorMs = clockFloorMs(finding);
@@ -130,6 +137,14 @@ const ASK_STAMPED: ReadonlySet<string> = new Set(['intake_decline', 'symptom_chr
 function askSinceIsoOf(finding: SignalFinding): string | null {
   const v = (finding as { askSinceIso?: unknown }).askSinceIso;
   return typeof v === 'string' ? v : null;
+}
+
+/** A re-raised card's `careState.raisedAgainAt`, read narrowly: only a card asking again has one. */
+function raisedAgainAtOf(finding: SignalFinding): string | null {
+  const cs = (finding as { careState?: unknown }).careState;
+  if (!cs || typeof cs !== 'object') return null;
+  const { state, raisedAgainAt } = cs as { state?: unknown; raisedAgainAt?: unknown };
+  return state === 'raised_again' && typeof raisedAgainAt === 'string' ? raisedAgainAt : null;
 }
 
 /** The instant an intake card (not a dog's) meets the floor by the clock alone, or null. */

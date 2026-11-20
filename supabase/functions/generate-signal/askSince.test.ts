@@ -92,3 +92,12 @@ Deno.test('CUL-2834 B1: "your vet knows" back to raised_again, or a quiet bookin
   }
   assertStrictEquals(stampOf(stampAskSince([row(withCare(chronic('firm'), 'raised'))], prior(withCare(chronic('firm'), 'raised')), NOW)[0]), EARLIER)
 })
+
+// Adversarial pass 2, B4: a fresh re-raise is raised_again on both runs, with a new instant.
+// Proven by mutation: dropping `raisedAgainAt` from the care key reds the first assertion.
+Deno.test('CUL-2834 B4: raised_again with a new raisedAgainAt restamps; the same latch carries', () => {
+  const back = (at: string): Finding =>
+    ({ ...chronic('firm'), careState: { state: 'raised_again', raisedAgainAt: at, text: null } } as unknown as Finding)
+  assertStrictEquals(stampOf(stampAskSince([row(back('2026-11-20T08:00:00.000Z'))], prior(back('2026-11-10T09:00:00.000Z')), NOW)[0]), NOW_ISO)
+  assertStrictEquals(stampOf(stampAskSince([row(back('2026-11-10T09:00:00.000Z'))], prior(back('2026-11-10T09:00:00.000Z')), NOW)[0]), EARLIER)
+})

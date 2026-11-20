@@ -45,7 +45,11 @@ export function askKeyOf(f: unknown): string | null {
   // The card's care state is part of its ask (adversarial pass 1, B1): "your vet knows" or "a visit
   // is booked" carries no ask, and the same tier back at `raised` or `raised_again` asks again. A
   // card with no care state (EN-9 off, or a run that skipped the step) shows the lane's own ask.
-  const care = x.careState && typeof x.careState === 'object' ? (x.careState as { state?: unknown }).state ?? 'unknown' : null
+  // And the re-raise's own instant (adversarial pass 2, B4): a fresh re-raise after an answer can be
+  // `raised_again` on both runs, with no run between that wrote "your vet knows"; its new
+  // `raisedAgainAt` is the louder ask beginning again.
+  const cs = x.careState && typeof x.careState === 'object' ? x.careState as { state?: unknown; raisedAgainAt?: unknown } : null
+  const care = cs === null ? null : [cs.state ?? 'unknown', cs.raisedAgainAt ?? null]
   if (x.type === 'intake_decline') {
     return JSON.stringify([x.trigger ?? null, x.species ?? null, x.allRefused ?? null, x.noGoodMeal24h ?? null, x.sustainedRefusal !== undefined, x.refusedThenVomited !== undefined, care])
   }

@@ -299,6 +299,21 @@ describe('CUL-2834: a louder ask starts the window again', () => {
     expect(contactLineFor(rose, after, TODAY, ANCHOR, null, NOW)).toBe('You called the vet today.');
   });
 
+  it('B4: a card back from "your vet knows" asks again from its re-raise, whatever its stamp says', () => {
+    // An old stamp the engine carried; the card came back Nov 13 at 3:00 pm, after the morning call.
+    const back = {
+      ...chronic,
+      careState: { state: 'raised_again', raisedAgainAt: at(2026, 11, 13, 15, 0), text: null },
+    } as unknown as SignalFinding;
+    expect(contactLineFor(back, call13, TODAY, ANCHOR, null, NOW)).toBeNull();
+    expect(contactLineFor(back, [c('k2', '2026-11-13', 'phone', at(2026, 11, 13, 16, 0))], TODAY, ANCHOR, null, NOW)).toBe(
+      'You called the vet on Fri, Nov 13.',
+    );
+    // Only a card asking again: a "your vet knows" card's old instant moves nothing.
+    const knows = { ...chronic, careState: { state: 'with_vet', raisedAgainAt: at(2026, 11, 13, 15, 0), text: null } } as unknown as SignalFinding;
+    expect(contactLineFor(knows, call13, TODAY, ANCHOR, null, NOW)).toBe('You called the vet on Fri, Nov 13.');
+  });
+
   it('a red flag is bounded by its own events, as PR-07 left it, stamp or none', () => {
     const line = contactLineFor(redFlag, [c('k', '2026-11-13', 'phone', at(2026, 11, 13, 10, 0))], TODAY, ANCHOR, null, NOW);
     expect(line).toBe('You called the vet on Fri, Nov 13.');
