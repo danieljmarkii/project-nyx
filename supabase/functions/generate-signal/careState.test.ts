@@ -14,6 +14,7 @@ import {
   careStateOf,
   EMPTY_CARE_RECORD,
   EN9_CARE_STATE_STEP,
+  PRIOR_ROW_WRITE_CEILING_MS,
   isPossibleRecheckPhantom,
   priorCareCarry,
   rankWatchedLast,
@@ -559,12 +560,31 @@ Deno.test('CUL-2847: an answer is timed by its tap, not its sync, against the ro
   // phone's push of the stale answer had not landed. That row's card offered no "My vet knows", so
   // the answer was tapped on an older one: it lapses.
   const skipped = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }]
-  const pending = ack({ id: 'p', daysAgo: 0, anchorOn: dayOf(0), createdAt: new Date(T + 20 * 60_000).toISOString() })
+  const pending = ack({ id: 'p', daysAgo: 0, anchorOn: dayOf(0), createdAt: new Date(T + 40 * 60_000).toISOString() })
   assertEquals(stateOf({ symptoms: STABLE, acks: [pending], priorFindings: skipped, priorGeneratedAtMs: T + 16 * 60_000 }).lapsed, ['p'])
   // The re-raised concern answered on its own card (the prior row holds it) still stands.
   const back = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised', ackId: null, lapsed: ['late'] } } }]
   const fresh = ack({ id: 'fresh', daysAgo: 0, createdAt: at(0, 20) })
   assertStrictEquals(stateOf({ symptoms: STABLE, acks: [late, fresh], priorFindings: back, priorGeneratedAtMs: T }).state, 'with_vet')
+})
+
+Deno.test('CUL-2844: an answer given while the build that dropped its concern was running lapses', () => {
+  // Build 1 starts reading at T (its stamp) and drops the vomiting concern; its row lands up to the
+  // function's wall-clock limit later. The owner answers at T + 30 s on the card still showing.
+  const T = NOW_MS - DAY
+  const gone = [{ rank: 0, finding: { type: 'timeofday_clustering', priorityClass: 'insight', symptomType: 'vomit' } }]
+  const during = ack({ id: 'during', daysAgo: 1, createdAt: new Date(T + 30_000).toISOString() })
+  const s = stateOf({ symptoms: STABLE, acks: [during], priorFindings: gone, priorGeneratedAtMs: T })
+  assertEquals([s.state, s.lapsed], ['raised', ['during']])
+  // At the edge of the ceiling it still lapses; past it the row was already written, so it stands.
+  // A visit answer anchored two days after the drop, so the ceiling is the only test that can
+  // lapse it ("My vet knows" beside a dropped row lapses whenever it was written, CUL-2847).
+  const T3 = NOW_MS - 3 * DAY
+  const visit = (id: string, createdAtMs: number) => ack({ id, daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(1), createdAt: new Date(createdAtMs).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [visit('edge', T3 + PRIOR_ROW_WRITE_CEILING_MS - 1_000)], priorFindings: gone, priorGeneratedAtMs: T3 }).lapsed, ['edge'])
+  assertEquals(stateOf({ symptoms: STABLE, acks: [visit('after', T3 + PRIOR_ROW_WRITE_CEILING_MS + 60_000)], priorFindings: gone, priorGeneratedAtMs: T3 }).lapsed, [])
+  // The ceiling covers the Edge Function's wall-clock limit (400 s on the paid plan).
+  assertStrictEquals(PRIOR_ROW_WRITE_CEILING_MS >= 400_000, true)
 })
 
 Deno.test('CUL-1667: R1 → R2 lost write → R3: a missing prior row beside an answer is continuity unknown', () => {

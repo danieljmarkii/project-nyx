@@ -327,9 +327,10 @@ export interface ReadNearBuild {
  * The newest settled read for one pet's live events that changed at or after `sinceIso`
  * less `marginMs`, or null: Home's Signal asks it with its row's `generated_at` (CUL-1105).
  * A read at or after the build is one that rebuild never saw. A read inside the margin
- * BEFORE it may not have been seen either: `generated_at` is stamped at the insert, after
- * the rebuild loaded its data and phrased, so a read written in that span (the adversarial
- * pass's race) sorts before the row that missed it. A read after the build is preferred,
+ * BEFORE it may not have been seen either: `generated_at` is the instant the build took before
+ * its first read (CUL-2844), so the margin covers a read committed after the build's pull but
+ * timed at its transaction's start, and the function's clock against the database's. A read
+ * landing during the build, however slow, is at or after the stamp. A read after the build is preferred,
  * then the newest. Pending rows never count: the rebuild waits for the verdict.
  *
  * Compared in SQL on PARSED instants (`julianday`), never as text (C-40): the copy holds

@@ -1212,6 +1212,26 @@ describe("readNearBuild — a read the pet's Signal may not have seen (CUL-1105)
     expect(await readNearBuild('milo', BUILT, MARGIN)).not.toBeNull();
   });
 
+  // CUL-2844: a build slower than the margin. generate-signal stamps the row with the instant it
+  // took before its first read; a read landing early in the build is after that stamp. The old
+  // end-of-build stamp put the same read more than the margin before it, and Home never rebuilt.
+  it('a read landing early in a build slower than LANDED_READ_RACE_MS is after the start stamp (CUL-2844)', async () => {
+    const { LANDED_READ_RACE_MS } = jest.requireActual('./signal') as typeof import('./signal');
+    const startMs = Date.parse('2026-11-11T02:00:00.000Z');
+    const buildMs = LANDED_READ_RACE_MS + 180_000;
+    const landedMs = startMs + 30_000;
+    event('ev', 'nyx');
+    verdict('ev', new Date(landedMs).toISOString().replace('.000Z', '+00:00'));
+    const startStamp = new Date(startMs).toISOString();
+    expect(await readNearBuild('nyx', startStamp, LANDED_READ_RACE_MS)).toEqual({
+      updatedAt: '2026-11-11T02:00:30+00:00',
+      afterBuild: true,
+    });
+    // The stamp it replaced: the end of the build, which this read sat out of reach of.
+    expect(buildMs - (landedMs - startMs)).toBeGreaterThan(LANDED_READ_RACE_MS);
+    expect(await readNearBuild('nyx', new Date(startMs + buildMs).toISOString(), LANDED_READ_RACE_MS)).toBeNull();
+  });
+
   it('an instant it cannot parse reads as after (the loud side)', async () => {
     event('ev', 'nyx');
     verdict('ev', '2026-11-11T01:00:00+00:00');

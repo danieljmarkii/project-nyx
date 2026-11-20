@@ -622,6 +622,23 @@ describe('a corrected visit rebuilds its pet\'s warnings when it lands (CUL-2842
     expect(await visitMovedNearBuild(OTHER_PET, built, 120_000)).toBeNull();
   });
 
+  // CUL-2844: a build slower than the margin. The row carries the instant generate-signal took
+  // before its first read, so a correction landing early in the build is after it. Against the old
+  // end-of-build stamp the same correction sat more than the margin before it and was never rebuilt.
+  it('a visit corrected early in a build slower than LANDED_READ_RACE_MS is after the start stamp (CUL-2844)', async () => {
+    const { LANDED_READ_RACE_MS } = jest.requireActual('./signal') as typeof import('./signal');
+    const startMs = Date.parse('2026-11-14T12:00:00.000Z');
+    const buildMs = LANDED_READ_RACE_MS + 180_000;
+    const landedMs = startMs + 30_000;
+    seedVisit({ id: 'slow', visited_at: '2026-11-14', channel: 'phone', updated_at: new Date(landedMs).toISOString() });
+    expect(await visitMovedNearBuild(PET, new Date(startMs).toISOString(), LANDED_READ_RACE_MS)).toEqual({
+      updatedAt: '2026-11-14T12:00:30.000Z',
+      afterBuild: true,
+    });
+    expect(buildMs - (landedMs - startMs)).toBeGreaterThan(LANDED_READ_RACE_MS);
+    expect(await visitMovedNearBuild(PET, new Date(startMs + buildMs).toISOString(), LANDED_READ_RACE_MS)).toBeNull();
+  });
+
   it('pass 2 (B4): pulling a visit corrected elsewhere nudges Home to re-check; an exam pulled does not', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { useSyncStore } = require('../store/syncStore') as typeof import('../store/syncStore');

@@ -45,10 +45,11 @@ import type { SignalTrialWindow } from './signalWindows';
 import { localDayIndex, localDayIndexOf } from './utils';
 
 /**
- * How long after the engine's clock read the cache row can be stamped. `ai_signals.generated_at`
- * is the insert's `DEFAULT now()`, written AFTER detection and the phrasing call, while the
- * day number was counted at the function's own `Date.now()` — so a regen that straddles local
- * midnight stamps the next day. Bounded by the Edge Function's wall-clock limit (400 s on the
+ * How long after the engine's clock read the cache row can be stamped. Since CUL-2844
+ * `ai_signals.generated_at` IS the function's own `Date.now()`, the instant it counted at, so a
+ * new row never stamps the next day; the band stays for rows written before that, when the
+ * stamp was the insert's `DEFAULT now()`, AFTER detection and phrasing, and a regen that
+ * straddled local midnight stamped the next day. Bounded by the Edge Function's wall-clock limit (400 s on the
  * paid plan, 150 s on free); ten minutes is past both with margin. Inside that band after
  * midnight either day is accepted — a wider band only widens the one residual this cannot
  * separate (an old trial that started the day before the new one, regenerated in that band).
