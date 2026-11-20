@@ -2555,3 +2555,40 @@ export async function readTrialVisitLink(trialId: string): Promise<string | null
   );
   return rows[0]?.vet_visit_id ?? null;
 }
+
+/**
+ * CUL-2842 (adversarial pass 1): the newest visit for the pet that stopped being an exam or
+ * was deleted at or after `sinceIso` less `marginMs`, as `ReadNearBuild` shapes it, or null.
+ * Home's Signal asks it with its row's `generated_at`. The visits drain arms a rebuild when such
+ * a row lands, but that rebuild is an in-memory timer: an app kill or sign-out inside its
+ * debounce, a failed generate-signal call, or a push that committed but lost its response
+ * (the next cycle's prior read already shows the new channel) all lose it. This is the
+ * backstop: a non-exam or deleted visit that moved after the build is one the build may not
+ * have seen, and a "Talked about it" on it may still be holding Home quiet.
+ *
+ * Only the QUIET direction: a contact or a deletion. A NULL (unknown) channel counts, the
+ * louder reading. A new contact logged after the build costs one rebuild (the loud side).
+ * Compared on PARSED instants (`julianday`), never as text (C-40); an unparseable instant on
+ * either side reads as after. Local only; throws on a local read failure.
+ */
+export async function visitMovedNearBuild(
+  petId: string,
+  sinceIso: string,
+  marginMs: number,
+): Promise<{ updatedAt: string; afterBuild: boolean } | null> {
+  const marginDays = marginMs / 86_400_000;
+  const after = `(julianday(?) IS NULL OR julianday(updated_at) IS NULL OR julianday(updated_at) >= julianday(?))`;
+  const rows = await getDb().getAllAsync<{ updated_at: string; after_build: number }>(
+    // visit-read: anyContact — the backstop looks for a visit that STOPPED being an exam (or was deleted) after the Signal was built.
+    `SELECT updated_at, ${after} AS after_build
+       FROM vet_visits
+      WHERE pet_id = ?
+        AND (channel IS NULL OR channel != 'in_clinic' OR deleted_at IS NOT NULL)
+        AND (${after} OR julianday(updated_at) >= julianday(?) - ?)
+      ORDER BY after_build DESC, julianday(updated_at) DESC
+      LIMIT 1`,
+    [sinceIso, sinceIso, petId, sinceIso, sinceIso, sinceIso, marginDays],
+  );
+  const r = rows[0];
+  return r ? { updatedAt: r.updated_at, afterBuild: r.after_build === 1 } : null;
+}

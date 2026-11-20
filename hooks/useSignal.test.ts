@@ -406,13 +406,23 @@ describe('useSignal — a read that landed after the Signal was built (CUL-1105)
     expect(mockedRegenerate).not.toHaveBeenCalled();
   });
 
-  it('an expired row takes the expiry’s refresh and never asks about reads', async () => {
+  it('an expired row with nothing moved takes the expiry’s refresh', async () => {
+    mockedReadCache.mockResolvedValue(fresh);
+    mockedIsStale.mockReturnValue(true);
+    mockedRebuildKey.mockResolvedValue(null);
+    renderHook(() => useSignal());
+    await waitFor(() => expect(mockedRegenerate).toHaveBeenCalledWith(PET_A.id));
+    expect(mockedRegenForRead).not.toHaveBeenCalled();
+  });
+
+  // CUL-2842 pass 2 (B1): the expiry's refresh can be turned away by the cap, so a visit
+  // corrected to a call on an expired row rebuilds as a log, under its key.
+  it('an expired row over a moved visit rebuilds as a log, never the refresh the cap can refuse', async () => {
     mockedReadCache.mockResolvedValue(fresh);
     mockedIsStale.mockReturnValue(true);
     mockedRebuildKey.mockResolvedValue('row|pet-a|key');
     renderHook(() => useSignal());
-    await waitFor(() => expect(mockedRegenerate).toHaveBeenCalledWith(PET_A.id));
-    expect(mockedRebuildKey).not.toHaveBeenCalled();
-    expect(mockedRegenForRead).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockedRegenForRead).toHaveBeenCalledWith(PET_A.id, 'row|pet-a|key'));
+    expect(mockedRegenerate).not.toHaveBeenCalled();
   });
 });

@@ -37,6 +37,12 @@ const mockReadNear = jest.fn(async (_petId: string, _since: string, _margin: num
 jest.mock('./readCopy', () => ({
   readNearBuild: (petId: string, since: string, margin: number) => mockReadNear(petId, since, margin),
 }));
+// CUL-2842: the same backstop over a visit corrected to a contact or deleted (`lib/vetVisits.ts`
+// `visitMovedNearBuild`, tested on real SQLite in lib/vetContacts.test.ts). Stubbed to none.
+const mockVisitMoved = jest.fn(async (_petId: string, _since: string, _margin: number): Promise<Near> => null);
+jest.mock('./vetVisits', () => ({
+  visitMovedNearBuild: (petId: string, since: string, margin: number) => mockVisitMoved(petId, since, margin),
+}));
 
 const mockedFrom = supabase.from as jest.Mock;
 const mockedInvoke = supabase.functions.invoke as jest.Mock;
@@ -368,8 +374,61 @@ describe('a read the Signal may not have seen rebuilds it, as a log, under one k
     cancelPendingSignalRegens();
     mockedInvoke.mockReset().mockResolvedValue({ data: {}, error: null });
     mockReadNear.mockReset().mockResolvedValue(null);
+    mockVisitMoved.mockReset().mockResolvedValue(null);
   });
-  afterEach(() => mockReadNear.mockReset().mockResolvedValue(null));
+  afterEach(() => {
+    mockReadNear.mockReset().mockResolvedValue(null);
+    mockVisitMoved.mockReset().mockResolvedValue(null);
+  });
+
+  // CUL-2842 (adversarial pass 1): the visits drain's rebuild is an in-memory timer, and a push
+  // that committed but lost its response never re-arms it. A visit corrected to a call after
+  // the build is the backstop's to catch on the next open.
+  it('a visit corrected to a call after the build rebuilds once per row, asked with the row’s generated_at', async () => {
+    mockVisitMoved.mockResolvedValue(AFTER);
+    expect(await rebuild('nyx', fresh())).not.toBeNull();
+    expect(mockVisitMoved).toHaveBeenCalledWith('nyx', BUILT, LANDED_READ_RACE_MS);
+    expect(reasons()).toEqual([expect.objectContaining({ petId: 'nyx', reason: 'log' })]);
+    expect(await landedReadRebuildKey('nyx', fresh())).toBeNull();
+  });
+
+  it('a visit moved inside the margin rebuilds once per visit version; none moved, none rebuilds', async () => {
+    mockVisitMoved.mockResolvedValue(RACE);
+    expect(await rebuild('nyx', fresh())).not.toBeNull();
+    expect(await landedReadRebuildKey('nyx', fresh('2026-11-11T02:00:15.000Z'))).toBeNull();
+    mockVisitMoved.mockResolvedValue(null);
+    expect(await landedReadRebuildKey('milo', fresh())).toBeNull();
+  });
+
+  it('pass 2 (B1): a moved visit is asked on an EXPIRED row too, and keys a log rebuild', async () => {
+    mockReadNear.mockResolvedValue(AFTER);
+    mockVisitMoved.mockResolvedValue(AFTER);
+    const expired = { ...fresh(), expiresAt: new Date(Date.now() - 1000).toISOString() };
+    expect(await rebuild('nyx', expired)).not.toBeNull();
+    expect(mockReadNear).not.toHaveBeenCalled(); // a READ on an expired row stays the expiry's
+    expect(reasons()).toEqual([expect.objectContaining({ petId: 'nyx', reason: 'log' })]);
+  });
+
+  it('pass 2 (B2): a failing read check falls through to the visit check', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockReadNear.mockRejectedValue(new Error('db gone'));
+      mockVisitMoved.mockResolvedValue(AFTER);
+      expect(await landedReadRebuildKey('nyx', fresh())).not.toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('a failed visit check keeps the cached Signal and does not throw', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockVisitMoved.mockRejectedValue(new Error('db gone'));
+      await expect(landedReadRebuildKey('nyx', fresh())).resolves.toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+  });
 
   it('asks the copy with the row’s own generated_at and the race margin', async () => {
     mockReadNear.mockResolvedValue(AFTER);

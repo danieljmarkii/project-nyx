@@ -32,8 +32,8 @@ jest.mock('expo-router', () => ({
 // Vet contacts (CUL-2767): the flag is OFF unless a test turns it on, so every shipped case
 // below is the flag-off screen. The Signal cache is the saved moment's live-warning read.
 let mockContactsOn = false;
-// CUL-2835's chips are held off in the build (lib/vetContactAfter VISIT_CHANNEL_CHIPS_ON); the
-// suite drives both states through this switch.
+// CUL-2835's chips are switched on in the build since PR-10 (lib/vetContactAfter
+// VISIT_CHANNEL_CHIPS_ON); the suite drives both states through this switch.
 let mockChipsOn = false;
 jest.mock('../../lib/vetContactAfter', () => {
   const actual = jest.requireActual('../../lib/vetContactAfter');
@@ -925,7 +925,11 @@ describe('CUL-2835 — a visit can say it was a call (AC 19’s in-app return tr
     mockChipsOn = true;
   });
 
-  it('held off in the build: flag on, a saved visit shows no chips until they are switched on', async () => {
+  it('the build ships them on (PR-10, CUL-2842 landed with them)', () => {
+    expect(jest.requireActual('../../lib/vetContactAfter').VISIT_CHANNEL_CHIPS_ON).toBe(true);
+  });
+
+  it('switched off: flag on, a saved visit shows no chips', async () => {
     mockChipsOn = false;
     mockContactsOn = true;
     mockVisit = savedVisit({ channel: 'in_clinic' });

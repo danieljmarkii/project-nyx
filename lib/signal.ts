@@ -18,6 +18,7 @@ import { useSyncStore } from '../store/syncStore';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { countRecordGaps } from './db';
 import { readNearBuild } from './readCopy';
+import { visitMovedNearBuild } from './vetVisits';
 import { currentSignOutEpoch } from './signOutEpoch';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
@@ -880,18 +881,39 @@ export function isSignalCacheStale(row: SignalCacheRow | null, nowMs = Date.now(
 export const LANDED_READ_RACE_MS = 120_000;
 const readRebuiltRows = new Set<string>();
 
-/** The key a landed read's rebuild runs under, or null when the row has seen every read. */
+/** The key a landed read's rebuild runs under, or null when the row has seen every read and
+ *  every visit corrected to a contact or deleted (CUL-2842). */
 export async function landedReadRebuildKey(petId: string, row: SignalCacheRow | null): Promise<string | null> {
-  if (!row?.generatedAt || isSignalCacheStale(row)) return null;
-  let near: Awaited<ReturnType<typeof readNearBuild>>;
+  if (!row?.generatedAt) return null;
+  // An expired row is the expiry's rebuild for a READ (CUL-1105, unchanged). A moved VISIT is
+  // asked on an expired row too (CUL-2842 pass 2, B1): the expiry's rebuild goes as a refresh,
+  // which the per-pet cap can turn away, and the cached "with your vet" would then outlive the
+  // call it rests on. The key makes it a log, which the cap never turns away.
+  let near: Awaited<ReturnType<typeof readNearBuild>> = null;
+  if (!isSignalCacheStale(row)) {
+    try {
+      near = await readNearBuild(petId, row.generatedAt, LANDED_READ_RACE_MS);
+    } catch (e) {
+      // Falls through to the visit check (pass 2, B2): a failing read side never switches it off.
+      console.warn('[signal] read-change check failed:', e);
+    }
+  }
+  if (near) {
+    const key = near.afterBuild ? `row|${petId}|${row.generatedAt}` : `read|${petId}|${near.updatedAt}`;
+    if (!readRebuiltRows.has(key)) return key;
+  }
+  // CUL-2842: the same backstop for a visit corrected to a call, text or email, or deleted,
+  // after the build (`visitMovedNearBuild`). Same keys, same economics: once per row after the
+  // build, once per visit version inside the margin, a failure releases its key.
+  let moved: Awaited<ReturnType<typeof visitMovedNearBuild>>;
   try {
-    near = await readNearBuild(petId, row.generatedAt, LANDED_READ_RACE_MS);
+    moved = await visitMovedNearBuild(petId, row.generatedAt, LANDED_READ_RACE_MS);
   } catch (e) {
-    console.warn('[signal] read-change check failed:', e);
+    console.warn('[signal] visit-change check failed:', e);
     return null;
   }
-  if (!near) return null;
-  const key = near.afterBuild ? `row|${petId}|${row.generatedAt}` : `read|${petId}|${near.updatedAt}`;
+  if (!moved) return null;
+  const key = moved.afterBuild ? `row|${petId}|${row.generatedAt}` : `visit|${petId}|${moved.updatedAt}`;
   return readRebuiltRows.has(key) ? null : key;
 }
 
@@ -1079,11 +1101,12 @@ export async function readSignalsAndRefresh(
   for (const petId of petIds) {
     try {
       const row = await readSignalCache(petId);
-      if (isSignalCacheStale(row)) {
+      // CUL-2842 pass 2 (B1): asked on an expired row too; a key turns the rebuild into a log.
+      const key = await landedReadRebuildKey(petId, row);
+      if (key) {
+        if (currentSignOutEpoch() === epoch) regenerateForLandedRead(petId, key).catch(() => {});
+      } else if (isSignalCacheStale(row)) {
         if (currentSignOutEpoch() === epoch) regenerateSignal(petId).catch(() => {});
-      } else {
-        const key = await landedReadRebuildKey(petId, row);
-        if (key && currentSignOutEpoch() === epoch) regenerateForLandedRead(petId, key).catch(() => {});
       }
       byPet.set(petId, row?.findings ?? []);
     } catch {
