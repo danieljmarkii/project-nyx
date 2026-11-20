@@ -7,6 +7,7 @@ import {
   formatShortWeekday,
   historyContactPhrase,
   historyContactText,
+  showsChannel,
   startedPhrase,
 } from './vetContacts';
 import { buildVisitListRow, channelOf, type LocalVetVisit } from './vetVisits';
@@ -102,5 +103,19 @@ describe('the list row', () => {
     expect(['in_clinic', 'phone', 'text', 'email', null, 'fax', 3].map(channelOf)).toEqual([
       'in_clinic', 'phone', 'text', 'email', null, null, null,
     ]);
+  });
+});
+
+// CUL-2830 (PM ruling 2026-11-20): the record decides the words, the switch only a clinic visit's.
+describe('showsChannel', () => {
+  it('a call, texts and an email always show; a clinic visit and an unknown row only while on', () => {
+    for (const ch of ['phone', 'text', 'email'] as const) {
+      expect(showsChannel(false, ch)).toBe(true);
+      expect(showsChannel(true, ch)).toBe(true);
+    }
+    expect(showsChannel(false, 'in_clinic')).toBe(false);
+    expect(showsChannel(false, null)).toBe(false);
+    expect(showsChannel(false, undefined)).toBe(false);
+    expect(showsChannel(true, 'in_clinic')).toBe(true);
   });
 });

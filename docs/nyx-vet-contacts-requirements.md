@@ -1,6 +1,6 @@
 # Nyx Vet Contacts: a call, text or email that was not an exam — Requirements
 
-**Version:** 1.1 | **Last Updated:** 2026-11-19 | **Issue:** CUL-2749 (discovery) | **Linear project:** *Vet contacts: a call, text or email that wasn't an exam* | **Design authority:** the build-ready mock round (PR-01, 2026-11-19), https://claude.ai/artifact/97ohC4DfPN2sUa2Cf9kyqV (canonical file `docs/culprit-vet-contact-mockups.html`; the repo file wins on divergence). It supersedes round 3.1.
+**Version:** 1.2 | **Last Updated:** 2026-11-20 | **Issue:** CUL-2749 (discovery) | **Linear project:** *Vet contacts: a call, text or email that wasn't an exam* | **Design authority:** the build-ready mock round (PR-01, 2026-11-19), https://claude.ai/artifact/97ohC4DfPN2sUa2Cf9kyqV (canonical file `docs/culprit-vet-contact-mockups.html`; the repo file wins on divergence). It supersedes round 3.1.
 
 **Read with:** `docs/nyx-vet-visits-requirements.md` (the visit lifecycle this extends; §5.6's reader bound), `docs/nyx-care-state-requirements.md` (the awareness-only rule rides its §6 shapes), `docs/nyx-vet-files-requirements.md` (attachments; D7, D8, D14), the Vet instructions spec once it lands (`docs/nyx-vet-instructions-requirements.md`, project *Vet instructions*, CUL-2731), `docs/nyx-diet-trial-requirements.md` (the trial row), `docs/nyx-beta-features-requirements.md` (the flag).
 
@@ -207,7 +207,7 @@ Contacts, attachments, instructions and the report line are core logging: free f
 
 ## 7. Acceptance criteria
 
-1. **Flag off** (or opt-in off): the Vet visits card, sheet, after screen, saved moment, visit page, History and report are byte-identical to `main` (C-36 differential).
+1. **Flag off** (or opt-in off): the Vet visits card, sheet, after screen, saved moment, visit page, History and report are byte-identical to `main` (C-36 differential) on a phone whose record holds no call, text or email. A row that already IS a contact reads as itself on every record surface (the list, its page, its edit, *Share*, the after screen, a course's source, History, the report-link picker) whatever the switch or a not-yet-resolved flag says: it exists only because someone used the feature, so naming it is a fact (PM ruling, CUL-2830, 2026-11-20). Entry (the logging door, the sheet's channel step, the channel chips) stays behind the switch.
 2. The logging door opens on a past contact with no *Has this visit happened?*; the booking door keeps it and shows no channel chips.
 3. Saving with Phone writes `channel = 'phone'`, the chosen day, and `contacted_at` only when a time was set; it syncs with both columns (a remote read after push shows `phone`).
 4. *Also about Juniper* writes two independent rows; editing one leaves the other unchanged.
@@ -216,7 +216,7 @@ Contacts, attachments, instructions and the report line are core logging: free f
 7. A course started from a contact carries its `vet_visit_id`; its page shows the source row; the report shows "Started after the Nov 9 phone consult".
 8. A document added from *What the vet sent* is a `vet_documents` row with `vet_visit_id` = the contact and its own `document_date`; it never renders on the report; the report line says "on the owner's phone, not attached".
 9. **Awareness only:** a live intake card plus a same-day email contact → the card's sentence, count, ask and Home order are identical (string and index equality); one context line is added; no `care_acknowledgements`, `vet_calls` or follow-up row exists.
-10. `generate-signal`'s care context ignores remote contacts (a phone contact yesterday sets no visit date).
+10. A phone contact sets no visit date and no window; it still withholds a zero for 42 days, as a visit does (PM ruling, CUL-2830, 2026-11-20: a phoned-in steroid hides symptoms whether or not its course is logged). Device (`readVisitDaysBefore`) and server (`generate-signal`'s `lastContactOn`) agree.
 11. A diet change started from a contact while an intake decline is live leaves every intake string and count unchanged.
 12. The saved moment shows no check mark when the pet has a live warning or this contact has a watched instruction; it never says "handled", "done" or "all set".
 13. On a pet with a running trial, the trial row is first among plan rows; *Keep going until Dec 1* moves `target_duration_days` and sets `target_duration_vet_directed`; hidden with no target.
@@ -268,3 +268,4 @@ Designer ✓ (one entry, the order on the after screen, no closure on C4) · Dir
 |---|---|---|
 | 1.0 | 2026-11-14 | First version, from CUL-2749's discovery: rulings R1–R9, the owner review, mock round 3.1. |
 | 1.1 | 2026-11-19 | PR-01's build-ready round and its contract critique (CUL-2763): rulings R10–R12; §2 corrected (the shipped logging button renders only for a pet with no visits); §4.1, §4.2 (editing), §4.5 (the double line), §4.6 (History's title); AC 17–19. |
+| 1.2 | 2026-11-20 | CUL-2830's two PM rulings: AC 10 says a contact masks a zero for 42 days and never anchors a window; AC 1 says a row that already is a contact reads as itself whatever the switch says, and a phone with no such row stays byte-identical. |

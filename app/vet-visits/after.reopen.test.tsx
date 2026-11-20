@@ -963,12 +963,20 @@ describe('CUL-2835 — a visit can say it was a call (AC 19’s in-app return tr
     alert.mockRestore();
   });
 
-  it('flag off: no chips, and a phone record still reads as shipped', async () => {
+  // CUL-2830 (PM ruling 2026-11-20): the switch gates the chips; the RECORD decides the words.
+  it('flag off: no chips, and a phone record still reads as the call it is', async () => {
     mockVisit = savedVisit({ channel: 'phone' });
     await openReopen();
     expect(screen.queryByText('How did you hear from the vet?')).toBeNull();
+    expect(screen.getByText('What did the vet say?')).toBeTruthy();
+    expect(screen.queryByText('How did it go?')).toBeNull();
+  });
+
+  it('flag off: a clinic visit reopens as shipped, with no chips', async () => {
+    mockVisit = savedVisit({ channel: 'in_clinic' });
+    await openReopen();
+    expect(screen.queryByText('How did you hear from the vet?')).toBeNull();
     expect(screen.getByText('How did it go?')).toBeTruthy();
-    expect(screen.queryByText('What did the vet say?')).toBeNull();
   });
 
   it('flag on, a contact shows no chips (its own Edit owns the channel)', async () => {

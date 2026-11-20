@@ -122,7 +122,7 @@ const D2 = detail(visitRecord(), {
 
 describe('VisitDetailBody — a contact reads as itself (D2, D3)', () => {
   it('D2: the call names its pet, its channel, its day and "no exam", then what was sent and started', () => {
-    render(<VisitDetailBody {...bodyProps(D2)} contactsOn />);
+    render(<VisitDetailBody {...bodyProps(D2)} />);
     expect(screen.getByText('Nyx’s call')).toBeTruthy();
     expect(screen.getByText('Phone · Mon, Nov 9 · no exam')).toBeTruthy();
     expect(screen.getByLabelText('Nyx’s call. Phone, Mon, Nov 9, no exam')).toBeTruthy();
@@ -141,7 +141,7 @@ describe('VisitDetailBody — a contact reads as itself (D2, D3)', () => {
     // 4:10 pm on Nov 13 in the device's zone, built from local parts (C-29).
     const at = new Date(2026, 10, 13, 16, 10, 0).toISOString();
     const juniper = detail(visitRecord({ id: 'v-j', pet_id: 'pet-j', channel: 'email', visited_at: '2026-11-13', reason: null, contacted_at: at }));
-    render(<VisitDetailBody {...bodyProps(juniper, { petName: 'Juniper' })} contactsOn />);
+    render(<VisitDetailBody {...bodyProps(juniper, { petName: 'Juniper' })} />);
     expect(screen.getByText('Juniper’s email')).toBeTruthy();
     expect(screen.getByText('Email · Fri, Nov 13, 4:10 pm · no exam')).toBeTruthy();
     expect(screen.getByText('This email has a day and a time so far. Add what the vet sent or started whenever you have it.')).toBeTruthy();
@@ -149,14 +149,14 @@ describe('VisitDetailBody — a contact reads as itself (D2, D3)', () => {
   });
 
   it('texts read as plural', () => {
-    render(<VisitDetailBody {...bodyProps(detail(visitRecord({ channel: 'text' })))} contactsOn />);
+    render(<VisitDetailBody {...bodyProps(detail(visitRecord({ channel: 'text' })))} />);
     expect(screen.getByText('Nyx’s texts')).toBeTruthy();
     expect(screen.getByText('Your vet report shows these texts. No exam.')).toBeTruthy();
   });
 
-  it('a clinic visit with the feature on is the shipped page', () => {
+  it('a clinic visit is the shipped page (the record decides, no switch reaches the body)', () => {
     const clinic = detail(visitRecord({ channel: 'in_clinic' }));
-    render(<VisitDetailBody {...bodyProps(clinic)} contactsOn />);
+    render(<VisitDetailBody {...bodyProps(clinic)} />);
     const onTree = JSON.stringify(tree());
     screen.unmount();
     render(<VisitDetailBody {...bodyProps(detail(withoutChannel(visitRecord({ channel: 'in_clinic' }))))} />);
@@ -164,21 +164,20 @@ describe('VisitDetailBody — a contact reads as itself (D2, D3)', () => {
     expect(screen.getByText('Ear, still shaking her head')).toBeTruthy();
   });
 
-  it('flag off: a phone contact renders exactly as the shipped record with no channel (non-vacuous)', () => {
-    render(<VisitDetailBody {...bodyProps(D2)} contactsOn />);
-    const onTree = JSON.stringify(tree());
-    screen.unmount();
+  // CUL-2830 (PM ruling 2026-11-20): the RECORD decides. A phone whose Early access switch is
+  // off (a second phone, a reinstall, the cold start) still reads a call as a call: the body
+  // takes no switch at all, so nothing on this page can call a phone consult "Vet visit".
+  it('a phone contact never renders as the shipped visit page (non-vacuous against a channel-less row)', () => {
     render(<VisitDetailBody {...bodyProps(D2)} />);
-    const offTree = JSON.stringify(tree());
+    const contactTree = JSON.stringify(tree());
+    expect(screen.queryByText('Vet visit')).toBeNull();
     screen.unmount();
     render(<VisitDetailBody {...bodyProps({ ...D2, visit: withoutChannel(D2.visit) })} />);
-    const absentTree = JSON.stringify(tree());
-    expect(onTree).not.toEqual(absentTree);
-    expect(offTree).toEqual(absentTree);
+    expect(contactTree).not.toEqual(JSON.stringify(tree()));
   });
 
   it('an unknown channel (never learned by this phone) reads as shipped, never as a contact', () => {
-    render(<VisitDetailBody {...bodyProps(detail(visitRecord({ channel: null })))} contactsOn />);
+    render(<VisitDetailBody {...bodyProps(detail(visitRecord({ channel: null })))} />);
     expect(screen.queryByText('Nyx’s call')).toBeNull();
     expect(screen.getByText('Ear, still shaking her head')).toBeTruthy();
   });

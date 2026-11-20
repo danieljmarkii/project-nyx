@@ -19,6 +19,7 @@
 import { supabase } from './supabase';
 import { functionsErrorStatus } from './syncQueue';
 import { formatVisitDate, type VetVisitsHome } from './vetVisits';
+import { recordNoun } from './vetContacts';
 import type { SavedReport } from './reportLibrary';
 
 export type VisitLinkTarget = { kind: 'visit' | 'appointment'; id: string };
@@ -188,12 +189,16 @@ export function linkOptions(home: VetVisitsHome, now: Date = new Date()): VisitL
     })),
     ...home.visits.map((v) => {
       const date = formatVisitDate(v.visitedAt, now);
+      // A call, text or email is named as itself (CUL-2830), whatever the switch says: "the Nov 9
+      // visit" over a phone consult files a report under an exam that never happened. A clinic
+      // visit and a row of unknown channel keep the shipped words.
+      const noun = recordNoun(v.channel);
       return {
         target: { kind: 'visit' as const, id: v.id },
-        primary: `${date} visit`,
+        primary: `${date} ${noun}`,
         // The reason, when typed, is the title; the stand-in title only repeats the date.
         secondary: [v.title.startsWith('Visit on ') ? '' : v.title, v.where].filter((p) => p.length > 0).join(' · '),
-        phrase: `the ${date} visit`,
+        phrase: `the ${date} ${noun}`,
       };
     }),
   ];

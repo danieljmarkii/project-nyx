@@ -21,7 +21,6 @@ import { visitCourseHref, visitTrialHref } from '../../lib/visitPlanDoors';
 import { captureVisitResults, type VisitResultsSource } from '../../lib/visitPaperwork';
 import { isDocumentPickerAvailable } from '../../lib/vetDocumentCapture';
 import { visitToPlainText } from '../../lib/visitShareText';
-import { useVetContactsOn } from '../../hooks/useVetContacts';
 import { isRemoteChannel, recordNoun } from '../../lib/vetContacts';
 import { channelOf } from '../../lib/vetVisits';
 
@@ -103,9 +102,9 @@ export default function VetVisitScreen() {
   // back to an anonymous label, and correct-but-anonymous beats confidently wrong.
   const petName = resolveRecordPetName(pets, detail?.visit.pet_id);
   // Vet contacts (CUL-2749 PR-06): what the record is, in one word, for the header's labels.
-  // "visit" for a clinic visit, an unknown channel, and every record while the feature is off.
-  const contactsOn = useVetContactsOn();
-  const noun = contactsOn ? recordNoun(channelOf(detail?.visit.channel)) : 'visit';
+  // "visit" for a clinic visit and an unknown channel. The RECORD decides (CUL-2830): a call
+  // says "call" whatever this phone's switch says, so no surface here reads the switch.
+  const noun = recordNoun(channelOf(detail?.visit.channel));
 
   // *Results arrived?* (CUL-2759): the paperwork capture, filed under this visit and typed as
   // results at insert. A refusal or a failure is said, never swallowed; a save re-reads the
@@ -164,11 +163,13 @@ export default function VetVisitScreen() {
   }
 
   // An unknown channel (a row this phone never learned) keeps the shipped *Edit*.
-  const editsAsContact = contactsOn && detail !== null && isRemoteChannel(channelOf(detail.visit.channel));
+  // A call edits as a call on every phone (CUL-2830): the visit's after screen would offer an
+  // exam's plan over a phone consult.
+  const editsAsContact = detail !== null && isRemoteChannel(channelOf(detail.visit.channel));
 
   async function handleShare(read: VetVisitDetail) {
     try {
-      const channel = contactsOn ? channelOf(read.visit.channel) : null;
+      const channel = channelOf(read.visit.channel);
       await Share.share({ message: visitToPlainText(read, petName, new Date(), isRemoteChannel(channel) ? channel : null) });
     } catch (err) {
       console.warn('[vet-visit] share failed:', err);
@@ -245,7 +246,6 @@ export default function VetVisitScreen() {
             onResultsArrived={(source) => void handleResultsArrived(source)}
             pdfAvailable={pdfAvailable}
             resultsBusy={resultsBusy}
-            contactsOn={contactsOn}
           />
           <VisitReports
             petId={detail.visit.pet_id}

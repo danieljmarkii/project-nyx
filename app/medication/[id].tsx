@@ -55,6 +55,7 @@ import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { useVetContactsOn } from '../../hooks/useVetContacts';
 import { readCourseVisitSources, type CourseVisitSource } from '../../lib/vetVisits';
 import { CourseSourceRow } from '../../components/vetvisits/CourseSourceRow';
+import { showsChannel } from '../../lib/vetContacts';
 import { useSyncStore } from '../../store/syncStore';
 import {
   uploadPhoto, compressForUpload, getSignedUrl,
@@ -198,11 +199,8 @@ export default function MedicationDetailScreen() {
         if (cancelled || courses == null) return;
         const ofDrug = courses.filter((c) => c.medicationItemId === id);
         setPastCourses(ofDrug.filter((c) => !c.isActive));
-        if (!contactsOn) {
-          setCurrentCourses([]);
-          setSources(new Map());
-          return;
-        }
+        // Read whatever the switch says (CUL-2830): a course started after a call names the
+        // call on every phone. `sourceOf` keeps a clinic source off while the switch is off.
         setCurrentCourses(ofDrug.filter((c) => c.isActive));
         // A failed source read leaves the rows off; the course itself still renders.
         const read = await readCourseVisitSources(
@@ -215,7 +213,7 @@ export default function MedicationDetailScreen() {
       })
       .catch((e) => { console.error('[medication-detail] course history load failed:', e); });
     return () => { cancelled = true; };
-  }, [id, activePet?.id, hydrationTick, contactsOn]);
+  }, [id, activePet?.id, hydrationTick]);
 
   // The courses are read for the active pet, so that pet is the record's (C-9): its name is
   // resolved from the record's id, never from the store's active name.
@@ -224,7 +222,10 @@ export default function MedicationDetailScreen() {
   // claim an exam the record may not hold (PR-06's product review).
   const sourceOf = (c: MedicationCourse): KnownSource | null => {
     const source = c.regimenId ? sources.get(c.regimenId) ?? null : null;
-    return source && source.channel !== null ? { ...source, channel: source.channel } : null;
+    if (!source || source.channel === null) return null;
+    // The record decides (CUL-2830): a call, text or email source draws its row on every phone;
+    // a clinic source only while the switch is on, so a phone with no remote rows is unchanged.
+    return showsChannel(contactsOn, source.channel) ? { ...source, channel: source.channel } : null;
   };
   const openSource = (source: CourseVisitSource) => router.push(`/vet-visits/${source.visitId}`);
   const currentWithSource = currentCourses.filter((c) => sourceOf(c) !== null);

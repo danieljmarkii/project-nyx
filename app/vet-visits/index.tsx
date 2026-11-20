@@ -11,7 +11,7 @@ import { AppointmentActions } from '../../components/vetvisits/AppointmentAction
 import { VisitRow } from '../../components/vetvisits/VisitRow';
 import { useEn14 } from '../../hooks/useFollowUps';
 import { useVetContactsOn } from '../../hooks/useVetContacts';
-import { isRemoteChannel } from '../../lib/vetContacts';
+import { isRemoteChannel, showsChannel } from '../../lib/vetContacts';
 import { callListRowOf, readCallsForPet, type CallView } from '../../lib/vetCallReads';
 import { petPronouns } from '../../lib/utils';
 import { VetVisitsEmptyState } from '../../components/vetvisits/VetVisitsEmptyState';
@@ -576,7 +576,9 @@ export default function VetVisitsScreen() {
                     // record, so it sits here in Past with its tag and "No exam". The Calls
                     // section below is a different record (the "I've called" answer) and is
                     // untouched.
-                    showChannel={contactsOn}
+                    // The record decides (CUL-2830): a call keeps its tag on a phone whose
+                    // switch is off; a clinic visit keeps the shipped row there.
+                    showChannel={showsChannel(contactsOn, row.channel)}
                     onPress={() => router.push(`/vet-visits/${row.id}`)}
                   />
                 ))}

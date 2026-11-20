@@ -158,6 +158,28 @@ describe('linkOptions and the words', () => {
     // The stand-in title only repeats the date, so it is not shown twice.
     expect(o[4].secondary).toBe('');
   });
+  // CUL-2830: the picker reads a row's own channel, whatever the switch says. "the Nov 9 visit"
+  // over a phone consult would file a report under an exam that never happened.
+  it('a call, texts and an email are named as themselves; an unknown channel keeps "visit"', () => {
+    const v = HOME.visits[1];
+    const home: VetVisitsHome = {
+      next: null, later: [], awaiting: [],
+      visits: [
+        { ...v, id: 'p', visitedAt: '2026-11-09', channel: 'phone' },
+        { ...v, id: 't', visitedAt: '2026-11-09', channel: 'text' },
+        { ...v, id: 'e', visitedAt: '2026-11-09', channel: 'email' },
+        { ...v, id: 'u', visitedAt: '2026-11-09', channel: undefined },
+      ],
+    };
+    const o = linkOptions(home, new Date(2026, 10, 20));
+    expect(o.map((x) => [x.primary, x.phrase])).toEqual([
+      ['Nov 9 call', 'the Nov 9 call'],
+      ['Nov 9 texts', 'the Nov 9 texts'],
+      ['Nov 9 email', 'the Nov 9 email'],
+      ['Nov 9 visit', 'the Nov 9 visit'],
+    ]);
+    expect(linkedLine({ kind: 'visit', id: 'p' }, o)).toBe('For the Nov 9 call');
+  });
   it('the report line says where it is filed, and never "not filed" for a link the list lost', () => {
     const o = linkOptions(HOME);
     expect(linkedLine({ kind: 'visit', id: VISIT }, o)).toBe('For the Oct 30 visit');
