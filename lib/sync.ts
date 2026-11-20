@@ -1887,6 +1887,23 @@ export function visitPushColumns(
 }
 
 /**
+ * CUL-2843: are the visit dirty flags being written? True only when all three triggers exist
+ * (installVisitDirtyFlags, lib/db.ts); a failed read answers false, the whole-row push.
+ */
+async function visitDirtyFlagsLive(db: Db): Promise<boolean> {
+  try {
+    const row = await db.getFirstAsync<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'trigger' AND name IN
+         ('trg_vet_visits_dirty_insert', 'trg_vet_visits_dirty_channel', 'trg_vet_visits_dirty_deleted')`,
+    );
+    return (row?.n ?? 0) === 3;
+  } catch (e) {
+    console.warn('[sync] could not read the visit dirty-flag triggers (pushing whole rows):', e);
+    return false;
+  }
+}
+
+/**
  * CUL-2843: after a visit push lands, clear its "this phone changed it" flags on the values sent,
  * and copy the server's channel / delete back over any the push left out. The copy is matched on
  * the pushed version and `synced = 1`, like markSynced (C-23): a row edited mid-push is still
@@ -1913,15 +1930,19 @@ async function settleLandedVisits(
       // the server now holds; a later change of its own has re-set the flag through the trigger.
       if (sent.channel) {
         await db.runAsync(
+          // The time as an INSTANT, like the trigger (pass 2): a re-spelled `.000Z` of the
+          // `+00:00` that landed is the same value, and a text match would keep the flag.
           `UPDATE vet_visits SET channel_dirty = 0
-            WHERE id = ? AND channel IS ? AND contacted_at IS ?`,
-          [v.id, v.channel, v.contacted_at],
+            WHERE id = ? AND channel IS ?
+              AND (contacted_at IS ? OR julianday(contacted_at) = julianday(?))`,
+          [v.id, v.channel, v.contacted_at, v.contacted_at],
         );
       }
       if (sent.deleted) {
         await db.runAsync(
-          `UPDATE vet_visits SET deleted_dirty = 0 WHERE id = ? AND deleted_at IS ?`,
-          [v.id, v.deleted_at],
+          `UPDATE vet_visits SET deleted_dirty = 0
+            WHERE id = ? AND (deleted_at IS ? OR julianday(deleted_at) = julianday(?))`,
+          [v.id, v.deleted_at, v.deleted_at],
         );
       }
       const was = prior?.get(v.id);
@@ -1969,8 +1990,15 @@ async function drainVetVisitsQueue(): Promise<void> {
     // says which rows are new on the server, and so must carry every column.
     const prior = await readServerVisitCareFacts(unsyncedVisits.map((v) => v.id));
     type QueuedVisit = (typeof unsyncedVisits)[number];
+    // Adversarial pass 2: a flag nothing writes reads 0, which would mean "unchanged" and drop
+    // this phone's own correction. So the flags count only while every trigger that writes them
+    // is present; otherwise every row goes whole, as before ruling A.
+    const flagsLive = await visitDirtyFlagsLive(db);
     const sends = new Map<string, VisitPushColumns>(
-      unsyncedVisits.map((v) => [v.id, visitPushColumns(v, prior)]),
+      unsyncedVisits.map((v) => [
+        v.id,
+        flagsLive ? visitPushColumns(v, prior) : { channel: v.channel !== null, deleted: true },
+      ]),
     );
     // Built from the same rows, so a miss is a bug; it throws rather than send a guessed shape.
     const sendsFor = (v: { id: string }): VisitPushColumns => {

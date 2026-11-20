@@ -58,7 +58,8 @@ export function getDb(): SQLite.SQLiteDatabase {
  * is wholly this phone's. An update counts only when the value actually moved (IS NOT, null-safe),
  * so a notes edit that re-saves the same channel claims nothing. The time is compared as an
  * INSTANT (C-40): a pulled `+00:00` re-saved by the Edit sheet as `.000Z` is the same time, and
- * the text compare marked it changed, so a stale phone sent its old channel (adversarial pass 1). Here, not in lib/localSchema.ts,
+ * the text compare marked it changed, so a stale phone sent its old channel (adversarial pass 1).
+ * Text that is not an instant falls back to the text compare, so it counts as changed (louder). Here, not in lib/localSchema.ts,
  * because that module sits in Home's import closure (guards/homeWrites) and this is the write
  * layer. Installed by `installVisitDirtyFlags` (below), never executed bare. `IF NOT EXISTS` never
  * replaces a body: a later change to a condition must DROP the old trigger first.
@@ -74,7 +75,8 @@ export const VET_VISIT_DIRTY_TRIGGERS_SQL = `
     AFTER UPDATE OF channel, contacted_at ON vet_visits
     WHEN NEW.synced = 0
       AND (OLD.channel IS NOT NEW.channel
-        OR julianday(OLD.contacted_at) IS NOT julianday(NEW.contacted_at))
+        OR julianday(OLD.contacted_at) IS NOT julianday(NEW.contacted_at)
+        OR (julianday(NEW.contacted_at) IS NULL AND OLD.contacted_at IS NOT NEW.contacted_at))
   BEGIN
     UPDATE vet_visits SET channel_dirty = 1 WHERE id = NEW.id;
   END;
@@ -95,8 +97,9 @@ export const VET_VISIT_DIRTY_TRIGGERS_SQL = `
  * between the two retries both on the next launch. On a fresh install the table is empty and the
  * marking is a no-op. Only when BOTH columns exist: SQLite resolves a trigger body when it fires,
  * so a trigger over a column whose ALTER failed would break every visit write ("no such column").
- * Without the columns the push reads the flags as unset, which `visitPushColumns` treats as dirty,
- * the whole-row push it replaced. Never throws: a failure here must not stop the app opening.
+ * Whatever fails here, the drain pushes whole rows until all three triggers are present
+ * (`visitDirtyFlagsLive`, lib/sync.ts), the push it replaced: a flag nothing writes must never
+ * read as "unchanged". Never throws: a failure here must not stop the app opening.
  */
 export async function installVisitDirtyFlags(database: SQLite.SQLiteDatabase): Promise<void> {
   try {
@@ -112,12 +115,18 @@ export async function installVisitDirtyFlags(database: SQLite.SQLiteDatabase): P
       `SELECT COUNT(*) AS n FROM sqlite_master
         WHERE type = 'trigger' AND name LIKE 'trg_vet_visits_dirty_%'`,
     );
-    if ((installed?.n ?? 0) === 3) return;
+    const n = installed?.n ?? 0;
+    if (n === 3) return;
     await database.withTransactionAsync(async () => {
-      await database.runAsync(
-        `UPDATE vet_visits SET channel_dirty = 1, deleted_dirty = 1
-          WHERE synced = 0`,
-      );
+      // Only a phone that never had ANY of them was never covered. A partial set (a future change
+      // that drops one to rewrite it) re-creates the missing one without re-claiming changes the
+      // surviving triggers have already been tracking (adversarial pass 2).
+      if (n === 0) {
+        await database.runAsync(
+          `UPDATE vet_visits SET channel_dirty = 1, deleted_dirty = 1
+            WHERE synced = 0`,
+        );
+      }
       await database.execAsync(VET_VISIT_DIRTY_TRIGGERS_SQL);
     });
   } catch (e) {

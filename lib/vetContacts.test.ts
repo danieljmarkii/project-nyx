@@ -898,6 +898,71 @@ describe('a stale second phone cannot undo a correction or a delete (CUL-2843)',
     expect(sentRows()[0]).toMatchObject({ channel: 'phone', deleted_at: null });
   });
 
+  const dropTriggers = () => {
+    for (const t of ['trg_vet_visits_dirty_insert', 'trg_vet_visits_dirty_channel', 'trg_vet_visits_dirty_deleted']) {
+      mockLocal.db!.exec(`DROP TRIGGER IF EXISTS ${t}`);
+    }
+  };
+
+  it('triggers missing with both columns present: a correction still travels, never copied back (pass 2, T)', async () => {
+    dropTriggers(); // the install threw on this launch
+    staleOnB('v11', {});
+    await updateVisitDetails('v11', { channel: 'phone' });
+    expect(flags('v11').channel_dirty).toBe(0); // nothing writes the flag
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).toMatchObject({ channel: 'phone' });
+    expect(mockServerTable('vet_visits').get('v11')).toMatchObject({ channel: 'phone' });
+    expect(localRow('v11')).toMatchObject({ channel: 'phone', synced: 1 });
+  });
+
+  it('a half-failed upgrade (one flag column) pushes whole rows: the correction travels (pass 2, H)', async () => {
+    dropTriggers();
+    mockLocal.db!.exec('ALTER TABLE vet_visits DROP COLUMN deleted_dirty');
+    await installVisitDirtyFlags(getDb()); // refuses: a column is missing
+    staleOnB('v12', {});
+    await updateVisitDetails('v12', { channel: 'phone' });
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get('v12')).toMatchObject({ channel: 'phone' });
+    expect(localRow('v12')).toMatchObject({ channel: 'phone' });
+  });
+
+  it('a partial trigger set is completed without re-claiming the queue (pass 2 residual)', async () => {
+    staleOnB('v13', {});
+    await updateVisitDetails('v13', { notes: 'n' }); // queued, nothing of this phone's to claim
+    mockLocal.db!.exec('DROP TRIGGER trg_vet_visits_dirty_deleted');
+    await installVisitDirtyFlags(getDb());
+    expect(flags('v13')).toEqual({ channel_dirty: 0, deleted_dirty: 0 });
+    expect(mockLocal.db!.prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'trigger'
+      AND name LIKE 'trg_vet_visits_dirty_%'`).get()).toEqual({ n: 3 });
+  });
+
+  it('a time re-spelled while the correction is in flight still spends the flag (pass 2, S; C-40)', async () => {
+    // Pulled as a call with PostgREST's `+00:00`.
+    seedVisit({ id: 'v14', visited_at: '2026-11-09', channel: 'phone', contacted_at: '2026-11-09T21:40:00+00:00', synced: 1 });
+    mockServerTable('vet_visits').set('v14', {
+      ...localRow('v14'), synced: undefined, channel_dirty: undefined, deleted_dirty: undefined,
+    });
+    await updateVisitDetails('v14', { channel: 'in_clinic' }); // the time keeps its spelling
+    mockServer.beforeLand = () => {
+      mockServer.beforeLand = null;
+      // The Edit sheet saves the clinic and hands the stored time back, which updateVisitDetails
+      // writes respelled `.000Z` (the hook is synchronous, so its statement is written here).
+      mockLocal.db!.prepare(
+        `UPDATE vet_visits SET clinic_name = 'Riverside', contacted_at = '2026-11-09T21:40:00.000Z',
+           updated_at = '2026-11-20T08:00:00.000Z', synced = 0, sync_attempts = 0, sync_error = NULL
+         WHERE id = 'v14'`,
+      ).run();
+    };
+    await syncPendingVetVisits();
+    expect(localRow('v14')).toMatchObject({ contacted_at: '2026-11-09T21:40:00.000Z', synced: 0, channel_dirty: 0 });
+    // Another phone makes it a call again; this phone's next push must not send the exam back.
+    mockServerTable('vet_visits').set('v14', { ...mockServerTable('vet_visits').get('v14'), channel: 'phone' });
+    mockServer.upserts.length = 0;
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).not.toHaveProperty('channel');
+    expect(mockServerTable('vet_visits').get('v14')).toMatchObject({ channel: 'phone', clinic_name: 'Riverside' });
+  });
+
   // Refactor-safety, green before and after by design: for one phone the server row is the whole
   // local row, exactly what the whole-row push produced. The insert carries every column (new on
   // the server), and the edit after it leaves out only columns the server already holds unchanged.
