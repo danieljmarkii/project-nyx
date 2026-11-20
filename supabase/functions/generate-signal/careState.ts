@@ -1257,17 +1257,35 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
       const onsetIso = chronicOnset.get(sign) ?? null
       const onsetMs = onsetIso === null ? NaN : Date.parse(onsetIso)
       const onsetDay = Number.isFinite(onsetMs) ? localDayIndex(onsetMs, tz) : null
-      // CUL-2841 (adversarial pass 1, B1): a visit answer about a day on or after a PASSED booking,
-      // refused because its visit was not an exam (a call, text or email, or deleted or missing),
-      // says how that visit went: no exam. The booking never stands in for it with "how it went
-      // isn't recorded yet". Retracted or not: the visit's own channel is the evidence. A booking
-      // still ahead is untouched, and an undo on an exam answer is not refused, so it is untouched.
-      const contactAfter = booked !== null && booked.fact.passed && args.record.acknowledgements.some((a) => {
+      // CUL-2841 (adversarial passes 1 and 2): a visit answer about this course, refused because its
+      // visit was not an exam (a call, text or email, or deleted or missing), keeps the concern off
+      // every booked-visit quiet. Before the correction it stood as an answer, and on main it was
+      // one; a booking must never make the corrected record QUIETER than that answer was (pass 2:
+      // a doubling's "Back because" became "A vet visit is booked"). Retracted or not, the visit's
+      // own channel is the evidence. Bound to the course by its onset with a day's slack, so an
+      // unknown zone (UTC days) cannot slip it; unknown onset counts every refused answer. Louder
+      // by design: "phoned, then booked an exam" keeps its ask beside the date.
+      const refusedHere = args.record.acknowledgements.some((a) => {
         if (a.sign !== sign || a.retracts || answerStandsOnAnExam(a)) return false
         const d = localDayIndexOf(a.anchorOn, tz)
-        return d !== null && d >= booked.day
+        return onsetDay === null || d === null || d >= onsetDay - 1
       })
-      const covers = booked !== null && !contactAfter && (!booked.fact.passed || (onsetDay !== null && booked.day >= onsetDay))
+      if (refusedHere && carried !== null) {
+        // The re-raise the refused answer was carrying stays: the latch's own back line, the lane's ask.
+        const back = carried.dated && carried.day <= ix.today ? `Back since ${formatDay(carried.day, ix.today)}.` : 'Still back.'
+        const again: CareStateFact = {
+          state: 'raised_again', ackId: null, source: null, anchorOn: null, reference: null, reason: carried.reason ?? p?.reason ?? 'rate', recheckOn: null,
+          text: [back, LANE_TOKEN].join(' '),
+          backLine: back,
+          lapsed: lapsedList,
+          raisedAgainAt: new Date(carried.ms).toISOString(),
+          raisedAgainOn: dayKeyFromIndex(carried.day),
+          ...(upcoming ? { bookedVisit: upcoming.fact } : {}),
+        }
+        bySign.set(sign, again)
+        return again
+      }
+      const covers = booked !== null && !refusedHere && (!booked.fact.passed || (onsetDay !== null && booked.day >= onsetDay))
       // PM ruling A (2026-11-07, adversarial pass 1 #3): ONE quiet window per course. Once a visit
       // in this course has passed its week with no answer, a later booking never quiets it again:
       // the ask stands until the owner says how it went. Unknown onset: any spent window counts.
@@ -1280,7 +1298,11 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
         bySign.set(sign, quiet)
         return quiet
       }
-      const raised: CareStateFact = { state: 'raised', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null, text: null, lapsed: lapsedList, ...keep }
+      const raised: CareStateFact = {
+        state: 'raised', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null, text: null, lapsed: lapsedList, ...keep,
+        // CUL-2841: a refused visit answer skipped the booked quiet; the ask stands with the date beside it.
+        ...(refusedHere && upcoming ? { bookedVisit: upcoming.fact } : {}),
+      }
       bySign.set(sign, raised)
       return raised
     }
