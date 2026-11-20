@@ -14,6 +14,7 @@ import {
   careStateOf,
   EMPTY_CARE_RECORD,
   EN9_CARE_STATE_STEP,
+  PRIOR_ROW_WRITE_CEILING_MS,
   isPossibleRecheckPhantom,
   priorCareCarry,
   rankWatchedLast,
@@ -529,6 +530,23 @@ Deno.test('D4: an answer lapses when its concern left the set, and stays lapsed 
   assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a, ack({ id: 'b', daysAgo: 0, createdAt: at(0, 13) })], priorFindings: back, priorGeneratedAtMs: NOW_MS - DAY }).state, 'with_vet')
   // The row that held the concern, read, lapses nothing (a MISSING row is CUL-1667's, below).
   assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a] }).state, 'with_vet')
+})
+
+Deno.test('CUL-2844: an answer given while the build that dropped its concern was running lapses', () => {
+  // Build 1 starts reading at T (its stamp) and drops the vomiting concern; its row lands up to the
+  // function's wall-clock limit later. The owner answers at T + 30 s on the card still showing.
+  const T = NOW_MS - DAY
+  const gone = [{ rank: 0, finding: { type: 'timeofday_clustering', priorityClass: 'insight', symptomType: 'vomit' } }]
+  const during = ack({ id: 'during', daysAgo: 1, createdAt: new Date(T + 30_000).toISOString() })
+  const s = stateOf({ symptoms: STABLE, acks: [during], priorFindings: gone, priorGeneratedAtMs: T })
+  assertEquals([s.state, s.lapsed], ['raised', ['during']])
+  // At the edge of the ceiling it still lapses; past it the row was already written, so it stands.
+  const edge = ack({ id: 'edge', daysAgo: 1, createdAt: new Date(T + PRIOR_ROW_WRITE_CEILING_MS - 1_000).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [edge], priorFindings: gone, priorGeneratedAtMs: T }).lapsed, ['edge'])
+  const after = ack({ id: 'after', daysAgo: 1, createdAt: new Date(T + PRIOR_ROW_WRITE_CEILING_MS + 60_000).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [after], priorFindings: gone, priorGeneratedAtMs: T }).lapsed, [])
+  // The ceiling covers the Edge Function's wall-clock limit (400 s on the paid plan).
+  assertStrictEquals(PRIOR_ROW_WRITE_CEILING_MS >= 400_000, true)
 })
 
 Deno.test('CUL-1667: R1 → R2 lost write → R3: a missing prior row beside an answer is continuity unknown', () => {

@@ -234,6 +234,14 @@ export interface CareRecord {
   history: CareHistory | null
 }
 
+// CUL-2844: a Signal row's `generated_at` is the instant its build STARTED reading, and the row
+// was written up to the function's wall-clock limit later (150 s free, 400 s paid). The §3.2 lapse
+// asks whether an answer came before the row that dropped its concern, so it measures against the
+// latest that row could have been WRITTEN: an answer given while the build ran lapses (the louder
+// side: the owner is asked once more). Its own constant, not the client's GENERATION_LAG_CEILING_MS
+// (lib/signalTrialAnchor.ts), which answers a different question at the same ten minutes (C-34).
+export const PRIOR_ROW_WRITE_CEILING_MS = 10 * 60_000
+
 export const EMPTY_CARE_RECORD: CareRecord = { acknowledgements: [], appointments: [], lethargyAt: [], history: null }
 
 /** How far back the shell will read for a reference: an answer anchored earlier than this lapses. */
@@ -1211,7 +1219,8 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     const p = prior.get(sign) ?? null
     // §3.2: an answer lapses when its concern leaves the set (adversarial D4). The previous row
     // is the record of that: written after the answer and holding no concern on this sign, it
-    // lapses every answer written before it. Lapses are carried, so they outlive that one row.
+    // lapses every answer written before it (its write bounded by PRIOR_ROW_WRITE_CEILING_MS past
+    // its stamp, CUL-2844). Lapses are carried, so they outlive that one row.
     const lapsed = new Set<string>(p?.lapsed ?? [])
     // A previous row that held the concern WITHOUT a care fact did not run this step (an
     // incomplete read, a failed flag or logging read, the flag-off engine), so it carried no lapse
@@ -1221,7 +1230,7 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     // `readPriorCare` reads as the care fact it stands in for, so this does not fire on it.
     if (priorSigns !== null && priorGen !== null && (!priorSigns.has(sign) || !prior.has(sign))) {
       for (const a of args.record.acknowledgements) {
-        if (a.sign === sign && Date.parse(a.createdAt) < priorGen) lapsed.add(a.id)
+        if (a.sign === sign && Date.parse(a.createdAt) < priorGen + PRIOR_ROW_WRITE_CEILING_MS) lapsed.add(a.id)
       }
     }
     // A previous row the shell could not read (CUL-1663, ruled expire 2026-10-08) is the same
