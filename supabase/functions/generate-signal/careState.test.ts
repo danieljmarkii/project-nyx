@@ -547,10 +547,20 @@ Deno.test('CUL-2847: an answer is timed by its tap, not its sync, against the ro
   // drop's day, so it lapses too.
   const visit = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(1), createdAt: new Date(T + 15 * 60_000).toISOString() })
   assertEquals(stateOf({ symptoms: STABLE, acks: [visit], priorFindings: gone, priorGeneratedAtMs: T }).lapsed, ['v'])
-  // A visit on a later day than the drop is vet contact after the concern left: it stands.
+  // A visit two days after the drop is vet contact after the concern left: it stands.
   const after = ack({ id: 'v2', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(1), createdAt: at(0, 13) })
   const s = stateOf({ symptoms: STABLE, acks: [after], priorFindings: gone, priorGeneratedAtMs: NOW_MS - 3 * DAY })
   assertEquals([s.state, s.lapsed], ['with_vet', []])
+  // A phone a day ahead of the profile's zone (Sydney against UTC) anchors the visit the day after
+  // the drop's UTC day: one day of slack lapses it (adversarial pass 1), louder for a genuine one.
+  const east = ack({ id: 'e', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(1), createdAt: at(0, 13) })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [east], priorFindings: gone, priorGeneratedAtMs: Date.UTC(2026, 8, 28, 22) }).lapsed, ['e'])
+  // Q2 (adversarial pass 1): the previous row held the concern but skipped the step, because this
+  // phone's push of the stale answer had not landed. That row's card offered no "My vet knows", so
+  // the answer was tapped on an older one: it lapses.
+  const skipped = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }]
+  const pending = ack({ id: 'p', daysAgo: 0, anchorOn: dayOf(0), createdAt: new Date(T + 20 * 60_000).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [pending], priorFindings: skipped, priorGeneratedAtMs: T + 16 * 60_000 }).lapsed, ['p'])
   // The re-raised concern answered on its own card (the prior row holds it) still stands.
   const back = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised', ackId: null, lapsed: ['late'] } } }]
   const fresh = ack({ id: 'fresh', daysAgo: 0, createdAt: at(0, 20) })
