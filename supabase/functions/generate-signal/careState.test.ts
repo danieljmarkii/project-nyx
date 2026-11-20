@@ -1251,3 +1251,27 @@ Deno.test('CUL-2841: a corrected call never covers an older answer\'s re-raise (
   const r = stateOf({ symptoms, acks: [a, callK, oldVisit] })
   assertEquals([r.state, r.ackId], ['raised_again', 'w'])
 })
+
+Deno.test('CUL-2841 adv pass 1 B1: a passed booking never stands in for a visit answer refused as not an exam', () => {
+  const passed = { appointments: [apptAt({ id: 'sep-27', daysAhead: -3 })] }
+  const answer = (visit: AckFact['visit'], over: Partial<AckFact> = {}) =>
+    ack({ id: 'v', daysAgo: 2, source: 'visit_answer', anchorOn: dayOf(3), visit, ...over })
+  const call = { channel: 'phone', deleted: false }
+  // Control: on an exam it is an answer; with no answer at all the passed booking quiets as designed.
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [answer({ channel: 'in_clinic', deleted: false })], record: passed }).state, 'with_vet')
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: passed }).state, 'visit_booked')
+  // Corrected to a call (or deleted, or missing): the ask returns, never "how it went isn't recorded".
+  for (const visit of [call, { channel: 'in_clinic', deleted: true }, null]) {
+    const s = stateOf({ symptoms: STABLE, acks: [answer(visit)], record: passed })
+    assertEquals([s.state, s.text], ['raised', null])
+  }
+  // The phone retracted it when the channel changed: the visit is still a call, so the same.
+  const undo: AckFact = { ...ack({ id: 'u', daysAgo: 1 }), retracts: 'v' }
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [answer(call), undo], record: passed }).state, 'raised')
+  // An undo on an EXAM answer is not a contact: the passed booking quiets as before.
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [answer({ channel: 'in_clinic', deleted: false }), undo], record: passed }).state, 'visit_booked')
+  // A call about a day BEFORE the booking says nothing about how the booked visit went.
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [answer(call, { anchorOn: dayOf(5), createdAt: at(4, 19) })], record: passed }).state, 'visit_booked')
+  // A booking still ahead quiets as designed (the call came before it).
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [answer(call)], record: { appointments: [apptAt({ daysAhead: 7 })] } }).state, 'visit_booked')
+})

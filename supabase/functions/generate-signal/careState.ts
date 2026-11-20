@@ -1257,7 +1257,17 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
       const onsetIso = chronicOnset.get(sign) ?? null
       const onsetMs = onsetIso === null ? NaN : Date.parse(onsetIso)
       const onsetDay = Number.isFinite(onsetMs) ? localDayIndex(onsetMs, tz) : null
-      const covers = booked !== null && (!booked.fact.passed || (onsetDay !== null && booked.day >= onsetDay))
+      // CUL-2841 (adversarial pass 1, B1): a visit answer about a day on or after a PASSED booking,
+      // refused because its visit was not an exam (a call, text or email, or deleted or missing),
+      // says how that visit went: no exam. The booking never stands in for it with "how it went
+      // isn't recorded yet". Retracted or not: the visit's own channel is the evidence. A booking
+      // still ahead is untouched, and an undo on an exam answer is not refused, so it is untouched.
+      const contactAfter = booked !== null && booked.fact.passed && args.record.acknowledgements.some((a) => {
+        if (a.sign !== sign || a.retracts || answerStandsOnAnExam(a)) return false
+        const d = localDayIndexOf(a.anchorOn, tz)
+        return d !== null && d >= booked.day
+      })
+      const covers = booked !== null && !contactAfter && (!booked.fact.passed || (onsetDay !== null && booked.day >= onsetDay))
       // PM ruling A (2026-11-07, adversarial pass 1 #3): ONE quiet window per course. Once a visit
       // in this course has passed its week with no answer, a later booking never quiets it again:
       // the ask stands until the owner says how it went. Unknown onset: any spent window counts.
