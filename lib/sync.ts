@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { getDb, getWatermark, setWatermark } from './db';
-import { markSignalUnseenIfAbsent } from './signalUnseen';
+import { markSignalUnseen, markSignalUnseenIfAbsent } from './signalUnseen';
 import { markRecordHydrated } from './coldStart';
 import { isUploadInFlight, markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
@@ -1241,12 +1241,22 @@ export function syncPendingMeals(): Promise<void> {
  * kill between the two leaves a landed row nobody owes a rebuild for. Best effort: a failure
  * leaves the time checks as the backstop.
  */
-async function oweSignalBeforePush(petIds: readonly string[], table: string): Promise<void> {
+async function oweSignalBeforePush(petIds: readonly string[], table: string): Promise<string[]> {
   try {
-    await markSignalUnseenIfAbsent(petIds);
+    return await markSignalUnseenIfAbsent(petIds);
   } catch (e) {
     console.warn(`[sync] could not record the owed Signal rebuild before the ${table} push:`, e);
+    return [];
   }
+}
+
+/**
+ * CUL-2846 pass 1 (B3): rows that landed for a pet nothing had armed a rebuild for (the write's
+ * own mark was lost to a kill, so `oweSignalBeforePush` owed it here). Nudge Home to re-read, so
+ * its backstop finds the debt now rather than at the next focus.
+ */
+function nudgeSignalForNewlyOwed(newlyOwed: readonly string[], landedPets: readonly string[]): void {
+  if (newlyOwed.some((p) => landedPets.includes(p))) useSyncStore.getState().bumpSignalTick();
 }
 
 async function drainMealsQueue(): Promise<void> {
@@ -1302,8 +1312,8 @@ async function drainMealsQueue(): Promise<void> {
   await presyncFoodItems(db, session.user.id, foodIds, 'meals');
 
   const childCtx = await childPushContext(db, 'meals', unsyncedMeals, mark);
-  await oweSignalBeforePush(unsyncedMeals.map((m) => m.pet_id), 'meals');
-  await pushRows(db, 'meals', unsyncedMeals, (m) => ({
+  const mealsNewlyOwed = await oweSignalBeforePush(unsyncedMeals.map((m) => m.pet_id), 'meals');
+  const landedMeals = await pushRows(db, 'meals', unsyncedMeals, (m) => ({
     id: m.id,
     event_id: m.event_id,
     pet_id: m.pet_id,
@@ -1324,6 +1334,8 @@ async function drainMealsQueue(): Promise<void> {
     // Migration 105: NULL = one food, 2+ = a mix (whose food_item_id is NULL, T2).
     component_count: m.component_count ?? null,
   }), childCtx);
+  const mealIds = new Set(landedMeals);
+  nudgeSignalForNewlyOwed(mealsNewlyOwed, unsyncedMeals.filter((m) => mealIds.has(m.id)).map((m) => m.pet_id));
 
   await drainMealComponents(db, session.user.id);
 }
@@ -1627,7 +1639,7 @@ async function drainEventsQueue(): Promise<void> {
 
   if (unsyncedEvents.length === 0) return;
 
-  await oweSignalBeforePush(unsyncedEvents.map((e) => e.pet_id), 'events');
+  const eventsNewlyOwed = await oweSignalBeforePush(unsyncedEvents.map((e) => e.pet_id), 'events');
   const landedEvents = await pushRows(db, 'events', unsyncedEvents, (e) => ({
     id: e.id,
     pet_id: e.pet_id,
@@ -1647,6 +1659,8 @@ async function drainEventsQueue(): Promise<void> {
     // B-289 — capture-surface provenance (see the meals payload note).
     logged_via: e.logged_via ?? 'app',
   }));
+  const eventIds = new Set(landedEvents);
+  nudgeSignalForNewlyOwed(eventsNewlyOwed, unsyncedEvents.filter((e) => eventIds.has(e.id)).map((e) => e.pet_id));
 
   // CUL-1986 / CUL-2032 — a log that lands gives its parked children a fresh try: markSynced
   // re-arms them (`rearmChildrenOf`), before the children's drains run in pushAllQueues.
@@ -2058,12 +2072,24 @@ async function drainVetVisitsQueue(): Promise<void> {
     // CUL-2846: a row that may quiet Home once it lands (a contact, an unknown channel, a
     // delete) is owed a rebuild BEFORE it goes, so a kill between the landing and the rebuild
     // armed below still leaves the debt on disk. An exam's own edit owes nothing here.
-    await oweSignalBeforePush(
+    // A FRESH token, never a kept one (adversarial pass 1, B1): no rebuild flushes this queue,
+    // so a rebuild already running under the pet's earlier token could otherwise land this
+    // visit after its read started and settle the debt over a correction it never read.
+    // Not after a sign-out: the outgoing account's pet must not be owed under the next.
+    const owedVisitPets = [...new Set(
       unsyncedVisits
         .filter((v) => v.channel === null || v.channel !== 'in_clinic' || v.deleted_at !== null)
         .map((v) => v.pet_id),
-      'vet_visits',
-    );
+    )];
+    if (epoch === currentSignOutEpoch()) {
+      for (const petId of owedVisitPets) {
+        try {
+          await markSignalUnseen(petId);
+        } catch (e) {
+          console.warn('[sync] could not record the owed Signal rebuild before the vet_visits push:', e);
+        }
+      }
+    }
     const landed = new Set<string>();
     for (const batch of batches.values()) {
       for (const id of await pushRows(db, 'vet_visits', batch, toRemote)) landed.add(id);
@@ -2076,11 +2102,17 @@ async function drainVetVisitsQueue(): Promise<void> {
     await settleLandedVisits(db, unsyncedVisits.filter((v) => landed.has(v.id)), sends, prior);
     const unknown = unsyncedVisits.filter((v) => v.channel === null);
     if (epoch === currentSignOutEpoch()) {
-      rebuildSignalsForBookings(
-        unsyncedVisits
-          .filter((v) => landed.has(v.id) && visitCareFactMoved(v, sendsFor(v), prior))
-          .map((v) => v.pet_id),
-      );
+      const moved = unsyncedVisits
+        .filter((v) => landed.has(v.id) && visitCareFactMoved(v, sendsFor(v), prior))
+        .map((v) => v.pet_id);
+      rebuildSignalsForBookings(moved);
+      // CUL-2846 pass 1 (B1b): a pet owed above whose landing armed nothing here (a retry of a
+      // push that committed but lost its response reads the new channel as the server's
+      // already) still holds a debt; nudge Home to re-read, so its backstop rebuilds now.
+      const landedOwed = unsyncedVisits
+        .filter((v) => landed.has(v.id) && owedVisitPets.includes(v.pet_id) && !moved.includes(v.pet_id))
+        .map((v) => v.pet_id);
+      if (landedOwed.length > 0) useSyncStore.getState().bumpSignalTick();
     }
     // A row that landed without its channel still reads NULL here. Re-arm the full re-pull, so
     // the next hydrate's fill learns it from the server (its updated_at may sit below the

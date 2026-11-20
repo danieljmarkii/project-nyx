@@ -64,12 +64,32 @@ describe('the rebuild owed (CUL-2846)', () => {
     expect(second).not.toBe(first);
   });
 
-  it('a drain keeps the token already owed, and owes one when none is', async () => {
+  it('a drain keeps the token already owed, owes one when none is, and says which it newly owed', async () => {
     await markSignalUnseen('nyx');
     const owed = await readSignalUnseenToken('nyx');
-    await markSignalUnseenIfAbsent(['nyx', 'milo', 'milo', '']);
+    expect(await markSignalUnseenIfAbsent(['nyx', 'milo', 'milo', ''])).toEqual(['milo']);
     expect(await readSignalUnseenToken('nyx')).toBe(owed);
     expect(await readSignalUnseenToken('milo')).not.toBeNull();
+  });
+
+  it('pass 1 (B1): a visit pushed while a rebuild runs under an earlier token stays owed after it settles', async () => {
+    // A meal armed T1; rebuild R captured T1 and started reading. The owner corrects the exam to
+    // a call; the visits drain owes a FRESH token and the visit lands (synced) mid-build. R
+    // succeeds and settles T1 — but its read started before the visit landed.
+    await markSignalUnseen('nyx');
+    const captured = (await readSignalUnseenToken('nyx')) as string;
+    await markSignalUnseen('nyx'); // the visits drain, before its push
+    await clearSignalUnseen('nyx', captured); // nothing unsent any more: the visit landed
+    expect(await readSignalUnseenToken('nyx')).not.toBeNull();
+  });
+
+  it('a row the server refused for good does not hold the debt (it would rebuild every launch)', async () => {
+    await markSignalUnseen('nyx');
+    const captured = (await readSignalUnseenToken('nyx')) as string;
+    unsentEvent('nyx');
+    mockDb.prepare(`UPDATE events SET sync_error = '23514: refused' WHERE pet_id = 'nyx'`).run();
+    await clearSignalUnseen('nyx', captured);
+    expect(await readSignalUnseenToken('nyx')).toBeNull();
   });
 
   it('a rebuild settles only the token it captured: a write made during it stays owed', async () => {
