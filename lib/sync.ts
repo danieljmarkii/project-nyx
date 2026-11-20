@@ -1780,7 +1780,71 @@ function sendWhatWaitedOnVisits(): void {
   syncPendingCareAcknowledgements().catch(queued('care_acknowledgements'));
 }
 
+/** A visit's two facts the server's care read depends on, as the server holds them. */
+type VisitCareFacts = { channel: string | null; deleted: boolean };
+
+/**
+ * CUL-2842: the server's `channel` and `deleted_at` for these visits, read just before the push.
+ * `null` when the read failed: the caller then cannot tell what moved and rebuilds every pet
+ * whose visit landed (the louder of the two). A visit absent from the answer is new on the server.
+ */
+async function readServerVisitCareFacts(ids: readonly string[]): Promise<Map<string, VisitCareFacts> | null> {
+  if (ids.length === 0) return new Map();
+  try {
+    // visit-read: anyContact — what the server holds for the rows about to be pushed, of every channel, to see which moved.
+    const { data, error } = await supabase
+      .from('vet_visits')
+      .select('id, channel, deleted_at')
+      .in('id', [...ids]);
+    if (error || !Array.isArray(data)) {
+      console.warn('[sync] vet_visits care-fact read failed (rebuilding every landed pet):', error?.message);
+      return null;
+    }
+    const facts = new Map<string, VisitCareFacts>();
+    for (const r of data as { id: unknown; channel: unknown; deleted_at: unknown }[]) {
+      facts.set(String(r.id), {
+        channel: typeof r.channel === 'string' ? r.channel : null,
+        // Presence, never the text: the server spells an instant `+00:00`, this phone `.000Z` (C-40).
+        deleted: r.deleted_at !== null && r.deleted_at !== undefined,
+      });
+    }
+    return facts;
+  } catch (e) {
+    console.warn('[sync] vet_visits care-fact read threw (rebuilding every landed pet):', e);
+    return null;
+  }
+}
+
+/**
+ * CUL-2842: did this push move a fact `generate-signal`'s care read depends on? Since PR-09 the
+ * server refuses a "Talked about it" answer whose visit is not an exam or is deleted, but that
+ * refusal only reaches Home when something rebuilds the Signal. The visit is what moved, so the
+ * visit's landing is what rebuilds, and it is judged against the SERVER'S prior row, never this
+ * phone's answers: a visit corrected on a phone that holds none of its answers (written on another
+ * phone, or before a reinstall) still differs from the server, so its pet still rebuilds.
+ *
+ *   · prior read failed → true: what moved is unknown, so rebuild (a spent phrasing call is the
+ *     cost; a "with your vet" left standing over a phone call is the alternative);
+ *   · absent on the server → false: a new visit, and no answer can name it there until it lands;
+ *     the answers that then land arm their own rebuild;
+ *   · a channel this phone does not know (NULL) is omitted from the push, so it cannot move;
+ *   · a call corrected back to an exam rebuilds too: the answer on it counts again.
+ *
+ * A notes, reason or date edit moves neither fact and spends nothing against the owner's AI cap.
+ */
+function visitCareFactMoved(
+  v: { id: string; channel: string | null; deleted_at: string | null },
+  prior: Map<string, VisitCareFacts> | null,
+): boolean {
+  if (prior === null) return true;
+  const was = prior.get(v.id);
+  if (was === undefined) return false;
+  if (v.channel !== null && v.channel !== was.channel) return true;
+  return (v.deleted_at !== null) !== was.deleted;
+}
+
 async function drainVetVisitsQueue(): Promise<void> {
+  const epoch = currentSignOutEpoch();
   const db = getDb();
 
   const unsyncedVisits = await db.getAllAsync<{
@@ -1821,10 +1885,20 @@ async function drainVetVisitsQueue(): Promise<void> {
     });
     const known = unsyncedVisits.filter((v) => v.channel !== null);
     const unknown = unsyncedVisits.filter((v) => v.channel === null);
+    // CUL-2842: read what the server holds BEFORE the push, so the landing can tell which rows
+    // moved a fact the care read depends on (see visitCareFactMoved).
+    const prior = await readServerVisitCareFacts(unsyncedVisits.map((v) => v.id));
     const landed = new Set<string>();
     for (const batch of [known, unknown]) {
       if (batch.length === 0) continue;
       for (const id of await pushRows(db, 'vet_visits', batch, toRemote)) landed.add(id);
+    }
+    if (epoch === currentSignOutEpoch()) {
+      rebuildSignalsForBookings(
+        unsyncedVisits
+          .filter((v) => landed.has(v.id) && visitCareFactMoved(v, prior))
+          .map((v) => v.pet_id),
+      );
     }
     // A row that landed without its channel still reads NULL here. Re-arm the full re-pull, so
     // the next hydrate's fill learns it from the server (its updated_at may sit below the
@@ -2086,7 +2160,8 @@ async function drainVetAppointmentsQueue(): Promise<void> {
 
 /**
  * CUL-2797: a Signal regen for each pet whose booking just moved on the server (pushed from
- * here) or on this phone (pulled from another device). One regen per pet, however many of its
+ * here) or on this phone (pulled from another device), and (CUL-2842) each pet whose visit's
+ * channel or deletion just landed (`visitCareFactMoved`). One regen per pet, however many of its
  * rows moved; the regen is debounced, so a burst collapses further.
  */
 function rebuildSignalsForBookings(petIds: readonly string[]): void {
