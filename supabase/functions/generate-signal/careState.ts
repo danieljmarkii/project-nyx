@@ -236,6 +236,25 @@ export interface CareRecord {
 
 export const EMPTY_CARE_RECORD: CareRecord = { acknowledgements: [], appointments: [], lethargyAt: [], history: null }
 
+/**
+ * CUL-2847: does an answer predate the row that dropped its concern (§3.2 D4), so it lapses?
+ * `created_at` is the server's clock when the answer SYNCED, not when it was tapped (082 grants the
+ * phone no write to it), so an answer tapped offline before the drop and synced after it looked
+ * newer than the drop and quieted the concern when it came back. Two facts the server does hold:
+ * - "My vet knows" is tapped only on a concern card. A row holding no such concern means the card
+ *   was already stale when tapped: the concern had left, so the answer lapses whenever it synced.
+ * - Every other answer carries the day it counts from (`anchor_on`): the visit's day, or the trial's
+ *   or course's start. One tapped before the drop is anchored on or before the drop's day, so it
+ *   lapses however late it synced. A visit on a later day is vet contact after the drop and stands.
+ * Both only add lapses (the owner is asked once more). An unreadable anchor lapses too.
+ */
+export function answerPredatesDrop(a: AckFact, rowWrittenByMs: number, tz: string | undefined): boolean {
+  if (a.source === 'my_vet_knows') return true
+  if (Date.parse(a.createdAt) < rowWrittenByMs) return true
+  const anchor = localDayIndexOf(a.anchorOn, tz)
+  return anchor === null || anchor <= localDayIndex(rowWrittenByMs, tz)
+}
+
 /** How far back the shell will read for a reference: an answer anchored earlier than this lapses. */
 export const CARE_HISTORY_MAX_DAYS = 730
 
@@ -1211,7 +1230,8 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     const p = prior.get(sign) ?? null
     // §3.2: an answer lapses when its concern leaves the set (adversarial D4). The previous row
     // is the record of that: written after the answer and holding no concern on this sign, it
-    // lapses every answer written before it. Lapses are carried, so they outlive that one row.
+    // lapses every answer given before it, timed by when it was given, not when it synced
+    // (`answerPredatesDrop`, CUL-2847). Lapses are carried, so they outlive that one row.
     const lapsed = new Set<string>(p?.lapsed ?? [])
     // A previous row that held the concern WITHOUT a care fact did not run this step (an
     // incomplete read, a failed flag or logging read, the flag-off engine), so it carried no lapse
@@ -1220,8 +1240,10 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     // that skipped the step with the key on stamps a `careCarry` instead (CUL-2662), which
     // `readPriorCare` reads as the care fact it stands in for, so this does not fire on it.
     if (priorSigns !== null && priorGen !== null && (!priorSigns.has(sign) || !prior.has(sign))) {
+      const dropped = !priorSigns.has(sign)
       for (const a of args.record.acknowledgements) {
-        if (a.sign === sign && Date.parse(a.createdAt) < priorGen) lapsed.add(a.id)
+        if (a.sign !== sign) continue
+        if (dropped ? answerPredatesDrop(a, priorGen, tz) : Date.parse(a.createdAt) < priorGen) lapsed.add(a.id)
       }
     }
     // A previous row the shell could not read (CUL-1663, ruled expire 2026-10-08) is the same

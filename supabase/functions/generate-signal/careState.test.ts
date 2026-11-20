@@ -531,6 +531,32 @@ Deno.test('D4: an answer lapses when its concern left the set, and stays lapsed 
   assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a] }).state, 'with_vet')
 })
 
+Deno.test('CUL-2847: an answer is timed by its tap, not its sync, against the row that dropped its concern', () => {
+  // The issue's case: the run that drops vomiting is stamped at T. At T+30 s the owner, offline,
+  // taps "My vet knows" on the stale card; it syncs at T+15 min, so the server stamps it then.
+  const T = NOW_MS - 3_600_000
+  const gone = [{ rank: 0, finding: { type: 'timeofday_clustering', priorityClass: 'insight', symptomType: 'vomit' } }]
+  const late = ack({ id: 'late', daysAgo: 0, anchorOn: dayOf(0), createdAt: new Date(T + 15 * 60_000).toISOString() })
+  const reRaise = stateOf({ symptoms: STABLE, acks: [late], priorFindings: gone, priorGeneratedAtMs: T })
+  assertEquals([reRaise.state, reRaise.ackId, reRaise.lapsed], ['raised', null, ['late']])
+  // However late it synced: "My vet knows" is tapped only on a concern card, so one standing
+  // beside a row that held no such concern was tapped on a stale card.
+  const days = ack({ id: 'days', daysAgo: 0, anchorOn: dayOf(0), createdAt: new Date(NOW_MS - 60_000).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [days], priorFindings: gone, priorGeneratedAtMs: NOW_MS - 3 * DAY }).lapsed, ['days'])
+  // A visit answer tapped before the drop and synced after it: its visit day is on or before the
+  // drop's day, so it lapses too.
+  const visit = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(1), createdAt: new Date(T + 15 * 60_000).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [visit], priorFindings: gone, priorGeneratedAtMs: T }).lapsed, ['v'])
+  // A visit on a later day than the drop is vet contact after the concern left: it stands.
+  const after = ack({ id: 'v2', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(1), createdAt: at(0, 13) })
+  const s = stateOf({ symptoms: STABLE, acks: [after], priorFindings: gone, priorGeneratedAtMs: NOW_MS - 3 * DAY })
+  assertEquals([s.state, s.lapsed], ['with_vet', []])
+  // The re-raised concern answered on its own card (the prior row holds it) still stands.
+  const back = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised', ackId: null, lapsed: ['late'] } } }]
+  const fresh = ack({ id: 'fresh', daysAgo: 0, createdAt: at(0, 20) })
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [late, fresh], priorFindings: back, priorGeneratedAtMs: T }).state, 'with_vet')
+})
+
 Deno.test('CUL-1667: R1 → R2 lost write → R3: a missing prior row beside an answer is continuity unknown', () => {
   // R1 raised the concern and the owner answered A. R2 stood the concern down, deleted R1's row and
   // lost its insert, so R3's read answers with NO row. The concern is back at R3 within one course.
