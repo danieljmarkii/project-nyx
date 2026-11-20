@@ -18,6 +18,7 @@ import { useSyncStore } from '../store/syncStore';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { countRecordGaps } from './db';
 import { readNearBuild } from './readCopy';
+import { visitMovedNearBuild } from './vetVisits';
 import { currentSignOutEpoch } from './signOutEpoch';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
@@ -880,7 +881,8 @@ export function isSignalCacheStale(row: SignalCacheRow | null, nowMs = Date.now(
 export const LANDED_READ_RACE_MS = 120_000;
 const readRebuiltRows = new Set<string>();
 
-/** The key a landed read's rebuild runs under, or null when the row has seen every read. */
+/** The key a landed read's rebuild runs under, or null when the row has seen every read and
+ *  every visit corrected to a contact or deleted (CUL-2842). */
 export async function landedReadRebuildKey(petId: string, row: SignalCacheRow | null): Promise<string | null> {
   if (!row?.generatedAt || isSignalCacheStale(row)) return null;
   let near: Awaited<ReturnType<typeof readNearBuild>>;
@@ -890,8 +892,22 @@ export async function landedReadRebuildKey(petId: string, row: SignalCacheRow | 
     console.warn('[signal] read-change check failed:', e);
     return null;
   }
-  if (!near) return null;
-  const key = near.afterBuild ? `row|${petId}|${row.generatedAt}` : `read|${petId}|${near.updatedAt}`;
+  if (near) {
+    const key = near.afterBuild ? `row|${petId}|${row.generatedAt}` : `read|${petId}|${near.updatedAt}`;
+    if (!readRebuiltRows.has(key)) return key;
+  }
+  // CUL-2842: the same backstop for a visit corrected to a call, text or email, or deleted,
+  // after the build (`visitMovedNearBuild`). Same keys, same economics: once per row after the
+  // build, once per visit version inside the margin, a failure releases its key.
+  let moved: Awaited<ReturnType<typeof visitMovedNearBuild>>;
+  try {
+    moved = await visitMovedNearBuild(petId, row.generatedAt, LANDED_READ_RACE_MS);
+  } catch (e) {
+    console.warn('[signal] visit-change check failed:', e);
+    return null;
+  }
+  if (!moved) return null;
+  const key = moved.afterBuild ? `row|${petId}|${row.generatedAt}` : `visit|${petId}|${moved.updatedAt}`;
   return readRebuiltRows.has(key) ? null : key;
 }
 

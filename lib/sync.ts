@@ -1839,7 +1839,9 @@ function visitCareFactMoved(
   if (prior === null) return true;
   const was = prior.get(v.id);
   if (was === undefined) return false;
-  if (v.channel !== null && v.channel !== was.channel) return true;
+  // Exam-ness, not the raw channel: the care read asks only "is it an exam", so a call
+  // corrected to a text moves nothing it reads and spends nothing.
+  if (v.channel !== null && (v.channel === 'in_clinic') !== (was.channel === 'in_clinic')) return true;
   return (v.deleted_at !== null) !== was.deleted;
 }
 

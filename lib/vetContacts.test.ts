@@ -31,6 +31,8 @@ const mockServer = {
   readFails: new Set<string>(),
   /** Tables whose upsert answers a network error, so nothing lands. */
   upsertFails: new Set<string>(),
+  /** Tables whose upsert COMMITS and then loses its response (a timeout after the write). */
+  upsertLosesResponse: new Set<string>(),
 };
 
 function mockServerTable(table: string): Map<string, Row> {
@@ -66,6 +68,7 @@ function mockServerFrom(table: string) {
           ...r,
         });
       }
+      if (mockServer.upsertLosesResponse.has(table)) return { data: null, error: { message: 'timeout' } };
       return { data: rows.map((r) => ({ id: String(r.id) })), error: null };
     };
     return { select: async () => land(), then: (res: (v: unknown) => unknown) => Promise.resolve(land()).then(res) };
@@ -126,7 +129,7 @@ import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 import { getDb } from './db';
 import { hydrateFromCloud, syncPendingVetVisits } from './sync';
-import { logVetVisit, readVisitConsequence, readVisitPrefill, updateVisitDetails } from './vetVisits';
+import { logVetVisit, readVisitConsequence, readVisitPrefill, updateVisitDetails, visitMovedNearBuild } from './vetVisits';
 import { latestVisitBefore, readLatestVisitBefore, readVisitDaysBefore } from './visitWindow';
 import { readCareQuestionRecord } from './careAnswers';
 
@@ -163,6 +166,7 @@ beforeEach(async () => {
   mockServer.upserts.length = 0;
   mockServer.readFails.clear();
   mockServer.upsertFails.clear();
+  mockServer.upsertLosesResponse.clear();
   mockRegen.mockClear();
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
@@ -565,6 +569,46 @@ describe('a corrected visit rebuilds its pet\'s warnings when it lands (CUL-2842
     await syncPendingVetVisits();
     expect(mockServerTable('vet_visits').get('notes-only')).toMatchObject({ notes: 'fine' });
     expect(regenPets()).toEqual([PET]);
+  });
+
+  it('a call corrected to a text moves nothing the care read asks (exam-ness), so it spends nothing', async () => {
+    seedVisit({ id: 'call', visited_at: '2026-11-09', channel: 'phone', synced: 1 });
+    mockServerTable('vet_visits').set('call', { ...localRow('call') });
+    await updateVisitDetails('call', { channel: 'text' });
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get('call')).toMatchObject({ channel: 'text' });
+    expect(regenPets()).toEqual([]);
+  });
+
+  // Adversarial pass 1: the push commits and its response is lost, so the drain arms nothing and
+  // the next cycle's prior read already shows the call. The drain can never rebuild it again;
+  // the Signal's own backstop (`visitMovedNearBuild`, asked by landedReadRebuildKey) does.
+  it('committed but the response lost: the drain cannot rebuild, and the backstop finds the visit', async () => {
+    seedSyncedExam('lost');
+    const builtBefore = new Date(Date.now() - 60 * 60_000).toISOString();
+    await updateVisitDetails('lost', { channel: 'phone' });
+    mockServer.upsertLosesResponse.add('vet_visits');
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get('lost')).toMatchObject({ channel: 'phone' });
+    mockServer.upsertLosesResponse.clear();
+    await syncPendingVetVisits(); // the retry lands; the server already said phone
+    expect(regenPets()).toEqual([]);
+    // A Signal built an hour ago never saw the call: the backstop names it.
+    expect(await visitMovedNearBuild(PET, builtBefore, 120_000)).toMatchObject({ afterBuild: true });
+  });
+
+  it('the backstop: only a visit that stopped being an exam or was deleted, never an exam, never one long before the build', async () => {
+    const built = '2026-11-14T12:00:00.000Z';
+    seedVisit({ id: 'exam', visited_at: '2026-11-13', updated_at: '2026-11-14T13:00:00.000Z' });
+    expect(await visitMovedNearBuild(PET, built, 120_000)).toBeNull();
+    seedVisit({ id: 'old-call', visited_at: '2026-11-01', channel: 'phone', updated_at: '2026-11-02T13:00:00.000Z' });
+    expect(await visitMovedNearBuild(PET, built, 120_000)).toBeNull();
+    // Inside the margin before the build, spelled the server's way (C-40): counted, not after.
+    seedVisit({ id: 'race', visited_at: '2026-11-14', channel: 'text', updated_at: '2026-11-14T11:59:30+00:00' });
+    expect(await visitMovedNearBuild(PET, built, 120_000)).toEqual({ updatedAt: '2026-11-14T11:59:30+00:00', afterBuild: false });
+    seedVisit({ id: 'gone', visited_at: '2026-11-10', deleted_at: '2026-11-14T12:30:00.000Z', updated_at: '2026-11-14T12:30:00.000Z' });
+    expect(await visitMovedNearBuild(PET, built, 120_000)).toEqual({ updatedAt: '2026-11-14T12:30:00.000Z', afterBuild: true });
+    expect(await visitMovedNearBuild(OTHER_PET, built, 120_000)).toBeNull();
   });
 
   it('a correction that did not land arms nothing, and rebuilds on the retry that lands', async () => {
