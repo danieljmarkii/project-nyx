@@ -196,7 +196,15 @@ export interface AppointmentFact {
    *  have booked it. It never stands as a booked visit. The shell sets it from the row's reason
    *  with `isPossibleRecheckPhantom` and passes no reason text on. */
   possibleRecheckPhantom: boolean
+  /** CUL-2829: what the appointment's own attendance link (`vet_visit_id`) says the visit was.
+   *  'unlinked': no visit logged against it yet. 'exam': an `in_clinic` visit. 'not_exam': a call,
+   *  text or email, a deleted visit, a NULL or unknown channel, or a link the read did not return
+   *  (every unknown fails loud). Required so no caller can leave it out: only
+   *  `passedBookingCanQuiet` reads it. The shell passes the link's verdict, never the visit. */
+  attendance: AppointmentAttendance
 }
+
+export type AppointmentAttendance = 'unlinked' | 'exam' | 'not_exam'
 
 /**
  * CUL-2793: the client's rule, on the server. It mirrors `isPhantomRecheckBooking` in
@@ -1232,6 +1240,9 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
   // when a possible phantom falls BEFORE the booking named, the date is dropped, never moved later:
   // the phantom may be a real recheck, and a later deadline is a delay. No date leaves the plain ask.
   const upcoming = booked && !booked.fact.passed && !phantomBefore(args, booked.day) ? booked : null
+  // CUL-2829: the booking that may QUIET. A passed one whose visit was a call (its own link, or any
+  // sign's refused visit answer on its day) quiets nothing; the upcoming date above is untouched.
+  const quietBooking = booked && passedBookingCanQuiet(args, booked) ? booked : null
   const chronicOnset = new Map<SymptomType, string>()
   for (const r of findings) {
     if (r.finding.type === 'symptom_chronicity') chronicOnset.set(r.finding.symptomType, r.finding.firstOnsetIso)
@@ -1321,15 +1332,15 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
         bySign.set(sign, again)
         return again
       }
-      const covers = booked !== null && !refusedHere && (!booked.fact.passed || (onsetDay !== null && booked.day >= onsetDay))
+      const covers = quietBooking !== null && !refusedHere && (!quietBooking.fact.passed || (onsetDay !== null && quietBooking.day >= onsetDay))
       // PM ruling A (2026-11-07, adversarial pass 1 #3): ONE quiet window per course. Once a visit
       // in this course has passed its week with no answer, a later booking never quiets it again:
       // the ask stands until the owner says how it went. Unknown onset: any spent window counts.
-      if (booked && covers && !quietWindowSpent(args, onsetDay, ix.today)) {
+      if (quietBooking && covers && !quietWindowSpent(args, onsetDay, ix.today)) {
         const quiet: CareStateFact = {
           state: 'visit_booked', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null,
-          text: bookedVisitSentence(booked.fact, booked.day, ix.today, `${possessive(args.petName)} ${SYMPTOM_LABEL[sign]}`),
-          lapsed: lapsedList, bookedVisit: booked.fact, ...keep,
+          text: bookedVisitSentence(quietBooking.fact, quietBooking.day, ix.today, `${possessive(args.petName)} ${SYMPTOM_LABEL[sign]}`),
+          lapsed: lapsedList, bookedVisit: quietBooking.fact, ...keep,
         }
         bySign.set(sign, quiet)
         return quiet
@@ -1410,7 +1421,9 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
   }
   const decorated = findings.map((r) => {
     const sign = concernSignOf(r.finding)
-    if (sign === null) return booked ? withBookedVisit(r, booked, upcoming, ix.today, args) : r
+    // CUL-2829: `quietBooking`, so a passed booking whose visit was a call never quiets the weight
+    // card either. Every other safety card takes only `upcoming`, which a passed booking never is.
+    if (sign === null) return quietBooking ? withBookedVisit(r, quietBooking, upcoming, ix.today, args) : r
     const fact = stateFor(sign)
     // Ruling A (worsening brief, 2026-11-07): a firing worsening lane IS "coming more often", and a
     // never-answered concern has no reference to re-raise from, so a booking never quiets it. The
@@ -1509,6 +1522,32 @@ export function bookedVisitFor(args: CareStateArgs): { day: number; fact: Booked
   if (next) return { day: next.day, fact: { on: dayKeyFromIndex(next.day), appointmentId: next.id, passed: false } }
   const last = standing.filter((x) => x.day < today && x.day >= today - BOOKED_VISIT_AFTER_DAYS).sort((a, b) => b.day - a.day || a.id.localeCompare(b.id))[0]
   return last ? { day: last.day, fact: { on: dayKeyFromIndex(last.day), appointmentId: last.id, passed: true } } : null
+}
+
+/**
+ * CUL-2829 (PR-09's adversarial pass 2): whether a booking may quiet anything. An upcoming one
+ * may (its date is a plan, not a claim about a visit). A PASSED one says "the visit has passed,
+ * and how it went isn't recorded yet", which is a claim that an exam happened, so it may not when
+ * the record says the visit was not an exam:
+ *   · its own attendance link names a call, text or email, a deleted visit, or a row the read did
+ *     not return (`attendance: 'not_exam'`);
+ *   · or ANY sign's visit answer refused by `answerStandsOnAnExam` anchors within a day of the
+ *     booking's day (the zone's slack, as CUL-2841 bounds its own refusal). PR-09 lifted the quiet
+ *     only for the sign the refused answer was about; the visit it names quiets no other sign.
+ * Louder by design: "phoned, then went in the same day" keeps its ask until the owner answers. A
+ * refused booking still SPENDS its quiet window (`quietWindowSpent` reads every appointment).
+ */
+export function passedBookingCanQuiet(args: CareStateArgs, booked: { day: number; fact: BookedVisit }): boolean {
+  if (!booked.fact.passed) return true
+  const appt = args.record.appointments.find((a) => a.id === booked.fact.appointmentId)
+  // `!== 'unlinked' && !== 'exam'`: a fact that does not say what it is fails loud.
+  if (!appt || (appt.attendance !== 'unlinked' && appt.attendance !== 'exam')) return false
+  const tz = args.timezone
+  return !args.record.acknowledgements.some((a) => {
+    if (a.retracts || answerStandsOnAnExam(a)) return false
+    const d = localDayIndexOf(a.anchorOn, tz)
+    return d === null || Math.abs(d - booked.day) <= 1
+  })
 }
 
 /**

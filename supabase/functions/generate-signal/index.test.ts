@@ -505,9 +505,9 @@ Deno.test('CUL-2652 reads — the appointments by date (and, CUL-2793, a phantom
   const { EMPTY_CARE_RECORD } = await import('./careState.ts')
   const NOW = Date.parse('2026-11-07T23:00:00.000Z')
   const APPTS = [
-    { id: 'a1', scheduled_at: '2026-11-14T15:00:00+00:00', cancelled_at: null, deleted_at: null, reason: 'Annual exam, the lump on her leg' },
-    { id: 'a2', scheduled_at: '2026-11-12T15:00:00+00:00', cancelled_at: null, deleted_at: null, reason: ' Recheck ' },
-    { id: 'a3', scheduled_at: '2026-11-10T15:00:00+00:00', cancelled_at: null, deleted_at: null, reason: null },
+    { id: 'a1', scheduled_at: '2026-11-14T15:00:00+00:00', cancelled_at: null, deleted_at: null, reason: 'Annual exam, the lump on her leg', vet_visit_id: null },
+    { id: 'a2', scheduled_at: '2026-11-12T15:00:00+00:00', cancelled_at: null, deleted_at: null, reason: ' Recheck ', vet_visit_id: null },
+    { id: 'a3', scheduled_at: '2026-11-10T15:00:00+00:00', cancelled_at: null, deleted_at: null, reason: null, vet_visit_id: null },
   ]
   const answer = (appt: { data: unknown; error: unknown; count?: number }) => (c: Call) =>
     c.table === 'vet_appointments' ? appt : { data: [], error: null, count: 0 }
@@ -515,16 +515,17 @@ Deno.test('CUL-2652 reads — the appointments by date (and, CUL-2793, a phantom
   const rec = await readCareRecord(client, 'pet-1', LOOKBACK, NOW)
   // CUL-2793: the reason is reduced to one boolean at the mapping line; its text goes no further.
   assertEquals(rec.appointments, [
-    { id: 'a1', scheduledAt: '2026-11-14T15:00:00+00:00', cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false },
-    { id: 'a2', scheduledAt: '2026-11-12T15:00:00+00:00', cancelledAt: null, deletedAt: null, possibleRecheckPhantom: true },
-    { id: 'a3', scheduledAt: '2026-11-10T15:00:00+00:00', cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false },
+    { id: 'a1', scheduledAt: '2026-11-14T15:00:00+00:00', cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false, attendance: 'unlinked' },
+    { id: 'a2', scheduledAt: '2026-11-12T15:00:00+00:00', cancelledAt: null, deletedAt: null, possibleRecheckPhantom: true, attendance: 'unlinked' },
+    { id: 'a3', scheduledAt: '2026-11-10T15:00:00+00:00', cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false, attendance: 'unlinked' },
   ])
   assertStrictEquals(JSON.stringify(rec).includes('lump'), false, 'no reason text reaches the care record')
   const a = calls.find((c) => c.table === 'vet_appointments')!
   assertEquals(a.ops.filter(([op]) => op !== 'range'), [
-    // Never the questions, the clinic, the vet, the notes or the visit link (AC 10). The reason
-    // only for CUL-2793's phantom flag (PM go, 2026-11-15).
-    ['select', ['id, scheduled_at, cancelled_at, deleted_at, reason', { count: 'exact' }]],
+    // Never the questions, the clinic, the vet or the notes (AC 10). The reason only for CUL-2793's
+    // phantom flag (PM go, 2026-11-15); the visit link only for CUL-2829's attendance (PM go,
+    // 2026-11-20), resolved to one of three words below.
+    ['select', ['id, scheduled_at, cancelled_at, deleted_at, reason, vet_visit_id', { count: 'exact' }]],
     ['eq', ['pet_id', 'pet-1']],
     // From the Signal's lookback (ruling A reads back to the course's onset).
     ['gte', ['scheduled_at', LOOKBACK]],
@@ -594,6 +595,32 @@ Deno.test('CUL-2841 reads — each visit answer carries its visit\'s channel; a 
   const quiet = fakeClient((c) => (c.table === 'care_acknowledgements' ? { data: [ack('knows', 'my_vet_knows', null)], error: null, count: 1 } : { data: [], error: null, count: 0 }))
   await readCareRecord(quiet.client, 'pet-1', LOOKBACK, NOW)
   assertStrictEquals(quiet.calls.some((c) => c.table === 'vet_visits'), false)
+})
+
+Deno.test('CUL-2829 reads — an appointment\'s attendance link resolves to unlinked, exam or not_exam in the one visit read', async () => {
+  const { readCareRecord } = await import('./index.ts')
+  const NOW = Date.parse('2026-11-07T23:00:00.000Z')
+  const appt = (id: string, link: string | null) => ({ id, scheduled_at: '2026-11-03T15:00:00+00:00', cancelled_at: null, deleted_at: null, reason: null, vet_visit_id: link })
+  const APPTS = [appt('none', null), appt('exam', 'v-exam'), appt('call', 'v-call'), appt('gone', 'v-gone'), appt('null', 'v-null'), appt('missing', 'v-missing')]
+  const VISITS = [
+    { id: 'v-exam', channel: 'in_clinic', deleted_at: null },
+    { id: 'v-call', channel: 'text', deleted_at: null },
+    { id: 'v-gone', channel: 'in_clinic', deleted_at: '2026-11-04T10:00:00.000Z' },
+    { id: 'v-null', channel: null, deleted_at: null },
+  ]
+  const { client, calls } = fakeClient((c: Call) =>
+    c.table === 'vet_appointments' ? { data: APPTS, error: null, count: APPTS.length }
+      : c.table === 'vet_visits' ? { data: VISITS, error: null, count: VISITS.length }
+      : { data: [], error: null, count: 0 })
+  const rec = await readCareRecord(client, 'pet-1', LOOKBACK, NOW)
+  assertEquals(rec.appointments.map((a) => [a.id, a.attendance]), [
+    ['none', 'unlinked'], ['exam', 'exam'], ['call', 'not_exam'], ['gone', 'not_exam'], ['null', 'not_exam'], ['missing', 'not_exam'],
+  ])
+  // The link id is reduced at the mapping line and goes no further.
+  assertStrictEquals(JSON.stringify(rec).includes('v-exam'), false, 'no visit id reaches the care record')
+  const v = calls.filter((c) => c.table === 'vet_visits')
+  assertStrictEquals(v.length, 1, 'one visit read, shared with the answers')
+  assertEquals(v[0].ops.find(([op]) => op === 'in'), ['in', ['id', ['v-exam', 'v-call', 'v-gone', 'v-null', 'v-missing']]])
 })
 
 Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the pipeline', async () => {

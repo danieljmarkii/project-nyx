@@ -472,7 +472,7 @@ export const POPULATED_CARE_RECORD: CareRecord = {
     { id: 'ack-3', sign: 'diarrhea', source: 'my_vet_knows', anchorOn: ago(8).slice(0, 10), createdAt: ago(8, 19), retracts: 'ack-2', trial: null, course: null, visit: null },
   ],
   appointments: [
-    { id: 'appt-1', scheduledAt: ago(-4, 15), cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false },
+    { id: 'appt-1', scheduledAt: ago(-4, 15), cancelledAt: null, deletedAt: null, possibleRecheckPhantom: false, attendance: 'unlinked' },
   ],
   lethargyAt: [ago(2, 9), ago(1, 9)],
   history: null,

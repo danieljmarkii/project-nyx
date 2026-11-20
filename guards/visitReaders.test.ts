@@ -312,7 +312,10 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'so a booked visit within 30 days quiets a "worth booking" ask. CUL-2793 (PM go, ' +
       '2026-11-15) adds `reason`, reduced at the mapping line to one boolean so a booking the ' +
       'old recheck wheel may have made up never quiets a concern; the reason text goes no ' +
-      'further. Never the questions, the clinic, the vet or the notes, pinned by SHELL_COLUMNS.',
+      'further. CUL-2829 (PM go, 2026-11-20) adds the appointment\'s `vet_visit_id`, resolved ' +
+      'in the same visits read to one word (unlinked, exam, not_exam), so a passed booking ' +
+      'whose visit was a call never quiets a card: a source, never a date or a count. Never ' +
+      'the questions, the clinic, the vet or the notes, pinned by SHELL_COLUMNS.',
   },
 
   // ── The report ──
@@ -705,8 +708,10 @@ const SHELL_COLUMNS: Record<string, readonly (readonly string[])[]> = {
   care_acknowledgements: [['id', 'symptom_type', 'source', 'anchor_on', 'vet_visit_id', 'diet_trial_id', 'medication_id', 'retracts', 'created_at']],
   // CUL-2652: the amendment's three appointment dates, and the row id (for "How did it go?"'s
   // link and a stable paging key). CUL-2793: `reason`, reduced at once to the phantom-recheck
-  // boolean (PM go, 2026-11-15). No questions, clinic, vet, notes or visit link.
-  vet_appointments: [['id', 'scheduled_at', 'cancelled_at', 'deleted_at', 'reason']],
+  // boolean (PM go, 2026-11-15). CUL-2829: `vet_visit_id`, the attendance link, resolved through the
+  // visits read above to one word (unlinked, exam, not_exam) at the mapping line (PM go,
+  // 2026-11-20). No questions, clinic, vet or notes.
+  vet_appointments: [['id', 'scheduled_at', 'cancelled_at', 'deleted_at', 'reason', 'vet_visit_id']],
 };
 
 /** Every `.from('<vet table>')` in `src` with the select list that follows it. */

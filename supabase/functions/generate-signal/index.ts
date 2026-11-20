@@ -52,6 +52,7 @@ import {
   isPossibleRecheckPhantom,
   type AckFact,
   type AckSource,
+  type AppointmentAttendance,
   type AppointmentFact,
   type CareHistory,
   type CareRecord,
@@ -1151,8 +1152,10 @@ export async function readCareContextFacts(
 // and the pet's appointments by DATE (CUL-2652: `scheduled_at`, `cancelled_at`, `deleted_at`, the
 // three AC 10 as amended allows) plus `reason`, which CUL-2793 (PM go, 2026-11-15) reads only to
 // reduce it at once to one boolean, `possibleRecheckPhantom`: the reason text never leaves the
-// mapping line, never reaches careState.ts, never is stored or printed. Never a question, a clinic
-// or a note. Caller's JWT, so RLS scopes every read.
+// mapping line, never reaches careState.ts, never is stored or printed. And `vet_visit_id`, the
+// attendance link (CUL-2829, PM go 2026-11-20): read only to resolve that visit's `channel` and
+// `deleted_at` in the same visits read, reduced at once to `attendance`; the id goes no further.
+// Never a question, a clinic or a note. Caller's JWT, so RLS scopes every read.
 //
 // Fails toward RAISED: any failure returns EMPTY_CARE_RECORD, so no answer quiets a concern on a
 // read that did not answer.
@@ -1160,9 +1163,17 @@ const ACK_SOURCES: ReadonlySet<string> = new Set<AckSource>(['at_vet_tick', 'vis
 
 type AckRow = { id: string; symptom_type: string; source: string; anchor_on: string; vet_visit_id: string | null; diet_trial_id: string | null; medication_id: string | null; retracts: string | null; created_at: string }
 type AckVisitRow = { id: string; channel: string | null; deleted_at: string | null }
+/** CUL-2829: an appointment's attendance link, as careState reads it. No link is 'unlinked'; only a
+ *  live `in_clinic` visit of this pet is 'exam'; anything else the link names (a call, text or
+ *  email, a deleted visit, a NULL channel, a row the pet-scoped read did not return) is 'not_exam'. */
+export function attendanceOf(visitId: string | null, visits: ReadonlyMap<string, AckVisitRow>): AppointmentAttendance {
+  if (visitId === null) return 'unlinked'
+  const v = visits.get(visitId)
+  return v && v.deleted_at === null && v.channel === 'in_clinic' ? 'exam' : 'not_exam'
+}
 type AckTrialRow = { id: string; started_at: string; ended_at: string | null; target_duration_days: number | null; target_duration_days_initial: number | null }
 type AckMedRow = { id: string; drug_name: string | null; started_at: string | null; ended_at: string | null; status: string | null; target_duration_days: number | null; target_duration_doses: number | null }
-type AppointmentRow = { id: string; scheduled_at: string; cancelled_at: string | null; deleted_at: string | null; reason: string | null }
+type AppointmentRow = { id: string; scheduled_at: string; cancelled_at: string | null; deleted_at: string | null; reason: string | null; vet_visit_id: string | null }
 type AckDoseRow = { id: string; occurred_at: string; medication_administrations: { medication_id: string | null } | { medication_id: string | null }[] | null }
 
 // EN-8 (PR-19, CUL-1413): the weight lane's facts. Every weigh-in in the predicate's window
@@ -1235,7 +1246,7 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
       fetchAll<AppointmentRow>('vet_appointments', (r) => r.id, (from, to) =>
         supabase
           .from('vet_appointments')
-          .select('id, scheduled_at, cancelled_at, deleted_at, reason', { count: 'exact' })
+          .select('id, scheduled_at, cancelled_at, deleted_at, reason, vet_visit_id', { count: 'exact' })
           .eq('pet_id', petId)
           .gte('scheduled_at', apptSinceIso)
           .order('scheduled_at', { ascending: false })
@@ -1247,7 +1258,12 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
     const medIds = [...new Set(rows.map((r) => r.medication_id).filter((x): x is string => typeof x === 'string'))]
     // CUL-2841: the visits the visit answers name, so careState can refuse one whose visit is not
     // an exam (`answerStandsOnAnExam`). Only the two visit sources may carry a link (082's CHECK).
-    const visitIds = [...new Set(rows.filter((r) => r.source === 'at_vet_tick' || r.source === 'visit_answer').map((r) => r.vet_visit_id).filter((x): x is string => typeof x === 'string'))]
+    // CUL-2829: and the visit each appointment's attendance link names, so a passed booking whose
+    // visit was a call never stands as "the visit has passed" (careState `passedBookingCanQuiet`).
+    const visitIds = [...new Set([
+      ...rows.filter((r) => r.source === 'at_vet_tick' || r.source === 'visit_answer').map((r) => r.vet_visit_id),
+      ...apptPull.rows.map((a) => a.vet_visit_id),
+    ].filter((x): x is string => typeof x === 'string'))]
     // No answer names a trial or a course: nothing to read, and an empty read is complete.
     const none = <T>(): Promise<Pull<T>> => Promise.resolve({ rows: [], complete: true })
     const [trialPull, medPull, dosePull, visitPull] = await Promise.all([
@@ -1344,7 +1360,7 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
       })
     }
     const history = await readCareHistory(supabase, petId, lookbackIso, nowMs, acknowledgements)
-    const appointments: AppointmentFact[] = apptPull.rows.map((a) => ({ id: a.id, scheduledAt: a.scheduled_at, cancelledAt: a.cancelled_at, deletedAt: a.deleted_at, possibleRecheckPhantom: isPossibleRecheckPhantom(a.reason) }))
+    const appointments: AppointmentFact[] = apptPull.rows.map((a) => ({ id: a.id, scheduledAt: a.scheduled_at, cancelledAt: a.cancelled_at, deletedAt: a.deleted_at, possibleRecheckPhantom: isPossibleRecheckPhantom(a.reason), attendance: attendanceOf(a.vet_visit_id, visits) }))
     return { acknowledgements, appointments, lethargyAt: lethargyPull.rows.map((r) => r.occurred_at), history }
   } catch (err) {
     console.warn('generate-signal: care-record reads failed, every concern stays raised:', err instanceof Error ? err.message : String(err))
