@@ -10,7 +10,11 @@ import { cardFirstDay, cardStart, contactLineFor, contactSentence, contactsFromR
 const TODAY = '2026-11-14';
 const at = (y: number, mo: number, d: number, h: number, mi: number) => new Date(y, mo - 1, d, h, mi).toISOString();
 
-const intake: SignalFinding = {
+// CUL-2834: every fixture's ask began before anything it is tested against, so PR-07's pins below
+// are also the differential: a stamp older than the card's start moves nothing.
+const EARLY_ASK = at(2026, 9, 1, 0, 0);
+const intake = {
+  askSinceIso: EARLY_ASK,
   type: 'intake_decline',
   priorityClass: 'safety',
   trigger: 'consecutive_low',
@@ -18,8 +22,9 @@ const intake: SignalFinding = {
   daysBelowBaseline: 2,
   refusedFoodLabel: null,
   ratedMealsConsidered: 7,
-};
-const chronic: SignalFinding = {
+} as SignalFinding;
+const chronic = {
+  askSinceIso: EARLY_ASK,
   type: 'symptom_chronicity',
   priorityClass: 'safety',
   symptomType: 'vomit',
@@ -31,8 +36,9 @@ const chronic: SignalFinding = {
   firstOnsetIso: at(2026, 10, 1, 9, 0),
   tier: 'firm',
   windowDays: 56,
-};
-const burden: SignalFinding = {
+} as SignalFinding;
+const burden = {
+  askSinceIso: EARLY_ASK,
   type: 'symptom_burden',
   priorityClass: 'safety',
   symptomType: 'vomit',
@@ -44,8 +50,9 @@ const burden: SignalFinding = {
   persistenceArm: true,
   tier: 'today',
   windowDays: 7,
-};
-const worsening: SignalFinding = {
+} as SignalFinding;
+const worsening = {
+  askSinceIso: EARLY_ASK,
   type: 'symptom_worsening',
   priorityClass: 'safety',
   symptomType: 'cough',
@@ -56,7 +63,7 @@ const worsening: SignalFinding = {
   trigger: 'more_days',
   tier: 'firm',
   windowDays: 7,
-};
+} as SignalFinding;
 const redFlag: SignalFinding = {
   type: 'incident_red_flag',
   priorityClass: 'safety',
@@ -230,5 +237,74 @@ describe('the read', () => {
     expect(sql).toMatch(/channel IN \('phone', 'text', 'email'\)/);
     expect(params).toEqual(['pet-1']);
     expect(runAsync).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-2834 (PM ruling A, 2026-11-20): a card whose ask got louder after a contact drops the line.
+// Proven by mutation: returning `problem` without the stamp reds the escalation cases; dropping
+// the "no stamp, no line" return reds the cached-before-the-field case; dropping the clock floor
+// reds the intake floor cases.
+describe('CUL-2834: a louder ask starts the window again', () => {
+  const stamped = (f: SignalFinding, askSinceIso: string | undefined): SignalFinding =>
+    ({ ...f, askSinceIso } as unknown as SignalFinding);
+  const NOW = new Date(2026, 10, 14, 21, 0).getTime();
+  const ANCHOR = A(TODAY, at(2026, 11, 14, 20, 0));
+  const call13 = [c('k', '2026-11-13', 'phone', at(2026, 11, 13, 10, 0))];
+
+  it.each([
+    // Three days below, so the card itself began Nov 12 and only the louder ask bounds Nov 13.
+    ['intake: eating less became a refusal', { ...intake, daysBelowBaseline: 3 } as SignalFinding],
+    ['burden: soon became today', burden],
+    ['chronicity: a tier rise', chronic],
+    ['worsening: a tier rise', worsening],
+  ])('%s yesterday afternoon: yesterday morning’s call is not said under it', (_name, f) => {
+    // Control: the same card at an ask that began before the call says it.
+    expect(contactLineFor(f, call13, TODAY, ANCHOR, null, NOW)).toBe('You called the vet on Fri, Nov 13.');
+    const louder = stamped(f, at(2026, 11, 13, 15, 0));
+    expect(contactLineFor(louder, call13, TODAY, ANCHOR, null, NOW)).toBeNull();
+    // A call after the louder ask began is about it, and is said.
+    const later = [c('k2', '2026-11-13', 'phone', at(2026, 11, 13, 16, 30))];
+    expect(contactLineFor(louder, later, TODAY, ANCHOR, null, NOW)).toBe('You called the vet on Fri, Nov 13.');
+    // An untimed call on the louder ask's own day may be from before it: not said.
+    expect(contactLineFor(louder, [c('k3', '2026-11-13', 'phone')], TODAY, ANCHOR, null, NOW)).toBeNull();
+  });
+
+  it('a card cached before the field (or with a malformed stamp) gains no line', () => {
+    for (const f of [intake, burden, chronic, worsening]) {
+      expect(contactLineFor(stamped(f, undefined), call13, TODAY, ANCHOR, null, NOW)).toBeNull();
+      expect(contactLineFor(stamped(f, 'not a date'), call13, TODAY, ANCHOR, null, NOW)).toBeNull();
+    }
+  });
+
+  it('a stamp only ever moves the start later: an old stamp leaves PR-07’s start as it was', () => {
+    expect(cardStart(burden, ANCHOR, NOW)).toEqual({ day: '2026-11-11', instant: null });
+    expect(cardStart(stamped(burden, at(2026, 11, 12, 9, 0)), ANCHOR, NOW)).toEqual({ day: '2026-11-12', instant: new Date(2026, 10, 12, 9, 0).getTime() });
+  });
+
+  it('on one day, an untimed card start beats a timed stamp: that day says nothing', () => {
+    // The burden run began Nov 11 (no instant on it), and the ask rose Nov 11 at 9:00 am.
+    const rose = stamped(burden, at(2026, 11, 11, 9, 0));
+    expect(cardStart(rose, ANCHOR, NOW)).toEqual({ day: '2026-11-11', instant: null });
+    expect(contactLineFor(rose, [c('k', '2026-11-11', 'phone', at(2026, 11, 11, 10, 0))], TODAY, ANCHOR, null, NOW)).toBeNull();
+  });
+
+  it('a red flag is bounded by its own events, as PR-07 left it, stamp or none', () => {
+    const line = contactLineFor(redFlag, [c('k', '2026-11-13', 'phone', at(2026, 11, 13, 10, 0))], TODAY, ANCHOR, null, NOW);
+    expect(line).toBe('You called the vet on Fri, Nov 13.');
+  });
+
+  it('the phone’s own floor: 24 hours after the last good meal the intake card firms up, and an earlier call is not said', () => {
+    const cat = stamped({ ...intake, daysBelowBaseline: 3, lastGoodMealIso: at(2026, 11, 12, 18, 0) } as SignalFinding, EARLY_ASK);
+    // The floor began Nov 13, 6:00 pm. A 10:00 am call that day was before it.
+    expect(contactLineFor(cat, call13, TODAY, ANCHOR, null, NOW)).toBeNull();
+    expect(contactLineFor(cat, [c('k', '2026-11-13', 'phone', at(2026, 11, 13, 19, 0))], TODAY, ANCHOR, null, NOW)).toBe(
+      'You called the vet on Fri, Nov 13.',
+    );
+    // Before the 24 hours are up the card has not firmed, so nothing moves.
+    const early = new Date(2026, 10, 13, 12, 0).getTime();
+    expect(contactLineFor(cat, call13, '2026-11-13', A('2026-11-13', at(2026, 11, 13, 11, 0)), null, early)).toBe('You called the vet today, 10:00 am.');
+    // A dog never takes the floor by the clock.
+    const dog = { ...cat, species: 'dog' } as SignalFinding;
+    expect(contactLineFor(dog, call13, TODAY, ANCHOR, null, NOW)).toBe('You called the vet on Fri, Nov 13.');
   });
 });

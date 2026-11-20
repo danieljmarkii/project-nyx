@@ -1,5 +1,6 @@
 import { getDb } from './db';
 import type { SignalFinding } from './signal';
+import { NO_GOOD_MEAL_HOURS } from './signalCopy';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
 import { formatClockTime } from './vetVisits';
 
@@ -11,6 +12,9 @@ import { formatClockTime } from './vetVisits';
 // takes nothing the card's sentence, count, ask or rank is computed from back out. The row draws
 // the line after everything it already draws, and the stack's order is decided before a contact
 // is ever read.
+//
+// CUL-2834 (ruling A): a card whose ask got louder after a contact drops that contact's line. The
+// engine stamps `askSinceIso` (when the current ask began) and `cardStart` takes the later start.
 //
 // It writes nothing. A contact is never a care-state answer, an acknowledgement, a `vet_calls`
 // row or a follow-up (§4.5), and Home's write classes stay two (guards/homeWrites.test.ts).
@@ -83,8 +87,49 @@ function msOf(iso: string | null | undefined): number | null {
  * flag. A type whose words name no instant takes the engine's count as its instant when the card
  * began on the count's own day, and none otherwise.
  */
-export function cardStart(finding: SignalFinding, anchor: CardAnchor): CardStart | null {
+export function cardStart(finding: SignalFinding, anchor: CardAnchor, nowMs: number = Date.now()): CardStart | null {
   if (finding.priorityClass !== 'safety') return null;
+  const problem = problemStart(finding, anchor);
+  if (problem === null || !ASK_STAMPED.has(finding.type)) return problem;
+  // CUL-2834 (ruling A): a card whose ask rose since the problem began starts where the louder
+  // ask began. No stamp (a row cached before the field, or a malformed one): no line.
+  const askMs = msOf(askSinceIsoOf(finding));
+  if (askMs === null) return null;
+  let start = laterStart(problem, { day: toLocalDayKey(new Date(askMs)), instant: askMs });
+  // The phone's own rise: an intake card firms up to the floor 24 hours after its last good meal
+  // (`intakeMeetsCatFloor`), with no engine run to stamp it. Once that has happened, it is a start.
+  const floorMs = clockFloorMs(finding);
+  if (floorMs !== null && floorMs <= nowMs) start = laterStart(start, { day: toLocalDayKey(new Date(floorMs)), instant: floorMs });
+  return start;
+}
+
+/** CUL-2834: the lanes whose ask can rise while they stay one card; the engine stamps each with
+ *  `askSinceIso` (supabase/functions/generate-signal/askSince.ts ASK_STAMPED, the same four). */
+const ASK_STAMPED: ReadonlySet<string> = new Set(['intake_decline', 'symptom_chronicity', 'symptom_worsening', 'symptom_burden']);
+
+/** The engine's stamp, read narrowly: lib/signal.ts's mirror types do not carry it yet. */
+function askSinceIsoOf(finding: SignalFinding): string | null {
+  const v = (finding as { askSinceIso?: unknown }).askSinceIso;
+  return typeof v === 'string' ? v : null;
+}
+
+/** The instant an intake card (not a dog's) meets the floor by the clock alone, or null. */
+function clockFloorMs(finding: SignalFinding): number | null {
+  if (finding.type !== 'intake_decline' || finding.species === 'dog') return null;
+  const t = msOf(finding.lastGoodMealIso);
+  return t === null ? null : t + NO_GOOD_MEAL_HOURS * 3_600_000;
+}
+
+/** The later of two starts. On one day an unknown instant wins: it already refuses every contact
+ *  that day, so it is the stricter of the two. */
+function laterStart(a: CardStart, b: CardStart): CardStart {
+  if (a.day !== b.day) return a.day > b.day ? a : b;
+  if (a.instant === null || b.instant === null) return { day: a.day, instant: null };
+  return { day: a.day, instant: Math.max(a.instant, b.instant) };
+}
+
+/** Where the card's PROBLEM begins (PR-07), before the ask's own start is applied. */
+function problemStart(finding: SignalFinding, anchor: CardAnchor): CardStart | null {
   const counted = (day: string): CardStart => ({ day, instant: day === anchor.day ? msOf(anchor.iso) : null });
   switch (finding.type) {
     case 'intake_decline':
@@ -116,8 +161,8 @@ export function cardStart(finding: SignalFinding, anchor: CardAnchor): CardStart
 }
 
 /** The card's first day alone (see `cardStart`). */
-export function cardFirstDay(finding: SignalFinding, anchor: CardAnchor): string | null {
-  return cardStart(finding, anchor)?.day ?? null;
+export function cardFirstDay(finding: SignalFinding, anchor: CardAnchor, nowMs: number = Date.now()): string | null {
+  return cardStart(finding, anchor, nowMs)?.day ?? null;
 }
 
 /** A contact after the card's problem began. On the first day itself only a contact the owner
@@ -167,6 +212,7 @@ export function contactSentence(contact: RemoteContact, today: string): string {
  *   A phone contact on that same day is the same fact, said once: null. Another day or another
  *   channel says something new and gets its line. No Home card draws that line today (PM ruling
  *   2026-11-19, option A on CUL-2769), so Home passes null.
+ * - CUL-2834: `nowMs` decides only whether the phone's own clock floor has begun (`cardStart`).
  */
 export function contactLineFor(
   finding: SignalFinding,
@@ -174,8 +220,9 @@ export function contactLineFor(
   today: string,
   anchor: CardAnchor,
   calledOn: string | null = null,
+  nowMs: number = Date.now(),
 ): string | null {
-  const start = cardStart(finding, anchor);
+  const start = cardStart(finding, anchor, nowMs);
   if (start === null) return null;
   const newest = contacts.filter((c) => c.day <= today && isAfterStart(c, start)).sort(newerFirst)[0];
   if (!newest) return null;

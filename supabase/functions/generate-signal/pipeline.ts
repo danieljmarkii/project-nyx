@@ -85,6 +85,7 @@ import {
 // (photoComposition.test.ts); attaches retained-food/hair/bile counts (present-only, tristate) onto
 // the vomit timing findings AFTER detection, so the engine's output is untouched.
 import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposition.ts'
+import { stampAskSince } from './askSince.ts'
 import { findingIdentity } from '../../../lib/findingIdentity.ts'
 import { isTieredRow, tierDisplayOf } from '../../../lib/incidentTierWords.ts'
 // B-422's effective end, from the ONE module that owns it. Imported across the
@@ -878,12 +879,15 @@ export function runSignalPipeline(
     readIncomplete && priorSignal
       ? readPriorSafetyEntries(priorSignal.findings, priorSignal.generatedAt, nowMs)
       : []
-  const decoratedBase = decoratedWithOnsets.map((r, i) => ({
+  // CUL-2834 (ruling A): each safety card's `askSinceIso`, after the tier hold so a held tier keeps
+  // its stamp. Read by the phone's contact line only (lib/vetContactLine.ts); nothing here or
+  // downstream computes a sentence, count, ask or rank from it.
+  const decoratedBase = stampAskSince(decoratedWithOnsets.map((r, i) => ({
     rank: r.rank,
     finding: readIncomplete
       ? holdPriorTier({ ...strippedFindings[i], countIsFloor: true } as Finding, priorSafety)
       : strippedFindings[i],
-  }))
+  })), priorSignal?.findings ?? null, nowMs)
   // 3c. EN-10 (PR-22, CUL-1420): the context lines, behind `engines_v3_en10`. Last, so the
   //     step sees the finished findings and nothing downstream reads what it adds (the summary
   //     packet is built from `curated`, the stand-down from `curated` and `input`). Not over an
