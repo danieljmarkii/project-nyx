@@ -74,7 +74,7 @@ const CEILINGS = {
   fontSize: 22, // 71 until CUL-1910 moved food capture onto the kit; 48 after CUL-1911 (the pet profile); 41 after CUL-1908; 23 after CUL-1909 (the event editor); 22 after CUL-1912 (the event detail)
   lineHeight: 61, // 67 until CUL-1909; 66 after it; 62 after CUL-1912; 61 after CUL-2754 (the five-field visit edit retired)
   letterSpacing: 8,
-  spacing: 295, // 336 until CUL-1909; 317 after it; 300 after CUL-1912; 299 after CUL-2243 (a card inset named, not tokenised); 297 after CUL-2278 (Patterns' ranges onto SegmentedControl); 296 after CUL-2297 (the notes hint's 2pt is spaceMicro); 295 after CUL-2754 (the five-field visit edit retired)
+  spacing: 293, // 336 until CUL-1909; 317 after it; 300 after CUL-1912; 299 after CUL-2243 (a card inset named, not tokenised); 297 after CUL-2278 (Patterns' ranges onto SegmentedControl); 296 after CUL-2297 (the notes hint's 2pt is spaceMicro); 295 after CUL-2754 (the five-field visit edit retired); 293 after CUL-2767 (the plan rows' glyph inset named)
   radius: 72, // 75 until CUL-1912; 72 after CUL-2278
   duration: 90,
   whorlSpinner: 37, // 43 until CUL-1912; 37 after CUL-2754

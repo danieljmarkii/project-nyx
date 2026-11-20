@@ -1,12 +1,17 @@
 import { StyleSheet, View } from 'react-native';
-import { Check } from 'lucide-react-native';
+import { Bookmark, Check } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
 import type { VisitSaveSummary } from '../../lib/vetVisitPlan';
 
 interface Props {
-  summary: VisitSaveSummary;
+  /** A contact's moment (CUL-2767) adds `mark` and `safety`; a visit's has neither and
+   *  renders exactly as shipped. */
+  summary: VisitSaveSummary & {
+    mark?: 'check' | 'neutral';
+    safety?: { lead: string; rest: string } | null;
+  };
   onDone: () => void;
 }
 
@@ -29,12 +34,29 @@ interface Props {
 // over a surface the owner is already looking at; this is a full screen at the end of
 // a flow, and it carries facts the owner may want to re-read — a timer would take
 // them away mid-sentence.
+//
+// A CONTACT WITH SOMETHING OPEN GETS NO CHECK (CUL-2767, spec §4.4, mock C4). A live warning
+// for the pet, or a sign this contact asked the owner to watch, and the mark is a neutral
+// bookmark at the shipped size, decorative and silent, with the safety line under the copy.
+// A check there read as "handled" (Sam, blocking). The shipped check stays for everything else.
 export function VisitSavedMoment({ summary, onDone }: Props) {
+  const neutral = summary.mark === 'neutral';
   return (
     <View style={styles.container}>
-      <View style={styles.mark}>
-        <Check size={22} color={theme.colorSurface} strokeWidth={3} />
-      </View>
+      {neutral ? (
+        <View
+          style={[styles.mark, styles.markNeutral]}
+          testID="saved-mark-neutral"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          <Bookmark size={22} color={theme.colorTextSecondary} strokeWidth={2} />
+        </View>
+      ) : (
+        <View style={styles.mark} testID="saved-mark-check">
+          <Check size={22} color={theme.colorSurface} strokeWidth={3} />
+        </View>
+      )}
       <ThemedText style={styles.heading}>{summary.heading}</ThemedText>
 
       {summary.reportLine ? (
@@ -42,6 +64,13 @@ export function VisitSavedMoment({ summary, onDone }: Props) {
       ) : null}
       {summary.homeLine ? (
         <ThemedText style={styles.consequence}>{summary.homeLine}</ThemedText>
+      ) : null}
+      {summary.safety ? (
+        <View style={styles.safety} accessible accessibilityLabel={`${summary.safety.lead} ${summary.safety.rest}`}>
+          <ThemedText style={styles.safetyText}>
+            <ThemedText style={styles.safetyLead}>{summary.safety.lead}</ThemedText> {summary.safety.rest}
+          </ThemedText>
+        </View>
       ) : null}
 
       {summary.linked.length > 0 ? (
@@ -78,6 +107,29 @@ const styles = StyleSheet.create({
     backgroundColor: colorRoles.positive.fillUnderLabel,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  markNeutral: {
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+  },
+  safety: {
+    borderWidth: 1,
+    borderColor: theme.colorBorderStrong,
+    borderRadius: theme.radiusSmall,
+    paddingVertical: theme.space2,
+    paddingHorizontal: theme.space2,
+  },
+  safetyText: {
+    fontSize: theme.textMD,
+    lineHeight: theme.lineHeightBody,
+    color: theme.colorTextPrimary,
+  },
+  safetyLead: {
+    fontSize: theme.textMD,
+    lineHeight: theme.lineHeightBody,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
   },
   heading: {
     fontSize: theme.textXL,

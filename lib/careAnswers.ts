@@ -55,6 +55,21 @@ export async function pushCareAnswers(): Promise<void> {
 }
 
 /**
+ * A visit-sourced answer named a call, text or email (CUL-2829 instance 1, Vet contacts R5).
+ * "Talked about it" against a contact would tell the care state "you talked about it at the
+ * Nov 9 visit" about a phone call, and a contact never answers a warning. Refused before any
+ * row is written; the caller writes nothing in its place (§4.5: a contact writes no answer).
+ */
+export class CareAnswerRefused extends Error {
+  constructor(readonly vetVisitId: string, readonly channel: string) {
+    super(`care answer: ${vetVisitId} is a ${channel} contact, not an exam`);
+    this.name = 'CareAnswerRefused';
+  }
+}
+
+const REMOTE_CHANNELS: ReadonlySet<string> = new Set(['phone', 'text', 'email']);
+
+/**
  * Write one answer. Returns its id once it is on this phone; the push follows and is not
  * awaited here (`pushCareAnswers`, or `careAnswerLanded` to ask afterwards).
  *
@@ -70,6 +85,18 @@ export async function recordCareAnswer(input: CareAnswerInput, newId: () => stri
   const medicationId = input.source === 'vet_started_course' ? input.medicationId : null;
   if ((input.source === 'at_vet_tick' || input.source === 'visit_answer') && !vetVisitId) {
     throw new Error('care answer: a visit source must name its visit');
+  }
+  if (vetVisitId) {
+    // visit-read: anyContact — the one row this answer names, read to refuse a contact.
+    const visit = await getDb().getFirstAsync<{ channel: string | null }>(
+      `SELECT channel FROM vet_visits WHERE id = ? LIMIT 1`,
+      [vetVisitId],
+    );
+    // A KNOWN remote channel refuses here. A row this phone has not learned the channel of
+    // (NULL) is left to the screen, which writes only when the record says in_clinic. Local
+    // only: a flip on another phone not yet pulled is not seen here (CUL-2767's server filter
+    // issue, filed from adversarial pass 1).
+    if (visit?.channel && REMOTE_CHANNELS.has(visit.channel)) throw new CareAnswerRefused(vetVisitId, visit.channel);
   }
   await getDb().runAsync(
     `INSERT INTO care_acknowledgements
@@ -120,6 +147,24 @@ export async function readVisitCareAnswers(vetVisitId: string): Promise<Set<stri
     [vetVisitId],
   );
   return new Set(rows.map((r) => r.symptom_type));
+}
+
+/**
+ * Take back every answer that still stands on this record (CUL-2767, Vet contacts R5). Run when a
+ * saved visit is turned into a call, text or email: "Talked about it at this visit" stops being
+ * true, and a contact never answers a warning, so the concerns are raised again on the server's
+ * next run. The LOUDER direction by construction: it only adds retractions. Returns the signs
+ * taken back, so the screen can say so.
+ */
+export async function retractVisitCareAnswers(vetVisitId: string, newId: () => string = uuid): Promise<string[]> {
+  const standing = await getDb().getAllAsync<{ id: string; symptom_type: string }>(
+    `SELECT a.id, a.symptom_type FROM care_acknowledgements a
+      WHERE a.vet_visit_id = ? AND a.retracts IS NULL
+        AND NOT EXISTS (SELECT 1 FROM care_acknowledgements r WHERE r.retracts = a.id)`,
+    [vetVisitId],
+  );
+  for (const row of standing) await retractCareAnswer(row.id, newId);
+  return standing.map((r) => r.symptom_type);
 }
 
 /** Has this answer reached the server? False while it waits (offline, or behind a parent). */

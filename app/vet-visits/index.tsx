@@ -11,6 +11,7 @@ import { AppointmentActions } from '../../components/vetvisits/AppointmentAction
 import { VisitRow } from '../../components/vetvisits/VisitRow';
 import { useEn14 } from '../../hooks/useFollowUps';
 import { useVetContactsOn } from '../../hooks/useVetContacts';
+import { isRemoteChannel } from '../../lib/vetContacts';
 import { callListRowOf, readCallsForPet, type CallView } from '../../lib/vetCallReads';
 import { petPronouns } from '../../lib/utils';
 import { VetVisitsEmptyState } from '../../components/vetvisits/VetVisitsEmptyState';
@@ -283,7 +284,7 @@ export default function VetVisitsScreen() {
         return;
       }
 
-      await logVetVisit({
+      const savedId = await logVetVisit({
         petId,
         visitedAt: input.day,
         clinicName: input.clinicName,
@@ -297,7 +298,18 @@ export default function VetVisitsScreen() {
       });
       syncPendingVetVisits().catch(console.error);
       setSheetMode(null);
+      // Vet contacts (CUL-2767, spec §4.3): a call, text or email goes straight on to *What did
+      // the vet say?* for the record's own pet, where what the vet sent and started is added and
+      // the saved moment plays. A visit closes onto the list as shipped, and flag-off never
+      // reaches here with another channel.
+      // Pushed AFTER the list re-reads, so the sheet's Modal has finished leaving before a new
+      // screen arrives over it (C-14: a push during a Modal's dismissal can be dropped on iOS).
       await load();
+      if (contactsOn && isRemoteChannel(input.channel)) {
+        // The other pets it was about ride along, so the saved moment reads every one (B3).
+        const also = input.alsoForPetIds.length > 0 ? `&also=${input.alsoForPetIds.map(encodeURIComponent).join(',')}` : '';
+        router.push(`/vet-visits/after?visit=${encodeURIComponent(savedId)}&fresh=1${also}`);
+      }
     } catch (err) {
       console.warn('[vet-visits] save failed:', err);
       // Plain cause, one action, no error string from the exception (the
