@@ -3,18 +3,31 @@
 // A `vet_visits` row is not always an exam since migration 122: `channel` says how the owner
 // heard from the vet. Every record surface (the list, the contact's own page, a course's
 // source, History) says which, from these functions, so the four surfaces cannot drift into
-// four spellings of one fact. Pure: no I/O, no flag. The caller decides whether the feature
-// is on and hands a channel only then.
+// four spellings of one fact. Pure: no I/O, no flag. A remote channel speaks whatever the
+// switch says (`showsChannel`, CUL-2830); the switch decides only a clinic visit's words.
 //
 // THE RULE THE COPY HOLDS. A remote contact says "no exam" on every surface, never implied
 // away (spec §6.1, n=1: a contact asserts nothing about the pet). A clinic visit keeps the
 // shipped words ("Vet visit"), so nothing an exam already says changes.
-import { formatClockTime, formatVisitDate, type VisitChannel } from './vetVisits';
+import { formatClockTime, formatVisitDate, type CourseVisitSource, type VisitChannel } from './vetVisits';
 
 export type RemoteChannel = Exclude<VisitChannel, 'in_clinic'>;
 
 export function isRemoteChannel(channel: VisitChannel | null | undefined): channel is RemoteChannel {
   return channel === 'phone' || channel === 'text' || channel === 'email';
+}
+
+/**
+ * Whether a record surface draws a row's channel (CUL-2830, PM ruling 2026-11-20): the RECORD
+ * decides, whatever this phone's Early access switch or a not-yet-resolved flag says. A call,
+ * text or email exists only because someone used the feature, so naming it is a fact about the
+ * record, never a feature: a second phone, a reinstall or a cold start never calls it "Vet
+ * visit". A clinic visit (or a row of unknown channel) keeps the shipped words while the switch
+ * is off, so a phone with no remote rows is byte-identical (AC 1). Entry (the logging door, the
+ * sheet's channel step, the channel chips) stays behind the switch; this governs words only.
+ */
+export function showsChannel(featureOn: boolean, channel: VisitChannel | null | undefined): boolean {
+  return featureOn || isRemoteChannel(channel);
 }
 
 /** The list's tag (mock D1): Visit | Phone | Text | Email. */
@@ -39,6 +52,11 @@ const HISTORY_TITLE: Record<RemoteChannel, string> = {
 };
 
 export const NO_EXAM = 'No exam';
+
+/** "this visit", "this call", "these texts", "this email": a record surface's subject (CUL-2830). */
+export function thisRecord(channel: VisitChannel | null | undefined): string {
+  return isRemoteChannel(channel) ? THIS_CONTACT[channel] : 'this visit';
+}
 
 /** What the record IS, in one word: the visit page's header actions and History's door. */
 export function recordNoun(channel: VisitChannel | null | undefined): string {
@@ -129,6 +147,20 @@ export function courseSourceLine(channel: VisitChannel, visitedAt: string, now: 
   return isRemoteChannel(channel)
     ? `Started after ${A_CONTACT[channel]} with the vet, ${date}`
     : `Started after a visit, ${date}`;
+}
+
+/** A course source this phone may name: its channel is known, and it speaks (`showsChannel`). */
+export type ShownCourseSource = CourseVisitSource & { channel: VisitChannel };
+
+/**
+ * The medication page's source row (D5), or null. A source whose channel this phone never
+ * learned draws no row: "Started after a visit" would claim an exam the record may not hold
+ * (PR-06's product review). A call, text or email draws its row on every phone (CUL-2830); a
+ * clinic source only while the switch is on, so a phone with no remote rows is unchanged.
+ */
+export function shownCourseSource(source: CourseVisitSource | null | undefined, featureOn: boolean): ShownCourseSource | null {
+  if (!source || source.channel === null) return null;
+  return showsChannel(featureOn, source.channel) ? { ...source, channel: source.channel } : null;
 }
 
 /** History's date-only row (D4): the title follows the channel; the detail ends on "no exam". */

@@ -64,7 +64,7 @@ import { shiftDay } from '../lib/historyDays';
 import { dayKeyToLocalDate, toLocalDayKey } from '../lib/utils';
 import { usePetStore, type Pet } from './petStore';
 import { defaultHistoryScope, type HistoryScope } from './historyScopeStore';
-import { historyRequestKey, mergePages, snapshotForScope, useHistoryListStore, withoutChannel } from './historyListStore';
+import { historyRequestKey, historyVisitRows, mergePages, snapshotForScope, useHistoryListStore, withoutChannel } from './historyListStore';
 import * as historyWindowFacts from '../lib/historyWindowFacts';
 import * as spineReads from '../lib/spineReads';
 import { dayStartMs } from '../lib/historyScreen';
@@ -790,8 +790,24 @@ describe('CUL-1760 — the timing read runs under a filter, a search and a month
   });
 });
 
-// Vet contacts PR-06 (CUL-2749): flag off, History's visit rows are the shipped shape, so a
-// call titles itself "Vet visit" exactly as main does (C-36); the gate is `vetContactsOnNow`.
+// Vet contacts PR-06 (CUL-2749), CUL-2830: flag off, a clinic visit's row is the shipped shape
+// (C-36); a call, text or email keeps its channel whatever the switch says, so it never titles
+// itself "Vet visit" on a second phone.
+describe('historyVisitRows', () => {
+  const row = (id: string, channel?: 'in_clinic' | 'phone' | 'text' | 'email') => ({
+    id, petId: 'p', visitedAt: '2026-11-09', sortMs: 1, reason: null, where: '', ...(channel ? { channel } : {}),
+  });
+  it('flag off: a clinic visit drops its channel; a call, texts and an email keep theirs', () => {
+    const out = historyVisitRows([row('c', 'in_clinic'), row('p', 'phone'), row('t', 'text'), row('e', 'email'), row('u')], false);
+    expect(out.map((r) => r.channel ?? null)).toEqual([null, 'phone', 'text', 'email', null]);
+    expect(out[0]).not.toHaveProperty('channel');
+  });
+  it('flag on: every row keeps what it carries', () => {
+    const out = historyVisitRows([row('c', 'in_clinic'), row('p', 'phone')], true);
+    expect(out.map((r) => r.channel)).toEqual(['in_clinic', 'phone']);
+  });
+});
+
 describe('withoutChannel', () => {
   it('drops the channel and nothing else', () => {
     const row = { id: 'v', petId: 'p', visitedAt: '2026-11-09', sortMs: 1, reason: 'Ear', where: '', channel: 'phone' as const };

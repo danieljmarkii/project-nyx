@@ -5,7 +5,8 @@ import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
 import { departureWords, sentDateLabel, windowLabel, type SavedReport } from '../../lib/reportLibrary';
-import { readReportsForVisit, VISIT_REPORTS_FAILED, VISIT_REPORTS_TITLE } from '../../lib/reportVisitLink';
+import { readReportsForVisit, visitReportsWords } from '../../lib/reportVisitLink';
+import type { VisitChannel } from '../../lib/vetVisits';
 
 // The reports filed under this visit (Vet report v2 PR-22, CUL-2302; spec §11.3, GAP-28).
 //
@@ -22,9 +23,12 @@ interface Props {
   /** Changes whenever the host re-reads, so this section re-reads with it. */
   refreshKey?: number;
   onOpenReport: (report: SavedReport) => void;
+  /** The record's own channel (CUL-2830): under a call the section reads "Reports for this call". */
+  channel?: VisitChannel | null;
 }
 
-export function VisitReports({ petId, visitId, appointmentId, refreshKey = 0, onOpenReport }: Props) {
+export function VisitReports({ petId, visitId, appointmentId, refreshKey = 0, onOpenReport, channel = null }: Props) {
+  const words = visitReportsWords(channel);
   const [reports, setReports] = useState<SavedReport[] | 'failed' | null>(null);
 
   useEffect(() => {
@@ -39,13 +43,13 @@ export function VisitReports({ petId, visitId, appointmentId, refreshKey = 0, on
 
   if (reports === null || (Array.isArray(reports) && reports.length === 0)) return null;
   if (reports === 'failed') {
-    return <ThemedText style={styles.failed} testID="visit-reports-failed">{VISIT_REPORTS_FAILED}</ThemedText>;
+    return <ThemedText style={styles.failed} testID="visit-reports-failed">{words.failed}</ThemedText>;
   }
 
   const year = new Date().getFullYear();
   return (
     <View style={styles.block} testID="visit-reports">
-      <SectionLabel label={VISIT_REPORTS_TITLE} header style={styles.sectionLabel} />
+      <SectionLabel label={words.title} header style={styles.sectionLabel} />
       <View style={styles.rows}>
         {reports.map((r) => {
           const title = `${sentDateLabel(r.sharedAt, year)} report`;

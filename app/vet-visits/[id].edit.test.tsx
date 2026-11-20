@@ -80,10 +80,22 @@ it('Edit on a call opens the sheet on it; Save writes the corrected channel', as
   await waitFor(() => expect(screen.queryByText('An email from the vet')).toBeNull());
 });
 
+// CUL-2830 (PM ruling 2026-11-20): the record decides. A call edits as a call on a phone whose
+// switch is off (a second phone, a reinstall): How did it go? would offer an exam's plan over it.
+it('Edit on a call, flag off, still opens the contact sheet, never How did it go?', async () => {
+  mockContactsOn = false;
+  mockDetail = detail('phone');
+  render(<VetVisitScreen />);
+  fireEvent.press(await screen.findByText('Edit'));
+  expect(router.push).not.toHaveBeenCalled();
+  expect(screen.getByText('A call with the vet')).toBeTruthy();
+});
+
 it.each([
   ['a clinic visit, flag on', 'in_clinic', true],
+  ['a clinic visit, flag off', 'in_clinic', false],
   ['a row whose channel the phone never learned, flag on', null, true],
-  ['a call, flag off', 'phone', false],
+  ['a row whose channel the phone never learned, flag off', null, false],
 ])('Edit on %s is How did it go?, as shipped', async (_name, channel, on) => {
   mockContactsOn = on;
   mockDetail = detail(channel);

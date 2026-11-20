@@ -43,6 +43,7 @@ import {
 import { toLocalDayKey } from '../lib/utils';
 import { readVisitsForHistory, type HistoryVisitRow } from '../lib/vetVisits';
 import { vetContactsOnNow } from '../hooks/useVetContacts';
+import { showsChannel } from '../lib/vetContacts';
 import {
   effectiveSearch,
   filterId,
@@ -474,9 +475,10 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
       // Every window is clipped to All time (`resolveWindow`), so it is a slice of the record.
       const facts = historyFactsFor(record.facts, resolved.bounds);
       const [visits, bowls, arrangements, firstPages, calls] = await Promise.all([
-        // Vet contacts (CUL-2749 PR-06): a row carries its channel into History only while the
-        // feature is on, so flag off every visit record titles itself as shipped (C-36).
-        readVisitsForHistory(pet.id).then((rows) => (vetContactsOnNow() ? rows : rows.map(withoutChannel))),
+        // Vet contacts (CUL-2749 PR-06; CUL-2830): a call, text or email carries its channel
+        // whatever the switch says, so it never titles itself "Vet visit". A clinic visit
+        // carries it only while the feature is on, so flag off it titles itself as shipped (C-36).
+        readVisitsForHistory(pet.id).then((rows) => historyVisitRows(rows, vetContactsOnNow())),
         getBoundaryMarkers(pet.id),
         getActiveArrangementsForPet(pet.id),
         readPagesThrough(pet.id, pageScope, keepTo),
@@ -661,6 +663,12 @@ usePetStore.subscribe((petState) => {
   const snap = useHistoryListStore.getState().snapshot;
   if (snap && snap.petId !== petId) useHistoryListStore.getState().reset();
 });
+
+/** History's visit rows for one read: a call, text or email keeps its channel whatever the
+ *  switch says (CUL-2830); a clinic visit keeps it only while the feature is on (C-36). */
+export function historyVisitRows(rows: readonly HistoryVisitRow[], featureOn: boolean): HistoryVisitRow[] {
+  return rows.map((r) => (showsChannel(featureOn, r.channel) ? r : withoutChannel(r)));
+}
 
 /** A History visit row as it read before Vet contacts: the channel dropped, nothing else. */
 export function withoutChannel(row: HistoryVisitRow): HistoryVisitRow {

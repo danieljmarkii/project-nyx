@@ -20,7 +20,7 @@ import { historyContactText, recordNoun, type RemoteChannel } from './vetContact
 // text's to summarise), rather than sharing a bare date that reads as "nothing was decided".
 //
 // A CALL, TEXT OR EMAIL (Vet contacts PR-06, CUL-2749) travels as itself: `contact` is the
-// record's remote channel while the feature is on, and the text then says what it was and
+// record's remote channel whatever the switch says (CUL-2830), and the text then says what it was and
 // "no exam" in its first line. Shared to a second vet, "vet visit" would claim an exam.
 export function visitToPlainText(
   detail: VetVisitDetail,

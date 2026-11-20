@@ -41,12 +41,6 @@ interface Props {
   pdfAvailable: boolean;
   /** The results capture is in flight. */
   resultsBusy?: boolean;
-  /**
-   * Vet contacts on (CUL-2749 PR-06, spec §4.6, mock D2 / D3). A call, text or email then reads
-   * as itself: "{pet}'s call", "Phone · Mon, Nov 9 · no exam", *What the vet sent*, *What the
-   * vet started*. A clinic visit, and every record while this is off, renders as shipped.
-   */
-  contactsOn?: boolean;
 }
 
 // One visit as written (mock D3, read-only).
@@ -74,7 +68,9 @@ interface Props {
 // *ADD TO THE PLAN* IS ALWAYS HERE (CUL-2754, §4.4 R1), on a visit with no plan above all:
 // the visit saved in a car park with nothing typed is the one that most needs the door.
 export function VisitDetailBody(props: Props) {
-  const channel = props.contactsOn ? channelOf(props.detail.visit.channel) : null;
+  // The record decides (CUL-2830): a call reads as a call whatever the switch says. Only a
+  // remote channel changes the body, so a clinic visit renders the shipped body either way.
+  const channel = channelOf(props.detail.visit.channel);
   if (isRemoteChannel(channel)) return <ContactDetailBody {...props} channel={channel} />;
   return <ClinicVisitBody {...props} />;
 }

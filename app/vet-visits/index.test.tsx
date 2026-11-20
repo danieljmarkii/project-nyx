@@ -799,3 +799,27 @@ describe('the logging door’s write', () => {
     expect(mockLog).toHaveBeenCalledTimes(1);
   });
 });
+
+// CUL-2830 (PM ruling 2026-11-20): the RECORD decides the list row's words. A call logged on
+// another phone keeps its tag and "No exam" here though this phone's switch is off; a clinic
+// visit keeps the shipped row (no tag) while the switch is off.
+describe('CUL-2830 — a call reads as a call on a phone whose switch is off', () => {
+  const row = (id: string, channel: 'in_clinic' | 'phone', title: string) => ({
+    id, petId: 'pet-a', visitedAt: '2026-11-09', stamp: null, title, where: '', tags: [], channel,
+    ...(channel === 'phone' ? { contactTitle: 'Call on Nov 9' } : {}),
+  });
+  it('the call shows "Phone" and "No exam"; the clinic visit shows no tag', async () => {
+    mockContactsOn = false;
+    mockHome = {
+      next: null, later: [], awaiting: [],
+      visits: [row('v-call', 'phone', 'Visit on Nov 9'), row('v-exam', 'in_clinic', 'Recheck')],
+    };
+    render(<VetVisitsScreen />);
+    expect(await screen.findByText('Call on Nov 9')).toBeTruthy();
+    expect(screen.getByText('Phone')).toBeTruthy();
+    expect(screen.getAllByText('No exam')).toHaveLength(1);
+    expect(screen.queryByText('Visit on Nov 9')).toBeNull();
+    expect(screen.queryByText('Visit')).toBeNull();
+    expect(screen.getByText('Recheck')).toBeTruthy();
+  });
+});

@@ -19,7 +19,10 @@ import {
   readReportLink,
   readReportsForVisit,
   sameTarget,
+  VISIT_REPORTS_FAILED,
   VISIT_REPORTS_PAGE,
+  VISIT_REPORTS_TITLE,
+  visitReportsWords,
 } from './reportVisitLink';
 import type { VetVisitsHome } from './vetVisits';
 
@@ -157,6 +160,40 @@ describe('linkOptions and the words', () => {
     expect(o[3]).toMatchObject({ primary: 'Oct 30 visit', secondary: 'Recheck · Riverside · Dr. Chen', phrase: 'the Oct 30 visit' });
     // The stand-in title only repeats the date, so it is not shown twice.
     expect(o[4].secondary).toBe('');
+  });
+  // CUL-2830: the picker reads a row's own channel, whatever the switch says. "the Nov 9 visit"
+  // over a phone consult would file a report under an exam that never happened.
+  it('a call, texts and an email are named as themselves; an unknown channel keeps "visit"', () => {
+    const v = HOME.visits[1];
+    const home: VetVisitsHome = {
+      next: null, later: [], awaiting: [],
+      visits: [
+        { ...v, id: 'p', visitedAt: '2026-11-09', channel: 'phone' },
+        { ...v, id: 't', visitedAt: '2026-11-09', channel: 'text' },
+        { ...v, id: 'e', visitedAt: '2026-11-09', channel: 'email' },
+        { ...v, id: 'u', visitedAt: '2026-11-09', channel: undefined },
+      ],
+    };
+    const o = linkOptions(home, new Date(2026, 10, 20));
+    expect(o.map((x) => [x.primary, x.phrase])).toEqual([
+      ['Nov 9 call', 'the Nov 9 call'],
+      ['Nov 9 texts', 'the Nov 9 texts'],
+      ['Nov 9 email', 'the Nov 9 email'],
+      ['Nov 9 visit', 'the Nov 9 visit'],
+    ]);
+    expect(linkedLine({ kind: 'visit', id: 'p' }, o)).toBe('For the Nov 9 call');
+    // A contact's row ends on "No exam"; an unknown row says nothing it cannot know.
+    expect(o.map((x) => x.secondary)).toEqual(['No exam', 'No exam', 'No exam', '']);
+  });
+  it('the reports section names a call as a call, and keeps the shipped words on a visit', () => {
+    expect(visitReportsWords('in_clinic')).toEqual({ title: VISIT_REPORTS_TITLE, failed: VISIT_REPORTS_FAILED });
+    expect(visitReportsWords(null)).toEqual({ title: VISIT_REPORTS_TITLE, failed: VISIT_REPORTS_FAILED });
+    expect(visitReportsWords('phone')).toEqual({
+      title: 'Reports for this call',
+      failed: 'Couldn’t load the reports for this call.',
+    });
+    expect(visitReportsWords('text').title).toBe('Reports for these texts');
+    expect(visitReportsWords('email').title).toBe('Reports for this email');
   });
   it('the report line says where it is filed, and never "not filed" for a link the list lost', () => {
     const o = linkOptions(HOME);

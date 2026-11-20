@@ -489,7 +489,8 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
                 <PlanSettledRow
                   glyph={<Utensils size={16} color={theme.colorTextTertiary} strokeWidth={2} />}
                   title={heldTrialLabel}
-                  subtitle="Trial running · not linked to this visit"
+                  // The record's own subject (CUL-2830): a call reopened mid-trial is not a visit.
+                  subtitle={`Trial running · not linked to ${contact?.thisNoun ?? 'this visit'}`}
                 />
               ) : null}
               <PlanActionRow

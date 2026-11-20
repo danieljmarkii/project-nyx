@@ -178,11 +178,13 @@ export default function AfterVisitScreen() {
   const reopened = !!reopenId;
   // Vet contacts (CUL-2767): the record's channel, as the RECORD holds it. A visit this screen
   // creates is 'in_clinic' (both create paths write it); a reopen reads it from the row, and a
-  // row this phone never learned the channel of stays null. `contactsOn` gates the SURFACE
-  // only: the care-answer refusal below reads the record whatever the flag says.
+  // row this phone never learned the channel of stays null. `contactsOn` gates the channel
+  // chips only: the words and the care-answer refusal read the record whatever it says.
   const contactsOn = useVetContactsOn();
   const [recordChannel, setRecordChannel] = useState<VisitChannel | null>(reopenId ? null : 'in_clinic');
-  const isContact = contactsOn && isRemoteChannel(recordChannel);
+  // The record decides the words (CUL-2830): a call reopened on a phone whose switch is off
+  // still reads as a call. The switch gates only the channel chips below.
+  const isContact = isRemoteChannel(recordChannel);
   // `&fresh=1`: the sheet just saved this contact, so *Done* plays the saved moment (C4, C5)
   // rather than returning, as a reopen of an older record does.
   const justSaved = fresh === '1';

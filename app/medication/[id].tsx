@@ -55,6 +55,7 @@ import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { useVetContactsOn } from '../../hooks/useVetContacts';
 import { readCourseVisitSources, type CourseVisitSource } from '../../lib/vetVisits';
 import { CourseSourceRow } from '../../components/vetvisits/CourseSourceRow';
+import { shownCourseSource, type ShownCourseSource } from '../../lib/vetContacts';
 import { useSyncStore } from '../../store/syncStore';
 import {
   uploadPhoto, compressForUpload, getSignedUrl,
@@ -72,7 +73,6 @@ import { historyHref } from '../../lib/historyDoors';
 import { ThemedText } from '../../components/ui/ThemedText';
 
 /** A course's source whose channel this phone knows: the only kind that draws a row. */
-type KnownSource = CourseVisitSource & { channel: NonNullable<CourseVisitSource['channel']> };
 
 interface MedicationItemRow {
   id: string;
@@ -198,11 +198,8 @@ export default function MedicationDetailScreen() {
         if (cancelled || courses == null) return;
         const ofDrug = courses.filter((c) => c.medicationItemId === id);
         setPastCourses(ofDrug.filter((c) => !c.isActive));
-        if (!contactsOn) {
-          setCurrentCourses([]);
-          setSources(new Map());
-          return;
-        }
+        // Read whatever the switch says (CUL-2830): a course started after a call names the
+        // call on every phone. `sourceOf` keeps a clinic source off while the switch is off.
         setCurrentCourses(ofDrug.filter((c) => c.isActive));
         // A failed source read leaves the rows off; the course itself still renders.
         const read = await readCourseVisitSources(
@@ -215,17 +212,14 @@ export default function MedicationDetailScreen() {
       })
       .catch((e) => { console.error('[medication-detail] course history load failed:', e); });
     return () => { cancelled = true; };
-  }, [id, activePet?.id, hydrationTick, contactsOn]);
+  }, [id, activePet?.id, hydrationTick]);
 
   // The courses are read for the active pet, so that pet is the record's (C-9): its name is
   // resolved from the record's id, never from the store's active name.
   const coursePetName = resolveRecordPetName(pets, activePet?.id);
-  // A source whose channel this phone never learned draws no row: "Started after a visit" would
-  // claim an exam the record may not hold (PR-06's product review).
-  const sourceOf = (c: MedicationCourse): KnownSource | null => {
-    const source = c.regimenId ? sources.get(c.regimenId) ?? null : null;
-    return source && source.channel !== null ? { ...source, channel: source.channel } : null;
-  };
+  // The record decides (CUL-2830): `shownCourseSource` holds the rule and its test.
+  const sourceOf = (c: MedicationCourse): ShownCourseSource | null =>
+    shownCourseSource(c.regimenId ? sources.get(c.regimenId) : null, contactsOn);
   const openSource = (source: CourseVisitSource) => router.push(`/vet-visits/${source.visitId}`);
   const currentWithSource = currentCourses.filter((c) => sourceOf(c) !== null);
 
@@ -492,7 +486,7 @@ export default function MedicationDetailScreen() {
             <View style={styles.historySection}>
               <SectionLabel label={`${coursePetName}’s current course`} />
               {currentWithSource.map((c) => {
-                const source = sourceOf(c) as KnownSource;
+                const source = sourceOf(c) as ShownCourseSource;
                 return (
                   <View key={c.key} style={styles.courseCard}>
                     <CourseSourceRow source={source} onPress={() => openSource(source)} />

@@ -18,7 +18,8 @@
 
 import { supabase } from './supabase';
 import { functionsErrorStatus } from './syncQueue';
-import { formatVisitDate, type VetVisitsHome } from './vetVisits';
+import { formatVisitDate, type VetVisitsHome, type VisitChannel } from './vetVisits';
+import { isRemoteChannel, NO_EXAM, recordNoun, thisRecord } from './vetContacts';
 import type { SavedReport } from './reportLibrary';
 
 export type VisitLinkTarget = { kind: 'visit' | 'appointment'; id: string };
@@ -188,12 +189,19 @@ export function linkOptions(home: VetVisitsHome, now: Date = new Date()): VisitL
     })),
     ...home.visits.map((v) => {
       const date = formatVisitDate(v.visitedAt, now);
+      // A call, text or email is named as itself (CUL-2830), whatever the switch says: "the Nov 9
+      // visit" over a phone consult files a report under an exam that never happened. A clinic
+      // visit and a row of unknown channel keep the shipped words.
+      const noun = recordNoun(v.channel);
       return {
         target: { kind: 'visit' as const, id: v.id },
-        primary: `${date} visit`,
+        primary: `${date} ${noun}`,
         // The reason, when typed, is the title; the stand-in title only repeats the date.
-        secondary: [v.title.startsWith('Visit on ') ? '' : v.title, v.where].filter((p) => p.length > 0).join(' · '),
-        phrase: `the ${date} visit`,
+        // A contact ends on "No exam", as every record surface says it (spec §6.1).
+        secondary: [v.title.startsWith('Visit on ') ? '' : v.title, v.where, isRemoteChannel(v.channel) ? NO_EXAM : '']
+          .filter((p) => p.length > 0)
+          .join(' · '),
+        phrase: `the ${date} ${noun}`,
       };
     }),
   ];
@@ -230,3 +238,11 @@ export const LINK_FAILED = 'Couldn’t save that. Try again in a moment.';
 /** The visit screen's section. */
 export const VISIT_REPORTS_TITLE = 'Reports for this visit';
 export const VISIT_REPORTS_FAILED = 'Couldn’t load the reports for this visit.';
+
+/** The section's words under a record's own channel (CUL-2830): "Reports for this call" under a
+ *  call. A clinic visit and an unknown channel keep the shipped words above. */
+export function visitReportsWords(channel: VisitChannel | null | undefined): { title: string; failed: string } {
+  if (!isRemoteChannel(channel)) return { title: VISIT_REPORTS_TITLE, failed: VISIT_REPORTS_FAILED };
+  const subject = thisRecord(channel);
+  return { title: `Reports for ${subject}`, failed: `Couldn’t load the reports for ${subject}.` };
+}

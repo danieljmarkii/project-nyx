@@ -7,6 +7,8 @@ import {
   formatShortWeekday,
   historyContactPhrase,
   historyContactText,
+  showsChannel,
+  shownCourseSource,
   startedPhrase,
 } from './vetContacts';
 import { buildVisitListRow, channelOf, type LocalVetVisit } from './vetVisits';
@@ -102,5 +104,36 @@ describe('the list row', () => {
     expect(['in_clinic', 'phone', 'text', 'email', null, 'fax', 3].map(channelOf)).toEqual([
       'in_clinic', 'phone', 'text', 'email', null, null, null,
     ]);
+  });
+});
+
+// CUL-2830 (PM ruling 2026-11-20): the record decides the words, the switch only a clinic visit's.
+describe('showsChannel', () => {
+  it('a call, texts and an email always show; a clinic visit and an unknown row only while on', () => {
+    for (const ch of ['phone', 'text', 'email'] as const) {
+      expect(showsChannel(false, ch)).toBe(true);
+      expect(showsChannel(true, ch)).toBe(true);
+    }
+    expect(showsChannel(false, 'in_clinic')).toBe(false);
+    expect(showsChannel(false, null)).toBe(false);
+    expect(showsChannel(false, undefined)).toBe(false);
+    expect(showsChannel(true, 'in_clinic')).toBe(true);
+  });
+});
+
+// CUL-2830: the medication page's source row follows the record, not the switch.
+describe('shownCourseSource', () => {
+  const src = (channel: 'in_clinic' | 'phone' | 'text' | 'email' | null) => ({ visitId: 'v', channel, visitedAt: '2026-11-09' });
+  it('switch off: a call, texts or an email source shows; a clinic or unknown source does not', () => {
+    expect(shownCourseSource(src('phone'), false)).toEqual(src('phone'));
+    expect(shownCourseSource(src('text'), false)).toEqual(src('text'));
+    expect(shownCourseSource(src('email'), false)).toEqual(src('email'));
+    expect(shownCourseSource(src('in_clinic'), false)).toBeNull();
+    expect(shownCourseSource(src(null), false)).toBeNull();
+    expect(shownCourseSource(null, false)).toBeNull();
+  });
+  it('switch on: a clinic source shows; an unknown channel never does', () => {
+    expect(shownCourseSource(src('in_clinic'), true)).toEqual(src('in_clinic'));
+    expect(shownCourseSource(src(null), true)).toBeNull();
   });
 });
