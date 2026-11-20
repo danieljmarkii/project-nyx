@@ -1137,7 +1137,9 @@ export async function readCareContextFacts(
 // ── EN-9's reads (Engines v3 PR-23, CUL-1417) ──────────────────────────────────
 //
 // Behind `engines_v3_en9`. Every read names its columns (guards/careRecord.test.ts): the owner's
-// answers (never a visit id, a clinic or a note: the answer's ANCHOR is the date it names), the
+// answers (never a clinic or a note: the answer's ANCHOR is the date it names; the visit id only
+// to read that visit's `channel` and `deleted_at`, CUL-2841, so an answer about a call, text or
+// email never stands a concern down), the
 // trial or course an answer is scoped to (dates, status and whether it has a target), the newest
 // given or partial dose of each such course, the lethargy rows in the lookback (C1a source 2),
 // and the pet's appointments by DATE (CUL-2652: `scheduled_at`, `cancelled_at`, `deleted_at`, the
@@ -1150,7 +1152,8 @@ export async function readCareContextFacts(
 // read that did not answer.
 const ACK_SOURCES: ReadonlySet<string> = new Set<AckSource>(['at_vet_tick', 'visit_answer', 'my_vet_knows', 'vet_started_trial', 'vet_started_course'])
 
-type AckRow = { id: string; symptom_type: string; source: string; anchor_on: string; diet_trial_id: string | null; medication_id: string | null; retracts: string | null; created_at: string }
+type AckRow = { id: string; symptom_type: string; source: string; anchor_on: string; vet_visit_id: string | null; diet_trial_id: string | null; medication_id: string | null; retracts: string | null; created_at: string }
+type AckVisitRow = { id: string; channel: string | null; deleted_at: string | null }
 type AckTrialRow = { id: string; started_at: string; ended_at: string | null; target_duration_days: number | null; target_duration_days_initial: number | null }
 type AckMedRow = { id: string; drug_name: string | null; started_at: string | null; ended_at: string | null; status: string | null; target_duration_days: number | null; target_duration_doses: number | null }
 type AppointmentRow = { id: string; scheduled_at: string; cancelled_at: string | null; deleted_at: string | null; reason: string | null }
@@ -1207,7 +1210,7 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
       fetchAll<AckRow>('care_acknowledgements', (r) => r.id, (from, to) =>
         supabase
           .from('care_acknowledgements')
-          .select('id, symptom_type, source, anchor_on, diet_trial_id, medication_id, retracts, created_at', { count: 'exact' })
+          .select('id, symptom_type, source, anchor_on, vet_visit_id, diet_trial_id, medication_id, retracts, created_at', { count: 'exact' })
           .eq('pet_id', petId)
           .order('created_at', { ascending: false })
           .order('id', { ascending: false })
@@ -1236,9 +1239,12 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
     const rows = ackPull.rows
     const trialIds = [...new Set(rows.map((r) => r.diet_trial_id).filter((x): x is string => typeof x === 'string'))]
     const medIds = [...new Set(rows.map((r) => r.medication_id).filter((x): x is string => typeof x === 'string'))]
+    // CUL-2841: the visits the visit answers name, so careState can refuse one whose visit is not
+    // an exam (`answerStandsOnAnExam`). Only the two visit sources may carry a link (082's CHECK).
+    const visitIds = [...new Set(rows.filter((r) => r.source === 'at_vet_tick' || r.source === 'visit_answer').map((r) => r.vet_visit_id).filter((x): x is string => typeof x === 'string'))]
     // No answer names a trial or a course: nothing to read, and an empty read is complete.
     const none = <T>(): Promise<Pull<T>> => Promise.resolve({ rows: [], complete: true })
-    const [trialPull, medPull, dosePull] = await Promise.all([
+    const [trialPull, medPull, dosePull, visitPull] = await Promise.all([
       trialIds.length === 0 ? none<AckTrialRow>() : fetchAll<AckTrialRow>('diet_trials', (r) => r.id, (from, to) =>
         supabase
           .from('diet_trials')
@@ -1272,16 +1278,27 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
           .order('occurred_at', { ascending: false })
           .order('id', { ascending: false })
           .range(from, to)),
+      visitIds.length === 0 ? none<AckVisitRow>() : fetchAll<AckVisitRow>('vet_visits', (r) => r.id, (from, to) =>
+        // visit-read: anyContact — resolves an answer's source: a call, text or email must be seen to be refused
+        supabase
+          .from('vet_visits')
+          .select('id, channel, deleted_at', { count: 'exact' })
+          .eq('pet_id', petId)
+          .in('id', visitIds)
+          .order('visited_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
     ])
     // A short appointment read refuses the whole record, the louder reading: no booking is
     // assumed and no answer is taken, so every concern keeps its ask.
-    const short = incompletePullNames({ acknowledgements: ackPull, lethargy: lethargyPull, appointments: apptPull, trials: trialPull, medications: medPull, doses: dosePull })
+    const short = incompletePullNames({ acknowledgements: ackPull, lethargy: lethargyPull, appointments: apptPull, trials: trialPull, medications: medPull, doses: dosePull, visits: visitPull })
     if (short.length > 0) {
       console.warn('generate-signal: the care-record reads were incomplete, every concern stays raised:', petId, short.join(', '))
       return EMPTY_CARE_RECORD
     }
     const trials = new Map(trialPull.rows.map((t) => [t.id, t]))
     const meds = new Map(medPull.rows.map((m) => [m.id, m]))
+    const visits = new Map(visitPull.rows.map((v) => [v.id, v]))
     const lastDose = new Map<string, string>()
     for (const d of dosePull.rows) {
       const admins = Array.isArray(d.medication_administrations) ? d.medication_administrations : d.medication_administrations ? [d.medication_administrations] : []
@@ -1294,6 +1311,7 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
       if (!ACK_SOURCES.has(r.source)) continue
       const t = r.diet_trial_id ? trials.get(r.diet_trial_id) : undefined
       const m = r.medication_id ? meds.get(r.medication_id) : undefined
+      const v = r.vet_visit_id ? visits.get(r.vet_visit_id) : undefined
       acknowledgements.push({
         id: r.id,
         sign: r.symptom_type as AckFact['sign'],
@@ -1314,6 +1332,9 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
             lastDoseAt: lastDose.get(m.id) ?? null,
           }
           : null,
+        // A visit the read did not return (no link, hard-deleted, another pet's) is null, and
+        // careState refuses the answer (`not_an_exam`): the louder reading.
+        visit: v ? { channel: typeof v.channel === 'string' ? v.channel : null, deleted: v.deleted_at !== null } : null,
       })
     }
     const history = await readCareHistory(supabase, petId, lookbackIso, nowMs, acknowledgements)

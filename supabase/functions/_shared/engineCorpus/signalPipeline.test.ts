@@ -412,7 +412,7 @@ Deno.test('(c-en9) AC-3: with every concern answered, every escalation keeps its
       ...EMPTY_CARE_RECORD,
       acknowledgements: signs.map((sign, i) => ({
         id: `ack-${i}`, sign, source: 'my_vet_knows' as const, anchorOn: new Date(nowMs - 86_400_000).toISOString().slice(0, 10),
-        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null,
+        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null, visit: null,
       })),
     }
     const on = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS)
@@ -456,7 +456,7 @@ Deno.test('(c-en9) CUL-1538: the summary says what a watched card says, and stil
       ...EMPTY_CARE_RECORD,
       acknowledgements: signs.map((sign, i) => ({
         id: `ack-${i}`, sign, source: 'my_vet_knows' as const, anchorOn: new Date(nowMs - 86_400_000).toISOString().slice(0, 10),
-        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null,
+        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null, visit: null,
       })),
     }
     const result = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS)
@@ -496,7 +496,7 @@ Deno.test('(c-en9) CUL-1663: an unreadable prior row lapses every answer written
       ...EMPTY_CARE_RECORD,
       acknowledgements: signs.map((sign, i) => ({
         id: `ack-${i}`, sign, source: 'my_vet_knows' as const, anchorOn: new Date(nowMs - 86_400_000).toISOString().slice(0, 10),
-        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null,
+        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null, visit: null,
       })),
     }
     const failed = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, true)
@@ -541,7 +541,7 @@ Deno.test('(c-en9) CUL-1667: a missing prior row beside an answer lapses exactly
       ...EMPTY_CARE_RECORD,
       acknowledgements: signs.map((sign, i) => ({
         id: `ack-${i}`, sign, source: 'my_vet_knows' as const, anchorOn: new Date(nowMs - 86_400_000).toISOString().slice(0, 10),
-        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null,
+        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null, visit: null,
       })),
     }
     const missing = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, false)
@@ -653,7 +653,7 @@ Deno.test('(c-en9) CUL-2662: an answer survives a run that skipped the step (A â
       ...EMPTY_CARE_RECORD,
       acknowledgements: signs.map((sign, i) => ({
         id: `ack-${i}`, sign, source: 'my_vet_knows' as const, anchorOn: new Date(nowMs - 86_400_000).toISOString().slice(0, 10),
-        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null,
+        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null, visit: null,
       })),
     }
     const go = (prior: PriorSignal | null, incomplete: string[], flags: EngineFlags = ON, priorReadFailed = false) =>

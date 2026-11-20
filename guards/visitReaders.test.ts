@@ -294,7 +294,8 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
 
   // ── The Signal shell (AC 10 as amended 2026-09-28; CUL-1420, Engines v3 PR-22) ──
   'supabase/functions/generate-signal/index.ts': {
-    kinds: ['table'],
+    // `column` since CUL-2841: care_acknowledgements.vet_visit_id, read only to resolve a source.
+    kinds: ['table', 'column'],
     why:
       'readCareContextFacts — EN-10\'s context line, behind engines_v3_en10. The ONE engine ' +
       'reader of a vet table: one column, `visited_at`, of the most recent visit, to start a ' +
@@ -303,7 +304,10 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'note is selected, pinned by SHELL_COLUMNS. readCareRecord (EN-9, PR-23, behind ' +
       'engines_v3_en9) reads the owner\'s answers about a sign by explicit columns: the sign, ' +
       'the source, the DATE it names, the trial or course it is scoped to, a retraction link and ' +
-      'when it was written; never the visit id. CUL-2652 adds the pet\'s appointments by DATE ' +
+      'when it was written. CUL-2841 (Vet contacts PR-09) adds the answer\'s vet_visit_id and ' +
+      'one read of those visits by `id, channel, deleted_at` ONLY, so an answer about a call, ' +
+      'text or email (or a deleted or missing visit) never stands a concern down: the link ' +
+      'resolves a source, never a date or a count. CUL-2652 adds the pet\'s appointments by DATE ' +
       '(`scheduled_at`, `cancelled_at`, `deleted_at`, the three AC 10 as amended names), ' +
       'so a booked visit within 30 days quiets a "worth booking" ask. CUL-2793 (PM go, ' +
       '2026-11-15) adds `reason`, reduced at the mapping line to one boolean so a booking the ' +
@@ -690,15 +694,19 @@ describe('AC 10 — visit data never reaches a count, a coverage line or an engi
 // unrelated `.select` can be attributed to it (a false red, the safe direction).
 
 const SHELL = 'supabase/functions/generate-signal/index.ts';
-const SHELL_COLUMNS: Record<string, readonly string[]> = {
-  vet_visits: ['visited_at'],
+const SHELL_COLUMNS: Record<string, readonly (readonly string[])[]> = {
+  // CUL-2765: the exam's day and the last contact's, both `visited_at` alone. CUL-2841: an answer's
+  // visit by `id, channel, deleted_at`, so a visit answer stands only on an exam. A read must match
+  // ONE of a table's sanctioned sets exactly.
+  vet_visits: [['visited_at'], ['id', 'channel', 'deleted_at']],
   // EN-9 (PR-23): AC 10 as amended lets the shell read "the owner's acknowledgement rows, by
-  // explicit column list". `vet_visit_id` is deliberately absent: the answer's anchor IS the date.
-  care_acknowledgements: ['id', 'symptom_type', 'source', 'anchor_on', 'diet_trial_id', 'medication_id', 'retracts', 'created_at'],
+  // explicit column list". The anchor IS the date; `vet_visit_id` (CUL-2841) only resolves the
+  // answer's source through the read above, never a date.
+  care_acknowledgements: [['id', 'symptom_type', 'source', 'anchor_on', 'vet_visit_id', 'diet_trial_id', 'medication_id', 'retracts', 'created_at']],
   // CUL-2652: the amendment's three appointment dates, and the row id (for "How did it go?"'s
   // link and a stable paging key). CUL-2793: `reason`, reduced at once to the phantom-recheck
   // boolean (PM go, 2026-11-15). No questions, clinic, vet, notes or visit link.
-  vet_appointments: ['id', 'scheduled_at', 'cancelled_at', 'deleted_at', 'reason'],
+  vet_appointments: [['id', 'scheduled_at', 'cancelled_at', 'deleted_at', 'reason']],
 };
 
 /** Every `.from('<vet table>')` in `src` with the select list that follows it. */
@@ -723,10 +731,11 @@ describe('the Signal shell reads a vet table only by its sanctioned columns', ()
 
   it('finds the shell\'s read (non-vacuity)', () => {
     // Two vet_visits reads since CUL-2765: the exam's day and the last contact's (masking only),
-    // both `visited_at` alone.
+    // both `visited_at` alone; a third since CUL-2841, the channels of the answers' visits.
     expect(reads.map((r) => r.table).sort()).toEqual([
       'care_acknowledgements',
       'vet_appointments',
+      'vet_visits',
       'vet_visits',
       'vet_visits',
     ]);
@@ -736,7 +745,8 @@ describe('the Signal shell reads a vet table only by its sanctioned columns', ()
     for (const r of reads) {
       expect(r.columns).not.toBeNull();
       const cols = (r.columns as string).split(',').map((c) => c.trim()).filter(Boolean).sort();
-      expect(cols).toEqual([...(SHELL_COLUMNS[r.table] ?? [])].sort());
+      const sets = (SHELL_COLUMNS[r.table] ?? []).map((set) => [...set].sort());
+      expect(sets).toContainEqual(cols);
     }
   });
 

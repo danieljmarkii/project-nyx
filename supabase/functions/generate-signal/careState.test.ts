@@ -61,6 +61,9 @@ function ack(over: Partial<AckFact> & { daysAgo: number }): AckFact {
     retracts: over.retracts ?? null,
     trial: over.trial ?? null,
     course: over.course ?? null,
+    // CUL-2841: every fixture's visit is an exam unless the test says otherwise, so each pinned
+    // result below is also the differential: with no contact anywhere, nothing moves.
+    visit: over.visit !== undefined ? over.visit : { channel: 'in_clinic', deleted: false },
   }
 }
 
@@ -1188,3 +1191,114 @@ Deno.test('CUL-2662: readPriorCare reads a carry as a raised fact holding its la
   assertStrictEquals(readPriorCare([insight({ careCarry: { lapsed: [], reason: null } })]).size, 0, 'an insight card\'s carry vouched')
   assertStrictEquals(readPriorCare([insight({ careState: { state: 'with_vet', ackId: 'a', lapsed: [] } })]).size, 0, 'an insight card\'s care state vouched')
 })
+
+// ── CUL-2841: a visit answer stands only on an exam ──
+
+Deno.test('CUL-2841: an answer about the Sep 18 exam stands the concern down; corrected to a call, text or email, deleted, missing or unknown, it does not', () => {
+  const visitAns = (visit: AckFact['visit'], source: 'visit_answer' | 'at_vet_tick' = 'visit_answer') =>
+    ack({ id: 'v', daysAgo: 12, source, anchorOn: '2026-09-18', visit })
+  const exam = { channel: 'in_clinic', deleted: false }
+  for (const source of ['visit_answer', 'at_vet_tick'] as const) {
+    const s = stateOf({ symptoms: STABLE, acks: [visitAns(exam, source)] })
+    assertEquals([s.state, s.ackId], ['with_vet', 'v'], `${source} on an exam`)
+    for (const [why, visit] of [
+      ['phone', { channel: 'phone', deleted: false }],
+      ['text', { channel: 'text', deleted: false }],
+      ['email', { channel: 'email', deleted: false }],
+      ['an unknown channel', { channel: 'video', deleted: false }],
+      ['a NULL channel', { channel: null, deleted: false }],
+      ['a deleted exam', { channel: 'in_clinic', deleted: true }],
+      ['no visit found', null],
+    ] as [string, AckFact['visit']][]) {
+      const t = stateOf({ symptoms: STABLE, acks: [visitAns(visit, source)] })
+      assertEquals([t.state, t.ackId, t.text], ['raised', null, null], `${source} on ${why}`)
+    }
+  }
+})
+
+Deno.test('CUL-2841: a "my vet knows" answer names no visit and is untouched', () => {
+  for (const visit of [null, { channel: 'phone', deleted: false }, { channel: 'in_clinic', deleted: true }]) {
+    const s = stateOf({ symptoms: STABLE, acks: [ack({ id: 'k', daysAgo: 12, visit })] })
+    assertEquals([s.state, s.ackId], ['with_vet', 'k'])
+  }
+})
+
+Deno.test('CUL-2841: a corrected call falls back to the older answer, never quieter than it', () => {
+  const older = ack({ id: 'k', daysAgo: 40 })
+  const call = ack({ id: 'v', daysAgo: 12, source: 'visit_answer', anchorOn: '2026-09-18', visit: { channel: 'phone', deleted: false } })
+  const s = stateOf({ symptoms: STABLE, acks: [older, call] })
+  assertEquals([s.state, s.ackId], ['with_vet', 'k'])
+})
+
+Deno.test('CUL-2841: a corrected call never covers an older answer\'s re-raise (the replay)', () => {
+  // The CUL-1600 fixture: against the 120-day answer, diarrhea on days −55 and −50 is a new co-sign;
+  // the 65-day answer, while it is live, is the one the step tests, so that re-raise never latches.
+  const symptoms = [...STABLE, ...events('diarrhea', [80, 55, 50])]
+  const a = ack({ id: 'a', daysAgo: 120 })
+  const examK = ack({ id: 'k', daysAgo: 65, source: 'visit_answer', anchorOn: dayOf(65) })
+  const control = stateOf({ symptoms, acks: [a, examK], record: { history: null } })
+  assertEquals([control.state, control.ackId, 'raisedAgainAt' in control], ['with_vet', 'k', false], 'control: on an exam it covers')
+  // The same answer once its visit is a call: it never stood, so the older answer's re-raise stands.
+  const callK = { ...examK, visit: { channel: 'phone', deleted: false } }
+  const s = stateOf({ symptoms, acks: [a, callK], record: { history: null } })
+  assertStrictEquals(s.state === 'with_vet' || s.state === 'recheck_booked' || s.state === 'visit_booked', false, s.state)
+  assertStrictEquals(s.ackId === 'k', false)
+  // The replay itself: a newer EXAM answer about a visit before the re-raise is the live one, so only
+  // the rebuilt marker can hold the re-raise. Covered by an exam, there is none to hold; covered by
+  // a call, the marker stands and the visit before it does not quiet the concern.
+  const oldVisit = ack({ id: 'w', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(52), createdAt: at(0, 13) })
+  assertStrictEquals(stateOf({ symptoms, acks: [a, examK, oldVisit] }).state, 'with_vet', 'control: the exam covered day −50')
+  const r = stateOf({ symptoms, acks: [a, callK, oldVisit] })
+  assertEquals([r.state, r.ackId], ['raised_again', 'w'])
+})
+
+Deno.test('CUL-2841 adv pass 1 B1: a passed booking never stands in for a visit answer refused as not an exam', () => {
+  const passed = { appointments: [apptAt({ id: 'sep-27', daysAhead: -3 })] }
+  const answer = (visit: AckFact['visit'], over: Partial<AckFact> = {}) =>
+    ack({ id: 'v', daysAgo: 2, source: 'visit_answer', anchorOn: dayOf(3), visit, ...over })
+  const call = { channel: 'phone', deleted: false }
+  // Control: on an exam it is an answer; with no answer at all the passed booking quiets as designed.
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [answer({ channel: 'in_clinic', deleted: false })], record: passed }).state, 'with_vet')
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: passed }).state, 'visit_booked')
+  // Corrected to a call (or deleted, or missing): the ask returns, never "how it went isn't recorded".
+  for (const visit of [call, { channel: 'in_clinic', deleted: true }, null]) {
+    const s = stateOf({ symptoms: STABLE, acks: [answer(visit)], record: passed })
+    assertEquals([s.state, s.text], ['raised', null])
+  }
+  // The phone retracted it when the channel changed: the visit is still a call, so the same.
+  const undo: AckFact = { ...ack({ id: 'u', daysAgo: 1 }), retracts: 'v' }
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [answer(call), undo], record: passed }).state, 'raised')
+  // An undo on an EXAM answer is not a contact: the passed booking quiets as before.
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [answer({ channel: 'in_clinic', deleted: false }), undo], record: passed }).state, 'visit_booked')
+  // Pass 2: any refused answer this course keeps every booking from quieting, the louder reading.
+  // A call about a day before the passed booking: the ask returns.
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [answer(call, { anchorOn: dayOf(5), createdAt: at(4, 19) })], record: passed }).state, 'raised')
+  // A booking still ahead: the ask stands with the date beside it ("phoned, then booked an exam").
+  const ahead = stateOf({ symptoms: STABLE, acks: [answer(call)], record: { appointments: [apptAt({ id: 'oct-7', daysAhead: 7 })] } })
+  assertEquals([ahead.state, ahead.bookedVisit], ['raised', { on: '2026-10-07', appointmentId: 'oct-7', passed: false }])
+  // Control: with no refused answer the booking quiets as designed.
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7 })] } }).state, 'visit_booked')
+})
+
+Deno.test('CUL-2841 adv pass 2 B2: a re-raised concern whose answer is corrected to a call stays back, booking or not', () => {
+  // The doubling: an exam answer 60 days ago re-raises today. Corrected to a call, the answer is
+  // refused; the re-raise it carried must stay, never become "A vet visit is booked".
+  const examA = ack({ id: 'a', daysAgo: 60, source: 'visit_answer', anchorOn: dayOf(60) })
+  const callA = { ...examA, visit: { channel: 'phone', deleted: false } }
+  const bookings = {
+    none: [],
+    upcoming: [apptAt({ id: 'up', daysAhead: 7 })],
+    passed: [apptAt({ id: 'past', daysAhead: -3 })],
+  }
+  for (const [name, appointments] of Object.entries(bookings)) {
+    const exam = stateOf({ symptoms: DOUBLING, acks: [examA], record: { appointments } })
+    assertStrictEquals(exam.state, 'raised_again', `control, exam, ${name}`)
+    const call = stateOf({ symptoms: DOUBLING, acks: [callA], record: { appointments } })
+    assertStrictEquals(call.state, 'raised_again', `call, ${name}`)
+    assert(typeof call.backLine === 'string' && call.backLine.startsWith('Back'), `${name}: ${call.backLine}`)
+    assert(call.text!.includes('Back') && !call.text!.includes('{lane}'), call.text!)
+    assertStrictEquals(call.ackId, null)
+    if (name === 'upcoming') assertEquals(call.bookedVisit, { on: '2026-10-07', appointmentId: 'up', passed: false })
+  }
+})
+

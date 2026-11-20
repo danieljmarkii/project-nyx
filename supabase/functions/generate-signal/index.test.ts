@@ -517,6 +517,61 @@ Deno.test('CUL-2652 reads — the appointments by date (and, CUL-2793, a phantom
   assertStrictEquals(src.slice(src.indexOf('export async function readCareRecord(')).includes(".from('vet_appointments')"), true)
 })
 
+Deno.test('CUL-2841 reads — each visit answer carries its visit\'s channel; a link the read did not return is null; a short or failed visit read empties the record', async () => {
+  const { readCareRecord } = await import('./index.ts')
+  const { EMPTY_CARE_RECORD } = await import('./careState.ts')
+  const NOW = Date.parse('2026-09-30T21:00:00.000Z')
+  const ack = (id: string, source: string, vetVisitId: string | null) =>
+    ({ id, symptom_type: 'vomit', source, anchor_on: '2026-09-18', vet_visit_id: vetVisitId, diet_trial_id: null, medication_id: null, retracts: null, created_at: '2026-09-18T20:00:00.000Z' })
+  const ACKS = [
+    ack('exam', 'visit_answer', 'v-exam'),
+    ack('call', 'visit_answer', 'v-call'),
+    ack('tick', 'at_vet_tick', 'v-gone'),
+    ack('unlinked', 'visit_answer', null),
+    ack('missing', 'visit_answer', 'v-missing'),
+    ack('knows', 'my_vet_knows', null),
+  ]
+  const VISITS = [
+    { id: 'v-exam', channel: 'in_clinic', deleted_at: null },
+    { id: 'v-call', channel: 'phone', deleted_at: null },
+    { id: 'v-gone', channel: 'in_clinic', deleted_at: '2026-09-20T10:00:00.000Z' },
+  ]
+  const answer = (visits: { data: unknown; error: unknown; count?: number }) => (c: Call) =>
+    c.table === 'care_acknowledgements' ? { data: ACKS, error: null, count: ACKS.length }
+      : c.table === 'vet_visits' ? visits
+      : { data: [], error: null, count: 0 }
+  const { client, calls } = fakeClient(answer({ data: VISITS, error: null, count: VISITS.length }))
+  const rec = await readCareRecord(client, 'pet-1', LOOKBACK, NOW)
+  assertEquals(rec.acknowledgements.map((a) => [a.id, a.visit]), [
+    ['exam', { channel: 'in_clinic', deleted: false }],
+    ['call', { channel: 'phone', deleted: false }],
+    ['tick', { channel: 'in_clinic', deleted: true }],
+    ['unlinked', null],
+    ['missing', null],
+    ['knows', null],
+  ])
+  const ackCall = calls.find((c) => c.table === 'care_acknowledgements')!
+  assertEquals(ackCall.ops[0], ['select', ['id, symptom_type, source, anchor_on, vet_visit_id, diet_trial_id, medication_id, retracts, created_at', { count: 'exact' }]])
+  const v = calls.filter((c) => c.table === 'vet_visits')
+  assertStrictEquals(v.length, 1, 'one visit read')
+  assertEquals(v[0].ops.filter(([op]) => op !== 'range'), [
+    // The channel and the tombstone only: never a clinic, a vet, a reason or a note.
+    ['select', ['id, channel, deleted_at', { count: 'exact' }]],
+    ['eq', ['pet_id', 'pet-1']],
+    ['in', ['id', ['v-exam', 'v-call', 'v-gone', 'v-missing']]],
+    ['order', ['visited_at', { ascending: false }]],
+    ['order', ['id', { ascending: false }]],
+  ])
+  // A short visit read (the count says more exist) or a failed one empties the record: no answer
+  // of any source quiets anything on a read that did not answer.
+  assertEquals(await readCareRecord(fakeClient(answer({ data: VISITS, error: null, count: 9 })).client, 'pet-1', LOOKBACK, NOW), EMPTY_CARE_RECORD)
+  assertEquals(await readCareRecord(fakeClient(answer({ data: null, error: { message: 'x' } })).client, 'pet-1', LOOKBACK, NOW), EMPTY_CARE_RECORD)
+  // No visit answer: no visit read at all.
+  const quiet = fakeClient((c) => (c.table === 'care_acknowledgements' ? { data: [ack('knows', 'my_vet_knows', null)], error: null, count: 1 } : { data: [], error: null, count: 0 }))
+  await readCareRecord(quiet.client, 'pet-1', LOOKBACK, NOW)
+  assertStrictEquals(quiet.calls.some((c) => c.table === 'vet_visits'), false)
+})
+
 Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the pipeline', async () => {
   const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
   const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
@@ -562,12 +617,16 @@ Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the
     true,
     'the fingerprint no longer hashes the config the pipeline detects with',
   )
-  // vet_visits is read inside readCareContextFacts and nowhere else in the shell: twice since
-  // CUL-2765, the exam's day (the visit line) and the last contact's (masking only).
+  // vet_visits is read twice inside readCareContextFacts since CUL-2765, the exam's day (the
+  // visit line) and the last contact's (masking only), and once inside readCareRecord since
+  // CUL-2841 (an answer's visit channel). Nowhere else in the shell.
   const start = src.indexOf('export async function readCareContextFacts(')
   const fn = src.slice(start, src.indexOf('\nexport ', start + 1))
-  assertStrictEquals(src.split(".from('vet_visits')").length - 1, 2)
+  const recStart = src.indexOf('export async function readCareRecord(')
+  const rec = src.slice(recStart, src.indexOf('\nasync function readCareHistory(', recStart))
+  assertStrictEquals(src.split(".from('vet_visits')").length - 1, 3)
   assertStrictEquals(fn.split(".from('vet_visits')").length - 1, 2)
+  assertStrictEquals(rec.split(".from('vet_visits')").length - 1, 1)
 })
 
 Deno.test('EN-10 — Ask\'s rule 10 is in the phrasing and summary prompts', async () => {
