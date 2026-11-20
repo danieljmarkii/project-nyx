@@ -72,6 +72,7 @@ import {
 import { pullReadCopies, pullReadCopyFor } from './readCopy';
 import { useAuthStore } from '../store/authStore';
 import { currentSignOutEpoch } from './signOutEpoch';
+import { useSyncStore } from '../store/syncStore';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -3743,6 +3744,13 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<boolean> 
       `UPDATE vet_visits SET channel = ?, contacted_at = ? WHERE id = ? AND synced = 1`,
       [v.channel, v.contacted_at ?? null, v.id],
     );
+  }
+  // CUL-2842 pass 2 (B4): a pulled visit that is a contact or deleted may be a correction whose
+  // rebuild was lost on the phone that made it. Home's backstop (`landedReadRebuildKey`) only
+  // runs when it re-reads, so nudge that re-read now rather than at the next focus. The keys
+  // stop it from rebuilding twice for one row.
+  if (toWrite.some((v) => v.channel !== 'in_clinic' || v.deleted_at)) {
+    useSyncStore.getState().bumpSignalTick();
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return false;

@@ -611,6 +611,25 @@ describe('a corrected visit rebuilds its pet\'s warnings when it lands (CUL-2842
     expect(await visitMovedNearBuild(OTHER_PET, built, 120_000)).toBeNull();
   });
 
+  it('pass 2 (B4): pulling a visit corrected elsewhere nudges Home to re-check; an exam pulled does not', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useSyncStore } = require('../store/syncStore') as typeof import('../store/syncStore');
+    const tick = () => useSyncStore.getState().signalTick;
+    const remote = (id: string, channel: string) => ({
+      id, pet_id: PET, visited_at: '2026-11-09', clinic_name: null, vet_name: null, reason: null, notes: null,
+      next_visit_at: null, deleted_at: null, channel, contacted_at: null,
+      created_at: '2026-11-09T21:41:00+00:00', updated_at: '2026-11-15T09:00:00+00:00',
+    });
+    mockServerTable('vet_visits').set('exam-only', remote('exam-only', 'in_clinic'));
+    let before = tick();
+    await hydrateFromCloud();
+    expect(tick()).toBe(before);
+    mockServerTable('vet_visits').set('far-call', { ...remote('far-call', 'phone'), updated_at: '2026-11-15T10:00:00+00:00' });
+    before = tick();
+    await hydrateFromCloud();
+    expect(tick()).toBeGreaterThan(before);
+  });
+
   it('a correction that did not land arms nothing, and rebuilds on the retry that lands', async () => {
     seedSyncedExam('retry');
     await updateVisitDetails('retry', { channel: 'email' });

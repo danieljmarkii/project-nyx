@@ -217,8 +217,10 @@ export function useSignal(): SignalState {
 
           // CUL-1105: a read this row may never have seen rebuilds it, as a log, once per
           // key (`landedReadRebuildKey`). Epoch-checked after the await, like the banner.
+          // CUL-2842 pass 2 (B1): asked on an expired row too, so a visit corrected to a call
+          // rebuilds as a log, which the cap never turns away, not as the expiry's refresh.
           const expired = isSignalCacheStale(row);
-          const landedKey = expired ? null : await landedReadRebuildKey(petId, row);
+          const landedKey = await landedReadRebuildKey(petId, row);
           if (cancelled || currentSignOutEpoch() !== epoch) return;
           if (expired || landedKey) {
             // Daily-expiry regen — off the render path; re-read when it lands.

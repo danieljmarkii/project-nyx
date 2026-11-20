@@ -884,13 +884,19 @@ const readRebuiltRows = new Set<string>();
 /** The key a landed read's rebuild runs under, or null when the row has seen every read and
  *  every visit corrected to a contact or deleted (CUL-2842). */
 export async function landedReadRebuildKey(petId: string, row: SignalCacheRow | null): Promise<string | null> {
-  if (!row?.generatedAt || isSignalCacheStale(row)) return null;
-  let near: Awaited<ReturnType<typeof readNearBuild>>;
-  try {
-    near = await readNearBuild(petId, row.generatedAt, LANDED_READ_RACE_MS);
-  } catch (e) {
-    console.warn('[signal] read-change check failed:', e);
-    return null;
+  if (!row?.generatedAt) return null;
+  // An expired row is the expiry's rebuild for a READ (CUL-1105, unchanged). A moved VISIT is
+  // asked on an expired row too (CUL-2842 pass 2, B1): the expiry's rebuild goes as a refresh,
+  // which the per-pet cap can turn away, and the cached "with your vet" would then outlive the
+  // call it rests on. The key makes it a log, which the cap never turns away.
+  let near: Awaited<ReturnType<typeof readNearBuild>> = null;
+  if (!isSignalCacheStale(row)) {
+    try {
+      near = await readNearBuild(petId, row.generatedAt, LANDED_READ_RACE_MS);
+    } catch (e) {
+      // Falls through to the visit check (pass 2, B2): a failing read side never switches it off.
+      console.warn('[signal] read-change check failed:', e);
+    }
   }
   if (near) {
     const key = near.afterBuild ? `row|${petId}|${row.generatedAt}` : `read|${petId}|${near.updatedAt}`;
@@ -1095,11 +1101,12 @@ export async function readSignalsAndRefresh(
   for (const petId of petIds) {
     try {
       const row = await readSignalCache(petId);
-      if (isSignalCacheStale(row)) {
+      // CUL-2842 pass 2 (B1): asked on an expired row too; a key turns the rebuild into a log.
+      const key = await landedReadRebuildKey(petId, row);
+      if (key) {
+        if (currentSignOutEpoch() === epoch) regenerateForLandedRead(petId, key).catch(() => {});
+      } else if (isSignalCacheStale(row)) {
         if (currentSignOutEpoch() === epoch) regenerateSignal(petId).catch(() => {});
-      } else {
-        const key = await landedReadRebuildKey(petId, row);
-        if (key && currentSignOutEpoch() === epoch) regenerateForLandedRead(petId, key).catch(() => {});
       }
       byPet.set(petId, row?.findings ?? []);
     } catch {

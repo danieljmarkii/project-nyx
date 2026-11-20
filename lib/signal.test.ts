@@ -400,6 +400,26 @@ describe('a read the Signal may not have seen rebuilds it, as a log, under one k
     expect(await landedReadRebuildKey('milo', fresh())).toBeNull();
   });
 
+  it('pass 2 (B1): a moved visit is asked on an EXPIRED row too, and keys a log rebuild', async () => {
+    mockReadNear.mockResolvedValue(AFTER);
+    mockVisitMoved.mockResolvedValue(AFTER);
+    const expired = { ...fresh(), expiresAt: new Date(Date.now() - 1000).toISOString() };
+    expect(await rebuild('nyx', expired)).not.toBeNull();
+    expect(mockReadNear).not.toHaveBeenCalled(); // a READ on an expired row stays the expiry's
+    expect(reasons()).toEqual([expect.objectContaining({ petId: 'nyx', reason: 'log' })]);
+  });
+
+  it('pass 2 (B2): a failing read check falls through to the visit check', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockReadNear.mockRejectedValue(new Error('db gone'));
+      mockVisitMoved.mockResolvedValue(AFTER);
+      expect(await landedReadRebuildKey('nyx', fresh())).not.toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('a failed visit check keeps the cached Signal and does not throw', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
