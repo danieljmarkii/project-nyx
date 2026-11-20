@@ -79,3 +79,16 @@ Deno.test('CUL-2834: a prior row that throws on read stamps now and never costs 
   assertStrictEquals(out.length, 1)
   assertStrictEquals(stampOf(out[0]), NOW_ISO)
 })
+
+// Adversarial pass 1, B1: a care state that returns the ask is a louder ask. Proven by mutation:
+// dropping `care` from `askKeyOf` reds this case.
+Deno.test('CUL-2834 B1: "your vet knows" back to raised_again, or a quiet booking back to raised, restamps; the same state carries', () => {
+  const withCare = (f: Finding, state: string | null): Finding =>
+    (state === null ? f : { ...f, careState: { state, text: null } }) as unknown as Finding
+  for (const [was, now] of [['with_vet', 'raised_again'], ['visit_booked', 'raised'], ['recheck_booked', 'raised_again'], ['with_vet', null]] as const) {
+    for (const f of [chronic('firm'), worsening('firm'), burden('today'), intake()]) {
+      assertStrictEquals(stampOf(stampAskSince([row(withCare(f, now))], prior(withCare(f, was)), NOW)[0]), NOW_ISO, `${was} -> ${now}`)
+    }
+  }
+  assertStrictEquals(stampOf(stampAskSince([row(withCare(chronic('firm'), 'raised'))], prior(withCare(chronic('firm'), 'raised')), NOW)[0]), EARLIER)
+})

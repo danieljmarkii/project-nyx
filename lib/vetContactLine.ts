@@ -88,19 +88,38 @@ function msOf(iso: string | null | undefined): number | null {
  * began on the count's own day, and none otherwise.
  */
 export function cardStart(finding: SignalFinding, anchor: CardAnchor, nowMs: number = Date.now()): CardStart | null {
+  return cardWindow(finding, anchor, nowMs)?.start ?? null;
+}
+
+/** The card's window: its start, and the latest INSTANT any part of it is known to begin at.
+ *  `notBefore` outlives a day-key tie and a zone change (adversarial pass 1 on CUL-2834, B2): a
+ *  call logged at 10:00 in Tokyo is before an ask raised at noon there, whatever day the phone's
+ *  zone now puts the ask on. */
+interface CardWindow {
+  start: CardStart;
+  notBefore: number | null;
+}
+
+function cardWindow(finding: SignalFinding, anchor: CardAnchor, nowMs: number): CardWindow | null {
   if (finding.priorityClass !== 'safety') return null;
   const problem = problemStart(finding, anchor);
-  if (problem === null || !ASK_STAMPED.has(finding.type)) return problem;
+  if (problem === null) return null;
+  const instants: number[] = problem.instant === null ? [] : [problem.instant];
+  if (!ASK_STAMPED.has(finding.type)) return { start: problem, notBefore: problem.instant };
   // CUL-2834 (ruling A): a card whose ask rose since the problem began starts where the louder
   // ask began. No stamp (a row cached before the field, or a malformed one): no line.
   const askMs = msOf(askSinceIsoOf(finding));
   if (askMs === null) return null;
   let start = laterStart(problem, { day: toLocalDayKey(new Date(askMs)), instant: askMs });
+  instants.push(askMs);
   // The phone's own rise: an intake card firms up to the floor 24 hours after its last good meal
   // (`intakeMeetsCatFloor`), with no engine run to stamp it. Once that has happened, it is a start.
   const floorMs = clockFloorMs(finding);
-  if (floorMs !== null && floorMs <= nowMs) start = laterStart(start, { day: toLocalDayKey(new Date(floorMs)), instant: floorMs });
-  return start;
+  if (floorMs !== null && floorMs <= nowMs) {
+    start = laterStart(start, { day: toLocalDayKey(new Date(floorMs)), instant: floorMs });
+    instants.push(floorMs);
+  }
+  return { start, notBefore: Math.max(...instants) };
 }
 
 /** CUL-2834: the lanes whose ask can rise while they stay one card; the engine stamps each with
@@ -168,11 +187,18 @@ export function cardFirstDay(finding: SignalFinding, anchor: CardAnchor, nowMs: 
 /** A contact after the card's problem began. On the first day itself only a contact the owner
  *  timed at or after the problem's instant counts: an untimed one, or one before, may be about
  *  something else, and the line is never a guess. */
-function isAfterStart(c: RemoteContact, start: CardStart): boolean {
+function isAfterStart(c: RemoteContact, w: CardWindow): boolean {
+  const at = msOf(c.contactedAt);
+  // A contact whose instant is before an instant the card is known to begin at is never about it,
+  // whatever the day keys say: across a zone change the instant can fall on another local day than
+  // the contact's day key, and it is still a real instant. An UNTIMED contact on a later day has
+  // no instant to test: the day keys are all the record holds (a known limit, stated in the PR).
+  if (at !== null && w.notBefore !== null && at < w.notBefore) return false;
+  const timed = at !== null && toLocalDayKey(new Date(at)) === c.day;
+  const start = w.start;
   if (c.day > start.day) return true;
   if (c.day < start.day || start.instant === null) return false;
-  const at = msOf(c.contactedAt);
-  return at !== null && toLocalDayKey(new Date(at)) === c.day && at >= start.instant;
+  return timed && (at as number) >= start.instant;
 }
 
 /** "Fri, Nov 13", with the year when it is not this year's. */
@@ -222,9 +248,9 @@ export function contactLineFor(
   calledOn: string | null = null,
   nowMs: number = Date.now(),
 ): string | null {
-  const start = cardStart(finding, anchor, nowMs);
-  if (start === null) return null;
-  const newest = contacts.filter((c) => c.day <= today && isAfterStart(c, start)).sort(newerFirst)[0];
+  const w = cardWindow(finding, anchor, nowMs);
+  if (w === null) return null;
+  const newest = contacts.filter((c) => c.day <= today && isAfterStart(c, w)).sort(newerFirst)[0];
   if (!newest) return null;
   if (calledOn !== null && newest.channel === 'phone' && newest.day === calledOn) return null;
   return contactSentence(newest, today);

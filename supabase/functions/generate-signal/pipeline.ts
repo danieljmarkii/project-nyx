@@ -879,15 +879,12 @@ export function runSignalPipeline(
     readIncomplete && priorSignal
       ? readPriorSafetyEntries(priorSignal.findings, priorSignal.generatedAt, nowMs)
       : []
-  // CUL-2834 (ruling A): each safety card's `askSinceIso`, after the tier hold so a held tier keeps
-  // its stamp. Read by the phone's contact line only (lib/vetContactLine.ts); nothing here or
-  // downstream computes a sentence, count, ask or rank from it.
-  const decoratedBase = stampAskSince(decoratedWithOnsets.map((r, i) => ({
+  const decoratedBase = decoratedWithOnsets.map((r, i) => ({
     rank: r.rank,
     finding: readIncomplete
       ? holdPriorTier({ ...strippedFindings[i], countIsFloor: true } as Finding, priorSafety)
       : strippedFindings[i],
-  })), priorSignal?.findings ?? null, nowMs)
+  }))
   // 3c. EN-10 (PR-22, CUL-1420): the context lines, behind `engines_v3_en10`. Last, so the
   //     step sees the finished findings and nothing downstream reads what it adds (the summary
   //     packet is built from `curated`, the stand-down from `curated` and `input`). Not over an
@@ -959,14 +956,21 @@ export function runSignalPipeline(
     const c = sign === null ? undefined : priorCarry?.get(sign)
     return c ? ({ ...f, careCarry: c } as unknown as Finding) : f
   }
-  const decorated = (priorLatches && priorLatches.size > 0) || (priorCarry && priorCarry.size > 0)
+  // CUL-2834 (ruling A): each safety card's `askSinceIso`, stamped LAST, on the card as this row
+  // will show it: after the tier hold, the care state, the latch and the carry (adversarial pass 1,
+  // B1: a care state that returns the ask is a louder ask too). Read by the phone's contact line
+  // only (lib/vetContactLine.ts); nothing here or downstream computes a sentence, count, ask or
+  // rank from it.
+  const priorRowFindings = priorSignal?.findings ?? null
+  const decorated = stampAskSince((priorLatches && priorLatches.size > 0) || (priorCarry && priorCarry.size > 0)
     ? stepped.map((r) => ({ ...r, finding: withCarry(withLatch(r.finding)) }))
-    : stepped
+    : stepped, priorRowFindings, nowMs)
   // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
   // Its absence here may be the rows the read did not reach, which is the resolution the ruling
-  // withholds, so the prior card is carried forward as it was shown.
+  // withholds, so the prior card is carried forward as it was shown. It drops its care state
+  // (EN-9 D1), so its stamp is taken again against the card as now shown (CUL-2834 B1).
   const carried: CachedFinding[] = readIncomplete
-    ? carryPriorSafety(priorSafety, decorated.map((r) => r.finding), petName).map((c) => ({ ...c, finding: withLatch(c.finding) }))
+    ? stampAskSince(carryPriorSafety(priorSafety, decorated.map((r) => r.finding), petName).map((c) => ({ ...c, finding: withLatch(c.finding) })), priorRowFindings, nowMs)
     : []
 
   // 4a. AI summary (B-023 PR 4). Assemble a DETERMINISTIC fact packet from the curated

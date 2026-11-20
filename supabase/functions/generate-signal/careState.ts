@@ -1421,9 +1421,9 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
   }
   const decorated = findings.map((r) => {
     const sign = concernSignOf(r.finding)
-    // CUL-2829: `quietBooking`, so a passed booking whose visit was a call never quiets the weight
-    // card either. Every other safety card takes only `upcoming`, which a passed booking never is.
-    if (sign === null) return quietBooking ? withBookedVisit(r, quietBooking, upcoming, ix.today, args) : r
+    // CUL-2829: the weight card quiets only on `quietBooking`, so a booking whose visit was a call
+    // never quiets it either. Every other safety card takes only `upcoming`, beside its ask.
+    if (sign === null) return booked ? withBookedVisit(r, booked, quietBooking !== null, upcoming, ix.today, args) : r
     const fact = stateFor(sign)
     // Ruling A (worsening brief, 2026-11-07): a firing worsening lane IS "coming more often", and a
     // never-answered concern has no reference to re-raise from, so a booking never quiets it. The
@@ -1525,23 +1525,24 @@ export function bookedVisitFor(args: CareStateArgs): { day: number; fact: Booked
 }
 
 /**
- * CUL-2829 (PR-09's adversarial pass 2): whether a booking may quiet anything. An upcoming one
- * may (its date is a plan, not a claim about a visit). A PASSED one says "the visit has passed,
- * and how it went isn't recorded yet", which is a claim that an exam happened, so it may not when
- * the record says the visit was not an exam:
- *   · its own attendance link names a call, text or email, a deleted visit, or a row the read did
- *     not return (`attendance: 'not_exam'`);
- *   · or ANY sign's visit answer refused by `answerStandsOnAnExam` anchors within a day of the
+ * CUL-2829 (PR-09's adversarial pass 2): whether a booking may quiet anything. Never one whose own
+ * attendance link names a call, text or email, a deleted visit, or a row the read did not return
+ * (`attendance: 'not_exam'`), whatever its day. Otherwise an upcoming one may (its date is a plan,
+ * not a claim about a visit). A PASSED one says "the visit has passed, and how it went isn't
+ * recorded yet", which is a claim that an exam happened, so it may not when the record says the
+ * visit was not an exam: ANY sign's visit answer refused by `answerStandsOnAnExam` anchors within a day of the
  *     booking's day (the zone's slack, as CUL-2841 bounds its own refusal). PR-09 lifted the quiet
  *     only for the sign the refused answer was about; the visit it names quiets no other sign.
  * Louder by design: "phoned, then went in the same day" keeps its ask until the owner answers. A
  * refused booking still SPENDS its quiet window (`quietWindowSpent` reads every appointment).
  */
 export function passedBookingCanQuiet(args: CareStateArgs, booked: { day: number; fact: BookedVisit }): boolean {
-  if (!booked.fact.passed) return true
   const appt = args.record.appointments.find((a) => a.id === booked.fact.appointmentId)
-  // `!== 'unlinked' && !== 'exam'`: a fact that does not say what it is fails loud.
+  // `!== 'unlinked' && !== 'exam'`: a fact that does not say what it is fails loud. Checked before
+  // the day (adversarial pass 1, B3): a booking already recorded as attended by a call, text or
+  // email is no exam to come, so it never quiets, upcoming or passed.
   if (!appt || (appt.attendance !== 'unlinked' && appt.attendance !== 'exam')) return false
+  if (!booked.fact.passed) return true
   const tz = args.timezone
   return !args.record.acknowledgements.some((a) => {
     if (a.retracts || answerStandsOnAnExam(a)) return false
@@ -1586,6 +1587,7 @@ export function bookedVisitSentence(v: BookedVisit, day: number, today: number, 
 function withBookedVisit<T extends { rank: number; finding: Finding }>(
   r: T,
   booked: { day: number; fact: BookedVisit },
+  canQuiet: boolean,
   upcoming: { day: number; fact: BookedVisit } | null,
   today: number,
   args: CareStateArgs,
@@ -1593,6 +1595,8 @@ function withBookedVisit<T extends { rank: number; finding: Finding }>(
   const petName = args.petName
   if (r.finding.priorityClass !== 'safety') return r
   if (r.finding.type === 'weight_loss') {
+    // CUL-2829: a booking whose visit was a call (`passedBookingCanQuiet`) leaves the shipped card.
+    if (!canQuiet) return r
     // A passed visit quiets the weight card only if it fell on or after the latest reading's day:
     // a visit before the drop was recorded was not about it.
     const latest = (r.finding as { latestDay?: unknown }).latestDay

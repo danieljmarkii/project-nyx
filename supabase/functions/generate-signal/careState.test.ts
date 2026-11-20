@@ -1363,8 +1363,16 @@ Deno.test('CUL-2829: a passed booking linked to a call, or carrying any sign\'s 
   assertStrictEquals(careStateOf(step({ findings: [w], symptoms: STABLE, record: passed('exam') })[0].finding)!.state, 'visit_booked')
   assertEquals(step({ findings: [w], symptoms: STABLE, record: passed('not_exam') })[0].finding, w)
   assertEquals(step({ findings: [w], symptoms: STABLE, acks: [otherSign], record: passed('unlinked') })[0].finding, w)
-  // An upcoming booking is a plan, not a claim about a visit: it quiets as before, link or not.
-  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7, attendance: 'not_exam' })] } }).state, 'visit_booked')
+  // An upcoming booking is a plan, not a claim about a visit: it quiets as before, unlinked or an exam.
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7, attendance: 'exam' })] } }).state, 'visit_booked')
+  // Adversarial pass 1, B3: one already recorded as attended by a call quiets nothing, whatever its day.
+  const calledAhead = stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7, attendance: 'not_exam' })] } })
+  assertEquals([calledAhead.state, calledAhead.text], ['raised', null])
+  const wAhead = { ...weight(), latestDay: dayOf(4) } as Finding
+  assertEquals(step({ findings: [wAhead], symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7, attendance: 'not_exam' })] } })[0].finding, wAhead)
+  // Every other safety card keeps the upcoming date beside its ask, as before.
+  const b = step({ findings: [burden()], symptoms: STABLE, record: { appointments: [apptAt({ id: 'oct-7', daysAhead: 7, attendance: 'not_exam' })] } })[0].finding
+  assertEquals((b as { bookedVisit?: unknown }).bookedVisit, { on: '2026-10-07', appointmentId: 'oct-7', passed: false })
 })
 
 Deno.test('CUL-2829: a refused passed booking moves no sentence, rank or ask: the card is the no-booking card', () => {

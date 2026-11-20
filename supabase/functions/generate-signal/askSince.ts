@@ -10,13 +10,17 @@
 // THE RULE. A finding of a type in ASK_STAMPED carries the prior row's stamp only when that row
 // held the same card (`findingIdentity`) at the same ask (`askKeyOf`) and the stamp is a real
 // instant no later than now. Anything else stamps this run's instant: a new card, ANY change in
-// the fields that set the ask (a drop as well as a rise), a failed or absent prior read, a row
+// the fields that set the ask (its lane's fields AND its care state; a drop as well as a rise),
+// a failed or absent prior read, a row
 // cached before the field existed. Every unknown stamps LATER, so the line errs toward silence:
 // the stamp can only ever remove a contact line, never add one, and it touches nothing the card's
 // sentence, count, ask or rank is computed from.
 //
 // incident_red_flag is not here: PR-07 (CUL-2769) bounds it by the newest event the card asks
 // about, which the record itself carries.
+//
+// The pipeline stamps LAST, on the card as the row will show it (care state, latch and carry
+// applied), and stamps a carried card again, since a carry drops its care state.
 //
 // Pure: findings, the prior row's findings and a clock in; the findings out, each a new object.
 
@@ -38,10 +42,14 @@ export function askKeyOf(f: unknown): string | null {
   if (!f || typeof f !== 'object') return null
   const x = f as Record<string, unknown>
   if (typeof x.type !== 'string' || !ASK_STAMPED.has(x.type) || x.priorityClass !== 'safety') return null
+  // The card's care state is part of its ask (adversarial pass 1, B1): "your vet knows" or "a visit
+  // is booked" carries no ask, and the same tier back at `raised` or `raised_again` asks again. A
+  // card with no care state (EN-9 off, or a run that skipped the step) shows the lane's own ask.
+  const care = x.careState && typeof x.careState === 'object' ? (x.careState as { state?: unknown }).state ?? 'unknown' : null
   if (x.type === 'intake_decline') {
-    return JSON.stringify([x.trigger ?? null, x.species ?? null, x.allRefused ?? null, x.noGoodMeal24h ?? null, x.sustainedRefusal !== undefined, x.refusedThenVomited !== undefined])
+    return JSON.stringify([x.trigger ?? null, x.species ?? null, x.allRefused ?? null, x.noGoodMeal24h ?? null, x.sustainedRefusal !== undefined, x.refusedThenVomited !== undefined, care])
   }
-  return JSON.stringify([x.tier ?? null])
+  return JSON.stringify([x.tier ?? null, care])
 }
 
 interface PriorStamp {

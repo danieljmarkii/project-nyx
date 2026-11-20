@@ -288,6 +288,17 @@ describe('CUL-2834: a louder ask starts the window again', () => {
     expect(contactLineFor(rose, [c('k', '2026-11-11', 'phone', at(2026, 11, 11, 10, 0))], TODAY, ANCHOR, null, NOW)).toBeNull();
   });
 
+  it('B2: a call whose instant is before the ask is refused even when its day key is later (a zone change)', () => {
+    // Logged in another zone: its day key is Nov 14, its instant is Nov 13, 5:00 pm here. The ask
+    // rose Nov 13, 7:00 pm here, after the call. The day keys alone would say the call came after.
+    const rose = stamped(burden, at(2026, 11, 13, 19, 0));
+    const abroad = [c('k', TODAY, 'phone', at(2026, 11, 13, 17, 0))];
+    expect(contactLineFor(rose, abroad, TODAY, ANCHOR, null, NOW)).toBeNull();
+    // The same shape after the ask is said (untimed, since its instant is not on its own day).
+    const after = [c('k', TODAY, 'phone', at(2026, 11, 13, 20, 0))];
+    expect(contactLineFor(rose, after, TODAY, ANCHOR, null, NOW)).toBe('You called the vet today.');
+  });
+
   it('a red flag is bounded by its own events, as PR-07 left it, stamp or none', () => {
     const line = contactLineFor(redFlag, [c('k', '2026-11-13', 'phone', at(2026, 11, 13, 10, 0))], TODAY, ANCHOR, null, NOW);
     expect(line).toBe('You called the vet on Fri, Nov 13.');
