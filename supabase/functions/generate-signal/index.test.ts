@@ -264,6 +264,30 @@ Deno.test('EN-F wiring — the flag is read for the pet\'s owner, and the cache 
   assertStrictEquals(/\.\.\.signalStampValues\(engineFlags, fingerprint\)/.test(insert.slice(0, insert.indexOf('})'))), true, 'the cache row lost its stamps')
 })
 
+// ── CUL-2844: the row is stamped when the build starts reading ───────────────────────────
+// Home's backstops (lib/signal.ts `landedReadRebuildKey`, lib/vetVisits.ts `visitMovedNearBuild`)
+// call a change at or after `generated_at` unseen. Stamped by the column's NOW() at the insert, a
+// change landing early in a build slower than LANDED_READ_RACE_MS sorted as seen and Home kept the
+// old warning. The handler has no fake-client harness, so the wiring is pinned on the source; the
+// backstops' behaviour over a slow build is proven in lib/readCopy.test.ts and lib/vetVisits tests.
+Deno.test('CUL-2844 — generated_at is the instant taken before the build\'s first read', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  const insert = src.slice(src.indexOf(".from('ai_signals').insert("))
+  const fields = insert.slice(0, insert.indexOf('})'))
+  assertStrictEquals(/\bgenerated_at:\s*new Date\(nowMs\)\.toISOString\(\),/.test(fields), true, 'the cache row is no longer stamped with the build\'s start')
+  const handler = src.slice(src.indexOf('const handler = async (req'))
+  const stamp = handler.indexOf('const nowMs = Date.now()')
+  assertStrictEquals(stamp > 0, true, 'the handler no longer takes nowMs')
+  assertStrictEquals((handler.match(/\bconst nowMs\b|\bnowMs = /g) ?? []).length, 1, 'nowMs is taken or reassigned more than once')
+  // Every database touch in the handler comes after the stamp: the auth check, the gate config,
+  // the usage read, the pulls and the prior row.
+  for (const call of ['supabase.auth.getUser()', 'readGateConfig(', 'readUsage(', ".from('pets')", ".from('ai_signals')"]) {
+    const at = handler.indexOf(call)
+    assertStrictEquals(at > stamp, true, `${call} runs before the stamp is taken`)
+  }
+})
+
 // ── CUL-1099 (Engines v3 PR-22a): the dose pull resolves, and the engine stays dark to it ──
 // The adversarial pass found the dose lanes can suppress a true food correlate and add claims,
 // so turning them on is CUL-1425's, behind an Engines key. Until then the pull is READ (so a

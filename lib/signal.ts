@@ -860,11 +860,14 @@ export function isSignalCacheStale(row: SignalCacheRow | null, nowMs = Date.now(
 // an in-memory timer, so it dies with the app. This is the BACKSTOP, run when Home and the
 // cross-pet banner read a row still inside its expiry:
 //   · a settled read at or after the row's `generated_at` is one the row never saw;
-//   · a settled read inside `LANDED_READ_RACE_MS` BEFORE it may not have been seen either:
-//     `generated_at` is stamped at the insert, after the rebuild loaded and phrased, so a
-//     read written during a rebuild sorts before the row that missed it (adversarial pass
-//     2: the read lands mid-rebuild, the owner swipes the app away inside the writer's 5s
-//     debounce, and on the next launch the pull finds the copy unchanged).
+//   · a settled read inside `LANDED_READ_RACE_MS` BEFORE it may not have been seen either.
+//     Since CUL-2844 `generated_at` is the instant generate-signal took before its first read,
+//     so a read landing during a rebuild, however slow, is at or after it. The margin now
+//     covers only what that stamp cannot: a read committed after the build's pull but timed
+//     by the database at its transaction's start, and the clock gap between the function and
+//     the database (adversarial pass 2: the read lands mid-rebuild, the owner swipes the app
+//     away inside the writer's 5s debounce, and on the next launch the pull finds the copy
+//     unchanged).
 // Either rebuild is a write to the record and goes as a log, which the per-pet cap never
 // turns away (CUL-2059).
 //
