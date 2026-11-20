@@ -527,8 +527,8 @@ describe('editing a saved contact (R12)', () => {
   };
 
   it('opens on the record, all four chips, and the words follow the chip', () => {
-    // The flag is the host's question (the page opens Edit this way only while it is on);
-    // the edit seed alone opens the contact sheet.
+    // The edit seed alone opens the contact sheet; the chips are the switch's (CUL-2830).
+    mockContactsOn = true;
     const onSubmit = renderSheet({ initialMode: 'happened', edit: EDIT, otherPets: [{ id: 'p2', name: 'Juniper' }] });
     expect(screen.getByText('A call with the vet')).toBeTruthy();
     expect(screen.getByLabelText('Day, Monday, Nov 9')).toBeTruthy();
@@ -548,6 +548,19 @@ describe('editing a saved contact (R12)', () => {
       contactedAt: EDIT.contactedAt,
       alsoForPetIds: [],
     });
+  });
+
+  // CUL-2830: a phone whose switch is off edits a call as a call (the record decides the words)
+  // but never re-channels it: the chips are entry, and turning a call into an exam moves the
+  // report's window.
+  it('switch off: the call still edits as itself, with no channel chips, and saves its own channel', () => {
+    mockContactsOn = false;
+    const onSubmit = renderSheet({ initialMode: 'happened', edit: EDIT, otherPets: [] });
+    expect(screen.getByText('A call with the vet')).toBeTruthy();
+    for (const chip of ['At the clinic', 'Phone', 'Text', 'Email']) expect(screen.queryByText(chip)).toBeNull();
+    expect(screen.getByDisplayValue('Ear, still shaking her head')).toBeTruthy();
+    fireEvent.press(screen.getByText('Save Nyx’s call'));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ channel: 'phone', day: '2026-11-09' });
   });
 });
 

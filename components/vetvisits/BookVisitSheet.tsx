@@ -453,20 +453,26 @@ export function BookVisitSheet({
               <>
                 {/* No "Has this visit happened?": from the logging door it has (the owner
                     review, §0.2). The one question is how the owner heard. */}
-                <SectionLabel label={CHANNEL_QUESTION} style={styles.firstLabel} />
-                <ChipGroup
-                  options={CHANNEL_OPTIONS.map((o) => ({ value: o.value, label: o.label, accessibilityLabel: o.spoken }))}
-                  value={channel}
-                  onChange={(next) => {
-                    if (!next) return;
-                    setChannel(next as VisitChannel);
-                    setChannelTouched(true);
-                  }}
-                  // Required: one of the four is always true.
-                  allowDeselect={false}
-                  accessibilityLabel={CHANNEL_QUESTION}
-                  style={styles.modes}
-                />
+                {/* The chips are entry (CUL-2830): a phone whose switch is off edits a call's day,
+                    time and words, never its channel. The title still names the record. */}
+                {contactsOn ? (
+                  <>
+                    <SectionLabel label={CHANNEL_QUESTION} style={styles.firstLabel} />
+                    <ChipGroup
+                      options={CHANNEL_OPTIONS.map((o) => ({ value: o.value, label: o.label, accessibilityLabel: o.spoken }))}
+                      value={channel}
+                      onChange={(next) => {
+                        if (!next) return;
+                        setChannel(next as VisitChannel);
+                        setChannelTouched(true);
+                      }}
+                      // Required: one of the four is always true.
+                      allowDeselect={false}
+                      accessibilityLabel={CHANNEL_QUESTION}
+                      style={styles.modes}
+                    />
+                  </>
+                ) : null}
 
                 {/* Day and Time side by side; they stack when the column is narrow or the
                     text is large (mock B5, B6), never truncate. */}

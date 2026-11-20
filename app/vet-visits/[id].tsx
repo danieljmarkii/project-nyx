@@ -248,6 +248,7 @@ export default function VetVisitScreen() {
             resultsBusy={resultsBusy}
           />
           <VisitReports
+            channel={channelOf(detail.visit.channel)}
             petId={detail.visit.pet_id}
             visitId={detail.visit.id}
             appointmentId={bookingId}

@@ -9,8 +9,9 @@ interface Props {
   row: VisitListRow;
   onPress: () => void;
   /**
-   * Vet contacts on (CUL-2749 PR-06, mock D1): the row carries its channel tag, and a remote
-   * contact says "No exam". The caller decides; off (the default), the row is the shipped one.
+   * Vet contacts (CUL-2749 PR-06, mock D1): the row carries its channel tag, and a remote
+   * contact says "No exam". The caller decides with `showsChannel` (CUL-2830: always for a
+   * call, text or email); off (the default), the row is the shipped one.
    */
   showChannel?: boolean;
 }

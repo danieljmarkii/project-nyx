@@ -53,6 +53,11 @@ const HISTORY_TITLE: Record<RemoteChannel, string> = {
 
 export const NO_EXAM = 'No exam';
 
+/** "this visit", "this call", "these texts", "this email": a record surface's subject (CUL-2830). */
+export function thisRecord(channel: VisitChannel | null | undefined): string {
+  return isRemoteChannel(channel) ? THIS_CONTACT[channel] : 'this visit';
+}
+
 /** What the record IS, in one word: the visit page's header actions and History's door. */
 export function recordNoun(channel: VisitChannel | null | undefined): string {
   return isRemoteChannel(channel) ? CONTACT_NOUN[channel] : 'visit';

@@ -19,7 +19,10 @@ import {
   readReportLink,
   readReportsForVisit,
   sameTarget,
+  VISIT_REPORTS_FAILED,
   VISIT_REPORTS_PAGE,
+  VISIT_REPORTS_TITLE,
+  visitReportsWords,
 } from './reportVisitLink';
 import type { VetVisitsHome } from './vetVisits';
 
@@ -179,6 +182,18 @@ describe('linkOptions and the words', () => {
       ['Nov 9 visit', 'the Nov 9 visit'],
     ]);
     expect(linkedLine({ kind: 'visit', id: 'p' }, o)).toBe('For the Nov 9 call');
+    // A contact's row ends on "No exam"; an unknown row says nothing it cannot know.
+    expect(o.map((x) => x.secondary)).toEqual(['No exam', 'No exam', 'No exam', '']);
+  });
+  it('the reports section names a call as a call, and keeps the shipped words on a visit', () => {
+    expect(visitReportsWords('in_clinic')).toEqual({ title: VISIT_REPORTS_TITLE, failed: VISIT_REPORTS_FAILED });
+    expect(visitReportsWords(null)).toEqual({ title: VISIT_REPORTS_TITLE, failed: VISIT_REPORTS_FAILED });
+    expect(visitReportsWords('phone')).toEqual({
+      title: 'Reports for this call',
+      failed: 'Couldn’t load the reports for this call.',
+    });
+    expect(visitReportsWords('text').title).toBe('Reports for these texts');
+    expect(visitReportsWords('email').title).toBe('Reports for this email');
   });
   it('the report line says where it is filed, and never "not filed" for a link the list lost', () => {
     const o = linkOptions(HOME);
