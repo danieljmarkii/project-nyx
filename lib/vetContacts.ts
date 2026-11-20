@@ -9,7 +9,7 @@
 // THE RULE THE COPY HOLDS. A remote contact says "no exam" on every surface, never implied
 // away (spec §6.1, n=1: a contact asserts nothing about the pet). A clinic visit keeps the
 // shipped words ("Vet visit"), so nothing an exam already says changes.
-import { formatClockTime, formatVisitDate, type VisitChannel } from './vetVisits';
+import { formatClockTime, formatVisitDate, type CourseVisitSource, type VisitChannel } from './vetVisits';
 
 export type RemoteChannel = Exclude<VisitChannel, 'in_clinic'>;
 
@@ -142,6 +142,20 @@ export function courseSourceLine(channel: VisitChannel, visitedAt: string, now: 
   return isRemoteChannel(channel)
     ? `Started after ${A_CONTACT[channel]} with the vet, ${date}`
     : `Started after a visit, ${date}`;
+}
+
+/** A course source this phone may name: its channel is known, and it speaks (`showsChannel`). */
+export type ShownCourseSource = CourseVisitSource & { channel: VisitChannel };
+
+/**
+ * The medication page's source row (D5), or null. A source whose channel this phone never
+ * learned draws no row: "Started after a visit" would claim an exam the record may not hold
+ * (PR-06's product review). A call, text or email draws its row on every phone (CUL-2830); a
+ * clinic source only while the switch is on, so a phone with no remote rows is unchanged.
+ */
+export function shownCourseSource(source: CourseVisitSource | null | undefined, featureOn: boolean): ShownCourseSource | null {
+  if (!source || source.channel === null) return null;
+  return showsChannel(featureOn, source.channel) ? { ...source, channel: source.channel } : null;
 }
 
 /** History's date-only row (D4): the title follows the channel; the detail ends on "no exam". */
