@@ -130,7 +130,7 @@ import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
-import { getDb, initDb, VET_VISIT_DIRTY_TRIGGERS_SQL } from './db';
+import { getDb, initDb, installVisitDirtyFlags } from './db';
 import { hydrateFromCloud, syncPendingVetVisits } from './sync';
 import { logVetVisit, readVisitConsequence, readVisitPrefill, updateVisitDetails, visitMovedNearBuild } from './vetVisits';
 import { latestVisitBefore, readLatestVisitBefore, readVisitDaysBefore } from './visitWindow';
@@ -165,7 +165,8 @@ beforeEach(async () => {
     mockLocal.db.exec(sql);
   }
   await applyColumnUpgrades(async (sql) => mockLocal.db!.exec(sql));
-  mockLocal.db.exec(VET_VISIT_DIRTY_TRIGGERS_SQL);
+  // The production install (CUL-2843), not the bare SQL: a fixture cannot skip the triggers.
+  await installVisitDirtyFlags(getDb());
   mockServer.rows.clear();
   mockServer.upserts.length = 0;
   mockServer.readFails.clear();
@@ -747,6 +748,46 @@ describe('a stale second phone cannot undo a correction or a delete (CUL-2843)',
     expect(localRow('v5')).toMatchObject({ channel: 'email', synced: 1, channel_dirty: 0 });
   });
 
+  it('a correction already delivered is not re-sent over a later one when a notes edit rode the push (pass 1, b)', async () => {
+    staleOnB('v9', {});
+    await updateVisitDetails('v9', { channel: 'phone' });
+    mockServer.beforeLand = () => {
+      mockServer.beforeLand = null;
+      // The owner types a note while the correction is in flight: the version moves.
+      mockLocal.db!.prepare(
+        `UPDATE vet_visits SET notes = 'typing', updated_at = '2026-11-20T08:00:00.000Z',
+           synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = 'v9'`,
+      ).run();
+    };
+    await syncPendingVetVisits();
+    // The call landed, so the flag is spent even though the row is still queued for the note.
+    expect(localRow('v9')).toMatchObject({ channel: 'phone', synced: 0, channel_dirty: 0 });
+    // Another phone corrects it back to an exam before this phone's next push.
+    mockServerTable('vet_visits').set('v9', { ...mockServerTable('vet_visits').get('v9'), channel: 'in_clinic' });
+    mockServer.upserts.length = 0;
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).not.toHaveProperty('channel');
+    expect(mockServerTable('vet_visits').get('v9')).toMatchObject({ channel: 'in_clinic', notes: 'typing' });
+  });
+
+  it('a pulled time re-saved in this phone\'s spelling is not a change (pass 1, a; C-40)', async () => {
+    // Pulled as a call with PostgREST's `+00:00`; another phone has since made it an exam.
+    seedVisit({ id: 'v10', visited_at: '2026-11-09', channel: 'phone', contacted_at: '2026-11-09T21:40:00+00:00', synced: 1 });
+    mockServerTable('vet_visits').set('v10', {
+      ...localRow('v10'), synced: undefined, channel_dirty: undefined, deleted_dirty: undefined,
+      channel: 'in_clinic', contacted_at: null, updated_at: '2026-11-14T09:00:00.000Z',
+    });
+    // The contact Edit sheet passes the stored time back unchanged, beside the clinic it edits.
+    await updateVisitDetails('v10', { clinicName: 'Riverside', contactedAt: '2026-11-09T21:40:00+00:00' });
+    expect(localRow('v10').contacted_at).toBe('2026-11-09T21:40:00.000Z'); // respelled
+    expect(flags('v10')).toEqual({ channel_dirty: 0, deleted_dirty: 0 });
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get('v10')).toMatchObject({ channel: 'in_clinic', clinic_name: 'Riverside' });
+    // A real change of time still counts.
+    await updateVisitDetails('v10', { contactedAt: '2026-11-09T22:00:00.000Z' });
+    expect(flags('v10').channel_dirty).toBe(1);
+  });
+
   it('a mixed queue goes in one batch per key set: no row is ever sent a channel or delete it left out', async () => {
     staleOnB('stale', { channel: 'phone' });
     staleOnB('fixed', {});
@@ -772,6 +813,15 @@ describe('a stale second phone cannot undo a correction or a delete (CUL-2843)',
     await syncPendingVetVisits();
     expect(sentRows()[0]).not.toHaveProperty('channel');
     expect(mockServerTable('vet_visits').get('v6')).toMatchObject({ channel: 'phone', notes: 'n' });
+  });
+
+  it('a new call logged while the server read fails still lands as a call, never the default exam', async () => {
+    // Only the insert trigger knows this row is wholly this phone's: no read says it is new.
+    const id = await logVetVisit({ petId: PET, visitedAt: '2026-11-09', channel: 'phone' });
+    expect(flags(id)).toEqual({ channel_dirty: 1, deleted_dirty: 1 });
+    mockServer.readFails.add('vet_visits');
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get(id)).toMatchObject({ channel: 'phone' });
   });
 
   it('a row the server does not hold sends its channel even unflagged (an insert takes the default)', async () => {
@@ -820,7 +870,38 @@ describe('a stale second phone cannot undo a correction or a delete (CUL-2843)',
     expect(flags('pulled')).toEqual({ channel_dirty: 1, deleted_dirty: 0 });
   });
 
-  it('flag off, one phone: a log then a notes edit leaves exactly the server row the whole-row push left', async () => {
+  it('the install is retried until it lands: a launch that died after the columns re-marks the queue', async () => {
+    const db = mockLocal.db!;
+    for (const t of ['trg_vet_visits_dirty_insert', 'trg_vet_visits_dirty_channel', 'trg_vet_visits_dirty_deleted']) {
+      db.exec(`DROP TRIGGER ${t}`);
+    }
+    // The columns were added on the launch that died; the triggers and the marking never ran.
+    seedVisit({ id: 'queued', visited_at: '2026-11-09', channel: 'phone', synced: 0 });
+    expect(flags('queued')).toEqual({ channel_dirty: 0, deleted_dirty: 0 });
+    await initDb(); // adds no column this time
+    expect(flags('queued')).toEqual({ channel_dirty: 1, deleted_dirty: 1 });
+  });
+
+  it('a phone whose column upgrade failed keeps writing visits and pushes whole rows', async () => {
+    const db = mockLocal.db!;
+    for (const t of ['trg_vet_visits_dirty_insert', 'trg_vet_visits_dirty_channel', 'trg_vet_visits_dirty_deleted']) {
+      db.exec(`DROP TRIGGER ${t}`);
+    }
+    db.exec('ALTER TABLE vet_visits DROP COLUMN channel_dirty');
+    db.exec('ALTER TABLE vet_visits DROP COLUMN deleted_dirty');
+    await installVisitDirtyFlags(getDb());
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'trigger'
+      AND name LIKE 'trg_vet_visits_dirty_%'`).get()).toEqual({ n: 0 });
+    staleOnB('v8', {});
+    await updateVisitDetails('v8', { channel: 'phone' }); // no "no such column"
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).toMatchObject({ channel: 'phone', deleted_at: null });
+  });
+
+  // Refactor-safety, green before and after by design: for one phone the server row is the whole
+  // local row, exactly what the whole-row push produced. The insert carries every column (new on
+  // the server), and the edit after it leaves out only columns the server already holds unchanged.
+  it('flag off, one phone: a log then a notes edit still round-trips the whole row to the server', async () => {
     // A flag-off build writes only 'in_clinic' and never deletes, so its row carries every
     // column on its insert, and the edit after it changes only what the owner typed.
     const id = await logVetVisit({ petId: PET, visitedAt: '2026-09-18', clinicName: 'Riverside', now: NOV_14 });

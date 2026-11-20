@@ -1874,39 +1874,58 @@ type VisitPushColumns = { channel: boolean; deleted: boolean };
  *   · a channel this phone never learned (NULL) is never sent, dirty or not (CUL-2765).
  */
 export function visitPushColumns(
-  v: { id: string; channel: string | null; channel_dirty: number; deleted_dirty: number },
+  v: { id: string; channel: string | null; channel_dirty?: number; deleted_dirty?: number },
   prior: ReadonlyMap<string, unknown> | null,
 ): VisitPushColumns {
   const newOnServer = prior !== null && !prior.has(v.id);
+  // `!== 0`, not `=== 1`: a flag this phone cannot read (its column upgrade failed, so the row has
+  // none) is unknown, and unknown sends, as the whole-row push it replaced did (installVisitDirtyFlags).
   return {
-    channel: v.channel !== null && (v.channel_dirty === 1 || newOnServer),
-    deleted: v.deleted_dirty === 1 || newOnServer,
+    channel: v.channel !== null && (v.channel_dirty !== 0 || newOnServer),
+    deleted: v.deleted_dirty !== 0 || newOnServer,
   };
 }
 
 /**
- * CUL-2843: after a visit push lands, clear its "this phone changed it" flags and copy the
- * server's channel / delete back over any the push left out. Matched on the pushed version and
- * `synced = 1`, like markSynced (C-23): a row edited mid-push is still queued, and its flags and
- * its own values stay. Best-effort: a failure leaves a flag set (this phone re-sends its own last
+ * CUL-2843: after a visit push lands, clear its "this phone changed it" flags on the values sent,
+ * and copy the server's channel / delete back over any the push left out. The copy is matched on
+ * the pushed version and `synced = 1`, like markSynced (C-23): a row edited mid-push is still
+ * queued, and its own values stay. Best-effort: a failure leaves a flag set (this phone re-sends its own last
  * value) or a stale local copy (the next pull corrects it), never a value it did not hold.
  */
 async function settleLandedVisits(
   db: Db,
-  landed: readonly { id: string; updated_at: string }[],
+  landed: readonly {
+    id: string; updated_at: string;
+    channel: string | null; contacted_at: string | null; deleted_at: string | null;
+  }[],
   sends: ReadonlyMap<string, VisitPushColumns>,
   prior: ReadonlyMap<string, VisitCareFacts> | null,
 ): Promise<void> {
   for (const v of landed) {
     try {
-      await db.runAsync(
-        `UPDATE vet_visits SET channel_dirty = 0, deleted_dirty = 0
-          WHERE id = ? AND updated_at IS ? AND synced = 1`,
-        [v.id, v.updated_at],
-      );
-      const was = prior?.get(v.id);
       const sent = sends.get(v.id);
-      if (!was || !sent) continue;
+      if (!sent) continue;
+      // A flag clears on the VALUE that landed, not the version (adversarial pass 1): a notes edit
+      // typed while the push was in flight moved updated_at, and a version-keyed clear left the
+      // flag set, so the next push re-sent a correction this phone had already delivered, over a
+      // later one from another phone. The value matches only while this phone still holds what
+      // the server now holds; a later change of its own has re-set the flag through the trigger.
+      if (sent.channel) {
+        await db.runAsync(
+          `UPDATE vet_visits SET channel_dirty = 0
+            WHERE id = ? AND channel IS ? AND contacted_at IS ?`,
+          [v.id, v.channel, v.contacted_at],
+        );
+      }
+      if (sent.deleted) {
+        await db.runAsync(
+          `UPDATE vet_visits SET deleted_dirty = 0 WHERE id = ? AND deleted_at IS ?`,
+          [v.id, v.deleted_at],
+        );
+      }
+      const was = prior?.get(v.id);
+      if (!was) continue;
       if (!sent.channel && was.channel !== null) {
         await db.runAsync(
           `UPDATE vet_visits SET channel = ?, contacted_at = ?
@@ -1936,7 +1955,8 @@ async function drainVetVisitsQueue(): Promise<void> {
     reason: string | null; notes: string | null;
     next_visit_at: string | null; deleted_at: string | null;
     channel: string | null; contacted_at: string | null;
-    channel_dirty: number; deleted_dirty: number;
+    // Absent only where the column upgrade failed (installVisitDirtyFlags): read as dirty.
+    channel_dirty?: number; deleted_dirty?: number;
     created_at: string; updated_at: string;
   }>(
     // visit-read: anyContact — the push moves every unsynced row verbatim; it decides nothing about exams.
@@ -1952,8 +1972,14 @@ async function drainVetVisitsQueue(): Promise<void> {
     const sends = new Map<string, VisitPushColumns>(
       unsyncedVisits.map((v) => [v.id, visitPushColumns(v, prior)]),
     );
+    // Built from the same rows, so a miss is a bug; it throws rather than send a guessed shape.
+    const sendsFor = (v: { id: string }): VisitPushColumns => {
+      const sent = sends.get(v.id);
+      if (!sent) throw new Error(`drainVetVisitsQueue: no push columns for visit ${v.id}`);
+      return sent;
+    };
     const toRemote = (v: QueuedVisit) => {
-      const sent = sends.get(v.id) ?? { channel: false, deleted: false };
+      const sent = sendsFor(v);
       return {
         id: v.id, pet_id: v.pet_id, visited_at: v.visited_at,
         clinic_name: v.clinic_name, vet_name: v.vet_name,
@@ -1979,7 +2005,7 @@ async function drainVetVisitsQueue(): Promise<void> {
     // delete. Grouped by shape, in queue order.
     const batches = new Map<string, QueuedVisit[]>();
     for (const v of unsyncedVisits) {
-      const sent = sends.get(v.id)!;
+      const sent = sendsFor(v);
       const key = `${sent.channel ? 'c' : '-'}${sent.deleted ? 'd' : '-'}`;
       batches.set(key, [...(batches.get(key) ?? []), v]);
     }
@@ -1997,7 +2023,7 @@ async function drainVetVisitsQueue(): Promise<void> {
     if (epoch === currentSignOutEpoch()) {
       rebuildSignalsForBookings(
         unsyncedVisits
-          .filter((v) => landed.has(v.id) && visitCareFactMoved(v, sends.get(v.id)!, prior))
+          .filter((v) => landed.has(v.id) && visitCareFactMoved(v, sendsFor(v), prior))
           .map((v) => v.pet_id),
       );
     }
