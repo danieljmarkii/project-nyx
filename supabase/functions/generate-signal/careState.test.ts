@@ -532,6 +532,42 @@ Deno.test('D4: an answer lapses when its concern left the set, and stays lapsed 
   assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a] }).state, 'with_vet')
 })
 
+Deno.test('CUL-2847: an answer is timed by its tap, not its sync, against the row that dropped its concern', () => {
+  // The issue's case: the run that drops vomiting is stamped at T. At T+30 s the owner, offline,
+  // taps "My vet knows" on the stale card; it syncs at T+15 min, so the server stamps it then.
+  const T = NOW_MS - 3_600_000
+  const gone = [{ rank: 0, finding: { type: 'timeofday_clustering', priorityClass: 'insight', symptomType: 'vomit' } }]
+  const late = ack({ id: 'late', daysAgo: 0, anchorOn: dayOf(0), createdAt: new Date(T + 15 * 60_000).toISOString() })
+  const reRaise = stateOf({ symptoms: STABLE, acks: [late], priorFindings: gone, priorGeneratedAtMs: T })
+  assertEquals([reRaise.state, reRaise.ackId, reRaise.lapsed], ['raised', null, ['late']])
+  // However late it synced: "My vet knows" is tapped only on a concern card, so one standing
+  // beside a row that held no such concern was tapped on a stale card.
+  const days = ack({ id: 'days', daysAgo: 0, anchorOn: dayOf(0), createdAt: new Date(NOW_MS - 60_000).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [days], priorFindings: gone, priorGeneratedAtMs: NOW_MS - 3 * DAY }).lapsed, ['days'])
+  // A visit answer tapped before the drop and synced after it: its visit day is on or before the
+  // drop's day, so it lapses too.
+  const visit = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(1), createdAt: new Date(T + 15 * 60_000).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [visit], priorFindings: gone, priorGeneratedAtMs: T }).lapsed, ['v'])
+  // A visit two days after the drop is vet contact after the concern left: it stands.
+  const after = ack({ id: 'v2', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(1), createdAt: at(0, 13) })
+  const s = stateOf({ symptoms: STABLE, acks: [after], priorFindings: gone, priorGeneratedAtMs: NOW_MS - 3 * DAY })
+  assertEquals([s.state, s.lapsed], ['with_vet', []])
+  // A phone a day ahead of the profile's zone (Sydney against UTC) anchors the visit the day after
+  // the drop's UTC day: one day of slack lapses it (adversarial pass 1), louder for a genuine one.
+  const east = ack({ id: 'e', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(1), createdAt: at(0, 13) })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [east], priorFindings: gone, priorGeneratedAtMs: Date.UTC(2026, 8, 28, 22) }).lapsed, ['e'])
+  // Q2 (adversarial pass 1): the previous row held the concern but skipped the step, because this
+  // phone's push of the stale answer had not landed. That row's card offered no "My vet knows", so
+  // the answer was tapped on an older one: it lapses.
+  const skipped = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }]
+  const pending = ack({ id: 'p', daysAgo: 0, anchorOn: dayOf(0), createdAt: new Date(T + 40 * 60_000).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [pending], priorFindings: skipped, priorGeneratedAtMs: T + 16 * 60_000 }).lapsed, ['p'])
+  // The re-raised concern answered on its own card (the prior row holds it) still stands.
+  const back = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised', ackId: null, lapsed: ['late'] } } }]
+  const fresh = ack({ id: 'fresh', daysAgo: 0, createdAt: at(0, 20) })
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [late, fresh], priorFindings: back, priorGeneratedAtMs: T }).state, 'with_vet')
+})
+
 Deno.test('CUL-2844: an answer given while the build that dropped its concern was running lapses', () => {
   // Build 1 starts reading at T (its stamp) and drops the vomiting concern; its row lands up to the
   // function's wall-clock limit later. The owner answers at T + 30 s on the card still showing.
@@ -541,10 +577,14 @@ Deno.test('CUL-2844: an answer given while the build that dropped its concern wa
   const s = stateOf({ symptoms: STABLE, acks: [during], priorFindings: gone, priorGeneratedAtMs: T })
   assertEquals([s.state, s.lapsed], ['raised', ['during']])
   // At the edge of the ceiling it still lapses; past it the row was already written, so it stands.
-  const edge = ack({ id: 'edge', daysAgo: 1, createdAt: new Date(T + PRIOR_ROW_WRITE_CEILING_MS - 1_000).toISOString() })
-  assertEquals(stateOf({ symptoms: STABLE, acks: [edge], priorFindings: gone, priorGeneratedAtMs: T }).lapsed, ['edge'])
-  const after = ack({ id: 'after', daysAgo: 1, createdAt: new Date(T + PRIOR_ROW_WRITE_CEILING_MS + 60_000).toISOString() })
-  assertEquals(stateOf({ symptoms: STABLE, acks: [after], priorFindings: gone, priorGeneratedAtMs: T }).lapsed, [])
+  // A visit answer about an older visit, beside a previous row that held the concern but skipped
+  // the step: there only the server clock can lapse it ("My vet knows" lapses whenever it was
+  // written, CUL-2847), so this is where the ceiling is load-bearing (adversarial pass 2, C-35).
+  const skipped = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }]
+  const visit = (id: string, createdAtMs: number) => ack({ id, daysAgo: 1, source: 'visit_answer', anchorOn: dayOf(5), createdAt: new Date(createdAtMs).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [visit('during-v', T + 30_000)], priorFindings: skipped, priorGeneratedAtMs: T }).lapsed, ['during-v'])
+  assertEquals(stateOf({ symptoms: STABLE, acks: [visit('edge', T + PRIOR_ROW_WRITE_CEILING_MS - 1_000)], priorFindings: skipped, priorGeneratedAtMs: T }).lapsed, ['edge'])
+  assertEquals(stateOf({ symptoms: STABLE, acks: [visit('after', T + PRIOR_ROW_WRITE_CEILING_MS + 60_000)], priorFindings: skipped, priorGeneratedAtMs: T }).lapsed, [])
   // The ceiling covers the Edge Function's wall-clock limit (400 s on the paid plan).
   assertStrictEquals(PRIOR_ROW_WRITE_CEILING_MS >= 400_000, true)
 })
