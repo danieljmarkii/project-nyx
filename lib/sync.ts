@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getDb, getWatermark, setWatermark } from './db';
+import { beginVisitPush, markSignalUnseen, markSignalUnseenIfAbsent } from './signalUnseen';
 import { markRecordHydrated } from './coldStart';
 import { isUploadInFlight, markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
@@ -1233,6 +1234,31 @@ export function syncPendingMeals(): Promise<void> {
   return serializeQueuePush('meals', drainMealsQueue);
 }
 
+/**
+ * CUL-2846: before a push, owe each pet a Signal rebuild unless one is owed already (a kept
+ * token stays settleable by the rebuild that captured it). The write that queued the row armed
+ * one, but its marker is written a moment after the row; this closes the window where an app
+ * kill between the two leaves a landed row nobody owes a rebuild for. Best effort: a failure
+ * leaves the time checks as the backstop.
+ */
+async function oweSignalBeforePush(petIds: readonly string[], table: string): Promise<string[]> {
+  try {
+    return await markSignalUnseenIfAbsent(petIds);
+  } catch (e) {
+    console.warn(`[sync] could not record the owed Signal rebuild before the ${table} push:`, e);
+    return [];
+  }
+}
+
+/**
+ * CUL-2846 pass 1 (B3): rows that landed for a pet nothing had armed a rebuild for (the write's
+ * own mark was lost to a kill, so `oweSignalBeforePush` owed it here). Nudge Home to re-read, so
+ * its backstop finds the debt now rather than at the next focus.
+ */
+function nudgeSignalForNewlyOwed(newlyOwed: readonly string[], landedPets: readonly string[]): void {
+  if (newlyOwed.some((p) => landedPets.includes(p))) useSyncStore.getState().bumpSignalTick();
+}
+
 async function drainMealsQueue(): Promise<void> {
   // Ensure the JWT is fresh before writing. getSession() triggers a refresh
   // if the access token has expired, and returns null if the session is gone.
@@ -1286,7 +1312,8 @@ async function drainMealsQueue(): Promise<void> {
   await presyncFoodItems(db, session.user.id, foodIds, 'meals');
 
   const childCtx = await childPushContext(db, 'meals', unsyncedMeals, mark);
-  await pushRows(db, 'meals', unsyncedMeals, (m) => ({
+  const mealsNewlyOwed = await oweSignalBeforePush(unsyncedMeals.map((m) => m.pet_id), 'meals');
+  const landedMeals = await pushRows(db, 'meals', unsyncedMeals, (m) => ({
     id: m.id,
     event_id: m.event_id,
     pet_id: m.pet_id,
@@ -1307,6 +1334,8 @@ async function drainMealsQueue(): Promise<void> {
     // Migration 105: NULL = one food, 2+ = a mix (whose food_item_id is NULL, T2).
     component_count: m.component_count ?? null,
   }), childCtx);
+  const mealIds = new Set(landedMeals);
+  nudgeSignalForNewlyOwed(mealsNewlyOwed, unsyncedMeals.filter((m) => mealIds.has(m.id)).map((m) => m.pet_id));
 
   await drainMealComponents(db, session.user.id);
 }
@@ -1610,6 +1639,7 @@ async function drainEventsQueue(): Promise<void> {
 
   if (unsyncedEvents.length === 0) return;
 
+  const eventsNewlyOwed = await oweSignalBeforePush(unsyncedEvents.map((e) => e.pet_id), 'events');
   const landedEvents = await pushRows(db, 'events', unsyncedEvents, (e) => ({
     id: e.id,
     pet_id: e.pet_id,
@@ -1629,6 +1659,8 @@ async function drainEventsQueue(): Promise<void> {
     // B-289 — capture-surface provenance (see the meals payload note).
     logged_via: e.logged_via ?? 'app',
   }));
+  const eventIds = new Set(landedEvents);
+  nudgeSignalForNewlyOwed(eventsNewlyOwed, unsyncedEvents.filter((e) => eventIds.has(e.id)).map((e) => e.pet_id));
 
   // CUL-1986 / CUL-2032 — a log that lands gives its parked children a fresh try: markSynced
   // re-arms them (`rearmChildrenOf`), before the children's drains run in pushAllQueues.
@@ -2037,36 +2069,73 @@ async function drainVetVisitsQueue(): Promise<void> {
       const key = `${sent.channel ? 'c' : '-'}${sent.deleted ? 'd' : '-'}`;
       batches.set(key, [...(batches.get(key) ?? []), v]);
     }
-    const landed = new Set<string>();
-    for (const batch of batches.values()) {
-      for (const id of await pushRows(db, 'vet_visits', batch, toRemote)) landed.add(id);
-    }
-    // CUL-2843: what landed has spoken for this phone's changes; clear the flags on THAT version
-    // only (an edit made while the push was in flight moved updated_at and keeps its flag). Then a
-    // column this push left out is the server's: copy the value read just before the push onto
-    // the landed row, so this phone stops showing an exam the server holds as a call. Its
-    // updated_at stays, so the next pull still overwrites it with anything newer.
-    await settleLandedVisits(db, unsyncedVisits.filter((v) => landed.has(v.id)), sends, prior);
-    const unknown = unsyncedVisits.filter((v) => v.channel === null);
-    if (epoch === currentSignOutEpoch()) {
-      rebuildSignalsForBookings(
-        unsyncedVisits
-          .filter((v) => landed.has(v.id) && visitCareFactMoved(v, sendsFor(v), prior))
-          .map((v) => v.pet_id),
-      );
-    }
-    // A row that landed without its channel still reads NULL here. Re-arm the full re-pull, so
-    // the next hydrate's fill learns it from the server (its updated_at may sit below the
-    // watermark, where an incremental pull would never fetch it again).
-    if (unknown.some((v) => landed.has(v.id))) {
-      try {
-        await db.runAsync('DELETE FROM sync_watermarks WHERE table_name = ?', ['vet_visits']);
-      } catch (e) {
-        console.warn('[sync] could not re-arm the vet_visits re-pull after an unknown-channel push:', e);
+    // CUL-2846: a row that may quiet Home once it lands (a contact, an unknown channel, a
+    // delete) is owed a rebuild BEFORE it goes, so a kill between the landing and the rebuild
+    // armed below still leaves the debt on disk. An exam's own edit owes nothing here.
+    // Kept if already owed, so a push that keeps failing mints no new rebuild each cycle
+    // (adversarial pass 2, CUL-2845's class). And while this push runs, no rebuild may settle
+    // a debt (`beginVisitPush`): none flushes visits, so one that read before a row landed
+    // could settle it after (passes 1 and 2, B1). Not after a sign-out: the outgoing
+    // account's pet must not be owed under the next.
+    const owesSignal = (v: QueuedVisit): boolean =>
+      v.channel === null || v.channel !== 'in_clinic' || v.deleted_at !== null;
+    const owedVisitPets = [...new Set(unsyncedVisits.filter(owesSignal).map((v) => v.pet_id))];
+    const endVisitPush = beginVisitPush();
+    try {
+      for (const petId of owedVisitPets) {
+        if (epoch !== currentSignOutEpoch()) break;
+        await oweSignalBeforePush([petId], 'vet_visits');
       }
+      const landed = new Set<string>();
+      for (const batch of batches.values()) {
+        for (const id of await pushRows(db, 'vet_visits', batch, toRemote)) landed.add(id);
+      }
+      // CUL-2843: what landed has spoken for this phone's changes; clear the flags on THAT version
+      // only (an edit made while the push was in flight moved updated_at and keeps its flag). Then a
+      // column this push left out is the server's: copy the value read just before the push onto
+      // the landed row, so this phone stops showing an exam the server holds as a call. Its
+      // updated_at stays, so the next pull still overwrites it with anything newer.
+      await settleLandedVisits(db, unsyncedVisits.filter((v) => landed.has(v.id)), sends, prior);
+      if (epoch === currentSignOutEpoch()) {
+        const moved = [...new Set(
+          unsyncedVisits
+            .filter((v) => landed.has(v.id) && visitCareFactMoved(v, sendsFor(v), prior))
+            .map((v) => v.pet_id),
+        )];
+        // CUL-2846 pass 2: a fresh token for every pet whose care fact moved, written and awaited
+        // BEFORE this push ends, so a rebuild that read before the landing cannot settle it.
+        for (const petId of moved) {
+          try {
+            await markSignalUnseen(petId);
+          } catch (e) {
+            console.warn('[sync] could not record the owed Signal rebuild after a visit landed:', e);
+          }
+        }
+        rebuildSignalsForBookings(moved);
+        // CUL-2846 pass 1 (B1b): a row owed above that landed and armed nothing here (a retry of a
+        // push that committed but lost its response reads the new channel as the server's
+        // already) still holds a debt; nudge Home to re-read, so its backstop rebuilds now.
+        const landedOwed = unsyncedVisits.filter(
+          (v) => landed.has(v.id) && owesSignal(v) && !moved.includes(v.pet_id),
+        );
+        if (landedOwed.length > 0) useSyncStore.getState().bumpSignalTick();
+      }
+      const unknown = unsyncedVisits.filter((v) => v.channel === null);
+      // A row that landed without its channel still reads NULL here. Re-arm the full re-pull, so
+      // the next hydrate's fill learns it from the server (its updated_at may sit below the
+      // watermark, where an incremental pull would never fetch it again).
+      if (unknown.some((v) => landed.has(v.id))) {
+        try {
+          await db.runAsync('DELETE FROM sync_watermarks WHERE table_name = ?', ['vet_visits']);
+        } catch (e) {
+          console.warn('[sync] could not re-arm the vet_visits re-pull after an unknown-channel push:', e);
+        }
+      }
+      // Before the photos below: what waits on the visit should not also wait on them.
+      if (landed.size > 0) sendWhatWaitedOnVisits();
+    } finally {
+      endVisitPush();
     }
-    // Before the photos below: what waits on the visit should not also wait on them.
-    if (landed.size > 0) sendWhatWaitedOnVisits();
   }
 
   // Sync vet visit attachments

@@ -18,6 +18,7 @@ jest.mock('./db', () => ({
       if (mockDbFails) throw new Error('db down');
       return mockDb.prepare(sql).all(...(params as never[]));
     }),
+    runAsync: jest.fn(async (sql: string, params: unknown[] = []) => mockDb.prepare(sql).run(...(params as never[]))),
   }),
   countRecordGaps: jest.fn(async () => mockGaps),
 }));
@@ -36,6 +37,7 @@ jest.mock('./signal', () => ({
 
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { contactHasOpenWarning, petHasOpenWarning } from './vetContactMoment';
+import { clearSignalUnseen, markSignalUnseen, readSignalUnseenToken } from './signalUnseen';
 import { useSyncStore } from '../store/syncStore';
 
 const NOW = Date.parse('2026-11-14T18:00:00.000Z');
@@ -176,5 +178,51 @@ describe('contactHasOpenWarning (B3: every pet the contact was about)', () => {
 
   it('no pet at all is never a sure no', async () => {
     expect(await contactHasOpenWarning([], NOW)).toBe(true);
+  });
+});
+
+// CUL-2846: the phone's clock runs five minutes slow. The cat's breakfast is rated None AFTER the
+// Signal was built (server 17:00), but the phone stamps it 16:56, before the build less the
+// margin (16:58), so the time check reads it as seen. The write armed a rebuild, the row
+// landed, and the app was killed before that rebuild ran. Only the debt on disk is left.
+describe('petHasOpenWarning: a rebuild owed needs no clock (CUL-2846)', () => {
+  const SLOW_STAMP = '2026-11-20 16:56:00'; // real time 17:01, phone 5 min slow
+  const built = '2026-11-20T17:00:00.000Z';
+  const NOW_20 = Date.parse('2026-11-20T17:05:00.000Z');
+
+  it('slow clock, killed app: the debt keeps the check from showing', async () => {
+    mockReads['pet-a'] = { row: { ...row(['insight'], built), expiresAt: '2026-11-21T17:00:00.000Z' }, fromLast: false };
+    logEvent('pet-a', SLOW_STAMP); // landed (synced) — the event row carries synced = 1
+    mockDb.prepare(`UPDATE events SET synced = 1`).run();
+    // The time check alone misses it: this is the bug, measured.
+    expect(await petHasOpenWarning('pet-a', NOW_20)).toBe(false);
+    await markSignalUnseen('pet-a'); // what the write's triggerSignalRegenDebounced left on disk
+    expect(await petHasOpenWarning('pet-a', NOW_20)).toBe(true);
+  });
+
+  it('once the rebuild that read it settles the debt, a quiet cache answers no again', async () => {
+    mockReads['pet-a'] = { row: { ...row(['insight'], built), expiresAt: '2026-11-21T17:00:00.000Z' }, fromLast: false };
+    await markSignalUnseen('pet-a');
+    await clearSignalUnseen('pet-a', (await readSignalUnseenToken('pet-a')) as string);
+    expect(await petHasOpenWarning('pet-a', NOW_20)).toBe(false);
+  });
+
+  it('a failed read of the debt is open', async () => {
+    mockReads['pet-a'] = { row: { ...row(['insight'], built), expiresAt: '2026-11-21T17:00:00.000Z' }, fromLast: false };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockDbFails = true;
+      expect(await petHasOpenWarning('pet-a', NOW_20)).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('every pet the contact was about: one owed pet is enough', async () => {
+    for (const p of ['pet-a', 'pet-b']) {
+      mockReads[p] = { row: { ...row(['insight'], built), expiresAt: '2026-11-21T17:00:00.000Z' }, fromLast: false };
+    }
+    await markSignalUnseen('pet-b');
+    expect(await contactHasOpenWarning(['pet-a', 'pet-b'], NOW_20)).toBe(true);
   });
 });

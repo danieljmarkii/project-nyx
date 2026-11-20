@@ -9,6 +9,7 @@ import {
 import { hasPendingReadFor, readNearBuild } from './readCopy';
 import { useSyncStore } from '../store/syncStore';
 import { hasLiveWarning } from './vetContactAfter';
+import { readSignalUnseenToken } from './signalUnseen';
 
 // Vet contacts PR-05 (CUL-2767, spec §4.4, mock C4/C5): is anything OPEN for the pets a call,
 // text or email was about? The saved moment shows its check only when the answer is a sure no.
@@ -24,6 +25,10 @@ import { hasLiveWarning } from './vetContactAfter';
 //     the engine has not read it yet. The row's time is the instant the build started reading
 //     (CUL-2844), on the SERVER's clock, and the write's is the phone's, so a write inside
 //     `LANDED_READ_RACE_MS` before the build counts too (pass 2);
+//   • a rebuild this phone still owes the pet (`lib/signalUnseen.ts`, CUL-2846): a write armed
+//     one and none that read it has succeeded. This is the check that needs no clock; the time
+//     check above it misses a write stamped by a phone running slow (its time sorts before the
+//     server's build stamp) once the app was killed before the write's own rebuild;
 //   • a row on this phone the server has not seen (unsent or refused): the build read an
 //     incomplete record (pass 2; the gap read `generate-signal` itself is told about);
 //   • a per-incident read that landed after (or just before) the build, or one still pending:
@@ -85,6 +90,7 @@ export async function petHasOpenWarning(petId: string, nowMs: number = Date.now(
   // The gap read fails closed on its own (an unreadable count is "unsent").
   if ((await readSignalRecordGaps()).unsentRows) return true;
   try {
+    if (await readSignalUnseenToken(petId)) return true;
     const newest = await newestRecordWriteMs(petId);
     if (newest !== null && newest >= generated - LANDED_READ_RACE_MS) return true;
     if (await readNearBuild(petId, row.generatedAt, LANDED_READ_RACE_MS)) return true;

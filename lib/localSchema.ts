@@ -730,6 +730,17 @@ export const BASE_SCHEMA_SQL = `
       queued_at     TEXT NOT NULL,
       user_id       TEXT
     );
+
+    -- CUL-2846 signal_unseen_writes — a pet whose Signal this phone owes a rebuild: a write
+    -- armed one and no rebuild that read it has succeeded yet (lib/signalUnseen.ts). Home's
+    -- backstop and the saved moment read it on the next open, so a rebuild lost to an app
+    -- kill is caught without comparing the phone's clock to the server's. Local only, never
+    -- synced. Wiped on sign-out (LOCAL_WIPE_TABLES): a row says this household's pet had a
+    -- record change the Signal has not read.
+    CREATE TABLE IF NOT EXISTS signal_unseen_writes (
+      pet_id        TEXT PRIMARY KEY,
+      token         TEXT NOT NULL
+    );
 `;
 
 // ── The column-upgrade path, as data (B-398) ─────────────────────────────────

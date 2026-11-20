@@ -19,6 +19,7 @@ import { syncPendingEvents, syncPendingMeals } from './sync';
 import { countRecordGaps } from './db';
 import { readNearBuild } from './readCopy';
 import { visitMovedNearBuild } from './vetVisits';
+import { clearSignalUnseen, markSignalUnseen, readSignalUnseenToken, visitPushInFlight } from './signalUnseen';
 import { currentSignOutEpoch } from './signOutEpoch';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
@@ -888,6 +889,24 @@ const readRebuiltRows = new Set<string>();
  *  every visit corrected to a contact or deleted (CUL-2842). */
 export async function landedReadRebuildKey(petId: string, row: SignalCacheRow | null): Promise<string | null> {
   if (!row?.generatedAt) return null;
+  // CUL-2846: a rebuild this phone still owes the pet (`lib/signalUnseen.ts`), asked before any
+  // time check because it needs no clock: a write armed a rebuild and none that read it has
+  // succeeded, so the app was closed first. Skipped while this process has one armed or in
+  // flight (the acknowledgment flag), which will settle it. Fresh or expired row alike (the
+  // key makes it a log, CUL-2842 B1). Once per token per process; a failure releases it.
+  if (!useSyncStore.getState().signalAcknowledging[petId]) {
+    let owed: string | null = null;
+    try {
+      owed = await readSignalUnseenToken(petId);
+    } catch (e) {
+      // Falls through to the time checks, which still run.
+      console.warn('[signal] owed-rebuild check failed:', e);
+    }
+    if (owed) {
+      const key = `unseen|${petId}|${owed}`;
+      if (!readRebuiltRows.has(key)) return key;
+    }
+  }
   // An expired row is the expiry's rebuild for a READ (CUL-1105, unchanged). A moved VISIT is
   // asked on an expired row too (CUL-2842 pass 2, B1): the expiry's rebuild goes as a refresh,
   // which the per-pet cap can turn away, and the cached "with your vet" would then outlive the
@@ -1056,6 +1075,15 @@ export async function readSignalRecordGaps(): Promise<{ unsentRows: boolean; ref
 
 async function runRegen(petId: string, reason: SignalRegenReason): Promise<{ error: string | null }> {
   try {
+    // CUL-2846: the rebuild this phone owes, captured BEFORE the flush, so everything it names
+    // was written before this build was asked for. Only that token is settled on success; a
+    // write made from here on sets a new one and is still owed.
+    let owed: string | null = null;
+    try {
+      owed = await readSignalUnseenToken(petId);
+    } catch (e) {
+      console.warn('[signal] owed-rebuild read failed (it stays owed):', e);
+    }
     await syncPendingEvents().catch(() => {});
     await syncPendingMeals().catch(() => {});
     // generate-signal treats either flag as an incomplete read: the 1-hour expiry and no
@@ -1071,6 +1099,15 @@ async function runRegen(petId: string, reason: SignalRegenReason): Promise<{ err
     // hour, which is what makes the cap reachable.
     const capped = (data as { cap_reached?: unknown } | null)?.cap_reached === true;
     if (!error && !capped) {
+      // Settled before the tick below, so the re-read it starts does not find the debt still
+      // there and rebuild again. A row still unsent keeps it owed (`clearSignalUnseen`).
+      // Not while a visits push runs (pass 2): this build did not flush it, and a visit that
+      // lands after its read started is one it never saw. The drain re-owes or nudges.
+      if (owed && !visitPushInFlight()) {
+        await clearSignalUnseen(petId, owed).catch((e: unknown) => {
+          console.warn('[signal] could not settle the owed rebuild (one extra rebuild next open):', e);
+        });
+      }
       // A successful regen wrote a fresh cache. Bump the signal tick so the Home
       // Signal (useSignal) and the cross-pet safety banner (useCrossPetSafetyBanner)
       // re-read it without waiting for a screen re-focus — closes the B-150 window
@@ -1196,6 +1233,12 @@ export function triggerSignalRegenDebounced(petId: string, delayMs = REGEN_DEBOU
   const generation = (regenGeneration.get(petId) ?? 0) + 1;
   regenGeneration.set(petId, generation);
   useSyncStore.getState().setSignalAcknowledging(petId, true);
+  // CUL-2846: owe the rebuild on disk too, so one lost to an app kill inside the debounce is
+  // still owed on the next open (Home's backstop and the saved moment read it). A failed write
+  // leaves the time checks as the backstop, as before this existed.
+  markSignalUnseen(petId).catch((e: unknown) => {
+    console.warn('[signal] could not record the owed rebuild:', e);
+  });
   // CUL-1947 — every caller schedules this after its local write has landed, so the
   // phone's own reads (the gap warning) re-run NOW, not on the regen's success: a regen
   // that fails or never fires (offline) must not leave the calm line standing.

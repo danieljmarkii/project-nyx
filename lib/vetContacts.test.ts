@@ -999,3 +999,77 @@ describe('a stale second phone cannot undo a correction or a delete (CUL-2843)',
     expect(mockServerTable('vet_visits').get(id)).toEqual(wholeRow);
   });
 });
+
+// CUL-2846 (adversarial pass 1, B1): the visits drain owes a FRESH rebuild token before its push.
+// No rebuild flushes this queue, so a rebuild already running under the pet's earlier token (a
+// meal logged a moment before) must not be able to settle a correction it never read.
+describe('a visit push owes its own rebuild, which a rebuild already running cannot settle (CUL-2846)', () => {
+  const owed = () =>
+    (mockLocal.db!.prepare(`SELECT token FROM signal_unseen_writes WHERE pet_id = ?`).get(PET) as { token: string } | undefined)?.token ?? null;
+  function seedSyncedExam(id: string): void {
+    seedVisit({ id, pet_id: PET, visited_at: '2026-11-09', synced: 1 });
+    mockServerTable('vet_visits').set(id, { ...localRow(id) });
+  }
+
+  it('a rebuild that captured the earlier token settles it, and the corrected visit stays owed', async () => {
+    const { markSignalUnseen, clearSignalUnseen } = jest.requireActual('./signalUnseen') as typeof import('./signalUnseen');
+    seedSyncedExam('mid');
+    await markSignalUnseen(PET); // the meal's write; rebuild R captures this token
+    const captured = owed() as string;
+    await updateVisitDetails('mid', { channel: 'phone' });
+    await syncPendingVetVisits(); // lands while R reads
+    await clearSignalUnseen(PET, captured); // R succeeds
+    expect(owed()).not.toBeNull();
+  });
+
+  it('a retry of a push whose response was lost re-arms nothing, so it nudges Home to find the debt', async () => {
+    const { useSyncStore } = jest.requireActual('../store/syncStore') as typeof import('../store/syncStore');
+    seedSyncedExam('lost');
+    await updateVisitDetails('lost', { channel: 'phone' });
+    mockServer.upsertLosesResponse.add('vet_visits');
+    await syncPendingVetVisits(); // committed on the server; this phone still holds it unsent
+    mockServer.upsertLosesResponse.clear();
+    mockRegen.mockClear();
+    const tick = useSyncStore.getState().signalTick;
+    await syncPendingVetVisits(); // the server already shows the call: no care fact moved
+    expect(mockRegen).not.toHaveBeenCalled();
+    expect(owed()).not.toBeNull();
+    expect(useSyncStore.getState().signalTick).toBeGreaterThan(tick);
+  });
+
+  it('pass 2: while the push runs no rebuild may settle a debt, and a landed correction owes a fresh token before it ends', async () => {
+    const { visitPushInFlight } = jest.requireActual('./signalUnseen') as typeof import('./signalUnseen');
+    seedSyncedExam('race');
+    await updateVisitDetails('race', { channel: 'phone' });
+    let pushingAtLanding: boolean | null = null;
+    let tokenAtLanding: string | null = null;
+    mockServer.beforeLand = (table) => {
+      if (table !== 'vet_visits') return;
+      pushingAtLanding = visitPushInFlight();
+      tokenAtLanding = owed();
+    };
+    await syncPendingVetVisits();
+    expect(pushingAtLanding).toBe(true);
+    expect(tokenAtLanding).not.toBeNull(); // owed before it went
+    expect(owed()).not.toBe(tokenAtLanding); // a rebuild holding the pre-push token cannot settle this one
+    expect(visitPushInFlight()).toBe(false);
+  });
+
+  it('pass 2 (CUL-2845’s class): a push that keeps failing keeps one token, so it mints no new rebuild each cycle', async () => {
+    seedSyncedExam('stuck');
+    await updateVisitDetails('stuck', { channel: 'phone' });
+    mockServer.upsertFails.add('vet_visits');
+    await syncPendingVetVisits();
+    const first = owed();
+    await syncPendingVetVisits();
+    expect(first).not.toBeNull();
+    expect(owed()).toBe(first);
+  });
+
+  it('an exam whose channel did not move owes nothing', async () => {
+    seedSyncedExam('notes-only');
+    await updateVisitDetails('notes-only', { notes: 'ears look better' });
+    await syncPendingVetVisits();
+    expect(owed()).toBeNull();
+  });
+});

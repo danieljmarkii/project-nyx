@@ -45,6 +45,14 @@ jest.mock('./db', () => ({
   getWatermark: jest.fn(),
   setWatermark: jest.fn(),
 }));
+// CUL-2846: the drains' "rebuild owed" mark is its own module (tested on real SQLite in
+// lib/signalUnseen.test.ts); stood in here so the DB call counts below stay the queue's own.
+const mockOweSignal = jest.fn(async (_petIds: readonly string[]): Promise<string[]> => []);
+jest.mock('./signalUnseen', () => ({
+  markSignalUnseenIfAbsent: (petIds: readonly string[]) => mockOweSignal(petIds),
+  markSignalUnseen: async () => {},
+  beginVisitPush: () => () => {},
+}));
 jest.mock('./hydration', () => ({
   reconcileBatch: jest.fn(),
   advanceWatermark: jest.fn(),
@@ -1222,6 +1230,24 @@ describe('pushRows — poison-pill isolation and the retry budget (B-398)', () =
     mockGetAllAsync.mockResolvedValue([]);
     await syncPendingEvents();
     expect(String(mockGetAllAsync.mock.calls[0][0])).toContain('sync_error IS NULL');
+  });
+
+  // CUL-2846 pass 1 (B3): the write's own "rebuild owed" mark was lost to a kill, so the drain
+  // owes it here. Nothing armed a rebuild for that pet, so a landing nudges Home to re-read.
+  it('a landing for a pet the drain newly owed nudges Home; one already owed does not', async () => {
+    const { useSyncStore } = jest.requireActual('../store/syncStore') as typeof import('../store/syncStore');
+    mockGetAllAsync.mockResolvedValue([evt('e1')]);
+    selectSpy.mockResolvedValue({ data: [{ id: 'e1' }], error: null });
+    mockOweSignal.mockResolvedValueOnce(['p1']);
+    let tick = useSyncStore.getState().signalTick;
+    await syncPendingEvents();
+    expect(mockOweSignal).toHaveBeenLastCalledWith(['p1']);
+    expect(useSyncStore.getState().signalTick).toBe(tick + 1);
+
+    mockOweSignal.mockResolvedValueOnce([]);
+    tick = useSyncStore.getState().signalTick;
+    await syncPendingEvents();
+    expect(useSyncStore.getState().signalTick).toBe(tick);
   });
 
   it('THE WEDGE: one refused row no longer blocks the other 99', async () => {

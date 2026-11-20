@@ -161,6 +161,12 @@ const NOT_RECORD_WRITES: Record<string, string> = {
   flushLegacyCatalogCachesIfNeeded: 'a one-time local cache migration',
   initDb: 'creates and migrates the local database',
   clearLocalData: 'the sign-out wipe of the local database',
+  // CUL-2846: the "rebuild owed" marker (lib/signalUnseen.ts in WRITE_PATH). It records that a
+  // write elsewhere armed a Signal rebuild, and a rebuild settles it; it adds nothing to the
+  // record, so the rebuild and the log that call these stay what they were.
+  markSignalUnseen: 'Signal bookkeeping: a rebuild this phone owes the pet, set by the write that armed it',
+  markSignalUnseenIfAbsent: 'Signal bookkeeping: the same debt, set by the drain before it pushes',
+  clearSignalUnseen: 'Signal bookkeeping: settles the debt once a rebuild that read it succeeds',
   writeCopies:
     'the per-incident read\u2019s verdict copy (lib/readCopy.ts in WRITE_PATH): it mirrors ' +
     'rows the SERVER wrote, so the realtime watch Home starts is a pull, not a write',
@@ -323,6 +329,12 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
       'dietTrialSetup/medicationSetup above: the layer a control goes through, not a ' +
       'control. Its four helpers are in WRITE_CALLS, so a Home card that calls one is ' +
       'still caught BY NAME \u2014 this entry silences the raw SQL, never the reach.',
+  },
+  'lib/signalUnseen.ts': {
+    helpers: [],
+    why:
+      'the Signal\u2019s "rebuild owed" marker (CUL-2846): local bookkeeping beside the ' +
+      'rebuild, never a row in the record',
   },
   'lib/feedingArrangements.ts': {
     helpers: [],
@@ -1100,8 +1112,9 @@ describe('the derived write helpers (CUL-1154)', () => {
     expect(stale).toEqual([]);
     expect(Object.keys(NOT_RECORD_WRITES).filter((n) => names.has(n))).toEqual([]);
     expect(Object.keys(NOT_RECORD_WRITES).sort()).toEqual([
-      'clearLocalData', 'ensureEventAttachmentsSynced', 'flushLegacyCatalogCachesIfNeeded',
-      'hydrateFromCloud', 'initDb', 'reapStalePendingFoods', 'refreshFoodCache',
+      'clearLocalData', 'clearSignalUnseen', 'ensureEventAttachmentsSynced', 'flushLegacyCatalogCachesIfNeeded',
+      'hydrateFromCloud', 'initDb', 'markSignalUnseen', 'markSignalUnseenIfAbsent',
+      'reapStalePendingFoods', 'refreshFoodCache',
       'refreshMedicationCache', 'setWatermark', 'syncNow', 'writeCopies',
     ]);
   });
