@@ -61,6 +61,40 @@ export function getDb(): SQLite.SQLiteDatabase {
 // (and the new owner filter) stops new foreign rows arriving, but never DELETEs
 // the rows already cached — ON CONFLICT DO UPDATE only ever adds/updates. Without
 // this flush, strangers' foods linger in the picker indefinitely.
+/**
+ * CUL-2843 (PM ruling A): the only writers of `vet_visits.channel_dirty` / `deleted_dirty`, the
+ * local "this phone changed it" flags the visit push reads (lib/sync.ts `visitPushColumns`).
+ * Triggers rather than each writer remembering, so the visit delete (CUL-2826) is covered the day
+ * its writer lands. Each fires only on an OWNER write, one that queues the row: hydrate and its
+ * fill write a synced row, so a pulled value is never mistaken for this phone's change. A new row
+ * is wholly this phone's. An update counts only when the value actually moved (IS NOT, null-safe),
+ * so a notes edit that re-saves the same channel claims nothing. Here, not in lib/localSchema.ts,
+ * because that module sits in Home's import closure (guards/homeWrites) and this is the write
+ * layer. Run by initDb after the column upgrades, so both columns exist when they are created.
+ */
+export const VET_VISIT_DIRTY_TRIGGERS_SQL = `
+  CREATE TRIGGER IF NOT EXISTS trg_vet_visits_dirty_insert
+    AFTER INSERT ON vet_visits
+    WHEN NEW.synced = 0
+  BEGIN
+    UPDATE vet_visits SET channel_dirty = 1, deleted_dirty = 1 WHERE id = NEW.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS trg_vet_visits_dirty_channel
+    AFTER UPDATE OF channel, contacted_at ON vet_visits
+    WHEN NEW.synced = 0
+      AND (OLD.channel IS NOT NEW.channel OR OLD.contacted_at IS NOT NEW.contacted_at)
+  BEGIN
+    UPDATE vet_visits SET channel_dirty = 1 WHERE id = NEW.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS trg_vet_visits_dirty_deleted
+    AFTER UPDATE OF deleted_at ON vet_visits
+    WHEN NEW.synced = 0
+      AND OLD.deleted_at IS NOT NEW.deleted_at
+  BEGIN
+    UPDATE vet_visits SET deleted_dirty = 1 WHERE id = NEW.id;
+  END;
+`;
+
 export const CACHE_SCHEMA_VERSION = 1;
 
 // The subset of the expo-sqlite database surface the flush needs — narrowed so
@@ -244,6 +278,24 @@ export async function initDb(): Promise<void> {
       await database.runAsync('DELETE FROM sync_watermarks WHERE table_name = ?', [table]);
     } catch (e) {
       console.warn(`[initDb] could not reset the ${table} watermark after its column upgrade:`, e);
+    }
+  }
+
+  // CUL-2843 — the flags' writers, created once both columns exist on every install.
+  await database.execAsync(VET_VISIT_DIRTY_TRIGGERS_SQL);
+
+  // CUL-2843 — on the launch that adds the visit dirty flags, every row still queued was queued
+  // under the whole-row push, so it keeps sending everything: mark it dirty once. Never on a
+  // later launch (it would re-claim changes this phone never made). If this one fails, a queued
+  // row the server does not hold yet still sends its channel (the drain's "new on the server").
+  if (addedColumns.some((u) => u.table === 'vet_visits' && u.column === 'channel_dirty')) {
+    try {
+      await database.runAsync(
+        `UPDATE vet_visits SET channel_dirty = 1, deleted_dirty = 1
+          WHERE synced = 0`,
+      );
+    } catch (e) {
+      console.warn('[initDb] could not mark the queued visits dirty after the flag upgrade:', e);
     }
   }
 

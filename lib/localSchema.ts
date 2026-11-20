@@ -333,8 +333,18 @@ export const BASE_SCHEMA_SQL = `
       updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
       synced          INTEGER NOT NULL DEFAULT 0,
       sync_attempts   INTEGER NOT NULL DEFAULT 0,
-      sync_error      TEXT
+      sync_error      TEXT,
+      -- CUL-2843 (PM ruling A): did THIS phone change the channel (with its time) or the delete
+      -- since its last landed push? LOCAL-ONLY: never pushed, never pulled. The push sends those
+      -- columns only when set, so a second phone's stale whole-row save of notes can no longer
+      -- undo a correction to a call or a delete; every other column stays whole-row LWW. Set by
+      -- VET_VISIT_DIRTY_TRIGGERS_SQL (lib/db.ts, the write layer: this module is in Home's import
+      -- closure), never by a writer, so the visit delete (CUL-2826) is covered the day it lands. Cleared once the version that carried it lands (drainVetVisitsQueue), and
+      -- zeroed by hydrate, whose row is the server's. Declared here AND in COLUMN_UPGRADES.
+      channel_dirty   INTEGER NOT NULL DEFAULT 0,
+      deleted_dirty   INTEGER NOT NULL DEFAULT 0
     );
+
 
     CREATE TABLE IF NOT EXISTS vet_visit_attachments (
       id              TEXT PRIMARY KEY,
@@ -895,6 +905,11 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // (see the CREATE above for why a default would be a false claim).
   { table: 'vet_visits', column: 'channel', type: 'TEXT', rehydrate: true },
   { table: 'vet_visits', column: 'contacted_at', type: 'TEXT', rehydrate: true },
+  // CUL-2843 — the local-only "this phone changed it" flags (see the CREATE). No rehydrate: the
+  // server never holds them. initDb marks every row still queued at upgrade as dirty, so it
+  // pushes exactly what the whole-row push it was queued under would have sent.
+  { table: 'vet_visits', column: 'channel_dirty', type: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'vet_visits', column: 'deleted_dirty', type: 'INTEGER NOT NULL DEFAULT 0' },
   // Engines v3 PR-12 (CUL-1267) / migration 075 — the read copy's three stamps. The copy
   // shipped in HV-5 without them, so an installed phone has the table and only this path
   // can add them. Nullable, no default: NULL is "written before the stamps", which is
