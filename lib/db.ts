@@ -49,6 +49,91 @@ export function getDb(): SQLite.SQLiteDatabase {
   return db;
 }
 
+/**
+ * CUL-2843 (PM ruling A): the only writers of `vet_visits.channel_dirty` / `deleted_dirty`, the
+ * local "this phone changed it" flags the visit push reads (lib/sync.ts `visitPushColumns`).
+ * Triggers rather than each writer remembering, so the visit delete (CUL-2826) is covered the day
+ * its writer lands. Each fires only on an OWNER write, one that queues the row: hydrate and its
+ * fill write a synced row, so a pulled value is never mistaken for this phone's change. A new row
+ * is wholly this phone's. An update counts only when the value actually moved (IS NOT, null-safe),
+ * so a notes edit that re-saves the same channel claims nothing. The time is compared as an
+ * INSTANT (C-40): a pulled `+00:00` re-saved by the Edit sheet as `.000Z` is the same time, and
+ * the text compare marked it changed, so a stale phone sent its old channel (adversarial pass 1).
+ * Text that is not an instant falls back to the text compare, so it counts as changed (louder). Here, not in lib/localSchema.ts,
+ * because that module sits in Home's import closure (guards/homeWrites) and this is the write
+ * layer. Installed by `installVisitDirtyFlags` (below), never executed bare. `IF NOT EXISTS` never
+ * replaces a body: a later change to a condition must DROP the old trigger first.
+ */
+export const VET_VISIT_DIRTY_TRIGGERS_SQL = `
+  CREATE TRIGGER IF NOT EXISTS trg_vet_visits_dirty_insert
+    AFTER INSERT ON vet_visits
+    WHEN NEW.synced = 0
+  BEGIN
+    UPDATE vet_visits SET channel_dirty = 1, deleted_dirty = 1 WHERE id = NEW.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS trg_vet_visits_dirty_channel
+    AFTER UPDATE OF channel, contacted_at ON vet_visits
+    WHEN NEW.synced = 0
+      AND (OLD.channel IS NOT NEW.channel
+        OR julianday(OLD.contacted_at) IS NOT julianday(NEW.contacted_at)
+        OR (julianday(NEW.contacted_at) IS NULL AND OLD.contacted_at IS NOT NEW.contacted_at))
+  BEGIN
+    UPDATE vet_visits SET channel_dirty = 1 WHERE id = NEW.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS trg_vet_visits_dirty_deleted
+    AFTER UPDATE OF deleted_at ON vet_visits
+    WHEN NEW.synced = 0
+      AND OLD.deleted_at IS NOT NEW.deleted_at
+  BEGIN
+    UPDATE vet_visits SET deleted_dirty = 1 WHERE id = NEW.id;
+  END;
+`;
+
+/**
+ * CUL-2843: install the visit flags' triggers, once, after the column upgrades. Durable without a
+ * marker of its own: the triggers' presence IS the marker. A phone without them was never covered,
+ * so every row it still has queued was queued under the whole-row push and is marked dirty (it
+ * keeps sending everything); then the triggers are created, in the same transaction, so a crash
+ * between the two retries both on the next launch. On a fresh install the table is empty and the
+ * marking is a no-op. Only when BOTH columns exist: SQLite resolves a trigger body when it fires,
+ * so a trigger over a column whose ALTER failed would break every visit write ("no such column").
+ * Whatever fails here, the drain pushes whole rows until all three triggers are present
+ * (`visitDirtyFlagsLive`, lib/sync.ts), the push it replaced: a flag nothing writes must never
+ * read as "unchanged". Never throws: a failure here must not stop the app opening.
+ */
+export async function installVisitDirtyFlags(database: SQLite.SQLiteDatabase): Promise<void> {
+  try {
+    const cols = await database.getAllAsync<{ name: string }>(
+      `SELECT name FROM pragma_table_info('vet_visits')`,
+    );
+    const names = new Set(cols.map((c) => c.name));
+    if (!names.has('channel_dirty') || !names.has('deleted_dirty')) {
+      console.warn('[initDb] vet_visits has no dirty-flag columns: visits push whole rows');
+      return;
+    }
+    const installed = await database.getFirstAsync<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM sqlite_master
+        WHERE type = 'trigger' AND name LIKE 'trg_vet_visits_dirty_%'`,
+    );
+    const n = installed?.n ?? 0;
+    if (n === 3) return;
+    await database.withTransactionAsync(async () => {
+      // Only a phone that never had ANY of them was never covered. A partial set (a future change
+      // that drops one to rewrite it) re-creates the missing one without re-claiming changes the
+      // surviving triggers have already been tracking (adversarial pass 2).
+      if (n === 0) {
+        await database.runAsync(
+          `UPDATE vet_visits SET channel_dirty = 1, deleted_dirty = 1
+            WHERE synced = 0`,
+        );
+      }
+      await database.execAsync(VET_VISIT_DIRTY_TRIGGERS_SQL);
+    });
+  } catch (e) {
+    console.warn('[initDb] could not install the visit dirty flags (visits push whole rows):', e);
+  }
+}
+
 // Local cache-schema version (SQLite's built-in PRAGMA user_version — unused
 // until now, so it reads 0 on every existing install). Bump this to force a
 // one-time flush of the catalog caches on the next launch. See
@@ -246,6 +331,9 @@ export async function initDb(): Promise<void> {
       console.warn(`[initDb] could not reset the ${table} watermark after its column upgrade:`, e);
     }
   }
+
+  // CUL-2843 — the visit dirty flags' triggers, and the one-time marking of rows queued before.
+  await installVisitDirtyFlags(database);
 
   // Backfill in its own try so it still runs if the ADD COLUMN above already
   // happened on a prior launch (a single try/catch would let a transient failure

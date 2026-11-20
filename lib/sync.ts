@@ -1781,8 +1781,14 @@ function sendWhatWaitedOnVisits(): void {
   syncPendingCareAcknowledgements().catch(queued('care_acknowledgements'));
 }
 
-/** A visit's two facts the server's care read depends on, as the server holds them. */
-type VisitCareFacts = { channel: string | null; deleted: boolean };
+/**
+ * A visit's two facts the server's care read depends on, as the server holds them, plus the raw
+ * values (CUL-2843) a push that leaves them out copies back onto this phone once it lands.
+ */
+type VisitCareFacts = {
+  channel: string | null; deleted: boolean;
+  contactedAt: string | null; deletedAt: string | null;
+};
 
 /**
  * CUL-2842: the server's `channel` and `deleted_at` for these visits, read just before the push.
@@ -1795,18 +1801,20 @@ async function readServerVisitCareFacts(ids: readonly string[]): Promise<Map<str
     // visit-read: anyContact — what the server holds for the rows about to be pushed, of every channel, to see which moved.
     const { data, error } = await supabase
       .from('vet_visits')
-      .select('id, channel, deleted_at')
+      .select('id, channel, contacted_at, deleted_at')
       .in('id', [...ids]);
     if (error || !Array.isArray(data)) {
       console.warn('[sync] vet_visits care-fact read failed (rebuilding every landed pet):', error?.message);
       return null;
     }
     const facts = new Map<string, VisitCareFacts>();
-    for (const r of data as { id: unknown; channel: unknown; deleted_at: unknown }[]) {
+    for (const r of data as { id: unknown; channel: unknown; contacted_at: unknown; deleted_at: unknown }[]) {
       facts.set(String(r.id), {
         channel: typeof r.channel === 'string' ? r.channel : null,
         // Presence, never the text: the server spells an instant `+00:00`, this phone `.000Z` (C-40).
         deleted: r.deleted_at !== null && r.deleted_at !== undefined,
+        contactedAt: typeof r.contacted_at === 'string' ? r.contacted_at : null,
+        deletedAt: typeof r.deleted_at === 'string' ? r.deleted_at : null,
       });
     }
     return facts;
@@ -1828,22 +1836,134 @@ async function readServerVisitCareFacts(ids: readonly string[]): Promise<Map<str
  *     cost; a "with your vet" left standing over a phone call is the alternative);
  *   · absent on the server → false: a new visit, and no answer can name it there until it lands;
  *     the answers that then land arm their own rebuild;
- *   · a channel this phone does not know (NULL) is omitted from the push, so it cannot move;
+ *   · a column the push leaves out cannot move: a channel this phone does not know (NULL), and
+ *     since CUL-2843 a channel or delete this phone did not change itself (`sent` says which);
  *   · a call corrected back to an exam rebuilds too: the answer on it counts again.
  *
  * A notes, reason or date edit moves neither fact and spends nothing against the owner's AI cap.
  */
 function visitCareFactMoved(
   v: { id: string; channel: string | null; deleted_at: string | null },
+  sent: VisitPushColumns,
   prior: Map<string, VisitCareFacts> | null,
 ): boolean {
+  if (!sent.channel && !sent.deleted) return false;
   if (prior === null) return true;
   const was = prior.get(v.id);
   if (was === undefined) return false;
   // Exam-ness, not the raw channel: the care read asks only "is it an exam", so a call
   // corrected to a text moves nothing it reads and spends nothing.
-  if (v.channel !== null && (v.channel === 'in_clinic') !== (was.channel === 'in_clinic')) return true;
-  return (v.deleted_at !== null) !== was.deleted;
+  if (sent.channel && (v.channel === 'in_clinic') !== (was.channel === 'in_clinic')) return true;
+  return sent.deleted && (v.deleted_at !== null) !== was.deleted;
+}
+
+/** CUL-2843: which of a visit's two guarded column groups this push carries. */
+type VisitPushColumns = { channel: boolean; deleted: boolean };
+
+/**
+ * CUL-2843 (PM ruling A, 2026-11-20): a visit's push carries `channel` (with `contacted_at`, the
+ * one fact "how the vet was reached") and `deleted_at` ONLY when this phone changed them, or when
+ * the server does not hold the row yet (an insert takes the server's default for anything left
+ * out, and no other phone can have a value there). Every other column stays whole-row
+ * last-write-wins. Without this, a second phone still holding 'in_clinic' saved a notes edit and
+ * its whole row overwrote the first phone's correction to a call, and a stale save would restore
+ * a deleted visit.
+ *
+ *   · `prior` null (the server read failed) → the flags alone decide: a stale value is never sent
+ *     on a guess. A row queued before the flags existed was marked dirty at upgrade (initDb);
+ *   · a channel this phone never learned (NULL) is never sent, dirty or not (CUL-2765).
+ */
+export function visitPushColumns(
+  v: { id: string; channel: string | null; channel_dirty?: number; deleted_dirty?: number },
+  prior: ReadonlyMap<string, unknown> | null,
+): VisitPushColumns {
+  const newOnServer = prior !== null && !prior.has(v.id);
+  // `!== 0`, not `=== 1`: a flag this phone cannot read (its column upgrade failed, so the row has
+  // none) is unknown, and unknown sends, as the whole-row push it replaced did (installVisitDirtyFlags).
+  return {
+    channel: v.channel !== null && (v.channel_dirty !== 0 || newOnServer),
+    deleted: v.deleted_dirty !== 0 || newOnServer,
+  };
+}
+
+/**
+ * CUL-2843: are the visit dirty flags being written? True only when all three triggers exist
+ * (installVisitDirtyFlags, lib/db.ts); a failed read answers false, the whole-row push.
+ */
+async function visitDirtyFlagsLive(db: Db): Promise<boolean> {
+  try {
+    const row = await db.getFirstAsync<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'trigger' AND name IN
+         ('trg_vet_visits_dirty_insert', 'trg_vet_visits_dirty_channel', 'trg_vet_visits_dirty_deleted')`,
+    );
+    return (row?.n ?? 0) === 3;
+  } catch (e) {
+    console.warn('[sync] could not read the visit dirty-flag triggers (pushing whole rows):', e);
+    return false;
+  }
+}
+
+/**
+ * CUL-2843: after a visit push lands, clear its "this phone changed it" flags on the values sent,
+ * and copy the server's channel / delete back over any the push left out. The copy is matched on
+ * the pushed version and `synced = 1`, like markSynced (C-23): a row edited mid-push is still
+ * queued, and its own values stay. Best-effort: a failure leaves a flag set (this phone re-sends its own last
+ * value) or a stale local copy (the next pull corrects it), never a value it did not hold.
+ */
+async function settleLandedVisits(
+  db: Db,
+  landed: readonly {
+    id: string; updated_at: string;
+    channel: string | null; contacted_at: string | null; deleted_at: string | null;
+  }[],
+  sends: ReadonlyMap<string, VisitPushColumns>,
+  prior: ReadonlyMap<string, VisitCareFacts> | null,
+): Promise<void> {
+  for (const v of landed) {
+    try {
+      const sent = sends.get(v.id);
+      if (!sent) continue;
+      // A flag clears on the VALUE that landed, not the version (adversarial pass 1): a notes edit
+      // typed while the push was in flight moved updated_at, and a version-keyed clear left the
+      // flag set, so the next push re-sent a correction this phone had already delivered, over a
+      // later one from another phone. The value matches only while this phone still holds what
+      // the server now holds; a later change of its own has re-set the flag through the trigger.
+      if (sent.channel) {
+        await db.runAsync(
+          // The time as an INSTANT, like the trigger (pass 2): a re-spelled `.000Z` of the
+          // `+00:00` that landed is the same value, and a text match would keep the flag.
+          `UPDATE vet_visits SET channel_dirty = 0
+            WHERE id = ? AND channel IS ?
+              AND (contacted_at IS ? OR julianday(contacted_at) = julianday(?))`,
+          [v.id, v.channel, v.contacted_at, v.contacted_at],
+        );
+      }
+      if (sent.deleted) {
+        await db.runAsync(
+          `UPDATE vet_visits SET deleted_dirty = 0
+            WHERE id = ? AND (deleted_at IS ? OR julianday(deleted_at) = julianday(?))`,
+          [v.id, v.deleted_at, v.deleted_at],
+        );
+      }
+      const was = prior?.get(v.id);
+      if (!was) continue;
+      if (!sent.channel && was.channel !== null) {
+        await db.runAsync(
+          `UPDATE vet_visits SET channel = ?, contacted_at = ?
+            WHERE id = ? AND updated_at IS ? AND synced = 1`,
+          [was.channel, was.contactedAt, v.id, v.updated_at],
+        );
+      }
+      if (!sent.deleted) {
+        await db.runAsync(
+          `UPDATE vet_visits SET deleted_at = ? WHERE id = ? AND updated_at IS ? AND synced = 1`,
+          [was.deletedAt, v.id, v.updated_at],
+        );
+      }
+    } catch (e) {
+      console.warn('[sync] settling a landed visit failed (the next pull corrects it):', e);
+    }
+  }
 }
 
 async function drainVetVisitsQueue(): Promise<void> {
@@ -1856,6 +1976,8 @@ async function drainVetVisitsQueue(): Promise<void> {
     reason: string | null; notes: string | null;
     next_visit_at: string | null; deleted_at: string | null;
     channel: string | null; contacted_at: string | null;
+    // Absent only where the column upgrade failed (installVisitDirtyFlags): read as dirty.
+    channel_dirty?: number; deleted_dirty?: number;
     created_at: string; updated_at: string;
   }>(
     // visit-read: anyContact — the push moves every unsynced row verbatim; it decides nothing about exams.
@@ -1863,43 +1985,73 @@ async function drainVetVisitsQueue(): Promise<void> {
   );
 
   if (unsyncedVisits.length > 0) {
-    // Two batches, never one (adversarial pass 2): PostgREST builds a batch's column list from
-    // the union of every row's keys and sends a missing key as NULL, so a row that OMITS its
-    // channel, batched beside one that names it, would be sent `channel: null`. Today that is a
-    // 23502 and the per-row retry rescues it; under `missing=default` it would silently write
-    // 'in_clinic' over the server's 'phone'. So the unknown-channel rows travel alone.
-    type QueuedVisit = (typeof unsyncedVisits)[number];
-    const toRemote = (v: QueuedVisit) => ({
-      id: v.id, pet_id: v.pet_id, visited_at: v.visited_at,
-      clinic_name: v.clinic_name, vet_name: v.vet_name,
-      reason: v.reason, notes: v.notes, next_visit_at: v.next_visit_at,
-      // CUL-899 VV-1 — the push ENUMERATES its columns, so a column absent from
-      // this literal can never travel no matter what the local row holds. Nothing
-      // writes it yet (the delete control is VV-6, gated on CUL-19); it is here now
-      // so that when a writer lands it does not also have to find this line.
-      deleted_at: v.deleted_at,
-      // CUL-2765 — both columns, or the server keeps its default and a phone contact
-      // becomes an EXAM there: the report's window would start at a call (the CUL-1184
-      // class). A NULL channel is a row this phone never learned the channel of (pulled by an
-      // older build): both are OMITTED, so the server keeps its own and a contact is never
-      // re-stamped as an exam (the adversarial pass). Pinned by lib/vetContacts.test.ts.
-      ...(v.channel === null ? {} : { channel: v.channel, contacted_at: v.contacted_at }),
-      created_at: v.created_at, updated_at: v.updated_at,
-    });
-    const known = unsyncedVisits.filter((v) => v.channel !== null);
-    const unknown = unsyncedVisits.filter((v) => v.channel === null);
     // CUL-2842: read what the server holds BEFORE the push, so the landing can tell which rows
-    // moved a fact the care read depends on (see visitCareFactMoved).
+    // moved a fact the care read depends on (see visitCareFactMoved). CUL-2843: the same read
+    // says which rows are new on the server, and so must carry every column.
     const prior = await readServerVisitCareFacts(unsyncedVisits.map((v) => v.id));
+    type QueuedVisit = (typeof unsyncedVisits)[number];
+    // Adversarial pass 2: a flag nothing writes reads 0, which would mean "unchanged" and drop
+    // this phone's own correction. So the flags count only while every trigger that writes them
+    // is present; otherwise every row goes whole, as before ruling A.
+    const flagsLive = await visitDirtyFlagsLive(db);
+    const sends = new Map<string, VisitPushColumns>(
+      unsyncedVisits.map((v) => [
+        v.id,
+        flagsLive ? visitPushColumns(v, prior) : { channel: v.channel !== null, deleted: true },
+      ]),
+    );
+    // Built from the same rows, so a miss is a bug; it throws rather than send a guessed shape.
+    const sendsFor = (v: { id: string }): VisitPushColumns => {
+      const sent = sends.get(v.id);
+      if (!sent) throw new Error(`drainVetVisitsQueue: no push columns for visit ${v.id}`);
+      return sent;
+    };
+    const toRemote = (v: QueuedVisit) => {
+      const sent = sendsFor(v);
+      return {
+        id: v.id, pet_id: v.pet_id, visited_at: v.visited_at,
+        clinic_name: v.clinic_name, vet_name: v.vet_name,
+        reason: v.reason, notes: v.notes, next_visit_at: v.next_visit_at,
+        // CUL-899 VV-1 — the push ENUMERATES its columns, so a column absent from this literal
+        // can never travel. CUL-2843 — and the tombstone travels only when this phone set or
+        // cleared it (visitPushColumns): a stale whole-row save never restores a deleted visit.
+        ...(sent.deleted ? { deleted_at: v.deleted_at } : {}),
+        // CUL-2765 — both columns, or the server keeps its default and a phone contact becomes an
+        // EXAM there. A NULL channel (pulled by an older build) is never sent, so a contact is
+        // never re-stamped as an exam. CUL-2843 — nor is a channel this phone did not change, so a
+        // correction to a call made on another phone survives this phone's stale notes edit.
+        // Pinned by lib/vetContacts.test.ts.
+        ...(sent.channel ? { channel: v.channel, contacted_at: v.contacted_at } : {}),
+        created_at: v.created_at, updated_at: v.updated_at,
+      };
+    };
+    // One batch per set of keys, never one (adversarial pass 2 on CUL-2765): PostgREST builds a
+    // batch's column list from the union of every row's keys and sends a missing key as NULL, so
+    // a row that OMITS its channel, batched beside one that names it, would be sent
+    // `channel: null` (a 23502 today; under `missing=default` it would write 'in_clinic' over the
+    // server's 'phone'). CUL-2843 makes `deleted_at` optional too, so a NULL there would undo a
+    // delete. Grouped by shape, in queue order.
+    const batches = new Map<string, QueuedVisit[]>();
+    for (const v of unsyncedVisits) {
+      const sent = sendsFor(v);
+      const key = `${sent.channel ? 'c' : '-'}${sent.deleted ? 'd' : '-'}`;
+      batches.set(key, [...(batches.get(key) ?? []), v]);
+    }
     const landed = new Set<string>();
-    for (const batch of [known, unknown]) {
-      if (batch.length === 0) continue;
+    for (const batch of batches.values()) {
       for (const id of await pushRows(db, 'vet_visits', batch, toRemote)) landed.add(id);
     }
+    // CUL-2843: what landed has spoken for this phone's changes; clear the flags on THAT version
+    // only (an edit made while the push was in flight moved updated_at and keeps its flag). Then a
+    // column this push left out is the server's: copy the value read just before the push onto
+    // the landed row, so this phone stops showing an exam the server holds as a call. Its
+    // updated_at stays, so the next pull still overwrites it with anything newer.
+    await settleLandedVisits(db, unsyncedVisits.filter((v) => landed.has(v.id)), sends, prior);
+    const unknown = unsyncedVisits.filter((v) => v.channel === null);
     if (epoch === currentSignOutEpoch()) {
       rebuildSignalsForBookings(
         unsyncedVisits
-          .filter((v) => landed.has(v.id) && visitCareFactMoved(v, prior))
+          .filter((v) => landed.has(v.id) && visitCareFactMoved(v, sendsFor(v), prior))
           .map((v) => v.pet_id),
       );
     }
@@ -3715,15 +3867,17 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<boolean> 
     await db.runAsync(
       `INSERT INTO vet_visits
         (id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, deleted_at,
-         channel, contacted_at, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+         channel, contacted_at, created_at, updated_at, synced, channel_dirty, deleted_dirty)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,0)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, visited_at=excluded.visited_at, clinic_name=excluded.clinic_name,
          vet_name=excluded.vet_name, reason=excluded.reason, notes=excluded.notes,
          next_visit_at=excluded.next_visit_at, deleted_at=excluded.deleted_at,
          channel=excluded.channel, contacted_at=excluded.contacted_at,
          created_at=excluded.created_at,
-         updated_at=excluded.updated_at, synced=1
+         updated_at=excluded.updated_at, synced=1,
+         -- CUL-2843: the row is now the server's, so nothing on it is this phone's change.
+         channel_dirty=0, deleted_dirty=0
        WHERE vet_visits.synced = 1`,
       [v.id, v.pet_id, v.visited_at, v.clinic_name ?? null, v.vet_name ?? null, v.reason ?? null,
        v.notes ?? null, v.next_visit_at ?? null, v.deleted_at ?? null,

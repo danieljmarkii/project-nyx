@@ -33,6 +33,8 @@ const mockServer = {
   upsertFails: new Set<string>(),
   /** Tables whose upsert COMMITS and then loses its response (a timeout after the write). */
   upsertLosesResponse: new Set<string>(),
+  /** Runs as an upsert arrives, before it lands: an owner edit made while the push is in flight. */
+  beforeLand: null as null | ((table: string) => void),
 };
 
 function mockServerTable(table: string): Map<string, Row> {
@@ -56,6 +58,7 @@ function mockServerFrom(table: string) {
   read.upsert = (payload: Row | Row[]) => {
     const rows = Array.isArray(payload) ? payload : [payload];
     const land = () => {
+      mockServer.beforeLand?.(table);
       if (mockServer.upsertFails.has(table)) return { data: null, error: { message: 'network' } };
       mockServer.upserts.push({ table, rows });
       for (const r of rows) {
@@ -127,7 +130,7 @@ import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
-import { getDb } from './db';
+import { getDb, initDb, installVisitDirtyFlags } from './db';
 import { hydrateFromCloud, syncPendingVetVisits } from './sync';
 import { logVetVisit, readVisitConsequence, readVisitPrefill, updateVisitDetails, visitMovedNearBuild } from './vetVisits';
 import { latestVisitBefore, readLatestVisitBefore, readVisitDaysBefore } from './visitWindow';
@@ -162,11 +165,14 @@ beforeEach(async () => {
     mockLocal.db.exec(sql);
   }
   await applyColumnUpgrades(async (sql) => mockLocal.db!.exec(sql));
+  // The production install (CUL-2843), not the bare SQL: a fixture cannot skip the triggers.
+  await installVisitDirtyFlags(getDb());
   mockServer.rows.clear();
   mockServer.upserts.length = 0;
   mockServer.readFails.clear();
   mockServer.upsertFails.clear();
   mockServer.upsertLosesResponse.clear();
+  mockServer.beforeLand = null;
   mockRegen.mockClear();
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
@@ -562,12 +568,17 @@ describe('a corrected visit rebuilds its pet\'s warnings when it lands (CUL-2842
     expect(regenPets()).toEqual([]);
   });
 
-  it('when the prior read fails, every pet whose visit landed rebuilds (the louder of the two)', async () => {
-    seedSyncedExam('notes-only');
+  it('when the prior read fails, every pet whose landed visit SENT a channel or delete rebuilds (the louder of the two)', async () => {
+    seedSyncedExam('corrected', PET);
+    seedSyncedExam('notes-only', OTHER_PET);
+    await updateVisitDetails('corrected', { channel: 'phone' });
     await updateVisitDetails('notes-only', { notes: 'fine' });
     mockServer.readFails.add('vet_visits');
     await syncPendingVetVisits();
-    expect(mockServerTable('vet_visits').get('notes-only')).toMatchObject({ notes: 'fine' });
+    expect(mockServerTable('vet_visits').get('corrected')).toMatchObject({ channel: 'phone' });
+    expect(mockServerTable('vet_visits').get('notes-only')).toMatchObject({ notes: 'fine', channel: 'in_clinic' });
+    // CUL-2843: the notes edit sent neither guarded column, so it cannot have moved a care fact,
+    // read or no read. Only the correction rebuilds.
     expect(regenPets()).toEqual([PET]);
   });
 
@@ -639,5 +650,335 @@ describe('a corrected visit rebuilds its pet\'s warnings when it lands (CUL-2842
     mockServer.upsertFails.clear();
     await syncPendingVetVisits();
     expect(regenPets()).toEqual([PET]);
+  });
+});
+
+// CUL-2843 (PM ruling A): a visit's push sends `channel` (with its time) and `deleted_at` only when
+// THIS phone changed them, so a second phone's stale whole-row save cannot undo a correction to a
+// call or a delete. This suite's local database is phone B; phone A is the server row it has not
+// pulled yet (A's push already landed there). Every other column stays whole-row last-write-wins.
+describe('a stale second phone cannot undo a correction or a delete (CUL-2843)', () => {
+  const sentRows = () => mockServer.upserts.filter((u) => u.table === 'vet_visits').flatMap((u) => u.rows);
+  const flags = (id: string) => {
+    const r = localRow(id);
+    return { channel_dirty: r.channel_dirty, deleted_dirty: r.deleted_dirty };
+  };
+  /** Phone B pulled the visit as an exam; phone A has since changed the server's row. */
+  function staleOnB(id: string, onA: Row): void {
+    seedVisit({ id, visited_at: '2026-11-09', synced: 1 });
+    mockServerTable('vet_visits').set(id, {
+      ...localRow(id), synced: undefined, channel_dirty: undefined, deleted_dirty: undefined,
+      updated_at: '2026-11-14T09:00:00.000Z', ...onA,
+    });
+  }
+
+  it('A corrects to a call; B, still holding the exam, edits the notes: the server keeps the call and takes the notes', async () => {
+    staleOnB('v1', { channel: 'phone', contacted_at: '2026-11-09T21:40:00.000Z' });
+    expect(flags('v1')).toEqual({ channel_dirty: 0, deleted_dirty: 0 });
+    await updateVisitDetails('v1', { notes: 'ears look better' });
+    expect(flags('v1')).toEqual({ channel_dirty: 0, deleted_dirty: 0 }); // a notes edit claims nothing
+
+    await syncPendingVetVisits();
+    const [sent] = sentRows();
+    expect(sent).toMatchObject({ id: 'v1', notes: 'ears look better' });
+    expect(sent).not.toHaveProperty('channel');
+    expect(sent).not.toHaveProperty('contacted_at');
+    expect(sent).not.toHaveProperty('deleted_at');
+    expect(mockServerTable('vet_visits').get('v1')).toMatchObject({
+      channel: 'phone', contacted_at: '2026-11-09T21:40:00.000Z', notes: 'ears look better',
+    });
+    // B learns the call at once (the value read before the push), and is no longer queued.
+    expect(localRow('v1')).toMatchObject({
+      channel: 'phone', contacted_at: '2026-11-09T21:40:00.000Z', synced: 1, notes: 'ears look better',
+    });
+    // Nothing B sent moved a care fact, so B spends nothing on a rebuild (A's own landing did).
+    expect(mockRegen).not.toHaveBeenCalled();
+    // And B's exam readers stop anchoring on a call the server holds.
+    expect(await readLatestVisitBefore(getDb(), PET, TODAY)).toBeNull();
+  });
+
+  it('A deletes the visit; B\'s stale notes edit leaves it deleted on the server and on B', async () => {
+    staleOnB('v2', { deleted_at: '2026-11-14T09:00:00+00:00' });
+    await updateVisitDetails('v2', { notes: 'a stale edit' });
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).not.toHaveProperty('deleted_at');
+    expect(mockServerTable('vet_visits').get('v2')).toMatchObject({ deleted_at: '2026-11-14T09:00:00+00:00' });
+    expect(localRow('v2')).toMatchObject({ deleted_at: '2026-11-14T09:00:00+00:00', synced: 1 });
+  });
+
+  it('a real channel change still travels, and its flag clears once that version lands', async () => {
+    staleOnB('v3', {});
+    await updateVisitDetails('v3', { channel: 'text', contactedAt: new Date(2026, 10, 9, 9, 0).toISOString() });
+    expect(flags('v3')).toEqual({ channel_dirty: 1, deleted_dirty: 0 });
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).toMatchObject({ channel: 'text' });
+    expect(sentRows()[0]).not.toHaveProperty('deleted_at');
+    expect(mockServerTable('vet_visits').get('v3')).toMatchObject({ channel: 'text' });
+    expect(localRow('v3')).toMatchObject({ synced: 1, channel_dirty: 0, deleted_dirty: 0 });
+  });
+
+  it('a delete this phone made travels (the tombstone and the un-delete both)', async () => {
+    staleOnB('v4', {});
+    mockLocal.db!.prepare(
+      `UPDATE vet_visits SET deleted_at = '2026-11-15T10:00:00.000Z', updated_at = '2026-11-15T10:00:00.000Z',
+         synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = 'v4'`,
+    ).run();
+    expect(flags('v4')).toEqual({ channel_dirty: 0, deleted_dirty: 1 });
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).toMatchObject({ deleted_at: '2026-11-15T10:00:00.000Z' });
+    expect(sentRows()[0]).not.toHaveProperty('channel');
+    expect(mockServerTable('vet_visits').get('v4')).toMatchObject({ deleted_at: '2026-11-15T10:00:00.000Z' });
+  });
+
+  it('a channel changed while the push is in flight keeps its flag and travels next cycle', async () => {
+    staleOnB('v5', {});
+    await updateVisitDetails('v5', { channel: 'phone' });
+    mockServer.beforeLand = () => {
+      mockServer.beforeLand = null;
+      // The owner corrects it again before the first push answers.
+      mockLocal.db!.prepare(
+        `UPDATE vet_visits SET channel = 'email', updated_at = '2026-11-20T08:00:00.000Z',
+           synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = 'v5'`,
+      ).run();
+    };
+    await syncPendingVetVisits();
+    expect(localRow('v5')).toMatchObject({ channel: 'email', synced: 0, channel_dirty: 1 });
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get('v5')).toMatchObject({ channel: 'email' });
+    expect(localRow('v5')).toMatchObject({ channel: 'email', synced: 1, channel_dirty: 0 });
+  });
+
+  it('a correction already delivered is not re-sent over a later one when a notes edit rode the push (pass 1, b)', async () => {
+    staleOnB('v9', {});
+    await updateVisitDetails('v9', { channel: 'phone' });
+    mockServer.beforeLand = () => {
+      mockServer.beforeLand = null;
+      // The owner types a note while the correction is in flight: the version moves.
+      mockLocal.db!.prepare(
+        `UPDATE vet_visits SET notes = 'typing', updated_at = '2026-11-20T08:00:00.000Z',
+           synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = 'v9'`,
+      ).run();
+    };
+    await syncPendingVetVisits();
+    // The call landed, so the flag is spent even though the row is still queued for the note.
+    expect(localRow('v9')).toMatchObject({ channel: 'phone', synced: 0, channel_dirty: 0 });
+    // Another phone corrects it back to an exam before this phone's next push.
+    mockServerTable('vet_visits').set('v9', { ...mockServerTable('vet_visits').get('v9'), channel: 'in_clinic' });
+    mockServer.upserts.length = 0;
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).not.toHaveProperty('channel');
+    expect(mockServerTable('vet_visits').get('v9')).toMatchObject({ channel: 'in_clinic', notes: 'typing' });
+  });
+
+  it('a pulled time re-saved in this phone\'s spelling is not a change (pass 1, a; C-40)', async () => {
+    // Pulled as a call with PostgREST's `+00:00`; another phone has since made it an exam.
+    seedVisit({ id: 'v10', visited_at: '2026-11-09', channel: 'phone', contacted_at: '2026-11-09T21:40:00+00:00', synced: 1 });
+    mockServerTable('vet_visits').set('v10', {
+      ...localRow('v10'), synced: undefined, channel_dirty: undefined, deleted_dirty: undefined,
+      channel: 'in_clinic', contacted_at: null, updated_at: '2026-11-14T09:00:00.000Z',
+    });
+    // The contact Edit sheet passes the stored time back unchanged, beside the clinic it edits.
+    await updateVisitDetails('v10', { clinicName: 'Riverside', contactedAt: '2026-11-09T21:40:00+00:00' });
+    expect(localRow('v10').contacted_at).toBe('2026-11-09T21:40:00.000Z'); // respelled
+    expect(flags('v10')).toEqual({ channel_dirty: 0, deleted_dirty: 0 });
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get('v10')).toMatchObject({ channel: 'in_clinic', clinic_name: 'Riverside' });
+    // A real change of time still counts.
+    await updateVisitDetails('v10', { contactedAt: '2026-11-09T22:00:00.000Z' });
+    expect(flags('v10').channel_dirty).toBe(1);
+  });
+
+  it('a mixed queue goes in one batch per key set: no row is ever sent a channel or delete it left out', async () => {
+    staleOnB('stale', { channel: 'phone' });
+    staleOnB('fixed', {});
+    await updateVisitDetails('stale', { notes: 'n' });
+    await updateVisitDetails('fixed', { channel: 'text' });
+    await logVetVisit({ petId: PET, visitedAt: '2026-11-16', channel: 'email', newId: () => 'fresh' });
+    await syncPendingVetVisits();
+    const batches = mockServer.upserts.filter((u) => u.table === 'vet_visits');
+    for (const b of batches) {
+      const keys = b.rows.map((r) => Object.keys(r).sort().join(','));
+      expect(new Set(keys).size).toBe(1);
+    }
+    expect(batches.map((b) => b.rows.map((r) => r.id))).toEqual([['stale'], ['fixed'], ['fresh']]);
+    expect(mockServerTable('vet_visits').get('stale')).toMatchObject({ channel: 'phone', notes: 'n' });
+    expect(mockServerTable('vet_visits').get('fixed')).toMatchObject({ channel: 'text' });
+    expect(mockServerTable('vet_visits').get('fresh')).toMatchObject({ channel: 'email' });
+  });
+
+  it('the server read fails: a channel this phone did not change is still never sent on a guess', async () => {
+    staleOnB('v6', { channel: 'phone' });
+    await updateVisitDetails('v6', { notes: 'n' });
+    mockServer.readFails.add('vet_visits');
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).not.toHaveProperty('channel');
+    expect(mockServerTable('vet_visits').get('v6')).toMatchObject({ channel: 'phone', notes: 'n' });
+  });
+
+  it('a new call logged while the server read fails still lands as a call, never the default exam', async () => {
+    // Only the insert trigger knows this row is wholly this phone's: no read says it is new.
+    const id = await logVetVisit({ petId: PET, visitedAt: '2026-11-09', channel: 'phone' });
+    expect(flags(id)).toEqual({ channel_dirty: 1, deleted_dirty: 1 });
+    mockServer.readFails.add('vet_visits');
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get(id)).toMatchObject({ channel: 'phone' });
+  });
+
+  it('a row the server does not hold sends its channel even unflagged (an insert takes the default)', async () => {
+    // A queued row whose flag was never set (the upgrade's backfill lost): new on the server.
+    seedVisit({ id: 'v7', visited_at: '2026-11-09', channel: 'phone', synced: 0 });
+    mockLocal.db!.prepare(`UPDATE vet_visits SET channel_dirty = 0, deleted_dirty = 0 WHERE id = 'v7'`).run();
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get('v7')).toMatchObject({ channel: 'phone' });
+  });
+
+  it('only an owner write sets a flag: hydrate and its fill never do, and a pull zeroes them', async () => {
+    mockServerTable('vet_visits').set('srv', {
+      id: 'srv', pet_id: PET, visited_at: '2026-11-09', clinic_name: null, vet_name: null, reason: null,
+      notes: null, next_visit_at: null, deleted_at: null, channel: 'phone', contacted_at: null,
+      created_at: '2026-11-09T21:41:00.000Z', updated_at: '2026-11-09T21:41:00.000Z',
+    });
+    await hydrateFromCloud();
+    expect(localRow('srv')).toMatchObject({ synced: 1, channel_dirty: 0, deleted_dirty: 0 });
+    // A flag left set on a synced row (its clear failed) is zeroed by the next pull of a newer row.
+    mockLocal.db!.prepare(`UPDATE vet_visits SET channel_dirty = 1 WHERE id = 'srv'`).run();
+    mockServerTable('vet_visits').set('srv', {
+      ...mockServerTable('vet_visits').get('srv'), channel: 'text', updated_at: '2026-11-10T08:00:00.000Z',
+    });
+    await hydrateFromCloud();
+    expect(localRow('srv')).toMatchObject({ channel: 'text', channel_dirty: 0 });
+  });
+
+  it('the upgrade marks every row still queued as dirty, once, and never a synced one', async () => {
+    const db = mockLocal.db!;
+    for (const t of ['trg_vet_visits_dirty_insert', 'trg_vet_visits_dirty_channel', 'trg_vet_visits_dirty_deleted']) {
+      db.exec(`DROP TRIGGER ${t}`);
+    }
+    db.exec('ALTER TABLE vet_visits DROP COLUMN channel_dirty');
+    db.exec('ALTER TABLE vet_visits DROP COLUMN deleted_dirty');
+    seedVisit({ id: 'queued', visited_at: '2026-11-09', channel: 'phone', synced: 0 });
+    seedVisit({ id: 'pulled', visited_at: '2026-11-10', synced: 1 });
+    await initDb();
+    expect(flags('queued')).toEqual({ channel_dirty: 1, deleted_dirty: 1 });
+    expect(flags('pulled')).toEqual({ channel_dirty: 0, deleted_dirty: 0 });
+    // A second launch adds nothing and re-marks nothing.
+    db.exec(`UPDATE vet_visits SET channel_dirty = 0, deleted_dirty = 0 WHERE id = 'queued'`);
+    await initDb();
+    expect(flags('queued')).toEqual({ channel_dirty: 0, deleted_dirty: 0 });
+    // And the triggers exist again after the launch.
+    await updateVisitDetails('pulled', { channel: 'email' });
+    expect(flags('pulled')).toEqual({ channel_dirty: 1, deleted_dirty: 0 });
+  });
+
+  it('the install is retried until it lands: a launch that died after the columns re-marks the queue', async () => {
+    const db = mockLocal.db!;
+    for (const t of ['trg_vet_visits_dirty_insert', 'trg_vet_visits_dirty_channel', 'trg_vet_visits_dirty_deleted']) {
+      db.exec(`DROP TRIGGER ${t}`);
+    }
+    // The columns were added on the launch that died; the triggers and the marking never ran.
+    seedVisit({ id: 'queued', visited_at: '2026-11-09', channel: 'phone', synced: 0 });
+    expect(flags('queued')).toEqual({ channel_dirty: 0, deleted_dirty: 0 });
+    await initDb(); // adds no column this time
+    expect(flags('queued')).toEqual({ channel_dirty: 1, deleted_dirty: 1 });
+  });
+
+  it('a phone whose column upgrade failed keeps writing visits and pushes whole rows', async () => {
+    const db = mockLocal.db!;
+    for (const t of ['trg_vet_visits_dirty_insert', 'trg_vet_visits_dirty_channel', 'trg_vet_visits_dirty_deleted']) {
+      db.exec(`DROP TRIGGER ${t}`);
+    }
+    db.exec('ALTER TABLE vet_visits DROP COLUMN channel_dirty');
+    db.exec('ALTER TABLE vet_visits DROP COLUMN deleted_dirty');
+    await installVisitDirtyFlags(getDb());
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'trigger'
+      AND name LIKE 'trg_vet_visits_dirty_%'`).get()).toEqual({ n: 0 });
+    staleOnB('v8', {});
+    await updateVisitDetails('v8', { channel: 'phone' }); // no "no such column"
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).toMatchObject({ channel: 'phone', deleted_at: null });
+  });
+
+  const dropTriggers = () => {
+    for (const t of ['trg_vet_visits_dirty_insert', 'trg_vet_visits_dirty_channel', 'trg_vet_visits_dirty_deleted']) {
+      mockLocal.db!.exec(`DROP TRIGGER IF EXISTS ${t}`);
+    }
+  };
+
+  it('triggers missing with both columns present: a correction still travels, never copied back (pass 2, T)', async () => {
+    dropTriggers(); // the install threw on this launch
+    staleOnB('v11', {});
+    await updateVisitDetails('v11', { channel: 'phone' });
+    expect(flags('v11').channel_dirty).toBe(0); // nothing writes the flag
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).toMatchObject({ channel: 'phone' });
+    expect(mockServerTable('vet_visits').get('v11')).toMatchObject({ channel: 'phone' });
+    expect(localRow('v11')).toMatchObject({ channel: 'phone', synced: 1 });
+  });
+
+  it('a half-failed upgrade (one flag column) pushes whole rows: the correction travels (pass 2, H)', async () => {
+    dropTriggers();
+    mockLocal.db!.exec('ALTER TABLE vet_visits DROP COLUMN deleted_dirty');
+    await installVisitDirtyFlags(getDb()); // refuses: a column is missing
+    staleOnB('v12', {});
+    await updateVisitDetails('v12', { channel: 'phone' });
+    await syncPendingVetVisits();
+    expect(mockServerTable('vet_visits').get('v12')).toMatchObject({ channel: 'phone' });
+    expect(localRow('v12')).toMatchObject({ channel: 'phone' });
+  });
+
+  it('a partial trigger set is completed without re-claiming the queue (pass 2 residual)', async () => {
+    staleOnB('v13', {});
+    await updateVisitDetails('v13', { notes: 'n' }); // queued, nothing of this phone's to claim
+    mockLocal.db!.exec('DROP TRIGGER trg_vet_visits_dirty_deleted');
+    await installVisitDirtyFlags(getDb());
+    expect(flags('v13')).toEqual({ channel_dirty: 0, deleted_dirty: 0 });
+    expect(mockLocal.db!.prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'trigger'
+      AND name LIKE 'trg_vet_visits_dirty_%'`).get()).toEqual({ n: 3 });
+  });
+
+  it('a time re-spelled while the correction is in flight still spends the flag (pass 2, S; C-40)', async () => {
+    // Pulled as a call with PostgREST's `+00:00`.
+    seedVisit({ id: 'v14', visited_at: '2026-11-09', channel: 'phone', contacted_at: '2026-11-09T21:40:00+00:00', synced: 1 });
+    mockServerTable('vet_visits').set('v14', {
+      ...localRow('v14'), synced: undefined, channel_dirty: undefined, deleted_dirty: undefined,
+    });
+    await updateVisitDetails('v14', { channel: 'in_clinic' }); // the time keeps its spelling
+    mockServer.beforeLand = () => {
+      mockServer.beforeLand = null;
+      // The Edit sheet saves the clinic and hands the stored time back, which updateVisitDetails
+      // writes respelled `.000Z` (the hook is synchronous, so its statement is written here).
+      mockLocal.db!.prepare(
+        `UPDATE vet_visits SET clinic_name = 'Riverside', contacted_at = '2026-11-09T21:40:00.000Z',
+           updated_at = '2026-11-20T08:00:00.000Z', synced = 0, sync_attempts = 0, sync_error = NULL
+         WHERE id = 'v14'`,
+      ).run();
+    };
+    await syncPendingVetVisits();
+    expect(localRow('v14')).toMatchObject({ contacted_at: '2026-11-09T21:40:00.000Z', synced: 0, channel_dirty: 0 });
+    // Another phone makes it a call again; this phone's next push must not send the exam back.
+    mockServerTable('vet_visits').set('v14', { ...mockServerTable('vet_visits').get('v14'), channel: 'phone' });
+    mockServer.upserts.length = 0;
+    await syncPendingVetVisits();
+    expect(sentRows()[0]).not.toHaveProperty('channel');
+    expect(mockServerTable('vet_visits').get('v14')).toMatchObject({ channel: 'phone', clinic_name: 'Riverside' });
+  });
+
+  // Refactor-safety, green before and after by design: for one phone the server row is the whole
+  // local row, exactly what the whole-row push produced. The insert carries every column (new on
+  // the server), and the edit after it leaves out only columns the server already holds unchanged.
+  it('flag off, one phone: a log then a notes edit still round-trips the whole row to the server', async () => {
+    // A flag-off build writes only 'in_clinic' and never deletes, so its row carries every
+    // column on its insert, and the edit after it changes only what the owner typed.
+    const id = await logVetVisit({ petId: PET, visitedAt: '2026-09-18', clinicName: 'Riverside', now: NOV_14 });
+    await syncPendingVetVisits();
+    await updateVisitDetails(id, { notes: 'ears look better', reason: 'GI' });
+    await syncPendingVetVisits();
+    const local = localRow(id);
+    const wholeRow = Object.fromEntries(
+      ['id', 'pet_id', 'visited_at', 'clinic_name', 'vet_name', 'reason', 'notes', 'next_visit_at',
+        'deleted_at', 'channel', 'contacted_at', 'created_at', 'updated_at'].map((c) => [c, local[c]]),
+    );
+    expect(wholeRow).toMatchObject({ channel: 'in_clinic', notes: 'ears look better' }); // non-vacuous
+    expect(mockServerTable('vet_visits').get(id)).toEqual(wholeRow);
   });
 });
