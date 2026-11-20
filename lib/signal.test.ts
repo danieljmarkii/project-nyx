@@ -44,6 +44,27 @@ jest.mock('./vetVisits', () => ({
   visitMovedNearBuild: (petId: string, since: string, margin: number) => mockVisitMoved(petId, since, margin),
 }));
 
+// CUL-2846: the "rebuild owed" marker (`lib/signalUnseen.ts`, its SQL tested on real SQLite in
+// lib/signalUnseen.test.ts). A stand-in store here, so these tests drive the WIRING: who sets
+// it, who reads it, and which token a rebuild settles. `mockPetUnsent` stands in for its rule
+// that a row still unsent keeps the debt.
+const mockOwed = new Map<string, string>();
+const mockPetUnsent = new Set<string>();
+let mockOweSeq = 0;
+let mockOwedReadFails = false;
+jest.mock('./signalUnseen', () => ({
+  markSignalUnseen: async (petId: string) => {
+    mockOwed.set(petId, `t${++mockOweSeq}`);
+  },
+  readSignalUnseenToken: async (petId: string) => {
+    if (mockOwedReadFails) throw new Error('db gone');
+    return mockOwed.get(petId) ?? null;
+  },
+  clearSignalUnseen: async (petId: string, token: string) => {
+    if (mockOwed.get(petId) === token && !mockPetUnsent.has(petId)) mockOwed.delete(petId);
+  },
+}));
+
 const mockedFrom = supabase.from as jest.Mock;
 const mockedInvoke = supabase.functions.invoke as jest.Mock;
 
@@ -372,6 +393,7 @@ describe('a read the Signal may not have seen rebuilds it, as a log, under one k
 
   beforeEach(() => {
     cancelPendingSignalRegens();
+    mockOwed.clear(); // CUL-2846: no debt carried in from another describe's triggers
     mockedInvoke.mockReset().mockResolvedValue({ data: {}, error: null });
     mockReadNear.mockReset().mockResolvedValue(null);
     mockVisitMoved.mockReset().mockResolvedValue(null);
@@ -530,5 +552,143 @@ describe('a read the Signal may not have seen rebuilds it, as a log, under one k
     await readSignalsAndRefresh(['landed', 'expired']);
     await flush();
     expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+});
+
+// ── CUL-2846: a rebuild owed needs no clock ─────────────────────────────────────────────
+// A phone running five minutes slow stamps a visit it corrected to a call BEFORE the Signal's
+// server-stamped generated_at less the margin, so `visitMovedNearBuild` finds nothing (stubbed
+// to null below, which is what it returns for that row). The rebuild the write armed is an
+// in-memory timer; the app is killed inside its debounce. Only the debt on disk is left.
+describe('a rebuild the phone still owes is caught on the next open, whatever its clock (CUL-2846)', () => {
+  const BUILT = '2026-11-20T17:00:00.000Z';
+  const fresh = (): SignalCacheRow => ({
+    signalText: null,
+    isBuilding: false,
+    findings: [],
+    coverage: [],
+    generatedAt: BUILT,
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+  });
+  const reasons = () => mockedInvoke.mock.calls.map((c) => (c[1] as { body: { petId: string; reason: string } }).body);
+  // The app is swiped away: every timer and every in-memory key is gone, the disk is not.
+  const killApp = () => {
+    jest.clearAllTimers();
+    cancelPendingSignalRegens();
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    cancelPendingSignalRegens();
+    mockOwed.clear();
+    mockPetUnsent.clear();
+    mockOwedReadFails = false;
+    mockedInvoke.mockReset().mockResolvedValue({ data: {}, error: null });
+    mockReadNear.mockReset().mockResolvedValue(null);
+    mockVisitMoved.mockReset().mockResolvedValue(null); // the slow clock: no time check fires
+  });
+  afterEach(() => {
+    killApp();
+    jest.useRealTimers();
+  });
+
+  it('slow clock, app killed before the write’s own rebuild: the next open rebuilds, as a log', async () => {
+    triggerSignalRegenDebounced('nyx'); // the visit drain, after the correction landed
+    await jest.advanceTimersByTimeAsync(0);
+    killApp(); // inside the 5s debounce
+    expect(mockedInvoke).not.toHaveBeenCalled();
+
+    const key = await landedReadRebuildKey('nyx', fresh());
+    expect(key).toMatch(/^unseen\|nyx\|/);
+    await regenerateForLandedRead('nyx', key as string);
+    expect(reasons()).toEqual([expect.objectContaining({ petId: 'nyx', reason: 'log' })]);
+    // Settled by the rebuild that read it: the next open asks nothing.
+    expect(mockOwed.has('nyx')).toBe(false);
+    expect(await landedReadRebuildKey('nyx', fresh())).toBeNull();
+  });
+
+  it('the same on an EXPIRED row: the key makes it a log, which the cap never turns away', async () => {
+    triggerSignalRegenDebounced('nyx');
+    await jest.advanceTimersByTimeAsync(0);
+    killApp();
+    const expired = { ...fresh(), expiresAt: new Date(Date.now() - 1000).toISOString() };
+    expect(await landedReadRebuildKey('nyx', expired)).toMatch(/^unseen\|/);
+  });
+
+  it('the write’s own rebuild, left to run, settles the debt (the app stayed alive)', async () => {
+    triggerSignalRegenDebounced('nyx');
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+    expect(mockOwed.has('nyx')).toBe(false);
+    expect(await landedReadRebuildKey('nyx', fresh())).toBeNull();
+  });
+
+  it('while this process has the rebuild armed, the backstop leaves it to that one', async () => {
+    triggerSignalRegenDebounced('nyx');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(await landedReadRebuildKey('nyx', fresh())).toBeNull();
+  });
+
+  it('a write made while the rebuild runs is still owed after it succeeds', async () => {
+    triggerSignalRegenDebounced('nyx');
+    await jest.advanceTimersByTimeAsync(0);
+    killApp();
+    let land!: (v: unknown) => void;
+    mockedInvoke.mockImplementationOnce(() => new Promise((r) => { land = r; }));
+    const key = (await landedReadRebuildKey('nyx', fresh())) as string;
+    const done = regenerateForLandedRead('nyx', key);
+    await jest.advanceTimersByTimeAsync(0);
+    triggerSignalRegenDebounced('nyx'); // a second correction, mid-rebuild
+    await jest.advanceTimersByTimeAsync(0);
+    land({ data: {}, error: null });
+    await done;
+    expect(mockOwed.has('nyx')).toBe(true);
+  });
+
+  it('a FAILED rebuild keeps the debt and releases its key, so the next open asks again', async () => {
+    triggerSignalRegenDebounced('nyx');
+    await jest.advanceTimersByTimeAsync(0);
+    killApp();
+    mockedInvoke.mockResolvedValue({ data: null, error: { message: 'offline' } });
+    const key = (await landedReadRebuildKey('nyx', fresh())) as string;
+    await regenerateForLandedRead('nyx', key);
+    expect(mockOwed.has('nyx')).toBe(true);
+    expect(await landedReadRebuildKey('nyx', fresh())).toBe(key);
+  });
+
+  it('a rebuild refused by the cap settles nothing', async () => {
+    triggerSignalRegenDebounced('nyx');
+    await jest.advanceTimersByTimeAsync(0);
+    killApp();
+    mockedInvoke.mockResolvedValue({ data: { cap_reached: true }, error: null });
+    await regenerateSignal('nyx', 'refresh');
+    expect(mockOwed.has('nyx')).toBe(true);
+  });
+
+  it('CUL-2845 not made worse: a debt the rebuild cannot settle (a row still unsent) rebuilds once per launch, never in a loop', async () => {
+    triggerSignalRegenDebounced('nyx');
+    await jest.advanceTimersByTimeAsync(0);
+    killApp();
+    mockPetUnsent.add('nyx');
+    const key = (await landedReadRebuildKey('nyx', fresh())) as string;
+    await regenerateForLandedRead('nyx', key);
+    // Its success bumped the tick; the re-read it starts finds the same debt and holds.
+    expect(await landedReadRebuildKey('nyx', fresh())).toBeNull();
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed read of the debt falls through to the time checks, which still run', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockOwedReadFails = true;
+      mockVisitMoved.mockResolvedValue({ updatedAt: '2026-11-20T17:00:40+00:00', afterBuild: true });
+      expect(await landedReadRebuildKey('nyx', fresh())).toBe(`row|nyx|${BUILT}`);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('nothing owed and nothing moved: no rebuild', async () => {
+    expect(await landedReadRebuildKey('nyx', fresh())).toBeNull();
   });
 });
