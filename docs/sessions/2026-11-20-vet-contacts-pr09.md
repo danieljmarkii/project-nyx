@@ -17,6 +17,18 @@ Server only, in the warning engine (`generate-signal`):
 
 - **One departure from the build note, stated in the plan before any code.** The note said to drop these answers in the shell. The build keeps them and lets the engine refuse them instead. A dropped answer also drops its "back again" history, and keeping it is the louder choice.
 - **A mutation caught a test that proved nothing.** The first replay test still passed with the new check deleted, because the engine caught the case another way. A third answer in the fixture forced the path the check guards, and the mutant now reds.
+- **Both adversarial passes found quiet holes beside the filter.** Each was fixed in this PR, louder:
+  - Pass 1: once the answer was refused, a vet visit booked in the last week stepped in and quieted the concern again, with "how it went isn't recorded yet".
+  - Pass 2: a concern that had come back ("Back because…") could go quiet as "A vet visit is booked".
+  - Now a corrected answer keeps the concern off every booked-visit quiet, and a "back" concern stays back.
+- **The cap was reached.** The pass 2 fix shipped without a third pass, because it errs loud.
+- **Filed:**
+  - [CUL-2842](https://linear.app/projectnyx/issue/CUL-2842): nothing rebuilds Home's warnings when a visit is corrected on the phone. It blocks the call chips.
+  - The other signs and the weight card are an instance of [CUL-2829](https://linear.app/projectnyx/issue/CUL-2829).
+
+## Residual
+
+"Phoned, then booked an exam" now keeps its ask beside the date rather than "A vet visit is booked". That is louder by design, and parked on CUL-2841 for a calmer rule with its own review.
 
 ## Teach
 
