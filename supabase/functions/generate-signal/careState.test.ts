@@ -577,12 +577,14 @@ Deno.test('CUL-2844: an answer given while the build that dropped its concern wa
   const s = stateOf({ symptoms: STABLE, acks: [during], priorFindings: gone, priorGeneratedAtMs: T })
   assertEquals([s.state, s.lapsed], ['raised', ['during']])
   // At the edge of the ceiling it still lapses; past it the row was already written, so it stands.
-  // A visit answer anchored two days after the drop, so the ceiling is the only test that can
-  // lapse it ("My vet knows" beside a dropped row lapses whenever it was written, CUL-2847).
-  const T3 = NOW_MS - 3 * DAY
-  const visit = (id: string, createdAtMs: number) => ack({ id, daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(1), createdAt: new Date(createdAtMs).toISOString() })
-  assertEquals(stateOf({ symptoms: STABLE, acks: [visit('edge', T3 + PRIOR_ROW_WRITE_CEILING_MS - 1_000)], priorFindings: gone, priorGeneratedAtMs: T3 }).lapsed, ['edge'])
-  assertEquals(stateOf({ symptoms: STABLE, acks: [visit('after', T3 + PRIOR_ROW_WRITE_CEILING_MS + 60_000)], priorFindings: gone, priorGeneratedAtMs: T3 }).lapsed, [])
+  // A visit answer about an older visit, beside a previous row that held the concern but skipped
+  // the step: there only the server clock can lapse it ("My vet knows" lapses whenever it was
+  // written, CUL-2847), so this is where the ceiling is load-bearing (adversarial pass 2, C-35).
+  const skipped = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }]
+  const visit = (id: string, createdAtMs: number) => ack({ id, daysAgo: 1, source: 'visit_answer', anchorOn: dayOf(5), createdAt: new Date(createdAtMs).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [visit('during-v', T + 30_000)], priorFindings: skipped, priorGeneratedAtMs: T }).lapsed, ['during-v'])
+  assertEquals(stateOf({ symptoms: STABLE, acks: [visit('edge', T + PRIOR_ROW_WRITE_CEILING_MS - 1_000)], priorFindings: skipped, priorGeneratedAtMs: T }).lapsed, ['edge'])
+  assertEquals(stateOf({ symptoms: STABLE, acks: [visit('after', T + PRIOR_ROW_WRITE_CEILING_MS + 60_000)], priorFindings: skipped, priorGeneratedAtMs: T }).lapsed, [])
   // The ceiling covers the Edge Function's wall-clock limit (400 s on the paid plan).
   assertStrictEquals(PRIOR_ROW_WRITE_CEILING_MS >= 400_000, true)
 })
