@@ -40,15 +40,49 @@ export type MergedPr = {
 
 export type QueueSpan = { id: string; arrivedAt: string; leftAt?: string | null };
 
+// How the queue's spans were dated. Linear's tools give a label's members, not when the
+// label was added or removed, so the truth comes from diffing two reads (`snapshot`). A
+// first readout has no earlier read and dates each member by its issue's creation
+// (`created`): arrivals are then a floor (a label added to an older issue is missed),
+// ages a ceiling, and departures unknowable, so the readout says so instead of printing 0.
+export type QueueBasis = 'snapshot' | 'created';
+
 export type NumbersInput = {
   from: string; // window start, inclusive
   to: string; // window end, exclusive
   merged: MergedPr[];
   queue: QueueSpan[]; // every `Waiting on PM` membership that touches the window
+  queueBasis?: QueueBasis; // default 'snapshot'
   filed: { id: string; createdAt: string }[]; // issues filed in the team
   rollbacks?: { pr: number; at: string }[];
   teamCalls?: { issue: string; cls: string; at: string }[];
 };
+
+// The queue's memory between readouts: each member's first-seen time, as of one read.
+export type QueueSnapshot = { at: string; firstSeen: Record<string, string> };
+
+// Spans from the previous readout's snapshot and this read's members. A member new since
+// `prev` arrived inside (prev.at, at]: dated by its creation when that is later than
+// prev.at, else at prev.at. A member gone since `prev` left inside (prev.at, at]: dated a
+// millisecond before `at`, so a window ending at `at` (exclusive) still counts it.
+export function queueFromSnapshots(
+  prev: QueueSnapshot | undefined,
+  current: { id: string; createdAt: string }[],
+  at: string,
+): { spans: QueueSpan[]; snapshot: QueueSnapshot; basis: QueueBasis } {
+  const firstSeen: Record<string, string> = {};
+  const spans: QueueSpan[] = [];
+  for (const c of current) {
+    const seen = prev?.firstSeen[c.id] ?? (prev && t(c.createdAt) < t(prev.at) ? prev.at : c.createdAt);
+    firstSeen[c.id] = seen;
+    spans.push({ id: c.id, arrivedAt: seen, leftAt: null });
+  }
+  const here = new Set(current.map((c) => c.id));
+  for (const [id, seen] of Object.entries(prev?.firstSeen ?? {})) {
+    if (!here.has(id)) spans.push({ id, arrivedAt: seen, leftAt: new Date(t(at) - 1).toISOString() });
+  }
+  return { spans, snapshot: { at, firstSeen }, basis: prev ? 'snapshot' : 'created' };
+}
 
 const t = (iso: string): number => {
   const ms = new Date(iso).getTime();
@@ -145,13 +179,17 @@ export function renderReadout(f: NumbersInput): string {
   const ofMerged = (k: number) => (k < n.mergedCount ? ` (n=${k} of ${n.mergedCount} merged)` : '');
   const kinds = TYPED_KINDS.map((k) => `${k} ${n.typed.byKind[k]}`).join(', ');
   const calls = Object.entries(n.teamCalls).sort(([a], [b]) => a.localeCompare(b));
+  const created = f.queueBasis === 'created';
+  const arrived = created ? `at least ${n.queue.arrivals} arrived` : `${n.queue.arrivals} arrived`;
+  const left = created ? 'departures not recorded until a second read' : `${n.queue.departures} left`;
+  const age = n.queue.medianOpenAgeDays === undefined ? 'none open' : `${created ? 'at most ' : ''}${r1(n.queue.medianOpenAgeDays)} days`;
 
   return [
     `**The numbers · ${span}**`,
     '',
     `- **Typed inputs per merged row: ${n.typed.perRow === undefined ? NR : r1(n.typed.perRow)}**${ofMerged(n.typed.traced)} · ${kinds} · baseline ${B.typedPerRowToday[0]} to ${B.typedPerRowToday[1]} on a traced row, target under ${B.typedPerRowTarget}`,
-    `- Queue: ${n.queue.arrivals} arrived, ${n.queue.departures} left, ${n.queue.openAtEnd} open at the end · baseline ${r1(B.queueArrivalsPerWeek[0] * weeks)} to ${r1(B.queueArrivalsPerWeek[1] * weeks)} arrivals`,
-    `- Median age of an open ruling: ${n.queue.medianOpenAgeDays === undefined ? 'none open' : `${r1(n.queue.medianOpenAgeDays)} days`}`,
+    `- Queue: ${arrived}, ${left}, ${n.queue.openAtEnd} open at the end · baseline ${r1(B.queueArrivalsPerWeek[0] * weeks)} to ${r1(B.queueArrivalsPerWeek[1] * weeks)} arrivals`,
+    `- Median age of an open ruling: ${age}`,
     `- Green to merged: ${r1(n.green.totalHours)} hours in all, median ${n.green.medianMinutes === undefined ? NR : `${Math.round(n.green.medianMinutes)} min`}, ${n.green.overHour} over an hour${ofMerged(n.green.n)} · baseline ${r1((B.greenHoursPer30Days * n.days) / 30)} hours`,
     `- Merges that needed a typed word: ${n.merges.pmShare === undefined ? NR : `${pct(n.merges.pmShare)} (${n.merges.pm} PM, ${n.merges.self} self merged)`}${ofMerged(n.merges.known)}`,
     `- Issues filed per merged PR: ${n.filed.perMergedPr === undefined ? 'no merges' : `${r1(n.filed.perMergedPr)} (${n.filed.count} filed, ${n.mergedCount} merged)`} · baseline ${B.findingsPerPr} findings per PR`,

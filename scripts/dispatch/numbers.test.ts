@@ -1,7 +1,7 @@
 // The numbers (CUL-2862): each count, its window edges, and the rule that an unread fact
 // is "not recorded", never zero.
 
-import { computeNumbers, median, renderReadout, rowLine, type NumbersInput } from './numbers.ts';
+import { computeNumbers, median, queueFromSnapshots, renderReadout, rowLine, type NumbersInput } from './numbers.ts';
 
 const base = (over: Partial<NumbersInput> = {}): NumbersInput => ({
   from: '2026-11-14T00:00:00Z',
@@ -148,5 +148,33 @@ describe('the per-row line', () => {
       .toBe('PR-03 · #9 · 0 typed · 42 min green to merged · self merged · $12.50');
     expect(rowLine('PR-04', { number: 10, mergedAt: '2026-11-15T00:00:00Z' }))
       .toBe('PR-04 · #10 · typed not recorded · green not recorded · merge word not recorded · cost not recorded');
+  });
+});
+
+describe('the queue between readouts', () => {
+  const prev = { at: '2026-11-14T00:00:00Z', firstSeen: { A: '2026-11-01T00:00:00Z', B: '2026-11-10T00:00:00Z' } };
+  const now = [
+    { id: 'A', createdAt: '2026-10-30T00:00:00Z' }, // stayed: keeps its first-seen time
+    { id: 'C', createdAt: '2026-11-16T00:00:00Z' }, // filed with the label this week
+    { id: 'D', createdAt: '2026-09-01T00:00:00Z' }, // an old issue labelled this week
+  ];
+  const q = queueFromSnapshots(prev, now, '2026-11-21T00:00:00Z');
+
+  it('dates arrivals inside the window and keeps a stayer\'s first-seen time', () => {
+    expect(q.snapshot.firstSeen).toEqual({ A: '2026-11-01T00:00:00Z', C: '2026-11-16T00:00:00Z', D: '2026-11-14T00:00:00Z' });
+    expect(q.basis).toBe('snapshot');
+  });
+
+  it('a member gone since the last read is a departure this window', () => {
+    const n = computeNumbers(base({ queue: q.spans }));
+    expect(n.queue).toEqual({ arrivals: 2, departures: 1, openAtEnd: 3, medianOpenAgeDays: 7 });
+  });
+
+  it('with no earlier read, the basis is creation and the readout says what it cannot know', () => {
+    const first = queueFromSnapshots(undefined, now, '2026-11-21T00:00:00Z');
+    expect(first.basis).toBe('created');
+    const out = renderReadout(base({ queue: first.spans, queueBasis: first.basis }));
+    expect(out).toMatch(/Queue: at least 1 arrived, departures not recorded until a second read, 3 open at the end/);
+    expect(out).toMatch(/Median age of an open ruling: at most 22 days/);
   });
 });
