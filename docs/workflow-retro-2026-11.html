@@ -1,0 +1,454 @@
+<title>Workflow Retro 5</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap">
+<style>
+/* Layout: one reading column. Each section is a claim, the chart that proves it, then what to do. The decisions are the working surface and get the strongest frame. Tokens follow the retro 4 page so the series reads as one. */
+:root {
+  --bg: #F4F5F8;
+  --surface: #FFFFFF;
+  --ink: #16142E;
+  --muted: #55536E;
+  --faint: #6E6C88;
+  --line: #E1E0EA;
+  --accent: #0B7B6C;
+  --accent-wash: #E3F7F3;
+  --harm: #9F1239;
+  --harm-wash: #FFE8EB;
+  --gate: #4B3FA8;
+  --gate-wash: #ECEAFB;
+  --chart-a: #0FA08B;
+  --chart-b: #6D5BD0;
+  --chart-rest: #B9B8C9;
+  --chart-track: #ECECF2;
+  --font-display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-body: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #13112E; --surface: #1B1840; --ink: #ECEAF6; --muted: #B3AFD6; --faint: #9A96C4;
+    --line: #2F2A62; --accent: #4FD8C4; --accent-wash: #16343A; --harm: #FB7185; --harm-wash: #3A1631;
+    --gate: #A99CF8; --gate-wash: #2A2463;
+    --chart-a: #1FA894; --chart-b: #8573EE; --chart-rest: #5A568C; --chart-track: #2B275A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #13112E; --surface: #1B1840; --ink: #ECEAF6; --muted: #B3AFD6; --faint: #9A96C4;
+  --line: #2F2A62; --accent: #4FD8C4; --accent-wash: #16343A; --harm: #FB7185; --harm-wash: #3A1631;
+  --gate: #A99CF8; --gate-wash: #2A2463;
+  --chart-a: #1FA894; --chart-b: #8573EE; --chart-rest: #5A568C; --chart-track: #2B275A;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+.page { max-width: 780px; margin: 0 auto; padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: max(18px, env(safe-area-inset-right, 0px)); padding-block: 40px 72px; display: flex; flex-direction: column; gap: 56px; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+h1, h2 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; letter-spacing: -0.01em; margin: 0; }
+h1 { font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1.08; }
+h2 { font-size: 1.6rem; line-height: 1.2; }
+h3 { font-size: 1rem; font-weight: 600; margin: 0; }
+p, ul, ol { margin: 0; }
+p, li, h1, h2, h3, td { overflow-wrap: break-word; }
+ul, ol { padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.76rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.dek { font-size: 1.12rem; color: var(--muted); max-width: 62ch; }
+header, section { display: flex; flex-direction: column; gap: 18px; }
+.section-head { display: flex; flex-direction: column; gap: 6px; }
+.prose { max-width: 66ch; color: var(--ink); }
+.prose.soft { color: var(--muted); }
+b.n, .n { font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* headline figures */
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.fig { padding: 16px 14px 16px 0; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fig .v { font-family: var(--font-display); font-size: 2.1rem; font-weight: 600; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.fig .l { font-size: 0.86rem; color: var(--muted); }
+
+/* chart frame */
+.chart { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.chart h3 { font-size: 0.95rem; }
+.chart .sub { font-size: 0.82rem; color: var(--muted); margin-top: -8px; }
+.note { font-size: 0.8rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.8rem; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.ca { background: var(--chart-a); } .cb { background: var(--chart-b); } .cr { background: var(--chart-rest); }
+.est { background-image: repeating-linear-gradient(135deg, transparent 0 4px, var(--surface) 4px 6px); }
+
+/* horizontal bars */
+.bars { display: flex; flex-direction: column; gap: 9px; }
+.row { display: grid; grid-template-columns: minmax(96px, 34%) 1fr 4.6em; gap: 10px; align-items: center; font-size: 0.86rem; }
+.row .k { color: var(--ink); min-width: 0; }
+.row .k small { display: block; color: var(--faint); font-size: 0.74rem; }
+.row .t { height: 14px; background: var(--chart-track); border-radius: 0 4px 4px 0; position: relative; min-width: 0; }
+.row .t > span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; }
+.row .t > .ref { left: auto; width: 2px; top: -4px; bottom: -4px; background: var(--harm); border-radius: 0; }
+.row .v { font-family: var(--font-mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; text-align: right; color: var(--ink); }
+/* stacked bar */
+.stack { display: flex; gap: 2px; height: 22px; border-radius: 4px; overflow: hidden; }
+.stack span { display: block; min-width: 2px; }
+.stackrow { display: grid; grid-template-columns: minmax(96px, 30%) 1fr; gap: 10px; align-items: center; font-size: 0.86rem; }
+.stackrow small { display: block; color: var(--faint); font-size: 0.74rem; font-family: var(--font-mono); }
+
+/* column chart */
+.cols { display: flex; align-items: flex-end; gap: 3px; height: 190px; padding-top: 18px; border-bottom: 1px solid var(--line); }
+.col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; }
+.col b { font-family: var(--font-mono); font-weight: 400; font-size: 0.62rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.col span { width: 100%; max-width: 30px; border-radius: 4px 4px 0 0; }
+.colx { display: flex; gap: 3px; font-family: var(--font-mono); font-size: 0.6rem; color: var(--faint); }
+.colx span { flex: 1 1 0; text-align: center; min-width: 0; }
+svg text { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+svg .ink { fill: var(--ink); }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.two > * { min-width: 0; }
+
+/* callouts and lists */
+.do { border-left: 3px solid var(--accent); padding: 2px 0 2px 14px; display: flex; flex-direction: column; gap: 6px; }
+.do .eyebrow { color: var(--accent); }
+.hour { background: var(--accent-wash); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.hour ol { gap: 8px; }
+
+/* decisions */
+.decisions { display: flex; flex-direction: column; gap: 12px; }
+.d { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.d .top { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.d .id { font-family: var(--font-mono); font-size: 0.8rem; color: var(--gate); background: var(--gate-wash); padding: 1px 7px; border-radius: 4px; }
+.d .rows { margin-left: auto; font-family: var(--font-mono); font-size: 0.74rem; color: var(--faint); }
+.d p { font-size: 0.92rem; }
+.d .rec { color: var(--ink); }
+.d .rec b { color: var(--accent); font-weight: 600; }
+.d .con { color: var(--muted); }
+.d .rule { font-size: 0.8rem; color: var(--harm); background: var(--harm-wash); padding: 3px 8px; border-radius: 4px; align-self: flex-start; }
+
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; min-width: 460px; }
+th { text-align: left; font-family: var(--font-mono); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); padding: 0 12px 8px 0; border-bottom: 1px solid var(--line); }
+td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tag { font-family: var(--font-mono); font-size: 0.74rem; padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
+.tag.ok { color: var(--accent); background: var(--accent-wash); }
+.tag.ch { color: var(--gate); background: var(--gate-wash); }
+.tag.no { color: var(--harm); background: var(--harm-wash); }
+.nots { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 24px; }
+.nots div { border-top: 1px solid var(--line); padding-top: 10px; font-size: 0.9rem; }
+.nots b { display: block; font-weight: 600; }
+.nots span { color: var(--muted); }
+footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; display: flex; flex-direction: column; gap: 6px; }
+</style>
+
+<div class="page">
+
+<header>
+  <span class="eyebrow">Culprit · Process retro 5 · 21 November 2026</span>
+  <h1>Free the decider before adding agents</h1>
+  <p class="dek">Dispatch doubled what lands each week. The agents are no longer the limit. You are, and most of what waits on you is not a real decision.</p>
+  <div class="figs">
+    <div class="fig"><span class="v">12 min</span><span class="l">median, launch to first commit</span></div>
+    <div class="fig"><span class="v">474 h</span><span class="l">green PRs sat waiting to merge, 30 days</span></div>
+    <div class="fig"><span class="v">195</span><span class="l">decisions waiting on you, in 90 issues</span></div>
+    <div class="fig"><span class="v">23</span><span class="l">of those 90 issues block any other work</span></div>
+  </div>
+  <p class="note">Ten read only research streams: four on our own data, six on outside practice. Pipeline numbers are measured from this repo. Figures for your minutes are estimates, because nothing records them. Full write up: <span class="n">docs/workflow-retro-2026-11.md</span>. Decisions live on <a href="https://linear.app/projectnyx/issue/CUL-2854">CUL-2854</a>.</p>
+</header>
+
+<section>
+  <div class="section-head"><span class="eyebrow">1 · What dispatch bought</span><h2>Throughput more than doubled</h2></div>
+  <div class="chart">
+    <h3>Merges to main per week</h3>
+    <div class="legend"><span><i class="cr"></i>Before dispatch, about 37 a week</span><span><i class="ca"></i>Since dispatch, about 83 a week</span></div>
+    <div class="cols" role="img" aria-label="Merges per week, weeks 31 to 46">
+      <div class="col" title="W31: 21 merges"><b>21</b><span class="cr" style="height:17%"></span></div>
+      <div class="col" title="W32: 52 merges"><b>52</b><span class="cr" style="height:42%"></span></div>
+      <div class="col" title="W33: 39 merges"><b>39</b><span class="cr" style="height:31%"></span></div>
+      <div class="col" title="W34: 47 merges"><b>47</b><span class="cr" style="height:38%"></span></div>
+      <div class="col" title="W35: 60 merges"><b>60</b><span class="cr" style="height:48%"></span></div>
+      <div class="col" title="W36: 22 merges"><b>22</b><span class="cr" style="height:18%"></span></div>
+      <div class="col" title="W37: 31 merges"><b>31</b><span class="cr" style="height:25%"></span></div>
+      <div class="col" title="W38: 27 merges"><b>27</b><span class="cr" style="height:22%"></span></div>
+      <div class="col" title="W39: 83 merges"><b>83</b><span class="ca" style="height:66%"></span></div>
+      <div class="col" title="W40: 104 merges"><b>104</b><span class="ca" style="height:83%"></span></div>
+      <div class="col" title="W41: 125 merges"><b>125</b><span class="ca" style="height:100%"></span></div>
+      <div class="col" title="W42: 52 merges"><b>52</b><span class="ca" style="height:42%"></span></div>
+      <div class="col" title="W43: 77 merges"><b>77</b><span class="ca" style="height:62%"></span></div>
+      <div class="col" title="W44: 63 merges"><b>63</b><span class="ca" style="height:50%"></span></div>
+      <div class="col" title="W45: 94 merges"><b>94</b><span class="ca" style="height:75%"></span></div>
+      <div class="col" title="W46: 63 merges"><b>63</b><span class="ca" style="height:50%"></span></div>
+    </div>
+    <div class="colx"><span>31</span><span>32</span><span>33</span><span>34</span><span>35</span><span>36</span><span>37</span><span>38</span><span>39</span><span>40</span><span>41</span><span>42</span><span>43</span><span>44</span><span>45</span><span>46</span></div>
+    <p class="note">ISO weeks, 2026. Source: git history of main. Dispatch v1 shipped in week 39.</p>
+  </div>
+  <p class="prose">Nothing fails loudly anymore. Zero of 62 recent child sessions failed, and only 8 of 304 pull requests ever had a red test run. The losses are quiet: finished work sitting idle.</p>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">2 · The largest wait</span><h2>Finished work waits for a merge word</h2></div>
+  <div class="two">
+    <div class="chart">
+      <h3>Where a session's hour goes</h3>
+      <p class="sub">Median minutes per phase, 27 sessions</p>
+      <div class="bars">
+        <div class="row" title="Launch to first commit: 12 min"><span class="k">Launch to first commit</span><span class="t"><span class="ca" style="width:80%"></span></span><span class="v">12 min</span></div>
+        <div class="row" title="PR opened to last commit: 10 min"><span class="k">PR open to last commit</span><span class="t"><span class="ca" style="width:67%"></span></span><span class="v">10 min</span></div>
+        <div class="row" title="Tests to green: 15 min"><span class="k">Tests to green</span><span class="t"><span class="cb" style="width:100%"></span></span><span class="v">15 min</span></div>
+        <div class="row" title="Green to merged when you merge: 10 min median, up to 822"><span class="k">Green to merged<small>when you merge</small></span><span class="t"><span class="cb" style="width:67%"></span></span><span class="v">10 min</span></div>
+        <div class="row" title="Green to merged when the session merges: 7 min median, max 13"><span class="k">Green to merged<small>when it merges itself</small></span><span class="t"><span class="cb" style="width:47%"></span></span><span class="v">7 min</span></div>
+      </div>
+      <div class="legend"><span><i class="ca"></i>Building</span><span><i class="cb"></i>Waiting</span></div>
+      <p class="note">The median hides the tail: the wait for your merge reached 822 minutes, the self merge never passed 13.</p>
+    </div>
+    <div class="chart">
+      <h3>How long "ready" waited for your word</h3>
+      <p class="sub">15 rows where the wait was timed</p>
+      <div class="bars">
+        <div class="row" title="9 rows waited under 10 minutes"><span class="k">Under 10 min</span><span class="t"><span class="ca" style="width:100%"></span></span><span class="v">9 rows</span></div>
+        <div class="row" title="4 rows waited 34 to 82 minutes"><span class="k">34 to 82 min</span><span class="t"><span class="cb" style="width:44%"></span></span><span class="v">4 rows</span></div>
+        <div class="row" title="2 rows waited 6.5 and 13.7 hours"><span class="k">6.5 h and 13.7 h</span><span class="t"><span class="cb" style="width:22%"></span></span><span class="v">2 rows</span></div>
+      </div>
+      <p class="note"><b class="n">21 of 27</b> sessions could not merge themselves, mostly because the merge would deploy server code. Six rows lost 24 hours between them. A late answer also costs more: about $1 inside ten minutes, $3.40 to $5.45 after an hour, because the session's cache has expired.</p>
+    </div>
+  </div>
+  <div class="do"><span class="eyebrow">Fix · D2</span><p class="prose">Build "merge when ready", which you ruled on 28 October and which was never built. It needs the ruleset click on main, which today has no protection at all.</p></div>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">3 · Your queue</span><h2>90 issues, 195 decisions, and most are not what they seem</h2></div>
+  <div class="two">
+    <div class="chart">
+      <h3>Issues, by kind</h3>
+      <div class="bars">
+        <div class="row" title="Single ruling with a recommendation: 25 issues"><span class="k">Ruling, recommended</span><span class="t"><span class="ca" style="width:100%"></span></span><span class="v">25</span></div>
+        <div class="row" title="Design rounds: 20 issues"><span class="k">Design rounds</span><span class="t"><span class="ca" style="width:80%"></span></span><span class="v">20</span></div>
+        <div class="row" title="Single ruling, no recommendation: 14 issues"><span class="k">Ruling, no recommendation</span><span class="t"><span class="ca" style="width:56%"></span></span><span class="v">14</span></div>
+        <div class="row" title="Console, legal or outside action: 12 issues"><span class="k">Console or legal action</span><span class="t"><span class="cr" style="width:48%"></span></span><span class="v">12</span></div>
+        <div class="row" title="Stale or mislabelled: 9 issues"><span class="k">Stale or mislabelled</span><span class="t"><span class="cr" style="width:36%"></span></span><span class="v">9</span></div>
+        <div class="row" title="Device check: 5 issues"><span class="k">Device check</span><span class="t"><span class="cr" style="width:20%"></span></span><span class="v">5</span></div>
+        <div class="row" title="Finding awaiting a go: 5 issues"><span class="k">Finding awaiting a go</span><span class="t"><span class="ca" style="width:20%"></span></span><span class="v">5</span></div>
+      </div>
+      <div class="legend"><span><i class="ca"></i>A decision</span><span><i class="cr"></i>Not a decision</span></div>
+    </div>
+    <div class="chart">
+      <h3>Decisions inside them</h3>
+      <div class="bars">
+        <div class="row" title="Design rounds hold 141 decisions"><span class="k">Design rounds</span><span class="t"><span class="ca" style="width:100%"></span></span><span class="v">141</span></div>
+        <div class="row" title="Recommended rulings: 26 decisions"><span class="k">Ruling, recommended</span><span class="t"><span class="ca" style="width:18.4%"></span></span><span class="v">26</span></div>
+        <div class="row" title="Rulings with no recommendation: 17 decisions"><span class="k">Ruling, no recommendation</span><span class="t"><span class="ca" style="width:12%"></span></span><span class="v">17</span></div>
+        <div class="row" title="Everything else: about 11 decisions"><span class="k">Everything else</span><span class="t"><span class="cr" style="width:7.8%"></span></span><span class="v">about 11</span></div>
+      </div>
+      <p class="note"><b class="n">72%</b> of the decisions sit in 20 design rounds, and 13 of those rounds are for work that starts after 1.2.0. Ruling them now frees nothing this month.</p>
+    </div>
+  </div>
+  <div class="chart">
+    <h3>The queue drained once, then refilled</h3>
+    <p class="sub">Open issues on the Waiting on PM label</p>
+    <svg viewBox="0 0 360 186" role="img" aria-label="Queue size: 90 on 11 October, 57 on 25 October, 71 on 7 November, 90 on 20 November, against a cap of 30" style="width:100%;height:auto;max-width:560px">
+      <line x1="30" y1="166" x2="340" y2="166" stroke="var(--line)" stroke-width="1"/>
+      <line x1="30" y1="121" x2="340" y2="121" stroke="var(--harm)" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <text x="340" y="115" text-anchor="end" style="fill:var(--harm)">cap 30</text>
+      <polyline points="30,31 135,80.5 232.5,59.5 330,31" fill="none" stroke="var(--chart-a)" stroke-width="2" stroke-linejoin="round"/>
+      <g fill="var(--chart-a)" stroke="var(--surface)" stroke-width="2">
+        <circle cx="30" cy="31" r="5"><title>11 Oct: 90</title></circle>
+        <circle cx="135" cy="80.5" r="5"><title>25 Oct: 57</title></circle>
+        <circle cx="232.5" cy="59.5" r="5"><title>7 Nov: 71</title></circle>
+        <circle cx="330" cy="31" r="5"><title>20 Nov: 90</title></circle>
+      </g>
+      <text class="ink" x="30" y="17">90</text><text class="ink" x="135" y="100" text-anchor="middle">57</text><text class="ink" x="242" y="78">71</text><text class="ink" x="336" y="17" text-anchor="end">90</text>
+      <text x="30" y="181">11 Oct</text><text x="135" y="181" text-anchor="middle">25 Oct</text><text x="232.5" y="181" text-anchor="middle">7 Nov</text><text x="340" y="181" text-anchor="end">20 Nov</text>
+    </svg>
+    <p class="note">At least 49 issues left in attended sittings in October, where you answered "as recommended". Since 25 October outflow is about zero against 8 to 9 arriving a week. 23 of the last 36 arrivals are reviewer findings. The clean up pass last ran on 8 November and has never applied a default.</p>
+  </div>
+  <div class="chart">
+    <h3>What each mechanism removes</h3>
+    <p class="sub">Issues taken off the queue; the first three cost you no time</p>
+    <div class="bars">
+      <div class="row" title="Close the stale ones: 9 issues"><span class="k">Close the stale ones</span><span class="t"><span class="ca" style="width:24%"></span></span><span class="v">9</span></div>
+      <div class="row" title="Apply the team call rule already written: 7 issues"><span class="k">Apply the team call rule</span><span class="t"><span class="ca" style="width:19%"></span></span><span class="v">7</span></div>
+      <div class="row" title="Park the post 1.2.0 rounds off the cap: 13 issues"><span class="k">Park post 1.2.0 rounds<small>deferred, not saved</small></span><span class="t"><span class="ca" style="width:35%"></span></span><span class="v">13</span></div>
+      <div class="row" title="One console and legal checklist: 14 issues, 45 to 60 minutes estimated"><span class="k">One console and legal list<small>45 to 60 min, estimate</small></span><span class="t"><span class="cb" style="width:38%"></span></span><span class="v">14</span></div>
+      <div class="row" title="One device script per TestFlight cut: 5 issues"><span class="k">One device script per cut</span><span class="t"><span class="cb" style="width:13.5%"></span></span><span class="v">5</span></div>
+      <div class="row" title="A ruling sheet for single rulings: 23 now, 37 once recommendations are written"><span class="k">Ruling sheet, single rulings<small>25 to 45 min, estimate</small></span><span class="t"><span class="cb est" style="width:100%"></span><span class="cb" style="width:62%"></span></span><span class="v">23 to 37</span></div>
+    </div>
+    <div class="legend"><span><i class="ca"></i>No time from you</span><span><i class="cb"></i>One sitting</span><span><i class="cb est"></i>Once 14 recommendations are written</span></div>
+  </div>
+  <div class="do"><span class="eyebrow">Fix · D4 and D5</span><p class="prose">One page for everything was the wrong shape. Design rounds are not tick boxes: your reaction to one recent mock overturned the team's framing. The evidence on approval fatigue also says preselected answers get waved through, so on clinical and privacy rows the sheet shows the recommendation and selects nothing.</p></div>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">4 · What refills the queue</span><h2>Findings are half signal, and reviewers differ sharply</h2></div>
+  <div class="chart">
+    <h3>60 findings, read in full and scored</h3>
+    <div class="legend"><span><i class="ca"></i>Worth fixing before release</span><span><i class="cb"></i>Low likelihood or impact</span><span><i class="cr"></i>Not real, duplicate, or not a finding</span></div>
+    <div class="bars">
+      <div class="stackrow"><span>Live harm<small>11 · 8 · 1</small></span><div class="stack"><span class="ca" style="flex:11" title="Worth fixing: 11"></span><span class="cb" style="flex:8" title="Low likelihood: 8"></span><span class="cr" style="flex:1" title="Other: 1"></span></div></div>
+      <div class="stackrow"><span>Gate: clinical<small>12 · 2 · 6</small></span><div class="stack"><span class="ca" style="flex:12" title="Worth fixing: 12"></span><span class="cb" style="flex:2" title="Low likelihood: 2"></span><span class="cr" style="flex:6" title="Other: 6"></span></div></div>
+      <div class="stackrow"><span>Unlabelled backlog<small>2 · 15 · 3</small></span><div class="stack"><span class="ca" style="flex:2" title="Worth fixing: 2"></span><span class="cb" style="flex:15" title="Low likelihood: 15"></span><span class="cr" style="flex:3" title="Other: 3"></span></div></div>
+    </div>
+    <p class="note">Sample of 60 drawn from 628 finding like issues, 20 per label. Code was checked for 12; the rest were judged from the full description.</p>
+  </div>
+  <div class="two">
+    <div class="chart">
+      <h3>Share worth fixing, by who found it</h3>
+      <div class="bars">
+        <div class="row" title="Vet report cold read: 14 of 16"><span class="k">Vet report cold read</span><span class="t"><span class="ca" style="width:87.5%"></span></span><span class="v">14 of 16</span></div>
+        <div class="row" title="Build session: 5 of 11"><span class="k">Build session</span><span class="t"><span class="ca" style="width:45%"></span></span><span class="v">5 of 11</span></div>
+        <div class="row" title="Adversarial reviewer: 4 of 18"><span class="k">Adversarial reviewer</span><span class="t"><span class="ca" style="width:22%"></span></span><span class="v">4 of 18</span></div>
+        <div class="row" title="Privacy reviewer: 0 of 5"><span class="k">Privacy reviewer</span><span class="t"><span class="ca" style="width:0%"></span></span><span class="v">0 of 5</span></div>
+      </div>
+      <p class="note">Small samples. The gap is still large enough to act on.</p>
+    </div>
+    <div class="chart">
+      <h3>Findings filed per merged PR</h3>
+      <div class="bars">
+        <div class="row" title="Vet report v2: 3.1 per PR"><span class="k">Vet report v2</span><span class="t"><span class="cb" style="width:100%"></span></span><span class="v">3.1</span></div>
+        <div class="row" title="Everything else, before the filing rule: 1.39"><span class="k">Everything else<small>before the filing rule</small></span><span class="t"><span class="ca" style="width:45%"></span></span><span class="v">1.39</span></div>
+        <div class="row" title="Everything else, after the filing rule: 1.36"><span class="k">Everything else<small>after the filing rule</small></span><span class="t"><span class="ca" style="width:44%"></span></span><span class="v">1.36</span></div>
+      </div>
+      <p class="note">The filing rule is followed (99 of 117 PRs) and absorbs about one find in five, but the underlying rate did not move.</p>
+    </div>
+  </div>
+  <ul class="prose">
+    <li><b>Fixes spawn findings in chains.</b> Four chains were traced, each three to five generations deep. Two had not converged. The two pass cap limits a PR, not a chain.</li>
+    <li><b>Reviewers audit the whole surface.</b> At least 14 of 41 reviewer findings were already on main, not caused by the change under review.</li>
+    <li><b>"Live harm" is never challenged.</b> 308 such findings in 60 days: zero duplicates, one cancellation, fixed in a median of one day.</li>
+    <li><b>Outside evidence agrees.</b> In one small study a second review pass in sequence added 0.37 real findings and 3.24 false ones per item. Parallel reviewers with a step that tries to refute each finding did better.</li>
+  </ul>
+  <div class="do"><span class="eyebrow">Fix · D3 and D8</span><p class="prose">Build the ship bar you ruled on 22 October. It is in no file a session reads. Replayed on this sample, it and four filing fixes reroute 20 to 24 of the 29 low value findings and none of the 25 real ones.</p></div>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">5 · The fixed tax</span><h2>One job sets the whole test wait</h2></div>
+  <div class="two">
+    <div class="chart">
+      <h3>Length of a test run</h3>
+      <div class="bars">
+        <div class="row" title="Today: 12.6 minutes median"><span class="k">Today</span><span class="t"><span class="cb" style="width:100%"></span></span><span class="v">12.6 min</span></div>
+        <div class="row" title="Timezone passes in parallel: about 6.5 minutes, estimated"><span class="k">Timezone passes side by side</span><span class="t"><span class="ca est" style="width:52%"></span></span><span class="v">~6.5 min</span></div>
+        <div class="row" title="Plus two test shards: about 3.75 minutes, estimated"><span class="k">Plus the suite in two shards</span><span class="t"><span class="ca est" style="width:30%"></span></span><span class="v">~3.8 min</span></div>
+      </div>
+      <div class="legend"><span><i class="cb"></i>Measured</span><span><i class="ca est"></i>Estimated from measured step times</span></div>
+      <p class="note">The timezone job runs the full suite three times in a row: 12.3 minutes. Every other job finishes in 6.5 or less.</p>
+    </div>
+    <div class="chart">
+      <h3>What 200 test runs were</h3>
+      <div class="stack" role="img" aria-label="106 completed, 93 cancelled by a newer push, 1 failed">
+        <span class="ca" style="flex:106" title="Completed green: 106"></span><span class="cb" style="flex:93" title="Cancelled by a newer push: 93"></span><span class="cr" style="flex:1" title="Failed: 1"></span>
+      </div>
+      <div class="legend"><span><i class="ca"></i>Ran to green, 106</span><span><i class="cb"></i>Cancelled by a newer push, 93</span><span><i class="cr"></i>Failed, 1</span></div>
+      <p class="note">A third of dispatch branches end on a commit that touches only docs, written after tests were already green. It buys a full new run. The median PR triggers three.</p>
+    </div>
+  </div>
+  <div class="do"><span class="eyebrow">Fix · no ruling needed</span><p class="prose">Run the timezone passes side by side, write the session record with the last code commit, and rerun a red main once automatically. Three of the four times main went red were tests that fail at midnight, and nobody reran them.</p></div>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">6 · Cost</span><h2>Money goes on carrying context, not writing code</h2></div>
+  <div class="two">
+    <div class="chart">
+      <h3>What a child session's $13.66 buys</h3>
+      <div class="stack" role="img" aria-label="57 percent reading cached context, 29 percent writing context to cache, 14.5 percent output">
+        <span class="cb" style="flex:57" title="Reading cached context: 57%"></span><span class="cb" style="flex:29;opacity:.6" title="Writing context to cache: 29%"></span><span class="ca" style="flex:14.5" title="Output: 14.5%"></span>
+      </div>
+      <div class="legend"><span><i class="cb"></i>Rereading context, 57%</span><span><i class="cb" style="opacity:.6"></i>Storing context, 29%</span><span><i class="ca"></i>Writing, 14.5%</span></div>
+      <p class="note">Median per child, range $3.93 to $29.92. A child's first request is about 124K tokens; the dispatcher's own prompt is 2.5K of that.</p>
+    </div>
+    <div class="chart">
+      <h3>Dispatcher context against its own limit</h3>
+      <div class="bars">
+        <div class="row" title="Hand off rule: 150K tokens"><span class="k">The hand off rule</span><span class="t"><span class="ca" style="width:21%"></span></span><span class="v">150K</span></div>
+        <div class="row" title="Dispatcher one: 587K tokens"><span class="k">Dispatcher one</span><span class="t"><span class="cb" style="width:83%"></span><span class="ref" style="left:21%"></span></span><span class="v">587K</span></div>
+        <div class="row" title="Dispatcher two: 707K tokens"><span class="k">Dispatcher two</span><span class="t"><span class="cb" style="width:100%"></span><span class="ref" style="left:21%"></span></span><span class="v">707K</span></div>
+      </div>
+      <p class="note">The rule is written down and nothing enforces it. Cost: $2.44 to $2.79 per child launched, plus 58 child wake ups that did nothing.</p>
+    </div>
+  </div>
+  <p class="prose soft">This is why the cheaper model idea from the first pass dropped down the list. Money is not the constraint, and most of the spend is context a cheaper model would still carry.</p>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">7 · The pattern underneath</span><h2>A ruling only works once it reaches a file</h2></div>
+  <div class="tablewrap"><table>
+    <tr><th>Ruling</th><th>Ruled</th><th>In a file sessions read?</th><th>Result</th></tr>
+    <tr><td>Two review passes at most</td><td>10 Oct</td><td><span class="tag ok">yes</span></td><td>Followed</td></tr>
+    <tr><td>The filing rule</td><td>7 Nov</td><td><span class="tag ok">yes</span></td><td>99 of 117 PRs within two weeks</td></tr>
+    <tr><td>Merge when ready</td><td>28 Oct</td><td><span class="tag no">no</span></td><td>474 green hours a month</td></tr>
+    <tr><td>The ship bar</td><td>22 Oct</td><td><span class="tag no">no</span></td><td>About two findings per merge</td></tr>
+    <tr><td>Weekly clean up pass</td><td>Sept</td><td><span class="tag no">no</span></td><td>Queue back at 90</td></tr>
+    <tr><td>Retro 4 readout</td><td>11 Oct</td><td><span class="tag no">no</span></td><td>Nothing measured for six weeks</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">8 · Your part</span><h2>One hour first, then eight decisions</h2></div>
+  <div class="hour">
+    <h3>The hour only you can do. No rulings in it.</h3>
+    <ol>
+      <li>The report session on <a href="https://linear.app/projectnyx/issue/CUL-1002">CUL-1002</a>. Gates the 1.2.0 release.</li>
+      <li>Four actions and one approval on <a href="https://linear.app/projectnyx/issue/CUL-1848">CUL-1848</a>. Gates the App Store submission.</li>
+      <li>The ruleset click on <a href="https://linear.app/projectnyx/issue/CUL-1491">CUL-1491</a>. Gates merge when ready.</li>
+      <li>Six decisions on <a href="https://linear.app/projectnyx/issue/CUL-2820">CUL-2820</a>, each with a recommendation. Frees eight rows.</li>
+    </ol>
+  </div>
+  <div class="decisions">
+    <div class="d"><div class="top"><span class="id">D1</span><h3>Lift the tool pause</h3><span class="rows">0 rows</span></div>
+      <p class="rec"><b>Recommended:</b> count this retro as the overdue readout and end the one tool change a week limit.</p>
+      <p class="con">Otherwise D2 to D8 take two months.</p><span class="rule">Unseats the pause ruling of 11 Oct</span></div>
+    <div class="d"><div class="top"><span class="id">D2</span><h3>Sessions merge their own green PRs</h3><span class="rows">2 rows</span></div>
+      <p class="rec"><b>Recommended:</b> build merge when ready, widened to routine merges that deploy. Migrations, RLS, deletion, clinical rows and gate edits stay yours.</p>
+      <p class="con">Removes most of the 474 green hours. We first test whether the platform blocks a session's own merge call.</p><span class="rule">Unseats "a deploying merge is the PM's"</span></div>
+    <div class="d"><div class="top"><span class="id">D3</span><h3>Build the ship bar, with four filing fixes</h3><span class="rows">2 rows</span></div>
+      <p class="rec"><b>Recommended:</b> all of it. Anything an owner or vet reads keeps today's strict bar.</p>
+      <p class="con">Every finding states its trigger; "caused by this change" is split from "already on main"; duplicates are checked before filing; every bundled item carries a direction tag.</p><span class="rule">Changes "every quiet break blocks" for rare sequences only</span></div>
+    <div class="d"><div class="top"><span class="id">D4</span><h3>Restructure the queue, stop starting over cap</h3><span class="rows">2 rows</span></div>
+      <p class="rec"><b>Recommended:</b> post 1.2.0 rounds leave the cap until their track starts, and while the queue is over cap dispatch launches only rows that need no new ruling.</p>
+      <p class="con">Counted queue goes from 90 to an estimated 25 to 30.</p><span class="rule">Changes what "cap 30" counts</span></div>
+    <div class="d"><div class="top"><span class="id">D5</span><h3>A ruling sheet for single rulings only</h3><span class="rows">2 rows</span></div>
+      <p class="rec"><b>Recommended:</b> a session writes the 14 missing recommendations first. Nothing is preselected on clinical or privacy rows. The page records how often you agree, per class.</p>
+      <p class="con">23 issues now, 37 after. That agreement rate is the number that would later justify delegating a class. Nothing is delegated here.</p><span class="rule">Needs: does a tap count as your ruling</span></div>
+    <div class="d"><div class="top"><span class="id">D6</span><h3>Agents check the app on an iPhone simulator</h3><span class="rows">2 rows now</span></div>
+      <p class="rec"><b>Recommended:</b> the first two rungs now (a before and after sheet, one simulator build on GitHub's free Mac runners). Scripted flows and an agent tester after 1.2.0.</p>
+      <p class="con">The agent tester may only escalate. A pass from it clears nothing: published bug finding accuracy for such agents is 33% to 49%.</p><span class="rule">Better than the rule: "No E2E tests in MVP scope"</span></div>
+    <div class="d"><div class="top"><span class="id">D7</span><h3>Merged code reaches your phone by itself</h3><span class="rows">2 rows</span></div>
+      <p class="rec"><b>Recommended:</b> every merge that touches no native code publishes to your installed test build, and each TestFlight cut carries one generated checklist.</p>
+      <p class="con">Ends the typed terminal commands for most changes.</p><span class="rule">Needs from you: one Expo token, one installed build</span></div>
+    <div class="d"><div class="top"><span class="id">D8</span><h3>Two reviewers side by side, then a refuter</h3><span class="rows">1 row</span></div>
+      <p class="rec"><b>Recommended:</b> trial it on ten clinical rows against today's two passes in sequence, then rule.</p>
+      <p class="con">Outside support is one small study and two vendor accounts, which is why this is a trial.</p><span class="rule">Would reshape the two pass ruling of 10 Oct</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">9 · The first pass, corrected</span><h2>How the first six ideas fared</h2></div>
+  <div class="tablewrap"><table>
+    <tr><th>First idea</th><th>Verdict</th><th>Why</th></tr>
+    <tr><td>R1 · One ruling sheet for everything</td><td><span class="tag ch">changed</span></td><td>Fits about 37 single rulings. Wrong for 20 design rounds and 17 items that are not decisions.</td></tr>
+    <tr><td>R2 · A QA agent on screen PRs</td><td><span class="tag ch">changed</span></td><td>Only as the last rung of a ladder, and only able to escalate.</td></tr>
+    <tr><td>R3 · Finish what is ruled</td><td><span class="tag ok">confirmed</span></td><td>Now first. Four unbuilt rulings match the four largest losses.</td></tr>
+    <tr><td>R4 · A cheaper model</td><td><span class="tag no">overturned</span></td><td>85% of cost is carried context, and money is not the constraint.</td></tr>
+    <tr><td>R5 · Stop hook, cached setup</td><td><span class="tag ch">changed</span></td><td>A stop hook already exists and collided with a push. The setup saving is unmeasured.</td></tr>
+    <tr><td>R6 · Score findings, ship bar</td><td><span class="tag ch">half</span></td><td>The ship bar is "build what you ruled". Numeric scoring has no support anywhere.</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">10 · Looked at and rejected</span><h2>What not to do</h2></div>
+  <div class="nots">
+    <div><b>Move to Claude's native Projects</b><span>Its threads do not load our repo hooks, where the production gate lives.</span></div>
+    <div><b>A merge queue, or an org move to get one</b><span>The problem it prevents happened once in 304 merges.</span></div>
+    <div><b>More reviewers or more passes</b><span>Extra passes add false findings faster than real ones.</span></div>
+    <div><b>Defaults that expire into "approved"</b><span>One first hand account saw a veto window become rubber stamping in three weeks.</span></div>
+    <div><b>A "PM twin" that rules for you</b><span>Predicting one person's judgments reaches about 72% to 75%.</span></div>
+    <div><b>Trust an agent tester's pass</b><span>Anthropic's own write up: it finds real problems, then approves anyway.</span></div>
+    <div><b>Larger rows</b><span>Conflicts and cost both rise with size.</span></div>
+    <div><b>Delete instructions on a study's say so</b><span>Those studies measured task success, not whether a rule prevents harm. Prune against a replay of past rows.</span></div>
+  </div>
+</section>
+
+<footer>
+  <p><b>What to trust less.</b> Every figure for your minutes is an estimate. Test time savings are arithmetic on measured step times and are untested. The session sample covers ten days. Outside reliability claims for agent testing all come from vendors. Reddit was read through one archive route, about 65 threads.</p>
+  <p><b>Never measured, and worth starting:</b> your minutes per ruling and per week, who performed each merge, how often you accept a recommendation, defects that reach the phone, and cost per merged PR that survives two weeks.</p>
+  <p>Source file <span class="n">docs/workflow-retro-2026-11.html</span>. The written report beside it carries every citation.</p>
+</footer>
+
+</div>

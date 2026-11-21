@@ -2,6 +2,8 @@
 
 **Date:** 2026-11-21 · **Issue:** [CUL-2854](https://linear.app/projectnyx/issue/CUL-2854) · **Status:** research complete, D1 to D8 await the PM
 
+**The charts:** `docs/workflow-retro-2026-11.html`, published at https://claude.ai/artifact/1Y95wf2bqjqeksTD9JzRHS (private to the PM unless shared).
+
 _A frozen, dated write-up (see `.claude/rules/docs.md`). Method: ten parallel research streams, four on this repo's own data (the PM queue item by item, a scored sample of 60 findings, 27 child session transcripts, all 304 PRs merged in 30 days) and six on outside practice (device verification, the human decision bottleneck, fleet orchestration, review quality, community channels including Reddit through one archive route, and a platform audit against current docs). Every stream was read only. Section 7, the decision briefs, was written by the coordinating session from the report above it._
 
 
