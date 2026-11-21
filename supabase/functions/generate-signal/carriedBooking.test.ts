@@ -95,10 +95,27 @@ Deno.test('CUL-2794: a carried escalation carries no booked visit, care state or
   assertStrictEquals('careCarry' in f, false)
 })
 
+const withoutAskSince = (rows: Entry[]) =>
+  rows.map((r) => {
+    const { askSinceIso: _drop, ...finding } = r.finding as Record<string, unknown>
+    return { ...r, finding }
+  })
+
 Deno.test('CUL-2794: the carried card and its ask are exactly the unstamped one', () => {
   const stamped = today(true)
   const plain = today(false)
   // Same cards, same order, same words, same finding: the ask the client reads off it is untouched.
-  assertEquals(stamped, plain)
+  // CUL-2834's stamp aside, which the next test pins.
+  assertEquals(withoutAskSince(stamped), withoutAskSince(plain))
   assertStrictEquals(/call your vet today/.test(stamped[0].text), true, `led with: ${stamped[0].text}`)
+})
+
+// CUL-2834 (adversarial pass 1, B1): the carry drops yesterday's quiet care state, so the card asks
+// again, and its ask starts again with it: a contact from before that is not set under it. A card
+// that was asking all along keeps yesterday's stamp. Proven by mutation: carrying the prior card
+// unstamped (no `stampAskSince` on `carried`) reds the first assertion.
+Deno.test('CUL-2834: a carried card that lost a quiet care state is stamped now; one that kept its ask keeps its stamp', () => {
+  const askOf = (rows: Entry[]) => (rows.filter(carriedOf)[0].finding as { askSinceIso?: string }).askSinceIso
+  assertStrictEquals(askOf(today(true)), new Date(NOW_MS).toISOString())
+  assertStrictEquals(askOf(today(false)), new Date(Date.parse(at(1, 20))).toISOString())
 })

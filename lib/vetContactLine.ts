@@ -1,5 +1,6 @@
 import { getDb } from './db';
 import type { SignalFinding } from './signal';
+import { NO_GOOD_MEAL_HOURS } from './signalCopy';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
 import { formatClockTime } from './vetVisits';
 
@@ -11,6 +12,9 @@ import { formatClockTime } from './vetVisits';
 // takes nothing the card's sentence, count, ask or rank is computed from back out. The row draws
 // the line after everything it already draws, and the stack's order is decided before a contact
 // is ever read.
+//
+// CUL-2834 (ruling A): a card whose ask got louder after a contact drops that contact's line. The
+// engine stamps `askSinceIso` (when the current ask began) and `cardStart` takes the later start.
 //
 // It writes nothing. A contact is never a care-state answer, an acknowledgement, a `vet_calls`
 // row or a follow-up (§4.5), and Home's write classes stay two (guards/homeWrites.test.ts).
@@ -83,8 +87,83 @@ function msOf(iso: string | null | undefined): number | null {
  * flag. A type whose words name no instant takes the engine's count as its instant when the card
  * began on the count's own day, and none otherwise.
  */
-export function cardStart(finding: SignalFinding, anchor: CardAnchor): CardStart | null {
+export function cardStart(finding: SignalFinding, anchor: CardAnchor, nowMs: number = Date.now()): CardStart | null {
+  return cardWindow(finding, anchor, nowMs)?.start ?? null;
+}
+
+/** The card's window: its start, and the latest INSTANT any part of it is known to begin at.
+ *  `notBefore` outlives a day-key tie and a zone change (adversarial pass 1 on CUL-2834, B2): a
+ *  call logged at 10:00 in Tokyo is before an ask raised at noon there, whatever day the phone's
+ *  zone now puts the ask on. */
+interface CardWindow {
+  start: CardStart;
+  notBefore: number | null;
+}
+
+function cardWindow(finding: SignalFinding, anchor: CardAnchor, nowMs: number): CardWindow | null {
   if (finding.priorityClass !== 'safety') return null;
+  const problem = problemStart(finding, anchor);
+  if (problem === null) return null;
+  const instants: number[] = problem.instant === null ? [] : [problem.instant];
+  if (!ASK_STAMPED.has(finding.type)) return { start: problem, notBefore: problem.instant };
+  // CUL-2834 (ruling A): a card whose ask rose since the problem began starts where the louder
+  // ask began. No stamp (a row cached before the field, or a malformed one): no line.
+  const askMs = msOf(askSinceIsoOf(finding));
+  if (askMs === null) return null;
+  let start = laterStart(problem, { day: toLocalDayKey(new Date(askMs)), instant: askMs });
+  instants.push(askMs);
+  // A card back from "your vet knows" asks again from its re-raise (adversarial pass 2, B4): the
+  // engine's stamp covers it, and the card's own instant holds even where a stamp does not.
+  const backMs = msOf(raisedAgainAtOf(finding));
+  if (backMs !== null && backMs <= nowMs) {
+    start = laterStart(start, { day: toLocalDayKey(new Date(backMs)), instant: backMs });
+    instants.push(backMs);
+  }
+  // The phone's own rise: an intake card firms up to the floor 24 hours after its last good meal
+  // (`intakeMeetsCatFloor`), with no engine run to stamp it. Once that has happened, it is a start.
+  const floorMs = clockFloorMs(finding);
+  if (floorMs !== null && floorMs <= nowMs) {
+    start = laterStart(start, { day: toLocalDayKey(new Date(floorMs)), instant: floorMs });
+    instants.push(floorMs);
+  }
+  return { start, notBefore: Math.max(...instants) };
+}
+
+/** CUL-2834: the lanes whose ask can rise while they stay one card; the engine stamps each with
+ *  `askSinceIso` (supabase/functions/generate-signal/askSince.ts ASK_STAMPED, the same four). */
+const ASK_STAMPED: ReadonlySet<string> = new Set(['intake_decline', 'symptom_chronicity', 'symptom_worsening', 'symptom_burden']);
+
+/** The engine's stamp, read narrowly: lib/signal.ts's mirror types do not carry it yet. */
+function askSinceIsoOf(finding: SignalFinding): string | null {
+  const v = (finding as { askSinceIso?: unknown }).askSinceIso;
+  return typeof v === 'string' ? v : null;
+}
+
+/** A re-raised card's `careState.raisedAgainAt`, read narrowly: only a card asking again has one. */
+function raisedAgainAtOf(finding: SignalFinding): string | null {
+  const cs = (finding as { careState?: unknown }).careState;
+  if (!cs || typeof cs !== 'object') return null;
+  const { state, raisedAgainAt } = cs as { state?: unknown; raisedAgainAt?: unknown };
+  return state === 'raised_again' && typeof raisedAgainAt === 'string' ? raisedAgainAt : null;
+}
+
+/** The instant an intake card (not a dog's) meets the floor by the clock alone, or null. */
+function clockFloorMs(finding: SignalFinding): number | null {
+  if (finding.type !== 'intake_decline' || finding.species === 'dog') return null;
+  const t = msOf(finding.lastGoodMealIso);
+  return t === null ? null : t + NO_GOOD_MEAL_HOURS * 3_600_000;
+}
+
+/** The later of two starts. On one day an unknown instant wins: it already refuses every contact
+ *  that day, so it is the stricter of the two. */
+function laterStart(a: CardStart, b: CardStart): CardStart {
+  if (a.day !== b.day) return a.day > b.day ? a : b;
+  if (a.instant === null || b.instant === null) return { day: a.day, instant: null };
+  return { day: a.day, instant: Math.max(a.instant, b.instant) };
+}
+
+/** Where the card's PROBLEM begins (PR-07), before the ask's own start is applied. */
+function problemStart(finding: SignalFinding, anchor: CardAnchor): CardStart | null {
   const counted = (day: string): CardStart => ({ day, instant: day === anchor.day ? msOf(anchor.iso) : null });
   switch (finding.type) {
     case 'intake_decline':
@@ -116,18 +195,25 @@ export function cardStart(finding: SignalFinding, anchor: CardAnchor): CardStart
 }
 
 /** The card's first day alone (see `cardStart`). */
-export function cardFirstDay(finding: SignalFinding, anchor: CardAnchor): string | null {
-  return cardStart(finding, anchor)?.day ?? null;
+export function cardFirstDay(finding: SignalFinding, anchor: CardAnchor, nowMs: number = Date.now()): string | null {
+  return cardStart(finding, anchor, nowMs)?.day ?? null;
 }
 
 /** A contact after the card's problem began. On the first day itself only a contact the owner
  *  timed at or after the problem's instant counts: an untimed one, or one before, may be about
  *  something else, and the line is never a guess. */
-function isAfterStart(c: RemoteContact, start: CardStart): boolean {
+function isAfterStart(c: RemoteContact, w: CardWindow): boolean {
+  const at = msOf(c.contactedAt);
+  // A contact whose instant is before an instant the card is known to begin at is never about it,
+  // whatever the day keys say: across a zone change the instant can fall on another local day than
+  // the contact's day key, and it is still a real instant. An UNTIMED contact on a later day has
+  // no instant to test: the day keys are all the record holds (a known limit, stated in the PR).
+  if (at !== null && w.notBefore !== null && at < w.notBefore) return false;
+  const timed = at !== null && toLocalDayKey(new Date(at)) === c.day;
+  const start = w.start;
   if (c.day > start.day) return true;
   if (c.day < start.day || start.instant === null) return false;
-  const at = msOf(c.contactedAt);
-  return at !== null && toLocalDayKey(new Date(at)) === c.day && at >= start.instant;
+  return timed && (at as number) >= start.instant;
 }
 
 /** "Fri, Nov 13", with the year when it is not this year's. */
@@ -167,6 +253,7 @@ export function contactSentence(contact: RemoteContact, today: string): string {
  *   A phone contact on that same day is the same fact, said once: null. Another day or another
  *   channel says something new and gets its line. No Home card draws that line today (PM ruling
  *   2026-11-19, option A on CUL-2769), so Home passes null.
+ * - CUL-2834: `nowMs` decides only whether the phone's own clock floor has begun (`cardStart`).
  */
 export function contactLineFor(
   finding: SignalFinding,
@@ -174,10 +261,11 @@ export function contactLineFor(
   today: string,
   anchor: CardAnchor,
   calledOn: string | null = null,
+  nowMs: number = Date.now(),
 ): string | null {
-  const start = cardStart(finding, anchor);
-  if (start === null) return null;
-  const newest = contacts.filter((c) => c.day <= today && isAfterStart(c, start)).sort(newerFirst)[0];
+  const w = cardWindow(finding, anchor, nowMs);
+  if (w === null) return null;
+  const newest = contacts.filter((c) => c.day <= today && isAfterStart(c, w)).sort(newerFirst)[0];
   if (!newest) return null;
   if (calledOn !== null && newest.channel === 'phone' && newest.day === calledOn) return null;
   return contactSentence(newest, today);

@@ -85,6 +85,7 @@ import {
 // (photoComposition.test.ts); attaches retained-food/hair/bile counts (present-only, tristate) onto
 // the vomit timing findings AFTER detection, so the engine's output is untouched.
 import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposition.ts'
+import { stampAskSince } from './askSince.ts'
 import { findingIdentity } from '../../../lib/findingIdentity.ts'
 import { isTieredRow, tierDisplayOf } from '../../../lib/incidentTierWords.ts'
 // B-422's effective end, from the ONE module that owns it. Imported across the
@@ -955,14 +956,21 @@ export function runSignalPipeline(
     const c = sign === null ? undefined : priorCarry?.get(sign)
     return c ? ({ ...f, careCarry: c } as unknown as Finding) : f
   }
-  const decorated = (priorLatches && priorLatches.size > 0) || (priorCarry && priorCarry.size > 0)
+  // CUL-2834 (ruling A): each safety card's `askSinceIso`, stamped LAST, on the card as this row
+  // will show it: after the tier hold, the care state, the latch and the carry (adversarial pass 1,
+  // B1: a care state that returns the ask is a louder ask too). Read by the phone's contact line
+  // only (lib/vetContactLine.ts); nothing here or downstream computes a sentence, count, ask or
+  // rank from it.
+  const priorRowFindings = priorSignal?.findings ?? null
+  const decorated = stampAskSince((priorLatches && priorLatches.size > 0) || (priorCarry && priorCarry.size > 0)
     ? stepped.map((r) => ({ ...r, finding: withCarry(withLatch(r.finding)) }))
-    : stepped
+    : stepped, priorRowFindings, nowMs)
   // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
   // Its absence here may be the rows the read did not reach, which is the resolution the ruling
-  // withholds, so the prior card is carried forward as it was shown.
+  // withholds, so the prior card is carried forward as it was shown. It drops its care state
+  // (EN-9 D1), so its stamp is taken again against the card as now shown (CUL-2834 B1).
   const carried: CachedFinding[] = readIncomplete
-    ? carryPriorSafety(priorSafety, decorated.map((r) => r.finding), petName).map((c) => ({ ...c, finding: withLatch(c.finding) }))
+    ? stampAskSince(carryPriorSafety(priorSafety, decorated.map((r) => r.finding), petName).map((c) => ({ ...c, finding: withLatch(c.finding) })), priorRowFindings, nowMs)
     : []
 
   // 4a. AI summary (B-023 PR 4). Assemble a DETERMINISTIC fact packet from the curated

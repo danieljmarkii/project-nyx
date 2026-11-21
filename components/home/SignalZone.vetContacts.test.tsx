@@ -64,10 +64,12 @@ const dayBefore = (() => {
 // A time earlier today, built from local components (C-29); at 00:00 it is still today.
 const earlierToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0).toISOString();
 
+const EARLY_ASK = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 60, 12, 0).toISOString();
 const intake: CachedFinding = {
   rank: 0,
   text: 'Pixel has eaten much less than usual for 2 days. Worth a call to your vet today.',
-  finding: { type: 'intake_decline', priorityClass: 'safety', trigger: 'consecutive_low', species: 'cat', daysBelowBaseline: 2, refusedFoodLabel: null, ratedMealsConsidered: 7 },
+  // CUL-2834: the engine's stamp, from long before any contact here, so it moves no line in this suite.
+  finding: { askSinceIso: EARLY_ASK, type: 'intake_decline', priorityClass: 'safety', trigger: 'consecutive_low', species: 'cat', daysBelowBaseline: 2, refusedFoodLabel: null, ratedMealsConsidered: 7 } as unknown as SignalFinding,
 };
 const chronic: CachedFinding = {
   rank: 1,
@@ -85,7 +87,8 @@ const chronic: CachedFinding = {
     firstOnsetIso: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 40, 12, 0).toISOString(),
     tier: 'firm',
     windowDays: 56,
-  },
+    askSinceIso: EARLY_ASK,
+  } as unknown as SignalFinding,
 };
 const watched: CachedFinding = {
   ...chronic,
@@ -204,6 +207,26 @@ describe('AC 9 — awareness only: a same-day email changes no card and adds one
     const view = await renderStack([{ id: 'v1', visited_at: older, channel: 'phone', contacted_at: null }]);
     await waitFor(() => expect(view.queryAllByTestId('signal-row-contact').length).toBe(2));
     expect(view.getAllByTestId('signal-row')[0].props.accessibilityLabel).not.toMatch(/You called/);
+  });
+
+  it('CUL-2834: a card whose ask rose after the contact drops that line, and the card is unchanged', async () => {
+    const before = await renderStack([{ id: 'v1', visited_at: dayBefore, channel: 'phone', contacted_at: null }]);
+    await waitFor(() => expect(before.queryAllByTestId('signal-row-contact').length).toBe(2));
+    expect(before.getAllByTestId('signal-row')[1].props.accessibilityLabel).toMatch(/You called/);
+    const labelsBefore = before.getAllByTestId('signal-row').map((r) => r.props.accessibilityLabel.replace(/ ?You called[^.]*\./, ''));
+    before.unmount();
+    // The chronicity card's ask rose this morning, after yesterday's call.
+    const rose = STACK.map((f) =>
+      f.finding.type === 'symptom_chronicity' && (f.finding as { symptomType?: string }).symptomType === 'vomit'
+        ? { ...f, finding: { ...f.finding, askSinceIso: earlierToday } as unknown as SignalFinding }
+        : f,
+    );
+    mockUseSignal.mockReturnValue(state(rose));
+    const after = await renderStack([{ id: 'v1', visited_at: dayBefore, channel: 'phone', contacted_at: null }]);
+    await waitFor(() => expect(after.queryAllByTestId('signal-row-contact').length).toBe(1));
+    expect(after.getAllByTestId('signal-row')[1].props.accessibilityLabel).not.toMatch(/You called/);
+    // Sentence, count, ask and order are the same cards, line aside.
+    expect(after.getAllByTestId('signal-row').map((r) => r.props.accessibilityLabel.replace(/ ?You called[^.]*\./, ''))).toEqual(labelsBefore);
   });
 
   it('C-12: nothing is drawn while the read is in flight, and a failed read draws the cards as they were', async () => {
