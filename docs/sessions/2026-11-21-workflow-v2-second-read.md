@@ -1,6 +1,9 @@
 # 2026-11-21 · Workflow v2, a second read before the build starts
 
-**Mode:** DISCOVERY · **Issue:** [CUL-2854](https://linear.app/projectnyx/issue/CUL-2854) (retro 5) · **Outcome:** the Workflow v2 project amended in Linear; no code. Shipped via this record's own PR.
+**Date:** 2026-11-21
+**One thing:** P2 L2 — Reversibility moves the check: a change you can undo in one step is checked after it lands, and only the changes you cannot undo are worth a gate before · check: pending
+
+**Mode:** DISCOVERY · **Issue:** [CUL-2854](https://linear.app/projectnyx/issue/CUL-2854) (retro 5) · **Outcome:** the Workflow v2 project amended in Linear; no code. Shipped via #1585.
 
 ## What was asked
 
@@ -56,7 +59,3 @@ An estimate until PR-33 measures it: one kickoff sitting on the preflight list, 
 ## Persona sign-off
 
 Dir. of Engineering ✓ (the deny list is paths and labels, never a session's own judgment of its risk; rollback before wide self merge) · Product Owner ✓ (25 rows on the run order, every parked row has a return condition) · Trust & Safety ✓ (nothing on the stakes list moves; `apply` stays typed) · Dr. Chen N/A · Designer N/A · tests: N/A, no code.
-
-## Learning line
-
-One thing: an approval that is never refused is a wait, not a control. The useful question about any gate is how often it has said no.
