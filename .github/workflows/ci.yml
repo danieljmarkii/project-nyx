@@ -7,11 +7,21 @@
 # CUL-1613), plus the Edge Function suites the hook never touches, enforced
 # where they can't be skipped. This, not the hook, is the required check.
 #
-# Three jobs on purpose, run in parallel so each reports independently:
+# The test jobs, run in parallel so each reports independently:
+#   changes        — decides whether this run is docs only (CUL-2860; scripts/ci/docsOnly.ts)
 #   app            — the RN/Expo app: `tsc --noEmit` + jest (self-contained)
-#   app-timezones  — the same jest suite again, under non-UTC clocks (B-514)
+#   app-timezones  — the same jest suite again, one job per non-UTC clock (B-514), and
+#                    one roll-up job that reports under the check name the ruleset knows
 #   edge-functions — `deno test` + `deno check` over supabase/functions (needs network once)
 # A network blip in one must not mask a real failure in the other.
+#
+# Docs only runs (CUL-2860). When a pull request's change since its last PASSED run is docs
+# and nothing else (or the whole pull request is docs), the timezone jobs, the Deno job and
+# the two report jobs are skipped, and the app job runs only the suites that read docs (every
+# guard among them). A skipped job reports success, so the required checks still report and
+# a docs pull request never blocks. The rule fails open: every skip condition below reads
+# `!= 'true'`, so a `changes` job that failed or printed nothing means the full run. main's
+# own runs are never docs only. A failed run on main is rerun once (ci-rerun.yml).
 name: CI
 
 on:
@@ -39,8 +49,44 @@ permissions:
   contents: read
 
 jobs:
+  # ── Docs only or full (CUL-2860) ────────────────────────────────────────────
+  #
+  # Reads the pull request's diff, its commits and their CI runs (hence the two read
+  # scopes, the only widening of the top-level token in this file, and read-only), and
+  # prints `docs_only`. It cannot fail a run: a failed read prints false.
+  changes:
+    name: Docs only or full
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.decide.outputs.docs_only }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      - name: Decide
+        id: decide
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types scripts/ci/docsOnlyCli.ts decide
+
   app:
     name: App (typecheck + jest)
+    needs: changes
+    # Never skipped: on a docs only run it is the job that runs the guards over the docs.
+    # `!cancelled()` so a failed `changes` job still lets it run, in full.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -66,11 +112,29 @@ jobs:
         run: npm ci
 
       - name: Type check
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: npx tsc --noEmit
 
       # `--ci` makes an unmatched snapshot a failure instead of a silent write.
       - name: Jest
+        if: ${{ needs.changes.outputs.docs_only != 'true' }}
         run: npm test -- --ci
+
+      # Docs only: the suites that read docs, and only those (scripts/ci/docsOnly.ts
+      # selectDocsSuites: every guard, every scripts/ suite, any suite naming a doc).
+      # An empty selection is a failure, never a pass over nothing.
+      - name: Jest (the suites that read docs)
+        if: ${{ needs.changes.outputs.docs_only == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t suites < <(node --experimental-strip-types scripts/ci/docsOnlyCli.ts suites | sed '/^$/d')
+          if [ "${#suites[@]}" -eq 0 ]; then
+            echo "::error::the docs only selection found no suites"
+            exit 1
+          fi
+          echo "Docs only: running ${#suites[@]} suites that read docs."
+          npx jest --ci --runTestsByPath "${suites[@]}"
 
   # ── The timezone leg (B-514) ────────────────────────────────────────────────
   #
@@ -101,15 +165,26 @@ jobs:
   # the Chatham entry is there precisely because +14 missed a real failure — so add
   # a zone here rather than assuming the ends cover the middle.
   #
-  # Every zone runs even after one fails: the useful output is WHICH clocks broke,
-  # since that is what names the assumption. `npm test` is invoked directly rather
-  # than through a matrix so this job reports under ONE stable check name — the
-  # `main` ruleset lists required checks by name, and a matrix would put three
-  # names in it that all have to be added and kept in step.
-  app-timezones:
-    name: App (jest, non-UTC timezones)
+  # Every zone runs even after one fails (`fail-fast: false`): the useful output is WHICH
+  # clocks broke, since that is what names the assumption. One job per zone since CUL-2860:
+  # run one after another the three passes made this the slowest job in CI (12.3 min against
+  # 6.5 or less for every other, retro 5), and side by side they take one pass's time. Each
+  # still runs the WHOLE suite (`npm test -- --ci`, no path, no filter); guards/ciShape.test.ts
+  # holds that.
+  #
+  # The `main` ruleset lists required checks by name, and a matrix reports one name per zone.
+  # So the roll-up job below keeps the one stable name this job always had, and it is red
+  # unless every zone passed (or the run is docs only, when all three are skipped).
+  app-timezone:
+    name: App (jest, TZ=${{ matrix.tz }})
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: [Pacific/Kiritimati, Pacific/Chatham, Pacific/Honolulu]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,29 +198,42 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Jest under non-UTC clocks
-        shell: bash
+      - name: Jest under TZ=${{ matrix.tz }}
+        env:
+          TZ: ${{ matrix.tz }}
+        run: npm test -- --ci
+
+  app-timezones:
+    name: App (jest, non-UTC timezones)
+    needs: [changes, app-timezone]
+    # `always()`: this job must report even when a zone failed, or the required check
+    # would sit unreported instead of red.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every zone passed
+        env:
+          RESULT: ${{ needs.app-timezone.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
         run: |
-          set -uo pipefail
-          zones=(Pacific/Kiritimati Pacific/Chatham Pacific/Honolulu)
-          failed=()
-          for tz in "${zones[@]}"; do
-            echo "::group::TZ=${tz}"
-            if TZ="${tz}" npm test -- --ci; then
-              echo "${tz}: green"
-            else
-              failed+=("${tz}")
-            fi
-            echo "::endgroup::"
-          done
-          if [ "${#failed[@]}" -ne 0 ]; then
-            echo "::error::jest failed under ${#failed[@]} of ${#zones[@]} timezones: ${failed[*]}. The app job is green at UTC, so this is a fixture (or a day-boundary bug) that assumes the runner's clock — see B-514. Pin the fixture to an explicit zone or build its instants from local components; do NOT pin this job back to UTC."
-            exit 1
+          if [ "$RESULT" = "success" ]; then
+            echo "All three timezones green."
+            exit 0
           fi
-          echo "All ${#zones[@]} timezones green."
+          if [ "$RESULT" = "skipped" ] && [ "$DOCS_ONLY" = "true" ]; then
+            echo "Docs only run: the timezone jobs were skipped (see the Docs only or full job)."
+            exit 0
+          fi
+          echo "::error::the timezone jobs ended '$RESULT'. The app job is green at UTC, so a red zone is a fixture (or a day-boundary bug) that assumes the runner's clock — see B-514, and the App (jest, TZ=…) job that failed. Pin the fixture to an explicit zone or build its instants from local components; do NOT pin these jobs back to UTC."
+          exit 1
 
   edge-functions:
     name: Edge Functions (deno test)
+    needs: changes
+    # Skipped on a docs only run: no Deno suite can read a doc (`--allow-read` reaches only
+    # supabase/functions and scripts, whose Markdown counts as code). A skip reports success.
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -373,6 +461,8 @@ jobs:
   # CPython 3.12.
   report-extraction:
     name: Vet report extraction (Chromium, pypdf, pdfminer)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -438,6 +528,8 @@ jobs:
   # check (those are named in the `main` ruleset).
   vet-report-withdrawal-probe:
     name: Vet report withdrawal clear (Postgres probe)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
