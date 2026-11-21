@@ -169,6 +169,24 @@ export function handoffDue(contextTokens: number): boolean {
   return contextTokens >= HANDOFF_TOKENS;
 }
 
+// D9 (CUL-2869): the limit was a sentence, and dispatchers ran at 587K and 707K tokens
+// against it. So the script refuses every run past it and prints the hand-off as the only
+// thing left to do. `contextTokens` is required: a fact the session may leave out is a
+// check it may skip. The closing lines are this run's, so the successor's memory is current.
+export function handoffRefusal(contextTokens: number | undefined, project: string, alias: string, closing: Closing): string | undefined {
+  if (typeof contextTokens !== 'number' || !Number.isFinite(contextTokens))
+    return 'REFUSED: no contextTokens fact. Read this session\'s context_usage with get_session (no id) into the facts file.';
+  if (!handoffDue(contextTokens)) return undefined;
+  return [
+    `REFUSED: this session holds ${contextTokens} tokens, past HANDOFF_TOKENS (${HANDOFF_TOKENS}). Hand off now (dispatch.md step 9.7), and do nothing else:`,
+    `  1. create_session in this session's environment, prompt \`/dispatch ${project}\`.`,
+    '  2. Post one **/dispatch run** status update ending in these lines, the new id filled in (check-update first):',
+    ...closingLines({ ...closing, successor: '<the new session id>' }).map((l) => `       ${l}`),
+    `  3. Delete this session's \`/dispatch progress · ${alias}\` trigger; the successor arms its own.`,
+    '  4. Stop: no launch, Board or note from here. Step 0 forwards every later wake to the successor.',
+  ].join('\n');
+}
+
 // An issue id in a PR's title or body closes that issue when the PR merges (CLAUDE.md,
 // CUL-1397, measured), and a closing word makes no difference: #1082's pasted dry run said
 // "close CUL-1247" and its merge closed CUL-1247. Text bound for a PR body therefore breaks

@@ -1,12 +1,19 @@
 // The dispatcher's memory (CUL-1615): validation on write, memory against GitHub, the
 // check-in read from the routines, and the closing-keyword guard.
 
+import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import * as F from './fixtures/facts-2026-10-05.ts';
+import { input } from './fixtures/sort-retro4.ts';
 import {
   checkInFrom,
   closingLines,
   HANDOFF_TOKENS,
   handoffDue,
+  handoffRefusal,
   issueIdsIn,
   launchLine,
   memoryCheck,
@@ -136,4 +143,50 @@ it('the hand-off is due at ~150K tokens', () => {
   expect(HANDOFF_TOKENS).toBe(150_000);
   expect(handoffDue(HANDOFF_TOKENS - 1)).toBe(false);
   expect(handoffDue(HANDOFF_TOKENS)).toBe(true);
+});
+
+// D9 (CUL-2869): dispatchers ran at 587K and 707K against the limit, because the limit was a
+// sentence. Now the script every wake runs refuses past it, so the hand-off cannot be missed.
+describe('a wake past the hand-off limit refuses', () => {
+  const closing = { dispatcher: 'session_01Old', auto: ['27b'], queued: [] };
+
+  it('refuses at the limit, passes under it, and refuses a missing reading', () => {
+    expect(handoffRefusal(HANDOFF_TOKENS - 1, 'Engines v3', 'Engines v3', closing)).toBeUndefined();
+    const r = handoffRefusal(587_000, 'Engines v3: the record that reads itself', 'Engines v3', closing)!;
+    expect(r).toMatch(/^REFUSED: this session holds 587000 tokens, past HANDOFF_TOKENS \(150000\)/);
+    expect(r).toContain('create_session in this session\'s environment, prompt `/dispatch Engines v3: the record that reads itself`');
+    expect(r).toContain('Dispatcher: session_01Old\n       Successor: <the new session id>');
+    expect(r).toContain('Auto: PR-27b');
+    expect(r).toContain('Delete this session\'s `/dispatch progress · Engines v3` trigger');
+    expect(handoffRefusal(undefined, 'x', 'x', closing)).toMatch(/^REFUSED: no contextTokens fact/);
+    expect(handoffRefusal(Number.NaN, 'x', 'x', closing)).toMatch(/^REFUSED: no contextTokens fact/);
+  });
+
+  // The real CLI on a fixture wake: plan and progress both refuse before printing anything
+  // a session could act on, and exit 3.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatch-handoff-'));
+  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const run = (cmd: string, contextTokens?: number) => {
+    const file = path.join(dir, `${cmd}-${contextTokens ?? 'none'}.json`);
+    fs.writeFileSync(file, JSON.stringify({ ...input(), contextTokens }));
+    return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'scripts/dispatch/cli.ts', cmd, file], {
+      cwd: path.resolve(__dirname, '../..'),
+      encoding: 'utf8',
+    });
+  };
+
+  it.each(['plan', 'progress'])('%s past the limit prints only the hand-off', (cmd) => {
+    const out = run(cmd, 707_000);
+    expect(out.status).toBe(3);
+    expect(out.stdout).toMatch(/^REFUSED: this session holds 707000 tokens/);
+    expect(out.stdout).toContain('Successor: <the new session id>');
+    expect(out.stdout).not.toMatch(/Slots:|Board \(|Proposed/);
+  });
+
+  it('a fact left out refuses too, and a wake under the limit runs', () => {
+    expect(run('plan').stdout).toMatch(/^REFUSED: no contextTokens fact/);
+    const ok = run('plan', 40_000);
+    expect(ok.status).toBe(0);
+    expect(ok.stdout).toContain('Slots:');
+  });
 });
