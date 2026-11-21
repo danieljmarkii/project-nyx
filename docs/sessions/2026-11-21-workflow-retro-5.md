@@ -76,7 +76,7 @@ A plan is a strategy only if it has three parts that fit together. A diagnosis s
 
 **Like:** A doctor's visit. "You have an infection" is the diagnosis, "we treat it with antibiotics, not surgery" is the policy, and the prescription is the action. A doctor who hands you ten prescriptions without saying what is wrong has not treated you.
 
-**In today's work:** `docs/workflow-retro-2026-11.md:11`
+**In today's work:** `docs/workflow-retro-2026-11.md:10`
 > The agents are no longer what limits this workflow; the one human is, and most of what waits on that human is not a real decision.
 
 That sentence is the diagnosis. The title above it, "Free the decider before adding agents", is the guiding policy. The first pass of this retro had neither: it was six ideas, and a cheaper model sat among them because nothing said what problem it solved. Once the diagnosis existed, that idea dropped out by itself.
