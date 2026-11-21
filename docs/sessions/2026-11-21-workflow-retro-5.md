@@ -29,9 +29,26 @@ Interactive DISCOVERY session, branch `claude/dazzling-ptolemy-2sm19j`. The PM a
 
 R3 (finish ruled work) was confirmed and moved first. R1, R2, R5 and R6 changed shape. R4 (a cheaper model) was largely overturned: money is not the constraint. The table is in § 5 of the write-up.
 
-## Decisions put to the PM
+## A second round, the same day
 
-D1 lift the tool pause · D2 merge when ready, widened to deploying merges · D3 build the ship bar with four filing fixes · D4 restructure the queue and stop starting over cap · D5 a ruling sheet for single rulings · D6 the simulator ladder (a better than the rule brief against "No E2E tests in MVP scope") · D7 merged code reaches the phone by itself · D8 trial parallel review with a refuter. None is ruled yet.
+The PM asked which outside techniques to take, said a past ruling should be reopened whenever something better appears, and said this work does not queue behind 1.2.0. Three more read only streams ran: about 40 primary engineering posts from organisations running coding agents, enduring practices that agents make cheap, and a feasibility read of this repo for an iPhone simulator agents can drive.
+
+- **The first write-up parked three ideas by citing an old ruling.** They came back as D9 (a stateless dispatcher), D10 (route rows by how checkable they are) and D11 (measure whether an agent can predict the PM's rulings). D12 is new: park the judgment call and ship the rest.
+- **D7 was unsafe as first written.** The TestFlight build and the store build share the `production` update channel, so publishing every merge would have reached the public after launch. Filed as [CUL-2859](https://linear.app/projectnyx/issue/CUL-2859) with three other launch gaps.
+- **The simulator is feasible without app changes.** About 1,030 test identifiers exist, the backend is two build variables, and the web capture fixture can stand in as the server. Nothing was run on a Mac.
+- **Asked whether any of it would be felt,** the answer was five of twelve: D2, D3, D6, D7 and D12. The rest are upkeep.
+
+## Rulings (PM, 2026-11-21)
+
+"Let's go w all of your recommendations": D1 to D12 option (a) each, in their revised form, and L1 with them because D7 depends on it. L2 to L4 were not read as covered and stay open on CUL-2859. The rulings each one unseats are named in the ruling comment on [CUL-2854](https://linear.app/projectnyx/issue/CUL-2854).
+
+## What was written into files
+
+- **CLAUDE.md:** a past ruling is a floor with a date too; the tool pause bullet is gone (D1); the testing line allows simulator smoke flows that report and never block (D6). The budget guard passes with no ceiling raised.
+- **Linear:** project *Workflow v2: free the decider*, six milestones, 28 rows in the dispatch layout. 25 issues are new ([CUL-2860](https://linear.app/projectnyx/issue/CUL-2860) to [CUL-2884](https://linear.app/projectnyx/issue/CUL-2884)); three existing ones moved in as rows (CUL-2234, CUL-2123, CUL-928).
+- **The charts page** (`docs/workflow-retro-2026-11.html`) carries both rounds.
+
+Not done: dispatch's plan script was not run against the new page, so its first run may report format drift. The other rulings reach their files in the rows that build them.
 
 ## Mistakes caught in session
 
@@ -39,6 +56,8 @@ D1 lift the tool pause · D2 merge when ready, widened to deploying merges · D3
 - **The first pass proposed one ruling sheet for the whole queue.** The queue read and the approval fatigue evidence both cut against it.
 - **The first pass carried retro 4's "37K tokens before code".** Transcripts show a first request of about 124K.
 - **The first pass could not reach Reddit.** One archive route worked on the second.
+- **Three ideas were parked by citing an old ruling.** The PM's directive reopened them.
+- **D7 would have published every merge to the public channel.** A later research stream caught it.
 
 ## Limits
 
