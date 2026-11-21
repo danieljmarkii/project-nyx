@@ -755,7 +755,7 @@ describe('scripts/steward/merge-check.sh', () => {
       { id: 61, conclusion: 'success', sha: 'e'.repeat(40) },
     ]);
     const r = check(s, [], { FAKE_GH_MAIN: rerunning });
-    expect(r.out).toContain(`main's CI: RERUNNING (run https://ci.example.invalid/runs/62 on ddddddd failed and is being rerun)`);
+    expect(r.out).toContain(`main's CI: RERUNNING (run https://ci.example.invalid/runs/62 on ddddddd is being run again)`);
     expect(r.code).toBe(2);
     expect(lastLine(r.out)).toBe('MERGE CHECK: REVIEW');
 

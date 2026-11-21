@@ -53,7 +53,8 @@ jobs:
   #
   # Reads the pull request's diff, its commits and their CI runs (hence the two read
   # scopes, the only widening of the top-level token in this file, and read-only), and
-  # prints `docs_only`. It cannot fail a run: a failed read prints false.
+  # prints `docs_only`. A failed read prints false (a full run); a failure of the job itself
+  # leaves `docs_only` empty, which is also a full run.
   changes:
     name: Docs only or full
     runs-on: ubuntu-latest

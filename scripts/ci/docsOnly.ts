@@ -37,9 +37,10 @@ export function allDocs(paths: readonly string[]): boolean {
 }
 
 // A suite that names a doc in its source: a docs/ path, a Markdown or HTML file, the
-// .claude tree, or the two root files guards read by name. Over-matching costs seconds;
-// under-matching would let a doc change skip the suite that judges it, so this errs wide.
-const NAMES_A_DOC = /docs\/|\.md\b|\.html\b|\.claude\/|CLAUDE|STATUS/;
+// .claude tree (also as a bare `'docs'` or `'.claude'` path segment, for a path.join), or
+// the two root files guards read by name. Over-matching costs seconds; under-matching would
+// let a doc change skip the suite that judges it, so this errs wide.
+const NAMES_A_DOC = /docs\/|\.md\b|\.html\b|\.claude\/|['"`](docs|\.claude)['"`]|CLAUDE|STATUS/;
 
 /** The jest suites a docs only commit still runs, sorted. Paths are repo relative. */
 export function selectDocsSuites(suites: readonly { path: string; text: string }[]): string[] {

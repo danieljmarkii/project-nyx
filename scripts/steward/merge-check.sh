@@ -563,7 +563,7 @@ else
       ci_line="main's CI: green (run $run_id on ${run_sha:0:7})"
     elif [ "$concl" = "rerunning" ]; then
       ci_red=1
-      ci_line="main's CI: RERUNNING (run $run_url on ${run_sha:0:7} failed and is being rerun); wait for it to complete"
+      ci_line="main's CI: RERUNNING (run $run_url on ${run_sha:0:7} is being run again); wait for it to complete"
     else
       # The suspects: every file changed between main's last green run and this red one.
       # No green run on the page, or a commit this clone lacks, leaves only the red commit.

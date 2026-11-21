@@ -4,7 +4,8 @@
 //     Reads the pull request's diff, its commits and their CI runs through the REST API,
 //     prints the decision, and writes `docs_only=true|false` to $GITHUB_OUTPUT and the
 //     reason to the step summary. Any failed read is a full run: this never exits non-zero
-//     on a read, so a broken API answer costs minutes, never a skipped suite.
+//     on a read, so a broken API answer costs minutes, never a skipped suite (and a crash of
+//     the step leaves the output empty, which ci.yml also reads as a full run).
 //   node --experimental-strip-types scripts/ci/docsOnlyCli.ts suites
 //     Prints the jest suites a docs only commit still runs, one per line.
 //

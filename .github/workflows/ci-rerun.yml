@@ -38,4 +38,11 @@ jobs:
           RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           echo "Rerunning the failed jobs of $RUN_URL (attempt 1 failed)."
-          gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"
+          # Retried: the API can refuse a rerun for a few seconds after the completed event.
+          # A rerun lost to that race fails this job loudly rather than leaving main quietly red.
+          for attempt in 1 2 3; do
+            if gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"; then exit 0; fi
+            [ "$attempt" -lt 3 ] && sleep 15
+          done
+          echo "::error::could not start the rerun of $RUN_URL after 3 attempts; main stays red until someone reruns it"
+          exit 1

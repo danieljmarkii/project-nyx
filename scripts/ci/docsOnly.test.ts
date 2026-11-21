@@ -87,8 +87,15 @@ describe('selectDocsSuites', () => {
       { path: 'scripts/sweep/prompt.test.ts', text: '' },
       { path: 'lib/reads.test.ts', text: "fs.readFileSync('docs/nyx-x.md')" },
       { path: 'lib/claims.test.ts', text: "read('.claude/rules/ui.md')" },
+      { path: 'lib/joined.test.ts', text: "path.join(ROOT, 'docs', name)" },
       { path: 'lib/pure.test.ts', text: 'expect(add(1, 2)).toBe(3)' },
     ]);
-    expect(picked).toEqual(['guards/claudeMdBudget.test.ts', 'lib/claims.test.ts', 'lib/reads.test.ts', 'scripts/sweep/prompt.test.ts']);
+    expect(picked).toEqual([
+      'guards/claudeMdBudget.test.ts',
+      'lib/claims.test.ts',
+      'lib/joined.test.ts',
+      'lib/reads.test.ts',
+      'scripts/sweep/prompt.test.ts',
+    ]);
   });
 });
