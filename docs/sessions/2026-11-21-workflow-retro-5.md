@@ -1,6 +1,8 @@
 # Workflow retro 5: free the decider before adding agents
 
 **Date:** 2026-11-21
+**One thing:** P1 L1 — The strategy kernel: a diagnosis, a guiding policy and coherent action, tested on this retro's own plan · check: pending
+**One thing (re-ask):** P3 L1 — Sequencing and opportunity cost: the scarce thing is the PM's review places, not the agents (asked fresh; the earlier question was not recorded) · check: pending
 
 Interactive DISCOVERY session, branch `claude/dazzling-ptolemy-2sm19j`. The PM asked for a session on workflow efficiency: reduce dispatch's downsides, find the next dispatch sized gain, and research what people at the frontier of agent driven delivery are doing, Reddit included. The write-up is `docs/workflow-retro-2026-11.md`; the briefs are on [CUL-2854](https://linear.app/projectnyx/issue/CUL-2854).
 
@@ -65,4 +67,22 @@ Not done: dispatch's plan script was not run against the new page, so its first 
 
 Human minutes are estimates throughout; nothing records them. The session sample covers ten days. Every CI saving is arithmetic on measured step times. The raw research notes were not committed.
 
-Shipped via the session's draft PR.
+## Teach
+
+Re-ask (P3): nine rows of the new project edit the same file one at a time, and about six of them need your merge. If you could clear only one of those merges this week, which one, and what does choosing it delay?
+
+### One thing — The strategy kernel (P1, L1)
+A plan is a strategy only if it has three parts that fit together. A diagnosis says what the real problem is. A guiding policy says the one approach you will take to it. Coherent action is the set of steps that all push the same way. A list of good ideas with no diagnosis is a wish list, however long it is.
+
+**Like:** A doctor's visit. "You have an infection" is the diagnosis, "we treat it with antibiotics, not surgery" is the policy, and the prescription is the action. A doctor who hands you ten prescriptions without saying what is wrong has not treated you.
+
+**In today's work:** `docs/workflow-retro-2026-11.md:11`
+> The agents are no longer what limits this workflow; the one human is, and most of what waits on that human is not a real decision.
+
+That sentence is the diagnosis. The title above it, "Free the decider before adding agents", is the guiding policy. The first pass of this retro had neither: it was six ideas, and a cheaper model sat among them because nothing said what problem it solved. Once the diagnosis existed, that idea dropped out by itself.
+
+**Why it matters to you as PM:** when a plan reaches you as a list, ask what its diagnosis is before ruling on any item, because a missing diagnosis is why lists grow to 28 rows.
+
+**Check:** the amended plan parks the live simulator, which you said you loved. Using the plan's own diagnosis, would you expect it to be parked or kept, and why?
+
+Shipped via #1584 ([CUL-2858](https://linear.app/projectnyx/issue/CUL-2858)).
