@@ -148,7 +148,7 @@ Do not drift from them. The general rules sit here; every surface rule lives in 
 - **State:** Zustand for global state. Local `useState` for component-only state. No prop drilling beyond two levels.
 - **Error handling:** Every async function has explicit error handling. No silent failures in sync or API calls.
 - **Comments:** Comment the why, not the what. Schema decisions and architectural rationale warrant comments. Obvious code does not.
-- **Testing:** Unit tests for all store logic and Edge Functions. `jest` + `@testing-library/react-native` for component tests. Test files co-located as `ComponentName.test.tsx`. No E2E tests in MVP scope.
+- **Testing:** Unit tests for all store logic and Edge Functions. `jest` + `@testing-library/react-native` for component tests. Test files co-located as `ComponentName.test.tsx`. E2E: simulator smoke flows only, reporting and never blocking (PM, 2026-11-21, CUL-2854 D6).
 
 | Rule file | Loads for | Covers |
 |---|---|---|
@@ -197,7 +197,6 @@ Never hardcode a key or token in source; client variables use the `EXPO_PUBLIC_`
 - **CI runs on every PR (B-390, `.github/workflows/ci.yml`):** `App (typecheck + jest)` and `Edge Functions (deno test)` are required checks on an Active `main` ruleset with an empty bypass list (plus `App (jest, non-UTC timezones)`; making it required is CUL-586), so a red check blocks the merge. The Deno job's `npm ci` and its `--allow-read=supabase/functions` are load-bearing, not cruft; actions are SHA-pinned (bump the SHA and its version comment together); never fix a red run by weakening the check (`--no-check`, `continue-on-error`, dropping a suite) without saying so in the PR.
 - Schema changes always get their own PR — never bundle a schema change with UI work.
 - Squash merge to keep `main` history clean and linear.
-- **Tool pause (retro 4 D4, 2026-10-11):** for one week after CUL-1870–1874 all merge, `/dispatch`, `/wrap`, the steward and the groomer take bug and friction fixes only (an extra PM decision, a stalled row, a confusing brief); then the CUL-1876 readout, then one tool PR a week. Safety fixes and ruling edits to CLAUDE.md are exempt.
 - **Branches (CUL-1497):** merge `main` in only when a branch conflicts or needs code from it; never rebase a pushed branch (save a stack you created) or take one side of a file wholesale. A self-merge needs the PM's word (`/wrap and merge`) or a `/dispatch` child's prompt (one that deploys or edits the gate: the PM's only, CUL-1654) and the gate in `.claude/skills/steward/SKILL.md` §7 _(account: `docs/engineering-lessons.md` §P-15)_
 - Do not merge a PR if the issue's QA criteria are not yet met.
 - **One PR per session.** The end-of-session `docs/sessions/` record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — not a separate "record the merge" PR afterward. Write the session record's outcome as `shipped via #<n>` (the PR number is assigned at creation, drafts included), never as `merged to main (#<n>)` — the post-merge phrasing is what forces the second PR. **Exception:** if the work PR was already merged mid-session, the status update is a small standalone follow-up. (Mechanics in `/wrap`.)
@@ -272,7 +271,7 @@ Keep each brief to ~4 lines. The bar: the PM can rule from the brief alone. A ba
 
 **Mock what you change (PM directive, 2026-08-07).** A design change is shown, never only described: any change to a user-facing surface lands as frames in the current mock round (republished to the same artifact URL) in the same session it's proposed, and a decision whose options differ *visually* renders those options **side by side in the mock** — the brief then points at the frames. Presenting a visual choice in words alone is the anti-pattern this rule exists to stop. (A change with no rendered surface is exempt.)
 
-**A rule is a floor with a date on it (PM directive, 2026-09-17, CUL-1060) — every workflow, not only design.** Every principle, convention and spec rule was written on a day, against what was known that day. When a better design, plan, query or test violates one, surface it as a **better-than-the-rule brief** in the decision-brief shape above — the rule, its date and what it protected; the better thing; whether the protection still holds; a recommendation — and let the PM rule. Quietly building the compliant, worse thing is the anti-pattern; so is quietly building the better one.
+**A rule is a floor with a date on it (PM directive, 2026-09-17, CUL-1060) — every workflow, not only design.** Every principle, convention, spec rule and past ruling was written on a day, on what was known then. When a better design, plan, query or test violates one, surface it as a **better-than-the-rule brief** in the decision-brief shape above — the rule, its date and what it protected; the better thing; whether the protection still holds; a recommendation — and let the PM rule. Quietly building the compliant, worse thing is the anti-pattern; so is quietly building the better one.
 
 ### Definition of Done — Before Saying "Done"
 
