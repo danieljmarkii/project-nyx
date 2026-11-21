@@ -156,3 +156,26 @@ These replace the first-pass briefs R1 to R6. Each commits to building, so each 
 **No ruling needed (team calls, logged on the issue):** run the three timezone test passes in parallel and write the session record with the last code commit; rerun a red `main` once automatically; fix the tests that fail at midnight; enforce the dispatcher's 150K hand off in the script and remove the empty wake turns; record cost, waits and CI runs per row automatically; correct CLAUDE.md's ruleset line once the ruleset exists; prove migrations on a local database in CI.
 
 **Parked with a reason:** the model and effort experiment (money is not the constraint; revisit after D2 and D3), a stateless dispatcher run by a scheduled task (conflicts with "a routine firing is never a pick"; the scripted hand off gets most of the gain), pruning instruction files (needs the replay set first).
+
+## 8. Addendum, 2026-11-21: a second research round
+
+_Added the same day, after the PM asked which outside techniques to take and ruled two things: a past ruling is reopened whenever something better appears (now in CLAUDE.md), and this work does not queue behind 1.2.0. Sections 1 to 7 stand as written; where this section differs, it wins. The current text of every brief is on [CUL-2854](https://linear.app/projectnyx/issue/CUL-2854) and on the charts page._
+
+**Three more research streams, all read only:** about 40 primary engineering posts from organisations running coding agents; enduring practices that agents make cheap; and a feasibility read of this repo for an iPhone simulator that agents drive.
+
+**What changed in the briefs**
+
+- **D2 is staged.** Small changes on low risk paths first, widening as each stage proves out. Intercom reports 19% of merges approved by automation, median merge time 14.6 minutes against 75.8, no reverts in a pilot of over 100. Linear and GitHub still have a person approve every PR.
+- **D3 gains a measurement.** Uber switches off categories of finding nobody acts on, measured by rerunning the reviewer on the final commit.
+- **D6 no longer waits for the release.** Variant A (GitHub's free Mac runners, one scripted flow against the web capture fixture, a video in the PR) first, then variant B (Expo's cloud simulator driven live by the session). The app already has about 1,030 test identifiers and reads its backend from two build variables, so no app code changes to start. Nothing was run on a Mac; times and costs are from documentation.
+- **D7 was unsafe as written.** The TestFlight build and the store build share the `production` update channel (`eas.json`, `docs/dev-handoff-runbook.md`), so publishing every merge would reach the public after launch. The channel split is [CUL-2859](https://linear.app/projectnyx/issue/CUL-2859) L1 and comes first.
+- **D9 to D11 reopen ideas the first write-up parked by citing an old ruling:** a stateless dispatcher, routing rows by how checkable they are, and measuring whether an agent can predict the PM's rulings.
+- **D12 is new:** park the judgment call and ship the rest (Spotify).
+
+**Sorted by whether the PM would feel it.** Dispatch and sweep each removed something done by hand many times a day. By that test D2, D3, D6, D7 and D12 would be felt; D1, D4 and D5 once; D8 to D11 are upkeep.
+
+**What the organisations furthest along walked back:** Block (90% adoption did not speed delivery), Spotify (automated changes now run only in owners' working hours, after one passed every check and failed in production), Google (throttled generation to review capacity), Cursor (stopped rechecking every task).
+
+**Launch safety, found along the way** ([CUL-2859](https://linear.app/projectnyx/issue/CUL-2859)): the shared update channel, no kill switch or version floor, no release freeze, no crash reporting.
+
+**Limits of this round:** nearly all outside numbers are self reported and were read through a summarising tool; no source describes a single decision maker; no open source app found runs simulator tests on every PR on a free runner.

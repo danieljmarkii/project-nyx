@@ -132,6 +132,7 @@ td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); vertical-ali
 .tag.ok { color: var(--accent); background: var(--accent-wash); }
 .tag.ch { color: var(--gate); background: var(--gate-wash); }
 .tag.no { color: var(--harm); background: var(--harm-wash); }
+.tag.up { color: var(--muted); background: var(--chart-track); }
 .nots { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 24px; }
 .nots div { border-top: 1px solid var(--line); padding-top: 10px; font-size: 0.9rem; }
 .nots b { display: block; font-weight: 600; }
@@ -151,7 +152,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
     <div class="fig"><span class="v">195</span><span class="l">decisions waiting on you, in 90 issues</span></div>
     <div class="fig"><span class="v">23</span><span class="l">of those 90 issues block any other work</span></div>
   </div>
-  <p class="note">Ten read only research streams: four on our own data, six on outside practice. Pipeline numbers are measured from this repo. Figures for your minutes are estimates, because nothing records them. Full write up: <span class="n">docs/workflow-retro-2026-11.md</span>. Decisions live on <a href="https://linear.app/projectnyx/issue/CUL-2854">CUL-2854</a>.</p>
+  <p class="note"><b>Updated 21 November</b> with a second research round: lessons from top engineering teams (section 8), the simulator plan (section 9), and twelve decisions sorted by whether you would feel them (section 10). Thirteen read only research streams in all: four on our own data, nine on outside practice. Pipeline numbers are measured from this repo. Figures for your minutes are estimates, because nothing records them. Full write up: <span class="n">docs/workflow-retro-2026-11.md</span>. Decisions live on <a href="https://linear.app/projectnyx/issue/CUL-2854">CUL-2854</a>.</p>
 </header>
 
 <section>
@@ -380,46 +381,171 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
 </section>
 
 <section>
-  <div class="section-head"><span class="eyebrow">8 · Your part</span><h2>One hour first, then eight decisions</h2></div>
-  <div class="hour">
-    <h3>The hour only you can do. No rulings in it.</h3>
-    <ol>
-      <li>The report session on <a href="https://linear.app/projectnyx/issue/CUL-1002">CUL-1002</a>. Gates the 1.2.0 release.</li>
-      <li>Four actions and one approval on <a href="https://linear.app/projectnyx/issue/CUL-1848">CUL-1848</a>. Gates the App Store submission.</li>
-      <li>The ruleset click on <a href="https://linear.app/projectnyx/issue/CUL-1491">CUL-1491</a>. Gates merge when ready.</li>
-      <li>Six decisions on <a href="https://linear.app/projectnyx/issue/CUL-2820">CUL-2820</a>, each with a recommendation. Frees eight rows.</li>
-    </ol>
+  <div class="section-head"><span class="eyebrow">8 · From top engineering teams</span><h2>What the organisations furthest along report</h2></div>
+  <p class="prose soft">About 40 primary engineering posts, read on 21 November. Nearly all of it is self reported, and nobody describes a single decision maker, so these are adapted from teams of engineers.</p>
+  <div class="two">
+    <div class="chart">
+      <h3>Time to merge, with and without a person</h3>
+      <p class="sub">Intercom, median minutes</p>
+      <div class="bars">
+        <div class="row" title="Approved by a person: 75.8 minutes"><span class="k">Approved by a person</span><span class="t"><span class="cb" style="width:100%"></span></span><span class="v">75.8 min</span></div>
+        <div class="row" title="Approved by automation: 14.6 minutes"><span class="k">Approved by automation</span><span class="t"><span class="ca" style="width:19.3%"></span></span><span class="v">14.6 min</span></div>
+      </div>
+      <p class="note">19% of merges qualify, 86% of those are 20 lines or fewer, and a pilot of over 100 saw no reverts.</p>
+    </div>
+    <div class="chart">
+      <h3>Share of agent PRs that merge, by task shape</h3>
+      <p class="sub">Microsoft, 878 PRs on one public repo</p>
+      <div class="bars">
+        <div class="row" title="Tasks of 1 to 50 lines: 77 to 80 percent merged"><span class="k">Small, 1 to 50 lines</span><span class="t"><span class="ca" style="width:78%"></span></span><span class="v">77–80%</span></div>
+        <div class="row" title="Open ended tasks: 11.5 percent merged"><span class="k">Open ended</span><span class="t"><span class="cb" style="width:11.5%"></span></span><span class="v">11.5%</span></div>
+      </div>
+      <p class="note">The only source here with checkable public data. Our rows are already small; this says keep them that way.</p>
+    </div>
+    <div class="chart">
+      <h3>Review findings per change, by size</h3>
+      <p class="sub">Anthropic, internal</p>
+      <div class="bars">
+        <div class="row" title="Under 50 lines: 0.5 findings"><span class="k">Under 50 lines</span><span class="t"><span class="ca" style="width:6.7%"></span></span><span class="v">0.5</span></div>
+        <div class="row" title="Over 1,000 lines: 7.5 findings"><span class="k">Over 1,000 lines</span><span class="t"><span class="cb" style="width:100%"></span></span><span class="v">7.5</span></div>
+      </div>
+      <p class="note">An argument for scaling review depth to the size and risk of the change.</p>
+    </div>
   </div>
-  <div class="decisions">
-    <div class="d"><div class="top"><span class="id">D1</span><h3>Lift the tool pause</h3><span class="rows">0 rows</span></div>
-      <p class="rec"><b>Recommended:</b> count this retro as the overdue readout and end the one tool change a week limit.</p>
-      <p class="con">Otherwise D2 to D8 take two months.</p><span class="rule">Unseats the pause ruling of 11 Oct</span></div>
-    <div class="d"><div class="top"><span class="id">D2</span><h3>Sessions merge their own green PRs</h3><span class="rows">2 rows</span></div>
-      <p class="rec"><b>Recommended:</b> build merge when ready, widened to routine merges that deploy. Migrations, RLS, deletion, clinical rows and gate edits stay yours.</p>
-      <p class="con">Removes most of the 474 green hours. We first test whether the platform blocks a session's own merge call.</p><span class="rule">Unseats "a deploying merge is the PM's"</span></div>
-    <div class="d"><div class="top"><span class="id">D3</span><h3>Build the ship bar, with four filing fixes</h3><span class="rows">2 rows</span></div>
-      <p class="rec"><b>Recommended:</b> all of it. Anything an owner or vet reads keeps today's strict bar.</p>
-      <p class="con">Every finding states its trigger; "caused by this change" is split from "already on main"; duplicates are checked before filing; every bundled item carries a direction tag.</p><span class="rule">Changes "every quiet break blocks" for rare sequences only</span></div>
-    <div class="d"><div class="top"><span class="id">D4</span><h3>Restructure the queue, stop starting over cap</h3><span class="rows">2 rows</span></div>
-      <p class="rec"><b>Recommended:</b> post 1.2.0 rounds leave the cap until their track starts, and while the queue is over cap dispatch launches only rows that need no new ruling.</p>
-      <p class="con">Counted queue goes from 90 to an estimated 25 to 30.</p><span class="rule">Changes what "cap 30" counts</span></div>
-    <div class="d"><div class="top"><span class="id">D5</span><h3>A ruling sheet for single rulings only</h3><span class="rows">2 rows</span></div>
-      <p class="rec"><b>Recommended:</b> a session writes the 14 missing recommendations first. Nothing is preselected on clinical or privacy rows. The page records how often you agree, per class.</p>
-      <p class="con">23 issues now, 37 after. That agreement rate is the number that would later justify delegating a class. Nothing is delegated here.</p><span class="rule">Needs: does a tap count as your ruling</span></div>
-    <div class="d"><div class="top"><span class="id">D6</span><h3>Agents check the app on an iPhone simulator</h3><span class="rows">2 rows now</span></div>
-      <p class="rec"><b>Recommended:</b> the first two rungs now (a before and after sheet, one simulator build on GitHub's free Mac runners). Scripted flows and an agent tester after 1.2.0.</p>
-      <p class="con">The agent tester may only escalate. A pass from it clears nothing: published bug finding accuracy for such agents is 33% to 49%.</p><span class="rule">Better than the rule: "No E2E tests in MVP scope"</span></div>
-    <div class="d"><div class="top"><span class="id">D7</span><h3>Merged code reaches your phone by itself</h3><span class="rows">2 rows</span></div>
-      <p class="rec"><b>Recommended:</b> every merge that touches no native code publishes to your installed test build, and each TestFlight cut carries one generated checklist.</p>
-      <p class="con">Ends the typed terminal commands for most changes.</p><span class="rule">Needs from you: one Expo token, one installed build</span></div>
-    <div class="d"><div class="top"><span class="id">D8</span><h3>Two reviewers side by side, then a refuter</h3><span class="rows">1 row</span></div>
-      <p class="rec"><b>Recommended:</b> trial it on ten clinical rows against today's two passes in sequence, then rule.</p>
-      <p class="con">Outside support is one small study and two vendor accounts, which is why this is a trial.</p><span class="rule">Would reshape the two pass ruling of 10 Oct</span></div>
+  <div class="two">
+    <div>
+      <h3>Worth taking</h3>
+      <ul class="prose" style="margin-top:10px">
+        <li><b>Widen self merging one area at a time</b> (Intercom, the Claude Code team). Cap by size, keep a person on sensitive paths. Now the shape of D2.</li>
+        <li><b>Proof in the PR</b> (Meta, Ramp, Uber, Linear). A recording of the change working. Ramp says about 30% of its merged PRs carry one. Now part of D6.</li>
+        <li><b>Switch off categories of finding nobody acts on</b> (Uber). Measured by rerunning the reviewer on the final commit. Now part of D3.</li>
+        <li><b>Park the judgment call, ship the rest</b> (Spotify). Now D12.</li>
+        <li><b>"This change makes X behave differently: intended?"</b> (Meta). A plain question in place of review. 74 serious privacy bugs caught in half a year, with 40% false alarms. A candidate trial for clinical modules.</li>
+        <li><b>Judge the finished change against its brief before opening a PR</b> (Spotify). About a quarter were vetoed, mostly for scope creep.</li>
+        <li><b>Production limits held by credentials, not instructions</b> (Stripe, Monzo). Ours is a hook plus a typed word.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>What they walked back</h3>
+      <ul class="prose" style="margin-top:10px">
+        <li><b>Block:</b> 90% adoption did not speed up delivery. Review stayed unsolved.</li>
+        <li><b>Spotify:</b> an automated upgrade passed every check and failed in production. Automated changes now run only in the owners' working hours.</li>
+        <li><b>Google:</b> throttled what agents generate to match review capacity.</li>
+        <li><b>Cursor:</b> stopped rechecking every task and dropped never ending workflows.</li>
+        <li><b>Linear and GitHub:</b> a person still approves every PR.</li>
+      </ul>
+    </div>
   </div>
 </section>
 
 <section>
-  <div class="section-head"><span class="eyebrow">9 · The first pass, corrected</span><h2>How the first six ideas fared</h2></div>
+  <div class="section-head"><span class="eyebrow">9 · The simulator, made concrete</span><h2>Agents can drive an iPhone, and the first version is free</h2></div>
+  <div class="figs">
+    <div class="fig"><span class="v">1,031</span><span class="l">test identifiers already in our screens</span></div>
+    <div class="fig"><span class="v">2</span><span class="l">build variables set the backend</span></div>
+    <div class="fig"><span class="v">0</span><span class="l">app code changes needed to start</span></div>
+  </div>
+  <p class="prose">The fixture behind today's web captures can stand in as the server, so no real account is touched. The first flow: sign in as the fixture owner, log a meal from the plus button, see it on Home. You get a short video and screenshots in the PR.</p>
+  <div class="tablewrap"><table>
+    <tr><th></th><th>A · GitHub's free Mac machines</th><th>B · Expo's cloud simulator</th></tr>
+    <tr><td><b>How it runs</b></td><td>A script after each push builds the app, walks the flow and attaches the video</td><td>The coding session drives the simulator live, like a person tapping</td></tr>
+    <tr><td><b>Cost</b></td><td>Free on a public repo</td><td>$19 a month, then $0.10 a minute</td></tr>
+    <tr><td><b>Needs from you</b></td><td>Nothing</td><td>Plan upgrade, a token, a public test backend</td></tr>
+    <tr><td><b>Time per run</b></td><td>15 to 30 min cold, 8 to 12 for most changes</td><td>8 to 12 min, plus a build when needed</td></tr>
+    <tr><td><b>Maturity</b></td><td>Common tools, used by Bluesky and others</td><td>Beta, launched 12 November</td></tr>
+  </table></div>
+  <div class="chart">
+    <h3>Would it have caught our past device bugs?</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Bug found on a phone</th><th>A</th><th>B</th></tr>
+      <tr><td>Keyboard covering the note field and save</td><td><span class="tag ok">yes</span></td><td><span class="tag ok">yes</span></td></tr>
+      <tr><td>Test files bundled into the app</td><td><span class="tag ok">yes</span></td><td><span class="tag ok">yes</span></td></tr>
+      <tr><td>Crash on launch</td><td><span class="tag ch">its own build only</span></td><td><span class="tag ch">its own build only</span></td></tr>
+      <tr><td>Home clipped to a band on the Duo</td><td><span class="tag ch">if someone reads the shot</span></td><td><span class="tag ok">likely</span></td></tr>
+      <tr><td>A frozen animation</td><td><span class="tag ch">by a person watching</span></td><td><span class="tag ch">by a person watching</span></td></tr>
+      <tr><td>The widget, real notifications, the store build</td><td><span class="tag no">no</span></td><td><span class="tag no">no</span></td></tr>
+    </table></div>
+  </div>
+  <p class="note"><b>What is not proven.</b> Nothing was run on a Mac: every time and cost is from documentation or other teams' setups. No open source app we found runs this on every PR on a free machine (Bluesky and Artsy run nightly; Rainbow and Mattermost only on labelled PRs), and two teams left GitHub's Macs over slow simulator launches. Still unknown: whether the simulator build handles our widget, and whether the right Mac image is offered to a personal repo.</p>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">10 · Your part</span><h2>Twelve decisions, sorted by whether you would feel them</h2></div>
+  <p class="prose">Dispatch and sweep felt big because each removed something you did by hand many times a day. That is the test used here. Five of these pass it. The rest save money and agent time and are worth doing, but they will not change your day.</p>
+  <div class="hour">
+    <h3>Only you can do these. No rulings in them.</h3>
+    <ol>
+      <li>The ruleset click on <a href="https://linear.app/projectnyx/issue/CUL-1491">CUL-1491</a>, about a minute. Everything in D2 waits on it: main has no protection today.</li>
+      <li>Six decisions on <a href="https://linear.app/projectnyx/issue/CUL-2820">CUL-2820</a>, each with a recommendation. Frees eight rows.</li>
+    </ol>
+  </div>
+  <div class="decisions">
+    <div class="d"><div class="top"><span class="id">D1</span><h3>Lift the tool pause</h3><span class="tag ch">felt once</span><span class="rows">0 rows</span></div>
+      <p class="rec"><b>Recommended:</b> count this retro as the overdue readout and end the one tool change a week limit.</p>
+      <p class="con">Everything below depends on it. Otherwise this plan takes months.</p><span class="rule">Unseats the pause ruling of 11 Oct</span></div>
+    <div class="d"><div class="top"><span class="id">D2</span><h3>Sessions merge their own green PRs, in stages</h3><span class="tag ok">you would feel it</span><span class="rows">3 rows</span></div>
+      <p class="rec"><b>Recommended:</b> start with small changes on low risk paths, then widen stage by stage as each proves out. Migrations, RLS, deletion, clinical rows and gate edits stay yours throughout.</p>
+      <p class="con">You typed a merge word on 21 of 27 rows. Intercom and the Claude Code team both widened this way; nobody credible opened it all at once. Every incident adds its change to the reviewer's test set.</p><span class="rule">Unseats "a deploying merge is the PM's"</span></div>
+    <div class="d"><div class="top"><span class="id">D3</span><h3>Build the ship bar, with the filing fixes</h3><span class="tag ok">you would feel it</span><span class="rows">2 rows</span></div>
+      <p class="rec"><b>Recommended:</b> all of it. Anything an owner or vet reads keeps today's strict bar. Add Uber's method: switch off whole categories of finding that nobody acts on.</p>
+      <p class="con">Every finding states its trigger; "caused by this change" is split from "already on main"; duplicates are checked before filing. You would feel it over two or three weeks, as the pile stops refilling.</p><span class="rule">Changes "every quiet break blocks" for rare sequences only</span></div>
+    <div class="d"><div class="top"><span class="id">D4</span><h3>Restructure the queue, stop starting over cap</h3><span class="tag ch">felt once</span><span class="rows">2 rows</span></div>
+      <p class="rec"><b>Recommended:</b> design rounds for tracks that have not started leave the cap until they do, and while the queue is over cap dispatch launches only rows that need no new ruling.</p>
+      <p class="con">Counted queue goes from 90 to an estimated 25 to 30. It only lasts if D3 lands too.</p><span class="rule">Changes what "cap 30" counts</span></div>
+    <div class="d"><div class="top"><span class="id">D5</span><h3>A ruling sheet for single rulings only</h3><span class="tag ch">felt once</span><span class="rows">2 rows</span></div>
+      <p class="rec"><b>Recommended:</b> a session writes the 14 missing recommendations first. Nothing is preselected on clinical or privacy rows. The page records how often you agree, per class.</p>
+      <p class="con">23 issues now, 37 after, in one sitting.</p><span class="rule">Needs: does a tap count as your ruling</span></div>
+    <div class="d"><div class="top"><span class="id">D6</span><h3>Agents drive an iPhone simulator</h3><span class="tag ok">you would feel it</span><span class="rows">4 rows</span></div>
+      <p class="rec"><b>Recommended:</b> build variant A now (free, nothing needed from you), then variant B as soon as A proves the build works. No waiting on the release. Section 9 has both.</p>
+      <p class="con">You would watch a 20 second clip of the change working in place of a device pass. The agent tester may only escalate: a pass from it clears nothing.</p><span class="rule">Better than the rule: "No E2E tests in MVP scope"</span></div>
+    <div class="d"><div class="top"><span class="id">D7</span><h3>Merged code reaches your phone by itself</h3><span class="tag ok">you would feel it</span><span class="rows">2 rows</span></div>
+      <p class="rec"><b>Recommended:</b> every merge that touches no native code publishes to your test build, and each TestFlight cut carries one generated checklist.</p>
+      <p class="con">Ends the typed terminal commands. The test build must first move to its own update channel (L1 below), or this would publish to the public after launch.</p><span class="rule">Needs from you: one Expo token, one installed build</span></div>
+    <div class="d"><div class="top"><span class="id">D12</span><h3>Park the judgment call, ship the rest</h3><span class="tag ok">you would feel it</span><span class="rows">1 row</span></div>
+      <p class="rec"><b>Recommended:</b> when a session hits a real product question off the never-list, it ships everything else behind a flag and leaves you one gated decision.</p>
+      <p class="con">One flagged decision in place of a blocked row. Spotify estimates ten engineer weeks saved over 240 PRs this way. New since the first version of this page.</p><span class="rule">Changes how a child stops for a ruling</span></div>
+    <div class="d"><div class="top"><span class="id">D8</span><h3>Two reviewers side by side, then a refuter</h3><span class="tag up">upkeep</span><span class="rows">1 row</span></div>
+      <p class="rec"><b>Recommended:</b> trial it on ten clinical rows against today's two passes in sequence, then rule.</p>
+      <p class="con">Outside support is one small study and two vendor accounts, which is why this is a trial.</p><span class="rule">Would reshape the two pass ruling of 10 Oct</span></div>
+    <div class="d"><div class="top"><span class="id">D9</span><h3>A stateless dispatcher</h3><span class="tag up">upkeep</span><span class="rows">3 rows</span></div>
+      <p class="rec"><b>Recommended:</b> each merge starts a fresh short dispatcher for rows already marked auto. Your picks, migrations and gated rows still start from your session.</p>
+      <p class="con">Stripe and Cursor keep scheduling in code. Ours ran at 587K and 707K tokens against a 150K rule. Reopened: the first write up parked this by citing an old ruling.</p><span class="rule">Better than the rule: "a routine firing is never a pick"</span></div>
+    <div class="d"><div class="top"><span class="id">D10</span><h3>Route rows by how checkable they are</h3><span class="tag up">upkeep</span><span class="rows">1 row</span></div>
+      <p class="rec"><b>Recommended:</b> ten rows whose "done" is a passing test run at low effort, against ten as today. Clinical, privacy, migration and review work never moves.</p>
+      <p class="con">Anthropic's runs held pass rates for a little over half the cost. Reopened.</p><span class="rule">Reopens "children inherit the dispatcher's model" (8 Oct)</span></div>
+    <div class="d"><div class="top"><span class="id">D11</span><h3>Measure whether an agent can predict your rulings</h3><span class="tag up">upkeep</span><span class="rows">1 row</span></div>
+      <p class="rec"><b>Recommended:</b> log its prediction silently for a month, then read the numbers. Nothing is delegated.</p>
+      <p class="con">The evidence any later change to who decides what would need. Rewind required 90% agreement before trusting its automation.</p><span class="rule">Touches no rule; the never-list stays yours</span></div>
+  </div>
+  <div class="chart">
+    <h3>If you rule as recommended, the build order</h3>
+    <ol class="prose">
+      <li><b>D1</b>, then the ruleset click.</li>
+      <li><b>L1 and D7:</b> split the update channel, then merged code reaches your phone.</li>
+      <li><b>D2, stage one:</b> small changes on low risk paths merge themselves.</li>
+      <li><b>D6, variant A:</b> the first simulator run with a video in the PR. Then variant B.</li>
+      <li><b>D3 and D12:</b> fewer findings filed, fewer rows blocked on you.</li>
+      <li><b>D4 and D5:</b> the queue restructure and the ruling sheet.</li>
+      <li><b>Upkeep, in any order:</b> D8 to D11, the faster test run, the dispatcher hand off.</li>
+    </ol>
+    <p class="note">About 22 rows in all. Once you have ruled, this becomes a Linear project with a run order dispatch can read.</p>
+  </div>
+  <div class="chart">
+    <h3>Found along the way: four launch safety calls</h3>
+    <p class="sub">On <a href="https://linear.app/projectnyx/issue/CUL-2859">CUL-2859</a>. Not workflow, but the first one sits under D7.</p>
+    <div class="tablewrap"><table>
+      <tr><th></th><th>Call</th><th>Recommended</th></tr>
+      <tr><td><span class="n">L1</span></td><td>Your TestFlight build and the store build share one update channel. After launch, a quick test update would reach every owner.</td><td>A separate test channel; production takes only promoted updates</td></tr>
+      <tr><td><span class="n">L2</span></td><td>No server switch to hide a broken feature, and no way to require an update</td><td>Both, in the first public build. They cannot be added later to installs that shipped without them</td></tr>
+      <tr><td><span class="n">L3</span></td><td>Nothing freezes what enters the release build</td><td>After the cut, only safety, sign up, first log and data loss fixes</td></tr>
+      <tr><td><span class="n">L4</span></td><td>No crash reporting</td><td>Apple's own data first, read daily for two weeks</td></tr>
+    </table></div>
+    <p class="note">Verified in the repo's build settings and handoff runbook. The Expo dashboard itself was not checked.</p>
+  </div>
+</section>
+
+<section>
+  <div class="section-head"><span class="eyebrow">11 · The first pass, corrected</span><h2>How the first six ideas fared</h2></div>
   <div class="tablewrap"><table>
     <tr><th>First idea</th><th>Verdict</th><th>Why</th></tr>
     <tr><td>R1 · One ruling sheet for everything</td><td><span class="tag ch">changed</span></td><td>Fits about 37 single rulings. Wrong for 20 design rounds and 17 items that are not decisions.</td></tr>
@@ -432,10 +558,10 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
 </section>
 
 <section>
-  <div class="section-head"><span class="eyebrow">10 · Looked at and rejected</span><h2>What not to do</h2></div>
+  <div class="section-head"><span class="eyebrow">12 · Looked at and rejected</span><h2>What not to do</h2></div>
   <div class="nots">
-    <div><b>Move to Claude's native Projects</b><span>Its threads do not load our repo hooks, where the production gate lives.</span></div>
-    <div><b>A merge queue, or an org move to get one</b><span>The problem it prevents happened once in 304 merges.</span></div>
+    <div><b>Move to Claude's native Projects</b><span>Its threads do not load our repo hooks, where the production gate lives. Reopen when they do.</span></div>
+    <div><b>A merge queue, or an org move to get one</b><span>The problem it prevents happened once in 304 merges. Reopen if that passes 1 in 50.</span></div>
     <div><b>More reviewers or more passes</b><span>Extra passes add false findings faster than real ones.</span></div>
     <div><b>Defaults that expire into "approved"</b><span>One first hand account saw a veto window become rubber stamping in three weeks.</span></div>
     <div><b>A "PM twin" that rules for you</b><span>Predicting one person's judgments reaches about 72% to 75%.</span></div>
