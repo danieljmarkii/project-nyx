@@ -48,6 +48,8 @@ The PM asked which outside techniques to take, said a past ruling should be reop
 - **Linear:** project *Workflow v2: free the decider*, six milestones, 28 rows in the dispatch layout. 25 issues are new ([CUL-2860](https://linear.app/projectnyx/issue/CUL-2860) to [CUL-2884](https://linear.app/projectnyx/issue/CUL-2884)); three existing ones moved in as rows (CUL-2234, CUL-2123, CUL-928).
 - **The charts page** (`docs/workflow-retro-2026-11.html`) carries both rounds.
 
+Later the same day a second session amended the plan (25 rows on the run order, new rows 29 to 33, eight parked); its record is its own, and the project page is the current truth. This session reviewed that amendment at the PM's request and reported six points back in chat.
+
 Not done: dispatch's plan script was not run against the new page, so its first run may report format drift. The other rulings reach their files in the rows that build them.
 
 ## Mistakes caught in session
