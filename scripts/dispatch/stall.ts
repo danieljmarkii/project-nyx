@@ -20,8 +20,8 @@ export const REQUIRED_CHECKS = ['App (typecheck + jest)', 'Edge Functions (deno 
 // its way is not raced by a note.
 export const STALL_GRACE_MIN = 10;
 
-// How far out the dispatcher arms its check-in while a child idles on running checks (or
-// sends `stopped: waiting on CI`): the repo's CI takes about ten minutes, so 90 would leave
+// How far out the dispatcher arms its check-in while a child idles on running checks (a
+// child no longer stops for CI, CUL-2869: its PR subscription wakes it): the repo's CI takes about ten minutes, so 90 would leave
 // a green PR waiting the whole gap #1084 waited.
 export const CI_WAIT_CHECK_IN_MIN = 20;
 

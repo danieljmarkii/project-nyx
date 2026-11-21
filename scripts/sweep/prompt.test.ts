@@ -41,6 +41,16 @@ describe('dispatch\'s paragraphs, copied, never re-written', () => {
     expect(TEMPLATE).toContain(norm(block));
   });
 
+  // D9 (CUL-2869): 58 no-op wake turns across 29 child tails, and a CI stop that woke a
+  // dispatcher to arm a check-in for what the child's own subscription already wakes.
+  it('a dispatch child has one wake source, and unsubscribes before its last message', () => {
+    expect(TEMPLATE).toContain('Your PR subscription is your one wake source: never send a stop or arm a check-in to wait on CI.');
+    expect(TEMPLATE).toContain('Just before your last message, unsubscribe from your PR (`unsubscribe_pr_activity`), so nothing wakes a session that is done.');
+    expect(TEMPLATE).not.toMatch(/waiting on CI|Stay subscribed/);
+    expect(DISPATCH).not.toContain('stopped: waiting on CI');
+    expect(render(pick())).toMatch(/just after you unsubscribe from your PR \(`unsubscribe_pr_activity`\)/);
+  });
+
   it('the sweep never-line is dispatch\'s with only the dispatcher exception removed', () => {
     const first = (s: string) => s.slice(0, s.indexOf('.') + 1);
     expect(first(norm(SWEEP_NEVER_LINE))).toBe(first(NEVER));
