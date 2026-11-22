@@ -198,13 +198,26 @@ jobs:
           # published update at launch and photograph that instead of this commit's JS.
           find ios -name Expo.plist -not -path '*/Pods/*' -print -exec \
             /usr/libexec/PlistBuddy -c 'Set :EXUpdatesEnabled false' {} \;
-          status=0
-          xcodebuild \
-            -workspace "$ws" -scheme "$scheme" -configuration Release \
-            -sdk iphonesimulator -destination "id=$SIM_UDID" \
-            -derivedDataPath "$SIM/dd" \
-            ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-            build > "$SIM/xcodebuild.log" 2>&1 || status=$?
+          build() {
+            status=0
+            xcodebuild \
+              -workspace "$ws" -scheme "$scheme" -configuration Release \
+              -sdk iphonesimulator -destination "id=$SIM_UDID" \
+              -derivedDataPath "$SIM/dd" \
+              ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+              build > "$SIM/xcodebuild.log" 2>&1 || status=$?
+          }
+          build
+          # expo-modules-autolinking gives its @ExpoModule scan a fixed 5000 ms (moduleScanner.js),
+          # which a cold scan on a loaded preview runner can overrun; Xcode then stops with
+          # "Build again to retry the scan". Only that failure gets one incremental rebuild,
+          # named in the summary; any other failure, or the same one twice, stays red.
+          if [ "$status" -ne 0 ] && grep -q "Scanning for @ExpoModule classes didn't complete" "$SIM/xcodebuild.log"; then
+            echo "::warning::the Expo module scan timed out (its fixed 5s budget); rebuilding once"
+            cp "$SIM/xcodebuild.log" "$SIM/xcodebuild-scan-timeout.log"
+            echo "BUILD_NOTE=rebuilt once: the Expo module scan overran its 5s budget" >> "$GITHUB_ENV"
+            build
+          fi
           grep -E 'error:|\*\* BUILD' "$SIM/xcodebuild.log" | tail -40 || true
           if [ "$status" -ne 0 ]; then
             echo "::error::xcodebuild failed with exit $status; the tail of its log follows, the whole log is an artifact"
@@ -410,6 +423,7 @@ jobs:
           name: sim-smoke-logs-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/sim/xcodebuild.log
+            ${{ runner.temp }}/sim/xcodebuild-scan-timeout.log
             ${{ runner.temp }}/sim/device.log
             ${{ runner.temp }}/sim/fixture-*.log
             ${{ runner.temp }}/sim/maestro-*.xml
@@ -438,6 +452,7 @@ jobs:
             echo "| Simulator | ${SIM_NAME:-?} |"
             echo "| Build | ${BUILD_KIND:-did not finish} |"
             echo "| Build time | ${BUILD_SECONDS:-?}s |"
+            if [ -n "${BUILD_NOTE:-}" ]; then echo "| Build note | $BUILD_NOTE |"; fi
             echo "| Job time | ${total}s |"
             echo "| Fingerprint | \`${FP:-?}\` |"
             echo "| Golden meal | ${FLOW_RESULT:-did not run}${FLOW_ATTEMPTS:+ (attempt $FLOW_ATTEMPTS of 2)} |"
