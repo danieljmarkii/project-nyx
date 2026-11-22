@@ -106,7 +106,10 @@ jobs:
             echo "::warning::Xcode ${WANT_XCODE} is not on this image; using $pick, the newest installed"
           fi
           sudo xcode-select -s "$pick/Contents/Developer"
-          ver="$(xcodebuild -version | head -1 | awk '{print $2}')"
+          # Read whole, never piped to head: under pipefail xcodebuild dies on the closed pipe.
+          xcodebuild -version > "$SIM/xcode-version.txt"
+          cat "$SIM/xcode-version.txt"
+          ver="$(awk 'NR==1{print $2}' "$SIM/xcode-version.txt")"
           echo "Selected $pick ($ver)"
           echo "version=$ver" >> "$GITHUB_OUTPUT"
           echo "XCODE_VERSION=$ver" >> "$GITHUB_ENV"
