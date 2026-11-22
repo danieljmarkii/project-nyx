@@ -41,6 +41,12 @@
 //     milestone, filed outside the project, is not in the population (the groomer's
 //     *Misrouted* report is its only reader).
 //   - "Covered" is a word-bounded match of the id in the page outside the Board.
+//   - The likelihood gate trusts the filer's `Trigger:` line as it trusts the tag. A rare
+//     line over a bug one owner hits weekly parks it; the source PR's adversarial pass is
+//     what checks the line. No line, or a cause outside the ruling's four, passes. What
+//     rests on the filer: a regression written with no "regress" in it, a class written
+//     with no "instance" or "class" in it, and a correction made only in a comment, which
+//     the sort never reads.
 
 import { normRow, type Page, type RowId } from './page.ts';
 
@@ -54,7 +60,7 @@ const DAY = 24 * 3600 * 1000;
 
 export type Direction = 'QUIET' | 'LOUD' | 'neither';
 export type HarmKind = 'quiet' | 'corruption' | 'exposure' | 'loss';
-export type ParkKind = 'err loud' | 'polish' | 'other';
+export type ParkKind = 'err loud' | 'polish' | 'other' | 'rare';
 
 export type Candidate = {
   id: string;
@@ -174,6 +180,37 @@ export function directionOf(description: string): Direction | undefined {
   return loud ? 'LOUD' : 'neither';
 }
 
+// The ship bar's likelihood gate (PM ruling 2026-10-22, CUL-2123). Before a project ships a
+// harm finding is fixed now only if one owner on one phone hits it in a normal week, it is
+// a regression, or it can leak or lose data. It parks only on a CLEAN line of its own,
+// `Trigger: rare (<cause>)` with exactly one of the ruling's four causes in the brackets
+// (list, bold or heading marks before it are fine; a `>` quote or a fenced line is a copy,
+// never its own). Every other shape errs loud and passes: no clean line; any other line
+// with "trigger" anywhere in it (`Triggered`, `meal_rollup_trigger`, a second instance in
+// any shape, a quoted rule), since the sort cannot tell a passing instance from prose; any
+// form of "regress"; any word for a leak or a loss; a negation or an unlisted cause.
+// `text` is the title and description together. Returns the clean value, or undefined.
+const CLEAN_RARE = /^[\s*_#-]*Trigger[*_`]*\s*:[*_`]*\s*(rare\s*\(\s*(?:two phones|timing|storage failure|clock skew)\s*\))[*_`]*\s*\.?\s*$/i;
+const LEAK_OR_LOSS = /\b(leak|expos|lose|loses|losing|loss|lost|delet|wipe|erase|overwrit)/i;
+// A class (it names instances, or calls itself one) always passes: one instance a normal
+// owner hits makes the class fixed now, and an instance need not say "trigger" (pass 2).
+const CLASS = /\b(instances?|class)\b/i;
+export function rareTrigger(text: string): string | undefined {
+  if (/regress/i.test(text) || LEAK_OR_LOSS.test(text) || CLASS.test(text)) return undefined;
+  let fenced = false;
+  let found: string | undefined;
+  for (const l of text.split('\n')) {
+    if (/^\s*(```|~~~)/.test(l)) fenced = !fenced;
+    const clean = fenced ? undefined : CLEAN_RARE.exec(l)?.[1];
+    if (clean) found ??= clean;
+    else if (/trigger/i.test(l)) return undefined;
+  }
+  return found;
+}
+
+// A parked finding holds nothing: its parent and `blocks` targets are offered for unlink.
+const unlinkOf = (c: Candidate) => [...(c.parentId ? [c.parentId] : []), ...(c.blocks ?? [])];
+
 export function isFinding(c: Candidate): boolean {
   return (
     hasDirectionLine(c.description) ||
@@ -278,6 +315,26 @@ export function sortFindings(input: SortInput): SortResult {
       if (!tag && readAway) s.why.push(`untagged, read as ${c.reading!.kind}: "${c.reading!.quote.trim()}"`);
 
       if (s.harm) {
+        // The likelihood gate, ahead of the Live harm door: a rare trigger parks, unless the
+        // finding can leak or lose data (rule 3 of the ruling). It decides fix now or park,
+        // never who rules: a clinical finding that passes still needs its ruling below.
+        // Scoped as ruled: this project's own findings, on a page that states its Ship bar.
+        // Another project's finding is that project's dispatcher's to gate.
+        const regressLabel = c.labels.some((l) => /regress/i.test(l));
+        const rare = c.inProject && input.page.shipBar && !regressLabel ? rareTrigger(`${c.title}\n${c.description}`) : undefined;
+        const leak = c.harm === 'exposure' || c.harm === 'loss' || hasLabel(c.labels, 'Gate: privacy');
+        if (rare && !leak) {
+          s.door = 4;
+          s.park = 'rare';
+          s.why.push(`fails the likelihood gate: Trigger "${rare}"; parked, Direction kept`);
+          const wasLive = hasLabel(c.labels, LIVE_HARM);
+          if (wasLive) writes.push({ issue: c.id, write: `remove label ${LIVE_HARM}`, why: s.why.join('; ') });
+          // A go-live it gates keeps its blocks: parking never ships a known QUIET finding.
+          const goLiveIds = new Set(Object.values(input.goLives ?? {}));
+          const rareUnlink = unlinkOf(c).filter((t) => !goLiveIds.has(t));
+          if (rareUnlink.length) s.unlink = rareUnlink;
+          continue;
+        }
         const live = liveReasons(c, input);
         const goLives = [...new Set((c.keys ?? []).map((k) => input.goLives?.[k]))];
         const missingGoLive = (c.keys ?? []).filter((k) => !input.goLives?.[k]).map((k) => `${k} has no go-live issue`);
@@ -326,8 +383,7 @@ export function sortFindings(input: SortInput): SortResult {
       s.door = 4;
       const k: ParkKind = tag === 'LOUD' || c.reading?.kind === 'loud' ? 'err loud' : tag === 'neither' ? c.kind ?? 'other' : c.reading?.kind ?? 'other';
       s.park = k;
-      const targets = [...(c.parentId ? [c.parentId] : []), ...(c.blocks ?? [])];
-      if (targets.length) s.unlink = targets;
+      if (unlinkOf(c).length) s.unlink = unlinkOf(c);
       s.why.push(`parked (${s.park})`);
       continue;
     }
@@ -431,6 +487,6 @@ function digestLine(sorted: Sorted[], input: SortInput): string {
   for (const s of gates) for (const g of s.goLives ?? []) byGate.set(g, (byGate.get(g) ?? 0) + 1);
   for (const [g, n] of byGate) parts.push(`${n} gate on ${g}`);
   const k = (p: ParkKind) => parked.filter((s) => s.park === p).length;
-  parts.push(`${parked.length} parked (${k('err loud')} err loud, ${k('polish')} polish, ${k('other')} other)`);
+  parts.push(`${parked.length} parked (${k('err loud')} err loud, ${k('polish')} polish, ${k('other')} other${k('rare') ? `, ${k('rare')} rare` : ''})`);
   return `Found since last run: ${parts.join(' · ')}`;
 }
