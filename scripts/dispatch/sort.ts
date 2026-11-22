@@ -41,6 +41,9 @@
 //     milestone, filed outside the project, is not in the population (the groomer's
 //     *Misrouted* report is its only reader).
 //   - "Covered" is a word-bounded match of the id in the page outside the Board.
+//   - The likelihood gate trusts the filer's `Trigger:` line as it trusts the tag. A rare
+//     line over a bug one owner hits weekly parks it; the source PR's adversarial pass is
+//     what checks the line. No line, or a cause outside the ruling's four, passes.
 
 import { normRow, type Page, type RowId } from './page.ts';
 
@@ -54,7 +57,7 @@ const DAY = 24 * 3600 * 1000;
 
 export type Direction = 'QUIET' | 'LOUD' | 'neither';
 export type HarmKind = 'quiet' | 'corruption' | 'exposure' | 'loss';
-export type ParkKind = 'err loud' | 'polish' | 'other';
+export type ParkKind = 'err loud' | 'polish' | 'other' | 'rare';
 
 export type Candidate = {
   id: string;
@@ -174,6 +177,24 @@ export function directionOf(description: string): Direction | undefined {
   return loud ? 'LOUD' : 'neither';
 }
 
+// The ship bar's likelihood gate (PM ruling 2026-10-22, CUL-2123). Before a project ships a
+// harm finding is fixed now only if one owner on one phone hits it in a normal week, it is
+// a regression, or it can leak or lose data. It parks only on an explicit
+// `Trigger: rare (<cause>)` naming one of the ruling's four causes; every Trigger value must
+// say so (a class goes by its worst instance), and `normal`, `regression`, an unreadable
+// value or no line at all passes. Returns the quoted rare value, or undefined: it passes.
+const TRIGGER = /\bTrigger\b[*_`\s]*[:|][*_`|\s]*([^\n|]*)/gi;
+export const RARE_CAUSES = /\b(two phones|timing|storage failure|clock skew)\b/i;
+export function rareTrigger(description: string): string | undefined {
+  const values = [...description.matchAll(TRIGGER)].map((m) => m[1].replace(/[*_`]/g, '').trim());
+  if (!values.length) return undefined;
+  for (const v of values) if (/\b(normal|regression)\b/i.test(v) || !/\brare\b/i.test(v) || !RARE_CAUSES.test(v)) return undefined;
+  return values[0];
+}
+
+// A parked finding holds nothing: its parent and `blocks` targets are offered for unlink.
+const unlinkOf = (c: Candidate) => [...(c.parentId ? [c.parentId] : []), ...(c.blocks ?? [])];
+
 export function isFinding(c: Candidate): boolean {
   return (
     hasDirectionLine(c.description) ||
@@ -278,6 +299,20 @@ export function sortFindings(input: SortInput): SortResult {
       if (!tag && readAway) s.why.push(`untagged, read as ${c.reading!.kind}: "${c.reading!.quote.trim()}"`);
 
       if (s.harm) {
+        // The likelihood gate, ahead of the Live harm door: a rare trigger parks, unless the
+        // finding can leak or lose data (rule 3 of the ruling). It decides fix now or park,
+        // never who rules: a clinical finding that passes still needs its ruling below.
+        const rare = rareTrigger(c.description);
+        const leak = c.harm === 'exposure' || c.harm === 'loss' || hasLabel(c.labels, 'Gate: privacy');
+        if (rare && !leak) {
+          s.door = 4;
+          s.park = 'rare';
+          s.why.push(`fails the likelihood gate: Trigger "${rare}"; parked, Direction kept`);
+          const wasLive = hasLabel(c.labels, LIVE_HARM);
+          if (wasLive) writes.push({ issue: c.id, write: `remove label ${LIVE_HARM}`, why: s.why.join('; ') });
+          if (unlinkOf(c).length) s.unlink = unlinkOf(c);
+          continue;
+        }
         const live = liveReasons(c, input);
         const goLives = [...new Set((c.keys ?? []).map((k) => input.goLives?.[k]))];
         const missingGoLive = (c.keys ?? []).filter((k) => !input.goLives?.[k]).map((k) => `${k} has no go-live issue`);
@@ -326,8 +361,7 @@ export function sortFindings(input: SortInput): SortResult {
       s.door = 4;
       const k: ParkKind = tag === 'LOUD' || c.reading?.kind === 'loud' ? 'err loud' : tag === 'neither' ? c.kind ?? 'other' : c.reading?.kind ?? 'other';
       s.park = k;
-      const targets = [...(c.parentId ? [c.parentId] : []), ...(c.blocks ?? [])];
-      if (targets.length) s.unlink = targets;
+      if (unlinkOf(c).length) s.unlink = unlinkOf(c);
       s.why.push(`parked (${s.park})`);
       continue;
     }
@@ -431,6 +465,6 @@ function digestLine(sorted: Sorted[], input: SortInput): string {
   for (const s of gates) for (const g of s.goLives ?? []) byGate.set(g, (byGate.get(g) ?? 0) + 1);
   for (const [g, n] of byGate) parts.push(`${n} gate on ${g}`);
   const k = (p: ParkKind) => parked.filter((s) => s.park === p).length;
-  parts.push(`${parked.length} parked (${k('err loud')} err loud, ${k('polish')} polish, ${k('other')} other)`);
+  parts.push(`${parked.length} parked (${k('err loud')} err loud, ${k('polish')} polish, ${k('other')} other${k('rare') ? `, ${k('rare')} rare` : ''})`);
   return `Found since last run: ${parts.join(' · ')}`;
 }

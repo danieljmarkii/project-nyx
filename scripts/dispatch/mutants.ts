@@ -132,7 +132,7 @@ const MUTANTS: Mutant[] = [
   { check: 'door 3 needs an unmerged row', file: 'sort.ts', from: "if (!row || input.rowState(row) === 'merged') return undefined;", to: 'if (!row) return undefined;' },
   { check: 'Waiting on PM suppresses the door-3 offer', file: 'sort.ts', from: ' || hasLabel(c.labels, WAITING_ON_PM) || c.id === input.index', to: ' || c.id === input.index' },
   { check: 'a page naming the issue covers it', file: 'sort.ts', from: 'new RegExp(`\\\\b${c.id}\\\\b`).test(input.page.plain) || !!c.skipped', to: '!!c.skipped' },
-  { check: 'unlink lists a parent as well as blocks', file: 'sort.ts', from: 'const targets = [...(c.parentId ? [c.parentId] : []), ...(c.blocks ?? [])];', to: 'const targets = [...(c.blocks ?? [])];' },
+  { check: 'unlink lists a parent as well as blocks', file: 'sort.ts', from: 'const unlinkOf = (c: Candidate) => [...(c.parentId ? [c.parentId] : []), ...(c.blocks ?? [])];', to: 'const unlinkOf = (c: Candidate) => [...(c.blocks ?? [])];' },
   { check: 'a leak stopgap switches the path off', file: 'sort.ts', from: "return harm === 'exposure' || harm === 'loss'\n    ? 'if the fix", to: "return false\n    ? 'if the fix" },
   { check: 'the digest counts only what was filed since the last run', file: 'sort.ts', from: '(created.get(s.id) ?? 0) > since', to: 'true' },
   // The two alarms (CUL-1872).
@@ -185,6 +185,27 @@ const MUTANTS: Mutant[] = [
   { check: "a forecast stopgap reads the rows under the root", file: 'alarms.ts', from: 'const s = stopgapFor([root, ...rowFacts], input.liveOf);', to: 'const s = stopgapFor([root], input.liveOf);' },
   { check: "a follow-up stopgap reads every one of the row's issues", file: 'alarms.ts', from: 'const s = stopgapFor(r.issues.map((i) => input.rowOutputs?.[i]), input.liveOf);', to: 'const s = stopgapFor([input.rowOutputs?.[r.issues[0]]], input.liveOf);' },
   { check: 'the allowlist-read keys include the engine keys', file: 'codeFacts.ts', from: "[...a, ...b]", to: '[...a]' },
+  // The likelihood gate (CUL-2123): ahead of the Live harm door, only an explicit rare
+  // trigger parks, a leak or loss always passes, and the rule text a child reads says so.
+  { check: 'the gate parks a rare trigger ahead of the Live harm door', file: 'sort.ts', from: 'if (rare && !leak) {', to: 'if (false) {' },
+  { check: 'a leak or a loss passes the gate', file: 'sort.ts', from: "const leak = c.harm === 'exposure' || c.harm === 'loss' || ", to: 'const leak = ' },
+  { check: 'Gate: privacy passes the gate', file: 'sort.ts', from: " || hasLabel(c.labels, 'Gate: privacy');", to: ';' },
+  { check: 'normal or regression passes the gate', file: 'sort.ts', from: '/\\b(normal|regression)\\b/i.test(v) || ', to: '' },
+  { check: 'a Trigger value must say rare', file: 'sort.ts', from: " || !/\\brare\\b/i.test(v)", to: '' },
+  { check: "a rare trigger must name one of the ruling's four causes", file: 'sort.ts', from: ' || !RARE_CAUSES.test(v)) return undefined;', to: ') return undefined;' },
+  { check: 'one passing Trigger line passes the class', file: 'sort.ts', from: 'for (const v of values) if (', to: 'for (const v of values.slice(0, 1)) if (' },
+  { check: 'no Trigger line passes the gate', file: 'sort.ts', from: '  if (!values.length) return undefined;\n', to: "  if (!values.length) return 'none';\n" },
+  { check: 'a parked rare finding loses Live harm', file: 'sort.ts', from: 'if (wasLive) writes.push(', to: 'if (false) writes.push(' },
+  { check: 'a parked rare finding is offered for unlink', file: 'sort.ts', from: '          if (unlinkOf(c).length) s.unlink = unlinkOf(c);\n          continue;', to: '          continue;' },
+  { check: 'the digest counts rare parks', file: 'sort.ts', from: "${k('rare') ? `", to: '${false ? `' },
+  { check: 'the page reads its Ship bar line', file: 'page.ts', from: "    shipBar: /^", to: '    shipBar: undefined && /^' },
+  { check: '§ The sort states the gate ahead of door 1', file: '../../.claude/commands/dispatch.md', from: '**1b · The likelihood gate, ahead of door 1**', to: '**1b · The likelihood gate**' },
+  { check: 'the gate keeps the clinical ruling', file: '../../.claude/commands/dispatch.md', from: 'a clinical finding that passes still needs its ruling', to: 'a clinical finding that passes is fixed' },
+  { check: "step 5's block carries the gate ahead of Live harm", file: '../../.claude/commands/dispatch.md', from: '   - The likelihood gate, ahead of `Live harm`:', to: '   - The likelihood gate:' },
+  { check: "step 5's block keeps the clinical ruling", file: '../../.claude/commands/dispatch.md', from: 'a clinical one still needs its ruling', to: 'a clinical one is fixed' },
+  { check: 'the page template carries the Ship bar', file: '../../.claude/commands/dispatch.md', from: '- **`Ship bar:`** one line under Done means', to: '- **Ship bar** under Done means' },
+  { check: '/wrap names the gate', file: '../../.claude/commands/wrap.md', from: 'the likelihood gate (§ The sort, 1b)', to: 'the gate' },
+  { check: 'the groomer does not re-sort a rare park', file: '../../.claude/skills/backlog-groomer/SKILL.md', from: 'unless its every `Trigger:` line is rare', to: 'unless rare' },
 ];
 
 function suiteGreen(): boolean {
