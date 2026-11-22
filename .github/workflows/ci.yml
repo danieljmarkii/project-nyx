@@ -326,13 +326,21 @@ jobs:
           # 2026-07-25 — those attempts each failed cleanly in ~39s — but a
           # retry loop that only handles clean failures is half a retry loop.)
           for attempt in 1 2 3 4; do
-            # `|| status=$?`, not `if ...; then` — a compound `if` whose
+            # `|| status=...`, not `if ...; then` — a compound `if` whose
             # condition fails and has no else branch itself returns 0, so `$?`
             # read after the `fi` is 0 and the real exit code is lost.
+            # PIPESTATUS[0] is deno's code (124 on a timeout), not tee's.
             status=0
-            timeout 120 deno cache --lock=deno.lock "${modules[@]}" || status=$?
+            NO_COLOR=1 timeout 120 deno cache --lock=deno.lock "${modules[@]}" 2>&1 | tee "${RUNNER_TEMP:-/tmp}/deno-cache.log" || status=${PIPESTATUS[0]}
             if [ "${status}" -eq 0 ]; then
               exit 0
+            fi
+            # A module that does not parse fails the same way on every attempt, so it
+            # is a code failure: say so now rather than retry it and blame the CDN
+            # (CUL-2861: a syntax error used to end in "upstream CDN failure, re-run").
+            if grep -qE 'SyntaxError|Relative import path|Module not found "file://' "${RUNNER_TEMP:-/tmp}/deno-cache.log"; then
+              echo "::error::deno cache failed on a module in this repo (the file and line are above). This is a code failure, not the CDN; fix the file, a re-run will fail the same way"
+              exit 1
             fi
             if [ "${status}" -eq 124 ]; then
               reason="timed out after 120s (stalled fetch)"
@@ -347,7 +355,7 @@ jobs:
             echo "::warning::deno cache attempt ${attempt} ${reason}; retrying in ${delay}s"
             sleep "${delay}"
           done
-          echo "::error::could not fetch the Edge Function module graph after 4 attempts — this is an upstream CDN failure (deno.land / esm.sh), not a code failure; re-run the job"
+          echo "::error::could not fetch the Edge Function module graph after 4 attempts. If the error above names a deno.land or esm.sh URL (a 5xx, a timeout, a refused connection), it is an upstream CDN failure: re-run the job. If it names a file in this repo, it is the code: fix it"
           exit 1
 
       # `--cached-only` forbids network here, so this step can only fail on the
