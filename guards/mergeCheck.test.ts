@@ -103,10 +103,18 @@
 //   ✗ the same read as a broken landing (exit 1) instead of a check that did not run
 //   ✗ a ci.yml run: line with shell syntax run anyway
 //
+// Added after the isolated code review the same day (its two false passes and a
+// misread), every one killed:
+//
+//   ✗ a landing that changes package-lock.json typed against the old node_modules
+//   ✗ a missing or renamed "Deno check (scripts)" step skipped instead of exit 3
+//   ✗ a lost local module (`Module not found "file://`) read as a check that did not run
+//
 // HOW DENO IS FAKED. CI's jest job has no Deno, so --verify's Deno is a stub named by
 // MERGE_CHECK_DENO: a toy checker that fails when a file it is asked to check holds
 // `use:NAME` and no checked-in file under supabase/ or scripts/ holds `def:NAME`, which is
-// enough to build two trees that pass apart and fail together. Its `--version` reports
+// enough to build two trees that pass apart and fail together. A checked file holding
+// `import:NAME` with no supabase/functions/NAME.ts fails as Deno does on a lost module. Its `--version` reports
 // FAKE_DENO_VERSION (default CI's 2.9.4), FAKE_DENO_OFFLINE makes it fail the way an
 // unreachable registry does, and FAKE_DENO_LOG records each call's directory and
 // arguments. tsc is the REAL one, this repo's, linked into each fixture clone.
@@ -280,9 +288,13 @@ function cloneOf(fx: Fixture, name: string): string {
 }
 
 /** Another session's PR lands on main. */
-function landOnMain(fx: Fixture, files: Record<string, string>, message: string): void {
+function landOnMain(fx: Fixture, files: Record<string, string | null>, message: string): void {
   git(fx.mainClone, ['pull', '--quiet', '--ff-only', 'origin', 'main']);
-  for (const [rel, body] of Object.entries(files)) write(fx.mainClone, rel, body);
+  // null deletes the file, as a PR that removes it would.
+  for (const [rel, body] of Object.entries(files)) {
+    if (body === null) git(fx.mainClone, ['rm', '--quiet', rel]);
+    else write(fx.mainClone, rel, body);
+  }
   commitAll(fx.mainClone, message);
   git(fx.mainClone, ['push', '--quiet', 'origin', 'main']);
 }
@@ -350,6 +362,11 @@ beforeAll(() => {
       '  if [ -d "$a" ]; then while IFS= read -r f; do files+=("$f"); done < <(find "$a" -type f -name "*.ts" | sort)',
       '  elif [ -f "$a" ]; then files+=("$a")',
       '  else echo "error: Module not found \"$a\"" >&2; exit 1; fi',
+      'done',
+      'for f in ${files[@]+"${files[@]}"}; do',
+      '  for m in $(grep -hoE "import:[a-z]+" "$f" | sed "s/import://"); do',
+      '    if [ ! -f "supabase/functions/$m.ts" ]; then echo "error: Module not found \\"file://$PWD/supabase/functions/$m.ts\\"."; echo "    at file://$PWD/$f:1:1"; exit 1; fi',
+      '  done',
       'done',
       'defs=$(grep -rhoE "def:[a-z]+" supabase scripts 2>/dev/null | sed "s/def://" | sort -u)',
       'bad=0',
@@ -1130,6 +1147,33 @@ describe('scripts/steward/merge-check.sh', () => {
       expect(r.out).toContain("  deno: TS2304 [ERROR]: Cannot find name 'send'.");
       expect(r.out).not.toContain('  tsc:');
       expect(r.code).toBe(1);
+    });
+
+    it('a landing that loses a local module the branch imports is CONFLICT, never "did not run"', () => {
+      const fx = typedFixture();
+      landOnMain(fx, { 'supabase/functions/shared.ts': 'def:fmt\n' }, 'a shared module');
+      const s = typedSession(fx, 'claude/feature', { 'supabase/functions/remind/index.ts': 'import:shared\n' });
+      landOnMain(fx, { 'supabase/functions/shared.ts': null }, 'delete the shared module');
+      const r = verify(s);
+      expect(r.out).toContain('landing types: BROKEN');
+      expect(r.out).toMatch(/\n {2}deno: error: Module not found "file:\/\/[^\n]*supabase\/functions\/shared\.ts"/);
+      expect(r.code).toBe(1);
+    });
+
+    it('a landing that changes the dependencies, or whose ci.yml lost the scripts step by its exact name, is exit 3', () => {
+      const fx = typedFixture();
+      const s = typedSession(fx, 'claude/feature', { 'src/extra.ts': 'export const extra = 1;\n' });
+      landOnMain(fx, { 'package-lock.json': '{"lockfileVersion": 3}\n' }, 'main bumps a dependency');
+      const deps = verify(s);
+      expect(deps.code).toBe(3);
+      expect(deps.out).toContain('--verify: the landing changes package-lock.json');
+
+      const fx2 = typedFixture();
+      const s2 = typedSession(fx2, 'claude/feature', { 'src/extra.ts': 'export const extra = 1;\n' });
+      landOnMain(fx2, { '.github/workflows/ci.yml': CI_YML.replace('- name: Deno check (scripts)', '- name: "Deno check (scripts)"') }, 'quote the step name');
+      const step = verify(s2);
+      expect(step.code).toBe(3);
+      expect(step.out).toContain('--verify: ci.yml has no "Deno check (scripts)" step');
     });
 
     it('never passes when it cannot run: no deno, the wrong deno, no node_modules, an offline registry, a run: line with shell syntax', () => {

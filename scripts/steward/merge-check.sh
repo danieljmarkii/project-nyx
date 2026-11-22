@@ -107,11 +107,14 @@
 #     runtime are CI's to catch on main. --verify adds the TYPE half of that, nothing more:
 #     tests are not run on the landing, so a landing that types clean and fails a test
 #     is still CI's to catch on main.
-#   - --verify checks the landing against THIS clone's node_modules. A landing that
-#     changes package-lock.json is typed against the old dependencies, which errs toward a
-#     false block, never a false pass. Its Deno steps are the `run:` lines of ci.yml's
-#     "Deno check (functions)" and "Deno check (scripts)" steps as the landing has them;
-#     a step renamed away is exit 3 for functions and silently not run for scripts.
+#   - --verify checks the landing against THIS clone's node_modules, so a landing whose
+#     package.json or package-lock.json differs from this branch's is exit 3: typed against
+#     the old dependencies it could pass with an API main's bump removed (code review). Its
+#     Deno steps are the `run:` lines of ci.yml's "Deno check (functions)" and "Deno check
+#     (scripts)" steps as the landing has them, matched by exact name: either step renamed,
+#     quoted or missing is exit 3. A step whose `run:` is a block (`run: |`) is exit 3.
+#   - The "current" skip trusts that this head's own CI ran and passed; the gate's
+#     every-check-passed condition is what proves that, never this script.
 
 set -uo pipefail
 export LC_ALL=C               # one collation for every sort and comm below
@@ -712,6 +715,11 @@ if [ "$verify" -eq 1 ]; then
     root_dir=$(pwd)
     tsc_js="$root_dir/node_modules/typescript/bin/tsc"
     [ -f "$tsc_js" ] || die "--verify: no node_modules/typescript under $root_dir (run npm ci); a landing that cannot be type checked is never a pass"
+    for dep in package.json package-lock.json; do
+      if [ "$(git rev-parse --verify --quiet "$landed_tree:$dep")" != "$(git rev-parse --verify --quiet "$head:$dep")" ]; then
+        die "--verify: the landing changes $dep, so this clone's node_modules is not the landing's; bring $base_ref in, npm ci, push, and run this again"
+      fi
+    done
     command -v "$deno_bin" >/dev/null 2>&1 || die "--verify: no $deno_bin on PATH; a landing that cannot be type checked is never a pass"
     ci_yml=$(git show "$landed_tree:.github/workflows/ci.yml" 2>/dev/null) || die "--verify: the landing has no .github/workflows/ci.yml to read the Deno pin and steps from"
     pinned=$(printf '%s\n' "$ci_yml" | sed -nE 's/^[[:space:]]*deno-version:[[:space:]]*([^[:space:]#]+).*/\1/p' | head -n 1)
@@ -729,10 +737,7 @@ if [ "$verify" -eq 1 ]; then
     deno_cmds=()
     for step in "Deno check (functions)" "Deno check (scripts)"; do
       cmd=$(step_run "$step")
-      if [ -z "$cmd" ]; then
-        [ "$step" = "Deno check (functions)" ] && die "--verify: ci.yml has no \"$step\" step with a run: line to mirror"
-        continue
-      fi
+      [ -n "$cmd" ] || die "--verify: ci.yml has no \"$step\" step with a run: line to mirror (matched by exact name)"
       # Only a plain `deno check` with arguments is run: the line comes from the landing's
       # own ci.yml, and nothing in it may chain, substitute or redirect.
       case "$cmd" in
@@ -757,7 +762,7 @@ if [ "$verify" -eq 1 ]; then
     : >"$tmp/types.out"
     # tsc exits 1 or 2 on diagnostics. Anything else, or a failure that names no TS error
     # (node missing, killed, out of memory), is a check that did not run.
-    (cd "$land" && node "$tsc_js" --noEmit -p .) >"$tmp/tsc.out" 2>&1
+    (cd "$land" && node "$tsc_js" --noEmit --pretty false -p .) >"$tmp/tsc.out" 2>&1
     tsc_rc=$?
     if [ "$tsc_rc" -ne 0 ]; then
       if { [ "$tsc_rc" -eq 1 ] || [ "$tsc_rc" -eq 2 ]; } && grep -qE 'error TS[0-9]+' "$tmp/tsc.out"; then
@@ -774,11 +779,14 @@ if [ "$verify" -eq 1 ]; then
       (cd "$land" && NO_COLOR=1 "$deno_bin" check $args) >"$tmp/deno.out" 2>&1
       deno_rc=$?
       [ "$deno_rc" -eq 0 ] && continue
-      # A type error is named TSnnnn. Any other failure (a module the network would not
-      # serve, a crash) says nothing about the landing's types.
-      if [ "$deno_rc" -eq 1 ] && grep -qE 'TS[0-9]+' "$tmp/deno.out"; then
+      # A type error opens its line with TSnnnn [ERROR]; a local module the landing lost (a
+      # rename on main that a branch still imports) is `Module not found "file://`, as ci.yml's
+      # own warm step reads it. Any other failure (a module the network would not serve, a
+      # crash) says nothing about the landing's types.
+      broken_re='^TS[0-9]+ \[ERROR\]|Module not found "file://|Relative import path'
+      if [ "$deno_rc" -eq 1 ] && grep -qE "$broken_re" "$tmp/deno.out"; then
         landing_broken=1
-        grep -E 'TS[0-9]+|^[[:space:]]+at ' "$tmp/deno.out" | sed 's/^[[:space:]]*/deno: /' >>"$tmp/types.out"
+        grep -E "$broken_re|^[[:space:]]+at " "$tmp/deno.out" | sed 's/^[[:space:]]*/deno: /' >>"$tmp/types.out"
       else
         die "--verify: deno check $args did not run on the landing (exit $deno_rc): $(head -c 200 "$tmp/deno.out" | tr '\n' ' ')"
       fi
