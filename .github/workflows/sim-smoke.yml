@@ -148,7 +148,9 @@ jobs:
                   return 0;
                 });
               for (const rt of ios.reverse()) {
-                const phone = devs[rt].find(d => d.isAvailable && /^iPhone/.test(d.name));
+                // One screen only: a foldable (the iPhone Duo) has two displays, and
+                // `simctl io screenshot` refuses to pick one.
+                const phone = devs[rt].find(d => d.isAvailable && /^iPhone/.test(d.name) && !/Duo|Fold/i.test(d.name));
                 if (phone) { console.error(`Simulator: ${phone.name} on ${rt}`); process.stdout.write(phone.udid); return; }
               }
               process.exit(1);
