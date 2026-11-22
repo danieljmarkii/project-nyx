@@ -1,6 +1,6 @@
 // Proof by MUTATION for `scripts/steward/merge-check.sh` (CUL-1497).
 //
-// WHY A GUARD AT ALL. The script is what `/wrap and merge` trusts to say a branch is safe
+// WHY A GUARD AT ALL. The script is what a `/wrap` merge trusts to say a branch is safe
 // to land, and its most important answer is the one a session would never notice going
 // wrong: "lost lines: none". A detector that has only ever said "none" has not been tested
 // (C-18), so every verdict here is driven both ways against a repository shaped like the

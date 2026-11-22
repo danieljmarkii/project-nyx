@@ -181,7 +181,7 @@ Never hardcode a key or token in source; client variables use the `EXPO_PUBLIC_`
 2. Make changes via Claude Code
 3. Push branch → open PR with a detailed description (see PR format below)
 4. Test via Expo QR code on device
-5. Merge PR to `main` (by hand, or `/wrap and merge`)
+5. `/wrap` merges it on the steward gate (`/wrap and hold` keeps it open)
 
 **PR descriptions must include:**
 - What changed and why (not just what — the why is the important part)
@@ -194,20 +194,20 @@ Never hardcode a key or token in source; client variables use the `EXPO_PUBLIC_`
 
 **Rules:**
 - PRs required before merging to `main`. No direct commits to `main`.
-- **CI runs on every PR (B-390, `.github/workflows/ci.yml`):** `App (typecheck + jest)` and `Edge Functions (deno test)` are required checks on an Active `main` ruleset with an empty bypass list (plus `App (jest, non-UTC timezones)`; making it required is CUL-586), so a red check blocks the merge. The Deno job's `npm ci` and its `--allow-read=supabase/functions` are load-bearing, not cruft; actions are SHA-pinned (bump the SHA and its version comment together); never fix a red run by weakening the check (`--no-check`, `continue-on-error`, dropping a suite) without saying so in the PR.
+- **CI runs on every PR (B-390, `.github/workflows/ci.yml`):** `App (typecheck + jest)` and `Edge Functions (deno test)` are to be required by a `main` ruleset with no bypass (CUL-1491; `App (jest, non-UTC timezones)` too, CUL-586). Until it exists GitHub blocks nothing, and steward §7's gate is the only block. The Deno job's `npm ci` and its `--allow-read=supabase/functions` are load-bearing, not cruft; actions are SHA-pinned (bump the SHA and its version comment together); never fix a red run by weakening the check (`--no-check`, `continue-on-error`, dropping a suite) without saying so in the PR.
 - Schema changes always get their own PR — never bundle a schema change with UI work.
-- Squash merge to keep `main` history clean and linear.
-- **Branches (CUL-1497):** merge `main` in only when a branch conflicts or needs code from it; never rebase a pushed branch (save a stack you created) or take one side of a file wholesale. A self-merge needs the PM's word (`/wrap and merge`) or a `/dispatch` child's prompt (one that deploys or edits the gate: the PM's only, CUL-1654) and the gate in `.claude/skills/steward/SKILL.md` §7 _(account: `docs/engineering-lessons.md` §P-15)_
+- Squash merge.
+- **Branches (CUL-1497):** merge `main` in only when a branch conflicts or needs code from it; never rebase a pushed branch (save a stack you created) or take one side of a file wholesale. Every session merges its own PR, never another's, once the gate in `.claude/skills/steward/SKILL.md` §7 passes, `--verify` included (PM, 2026-10-28, CUL-2234); a deploy or gate edit (CUL-1654), an unapplied migration, a device check or a hold waits for the PM _(account: `docs/engineering-lessons.md` §P-15)_
 - Do not merge a PR if the issue's QA criteria are not yet met.
-- **One PR per session.** The end-of-session `docs/sessions/` record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — not a separate "record the merge" PR afterward. Write the session record's outcome as `shipped via #<n>` (the PR number is assigned at creation, drafts included), never as `merged to main (#<n>)` — the post-merge phrasing is what forces the second PR. **Exception:** if the work PR was already merged mid-session, the status update is a small standalone follow-up. (Mechanics in `/wrap`.)
+- **One PR per session.** The end-of-session `docs/sessions/` record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — not a separate "record the merge" PR afterward. Write the session record's outcome as `shipped via #<n>` (the PR number is assigned at creation, drafts included), never as `merged to main (#<n>)`. **Exception:** if the work PR was already merged mid-session, the status update is a small standalone follow-up. (Mechanics in `/wrap`.)
 - **Two repos (2026-10-11):** every session starts in `project-nyx`, website work included. A `getculprit.app` change adds `culprit-web` to the session (cloud `add_repo` with push; local `claude --add-dir ../culprit-web`), branches from its `main`, and still lands its record in the session's project-nyx PR, the one `/dispatch` reads; `docs/legal/` stays the source the site publishes. Only its `main` deploys the site; other branches never build (CUL-1877). Such issues carry `Repo: culprit-web`.
 
-**PR check-ins — arm at most one, never a standing chain (instituted 2026-07-25).** A session that opens a PR may schedule a self check-in to catch what webhooks miss. Bound it:
+**PR check-ins — arm at most one, never a standing chain (instituted 2026-07-25).** A PR's session may arm a self check-in to catch what webhooks miss:
 
-- **Arm at most one check-in, ~90 minutes out, and only while sibling sessions are actively landing on `main`.** If nothing is in flight, arm nothing — there is no event to catch.
-- **Stop after one check-in that finds nothing.** Do not re-arm on a no-op. A chain that re-arms unconditionally can only terminate on merge, and PRs here sit open for weeks.
-- **Never arm one at `/wrap`**, nor overnight (one exception: `/dispatch`'s 07:30 launch of rows held for daylight, PM 2026-10-03): a merge conflict wakes the PR's own subscription, so a timer adds nothing.
-- **Never poll on an interval shorter than ~90 minutes.** An hourly cadence lands past the cache TTL, so each wake re-sends the whole context at full price.
+- **Arm at most one, ~90 minutes out, only while siblings are landing on `main`.** Nothing in flight, nothing to catch.
+- **Stop after one that finds nothing.** A chain that re-arms can only end on merge.
+- **Never arm one at `/wrap`**, nor overnight (one exception: `/dispatch`'s 07:30 launch of rows held for daylight, PM 2026-10-03): a merge conflict wakes the PR's own subscription, so a timer adds nothing. **Nor to wait on CI:** the subscription wakes the merge, and if the main suite has not reported 20 minutes after ready, read the check runs (steward §7).
+- **Never poll more often than ~90 minutes:** a wake past the cache TTL re-sends the whole context.
 
 **Merge → Linear status — reference `CUL-NNN` in every PR (instituted 2026-08-16).** Linear (team Culprit) owns issue status, and the native GitHub↔Linear integration moves an issue Todo/Backlog → In Progress → Done automatically **when a PR references it**. So:
 

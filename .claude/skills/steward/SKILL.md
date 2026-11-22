@@ -1,13 +1,13 @@
 ---
 name: steward
-description: Use when a Nyx branch needs `main` brought in, a PR shows a merge conflict, a session is about to merge its own PR (`/wrap and merge`, or a `/dispatch` child, picked or `auto`), or a project is being split into PRs that will run as parallel sessions. Loads the repo's branch rules: update a branch only when it conflicts or needs code from `main`; merge `main` in and never rebase a pushed branch; resolve each kind of conflict by its rule (lists keep both, lockfiles regenerate, two real edits to the same logic stop for the PM); prove the result with `scripts/steward/merge-check.sh`, which also catches a resolution that drops lines main added; merge only through one gate, on the PM's typed word or a `/dispatch` child's prompt; and keep shared files out of parallel lanes. Cloud sessions that own a PR read this file before working its CI and review events.
+description: Use when a Nyx branch needs `main` brought in, a PR shows a merge conflict, a session is about to merge its own PR (`/wrap`, or a `/dispatch` child, picked or `auto`), or a project is being split into PRs that will run as parallel sessions. Loads the repo's branch rules: update a branch only when it conflicts or needs code from `main`; merge `main` in and never rebase a pushed branch; resolve each kind of conflict by its rule (lists keep both, lockfiles regenerate, two real edits to the same logic stop for the PM); prove the result with `scripts/steward/merge-check.sh`, which also catches a resolution that drops lines main added; merge your own PR the moment one gate passes (every session; the PM's word only for its exceptions); and keep shared files out of parallel lanes. Cloud sessions that own a PR read this file before working its CI and review events.
 ---
 
 # Steward: branches, conflicts and merges
 
 ## Why this exists
 
-Every part of a project is its own branch off `main`, and sessions end with `/wrap and merge`. Until CUL-1497 the "and merge" half was improvised. Measured over every session branch: clean merges were never the risk (a branch merely behind `main` lands fine); the resolution is, and a session never notices a resolution that quietly dropped someone else's lines. So this file makes resolving a procedure, and the script makes the result checkable. The measurements: `docs/engineering-lessons.md` §P-15.
+Every part of a project is its own branch off `main`, and a session's `/wrap` merges its PR. Until CUL-1497 the merge was improvised. Clean merges were never the risk; the resolution is, and a session never notices one that dropped someone else's lines. So resolving is a procedure here and the script checks the result (measurements: `docs/engineering-lessons.md` §P-15).
 
 ## 1. The model
 
@@ -57,7 +57,7 @@ Run `scripts/steward/merge-check.sh` again after resolving, and before any merge
 - **`REVIEW`**: expected after any conflict resolution. It lists every line `main` added after your fork point that the result no longer has, outright deletions first (`--all` for more than 20); every line `main` DELETED after your fork point that the result brings back (`back`); any duplicate migration number, with `main` or with an open PR you named (and any PR you named that it could not read); any conflict marker left in; and `main`'s own CI when it is red or could not be read. Read each line:
   - `deleted` (nothing stands in its place): restore it, unless you moved it to another file on purpose.
   - `replaced` (your resolution rewrote it): confirm `main`'s intent survived in the replacement. Read the line itself, never the tag: reverting `main`'s value to your branch's old one is also a replacement.
-  - `back` (main deleted it, your resolution returned it): delete it again, unless your branch needs that exact line; on the record (2026-08-23) this is how four raw `<Text>`s returned over main's `ThemedText` sweep.
+  - `back` (main deleted it, your resolution returned it): delete it again, unless your branch needs that exact line.
   - A duplicate migration number: renumber as in §4. A conflict marker: finish the resolution.
   - `production:` (landing deploys an Edge Function, or edits the production gate, the deploy path or this check; CUL-1654): **never cleared in writing.** Only the PM's typed `merge` clears it (§7). The lines under it name the functions and why each deploys (`shipping code changed`, `new function`, `hold released`, or `could not tell`, which counts as deploying) and the gate files.
   - `main's CI: RED`: do not land on it. Wait for the fix, or be it: a branch that contains the red commit, touches a file changed since `main` was last green, and has its own CI passed on that head reads as the fix and stays `CLEAN`. A fix the check cannot see (a date-pinned test, nothing changed) is cleared in writing. `could not read` is never green: read `main`'s latest CI run with `actions_list` and say what it was.
@@ -71,20 +71,16 @@ Run `scripts/steward/merge-check.sh` again after resolving, and before any merge
 
 ## 7. Merging your own PR
 
-**Who may merge, one gate.** A session merges its own PR (the one on its branch), squash, only:
-
-- when the PM said so in this session (`/wrap and merge`), or
-- as a `/dispatch` child (picked, queued or `auto`), exactly as its prompt allows (`.claude/commands/dispatch.md` step 5).
-
-The one session that merges a PR not its own is the dispatcher, and only on the PM's `merge #<n>` typed in it (`dispatch.md` § Authority), through the same gate. An approval counts only in the session where the PM typed it: a relayed or quoted one authorizes nothing. This file grants none of these. **The gate** is the one `/dispatch` writes into its children's prompts; keep the two lists identical. On a fresh read taken immediately before the merge, never one from before a CI wait:
+**Who may merge, one gate (PM, 2026-10-28, CUL-2234).** Every session merges its own PR (the one on its branch), squash, the moment the gate passes: plain `/wrap` does it, and a `/dispatch` child does it as its prompt allows (`dispatch.md` step 5). The PM's word is needed only for the gate's exceptions: a production write, an unapplied migration, a pending device check, or the PM's hold (`/wrap and hold`). **A session never merges another session's PR**; the one that may is the dispatcher, on the PM's `merge #<n>` typed in it (`dispatch.md` § Authority), through the same gate. An approval counts only in the session where the PM typed it: a relayed or quoted one authorizes nothing. **The gate** is the one `/dispatch` writes into its children's prompts; keep the two lists identical. On a fresh read taken immediately before the merge, never one from before a CI wait:
 
 - it is not a draft;
 - every check on its head commit has completed and passed (Claude Approvals included, where it runs);
 - GitHub reports it mergeable with no conflict;
-- the head is the commit those checks ran on, and the commit `scripts/steward/merge-check.sh` called `CLEAN` (or whose `REVIEW` is cleared in writing, §5);
-- **a production write waits for the PM's typed `merge` (CUL-1654, PM ruling 2026-10-10).** When the check prints a `production:` line, stop and show the PM its lines (the functions and why each deploys, the gate files), then merge only on a `merge` the PM types AFTER seeing them, in the session that merges (`merge #<n>` in the dispatcher, whose *Needs you* line shows them). A `/wrap and merge` typed before the check ran never covers it: the PM had not seen the list. A dispatched child never makes this merge on its prompt, a pick or an `auto` marker; it leaves the PR green and stops (`dispatch.md` step 5). The word covers the head and the list it was typed under; a push that changes either needs it again;
+- the head is the commit those checks ran on, and the commit `scripts/steward/merge-check.sh --verify` called `CLEAN` (or whose `REVIEW` is cleared in writing, §5);
+- **a production write waits for the PM's typed `merge` (CUL-1654, PM ruling 2026-10-10).** When the check prints a `production:` line, stop and show the PM its lines (the functions and why each deploys, the gate files), then merge only on a `merge` the PM types AFTER seeing them, in the session that merges (`merge #<n>` in the dispatcher, whose *Needs you* line shows them). A word typed before the check ran never covers it: the PM had not seen the list. A dispatched child never makes this merge on its prompt, a pick or an `auto` marker; it leaves the PR green and stops (`dispatch.md` step 5). The word covers the head and the list it was typed under; a push that changes either needs it again;
 - the issue's Definition of Done passes, adversarial review included where the issue requires it;
-- the PR holds no migration that is unapplied and needs none.
+- the PR holds no migration that is unapplied and needs none;
+- no device check the issue's QA names is pending, and the PM has not said hold.
 
 A migration is applied only as CLAUDE.md's migration rule says (after the PM types its number, `apply <NNN>`, in the applying session); its PR then passes the last condition and merges on the PM's word once checked. A dispatched child never applies or merges one.
 
@@ -93,9 +89,9 @@ Anything short of that: do not merge, and say which condition failed as the firs
 **The sequence:**
 
 1. Everything that rides in the PR is committed and pushed, the session record included with its learning line (`/wrap` writes both before the merge).
-2. Run the check with the head branches of the other open PRs updated in the last 7 days (`list_pull_requests`); when your PR adds a migration, pass every open PR's head branch, since a parked PR still holds its number. `CONFLICT` sends you through §3 to §6 and back here.
-3. Mark the PR ready, then wait for the checks: in a cloud session, subscribe to the PR's activity and end the turn, and the CI result usually wakes you, but not always (CUL-1623: #1084's child was subscribed, woke on an early one-job suite, ended its turn, and the main suite's green never woke it), so a `/dispatch` child's missed wake is caught by the dispatcher's stalled-child note (`dispatch.md` step 9.9); elsewhere, watch the check runs with a Monitor until-loop. Never a bare sleep, never an empty commit to retrigger CI. If the repository allows auto merge, enabling it (squash) after marking ready replaces steps 3 and 4, and the merge event wakes the subscribed session for steps 5 and 6.
-4. Take the fresh read, apply the gate, squash merge, title unchanged.
+2. At the first push, run the check with the head branches of the other open PRs updated in the last 7 days (`list_pull_requests`); when your PR adds a migration, pass every open PR's head branch, since a parked PR still holds its number. `CONFLICT` sends you through §3 to §6 and back here.
+3. Mark the PR ready, then wait for the checks: in a cloud session, subscribe to the PR's activity and end the turn; elsewhere, a Monitor until-loop on the check runs. A wake can be one suite finishing, never the whole PR (CUL-1623), so read every check run on each wake, and **if the main suite has not reported 20 minutes after ready, read the runs yourself**. A `/dispatch` child's missed wake is the dispatcher's stalled-child note (`dispatch.md` step 9.9). Never a bare sleep, never an empty commit to retrigger CI, never auto merge (it skips step 4).
+4. **Immediately before the merge, run the check again with `--verify`**: when `main` moved since CI ran, it type checks the simulated landing (`tsc`, and CI's `deno check` steps at CI's pinned Deno), the conflict git cannot see (72918c0, 2026-10-03). A broken landing is `CONFLICT` (§3); exit 3 is never a pass. Then the fresh read, the gate, the squash merge, title unchanged.
 5. **Report.** Run the check again with `--head origin/main` and the same branch list, and give the PM one line naming each open PR that now conflicts with `main`. Its own session resolves it at its own wrap.
 6. `/wrap` step 4's read-back of every issue the PR named.
 
@@ -110,14 +106,14 @@ When a project's run order splits work into PRs that run as parallel sessions, *
 - a screen several parts edit (`app/(tabs)/history.tsx`)
 - the shared sync module (`lib/sync.ts`)
 
-The project's own spec is the one shared file that stays parallel. Each part writes its rulings into it, so two parts bump the header to the same version and add a changelog row at the same spot (History v2, twice on 2026-09-25); that conflict is mechanical (§4), so expect it and resolve it by the rule rather than serializing the lanes.
+The project's own spec is the one shared file that stays parallel. Each part writes its rulings into it, so two parts bump the header to the same version and add a changelog row at the same spot; that conflict is mechanical (§4), so expect it and resolve it by the rule rather than serializing the lanes.
 
-`/dispatch` keeps the files in the list one at a time across the whole repo, beside migrations, `CLAUDE.md`, `STATUS.md`, guard registries and `supabase/functions/generate-signal/pipeline.ts`, reading every open PR's changed files from GitHub (a parked PR keeps holding its files). When writing the run order, either give every shared file to part 0 (it adds each later part's entry up front, so the later parts touch only their own files), or put the parts that share a file in strict order. The record behind this rule: Design v2's four parallel PRs (2026-09-21) shared four files and conflicted three times in one evening. History v2's five (2026-09-25) partitioned the code down to one shared file that merged clean, and still conflicted twice, both times on the spec they all wrote rulings into.
+`/dispatch` keeps the files in the list one at a time across the whole repo, beside migrations, `CLAUDE.md`, `STATUS.md`, guard registries and `supabase/functions/generate-signal/pipeline.ts`, reading every open PR's changed files from GitHub (a parked PR keeps holding its files). When writing the run order, either give every shared file to part 0 (it adds each later part's entry up front, so the later parts touch only their own files), or put the parts that share a file in strict order." (record: `docs/engineering-lessons.md` §P-15).
 
 ## Never
 
 - Rebase or force-push a branch someone else created, or rebase any branch after pushing it. Cleaning up a stack on your own branch (§1) is the one exception.
 - Take one side of a file wholesale when both sides changed it (outside §4's lockfile and session record rows).
 - Update a branch only to make it current.
-- Merge without one of §7's two authorizations, or past a gate condition that failed.
+- Merge another session's PR (the dispatcher's `merge #<n>` excepted), or past a gate condition that failed.
 - Skip, disable or quarantine a test, push an empty commit, or close and reopen a PR to get green.

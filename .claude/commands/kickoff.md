@@ -55,7 +55,7 @@ Emit, in this order:
 - **Claim** — the `CUL-NNN` claimed at start, or (for a general brief) a note that the claim goes on whatever the recommended task turns out to be. If a claim was contested or stale, say which and what you did about it.
 - **Where we are** — phase + in-flight work, in 2–3 lines, from the Linear projects and the `In Progress` issues.
 - **Last shipped** — one line, with PR number(s), from the newest files in `docs/sessions/`.
-- **Blocked on / waiting on PM** — any blocking Open Question, plus anything on the `Waiting on PM` label that gates the recommended task. Name the `CUL-NNN`. If none, say "nothing blocking."
+- **Blocked on / waiting on PM** — any blocking Open Question, plus anything on the `Waiting on PM` label that gates the recommended task. Name the `CUL-NNN`. If none, say "nothing blocking." Then each **orphaned green PR** (`list_pull_requests`, open): ready, every check passed on its head, its session gone (claim released or over 24h old) and not merged. A session merges its own on the gate (CUL-2234), so one still open stalled: list `#<n>` with the reason for the PM to merge or hold.
 - **Recommended first task** — the top ungated candidate in § Ranking, with its unblock count, the file/doc to open first and its `CUL-NNN`. If a PM Action Item is a prerequisite, say so.
 - **Alternates** — the next 1–2 candidates in § Ranking, gated ones marked.
 

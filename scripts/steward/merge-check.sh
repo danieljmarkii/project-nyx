@@ -20,8 +20,8 @@
 #      (72918c0, 2026-10-03). The squash landing is materialized and checked with `tsc`
 #      and with CI's own `deno check` steps at CI's pinned Deno (CUL-2234).
 #
-# WHY THIS FILE EXISTS. Sessions end with `/wrap and merge`, and until this script the
-# "and merge" half was improvised. Clean merges were never the risk; the resolution is,
+# WHY THIS FILE EXISTS. A session's `/wrap` merges its own PR, and until this script the
+# merge was improvised. Clean merges were never the risk; the resolution is,
 # and a session never notices a resolution that quietly dropped someone else's lines. So
 # this script decides the mechanical questions and leaves only judgment to the session.
 # The rules for acting on its verdict are `.claude/skills/steward/SKILL.md`; the
