@@ -15,6 +15,10 @@
 #   5. Is landing it a production write: does it deploy an Edge Function, or edit the
 #      production gate, the deploy path or this check (CUL-1654)? Then a self-merge waits
 #      for the PM's typed `merge`, and no writing clears it.
+#   6. With --verify, when main moved since this branch's CI ran: does the landing type
+#      check? Two PRs can each pass alone and fail together with no textual conflict
+#      (72918c0, 2026-10-03). The squash landing is materialized and checked with `tsc`
+#      and with CI's own `deno check` steps at CI's pinned Deno (CUL-2234).
 #
 # WHY THIS FILE EXISTS. Sessions end with `/wrap and merge`, and until this script the
 # "and merge" half was improvised. Clean merges were never the risk; the resolution is,
@@ -24,7 +28,7 @@
 # measurements behind it are `docs/engineering-lessons.md` §P-15.
 #
 # USAGE
-#   scripts/steward/merge-check.sh [--base <ref>] [--head <ref>] [--no-fetch] [--all] [<branch> ...]
+#   scripts/steward/merge-check.sh [--base <ref>] [--head <ref>] [--no-fetch] [--all] [--verify] [<branch> ...]
 #
 #   --base      what the branch lands on (default origin/main)
 #   --head      what is checked (default HEAD). After a merge, `--head origin/main` asks
@@ -32,13 +36,19 @@
 #   --no-fetch  skip the fetch (offline, or the refs are already current). Main's CI is
 #               still read from GitHub; offline, that read fails and the verdict says so.
 #   --all       list every lost line, not the first 20
+#   --verify    also type check the simulated landing when it differs from this branch's
+#               tree (main moved). Run it immediately before the merge (the steward skill
+#               §7); it takes about a minute on this repo. Needs node_modules (npm ci) and
+#               the Deno version ci.yml pins; without either it exits 3, never a pass.
 #   <branch>    other open PRs' head branches as named on origin (claude/foo)
 #
 #   Runs from anywhere in the repository; every path is taken from its root.
 #
 # VERDICT (the last line) and exit code:
 #   MERGE CHECK: CLEAN      0  lands clean; nothing below is reported
-#   MERGE CHECK: CONFLICT   1  conflicts with the base: merge it in, resolve, run this again
+#   MERGE CHECK: CONFLICT   1  conflicts with the base: merge it in, resolve, run this again;
+#                              or, with --verify, the landing fails its type check (a
+#                              conflict git cannot see), which no writing clears
 #   MERGE CHECK: REVIEW     2  lands clean, but read the lost or resurrected lines, the
 #                              duplicate migration numbers (with main or another open PR),
 #                              the conflict markers, or main's red or unread CI first;
@@ -94,7 +104,14 @@
 #     on a push goes out on the next merge unreported. A branch that edits this check
 #     runs its own copy, so the line it prints about itself is only as honest as the edit.
 #   - It finds textual collisions only. Two PRs that merge clean and break each other at
-#     runtime are CI's to catch on main.
+#     runtime are CI's to catch on main. --verify adds the TYPE half of that, nothing more:
+#     tests are not run on the landing, so a landing that types clean and fails a test
+#     is still CI's to catch on main.
+#   - --verify checks the landing against THIS clone's node_modules. A landing that
+#     changes package-lock.json is typed against the old dependencies, which errs toward a
+#     false block, never a false pass. Its Deno steps are the `run:` lines of ci.yml's
+#     "Deno check (functions)" and "Deno check (scripts)" steps as the landing has them;
+#     a step renamed away is exit 3 for functions and silently not run for scripts.
 
 set -uo pipefail
 export LC_ALL=C               # one collation for every sort and comm below
@@ -119,6 +136,10 @@ deploy_workflow="edge-deploy.yml"
 head_ref="HEAD"
 fetch=1
 max_list=20
+verify=0
+# The Deno binary --verify runs. Overridable only so the guard can stand a stub in its
+# place; the session's own run uses whatever `deno` is on PATH.
+deno_bin=${MERGE_CHECK_DENO:-deno}
 others=()
 
 while [ $# -gt 0 ]; do
@@ -139,6 +160,10 @@ while [ $# -gt 0 ]; do
       ;;
     --all)
       max_list=0
+      shift
+      ;;
+    --verify)
+      verify=1
       shift
       ;;
     -h | --help)
@@ -668,12 +693,116 @@ if [ -n "$landed_tree" ] && [ "$merged" -eq 0 ]; then
   fi
 fi
 
+# ---- 6. With --verify: does the landing type check? -----------------------------------
+
+# The conflict git cannot see: this branch and main each pass CI, and together they do not
+# type check (72918c0, 2026-10-03). Only a landing whose tree differs from this branch's
+# own can hold one, since CI already typed the branch's tree. A check that could not run
+# is exit 3, never a pass; a type error on the landing is CONFLICT, because its fix is the
+# same as a textual conflict's (bring main in, fix, push) and no writing clears it.
+landing_broken=0
+if [ "$verify" -eq 1 ]; then
+  if [ -n "$conflicts" ]; then
+    echo "landing types: skipped until the conflict is resolved"
+  elif [ "$merged" -eq 1 ]; then
+    echo "landing types: skipped ($name is already inside $base_ref)"
+  elif [ "$landed_tree" = "$(git rev-parse "$head^{tree}")" ]; then
+    echo "landing types: skipped (current: landing it lands this branch's own tree, which its CI type checked)"
+  else
+    root_dir=$(pwd)
+    tsc_js="$root_dir/node_modules/typescript/bin/tsc"
+    [ -f "$tsc_js" ] || die "--verify: no node_modules/typescript under $root_dir (run npm ci); a landing that cannot be type checked is never a pass"
+    command -v "$deno_bin" >/dev/null 2>&1 || die "--verify: no $deno_bin on PATH; a landing that cannot be type checked is never a pass"
+    ci_yml=$(git show "$landed_tree:.github/workflows/ci.yml" 2>/dev/null) || die "--verify: the landing has no .github/workflows/ci.yml to read the Deno pin and steps from"
+    pinned=$(printf '%s\n' "$ci_yml" | sed -nE 's/^[[:space:]]*deno-version:[[:space:]]*([^[:space:]#]+).*/\1/p' | head -n 1)
+    [ -n "$pinned" ] || die "--verify: ci.yml pins no deno-version"
+    have=$("$deno_bin" --version 2>/dev/null | head -n 1 | awk '{ print $2 }')
+    [ "$have" = "$pinned" ] || die "--verify: deno ${have:-(unreadable)} here, CI pins $pinned; a check at another version is not CI's check"
+    # The `run:` line of a named ci.yml step, or nothing when the step is not there.
+    step_run() {
+      printf '%s\n' "$ci_yml" | awk -v want="- name: $1" '
+        { line = $0; sub(/^[[:space:]]+/, "", line) }
+        on && line ~ /^- name:/ { exit }
+        on && line ~ /^run:[[:space:]]/ { sub(/^run:[[:space:]]+/, "", line); print line; exit }
+        line == want { on = 1 }'
+    }
+    deno_cmds=()
+    for step in "Deno check (functions)" "Deno check (scripts)"; do
+      cmd=$(step_run "$step")
+      if [ -z "$cmd" ]; then
+        [ "$step" = "Deno check (functions)" ] && die "--verify: ci.yml has no \"$step\" step with a run: line to mirror"
+        continue
+      fi
+      # Only a plain `deno check` with arguments is run: the line comes from the landing's
+      # own ci.yml, and nothing in it may chain, substitute or redirect.
+      case "$cmd" in
+        "deno check "*) ;;
+        *) die "--verify: ci.yml's \"$step\" step runs something other than deno check: $cmd" ;;
+      esac
+      if printf '%s' "$cmd" | grep -q '[;&|$`<>(){}\\]'; then
+        die "--verify: ci.yml's \"$step\" run: line has shell syntax; refusing to run it: $cmd"
+      fi
+      deno_cmds+=("${cmd#deno check }")
+    done
+
+    # The landing as files, written through a private index: the session's index, working
+    # tree and branches are never touched (the promise at the top of this file).
+    land="$tmp/land"
+    mkdir -p "$land" || die "--verify: cannot create the landing directory"
+    GIT_INDEX_FILE="$tmp/land.index" git read-tree "$landed_tree" &&
+      GIT_INDEX_FILE="$tmp/land.index" git --work-tree="$land" checkout-index --all --force ||
+      die "--verify: could not write the landing out"
+    ln -s "$root_dir/node_modules" "$land/node_modules" || die "--verify: could not link node_modules into the landing"
+
+    : >"$tmp/types.out"
+    # tsc exits 1 or 2 on diagnostics. Anything else, or a failure that names no TS error
+    # (node missing, killed, out of memory), is a check that did not run.
+    (cd "$land" && node "$tsc_js" --noEmit -p .) >"$tmp/tsc.out" 2>&1
+    tsc_rc=$?
+    if [ "$tsc_rc" -ne 0 ]; then
+      if { [ "$tsc_rc" -eq 1 ] || [ "$tsc_rc" -eq 2 ]; } && grep -qE 'error TS[0-9]+' "$tmp/tsc.out"; then
+        landing_broken=1
+        grep -E 'error TS[0-9]+' "$tmp/tsc.out" | sed 's/^/tsc: /' >>"$tmp/types.out"
+      else
+        die "--verify: tsc did not run on the landing (exit $tsc_rc): $(head -c 200 "$tmp/tsc.out" | tr '\n' ' ')"
+      fi
+    fi
+    for args in "${deno_cmds[@]}"; do
+      # Unquoted on purpose: the step's globs (scripts/*.deno.ts) expand inside the landing,
+      # as they do in CI's shell. The line was refused above if it held shell syntax.
+      # shellcheck disable=SC2086
+      (cd "$land" && NO_COLOR=1 "$deno_bin" check $args) >"$tmp/deno.out" 2>&1
+      deno_rc=$?
+      [ "$deno_rc" -eq 0 ] && continue
+      # A type error is named TSnnnn. Any other failure (a module the network would not
+      # serve, a crash) says nothing about the landing's types.
+      if [ "$deno_rc" -eq 1 ] && grep -qE 'TS[0-9]+' "$tmp/deno.out"; then
+        landing_broken=1
+        grep -E 'TS[0-9]+|^[[:space:]]+at ' "$tmp/deno.out" | sed 's/^[[:space:]]*/deno: /' >>"$tmp/types.out"
+      else
+        die "--verify: deno check $args did not run on the landing (exit $deno_rc): $(head -c 200 "$tmp/deno.out" | tr '\n' ' ')"
+      fi
+    done
+    if [ "$landing_broken" -eq 1 ]; then
+      echo "landing types: BROKEN; this branch and $base_ref pass apart and fail together ($behind behind)"
+      if [ "$max_list" -gt 0 ]; then head -n "$max_list" "$tmp/types.out"; else cat "$tmp/types.out"; fi | sed 's/^/  /'
+    else
+      echo "landing types: tsc and $((${#deno_cmds[@]})) deno check step(s) pass on the simulated landing ($behind behind, deno $pinned)"
+    fi
+  fi
+fi
+
 for n in ${notes[@]+"${notes[@]}"}; do
   echo "note: $n"
 done
 
 if [ -n "$conflicts" ]; then
   echo "next: git merge $base_ref, resolve per the steward skill, then run this again"
+  echo "MERGE CHECK: CONFLICT"
+  exit 1
+fi
+if [ "$landing_broken" -eq 1 ]; then
+  echo "next: git merge $base_ref, fix the type errors above, push, let CI pass, then run this again with --verify"
   echo "MERGE CHECK: CONFLICT"
   exit 1
 fi
