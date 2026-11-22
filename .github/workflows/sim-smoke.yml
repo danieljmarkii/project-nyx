@@ -304,6 +304,25 @@ jobs:
           app="$(ls -d "$APP_OUT"/*.app | head -1)"
           bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
           exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
+          # The build is unsigned (CODE_SIGNING_ALLOWED=NO), and an unsigned simulator binary
+          # has no entitlements, so every keychain call fails: the session never persists,
+          # getSession() reads nothing, and the sync's pull returns before reading a table.
+          # Ad-hoc sign it here with a stand-in team id, the app's App Group and its keychain
+          # group, the extension first. Simulator only: nothing here reaches a device build.
+          ents="$SIM/entitlements"; mkdir -p "$ents"
+          for target in "$bundle" "$bundle.ExpoWidgetsTarget"; do
+            f="$ents/$target.plist"
+            plutil -create xml1 "$f"
+            plutil -insert application-identifier -string "FIXTURETM.$target" "$f"
+            plutil -insert 'com\.apple\.developer\.team-identifier' -string FIXTURETM "$f"
+            plutil -insert keychain-access-groups -json "[\"FIXTURETM.$bundle\"]" "$f"
+            plutil -insert 'com\.apple\.security\.application-groups' -json '["group.com.projectnyx.app"]' "$f"
+          done
+          for appex in "$app"/PlugIns/*.appex; do
+            if [ -d "$appex" ]; then codesign --force --sign - --entitlements "$ents/$bundle.ExpoWidgetsTarget.plist" "$appex"; fi
+          done
+          codesign --force --sign - --entitlements "$ents/$bundle.plist" "$app"
+          codesign -d --entitlements - "$app" 2>/dev/null | head -20 || true
           xcrun simctl install "$SIM_UDID" "$app"
           xcrun simctl launch "$SIM_UDID" "$bundle"
           # The landing screen: give the JS a moment past the splash.
