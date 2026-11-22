@@ -52,6 +52,7 @@ export type TeamRead = { persona: string; rec: string };
 export type SweepCandidate = {
   id: string;
   title: string;
+  description?: string; // the issue's body, read by the kept list (adversarial pass 2, Q7)
   priority: number; // Linear: 0 none, 1 urgent … 4 low
   labels: string[];
   createdAt: string;
@@ -158,7 +159,8 @@ export function compare(a: SweepCandidate, b: SweepCandidate): number {
 // The kept list decides what plans first (CUL-2886): a stakes, taste or scope call waits on
 // the PM, exactly as dispatch's gate predicate reads the same row at launch. One module,
 // so the sweep and dispatch can never disagree about a row (first run, 2026-11-08).
-export const keptFor = (c: SweepCandidate) => keptOf({ labels: c.labels, files: c.files, text: `${c.title} ${c.impactWhy}` });
+export const keptFor = (c: SweepCandidate) =>
+  keptOf({ labels: c.labels, files: c.files, text: [c.title, c.description, c.impactWhy, c.relevanceWhy, c.needsShaping].filter(Boolean).join('\n') });
 
 export function kindOf(c: SweepCandidate): Kind {
   if (c.needsShaping || c.relevance === 'unclear' || c.size === 'XL') return 'shape';

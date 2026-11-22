@@ -14,7 +14,7 @@ const cand = (over: Partial<SweepCandidate> = {}): SweepCandidate => ({
   impact: 'C',
   impactWhy: '',
   size: 'M',
-  files: [`lib/file${n}.ts`],
+  files: [`scripts/dispatch/file${n}.ts`], // a tooling path: these tests are about order and capacity, not the kept list
   surface: `surface ${n}`,
   relevance: 'valid',
   relevanceWhy: 'the code path is unchanged on main',
@@ -88,11 +88,11 @@ describe('no two picks on the same files (PM tip, 2026-11-07)', () => {
     expect(r.held).toEqual([{ id: 'CUL-40', reason: 'files overlap #1470' }]);
   });
   it('two candidates sharing a file bundle when they fit; otherwise the lower one is held', () => {
-    const a = cand({ id: 'CUL-41', size: 'S', files: ['app/log.tsx'], surface: 'log sheet' });
-    const b = cand({ id: 'CUL-42', size: 'S', files: ['app/log.tsx'], surface: 'type step' });
+    const a = cand({ id: 'CUL-41', size: 'S', files: ['scripts/dispatch/board.ts'], surface: 'log sheet' });
+    const b = cand({ id: 'CUL-42', size: 'S', files: ['scripts/dispatch/board.ts'], surface: 'type step' });
     expect(ids(run([a, b]))).toEqual(['CUL-41+CUL-42']);
-    const c = cand({ id: 'CUL-43', size: 'M', files: ['app/log.tsx'], surface: 'a' });
-    const d = cand({ id: 'CUL-44', size: 'M', files: ['app/log.tsx'], surface: 'b', priority: 4 });
+    const c = cand({ id: 'CUL-43', size: 'M', files: ['scripts/dispatch/board.ts'], surface: 'a' });
+    const d = cand({ id: 'CUL-44', size: 'M', files: ['scripts/dispatch/board.ts'], surface: 'b', priority: 4 });
     const r = run([c, d]);
     expect(ids(r)).toEqual(['CUL-43']);
     expect(r.held).toEqual([{ id: 'CUL-44', reason: "files overlap this batch's CUL-43" }]);
@@ -158,7 +158,7 @@ describe('the sanity-check gaps (PM, 2026-11-08)', () => {
   });
   it('a build that deploys or touches the gate waits on the PM to merge, so it spends a place', () => {
     const fn = cand({ id: 'CUL-125', files: ['.github/workflows/ci.yml'] });
-    const plain = cand({ id: 'CUL-126', files: ['app/log.tsx'] });
+    const plain = cand({ id: 'CUL-126', files: ['scripts/dispatch/board.ts'] });
     const r = run([fn, plain], { waitingOnPm: 3 });
     expect(r.picks.map((p) => p.issues[0])).toEqual(['CUL-126']);
     expect(r.held).toEqual([{ id: 'CUL-125', reason: 'waits on the PM to merge (it deploys or touches the gate), and 3 already do' }]);
@@ -168,7 +168,7 @@ describe('the sanity-check gaps (PM, 2026-11-08)', () => {
     expect(r2.held[0]).toMatchObject({ id: 'CUL-127' });
   });
   it('a member never turns a plain bundle into one that waits when no place is free', () => {
-    const lead = cand({ id: 'CUL-128', size: 'S', surface: 'Ask', files: ['app/foods.tsx'] });
+    const lead = cand({ id: 'CUL-128', size: 'S', surface: 'Ask', files: ['scripts/dispatch/board.ts'] });
     const fnMember = cand({ id: 'CUL-129', size: 'S', surface: 'Ask', files: ['.github/workflows/ci.yml'], priority: 4 });
     const r = run([lead, fnMember], { waitingOnPm: 3 });
     expect(r.picks.map((p) => p.issues.join('+'))).toEqual(['CUL-128']);
@@ -198,6 +198,9 @@ describe('bundles and sizes', () => {
     expect(kindOf(cand({ files: ['docs/ask-mockups.html'] }))).toBe('plan');
     expect(kindOf(cand({ files: ['docs/nyx-ask-requirements.md'] }))).toBe('plan');
     expect(kindOf(cand({ files: ['.github/workflows/ci.yml'], title: 'Pin the action SHA' }))).toBe('build');
+    // The description is read too (adversarial pass 2, Q7): a plain title over a clinical body plans.
+    expect(kindOf(cand({ title: 'Card spacing', description: 'the intake-decline flag moves' }))).toBe('plan');
+    expect(kindOf(cand({ title: 'Card spacing', description: 'the margin moves' }))).toBe('build');
   });
   it('a plan or shape never bundles: it waits on the PM alone', () => {
     const a = cand({ id: 'CUL-54', size: 'L', surface: 'x' });

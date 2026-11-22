@@ -26,19 +26,25 @@
 //
 // HOW IT READS. Labels first, then paths, then text, and every hit counts: the answer is
 // the most serious class any of them found (stakes, then taste, then scope). UNCERTAIN
-// COUNTS AS KEPT: an input with nothing to read returns `stakes`, and a word in passing
-// keeps the row. That errs loud (an extra ask), never quiet (a kept call made silently).
+// COUNTS AS KEPT, and since two adversarial passes (2026-11-22) that is structural, not a
+// word list: product code (lib, store, hooks, app, components, constants, supabase,
+// widgets) keeps unless it is on a short list of UI mechanics; a script outside the named
+// tooling folders keeps; an input that names no file keeps unless it carries a tooling
+// label; a file named without its folder keeps. Stems and wording only add the reasons.
+// That errs loud (an extra ask), never quiet (a kept call made silently).
 //
 // Pure: no I/O, no clock. cli.ts is the shell for merge-check and the groomer.
 //
 // STATED BLIND SPOTS (C-38):
-//   - Paths are what the caller passes. A row whose note names no file is read from its
-//     text alone.
+//   - Paths are what the caller passes, or what `pathsIn` finds in a note. A path split by
+//     a line break reads as its folder (`lib/`), which keeps.
 //   - The text test reads words, not meaning: "no clinical surface" still keeps the row.
 //     That is the loud direction, by design.
-//   - "Inside a ratified mock round" is the caller's claim (`ratifiedRound`, naming the
-//     round). The module cannot check that the round was ratified, only that one is named;
-//     a reaction to a mock and brand stay kept whatever round is named.
+//   - "Inside a ratified mock round" is the caller's claim (`ratifiedRound`, which must
+//     name a round: `R-3`, `round 2`). The module cannot check that the PM ratified it; a
+//     reaction to a mock and brand stay kept whatever round is named.
+//   - An issue with a tooling label and no files is read from its words alone; a missed
+//     word there is the residual the second pass left (CUL-2886).
 
 export type Kept = 'stakes' | 'taste' | 'scope' | 'none';
 export const KEPT_ORDER: Kept[] = ['stakes', 'taste', 'scope', 'none'];
@@ -48,7 +54,7 @@ export type TeamCallClass = 'engineering' | 'copy' | 'ux' | 'doc';
 
 export type KeptInput = {
   labels?: string[];
-  files?: string[]; // a diff's files, or the files a row's note names
+  files?: string[]; // a diff's files, or the files a row's note names (pathsIn)
   text?: string; // title, description, a row's What and build note
   migration?: boolean; // the caller already knows it adds a migration
   forecast?: { rows: number; built: number }; // a brief's forecast and the rows it has taken
@@ -59,16 +65,16 @@ export type KeptInput = {
 export type KeptResult = { kept: Kept; reasons: string[] };
 
 type Rule = { kept: Exclude<Kept, 'none'>; why: string };
-type PathRule = Rule & { prefixes: string[] };
 type TextRule = Rule & { re: RegExp; tasteVisual?: true };
+
+const UNCERTAIN = '(uncertain counts as kept)';
 
 // ---- labels -------------------------------------------------------------------------
 // Matched on a normal form (case and spacing ignored), so `gate:clinical` still keeps.
 // `Live harm` is deliberately unmapped: a harm is fixed now, never held for a ruling (that
 // would delay the fix); its clinical or privacy part keeps by its own label or words.
 // `Gate: device` is deliberately unmapped: it names a check only the PM's phone can run,
-// not a call; the device sitting takes it. `Area: Copy/Voice` is copy, a team call inside
-// nyx-voice (clinical wording is caught by the text).
+// not a call; the device sitting takes it.
 const LABELS: Record<string, Rule> = {
   'gate:clinical': { kept: 'stakes', why: 'clinical (label Gate: clinical)' },
   'gate:privacy': { kept: 'stakes', why: 'privacy (label Gate: privacy)' },
@@ -79,87 +85,151 @@ const LABELS: Record<string, Rule> = {
   'gate:design': { kept: 'taste', why: 'a design call (label Gate: design)' },
 };
 const labelKey = (l: string) => l.toLowerCase().replace(/\s+/g, '');
+// The labels whose work is the team's own tooling; only these let an input with no files
+// be read from its words alone.
+const TOOLING_LABELS = new Set(['area:ci/build', 'area:aiinfra', 'area:testcoverage']);
 
 // ---- paths --------------------------------------------------------------------------
-// Two tests. Prefixes for whole trees and named files; then, for app code, the file's own
-// name read word by word against stems, so a file added next month is read too (the
-// adversarial pass found 30 health, privacy and money files a hand list had missed).
-const PATHS: PathRule[] = [
-  // Every Edge Function reads health data with the service role and deploys on merge.
-  { kept: 'stakes', why: 'server code over health data (supabase/functions/)', prefixes: ['supabase/functions/'] },
-  { kept: 'stakes', why: 'clinical surface', prefixes: ['.claude/skills/clinical-guardrails/'] },
-  { kept: 'stakes', why: 'schema (a migration)', prefixes: ['supabase/migrations/'] },
-  { kept: 'stakes', why: 'irreversible (SQL against a database)', prefixes: ['scripts/export-pet-timeline.sql'] },
-  { kept: 'stakes', why: 'money or Pets > $', prefixes: ['docs/monetization'] },
-  { kept: 'stakes', why: 'App Store or legal', prefixes: ['app.json', 'eas.json', 'app.config.', 'docs/legal/', 'scripts/store-screenshots/', 'ios/'] },
-  { kept: 'stakes', why: 'privacy (the widget shows health data outside the app)', prefixes: ['widgets/'] },
-  { kept: 'taste', why: 'brand or a visual system file', prefixes: ['assets/', 'constants/theme', 'components/brand/', 'docs/culprit-icon-brand-direction.md'] },
-];
+const PRODUCT = /^(lib|store|hooks|app|components|constants|supabase|widgets)(\/|$)/;
+// UI mechanics: product code that holds no health data, money or copy. A file here is a
+// team call; every other product file keeps. Add a file only with the reason it is safe.
+const UI_MECHANICS = new Set([
+  'lib/utils.ts', 'lib/haptics.ts', 'lib/textWidth.ts', 'lib/a11yFocus.ts', 'lib/fonts.ts', 'lib/tapTarget.ts',
+  'lib/measureNode.ts', 'lib/layoutCaps.ts', 'lib/revealInScroll.ts', 'lib/screenOrientation.ts', 'lib/rateContrast.ts',
+  'lib/fabFootprint.ts', 'lib/network.ts', 'lib/appInfo.ts', 'hooks/useReducedMotion.ts', 'hooks/useLayoutClass.ts',
+  'hooks/useLiveRegionAnnouncement.ts', 'hooks/useAppActive.ts', 'hooks/useSubmitGuard.ts', 'hooks/useIsOnline.ts',
+  'store/reducedMotionStore.ts', 'store/uiStore.ts', 'store/snackbarStore.ts',
+]);
+// The team's own tooling under scripts/. Every other script keeps: many read or write
+// production data (backfills, exports, replays).
+const TOOLING_SCRIPTS = /^scripts\/(dispatch|sweep|kept|groom|ci|repo-hygiene|how-we-work|layout-probe|design-critique|mockup-theme|web-capture)\/|^scripts\/render-mockup\.mjs$/;
+// Folders that hold no product code: a file here keeps only by a rule below.
+const TOOLING_ROOTS = /^(guards|\.claude|\.github|\.githooks|docs|e2e|\.maestro|patches)\/|^(CLAUDE|STATUS|README)\.md$|^(package(-lock)?\.json|tsconfig\.json|jest[\w.]*\.js|babel\.config\.js|\.gitignore|\.eslintrc[\w.]*)$/;
 
-const CODE_DIRS = /^(lib|store|constants|hooks|app|components)\//;
-// Stems, matched against the start of each word of a file's name (`freeFedIntake` reads as
-// free · fed · intake). Loud by design: a name that only sounds clinical still keeps.
+// Stems, matched against the start of each word of every folder and the file's name
+// (`app/vet-visits/[id].tsx` reads as app · vet · visits · id). They name the reason; the
+// default for product code keeps a file they miss.
 const NAME_STEMS: { kept: Exclude<Kept, 'none'>; why: string; stems: string[] }[] = [
   {
     kept: 'stakes',
-    why: 'clinical surface (by file name)',
-    stems: ['signal', 'trial', 'diet', 'protein', 'symptom', 'intake', 'vomit', 'stool', 'incident', 'floor', 'emergency', 'analysis', 'may', 'call', 'look', 'episode', 'med', 'dose', 'weight', 'feeding', 'fed', 'meal', 'care', 'vet', 'report', 'ask', 'pattern', 'read', 'verdict', 'tier', 'finding', 'exam', 'ready', 'event', 'safety', 'masking'],
+    why: 'clinical surface',
+    stems: ['signal', 'trial', 'diet', 'protein', 'symptom', 'intake', 'vomit', 'stool', 'incident', 'floor', 'emergency', 'analy', 'may', 'call', 'look', 'episode', 'med', 'dose', 'weight', 'feeding', 'fed', 'meal', 'care', 'vet', 'report', 'ask', 'pattern', 'read', 'verdict', 'tier', 'finding', 'exam', 'ready', 'event', 'safety', 'masking', 'rundown', 'duplicate', 'warn', 'gap', 'en', 'engine', 'detect'],
   },
   {
     kept: 'stakes',
-    why: 'privacy, Storage, deletion, export or share links (by file name)',
-    stems: ['consent', 'auth', 'account', 'secure', 'session', 'storage', 'attachment', 'photo', 'upload', 'transient', 'local', 'db', 'schema', 'export', 'pdf', 'share', 'link', 'send', 'supabase', 'analytics', 'crash', 'delete', 'removal', 'sign', 'password', 'recovery', 'owner', 'widget', 'record', 'sync', 'undo', 'discard', 'loss', 'notification'],
+    why: 'privacy, Storage, deletion, export or share links',
+    stems: ['consent', 'auth', 'account', 'secure', 'session', 'storage', 'attachment', 'photo', 'upload', 'transient', 'local', 'db', 'schema', 'export', 'pdf', 'share', 'link', 'send', 'supabase', 'analytics', 'crash', 'delete', 'removal', 'sign', 'password', 'recovery', 'owner', 'widget', 'record', 'sync', 'hydrat', 'undo', 'discard', 'loss', 'archive', 'inbox', 'capture', 'paperwork', 'document', 'file', 'email', 'notification', 'pet', 'profile'],
   },
-  { kept: 'stakes', why: 'money or Pets > $ (by file name)', stems: ['monetization', 'entitlement', 'paywall', 'premium', 'beta', 'flag', 'config', 'purchase', 'price', 'pricing'] },
-  { kept: 'stakes', why: 'App Store or legal (by file name)', stems: ['legal'] },
+  { kept: 'stakes', why: 'money or Pets > $', stems: ['monetization', 'entitlement', 'paywall', 'premium', 'beta', 'flag', 'config', 'purchase', 'price', 'pricing'] },
+  { kept: 'stakes', why: 'App Store or legal', stems: ['legal'] },
 ];
 
 const wordsOf = (f: string) =>
-  (f.split('/').pop() ?? '')
+  f
     .replace(/\.[\w.]+$/, '')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
 
-// A mock is taste wherever it sits; a spec is scope. Session records are the archive.
-function pathRules(f: string): Rule[] {
+// Files at the repo root are placed paths, not bare names.
+const ROOT_FILES = /^(app\.json|eas\.json|app\.config\.\w+|package(-lock)?\.json|tsconfig\.json|babel\.config\.js|jest[\w.]*\.js|metro\.config\.js|index\.ts|App\.tsx|CLAUDE\.md|STATUS\.md|README\.md)$/;
+const isBare = (f: string) => !f.includes('/') && !ROOT_FILES.test(f);
+
+function pathRules(f: string, ratified: boolean): Rule[] {
   const out: Rule[] = [];
-  for (const r of PATHS) if (r.prefixes.some((p) => f.startsWith(p))) out.push(r);
-  if (CODE_DIRS.test(f)) {
+  const push = (kept: Exclude<Kept, 'none'>, why: string) => out.push({ kept, why });
+  const base = f.replace(/\.test(\.[\w]+)$/, '$1');
+
+  // Whole trees and file kinds.
+  if (f.startsWith('supabase/migrations/')) push('stakes', 'schema (a migration)');
+  else if (f.startsWith('supabase/')) push('stakes', 'server code over health data (supabase/)');
+  if (/\.sql$/.test(f)) push('stakes', 'irreversible (SQL against a database)');
+  if (/backfill/i.test(f)) push('stakes', 'irreversible (a backfill)');
+  if (/^\.github\/workflows\/.*(deploy|release|submit|eas|store|testflight|prod)/i.test(f) || /^scripts\/(deploy|edge-deploy)/.test(f)) push('stakes', 'a deploy or release path');
+  if (/^(\.claude\/hooks\/|\.claude\/settings|scripts\/steward\/)/.test(f)) push('stakes', 'the production gate');
+  if (/^(app\.json|eas\.json|app\.config\.|docs\/legal\/|scripts\/store-screenshots\/|ios\/|android\/)/.test(f)) push('stakes', 'App Store or legal');
+  if (f.startsWith('widgets/')) push('stakes', 'privacy (the widget shows health data outside the app)');
+  if (f.startsWith('.claude/skills/clinical-guardrails/')) push('stakes', 'clinical surface');
+  if (f.startsWith('docs/monetization')) push('stakes', 'money or Pets > $');
+  if (/^(assets\/|constants\/theme|components\/brand\/|docs\/culprit-icon-brand-direction\.md)/.test(f)) push('taste', 'brand or a visual system file');
+  if (/^docs\/.*mock.*\.html$/i.test(f) || /^docs\/mocks?\//.test(f)) push('taste', 'a mock');
+  if (/^docs\/.+\.md$/.test(f) && !f.startsWith('docs/sessions/') && !f.startsWith('docs/legal/')) push('scope', 'a Tier-2 doc edit');
+
+  // Product code: stems name the reason; anything they miss still keeps.
+  if (PRODUCT.test(f) && !UI_MECHANICS.has(base)) {
     const words = wordsOf(f);
-    for (const n of NAME_STEMS) if (words.some((w) => n.stems.some((st) => w.startsWith(st)))) out.push(n);
+    const before = out.length;
+    for (const n of NAME_STEMS) if (words.some((w) => n.stems.some((st) => w.startsWith(st)))) push(n.kept, `${n.why} (by name)`);
+    if (out.length === before && !out.some((r) => r.kept === 'stakes')) {
+      // A screen or component is the PM's taste until a ratified round covers it; other
+      // product code keeps as stakes.
+      if (/^(app|components)\//.test(f)) {
+        if (!ratified) push('taste', `a screen or component outside a named mock round ${UNCERTAIN}`);
+      } else push('stakes', `product code the list cannot place ${UNCERTAIN}`);
+    }
+  } else if (f.startsWith('scripts/') && !TOOLING_SCRIPTS.test(f) && !out.length) {
+    push('stakes', `a script outside the tooling folders ${UNCERTAIN}`);
+  } else if (!isBare(f) && !PRODUCT.test(f) && !TOOLING_ROOTS.test(f) && !f.startsWith('scripts/') && !out.length && !/^(assets|docs)\//.test(f)) {
+    push('stakes', `a path the list does not know ${UNCERTAIN}`);
   }
-  if (/^docs\/.*mock.*\.html$/i.test(f) || /^docs\/mocks?\//.test(f)) out.push({ kept: 'taste', why: 'a mock' });
-  if (/^docs\/.+\.md$/.test(f) && !f.startsWith('docs/sessions/')) out.push({ kept: 'scope', why: 'a Tier-2 doc edit' });
   return out;
 }
 
+// The repo paths a piece of text names, for a caller that has a note, not a diff. Splits
+// on whitespace, then strips the markdown and punctuation around each token (backticks,
+// `**`, `_`, quotes, brackets, `!?.,;:…—`, a `#L42` anchor, a leading `./`), so a path in
+// any of the shapes the second adversarial pass tried is found.
+const ROOT_NAMES = /^(lib|store|hooks|app|components|constants|supabase|widgets|scripts|guards|docs|\.github|\.githooks|\.claude|assets|ios|android|patches|e2e|\.maestro)\//;
+// Leading marks never include `.`, which starts `.github/` and `./`.
+const WRAP = /^[\s*_`'"<>()[\]{}|!?,;:…—–]+|[\s*_`'"<>()[\]{}|!?.,;:…—–]+$/g;
+export function pathsIn(text: string): string[] {
+  const out = new Set<string>();
+  for (const raw of text.split(/\s+/)) {
+    let t = raw.replace(/#L\d+(-L?\d+)?/g, '');
+    let prev = '';
+    while (prev !== t) {
+      prev = t;
+      t = t.replace(WRAP, '');
+    }
+    t = t.replace(/^\.\//, '');
+    // Brackets that close inside the token are part of the path (`[id].tsx`, `(tabs)/`).
+    if (!t) continue;
+    if (ROOT_NAMES.test(t) || /^[\w-]+\/$/.test(t) && ROOT_NAMES.test(t)) out.add(t);
+    else if (!t.includes('/') && /^[\w.-]+\.(tsx?|jsx?|mjs|sql|sh|ya?ml|json|swift)$/.test(t)) out.add(t);
+  }
+  return [...out];
+}
+
 // ---- text ---------------------------------------------------------------------------
-// Case-insensitive, stem-based. Every word here was either on the spec or found by the
-// adversarial pass in wording a real issue would use.
+// Case-insensitive, stem-based. Every word here was either on the spec or found by one of
+// the two adversarial passes in wording a real issue would use.
 const TEXT: TextRule[] = [
   {
     kept: 'stakes',
     why: 'clinical',
-    re: /\bclinical\b|\bsafety invariants?\b|intake is not preference|n=1 never reassures|adversarial-reviewer|clinical-guardrails|\bvet[- ]reports?\b|\bescalat\w*|\breassur\w*|\bpicky\b|\bsoften\w*|\bwarn(s|ed|ing|ings)?\b|\bred[- ]flags?\b|\bthresholds?\b|\bappetite\b|\banorexi\w*|\blipidosis\b|\bvomit\w*|\bstools?\b|\bdiarrh\w*|\blethargi?\w*|\bsymptoms?\b|\bintake\b|\brefus\w*|\bdiet[- ]trials?\b|\bdoses?\b|\bmedications?\b|\bdetect(or|ion)s?\b|\bhealth flags?\b/i,
+    re: /\bclinical\b|\bsafety invariants?\b|intake is not preference|\bn ?= ?1\b|adversarial-reviewer|clinical-guardrails|\bvet\b|\bvet[- ]reports?\b|\bescalat\w*|\breassur\w*|\bpicky\b|\bsoften\w*|\bwarn(s|ed|ing|ings)?\b|\bred[- ]flags?\b|\bthresholds?\b|\bappetite\b|\banorexi\w*|\blipidosis\b|\bvomit\w*|\bthrow\w* up\b|\bregurgitat\w*|\bstools?\b|\bpoop\w*|\blitter\b|\bblood\b|\bdiarrh\w*|\blethargi?\w*|\bsymptoms?\b|\bintake\b|\brefus\w*|\bdeclin\w*|\b(eat|eats|eating|eaten|ate)\b|\bskip\w* meals?\b|\bleft in the bowl\b|\bdiet[- ]trials?\b|\bfood trials?\b|\belimination\b|\bdoses?\b|\bmedications?\b|\bdetect(or|ion)s?\b|\bhealth flags?\b|\ball[- ]clear\b|\blooks? normal\b|\bno concerns?\b|\bcalm read\b|\bsingle[- ]sample\b|\bweight\b|\bseizures?\b|\bnausea\b|\bCKD\b|\bkidney\w*|\brenal\b|thyroid\w*|\bemergenc\w*|\burgent\w*|\balerts?\b|\bsignals?\b|\btiers? fires?\b|\bsignal tiers?\b|\bcorrelation\b|\bMcNemar\b|\bfalse[- ](positive|negative)s?\b|\bdiagnos\w*|\bsick\w*|\billness\b|\bpain\b|\bfever\b|\ballerg\w*/i,
   },
   {
     kept: 'stakes',
     why: 'privacy, RLS, Storage, deletion, export or share links',
-    re: /\bRLS\b|\bpolic(y|ies)\b|\bstorage\b|\bbuckets?\b|\bdelet\w*|\bexport\w*|rls-privacy-reviewer|\bprivacy\b|\bshare[- ]?(links?|tokens?)\b|\b(visit|report) links?\b|\bsigned URLs?\b|\bservice[- ]role\b|\bconsent\w*|\bhealth (data|photos?)\b|\bpersonal data\b/i,
+    re: /\bRLS\b|\brow[- ]level security\b|\bpolic(y|ies)\b|\bstorage\b|\bbuckets?\b|\bdelet\w*|\berase\w*|\bremov\w* (the |an |my |a )?(account|pet)s?\b|\barchiv\w* (the |a )?pets?\b|\bexport\w*|\bPDFs?\b|rls-privacy-reviewer|\bprivacy\b|\bshare[- ]?(links?|tokens?|sheets?)\b|\b(visit|report) links?\b|\bsigned URLs?\b|\bservice[- ]role\b|\banon key\b|\bconsent\w*|\bhealth (data|photos?)\b|\bpersonal data\b|\bphotos?\b|\buploads?\b|\bauth\w*|\bsign[- ]?(in|out|up)\b|\bpasswords?\b|\bleak\w*|\bGDPR\b|\bCCPA\b|\bHIPAA\b|\bretention\b|\bemail address\w*/i,
   },
   {
     kept: 'stakes',
     why: 'money or Pets > $',
-    re: /Pets > \$|\b(paywalls?|entitlements?|premium|pric(e|es|ing)|subscriptions?|in-app purchases?|purchases?|ai_usage|money|monetiz\w*|revenuecat|throttl\w*|app_config)\b|\b(pets?|ai|usage|free|daily|monthly) caps?\b|\bcap (on|of)\b|\b(free|pro|paid) tiers?\b|\btier limits?\b/i,
+    re: /Pets > \$|\b(paywalls?|entitlements?|premium|pric(e|es|ing)|subscriptions?|in-app purchases?|purchases?|IAP|ai_usage|money|monetiz\w*|revenuecat|stripe|refunds?|billing|throttl\w*|app_config)\b|\b(pets?|ai|usage|free|daily|monthly) caps?\b|\bcap (on|of)\b|\b(free|pro|paid) (tiers?|plans?)\b|\btier limits?\b|\bfree trials?\b|\bpro plan\b/i,
   },
-  { kept: 'stakes', why: 'schema', re: /\bschema\b|\bmigrations?\b|supabase\/migrations\/|\bALTER TABLE\b|\b(add|drop|rename)\w* (a |an |the )?(new )?(column|table|index|constraint)s?\b|\bnew (column|table)s?\b/i },
-  { kept: 'stakes', why: 'App Store or legal', re: /\bApp[- ]?Store\b|\bApp Review\b|\bTestFlight (submission|review)\b|\bstore listing\b|\bdocs\/legal\b|\bterms of service\b|\bprivacy policy\b|\blegal\b/i },
+  {
+    kept: 'stakes',
+    why: 'schema',
+    re: /\bschema\b|\bmigrations?\b|supabase\/migrations\/|\bALTER TABLE\b|\b(add|drop|rename)\w* (a |an |the )?(new |nullable )?(`?\w+`? )?(column|table|index|constraint)s?\b|\bnew (column|table)s?\b|\bcolumns?\b|\bnullable\b|\benum (value|type)s?\b|\bnew enum\b|\bforeign key\b|\bprimary key\b|\b(db|database|sql|postgres) triggers?\b/i,
+  },
+  { kept: 'stakes', why: 'App Store or legal', re: /\bApp[- ]?Store\b|\bApp Review\b|\bTestFlight (submission|review)\b|\bstore listing\b|\bdocs\/legal\b|\bterms of service\b|\bprivacy policy\b|\blegal\b|\bEULA\b|\bdisclaimer\b|\blicen[cs]e\w*/i },
   {
     kept: 'stakes',
     why: 'irreversible (a revert PR or a Linear edit cannot undo it)',
-    re: /\birreversible\b|\b(cannot|can't|can not) be undone\b|\bapply_migration\b|\bexecute_sql\b|\bpurge\w*|\bwip(e|es|ed|ing)\b|\bhard[- ]delet\w*|\bdrop (the )?(table|column|bucket)s?\b|\bTRUNCATE\b|\bforce[- ]push\w*|\bbackfill\w*|\brotat\w* (the |a )?(\w+ )?(keys?|secrets?|tokens?)\b|\bsecrets? set\b|\bsend(s|ing)? (an? |the )?(emails?|push(es)?|notifications?)\b|\b(notify|email|message|push to) (all|every)\b|\b(publish|release)\w* to (production|prod)\b|\bremov\w* (the |a )?buckets?\b/i,
+    re: /\birreversible\b|\b(cannot|can't|can not) be undone\b|\bapply_migration\b|\bexecute_sql\b|\bpurge\w*|\bwip(e|es|ed|ing)\b|\bhard[- ]delet\w*|\bdrop (the )?(table|column|bucket)s?\b|\bTRUNCATE\b|\bforce[- ]push\w*|\bbackfill\w*|\brotat\w* (the |a )?(\w+ )?(keys?|secrets?|tokens?)\b|\bsecrets? set\b|\bsend(s|ing)? (an? |the )?(emails?|push(es)?|notifications?)\b|\bpush notifications?\b|\b(notify|email|message|push to) (all|every)\b|\b(publish|release|deploy)\w* to (production|prod)\b|\bproduction (write|data|database|db)\b|\bremov\w* (the |a )?buckets?\b/i,
   },
   { kept: 'taste', why: 'a reaction to a mock', re: /\breactions?\b|\bR-\d+\b/ },
   { kept: 'taste', why: 'brand', re: /\bbrand(ing)?\b/i },
@@ -175,6 +245,9 @@ const TEXT: TextRule[] = [
 // docs are scope (the PM saying what gets built), never stakes, which they were not.
 const BACK_TO: Record<TeamCallClass, Exclude<Kept, 'none'>> = { copy: 'taste', ux: 'taste', engineering: 'scope', doc: 'scope' };
 
+// A ratified round is named, never assumed: `R-3`, `round 2`, `Round 4`.
+const ROUND = /\b(R-\d+|round\s*\d+)\b/i;
+
 export function keptOf(input: KeptInput): KeptResult {
   // Blank entries are no input: `{ labels: [''] }` is nothing to read, never `none`.
   const labels = (input.labels ?? []).map((l) => l.trim()).filter(Boolean);
@@ -184,14 +257,25 @@ export function keptOf(input: KeptInput): KeptResult {
   const add = (r: Rule) => {
     if (!hits.some((h) => h.kept === r.kept && h.why === r.why)) hits.push(r);
   };
-  const ratified = !!input.ratifiedRound?.trim();
+  const ratified = ROUND.test(input.ratifiedRound ?? '');
+  const tooling = labels.some((l) => TOOLING_LABELS.has(labelKey(l)));
 
   for (const l of labels) {
     const r = LABELS[labelKey(l)];
     if (r && !(ratified && labelKey(l) === 'gate:design')) add(r);
   }
   if (input.migration) add({ kept: 'stakes', why: 'schema (a migration)' });
-  for (const f of files) for (const r of pathRules(f)) if (!(ratified && r.why === 'a mock')) add(r);
+  for (const f of files) {
+    if (isBare(f) && !/\.(sql|sh)$/.test(f)) {
+      // A file named without its folder cannot be placed; on tooling work it is read by
+      // its words, elsewhere it keeps.
+      if (!tooling) add({ kept: 'stakes', why: `a file named without its folder ${UNCERTAIN}` });
+      continue;
+    }
+    for (const r of isBare(f) ? [{ kept: 'stakes' as const, why: 'irreversible (SQL or a shell script)' }] : pathRules(f, ratified)) {
+      if (!(ratified && r.why === 'a mock')) add(r);
+    }
+  }
   for (const r of TEXT) {
     if (ratified && r.tasteVisual) continue;
     if (r.re.test(text)) add(r);
@@ -204,7 +288,9 @@ export function keptOf(input: KeptInput): KeptResult {
     if (input.backToKept.includes(cls)) add({ kept: BACK_TO[cls], why: `${cls} calls returned to kept by the reversal rule` });
   }
   if (!labels.length && !files.length && !text.trim() && !input.migration) {
-    add({ kept: 'stakes', why: 'nothing to read (uncertain counts as kept)' });
+    add({ kept: 'stakes', why: `nothing to read ${UNCERTAIN}` });
+  } else if (!files.length && !input.migration && !tooling) {
+    add({ kept: 'stakes', why: `no files named, so the surface is unread ${UNCERTAIN}` });
   }
 
   if (!hits.length) return { kept: 'none', reasons: [] };
@@ -212,13 +298,14 @@ export function keptOf(input: KeptInput): KeptResult {
   return { kept, reasons: hits.sort((a, b) => KEPT_ORDER.indexOf(a.kept) - KEPT_ORDER.indexOf(b.kept)).map((h) => `${h.kept}: ${h.why}`) };
 }
 
-// Which digest group a team call belongs to: copy by its label or words, docs by a
-// docs-only diff, UX by a UI path, engineering otherwise.
+// Which digest group a team call belongs to: copy by its label or its own words, docs by
+// a docs-only diff, UX by a UI path, engineering otherwise.
 export function teamCallClass(input: Pick<KeptInput, 'labels' | 'files' | 'text'>): TeamCallClass {
   const files = input.files ?? [];
-  if ((input.labels ?? []).includes('Area: Copy/Voice') || /\bnyx-voice\b|\bcopy\b|\bwording\b/i.test(input.text ?? '')) return 'copy';
+  const labels = (input.labels ?? []).map(labelKey);
+  if (labels.includes('area:copy/voice') || /\bnyx-voice\b|\bwording\b|\bowner-facing copy\b|\bcopy (change|edit|fix|pass|line|string)s?\b/i.test(input.text ?? '')) return 'copy';
   if (files.length && files.every((f) => f.startsWith('docs/') || f.endsWith('.md'))) return 'doc';
-  if (files.some((f) => /^(app|components|hooks)\//.test(f)) || (input.labels ?? []).includes('Area: UX polish')) return 'ux';
+  if (files.some((f) => /^(app|components|hooks)\//.test(f)) || labels.includes('area:uxpolish')) return 'ux';
   return 'engineering';
 }
 

@@ -26,6 +26,9 @@ export const PAGE = [
   '',
   '**Done means (rows):** 23, 27e, 27f, 27g, 41',
   '',
+  // PR-23 and PR-40 name a tooling file so the kept list reads them as routine (CUL-2886).
+  '**PR-23:** the latch, in `scripts/dispatch/board.ts`.',
+  '**PR-40:** a polish pass, in `scripts/dispatch/board.ts`.',
   '**PR-27e:** the read, per CUL-1611 option A.',
   '**PR-41:** the go-live: `engines_v3_en9` on for everyone. CUL-1777 is named here.',
 ].join('\n');
