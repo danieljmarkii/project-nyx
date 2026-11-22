@@ -202,15 +202,15 @@ describe('adversarial pass 2: the quiet breaks stay kept', () => {
     expect(keptOf({ labels: ['Area: CI/Build'], files: ['scripts/dispatch/plan.ts'], text: t }).kept).not.toBe('none');
   });
 
-  it('an input that names no file keeps, unless a tooling label says it is the team\'s own tooling', () => {
+  it('an input that names no file keeps, whatever its labels', () => {
     expect(keptOf({ text: 'Card spacing' }).kept).toBe('stakes');
-    expect(keptOf({ labels: ['Area: CI/Build'], text: 'Bump the setup-node action SHA' }).kept).toBe('none');
+    expect(keptOf({ labels: ['Area: CI/Build'], text: 'Bump the setup-node action SHA' }).kept).toBe('stakes');
   });
 
-  it('a file named without its folder keeps, except on tooling work; SQL and shell always keep', () => {
+  it('a file named without its folder keeps, on any work; root files are placed', () => {
     expect(keptOf({ files: ['rundown.ts'], text: 'tidy' }).kept).toBe('stakes');
-    expect(keptOf({ labels: ['Area: AI infra'], files: ['plan.ts'], text: 'tidy' }).kept).toBe('none');
-    expect(keptOf({ labels: ['Area: AI infra'], files: ['deploy.sh'], text: 'tidy' }).kept).toBe('stakes');
+    expect(keptOf({ labels: ['Area: AI infra'], files: ['plan.ts'], text: 'tidy' }).kept).toBe('stakes');
+    expect(keptOf({ files: ['deploy.sh'], text: 'tidy' }).kept).toBe('stakes');
     expect(keptOf({ files: ['app.json'] }).reasons).toContain('stakes: App Store or legal');
   });
 

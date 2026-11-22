@@ -42,7 +42,7 @@ const MUTANTS: Mutant[] = [
   { check: 'product code keeps by default', from: "else push('stakes', `product code the list cannot place ${UNCERTAIN}`);", to: '' },
   { check: 'a screen keeps as taste by default', from: "if (!ratified) push('taste', `a screen or component outside a named mock round ${UNCERTAIN}`);", to: '' },
   { check: 'a script outside the tooling folders keeps', from: "push('stakes', `a script outside the tooling folders ${UNCERTAIN}`);", to: '' },
-  { check: 'a file with no folder keeps', from: "if (!tooling) add({ kept: 'stakes', why: `a file named without its folder ${UNCERTAIN}` });", to: '' },
+  { check: 'a file with no folder keeps', from: "      add({ kept: 'stakes', why: `a file named without its folder ${UNCERTAIN}` });", to: '' },
   { check: 'a file-less input keeps', from: "add({ kept: 'stakes', why: `no files named, so the surface is unread ${UNCERTAIN}` });", to: '' },
   { check: 'a round must be named', from: 'const ratified = ROUND.test(input.ratifiedRound ?? \'\');', to: "const ratified = !!input.ratifiedRound?.trim();" },
   { check: 'UI mechanics are a team call', from: "'lib/utils.ts', 'lib/haptics.ts',", to: "'lib/utils.ts'," },

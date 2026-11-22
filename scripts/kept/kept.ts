@@ -29,8 +29,8 @@
 // COUNTS AS KEPT, and since two adversarial passes (2026-11-22) that is structural, not a
 // word list: product code (lib, store, hooks, app, components, constants, supabase,
 // widgets) keeps unless it is on a short list of UI mechanics; a script outside the named
-// tooling folders keeps; an input that names no file keeps unless it carries a tooling
-// label; a file named without its folder keeps. Stems and wording only add the reasons.
+// tooling folders keeps; an input that names no file keeps; a file named without its
+// folder keeps. Stems and wording only add the reasons.
 // That errs loud (an extra ask), never quiet (a kept call made silently).
 //
 // Pure: no I/O, no clock. cli.ts is the shell for merge-check and the groomer.
@@ -43,8 +43,6 @@
 //   - "Inside a ratified mock round" is the caller's claim (`ratifiedRound`, which must
 //     name a round: `R-3`, `round 2`). The module cannot check that the PM ratified it; a
 //     reaction to a mock and brand stay kept whatever round is named.
-//   - An issue with a tooling label and no files is read from its words alone; a missed
-//     word there is the residual the second pass left (CUL-2886).
 
 export type Kept = 'stakes' | 'taste' | 'scope' | 'none';
 export const KEPT_ORDER: Kept[] = ['stakes', 'taste', 'scope', 'none'];
@@ -85,9 +83,6 @@ const LABELS: Record<string, Rule> = {
   'gate:design': { kept: 'taste', why: 'a design call (label Gate: design)' },
 };
 const labelKey = (l: string) => l.toLowerCase().replace(/\s+/g, '');
-// The labels whose work is the team's own tooling; only these let an input with no files
-// be read from its words alone.
-const TOOLING_LABELS = new Set(['area:ci/build', 'area:aiinfra', 'area:testcoverage']);
 
 // ---- paths --------------------------------------------------------------------------
 const PRODUCT = /^(lib|store|hooks|app|components|constants|supabase|widgets)(\/|$)/;
@@ -258,7 +253,6 @@ export function keptOf(input: KeptInput): KeptResult {
     if (!hits.some((h) => h.kept === r.kept && h.why === r.why)) hits.push(r);
   };
   const ratified = ROUND.test(input.ratifiedRound ?? '');
-  const tooling = labels.some((l) => TOOLING_LABELS.has(labelKey(l)));
 
   for (const l of labels) {
     const r = LABELS[labelKey(l)];
@@ -267,9 +261,8 @@ export function keptOf(input: KeptInput): KeptResult {
   if (input.migration) add({ kept: 'stakes', why: 'schema (a migration)' });
   for (const f of files) {
     if (isBare(f) && !/\.(sql|sh)$/.test(f)) {
-      // A file named without its folder cannot be placed; on tooling work it is read by
-      // its words, elsewhere it keeps.
-      if (!tooling) add({ kept: 'stakes', why: `a file named without its folder ${UNCERTAIN}` });
+      // A file named without its folder cannot be placed, so it keeps.
+      add({ kept: 'stakes', why: `a file named without its folder ${UNCERTAIN}` });
       continue;
     }
     for (const r of isBare(f) ? [{ kept: 'stakes' as const, why: 'irreversible (SQL or a shell script)' }] : pathRules(f, ratified)) {
@@ -289,7 +282,7 @@ export function keptOf(input: KeptInput): KeptResult {
   }
   if (!labels.length && !files.length && !text.trim() && !input.migration) {
     add({ kept: 'stakes', why: `nothing to read ${UNCERTAIN}` });
-  } else if (!files.length && !input.migration && !tooling) {
+  } else if (!files.length && !input.migration) {
     add({ kept: 'stakes', why: `no files named, so the surface is unread ${UNCERTAIN}` });
   }
 
