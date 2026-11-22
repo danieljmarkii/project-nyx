@@ -3,7 +3,7 @@
 // CUL-1438 and CUL-1741 shapes, and the population, order and door-3 rules. Each case
 // drives the real planner over a page shaped like Engines v3's, never a re-derivation.
 
-import { APP_CONFIG, NOW, PM_UUID, UNTAGGED, finding, input, tagged } from './fixtures/sort-retro4.ts';
+import { APP_CONFIG, NOW, PAGE, PM_UUID, UNTAGGED, finding, input, tagged } from './fixtures/sort-retro4.ts';
 import { parsePage } from './page.ts';
 import { planDispatch, type PlanInput } from './plan.ts';
 import { scopeFromIssues, scopeFromPlan, scopeLine } from './progress.ts';
@@ -499,5 +499,186 @@ describe('Q5: the allowlist-read keys come from the code', () => {
     expect(keys).toEqual(expect.arrayContaining(['ask_enabled', 'ask_general_enabled', 'engines_v3_en3', 'engines_v3_en9', 'engines_v3_en0']));
     expect(keys).not.toContain('ai_vomit_read_enabled');
     expect(keys).not.toContain('widget_enabled'); // graduated at 1.2.0 (CUL-1842)
+  });
+});
+
+// The ship bar (PM ruling 2026-10-22, CUL-2123): the likelihood gate sits AHEAD of the
+// Live harm door, parks only an explicit rare trigger, and never decides who rules.
+describe('the likelihood gate (CUL-2123)', () => {
+  const rare = (cause = 'two phones', extra = '') => `TL;DR — plain English: a finding.\n\nDirection: QUIET\nTrigger: rare (${cause})${extra}\n\n---\n\nBody.`;
+  // The gate runs only on a page that states its Ship bar (the ruling's "before a project ships").
+  const SHIPPING = { name: 'Engines v3: the record that reads itself', description: `${PAGE}\n\n**Ship bar:** every Done means row merged, no gate-passing harm open` };
+  const run = (findings: Candidate[], over: Partial<PlanInput> = {}) => planDispatch(input({ findings, project: SHIPPING, ...over })).sort!;
+  const door = (findings: Candidate[], id: string, over: Partial<PlanInput> = {}) => run(findings, over).sorted.find((s) => s.id === id)?.door;
+
+  it('a QUIET finding whose trigger is rare parks as rare, Direction kept, never Live harm', () => {
+    for (const cause of ['two phones', 'timing', 'storage failure', 'clock skew']) {
+      const r = run([finding('CUL-2901', { description: rare(cause), keys: [] })]);
+      expect(r.sorted[0]).toMatchObject({ door: 4, park: 'rare', direction: 'QUIET', harm: true });
+      expect(r.writes.filter((w) => w.issue === 'CUL-2901')).toEqual([]);
+      expect(r.liveFixes).toEqual([]);
+    }
+  });
+
+  it('a labelled Live harm finding that fails the gate gets its label removed, with the trigger quoted', () => {
+    const r = run([finding('CUL-2902', { description: rare('clock skew'), labels: ['Live harm'], keys: [] })]);
+    expect(r.sorted[0].door).toBe(4);
+    expect(r.writes).toEqual([expect.objectContaining({ issue: 'CUL-2902', write: 'remove label Live harm', why: expect.stringContaining('rare (clock skew)') })]);
+  });
+
+  it('a Gate: clinical finding the gate parks keeps its gate label: no write adds or removes it', () => {
+    const r = run([finding('CUL-2903', { description: rare('timing'), labels: ['Gate: clinical'], keys: [] })]);
+    expect(r.sorted[0].door).toBe(4);
+    expect(r.writes.some((w) => /Gate:/.test(w.write))).toBe(false);
+  });
+
+  it('a leak or a loss always passes: exposure, loss and Gate: privacy stay door 1', () => {
+    expect(door([finding('CUL-2904', { description: rare(), harm: 'exposure', keys: [] })], 'CUL-2904')).toBe(1);
+    expect(door([finding('CUL-2905', { description: rare(), harm: 'loss', keys: [] })], 'CUL-2905')).toBe(1);
+    expect(door([finding('CUL-2906', { description: rare(), labels: ['Gate: privacy'], keys: [] })], 'CUL-2906')).toBe(1);
+  });
+
+  it('no Trigger line, normal, regression, or a cause outside the four passes and is sorted as before', () => {
+    expect(door([finding('CUL-2907', { keys: [] })], 'CUL-2907')).toBe(1);
+    expect(door([finding('CUL-2908', { description: rare('two phones', '\nTrigger: regression'), keys: [] })], 'CUL-2908')).toBe(1);
+    expect(door([finding('CUL-2909', { description: rare('a regression on two phones'), keys: [] })], 'CUL-2909')).toBe(1);
+    expect(door([finding('CUL-2910', { description: rare('a slow network'), keys: [] })], 'CUL-2910')).toBe(1);
+    expect(door([finding('CUL-2911', { description: rare('two phones').replace('rare (two phones)', 'normal'), keys: [] })], 'CUL-2911')).toBe(1);
+    expect(door([finding('CUL-2912', { description: rare('two phones').replace('rare (two phones)', '(two phones)'), keys: [] })], 'CUL-2912')).toBe(1);
+  });
+
+  it('a class goes by its worst instance: one passing Trigger line among rare ones passes', () => {
+    expect(door([finding('CUL-2913', { description: rare('timing', '\nInstance 2 — Trigger: normal'), keys: [] })], 'CUL-2913')).toBe(1);
+  });
+
+  it('a clinical finding that passes still needs its ruling: door 1, and Waiting on PM once unclaimed 24 hours', () => {
+    const r = run([finding('CUL-2914', { description: rare('two phones').replace('rare (two phones)', 'normal'), labels: ['Gate: clinical'], keys: [], createdAt: '2026-10-10T12:00:00Z' })]);
+    expect(r.sorted[0].door).toBe(1);
+    expect(r.writes.map((w) => w.write)).toEqual(['add label Live harm', 'add label Waiting on PM']);
+  });
+
+  it('adversarial pass 1: every shape it cannot read cleanly passes (errs loud)', () => {
+    const passes = [
+      // A DB trigger in prose, with no Trigger line of its own.
+      'TL;DR. Direction: QUIET\n\nThe Postgres trigger: `meal_rollup` has a rare timing race; one owner hits it every breakfast.',
+      // Negation, regression in any word form, a cause word inside an unlisted cause.
+      'Direction: QUIET\nTrigger: not rare, one phone, timing of the daily log',
+      'Direction: QUIET\nTrigger: not rare (timing)',
+      rare('timing', '\nThis regressed in 1.4; it worked in 1.3.'),
+      'Direction: QUIET\nTrigger: rare (a slow network delays the timing)',
+      // A second instance in any shape the clean line does not cover.
+      rare('timing', '\nTrigger (instance 2): normal'),
+      rare('timing', '\nAlso — Trigger — normal'),
+      rare('timing', '\n**Trigger** normal'),
+      rare('timing', '\nTriggers for B: normal'),
+      'Direction: QUIET\nTrigger:\n- path A: rare (two phones)\n- path B: normal',
+      'Direction: QUIET\n| Trigger | rare (timing) | normal |',
+      // A rule quoted mid-line is not a line of its own.
+      'Direction: QUIET\nThe block says `Trigger: rare (timing)`, or its cause.',
+      'Direction: QUIET\nInstance A — Trigger: rare (timing)',
+    ];
+    for (const [i, d] of passes.entries()) expect([i, door([finding(`CUL-30${10 + i}`, { description: d, keys: [] })], `CUL-30${10 + i}`)]).toEqual([i, 1]);
+    // The clean shapes park: bold, a list item, a trailing full stop.
+    for (const d of ['Direction: QUIET\n**Trigger:** rare (timing)', 'Direction: QUIET\n- Trigger: rare (clock skew).', rare('storage failure', '\nTrigger: rare (two phones)')])
+      expect(door([finding('CUL-3030', { description: d, keys: [] })], 'CUL-3030')).toBe(4);
+  });
+
+  it('adversarial pass 2: other word forms, the title, a label, a leak or loss in words, a copy, a fence all pass', () => {
+    const passes: Partial<Candidate>[] = [
+      { description: rare('timing', '\nTriggered on every app reopen by one owner.') },
+      { description: rare('timing', '\nThe meal_rollup_trigger fires on every insert.') },
+      { description: rare('timing'), title: 'Regression: dose reminder silenced on reopen' },
+      { description: rare('timing'), labels: ['Regression'] },
+      { description: rare('storage failure', '\nThe meal log is lost for good.') },
+      { description: rare('two phones', '\nThe other phone deletes the meal.') },
+      { description: 'Direction: QUIET\n> Trigger: rare (clock skew)\nHere it happens on one phone every day.' },
+      { description: 'Direction: QUIET\n```\nTrigger: rare (clock skew)\n```' },
+      { description: 'Direction: QUIET\nTrigger: rare (timing, two phones)' },
+      { description: rare('two phones', '\nInstance 2: one phone, every breakfast.') },
+      { description: rare('two phones', '\nThe class covers both write paths.') },
+    ];
+    for (const [i, over] of passes.entries()) expect([i, door([finding(`CUL-31${10 + i}`, { keys: [], ...over })], `CUL-31${10 + i}`)]).toEqual([i, 1]);
+  });
+
+  it('adversarial pass 2: a placeholder Ship bar states no bar', () => {
+    for (const v of ['TBD', 'none', '—', 'n/a.']) expect(parsePage(`Ship bar: ${v}`).shipBar).toBeUndefined();
+    const tbd = { name: 'Engines v3', description: `${PAGE}\n\nShip bar: TBD` };
+    expect(planDispatch(input({ findings: [finding('CUL-3120', { description: rare(), keys: [] })], project: tbd })).sort!.sorted[0].door).toBe(1);
+  });
+
+  it('adversarial pass 1: scoped as ruled, to this project on a page with a Ship bar', () => {
+    // Another project's finding, read team-wide, is not this dispatcher's to park.
+    const out = run([finding('CUL-3002', { description: rare('clock skew'), inProject: false, project: 'Out of beta', labels: ['Live harm'], keys: [] })]);
+    expect(out.sorted[0].door).toBe(1);
+    expect(out.writes.some((w) => w.write === 'remove label Live harm')).toBe(false);
+    // A page with no Ship bar line has not opted in: the doors run as before.
+    expect(planDispatch(input({ findings: [finding('CUL-3003', { description: rare(), keys: [] })] })).sort!.sorted[0].door).toBe(1);
+  });
+
+  it('adversarial pass 1: a rare park keeps the go-live it gates; only its parent and row links are offered for unlink', () => {
+    const r = run([finding('CUL-3004', { description: rare('timing'), labels: ['Gate: clinical'], blocks: ['CUL-1500', 'CUL-1432'], parentId: 'CUL-1300' })]);
+    expect(r.sorted[0].door).toBe(4);
+    expect(r.unlink).toEqual([{ id: 'CUL-3004', targets: ['CUL-1300', 'CUL-1432'] }]);
+  });
+
+  it('a parked rare finding with a parent or a blocks relation is offered for unlink, and counts in the digest', () => {
+    const r = run([finding('CUL-2915', { description: rare(), blocks: ['CUL-1432'], keys: [] })]);
+    expect(r.unlink).toEqual([{ id: 'CUL-2915', targets: ['CUL-1432'] }]);
+    expect(r.digest).toContain('1 parked (0 err loud, 0 polish, 0 other, 1 rare)');
+  });
+
+  it('the page reads a Ship bar line, and a page without one has none', () => {
+    expect(parsePage('**Ship bar:** the likelihood gate; ships when every Done means row merged').shipBar).toBe('the likelihood gate; ships when every Done means row merged');
+    expect(parsePage(input().project.description).shipBar).toBeUndefined();
+  });
+});
+
+// The rule text the children read: the gate sits ahead of the Live harm door in § The
+// sort and in step 5's sort block, it keeps the clinical ruling, and the page template
+// carries Done means and the Ship bar. Every copy of the block (sweep's, prompt.test.ts)
+// follows dispatch.md.
+describe('the likelihood gate in the rules a child reads (CUL-2123)', () => {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const read = (p: string) => fs.readFileSync(path.resolve(__dirname, '../..', p), 'utf8');
+  const md = read('.claude/commands/dispatch.md');
+  const section = (from: string, to: string) => md.slice(md.indexOf(from), md.indexOf(to, md.indexOf(from)));
+
+  it('§ The sort states the gate before door 1, with the ruling\'s four causes and the clinical ruling kept', () => {
+    const sort = section('## The sort', '## Steps');
+    const gate = sort.indexOf('**1b · The likelihood gate, ahead of door 1**');
+    expect(gate).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(sort.indexOf('**Harm, live.**'));
+    const text = sort.slice(gate, sort.indexOf('**2 · The four doors.**'));
+    expect(text).toContain('rare (two phones | timing | storage failure | clock skew)');
+    expect(text).toContain('cannot expose or lose data');
+    expect(text).toContain('a clinical finding that passes still needs its ruling');
+    expect(text).toContain('A finding of this project, on a page with a `Ship bar:` line');
+    expect(text).toContain('nothing else in it (title included) names a trigger, a regression, a leak or a loss');
+    expect(text).toContain('a gate label and go-live `blocks` kept');
+    expect(sort).toContain('A QUIET or harm finding parks only through the gate');
+  });
+
+  it("step 5's sort block carries the gate ahead of the Live harm bullet", () => {
+    const block = section('Every finding you file (a reviewer', 'File at most three issues');
+    const gate = block.indexOf('- The likelihood gate, ahead of `Live harm`');
+    expect(gate).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(block.indexOf('label `Live harm`'));
+    expect(block).toContain('clinical one still needs its ruling');
+    expect(block).toContain('only on a page with a `Ship bar:` line');
+    expect(block).toContain('A class, or any doubt, is sorted below');
+    expect(block).toContain('never goes in the last bullet unless the gate parks it');
+    expect(block).toContain('goes under the last bullet, uncapped');
+  });
+
+  it('the page template carries a Done means line and a stated Ship bar', () => {
+    const fmt = section('## Page format', '$ARGUMENTS');
+    expect(fmt).toContain('- **`Done means (rows):`**');
+    expect(fmt).toContain('- **`Ship bar:`** one line under Done means');
+  });
+
+  it('/wrap and the groomer name the gate, so a parked rare finding is not re-sorted', () => {
+    expect(read('.claude/commands/wrap.md')).toContain('the likelihood gate (§ The sort, 1b)');
+    expect(read('.claude/skills/backlog-groomer/SKILL.md')).toContain('unless its every `Trigger:` line is rare');
   });
 });

@@ -76,6 +76,8 @@ export type Page = {
   // The `Done means (rows):` line (§ The sort rule 6): the rows on the path, by PR number.
   // Absent means the page has no path, so every row is off it (Unblock kind g).
   doneMeans?: RowId[];
+  // The `Ship bar:` line (§ The sort 1b and rule 6): when hardening ends. Absent → Unblock kind g.
+  shipBar?: string;
   plain: string; // the page minus its Board, tags stripped: what "covered" reads
 };
 
@@ -341,6 +343,7 @@ export function parsePage(raw: string): Page {
     hasBoard: !!boardStart,
     alias: /^Alias:\s*(.+)$/m.exec(plain)?.[1]?.trim(),
     doneMeans: parseDoneMeans(plain),
+    shipBar: parseShipBar(plain),
     plain,
   };
 }
@@ -357,6 +360,12 @@ export function parseDoneMeans(plain: string): RowId[] | undefined {
     .map((t) => /(?:PR-)?(\d{2}[a-z]?)\b/.exec(t.trim())?.[1])
     .filter((x): x is string => !!x)
     .map(normRow);
+}
+
+// `Ship bar: <text>`. A placeholder (`TBD`, `none`, a dash) states no bar: the gate stays off.
+export function parseShipBar(plain: string): string | undefined {
+  const v = /^\**Ship bar:\**\s*(.+)$/m.exec(plain.split('\n').map((l) => l.trim()).join('\n'))?.[1]?.replace(/\*\*/g, '').trim();
+  return v && !/^(tbd|todo|none|n\/a|[-—–.?]+)\.?$/i.test(v) ? v : undefined;
 }
 
 function withoutBoard(lines: string[]): string[] {
