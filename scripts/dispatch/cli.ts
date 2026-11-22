@@ -16,6 +16,8 @@
 // `queued`, and for the stalled-child check (CUL-1623) `checkRuns` (PR number → its head's
 // `get_check_runs` list), `headShas` (PR number → head sha), `wakes` (the children's
 // `/dispatch wake` messages this session received) and `notes` (the `/dispatch note`s it sent).
+// `contextTokens` (get_session's context_usage, required by plan and progress): at or past
+// HANDOFF_TOKENS both print only the hand-off and exit 3 (D9, CUL-2869).
 //
 // The sort and the alarms (CUL-1872; dispatch.md § The sort, step 1): `findings` (every
 // candidate step 1's three reads returned: `Candidate` in sort.ts, with the dispatcher's
@@ -39,7 +41,7 @@ import { cyclesFrom, holdsFromPlan, nextFromPlan, nextFromQueued, progressEmail,
 import { allowlistKeysFromCode } from './codeFacts.ts';
 import { LIVE_HARM } from './sort.ts';
 import { CI_WAIT_CHECK_IN_MIN, checksOf, findStalls, type CheckRun, type Note, type Wake } from './stall.ts';
-import { checkInFrom, closingLines, memoryCheck, prSafe, validateStatusUpdate, type Trigger } from './status.ts';
+import { checkInFrom, closingLines, handoffRefusal, memoryCheck, prSafe, validateStatusUpdate, type Closing, type Trigger } from './status.ts';
 
 type Facts = Omit<PlanInput, 'project' | 'others'> & {
   project: ProjectInput & { descriptionFile?: string };
@@ -57,6 +59,7 @@ type Facts = Omit<PlanInput, 'project' | 'others'> & {
   headShas?: Record<string, string>;
   wakes?: Wake[];
   notes?: Note[];
+  contextTokens?: number;
 };
 
 function fail(msg: string): never {
@@ -71,6 +74,28 @@ function load(file: string): Facts {
     description: p.description ?? (p.descriptionFile ? fs.readFileSync(p.descriptionFile, 'utf8') : fail(`no description for ${p.name}`)),
   });
   return { ...f, project: desc(f.project), others: (f.others ?? []).map(desc) };
+}
+
+function closingOf(f: Facts, p: ReturnType<typeof planDispatch>): Closing {
+  const merged = new Set(p.verdicts.filter((v) => v.state.kind === 'merged').map((v) => v.row));
+  return {
+    dispatcher: f.dispatcher ?? '<this session>',
+    teach: f.teach,
+    checkIn: checkInFrom(f.triggers ?? [], p.alias, f.now),
+    auto: p.autoRows,
+    queued: (f.queued ?? []).filter((r) => !merged.has(r)),
+  };
+}
+
+// D9 (CUL-2869): plan and progress run on every wake, so both refuse past the hand-off
+// limit, print the hand-off and exit 3 before anything else is printed to act on.
+function handoffGate(f: Facts): void {
+  const p = planDispatch(f);
+  const refusal = handoffRefusal(f.contextTokens, f.project.name, p.alias, closingOf(f, p));
+  if (refusal) {
+    console.log(refusal);
+    process.exit(3);
+  }
 }
 
 function plan(f: Facts, shape: BoardShape): string {
@@ -165,14 +190,7 @@ function plan(f: Facts, shape: BoardShape): string {
   }
   say();
   say('Closing lines for this run\'s status update:');
-  for (const l of closingLines({
-    dispatcher: f.dispatcher ?? '<this session>',
-    teach: f.teach,
-    checkIn: checkInFrom(f.triggers ?? [], p.alias, f.now),
-    auto: p.autoRows,
-    queued: (f.queued ?? []).filter((r) => !merged.has(r)),
-  }))
-    say(`  ${l}`);
+  for (const l of closingLines(closingOf(f, p))) say(`  ${l}`);
   say();
   const board = renderBoard({ plan: p, now: f.now, shape, unblock: f.unblock, index: f.index });
   const errs = validateBoard(board, { now: f.now, merged: new Set(merged.keys()), rows: new Set(p.verdicts.map((v) => v.row)) });
@@ -221,7 +239,9 @@ const flags = [a, b, ...rest];
 // The digest is the default Board (D4, CUL-1622): the PM reads the digests, not a table.
 const shape: BoardShape = flags.includes('--board') ? (flags[flags.indexOf('--board') + 1] as BoardShape) || 'digest' : 'digest';
 if (cmd === 'plan' && a) {
-  const text = plan(load(a), shape);
+  const f = load(a);
+  handoffGate(f);
+  const text = plan(f, shape);
   const keep = flags.includes('--for-pr') ? flags.slice(flags.indexOf('--for-pr') + 1).filter((x) => /^CUL-\d+$/.test(x)) : [];
   console.log(flags.includes('--for-pr') ? prSafe(text, keep) : text);
 } else if (cmd === 'check-update' && a && b) {
@@ -240,6 +260,7 @@ if (cmd === 'plan' && a) {
   process.exit(errs.length ? 1 : 0);
 } else if (cmd === 'progress' && a) {
   const f = load(a) as ProgressFacts;
+  handoffGate(f);
   const { alias, text } = progress(f);
   if (flags.includes('--email')) console.log(JSON.stringify(progressEmail(text, alias, f.now, flags[flags.indexOf('--email') + 1]), null, 2));
   else {
