@@ -379,8 +379,11 @@ jobs:
         if: ${{ !cancelled() && env.SIM_UDID != '' }}
         shell: bash
         run: |
-          xcrun simctl spawn "$SIM_UDID" log show --last 15m --style compact \
+          xcrun simctl spawn "$SIM_UDID" log show --last 15m --style compact --info --debug \
             --predicate 'process CONTAINS "Culprit" OR eventMessage CONTAINS "com.projectnyx"' > "$SIM/device.log" 2>&1 || true
+          # The app's own console (console.warn is below the default level, so --info above).
+          grep 'react.log:javascript' "$SIM/device.log" > "$SIM/app-console.log" || true
+          tail -60 "$SIM/app-console.log" || true
           tail -40 "$SIM/device.log" || true
 
       - name: Upload the screenshot
@@ -426,6 +429,7 @@ jobs:
             ${{ runner.temp }}/sim/xcodebuild.log
             ${{ runner.temp }}/sim/xcodebuild-scan-timeout.log
             ${{ runner.temp }}/sim/device.log
+            ${{ runner.temp }}/sim/app-console.log
             ${{ runner.temp }}/sim/fixture-*.log
             ${{ runner.temp }}/sim/maestro-*.xml
             ${{ runner.temp }}/sim/maestro-debug-*/**

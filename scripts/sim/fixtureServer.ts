@@ -163,6 +163,9 @@ export function startFixtureServer(port: number, opts: FixtureServerOptions = {}
       .then((body) => {
         const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`);
         const a = answer(req.method ?? 'GET', url, String(req.headers.accept ?? ''), body);
+        // Every request, so a run that never pulls a table shows which read it skipped.
+        const rows = a.body.startsWith('[') ? ` ${(JSON.parse(a.body) as unknown[]).length} rows` : '';
+        opts.log?.(`${req.method} ${url.pathname}${url.search.slice(0, 140)} -> ${a.status}${rows}`);
         res.writeHead(a.status, a.headers ?? {});
         res.end(a.status === 204 ? undefined : a.body);
       })
