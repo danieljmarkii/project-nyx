@@ -151,7 +151,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.0.0
         with:
           path: ${{ runner.temp }}/sim/cached
-          key: sim-app-${{ runner.os }}-${{ runner.arch }}-xcode${{ steps.xcode.outputs.version }}-${{ steps.fp.outputs.hash }}
+          key: sim-app-signed-${{ runner.os }}-${{ runner.arch }}-xcode${{ steps.xcode.outputs.version }}-${{ steps.fp.outputs.hash }}
 
       # One iPhone on the newest iOS runtime the selected Xcode carries. Picked before the
       # build so xcodebuild builds the simulator's own architecture only.
@@ -198,13 +198,19 @@ jobs:
           # published update at launch and photograph that instead of this commit's JS.
           find ios -name Expo.plist -not -path '*/Pods/*' -print -exec \
             /usr/libexec/PlistBuddy -c 'Set :EXUpdatesEnabled false' {} \;
+          # Signed to run locally (identity "-", no team), as Xcode signs a simulator run: the
+          # entitlements (the App Group) go into the binary as simulated entitlements. Unsigned,
+          # the binary has none and every keychain call fails, so the session never persists
+          # and the sync never pulls the record. Re-signing after the build cannot stand in:
+          # macOS refuses an ad-hoc signature that claims keychain entitlements (run 45034999097).
           build() {
             status=0
             xcodebuild \
               -workspace "$ws" -scheme "$scheme" -configuration Release \
               -sdk iphonesimulator -destination "id=$SIM_UDID" \
               -derivedDataPath "$SIM/dd" \
-              ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+              ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
               build > "$SIM/xcodebuild.log" 2>&1 || status=$?
           }
           build
@@ -251,6 +257,9 @@ jobs:
           out="$APP_OUT/$(basename "$src")"
           npx --yes @expo/repack-app@0.10.4 --platform ios --source-app "$src" --output "$out" --working-directory "$SIM/repack" --verbose .
           test -d "$out" || { echo "::error::repack produced no .app"; exit 1; }
+          # The new bundle breaks the cached app's seal: re-sign it to run locally, keeping the
+          # signature's own entitlements (the simulated ones live in the binary, untouched).
+          codesign --force --sign - --preserve-metadata=identifier,entitlements,flags "$out"
           echo "BUILD_KIND=warm (cached binary + repacked JS)" >> "$GITHUB_ENV"
           echo "BUILD_SECONDS=$(( $(date +%s) - t0 ))" >> "$GITHUB_ENV"
 
@@ -304,25 +313,6 @@ jobs:
           app="$(ls -d "$APP_OUT"/*.app | head -1)"
           bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
           exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
-          # The build is unsigned (CODE_SIGNING_ALLOWED=NO), and an unsigned simulator binary
-          # has no entitlements, so every keychain call fails: the session never persists,
-          # getSession() reads nothing, and the sync's pull returns before reading a table.
-          # Ad-hoc sign it here with a stand-in team id, the app's App Group and its keychain
-          # group, the extension first. Simulator only: nothing here reaches a device build.
-          ents="$SIM/entitlements"; mkdir -p "$ents"
-          for target in "$bundle" "$bundle.ExpoWidgetsTarget"; do
-            f="$ents/$target.plist"
-            plutil -create xml1 "$f"
-            plutil -insert application-identifier -string "FIXTURETM.$target" "$f"
-            plutil -insert 'com\.apple\.developer\.team-identifier' -string FIXTURETM "$f"
-            plutil -insert keychain-access-groups -json "[\"FIXTURETM.$bundle\"]" "$f"
-            plutil -insert 'com\.apple\.security\.application-groups' -json '["group.com.projectnyx.app"]' "$f"
-          done
-          for appex in "$app"/PlugIns/*.appex; do
-            if [ -d "$appex" ]; then codesign --force --sign - --entitlements "$ents/$bundle.ExpoWidgetsTarget.plist" "$appex"; fi
-          done
-          codesign --force --sign - --entitlements "$ents/$bundle.plist" "$app"
-          codesign -d --entitlements - "$app" 2>/dev/null | head -20 || true
           xcrun simctl install "$SIM_UDID" "$app"
           xcrun simctl launch "$SIM_UDID" "$bundle"
           # The landing screen: give the JS a moment past the splash.
