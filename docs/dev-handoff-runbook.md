@@ -1,6 +1,6 @@
 # Dev Handoff Runbook
 
-The exact, copy-pasteable command scripts the PM runs to get the latest code onto their phone after a push. Extracted from `CLAUDE.md` (which keeps the *rules* — when to use which runtime, the npm-test / migration / Edge-Function deploy reminders, and the Manual QA Script format). Read this file when emitting a Dev Handoff and paste the block for the runtime that matches the session.
+The exact, copy-pasteable command scripts the PM runs to get the latest code onto their phone after a push, and the handoff rules (§ The handoff rules). Paste the block for the runtime that matches the session.
 
 There are **two runtimes**, and they map to two *different intentions*:
 
@@ -9,7 +9,7 @@ There are **two runtimes**, and they map to two *different intentions*:
 
 Pick the one that matches the session's intention and emit only that block. **Default to Runtime B** unless the session's explicit goal is shipping to TestFlight.
 
-> ⚠️ **The TestFlight build lives on the `production` channel, built with the `production` profile** (`distribution: store`). This was mis-documented as `preview` until 2026-06-12 and cost a full session — see **§ Current build state** below. `preview` is `distribution: internal` (ad-hoc) and is **not** TestFlight-eligible; OTA to TestFlight is `--branch production`, never `--branch preview`.
+> ⚠️ **Two channels since 2026-11-22 (CUL-2863).** The PM's TestFlight build is built with the `testflight` profile and listens on the **`testflight`** channel; the App Store build is built with `production` and listens on **`production`**, which every owner's phone reads. Every update is published to `testflight` first, and `production` receives only an update group the PM has tested, through **§ Promote to the App Store channel**, the one place a command may target it (`guards/releaseChannel.test.ts`). `preview` is `distribution: internal` (ad-hoc) and is never TestFlight-eligible.
 
 > ⚠️ **SDK 58 OTA fence (Every iPhone PR-01, CUL-2236).** Expo SDK 57 → 58 (React Native 0.88, iOS 27 SDK) bumped `app.json` `version` **1.2.0 → 1.3.0**, so under `runtimeVersion.policy: appVersion` no SDK-58 bundle can reach an installed 1.2.0 binary. Until a 1.3.0 binary is installed, **A-OTA is a harmless no-op** against the 1.2.0 build, and **the first cut after PR-01 MUST be Runtime A-Native** (`eas build`), never `eas update`; the dev client needs a fresh `--profile development` build too. Never revert the version to "fix" a non-arriving OTA: an SDK-58 bundle on an SDK-57 binary is a crash-on-launch (the same fence W2 set at SDK 57, 1.0.0 → 1.1.0).
 
@@ -21,14 +21,14 @@ _Moved here from `STATUS.md` → Runtime in Use (2026-08-22), because it is read
 
 **TestFlight (real iOS builds) is the primary on-device target** since 2026-06-07. Runtime B (Metro + tunnel in the **custom dev client** — Expo Go retired at W2/SDK 57) remains the per-push daily driver.
 
-**Installed TestFlight build: the 1.2.0 cut of 2026-08-29 (#730, `76d27a1`); build number not recorded, so record it at the next cut (CUL-559).** Before it: 1.1.0 (35), 2026-07-25, first since SDK 57.
+**Installed TestFlight build: the 1.2.0 cut of 2026-08-29 (#730, `76d27a1`), on the old shared `production` channel; build number not recorded, so record it at the next cut (CUL-559).** Before it: 1.1.0 (35), 2026-07-25, first since SDK 57. **The next cut is the first on `--profile testflight`;** until it is installed, no test update reaches the PM's phone.
 
-**OTA to the installed build:** `eas update --branch production` — the build's channel is `production`, **not** `preview`.
+**OTA to the installed build:** `eas update --branch testflight`, once the `testflight` build is installed. `eas channel:view testflight` must show branch `testflight`; if not, `eas channel:edit testflight --branch testflight` once.
 
 ### Traps — each of these cost a session; do not repeat them
 
 - **SDK 58 OTA fence (PR-01, CUL-2236).** 1.2.0 → 1.3.0; the first post-PR-01 cut is a native `eas build`, never OTA (callout above). Every profile pins `ios.image` in `eas.json` to `macos-tahoe-26.6-xcode-27.1` (Xcode 27.1 RC, EAS's `sdk-58` image), the iOS 27 SDK that lets the iPhone Duo's unfolded screen size the app.
-- **Never build TestFlight with the `preview` profile.** It is `distribution: internal` (ad-hoc) and can never be store-submitted. Use `production`.
+- **Build the PM's TestFlight build with `testflight`, never `preview` or `production`.** `preview` is `distribution: internal` (ad-hoc) and can never be store-submitted. A `production` build is the App Store binary: it passes through TestFlight on its way to review, and installing it as the daily build puts the PM's phone on the public channel. Once an update lands, Settings' version foot reads `testflight · <id>` (a fresh install reads `embedded`); anything else is the wrong build.
 - **Never submit with `eas submit --latest`.** It skips internal builds and re-uploads a stale store build — the "build number 8 already used" loop. Use `--auto-submit`, which binds the upload to the binary just built.
 - **"Build number N already used"** = the EAS counter is behind App Store Connect → `eas build:version:set --platform ios`, then rebuild. Build numbers live on EAS (`appVersionSource: remote`, `autoIncrement`).
 - **All three `eas.json` build profiles carry the `EXPO_PUBLIC_SUPABASE_*` `env` block** (#90). EAS cloud builds never see the gitignored `.env.local`; stripping it was the first crash-on-launch.
@@ -40,7 +40,7 @@ _Moved here from `STATUS.md` → Runtime in Use (2026-08-22), because it is read
 
 ⚠️ **Not the per-push default.** Use this when the change is **pure JS/TS/React** (no new native module, SDK bump, or `app.json` native/permission change) and you just want it on the *existing* installed TestFlight build in ~2 minutes. For testing a single pushed PR locally, use Runtime B below; for a native change, use Runtime A-Native.
 
-The app is published as a JS bundle to Expo's CDN on the **`production`** channel; the installed TestFlight build picks it up OTA on next cold open (matching channel + `runtimeVersion`). No Codespace tunnel required.
+The app is published as a JS bundle to Expo's CDN on the **`testflight`** channel; only the PM's TestFlight build reads it, on next cold open (matching channel + `runtimeVersion`). Owners never see it until it is promoted. No Codespace tunnel required.
 
 **Sequence:**
 
@@ -54,9 +54,9 @@ Gets the latest commits, **switches you onto the branch we just pushed to**, and
 > **One-time fix that kills the "divergent branches" prompt for good** — run this once per Codespace (or with `--global`): `git config --global pull.ff only`. After that, any stray `git pull` fast-forwards or fails fast instead of dropping you into the merge-vs-rebase chooser. And if you ever see that prompt again, the answer is **never** "pick merge or rebase" — it's: you're on the wrong branch. Run `git checkout <the branch named in the handoff>` and re-run. The PM consumes these `claude/...` branches read-only (Claude is the only one committing to them), so there is never a real divergence to reconcile — only a wrong-branch mistake to undo.
 
 ```bash
-eas update --branch production --message "<one-line description of change>"
+eas update --branch testflight --message "<one-line description of change>"
 ```
-Compiles the current JS bundle and uploads it to Expo's CDN on the **`production`** channel. The installed **TestFlight build** picks it up on next cold open (it must match the build's channel + `runtimeVersion`). Note: EAS cloud builds inline env from the `eas.json` `env` block, not `.env.local` (which is gitignored and never seen by the cloud builder) — see the Secrets Register.
+Compiles the current JS bundle and uploads it to Expo's CDN on the **`testflight`** channel. The installed **TestFlight build** picks it up on next cold open (it must match the build's channel + `runtimeVersion`). The App Store build reads `production` and never sees it. Note: EAS cloud builds inline env from the `eas.json` `env` block, not `.env.local` (which is gitignored and never seen by the cloud builder) — see the Secrets Register.
 
 Then on your phone: **fully close the Nyx TestFlight app** (swipe it away from app switcher) and reopen it. It fetches the new bundle on launch. A warm reload is not enough — the bundle is cached and only refetched on cold open.
 
@@ -79,14 +79,35 @@ npm install -g eas-cli && eas whoami    # containers are ephemeral; reinstall + 
 ```
 
 ```bash
-eas build --platform ios --profile production --auto-submit
+eas build --platform ios --profile testflight --auto-submit
 ```
-Builds a **store-signed** binary on the `production` profile (`distribution: store`, `channel: production`) and, on success, submits **that same artifact** straight to TestFlight via the matching `submit.production` profile. `autoIncrement: true` advances the build number (lives on EAS — `appVersionSource: remote`). ~15 min build + ~5–15 min Apple processing, then it appears in TestFlight.
+Builds a **store-signed** binary on the `testflight` profile (it extends `production`: `distribution: store`, the same env block and image, but `channel: testflight`) and, on success, submits **that same artifact** straight to TestFlight via the matching `submit.testflight` profile. The App Store binary is the same command with `--profile production`, cut only for a release (`docs/app-store-submission-guide.md` step 10). `autoIncrement: true` advances the build number (lives on EAS — `appVersionSource: remote`). ~15 min build + ~5–15 min Apple processing, then it appears in TestFlight.
 
 **Hard-won rules (2026-06-12 — each cost real time):**
-- **Use the `production` profile, not `preview`.** `preview` = `distribution: internal` (ad-hoc) → not TestFlight-eligible. Internal binaries can never be submitted.
 - **Use `--auto-submit`, not `eas submit --latest`.** `--latest` picks the latest *store* build and skips internal ones, so it silently re-uploads a stale older binary. `--auto-submit` binds the upload to the binary just built.
 - **"build number N already used" = EAS counter is behind App Store Connect.** Fix: `eas build:version:set --platform ios` → set it above ASC's current max (check TestFlight → builds for the version train), then rebuild. Gaps in build numbers are fine.
+
+---
+
+## Promote to the App Store channel — the only way an update reaches owners
+
+**The rule (CUL-2863, Apple guideline 2.5.2).** An update may go over the air only when it is a **fix or a copy change** on a surface that already shipped. A **new feature**, a change to what a feature does, and any **never-list surface** (clinical, a safety invariant, privacy / RLS / Storage / deletion / export, money or Pets > $, App Store) ships in a new binary through App Review. Uncertain counts as review. Every update is tested on `testflight` first; `production` receives only that exact group.
+
+**Sequence**, after the update has been tested on the PM's phone (Runtime A-OTA):
+
+```bash
+eas update:list --branch testflight --limit 5
+```
+Lists the recent `testflight` update groups; copy the group ID of the one you tested.
+
+<!-- promote-step:start -->
+```bash
+eas update:republish --group <tested group id> --destination-branch production --message "promote: <what>"
+```
+Republishes **that same bundle** to `production`, with no rebuild, so owners get byte for byte what you tested. Rolling back is the same command with the previous `production` group's ID.
+<!-- promote-step:end -->
+
+---
 
 **One-time setup (first session only, then never again):**
 
@@ -192,7 +213,7 @@ There are **two runtimes** the PM uses, and the handoff differs for each. Pick t
 The full, copy-pasteable command scripts for both runtimes — the one-time EAS/ngrok setup and the complete git "divergent branches" explanation — live in **`docs/dev-handoff-runbook.md`**. Read that file when emitting a handoff and paste the matching runtime's block. Quick reference:
 
 - **Runtime B** (the per-push default — Metro + tunnel, for one-off PR testing): `git fetch` → `git checkout <branch>` → `git pull --ff-only` → (once per Codespace) `ngrok authtoken <token>` → `npx expo start --tunnel`, scan the QR, press `r` to reload.
-- **Runtime A** (TestFlight — a deliberate, separate "cut a new build" session, NOT per-push): `git fetch` → `git checkout <branch>` → `git pull --ff-only`, then **A-OTA** (`eas update --branch production`, JS-only) or **A-Native** (`eas build --platform ios --profile production --auto-submit`). **The channel is `production`, never `preview`**, and since the SDK-58 fence the next TestFlight cut must be A-Native. Traps + the installed-build state: `docs/dev-handoff-runbook.md` § Current build state.
+- **Runtime A** (TestFlight — a deliberate, separate "cut a new build" session, NOT per-push): `git fetch` → `git checkout <branch>` → `git pull --ff-only`, then **A-OTA** (`eas update --branch testflight`, JS-only) or **A-Native** (`eas build --platform ios --profile testflight --auto-submit`). **The PM's channel is `testflight`; `production` takes only a promoted group** (§ Promote), and since the SDK-58 fence the next TestFlight cut must be A-Native. Traps + the installed-build state: `docs/dev-handoff-runbook.md` § Current build state.
 
 **Default to Runtime B in the handoff** — it's the per-push, test-one-PR path. Only emit a Runtime A block when the session's explicit goal is cutting a new TestFlight build.
 
@@ -200,29 +221,4 @@ The full, copy-pasteable command scripts for both runtimes — the one-time EAS/
 
 **When git misbehaves** (divergent-branches prompt, "local changes would be overwritten," `--ff-only` failing after a squash-merge, detached HEAD, accidental commit on `main`): see **`docs/git-first-aid.md`** — a symptom→exact-command guide keyed by the literal error message. Point the PM there rather than improvising recovery commands.
 
-**Before pushing**, if the diff touches a store, Edge Function, or shared utility, run:
-```bash
-npm test
-```
-Confirms automated tests pass locally. Do not push a chunk-completing PR with failing or skipped tests — fix or mark `tests: N/A` in the DoD with the Engineer's exemption rationale.
-
-### Manual QA Script (required, every push)
-
-After the command sequence above, emit a numbered on-device QA script the PM can run in under 3 minutes. The script must:
-
-- Start from a known state (e.g. "open Expo Go, reload with `r`")
-- List the specific taps and inputs to exercise the change (golden path first, then 1–2 edge cases)
-- Tell the PM **what to expect** at each step, so they can spot regressions without reading code
-- Tie back to the issue's acceptance criteria — call out which criterion each check verifies
-- Flag any check the PM cannot perform on-device (e.g. "verify in Supabase dashboard that `events.synced=1`")
-
-Format:
-
-```
-### Manual QA — <feature>
-1. <action> → <expected> (AC: <criterion ref>)
-2. <action> → <expected>
-3. Edge case: <action> → <expected>
-```
-
-If the change is backend-only (Edge Function, migration, schema), the QA script is the curl/SQL/dashboard steps to verify it instead — same numbered format.
+**Before pushing** and **the Manual QA Script**: § Always, before pushing and § Manual QA Script above.

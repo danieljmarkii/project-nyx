@@ -31,6 +31,11 @@
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFpZ2NobHVxbHV6dWh0YmZsbGdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NTcwNDcsImV4cCI6MjA5NDQzMzA0N30.FWerawEGnFuaDeBIuzVHF6LuGIJMu2Yw6RbEzVf8yTo"
       }
     },
+    "testflight": {
+      "extends": "production",
+      "distribution": "store",
+      "channel": "testflight"
+    },
     "production": {
       "channel": "production",
       "ios": {
@@ -44,6 +49,7 @@
     }
   },
   "submit": {
+    "testflight": {},
     "production": {}
   }
 }
