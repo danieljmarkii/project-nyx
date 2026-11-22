@@ -6,7 +6,8 @@
 # Step two (CUL-2875, PR-11): one real flow. `.maestro/golden-meal.yaml` signs in as the
 # fixture owner, logs a meal from the plus button and checks it on Home's Today card, with
 # the screen recorded (`simctl io recordVideo`) and the video, the screenshots and the logs
-# linked from the job summary. One retry at most, and the summary says when it was used: a
+# linked from the job summary. The summary also says whether the meal reached the fixture
+# host (the sync push), which the flow itself cannot assert without racing it. One retry at most, and the summary says when it was used: a
 # flaky step is fixed, never quarantined. A pass is a smoke reading, never a review: it
 # clears nothing on a never-list surface.
 #
@@ -81,8 +82,10 @@ jobs:
       WANT_XCODE: ${{ inputs.xcode || '27.1' }}
       EXPO_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
       FIXTURE_PORT: '54321'
-      # Released 2026-10-26; the installer fetches exactly this tag.
+      # Released 2026-10-26. The release zip is fetched by tag and checked against this hash,
+      # never through the unpinned install script.
       MAESTRO_VERSION: 2.12.0
+      MAESTRO_SHA256: a6044a84542f522f434c5dc3d609e60c7446d423f3ed1b2ae513f5c48663ec5e
       EXPO_PUBLIC_SUPABASE_ANON_KEY: fixture-anon-key
       CI: '1'
       EXPO_NO_TELEMETRY: '1'
@@ -273,9 +276,12 @@ jobs:
             done
           done
           java -version
-          curl -fsSL https://get.maestro.mobile.dev | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-          "$HOME/.maestro/bin/maestro" --version
+          zip="$RUNNER_TEMP/maestro.zip"
+          curl -fsSL -o "$zip" "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+          echo "${MAESTRO_SHA256}  $zip" | shasum -a 256 -c -
+          unzip -q "$zip" -d "$RUNNER_TEMP/maestro-dist"
+          echo "$RUNNER_TEMP/maestro-dist/maestro/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/maestro-dist/maestro/bin/maestro" --version
 
       - name: Install, launch, screenshot
         shell: bash
@@ -327,8 +333,22 @@ jobs:
                 -e APP_ID="$APP_ID" -e FIXTURE_EMAIL="$FIXTURE_EMAIL" -e FIXTURE_PASSWORD="$FIXTURE_PASSWORD" \
                 "$flow" )
             code=$?
+            # The flow proves the local write and Home's render. The push is async, so whether
+            # the meal reached the fixture host is read after, for up to 20s, and reported.
+            if [ "$code" -eq 0 ]; then
+              for _ in $(seq 1 40); do grep -q ' write meals ' "$SIM/fixture-$n.log" && break; sleep 0.5; done
+              grep -q ' write meals ' "$SIM/fixture-$n.log" || echo "::warning::the meal showed on Home but never reached the fixture host: sync did not push it"
+            fi
             sleep 1
-            kill -INT "$rec" 2>/dev/null; wait "$rec" 2>/dev/null
+            # SIGINT finalises the mp4. Bounded: a recorder that ignores it is killed after 20s
+            # rather than holding the job to its timeout, and its file is called out as suspect.
+            kill -INT "$rec" 2>/dev/null
+            for _ in $(seq 1 40); do kill -0 "$rec" 2>/dev/null || break; sleep 0.5; done
+            if kill -0 "$rec" 2>/dev/null; then
+              kill -KILL "$rec" 2>/dev/null
+              echo "::warning::the recorder ignored SIGINT on attempt $n: its video may be truncated"
+            fi
+            [ -s "$SHOTS/golden-meal-$n.mp4" ] || echo "::warning::attempt $n recorded no video"
             kill "$fx" 2>/dev/null; wait "$fx" 2>/dev/null
             echo "Fixture writes: $(grep -c ' write ' "$SIM/fixture-$n.log" || true) ($(grep -o 'write [a-z_]*' "$SIM/fixture-$n.log" | sort | uniq -c | tr '\n' ';'))"
             echo "::endgroup::"

@@ -16,6 +16,9 @@ env:
   # Inside the Today card only: the trial card elsewhere on Home names the same food.
   FOOD_ROW: ".*Venison & Potato.*"
 ---
+# The session lives in the Keychain, which clearState does not touch and a reinstall keeps:
+# without this, a retry after a sign-in would open on Home and never see the landing.
+- clearKeychain
 - launchApp:
     clearState: true
     permissions:
