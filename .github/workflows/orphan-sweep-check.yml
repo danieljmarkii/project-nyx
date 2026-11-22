@@ -1,12 +1,14 @@
 # The daily orphaned-storage check (CUL-2521, PM ruling 2026-11-05: an outcome check).
 #
-# Asks sweep-orphaned-storage, in its afternoon check window (12:07–14:07 UTC), whether any file the 09:23 UTC
-# run should have removed is still stored, or whether the check could not read everything. Opens a Linear issue
+# Reads the answer the daily check stored (pg_cron runs the check at 12:07 UTC, migration 123): whether any file
+# the 09:23 UTC run should have removed is still stored, whether the check could not read everything, or whether
+# no check stored an answer in the last 24 hours. Opens a Linear issue
 # (team Culprit) when either holds or the function cannot answer; a later day comments on the open issue instead
 # of opening another. Why it reads the outcome rather than the run's log line is scripts/ops/orphanSweepCheck.ts.
 #
 # NEVER A REQUIRED CHECK, NEVER ON A PULL REQUEST: its own workflow, on a schedule and by hand only, like
-# report-drafts-check.yml. A run by hand outside 12:07–14:07 UTC gets a 400 from the function's gate and goes red.
+# report-drafts-check.yml. It runs no pass, so a run by hand works at any hour (CUL-2897: the check itself left
+# GitHub because GitHub started it 5 to 10 hours late, past its window, every day).
 #
 # THE KEY. LINEAR_API_KEY is the ops-alerts environment secret (docs/secrets-register.md), readable from `main`
 # only. Until it is set (CUL-2518) a finding exits non-zero, so GitHub's failed-run email is the alert.
@@ -14,8 +16,8 @@ name: Orphaned storage check
 
 on:
   schedule:
-    # Daily, 12:07 UTC: the check window's first minute, leaving two hours for a late GitHub schedule.
-    - cron: '7 12 * * *'
+    # Daily, 14:37 UTC: after the 12:07 check. A late start is harmless: the answer is read for 24 hours.
+    - cron: '37 14 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -29,7 +31,7 @@ jobs:
   check:
     name: Orphaned files the sweep left
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     environment: ops-alerts
     steps:
       - name: Checkout

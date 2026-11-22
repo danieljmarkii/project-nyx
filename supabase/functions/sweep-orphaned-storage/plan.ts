@@ -534,19 +534,29 @@ export const RUN_HOUR_UTC = 9
 export const RUN_MINUTE_UTC = 23
 export const RUN_WINDOW_MIN = 15
 
-// CUL-2521 — the daily check. GitHub Actions (.github/workflows/orphan-sweep-check.yml)
-// asks, hours after the run window, whether the scheduled run did its job. The body is
-// `{ check: CHECK_MARKER }`, as public as RUN_MARKER. A check never removes anything
-// (index.ts swaps Storage's remove for a counter), but it lists every bucket and reads
-// owners, so it gets its own bounded window, the same F2 posture as the run. The window
-// is two hours, not fifteen minutes, because a GitHub schedule can start late; a check
-// that misses it is reported as one that could not run, never skipped.
+// CUL-2521 — the daily check. A pg_cron job (migration 123) asks, hours after the run
+// window, whether the scheduled run did its job. The body is `{ check: CHECK_MARKER }`,
+// as public as RUN_MARKER. A check never removes anything (index.ts swaps Storage's
+// remove for a counter), but it lists every bucket and reads owners, so it gets its own
+// bounded window, the same F2 posture as the run: fifteen minutes, like the run's.
+//
+// CUL-2897: the check first ran from GitHub Actions with a two-hour window, and GitHub
+// started it 5 to 10 hours late every day, so every call was a 400 and no check ever
+// ran. pg_cron fires on the minute (the 09:23 run proves it), so the window is back to
+// fifteen minutes and GitHub only reads the stored answer (RESULT_MARKER below).
 export const CHECK_MARKER = 'overdue'
 export const CHECK_HOUR_UTC = 12
 export const CHECK_MINUTE_UTC = 7
-export const CHECK_WINDOW_MIN = 120
+export const CHECK_WINDOW_MIN = 15
 
-export type GateVerdict = 'run' | 'check' | 'not_a_run' | 'outside_window'
+// CUL-2897 — reading the check's answer. `{ result: CHECK_MARKER }`, any time of day.
+// It starts no Storage pass: one read of the newest sweep_check_results row. It reveals
+// what the check's own reply already did (two bits), plus whether a check ran in the
+// last RESULT_MAX_AGE_MS. A missing or older row answers "no recent check", which the
+// watcher reports as a check that could not run, never as clean.
+export const RESULT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+export type GateVerdict = 'run' | 'check' | 'result' | 'not_a_run' | 'outside_window'
 
 function minutesPast(now: number, hour: number, minute: number): number {
   const d = new Date(now)
@@ -563,7 +573,31 @@ export function gate(body: unknown, now: number): GateVerdict {
     const minutes = minutesPast(now, CHECK_HOUR_UTC, CHECK_MINUTE_UTC)
     return minutes >= 0 && minutes < CHECK_WINDOW_MIN ? 'check' : 'outside_window'
   }
+  if ((body as { result?: unknown }).result === CHECK_MARKER) return 'result'
   return 'not_a_run'
+}
+
+// One stored check answer (sweep_check_results). `checkedAt` is an ISO instant.
+export interface StoredCheck {
+  checkedAt: string
+  overdue: boolean
+  incomplete: boolean
+}
+
+export type ResultAnswer = { kind: 'clean' } | { kind: 'found'; overdue: boolean; incomplete: boolean } | { kind: 'no_recent_check' }
+
+// What a result read answers, from the newest stored row (or none). Anything that is not
+// a parseable, recent row is "no recent check": a dead pg_cron, a check that threw before
+// it stored, a row write that failed, a clock or parse surprise. All of them reach a
+// person; none reads as clean.
+export function resultAnswer(row: StoredCheck | null, now: number): ResultAnswer {
+  if (!row) return { kind: 'no_recent_check' }
+  const at = Date.parse(row.checkedAt)
+  // A row from the future past a few minutes of clock skew is not trusted either.
+  if (!Number.isFinite(at) || at - now > 5 * 60_000 || now - at > RESULT_MAX_AGE_MS) return { kind: 'no_recent_check' }
+  if (typeof row.overdue !== 'boolean' || typeof row.incomplete !== 'boolean') return { kind: 'no_recent_check' }
+  if (!row.overdue && !row.incomplete) return { kind: 'clean' }
+  return { kind: 'found', overdue: row.overdue, incomplete: row.incomplete }
 }
 
 // The start of the UTC day's scheduled run: the instant the check judges age at. A file

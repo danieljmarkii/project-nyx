@@ -10,8 +10,12 @@
 // can do anything to the project), but the outcome: in its own afternoon window the function repeats the pass
 // with a remove that deletes nothing, judging each file's age at the morning run's start. A file that was due
 // then and is still here means the morning run did not do its job, whatever the reason; a pass that could not
-// read everything says so. It runs from GitHub Actions, not pg_cron, so a dead pg_cron does not take the check
-// down with it.
+// read everything says so.
+//
+// WHO RUNS WHAT (CUL-2897). The check itself runs from pg_cron at 12:07 UTC (migration 123) and stores its
+// two bits; it first ran from GitHub, which started it 5 to 10 hours late every day, past its window, so it
+// never ran once. This script, still on GitHub, only READS the stored answer, at any hour. A dead pg_cron
+// does not pass for clean: no answer stored in the last 24 h is a 404, reported as a check that could not run.
 //
 // WHAT IT CANNOT SEE, stated. A stopped sweep with nothing to remove raises nothing, because nothing is at risk;
 // the first file past due raises it the same day. Files no run can ever remove (an unexpected key depth, a
@@ -26,9 +30,9 @@
 
 import { linearGraphQL, PROJECT_URL, report, type FetchLike, type IssueSpec } from './reportDraftsCheck.ts'
 
-export const CHECK_BODY = { check: 'overdue' } as const
-// The pass lists every bucket: longer than the draft check's single read.
-export const CHECK_TIMEOUT_MS = 150_000
+// The result read (CUL-2897): one stored row, no pass, any time of day.
+export const CHECK_BODY = { result: 'overdue' } as const
+export const CHECK_TIMEOUT_MS = 30_000
 
 /** CUL-2521, the issue this check exists for, by its Linear id. */
 export const PARENT_ISSUE_ID = 'faac12f6-0ef7-4286-ad3a-f3bfa9965b76'
@@ -66,7 +70,9 @@ export async function askSweep(fetchFn: FetchLike, anonKey: string, timeoutMs: n
       }
       return { kind: 'unreachable', detail: 'HTTP 200 with an unexpected body' }
     }
-    // 400 here is most often a check that started outside its 12:07–14:07 UTC window (a late GitHub schedule).
+    // 404: no check stored an answer in the last 24 h (pg_cron's 12:07 UTC job did not run, or the check
+    // failed before it stored). Still "could not run", named so the triage starts in the right place.
+    if (res.status === 404) return { kind: 'unreachable', detail: 'HTTP 404: no check answer stored in the last 24 hours' }
     return { kind: 'unreachable', detail: `HTTP ${res.status}` }
   } catch (e) {
     const aborted = e instanceof Error && e.name === 'AbortError'
@@ -80,8 +86,8 @@ export async function askSweep(fetchFn: FetchLike, anonKey: string, timeoutMs: n
 export function findingText(outcome: Exclude<CheckOutcome, { kind: 'none' }>, dayIso: string, runUrl: string | null): string {
   const run = runUrl ? `\n\nRun: ${runUrl}` : ''
   if (outcome.kind === 'unreachable') {
-    return `**${dayIso}: the daily check could not reach the orphaned-storage sweep (${outcome.detail}).** The same ` +
-      `function, key and URL serve the 09:23 UTC run, so the run may not be working either.${run}`
+    return `**${dayIso}: the daily check could not get an answer from the orphaned-storage sweep (${outcome.detail}).** ` +
+      `The same function, key and scheduler serve the 09:23 UTC run, so the run may not be working either.${run}`
   }
   const parts: string[] = []
   if (outcome.overdue) {
@@ -109,13 +115,16 @@ export function issueDescription(first: string): string {
     '```sql',
     "SELECT jobname, schedule, active FROM cron.job WHERE jobname = 'sweep-orphaned-storage';",
     "SELECT current_setting('cron.timezone', true);",
+    "SELECT jobname, schedule, active FROM cron.job WHERE jobname = 'sweep-orphaned-storage-check';",
     "SELECT status, start_time FROM cron.job_run_details WHERE jobid = (SELECT jobid FROM cron.job WHERE jobname = 'sweep-orphaned-storage') ORDER BY start_time DESC LIMIT 5;",
+    'SELECT * FROM public.sweep_check_results ORDER BY checked_on DESC LIMIT 5;',
     'SELECT status_code, created FROM net._http_response ORDER BY created DESC LIMIT 10; -- the last ~6 h only',
     '```',
     '',
     'Then the function logs for `sweep-orphaned-storage`: the morning `sweep-orphaned-storage.run` line (its `left` ' +
       'reasons say which reads failed) and the afternoon `sweep-orphaned-storage.check` line. A 400 in ' +
-      '`net._http_response` is the schedule outside the run window; a 401 is the key.',
+      '`net._http_response` is the schedule outside the run window; a 401 is the key. A 404 from this check means ' +
+      'no answer was stored: start with the 12:07 UTC job.',
     '',
     'Each later day this is still true adds a comment here instead of a new issue. Close it once a check runs clean.',
     '',

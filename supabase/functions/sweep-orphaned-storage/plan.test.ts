@@ -25,6 +25,8 @@ import {
   isSweepableRoot,
   KEY_SEGMENTS,
   gate,
+  RESULT_MAX_AGE_MS,
+  resultAnswer,
   rotatedRules,
   RUN_HOUR_UTC,
   RUN_MARKER,
@@ -600,6 +602,62 @@ Deno.test('CUL-2521: the check has its own window and never passes as a run', ()
   assert(CHECK_HOUR_UTC * 60 + CHECK_MINUTE_UTC + CHECK_WINDOW_MIN <= 24 * 60)
 })
 
+Deno.test('CUL-2897: the check window is the run\'s fifteen minutes, now that pg_cron sends it', () => {
+  // Two hours was GitHub's slack; pg_cron fires on the minute. A wider window is a wider
+  // anon-startable pass (rls-privacy-reviewer F2), so it is pinned, not merely bounded.
+  assertEquals(CHECK_WINDOW_MIN, RUN_WINDOW_MIN)
+  // The hour GitHub actually started it (17:43 to 22:15 UTC) is outside.
+  assertEquals(gate({ check: CHECK_MARKER }, atCheck(17, 43)), 'outside_window')
+})
+
+Deno.test('CUL-2897: the result read is open all day and is never a check or a run', () => {
+  const body = { result: CHECK_MARKER }
+  for (const [h, m] of [[0, 0], [RUN_HOUR_UTC, RUN_MINUTE_UTC], [CHECK_HOUR_UTC, CHECK_MINUTE_UTC], [22, 15], [23, 59]]) {
+    assertEquals(gate(body, atCheck(h, m)), 'result', `${h}:${m}`)
+  }
+  for (const b of [{ result: 'x' }, { result: true }, { result: RUN_MARKER }]) {
+    assertEquals(gate(b, atCheck(12, 0)), 'not_a_run', JSON.stringify(b))
+  }
+  // A body naming the run marker AND a result is still judged as a run: the run key wins,
+  // so adding `result` can never open the run (or the check) outside its window.
+  assertEquals(gate({ run: RUN_MARKER, result: CHECK_MARKER }, atCheck(12, 0)), 'outside_window')
+  assertEquals(gate({ check: CHECK_MARKER, result: CHECK_MARKER }, atCheck(20, 0)), 'outside_window')
+})
+
+Deno.test('CUL-2897: resultAnswer never reads clean without a recent, well-formed row', () => {
+  const now = atCheck(14, 37)
+  const at = (ms: number) => new Date(ms).toISOString()
+  const today = atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC)
+  assertEquals(resultAnswer({ checkedAt: at(today), overdue: false, incomplete: false }, now), { kind: 'clean' })
+  assertEquals(resultAnswer({ checkedAt: at(today), overdue: true, incomplete: false }, now), {
+    kind: 'found',
+    overdue: true,
+    incomplete: false,
+  })
+  assertEquals(resultAnswer({ checkedAt: at(today), overdue: false, incomplete: true }, now), {
+    kind: 'found',
+    overdue: false,
+    incomplete: true,
+  })
+  // No row: pg_cron never ran it, or the check threw before it stored.
+  assertEquals(resultAnswer(null, now), { kind: 'no_recent_check' })
+  // Yesterday's clean row, today's check missing: 26.5 h old, not clean.
+  assertEquals(resultAnswer({ checkedAt: at(today - 86_400_000), overdue: false, incomplete: false }, now), {
+    kind: 'no_recent_check',
+  })
+  // The edge: exactly the max age still answers; a minute past does not.
+  assertEquals(resultAnswer({ checkedAt: at(now - RESULT_MAX_AGE_MS), overdue: false, incomplete: false }, now).kind, 'clean')
+  assertEquals(
+    resultAnswer({ checkedAt: at(now - RESULT_MAX_AGE_MS - 60_000), overdue: false, incomplete: false }, now).kind,
+    'no_recent_check',
+  )
+  // Unparseable, far-future, or malformed bits: never clean.
+  assertEquals(resultAnswer({ checkedAt: 'not a time', overdue: false, incomplete: false }, now).kind, 'no_recent_check')
+  assertEquals(resultAnswer({ checkedAt: at(now + 3_600_000), overdue: false, incomplete: false }, now).kind, 'no_recent_check')
+  const malformed = { checkedAt: at(today), overdue: null, incomplete: false } as unknown as Parameters<typeof resultAnswer>[0]
+  assertEquals(resultAnswer(malformed, now).kind, 'no_recent_check')
+})
+
 Deno.test('CUL-2521: runStartOf is the same UTC day\'s run start', () => {
   assertEquals(runStartOf(atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 30)), atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC))
   assertEquals(runStartOf(Date.UTC(2026, 10, 2, 23, 59)), atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC))
@@ -698,6 +756,18 @@ Deno.test('index.ts — CUL-2521: the check runs on an IO whose remove deletes n
   assert(branch.includes('runSweep(checkIO(admin)'), branch)
   assert(branch.includes('asOf: runStartOf(startedAt)'), branch)
   assert(!branch.includes('sweepIO('), 'the check branch reaches the deleting IO')
+})
+
+Deno.test('index.ts — CUL-2897: the check stores its answer; the result read runs no pass', async () => {
+  const src = await Deno.readTextFile(new URL('./index.ts', import.meta.url))
+  const check = src.slice(src.indexOf("if (verdict === 'check') {"), src.indexOf('const report = await runSweep(sweepIO(admin)'))
+  assert(/await storeCheck\(admin, startedAt, overdue, incomplete\)/.test(check), check)
+  const result = src.slice(src.indexOf("if (verdict === 'result') {"), src.indexOf('if (running)'))
+  assert(result.length > 0 && src.indexOf("if (verdict === 'result') {") < src.indexOf('if (running)'), 'the result read sits after the running check')
+  assert(result.includes('newestCheck(admin)') && result.includes('resultAnswer(row'), result)
+  assert(!/runSweep|sweepIO|checkIO|running = /.test(result), 'the result read starts a pass or claims the worker')
+  // A failed read is 503, never the clean 204.
+  assert(/row === 'error'\) return new Response\(null, \{ status: 503 \}\)/.test(result), result)
 })
 
 Deno.test('CUL-2521 F2: a deleted pet\'s file at a depth its bucket never writes is overdue, not clean', async () => {

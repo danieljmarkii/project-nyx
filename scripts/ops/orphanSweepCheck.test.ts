@@ -64,12 +64,14 @@ const mutation = (n: ReturnType<typeof net>, name: string) => linearCalls(n).fin
 const created = (n: ReturnType<typeof net>) => (mutation(n, 'issueCreate')!.body.variables as { input: Record<string, unknown> }).input;
 
 describe('the daily orphaned-storage check (CUL-2521)', () => {
-  it('asks the sweep with the check body and the anon key, and nothing else', async () => {
+  it('asks the sweep for its stored result with the anon key, and nothing else (CUL-2897)', async () => {
     const n = net({ sweep: { status: 204 } });
     expect(await askSweep(n.fetchFn, ANON)).toEqual({ kind: 'none' });
     expect(n.calls).toHaveLength(1);
     expect(n.calls[0].body).toEqual(CHECK_BODY);
-    expect(n.calls[0].body).toEqual({ check: 'overdue' });
+    expect(n.calls[0].body).toEqual({ result: 'overdue' });
+    // Never the check body: a check from GitHub lands outside its 15-minute window (CUL-2897).
+    expect(n.calls[0].body).not.toHaveProperty('check');
     expect(n.calls[0].headers.Authorization).toBe(`Bearer ${ANON}`);
   });
 
@@ -113,7 +115,8 @@ describe('the daily orphaned-storage check (CUL-2521)', () => {
   });
 
   it.each([
-    ['a 400 (outside the window, or the gate moved)', { status: 400 }, /HTTP 400/],
+    ['a 404 (no check stored an answer in 24 h: pg_cron did not run it)', { status: 404 }, /HTTP 404: no check answer stored/],
+    ['a 400 (the gate moved, or the body)', { status: 400 }, /HTTP 400/],
     ['a 401 (the anon key rotated)', { status: 401 }, /HTTP 401/],
     ['a 503 (the worker was busy)', { status: 503 }, /HTTP 503/],
     ['a 200 naming neither bit', { status: 200, body: { overdue: false, incomplete: false } }, /unexpected body/],
@@ -122,7 +125,7 @@ describe('the daily orphaned-storage check (CUL-2521)', () => {
   ] as const)('%s is "could not run", and still reaches a person', async (_l, sweep, detail) => {
     const n = net({ sweep });
     expect((await run(n)).code).toBe(1);
-    expect(String(created(n).description)).toMatch(/could not reach the orphaned-storage sweep/);
+    expect(String(created(n).description)).toMatch(/could not get an answer from the orphaned-storage sweep/);
     expect(String(created(n).description)).toMatch(detail);
   });
 
