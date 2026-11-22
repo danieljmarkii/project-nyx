@@ -187,10 +187,16 @@ const PRIVILEGED = /\b(apply_migration|execute_sql|(?:re)?deploy\w*|merg(?:e|es|
 // taste call plan-gates a BUILD row (a DISCOVERY row's deliverable is the thing the PM
 // reacts to). Copy inside nyx-voice and UX inside a ratified round are team calls now, so
 // the old keyword match on `copy`, `string`, `label`, `mock`, `frame` is gone.
+// The repo paths a row's note names (`lib/x.ts`, supabase/functions/y/), so the kept list
+// reads them as paths, not only as words (adversarial pass 1, Q1).
+export function pathsIn(text: string): string[] {
+  return [...new Set([...text.matchAll(/(?:^|[\s`'"(])((?:\.?[\w-]+\/)+[\w.*-]*|[\w-]+\.(?:json|tsx?|md|sql|ya?ml|swift))(?=$|[\s`'",;:)]|\.(?:\s|$))/g)].map((m) => m[1]))];
+}
+
 export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?: Pick<IssueFact, 'labels'>): Gate {
   const text = `${row.what} ${row.note}`;
   const mode = /\b(spec|mock|brief|research|discovery)\b/i.test(text) ? 'DISCOVERY' : 'BUILD';
-  const k = keptOf({ labels: issue?.labels ?? [], text, migration: row.migration });
+  const k = keptOf({ labels: issue?.labels ?? [], files: pathsIn(text), text, migration: row.migration });
   const planGated: string[] = [];
   if (row.migration) planGated.push('migration');
   for (const why of k.reasons) {

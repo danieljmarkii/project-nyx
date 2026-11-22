@@ -187,6 +187,8 @@ const MUTANTS: Mutant[] = [
   // The gate reads the kept list (CUL-2886).
   { check: 'auto needs nothing kept', file: 'plan.ts', from: "g.mode === 'BUILD' && g.kept === 'none' &&", to: "g.mode === 'BUILD' &&" },
   { check: 'the gate passes labels to the kept list', file: 'plan.ts', from: 'keptOf({ labels: issue?.labels ?? [], text,', to: 'keptOf({ labels: [], text,' },
+  { check: 'the gate reads the paths a note names', file: 'plan.ts', from: 'files: pathsIn(text), text,', to: 'text,' },
+  { check: 'a bare file name is a path', file: 'plan.ts', from: "|[\\w-]+\\.(?:json|tsx?|md|sql|ya?ml|swift))", to: ")" },
   { check: 'taste does not plan-gate a DISCOVERY row', file: 'plan.ts', from: "    if (why.startsWith('taste:') && mode === 'DISCOVERY') continue;\n", to: '' },
   { check: 'taste plan-gates a BUILD row', file: 'plan.ts', from: "if (why.startsWith('taste:') && mode === 'DISCOVERY') continue;", to: "if (why.startsWith('taste:')) continue;" },
   { check: 'the allowlist-read keys include the engine keys', file: 'codeFacts.ts', from: "[...a, ...b]", to: '[...a]' },

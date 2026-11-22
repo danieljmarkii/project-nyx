@@ -157,7 +157,7 @@ describe('the sanity-check gaps (PM, 2026-11-08)', () => {
     expect(r.picks.map((p) => p.issues[0])).toEqual(['CUL-124']);
   });
   it('a build that deploys or touches the gate waits on the PM to merge, so it spends a place', () => {
-    const fn = cand({ id: 'CUL-125', files: ['supabase/functions/extract-food-from-photo/index.ts'] });
+    const fn = cand({ id: 'CUL-125', files: ['.github/workflows/ci.yml'] });
     const plain = cand({ id: 'CUL-126', files: ['app/log.tsx'] });
     const r = run([fn, plain], { waitingOnPm: 3 });
     expect(r.picks.map((p) => p.issues[0])).toEqual(['CUL-126']);
@@ -168,8 +168,8 @@ describe('the sanity-check gaps (PM, 2026-11-08)', () => {
     expect(r2.held[0]).toMatchObject({ id: 'CUL-127' });
   });
   it('a member never turns a plain bundle into one that waits when no place is free', () => {
-    const lead = cand({ id: 'CUL-128', size: 'S', surface: 'Ask', files: ['app/ask.tsx'] });
-    const fnMember = cand({ id: 'CUL-129', size: 'S', surface: 'Ask', files: ['supabase/functions/ask/index.ts'], priority: 4 });
+    const lead = cand({ id: 'CUL-128', size: 'S', surface: 'Ask', files: ['app/foods.tsx'] });
+    const fnMember = cand({ id: 'CUL-129', size: 'S', surface: 'Ask', files: ['.github/workflows/ci.yml'], priority: 4 });
     const r = run([lead, fnMember], { waitingOnPm: 3 });
     expect(r.picks.map((p) => p.issues.join('+'))).toEqual(['CUL-128']);
     expect(r.held[0]).toMatchObject({ id: 'CUL-129' });
@@ -235,7 +235,7 @@ describe('capacity: slots and the PM\'s review', () => {
 
 describe('what it writes', () => {
   it('rows and notes parse back through dispatch\'s own page reader', () => {
-    const r = run([cand({ id: 'CUL-80', title: 'Signal keeps a refused meal | today', labels: ['Live harm'], impact: 'A', impactWhy: 'Home says eating' }), cand({ id: 'CUL-81', size: 'XL' })]);
+    const r = run([cand({ id: 'CUL-80', title: 'Home keeps a stale header | today', labels: ['Live harm'], impact: 'A', impactWhy: 'Home shows yesterday' }), cand({ id: 'CUL-81', size: 'XL' })]);
     const { rows, notes, doneMeans } = pageRows(r.picks, 12);
     const page = parsePage(['## Run order', '', '| PR | Issue(s) | What it is | After | Lane |', '|---|---|---|---|---|', ...rows, '', doneMeans, '', ...notes].join('\n'));
     expect(page.rows.map((x) => [x.id, x.issues])).toEqual([['12', ['CUL-80']], ['13', ['CUL-81']]]);

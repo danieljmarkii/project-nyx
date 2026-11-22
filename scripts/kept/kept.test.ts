@@ -2,13 +2,14 @@
 // reaction and a forecast overrun each return kept; a CI change returns none. Every check
 // here is proven by mutation in mutants.ts.
 
-import { classesBackToKept, keptOf, teamCallClass, type TeamCall } from './kept.ts';
+import { classesBackToKept, keptOf, teamCallClass, type KeptInput, type TeamCall } from './kept.ts';
 
 describe('the Done-when fixtures', () => {
   it('a clinical path returns kept: stakes', () => {
-    const r = keptOf({ files: ['supabase/functions/generate-signal/detection.ts'], text: 'Tighten the refusal window' });
+    const r = keptOf({ files: ['lib/signalWindows.ts'], text: 'Tidy the window helper' });
     expect(r.kept).toBe('stakes');
-    expect(r.reasons).toContain('stakes: clinical surface');
+    expect(r.reasons).toContain('stakes: clinical surface (by file name)');
+    expect(keptOf({ files: ['supabase/functions/generate-signal/detection.ts'], text: 'Tidy' }).kept).toBe('stakes');
   });
   it('a mock reaction returns kept: taste, even inside a named round', () => {
     const r = keptOf({ files: ['docs/home-mockups-round-3.html'], text: 'Take the R-2 reaction: the quieter header', ratifiedRound: 'Home round 3' });
@@ -30,11 +31,11 @@ describe('stakes', () => {
     [{ labels: ['Gate: clinical'], text: 'x' }, 'stakes: clinical (label Gate: clinical)'],
     [{ labels: ['Gate: privacy'], text: 'x' }, 'stakes: privacy (label Gate: privacy)'],
     [{ labels: ['Area: Privacy/RLS'], text: 'x' }, 'stakes: privacy (label Area: Privacy/RLS)'],
-    [{ files: ['lib/storage.ts'] }, 'stakes: privacy, Storage, deletion, export or share links'],
-    [{ files: ['supabase/functions/report-visit-link/index.ts'] }, 'stakes: privacy, Storage, deletion, export or share links'],
+    [{ files: ['lib/storage.ts'] }, 'stakes: privacy, Storage, deletion, export or share links (by file name)'],
+    [{ files: ['supabase/functions/report-visit-link/index.ts'] }, 'stakes: server code over health data (supabase/functions/)'],
     [{ files: ['supabase/migrations/124_x.sql'] }, 'stakes: schema (a migration)'],
     [{ migration: true }, 'stakes: schema (a migration)'],
-    [{ files: ['lib/appConfig.ts'] }, 'stakes: money or Pets > $'],
+    [{ files: ['lib/appConfig.ts'] }, 'stakes: money or Pets > $ (by file name)'],
     [{ files: ['app.json'] }, 'stakes: App Store or legal'],
     [{ files: ['docs/legal/privacy-policy.md'] }, 'stakes: App Store or legal'],
     [{ text: 'the n=1 never reassures rule' }, 'stakes: clinical'],
@@ -59,6 +60,107 @@ describe('stakes', () => {
     const r = keptOf({ files: ['lib/storage.ts', 'docs/home-mockups.html'], text: 'out of scope for now' });
     expect(r.kept).toBe('stakes');
     expect(r.reasons.map((x) => x.split(':')[0])).toEqual(['stakes', 'taste', 'scope']);
+  });
+});
+
+// Adversarial pass 1 (2026-11-22): every input below returned `none` and must keep.
+describe('adversarial pass 1: the quiet breaks stay kept', () => {
+  it.each<[KeptInput]>([
+    // Q2 to Q4: health, privacy and money files a hand list missed.
+    ...[
+      'supabase/functions/_shared/incident-tier.ts',
+      'supabase/functions/extract-food-from-photo/index.ts',
+      'supabase/functions/reap-report-drafts/index.ts',
+      'lib/ask.ts',
+      'lib/symptomEpisodes.ts',
+      'lib/freeFedIntake.ts',
+      'lib/feedingArrangements.ts',
+      'lib/emergencyDoorRead.ts',
+      'lib/analysis.ts',
+      'lib/mayWaitLine.ts',
+      'lib/callNowDated.ts',
+      'lib/vomitContents.ts',
+      'lib/stoolForm.ts',
+      'lib/medicationDose.ts',
+      'lib/weightStory.ts',
+      'lib/vetVisitLink.ts',
+      'lib/reportVisitLink.ts',
+      'lib/reportSend.ts',
+      'lib/pdf.ts',
+      'lib/attachments.ts',
+      'lib/eventPhoto.ts',
+      'lib/captureUploads.ts',
+      'lib/transientFiles.ts',
+      'lib/db.ts',
+      'lib/account.ts',
+      'lib/secureStore.ts',
+      'lib/supabase.ts',
+      'lib/aiConsent.ts',
+      'lib/recordConsent.ts',
+      'lib/analytics.ts',
+      'store/authStore.ts',
+      'store/aiConsentStore.ts',
+      'constants/monetizationCopy.ts',
+      'constants/flags.ts',
+      'lib/betaFeatures.ts',
+      'widgets/Home.swift',
+    ].map((f) => [{ files: [f], text: 'refactor' }] as [KeptInput]),
+    // Q5: everyday wording.
+    ...[
+      'Cat stopped eating: flag intake decline as picky',
+      'Treat a single vomit as reassuring',
+      'Call the cat picky on the empty state',
+      'Soften the appetite-drop warning',
+      'Move the red-flag threshold',
+      'Escalating the call line',
+      'Reassurance copy for the read',
+      'the vet-report header',
+      'a hepatic lipidosis rule',
+      'the anorexia detector',
+      'Delete account flow',
+      'Deleting photos',
+      'the storage bucket',
+      'Export PDF',
+      'exporting the timeline',
+      'Share-link expiry',
+      'the visit link token',
+      'Raise the Pets cap to 3',
+      'Price change for Pro',
+      'Monetization tier',
+      'Free tier limit',
+      'RevenueCat purchase',
+      'Add a column for the bowl',
+      'ALTER TABLE meals',
+      'TestFlight submission notes',
+      'App-Store screenshots',
+      'Wipe the user data',
+      'Rotate the service key',
+      'Notify all users',
+      'Email every user',
+      'Remove the bucket',
+      'Publish to production',
+      'Drop the table',
+    ].map((t) => [{ text: t }] as [KeptInput]),
+    // Q6: labels, any case or spacing.
+    ...['Area: Correctness', 'Gate: deploy', 'gate: clinical', 'Gate:clinical', 'Gate: Clinical'].map((l) => [{ labels: [l], text: 'x' }] as [KeptInput]),
+    // Q7: blank entries are nothing to read.
+    [{ labels: [''] }],
+    [{ files: [''] }],
+    [{ forecast: { rows: 3, built: 3 } }],
+  ])('%j is kept as stakes', (input) => {
+    expect(keptOf(input).kept).toBe('stakes');
+  });
+
+  it('GA gate is scope; Live harm alone is fixed now, not held', () => {
+    expect(keptOf({ labels: ['GA gate'], text: 'x' }).kept).toBe('scope');
+    expect(keptOf({ labels: ['Live harm'], text: 'the empty state shows the old pet' }).kept).toBe('none');
+    expect(keptOf({ labels: ['Live harm', 'Gate: privacy'], text: 'x' }).kept).toBe('stakes');
+  });
+
+  it('engineering and UI files that name no stake stay team calls', () => {
+    for (const f of ['lib/utils.ts', 'lib/haptics.ts', 'lib/textWidth.ts', 'components/home/HomeHeader.tsx', 'app/log.tsx', 'lib/appGroup.ts', 'scripts/dispatch/plan.ts', 'guards/x.test.ts']) {
+      expect([f, keptOf({ files: [f], text: 'tidy' }).kept]).toEqual([f, 'none']);
+    }
   });
 });
 

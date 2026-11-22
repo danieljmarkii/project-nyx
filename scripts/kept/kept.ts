@@ -63,75 +63,103 @@ type PathRule = Rule & { prefixes: string[] };
 type TextRule = Rule & { re: RegExp; tasteVisual?: true };
 
 // ---- labels -------------------------------------------------------------------------
+// Matched on a normal form (case and spacing ignored), so `gate:clinical` still keeps.
+// `Live harm` is deliberately unmapped: a harm is fixed now, never held for a ruling (that
+// would delay the fix); its clinical or privacy part keeps by its own label or words.
+// `Gate: device` is deliberately unmapped: it names a check only the PM's phone can run,
+// not a call; the device sitting takes it. `Area: Copy/Voice` is copy, a team call inside
+// nyx-voice (clinical wording is caught by the text).
 const LABELS: Record<string, Rule> = {
-  'Gate: clinical': { kept: 'stakes', why: 'clinical (label Gate: clinical)' },
-  'Gate: privacy': { kept: 'stakes', why: 'privacy (label Gate: privacy)' },
-  'Area: Privacy/RLS': { kept: 'stakes', why: 'privacy (label Area: Privacy/RLS)' },
-  'Gate: design': { kept: 'taste', why: 'a design call (label Gate: design)' },
+  'gate:clinical': { kept: 'stakes', why: 'clinical (label Gate: clinical)' },
+  'gate:privacy': { kept: 'stakes', why: 'privacy (label Gate: privacy)' },
+  'area:privacy/rls': { kept: 'stakes', why: 'privacy (label Area: Privacy/RLS)' },
+  'area:correctness': { kept: 'stakes', why: 'clinical honesty or data integrity (label Area: Correctness)' },
+  'gate:deploy': { kept: 'stakes', why: 'a production write (label Gate: deploy)' },
+  'gagate': { kept: 'scope', why: 'a go-live gate (label GA gate)' },
+  'gate:design': { kept: 'taste', why: 'a design call (label Gate: design)' },
 };
+const labelKey = (l: string) => l.toLowerCase().replace(/\s+/g, '');
 
 // ---- paths --------------------------------------------------------------------------
+// Two tests. Prefixes for whole trees and named files; then, for app code, the file's own
+// name read word by word against stems, so a file added next month is read too (the
+// adversarial pass found 30 health, privacy and money files a hand list had missed).
 const PATHS: PathRule[] = [
-  {
-    kept: 'stakes',
-    why: 'clinical surface',
-    prefixes: [
-      'supabase/functions/generate-signal/',
-      'supabase/functions/analyze-',
-      'supabase/functions/generate-report/',
-      'supabase/functions/ask/',
-      'lib/signal',
-      'lib/dietTrial',
-      'lib/trial',
-      'lib/protein',
-      'lib/patterns',
-      'constants/eventTypes.ts',
-      'constants/lookWords.ts',
-      '.claude/skills/clinical-guardrails/',
-    ],
-  },
-  {
-    kept: 'stakes',
-    why: 'privacy, Storage, deletion, export or share links',
-    prefixes: [
-      'lib/storage',
-      'lib/retiredStorage',
-      'lib/deleteAccount',
-      'lib/export',
-      'lib/visitShareText',
-      'supabase/functions/delete-account/',
-      'supabase/functions/export',
-      'supabase/functions/sweep-orphaned-storage/',
-      'supabase/functions/report-visit-link/',
-    ],
-  },
+  // Every Edge Function reads health data with the service role and deploys on merge.
+  { kept: 'stakes', why: 'server code over health data (supabase/functions/)', prefixes: ['supabase/functions/'] },
+  { kept: 'stakes', why: 'clinical surface', prefixes: ['.claude/skills/clinical-guardrails/'] },
   { kept: 'stakes', why: 'schema (a migration)', prefixes: ['supabase/migrations/'] },
-  { kept: 'stakes', why: 'money or Pets > $', prefixes: ['lib/appConfig', 'lib/entitlement', 'lib/paywall', 'docs/monetization'] },
+  { kept: 'stakes', why: 'irreversible (SQL against a database)', prefixes: ['scripts/export-pet-timeline.sql'] },
+  { kept: 'stakes', why: 'money or Pets > $', prefixes: ['docs/monetization'] },
   { kept: 'stakes', why: 'App Store or legal', prefixes: ['app.json', 'eas.json', 'app.config.', 'docs/legal/', 'scripts/store-screenshots/', 'ios/'] },
+  { kept: 'stakes', why: 'privacy (the widget shows health data outside the app)', prefixes: ['widgets/'] },
   { kept: 'taste', why: 'brand or a visual system file', prefixes: ['assets/', 'constants/theme', 'components/brand/', 'docs/culprit-icon-brand-direction.md'] },
 ];
 
+const CODE_DIRS = /^(lib|store|constants|hooks|app|components)\//;
+// Stems, matched against the start of each word of a file's name (`freeFedIntake` reads as
+// free · fed · intake). Loud by design: a name that only sounds clinical still keeps.
+const NAME_STEMS: { kept: Exclude<Kept, 'none'>; why: string; stems: string[] }[] = [
+  {
+    kept: 'stakes',
+    why: 'clinical surface (by file name)',
+    stems: ['signal', 'trial', 'diet', 'protein', 'symptom', 'intake', 'vomit', 'stool', 'incident', 'floor', 'emergency', 'analysis', 'may', 'call', 'look', 'episode', 'med', 'dose', 'weight', 'feeding', 'fed', 'meal', 'care', 'vet', 'report', 'ask', 'pattern', 'read', 'verdict', 'tier', 'finding', 'exam', 'ready', 'event', 'safety', 'masking'],
+  },
+  {
+    kept: 'stakes',
+    why: 'privacy, Storage, deletion, export or share links (by file name)',
+    stems: ['consent', 'auth', 'account', 'secure', 'session', 'storage', 'attachment', 'photo', 'upload', 'transient', 'local', 'db', 'schema', 'export', 'pdf', 'share', 'link', 'send', 'supabase', 'analytics', 'crash', 'delete', 'removal', 'sign', 'password', 'recovery', 'owner', 'widget', 'record', 'sync', 'undo', 'discard', 'loss', 'notification'],
+  },
+  { kept: 'stakes', why: 'money or Pets > $ (by file name)', stems: ['monetization', 'entitlement', 'paywall', 'premium', 'beta', 'flag', 'config', 'purchase', 'price', 'pricing'] },
+  { kept: 'stakes', why: 'App Store or legal (by file name)', stems: ['legal'] },
+];
+
+const wordsOf = (f: string) =>
+  (f.split('/').pop() ?? '')
+    .replace(/\.[\w.]+$/, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
 // A mock is taste wherever it sits; a spec is scope. Session records are the archive.
-function pathRule(f: string): Rule | null {
-  for (const r of PATHS) if (r.prefixes.some((p) => f.startsWith(p))) return r;
-  if (/^docs\/.*mock.*\.html$/i.test(f) || /^docs\/mocks?\//.test(f)) return { kept: 'taste', why: 'a mock' };
-  if (/^docs\/.+\.md$/.test(f) && !f.startsWith('docs/sessions/')) return { kept: 'scope', why: 'a Tier-2 doc edit' };
-  return null;
+function pathRules(f: string): Rule[] {
+  const out: Rule[] = [];
+  for (const r of PATHS) if (r.prefixes.some((p) => f.startsWith(p))) out.push(r);
+  if (CODE_DIRS.test(f)) {
+    const words = wordsOf(f);
+    for (const n of NAME_STEMS) if (words.some((w) => n.stems.some((st) => w.startsWith(st)))) out.push(n);
+  }
+  if (/^docs\/.*mock.*\.html$/i.test(f) || /^docs\/mocks?\//.test(f)) out.push({ kept: 'taste', why: 'a mock' });
+  if (/^docs\/.+\.md$/.test(f) && !f.startsWith('docs/sessions/')) out.push({ kept: 'scope', why: 'a Tier-2 doc edit' });
+  return out;
 }
 
 // ---- text ---------------------------------------------------------------------------
-// Case-sensitive where the word is a proper noun in this repo (RLS, Storage) or common in
-// lower case in passing ("export function"); case-insensitive everywhere else.
+// Case-insensitive, stem-based. Every word here was either on the spec or found by the
+// adversarial pass in wording a real issue would use.
 const TEXT: TextRule[] = [
-  { kept: 'stakes', why: 'clinical', re: /\bclinical\b|\bsafety invariants?\b|intake is not preference|n=1 never reassures|adversarial-reviewer|clinical-guardrails|\bvet report\b|\bescalat(e|es|ion)\b/i },
-  { kept: 'stakes', why: 'privacy, RLS, Storage, deletion, export or share links', re: /\bRLS\b|\bpolic(y|ies)\b|\bStorage\b|\bdeletion\b|\bexport\b|rls-privacy-reviewer|\b[Pp]rivacy\b|\bshare (links?|tokens?)\b|\bsigned URLs?\b|\bservice[- ]role\b/ },
-  { kept: 'stakes', why: 'money or Pets > $', re: /Pets > \$|\b(paywalls?|entitlements?|premium|pricing|subscriptions?|in-app purchases?|ai_usage|money)\b/i },
-  { kept: 'stakes', why: 'schema', re: /\bschema\b|\bmigrations?\b|supabase\/migrations\//i },
-  { kept: 'stakes', why: 'App Store or legal', re: /\bApp Store\b|\bApp Review\b|\bdocs\/legal\b|\bterms of service\b|\bprivacy policy\b|\blegal\b/i },
+  {
+    kept: 'stakes',
+    why: 'clinical',
+    re: /\bclinical\b|\bsafety invariants?\b|intake is not preference|n=1 never reassures|adversarial-reviewer|clinical-guardrails|\bvet[- ]reports?\b|\bescalat\w*|\breassur\w*|\bpicky\b|\bsoften\w*|\bwarn(s|ed|ing|ings)?\b|\bred[- ]flags?\b|\bthresholds?\b|\bappetite\b|\banorexi\w*|\blipidosis\b|\bvomit\w*|\bstools?\b|\bdiarrh\w*|\blethargi?\w*|\bsymptoms?\b|\bintake\b|\brefus\w*|\bdiet[- ]trials?\b|\bdoses?\b|\bmedications?\b|\bdetect(or|ion)s?\b|\bhealth flags?\b/i,
+  },
+  {
+    kept: 'stakes',
+    why: 'privacy, RLS, Storage, deletion, export or share links',
+    re: /\bRLS\b|\bpolic(y|ies)\b|\bstorage\b|\bbuckets?\b|\bdelet\w*|\bexport\w*|rls-privacy-reviewer|\bprivacy\b|\bshare[- ]?(links?|tokens?)\b|\b(visit|report) links?\b|\bsigned URLs?\b|\bservice[- ]role\b|\bconsent\w*|\bhealth (data|photos?)\b|\bpersonal data\b/i,
+  },
+  {
+    kept: 'stakes',
+    why: 'money or Pets > $',
+    re: /Pets > \$|\b(paywalls?|entitlements?|premium|pric(e|es|ing)|subscriptions?|in-app purchases?|purchases?|ai_usage|money|monetiz\w*|revenuecat|throttl\w*|app_config)\b|\b(pets?|ai|usage|free|daily|monthly) caps?\b|\bcap (on|of)\b|\b(free|pro|paid) tiers?\b|\btier limits?\b/i,
+  },
+  { kept: 'stakes', why: 'schema', re: /\bschema\b|\bmigrations?\b|supabase\/migrations\/|\bALTER TABLE\b|\b(add|drop|rename)\w* (a |an |the )?(new )?(column|table|index|constraint)s?\b|\bnew (column|table)s?\b/i },
+  { kept: 'stakes', why: 'App Store or legal', re: /\bApp[- ]?Store\b|\bApp Review\b|\bTestFlight (submission|review)\b|\bstore listing\b|\bdocs\/legal\b|\bterms of service\b|\bprivacy policy\b|\blegal\b/i },
   {
     kept: 'stakes',
     why: 'irreversible (a revert PR or a Linear edit cannot undo it)',
-    re: /\birreversible\b|\b(cannot|can't|can not) be undone\b|\bapply_migration\b|\bexecute_sql\b|\bpurge[sd]?\b|\bhard[- ]delet\w*|\bDROP (TABLE|COLUMN)\b|\bTRUNCATE\b|\bforce[- ]push\w*|\bsend(s|ing)? (an? |the )?(emails?|push(es)?|notifications?)\b/i,
+    re: /\birreversible\b|\b(cannot|can't|can not) be undone\b|\bapply_migration\b|\bexecute_sql\b|\bpurge\w*|\bwip(e|es|ed|ing)\b|\bhard[- ]delet\w*|\bdrop (the )?(table|column|bucket)s?\b|\bTRUNCATE\b|\bforce[- ]push\w*|\bbackfill\w*|\brotat\w* (the |a )?(\w+ )?(keys?|secrets?|tokens?)\b|\bsecrets? set\b|\bsend(s|ing)? (an? |the )?(emails?|push(es)?|notifications?)\b|\b(notify|email|message|push to) (all|every)\b|\b(publish|release)\w* to (production|prod)\b|\bremov\w* (the |a )?buckets?\b/i,
   },
   { kept: 'taste', why: 'a reaction to a mock', re: /\breactions?\b|\bR-\d+\b/ },
   { kept: 'taste', why: 'brand', re: /\bbrand(ing)?\b/i },
@@ -148,8 +176,9 @@ const TEXT: TextRule[] = [
 const BACK_TO: Record<TeamCallClass, Exclude<Kept, 'none'>> = { copy: 'taste', ux: 'taste', engineering: 'scope', doc: 'scope' };
 
 export function keptOf(input: KeptInput): KeptResult {
-  const labels = input.labels ?? [];
-  const files = input.files ?? [];
+  // Blank entries are no input: `{ labels: [''] }` is nothing to read, never `none`.
+  const labels = (input.labels ?? []).map((l) => l.trim()).filter(Boolean);
+  const files = (input.files ?? []).map((f) => f.trim()).filter(Boolean);
   const text = input.text ?? '';
   const hits: Rule[] = [];
   const add = (r: Rule) => {
@@ -158,14 +187,11 @@ export function keptOf(input: KeptInput): KeptResult {
   const ratified = !!input.ratifiedRound?.trim();
 
   for (const l of labels) {
-    const r = LABELS[l];
-    if (r && !(ratified && l === 'Gate: design')) add(r);
+    const r = LABELS[labelKey(l)];
+    if (r && !(ratified && labelKey(l) === 'gate:design')) add(r);
   }
   if (input.migration) add({ kept: 'stakes', why: 'schema (a migration)' });
-  for (const f of files) {
-    const r = pathRule(f);
-    if (r && !(ratified && r.why === 'a mock')) add(r);
-  }
+  for (const f of files) for (const r of pathRules(f)) if (!(ratified && r.why === 'a mock')) add(r);
   for (const r of TEXT) {
     if (ratified && r.tasteVisual) continue;
     if (r.re.test(text)) add(r);
@@ -177,7 +203,7 @@ export function keptOf(input: KeptInput): KeptResult {
     const cls = teamCallClass(input);
     if (input.backToKept.includes(cls)) add({ kept: BACK_TO[cls], why: `${cls} calls returned to kept by the reversal rule` });
   }
-  if (!labels.length && !files.length && !text.trim() && !input.migration && !input.forecast) {
+  if (!labels.length && !files.length && !text.trim() && !input.migration) {
     add({ kept: 'stakes', why: 'nothing to read (uncertain counts as kept)' });
   }
 

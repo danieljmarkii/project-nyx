@@ -2,7 +2,7 @@
 // the 084 clash, and the rules the prose kept dropping.
 
 import * as F from './fixtures/facts-2026-10-05.ts';
-import { autoEligible, gateOf, planDispatch, type PlanInput } from './plan.ts';
+import { autoEligible, gateOf, pathsIn, planDispatch, type PlanInput } from './plan.ts';
 
 const AT_2110 = '2026-10-05T21:10:19Z';
 
@@ -84,7 +84,9 @@ describe('the 084 clash', () => {
   it('tells a ready migration row the next free number, past every reserved one', () => {
     const p = planDispatch(enginesAt2110({ prs: [...F.MERGED, F.PR_1064] }));
     expect(p.nextMigration).toBe('085');
-    expect(p.verdicts.find((v) => v.row === '36a')!.ready).toBe(true);
+    // No clash holds it. Since the kept list (CUL-2886) the Engines v3 rows in flight are
+    // clinical, so they wait on the PM, and that sub-limit is its only hold.
+    expect(p.verdicts.find((v) => v.row === '36a')!.reasons).toEqual(['waiting on the PM: 3 of 3']);
   });
 
   it('once main carries 084, the parked PR is the one that renumbers', () => {
@@ -133,7 +135,11 @@ describe('the gate predicate reads the kept list (CUL-2886)', () => {
   });
 
   it('auto-eligible only when BUILD, nothing kept, privilege-free and no migration', () => {
-    expect(autoEligible(gateOf({ what: 'A refused meal keeps counting', note: '`lib/analytics.ts`.', migration: false }))).toBe(true);
+    expect(autoEligible(gateOf({ what: 'The board keeps a stale row', note: '`scripts/dispatch/board.ts`.', migration: false }))).toBe(true);
+    // A refused meal is intake, and the note's file is read too (adversarial pass 1, Q1).
+    expect(autoEligible(gateOf({ what: 'A refused meal keeps counting', note: '`lib/utils.ts`.', migration: false }))).toBe(false);
+    expect(gateOf({ what: 'Stop the extra line', note: 'edit supabase/functions/_shared/incident-tier.ts', migration: false }).kept).toBe('stakes');
+    expect(pathsIn('edit `lib/freeFedIntake.ts`, then supabase/functions/_shared/ and app.json.')).toEqual(['lib/freeFedIntake.ts', 'supabase/functions/_shared/', 'app.json']);
     // Copy inside nyx-voice is a team call now: the old keyword match held this row (CUL-2886 item 4).
     expect(autoEligible(gateOf({ what: 'x', note: 'nyx-voice copy for the toast; the label string.', migration: false }))).toBe(true);
     expect(autoEligible(gateOf({ what: 'x', note: 'merging redeploys `generate-report`.', migration: false }))).toBe(false);
