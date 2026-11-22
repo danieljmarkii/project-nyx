@@ -27,6 +27,8 @@
 //   - Two candidates on the same surface with disjoint files still bundle: the surface is
 //     the sweep's word that they belong in one session.
 
+import { keptOf } from '../kept/kept.ts';
+
 export const MAX_SESSIONS = 6; // the repo-wide cap, CUL-1606 D1
 export const WAITING_ON_PM_LIMIT = 3; // dispatch.md step 4's sub-limit
 export const FINDINGS_CAP = 3; // new non-harm issues one session may file (PM tip, 2026-11-07)
@@ -108,7 +110,6 @@ const IMPACT_ORDER: Record<Impact, number> = { A: 0, B: 1, C: 2, D: 3 };
 const SIZE_WEIGHT: Record<Size, number> = { S: 1, M: 3, L: 6, XL: 12 };
 const priorityRank = (p: number) => (p >= 1 && p <= 4 ? p : 5); // "no priority" sorts last
 export const isLiveHarm = (c: SweepPick | SweepCandidate) => ('labels' in c ? c.labels.includes('Live harm') : c.liveHarm);
-const GATED_LABELS = ['Gate: clinical', 'Gate: privacy', 'Area: Privacy/RLS'];
 
 // A merge the PM must type (steward §7, CUL-1654): landing deploys an Edge Function or edits
 // the gate's files, or the PR holds a migration only the PM's `apply` lands. A build on these
@@ -154,15 +155,14 @@ export function compare(a: SweepCandidate, b: SweepCandidate): number {
   );
 }
 
-// CLAUDE.md: anything touching RLS, Storage, deletion or export is never mechanical: it plans
-// first and gets the rls-privacy-reviewer. dispatch's gate predicate (step 5) plan-gates the
-// same rows at launch, so the sweep must count them as waiting too (first run, 2026-11-08).
-const PLAN_PATHS = ['lib/storage.ts', 'supabase/migrations/', 'supabase/functions/delete-account/', 'supabase/functions/export', 'lib/deleteAccount', 'lib/export'];
-const touchesPlanPath = (files: string[]) => files.some((f) => PLAN_PATHS.some((p) => f.startsWith(p)));
+// The kept list decides what plans first (CUL-2886): a stakes, taste or scope call waits on
+// the PM, exactly as dispatch's gate predicate reads the same row at launch. One module,
+// so the sweep and dispatch can never disagree about a row (first run, 2026-11-08).
+export const keptFor = (c: SweepCandidate) => keptOf({ labels: c.labels, files: c.files, text: `${c.title} ${c.impactWhy}` });
 
 export function kindOf(c: SweepCandidate): Kind {
   if (c.needsShaping || c.relevance === 'unclear' || c.size === 'XL') return 'shape';
-  if (c.size === 'L' || c.labels.some((l) => GATED_LABELS.includes(l)) || touchesPlanPath(c.files)) return 'plan';
+  if (c.size === 'L' || keptFor(c).kept !== 'none') return 'plan';
   return 'build';
 }
 

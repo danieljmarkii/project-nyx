@@ -157,7 +157,7 @@ describe('the sanity-check gaps (PM, 2026-11-08)', () => {
     expect(r.picks.map((p) => p.issues[0])).toEqual(['CUL-124']);
   });
   it('a build that deploys or touches the gate waits on the PM to merge, so it spends a place', () => {
-    const fn = cand({ id: 'CUL-125', files: ['supabase/functions/ask/index.ts'] });
+    const fn = cand({ id: 'CUL-125', files: ['supabase/functions/extract-food-from-photo/index.ts'] });
     const plain = cand({ id: 'CUL-126', files: ['app/log.tsx'] });
     const r = run([fn, plain], { waitingOnPm: 3 });
     expect(r.picks.map((p) => p.issues[0])).toEqual(['CUL-126']);
@@ -193,6 +193,11 @@ describe('bundles and sizes', () => {
     // Storage, migrations, deletion and export plan first, as dispatch's predicate does (CLAUDE.md).
     expect(kindOf(cand({ files: ['app/medication-capture.tsx', 'lib/storage.ts'] }))).toBe('plan');
     expect(kindOf(cand({ files: ['supabase/functions/delete-account/index.ts'] }))).toBe('plan');
+    // The kept list's other classes plan first too (CUL-2886): money, a mock, a spec edit.
+    expect(kindOf(cand({ files: ['lib/appConfig.ts'] }))).toBe('plan');
+    expect(kindOf(cand({ files: ['docs/ask-mockups.html'] }))).toBe('plan');
+    expect(kindOf(cand({ files: ['docs/nyx-ask-requirements.md'] }))).toBe('plan');
+    expect(kindOf(cand({ files: ['.github/workflows/ci.yml'], title: 'Pin the action SHA' }))).toBe('build');
   });
   it('a plan or shape never bundles: it waits on the PM alone', () => {
     const a = cand({ id: 'CUL-54', size: 'L', surface: 'x' });
