@@ -60,6 +60,10 @@ describe('typed inputs per merged row', () => {
     expect(out).toMatch(/Typed inputs per merged row: not recorded\*\* \(n=0 of 1 merged\)/);
   });
 
+  it('prints the read notes under the numbers', () => {
+    expect(renderReadout(base({ notes: ['picks are typed in the dispatcher, not traced'] }))).toMatch(/\n\n_picks are typed in the dispatcher, not traced_$/);
+  });
+
   it('leads the readout', () => {
     expect(renderReadout(base()).split('\n')[2]).toMatch(/^- \*\*Typed inputs per merged row/);
   });

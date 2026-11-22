@@ -56,6 +56,7 @@ export type NumbersInput = {
   filed: { id: string; createdAt: string }[]; // issues filed in the team
   rollbacks?: { pr: number; at: string }[];
   teamCalls?: { issue: string; cls: string; at: string }[];
+  notes?: string[]; // how this window's facts were read, printed under the numbers
 };
 
 // The queue's memory between readouts: each member's first-seen time, as of one read.
@@ -195,6 +196,7 @@ export function renderReadout(f: NumbersInput): string {
     `- Issues filed per merged PR: ${n.filed.perMergedPr === undefined ? 'no merges' : `${r1(n.filed.perMergedPr)} (${n.filed.count} filed, ${n.mergedCount} merged)`} · baseline ${B.findingsPerPr} findings per PR`,
     `- Cost per merged PR: ${n.cost.medianUsd === undefined ? NR : `median $${n.cost.medianUsd.toFixed(2)}`}${ofMerged(n.cost.n)} · baseline $${B.medianCostPerChild.toFixed(2)} median per child`,
     `- Rollbacks: ${n.rollbacks} · team calls by class: ${calls.length ? calls.map(([c, k]) => `${c} ${k}`).join(', ') : 'none logged'}`,
+    ...(f.notes?.length ? ['', ...f.notes.map((x) => `_${x}_`)] : []),
   ].join('\n');
 }
 
