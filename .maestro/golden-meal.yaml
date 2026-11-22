@@ -12,7 +12,8 @@
 appId: ${APP_ID}
 name: Golden meal
 env:
-  FOOD_TILE: "Fieldstone Venison & Potato"
+  # The tile's spoken name is brand and product; a regex, as Maestro matches the whole label.
+  FOOD_TILE: ".*Fieldstone Venison & Potato.*"
   # Inside the Today card only: the trial card elsewhere on Home names the same food.
   FOOD_ROW: ".*Venison & Potato.*"
 ---
@@ -56,6 +57,12 @@ env:
     visible: Tap a food to log it now.
     timeout: 20000
 - takeScreenshot: 04-food-picker
+# The trial pet's library can sit below the fold on a small phone.
+- scrollUntilVisible:
+    element:
+      text: ${FOOD_TILE}
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     text: ${FOOD_TILE}
     index: 0

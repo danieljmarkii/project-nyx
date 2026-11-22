@@ -323,7 +323,8 @@ jobs:
         id: flow
         shell: bash
         run: |
-          set -uo pipefail
+          # Actions runs bash with -e; a failed attempt must reach the retry and the uploads.
+          set +e -uo pipefail
           FIXTURE_EMAIL="$(node --experimental-strip-types -e 'import("./scripts/web-capture/fixtureRest.ts").then(m => process.stdout.write(m.FIXTURE_EMAIL))' 2>/dev/null)"
           FIXTURE_PASSWORD="$(node --experimental-strip-types -e 'import("./scripts/sim/fixtureServer.ts").then(m => process.stdout.write(m.FIXTURE_PASSWORD))' 2>/dev/null)"
           [ -n "$FIXTURE_EMAIL" ] && [ -n "$FIXTURE_PASSWORD" ] || { echo "::error::could not read the fixture credentials"; exit 1; }
@@ -428,6 +429,7 @@ jobs:
             ${{ runner.temp }}/sim/fixture-*.log
             ${{ runner.temp }}/sim/maestro-*.xml
             ${{ runner.temp }}/sim/maestro-debug-*/**
+            ~/.maestro/tests/**
           if-no-files-found: ignore
           retention-days: 14
 
