@@ -164,6 +164,7 @@ interface CiRun {
   sha: string;
   status?: string;
   event?: string;
+  attempt?: number;
 }
 
 /** A page of ci.yml runs as the Actions API returns it, newest first; returns its path. */
@@ -175,6 +176,7 @@ function runsFile(name: string, runs: CiRun[]): string {
     conclusion: r.conclusion,
     head_sha: r.sha,
     event: r.event ?? 'push',
+    run_attempt: r.attempt ?? 1,
     html_url: `https://ci.example.invalid/runs/${r.id}`,
   }));
   fs.writeFileSync(file, JSON.stringify({ total_count: runs.length, workflow_runs }), 'utf8');
@@ -741,6 +743,37 @@ describe('scripts/steward/merge-check.sh', () => {
     const d = check(unrelated, [], { FAKE_GH_MAIN: cancelledThenGreen });
     expect(d.out).toContain(`main's CI: green (run 41 on ${red.slice(0, 7)})`);
     expect(d.code).toBe(0);
+  });
+
+  // CUL-2860: ci-rerun.yml reruns a failed main run once, in place, so while it runs the
+  // red run is not completed. Read past, main would read as the older green run.
+  it("a failed main run being rerun is REVIEW until it completes; a new push in flight is not", () => {
+    const fx = fixture();
+    const s = session(fx, 'claude/feature', { 'feature.txt': 'new\n' });
+    const rerunning = runsFile('rerunning', [
+      { id: 62, conclusion: '', status: 'in_progress', attempt: 2, sha: 'd'.repeat(40) },
+      { id: 61, conclusion: 'success', sha: 'e'.repeat(40) },
+    ]);
+    const r = check(s, [], { FAKE_GH_MAIN: rerunning });
+    expect(r.out).toContain(`main's CI: RERUNNING (run https://ci.example.invalid/runs/62 on ddddddd is being run again)`);
+    expect(r.code).toBe(2);
+    expect(lastLine(r.out)).toBe('MERGE CHECK: REVIEW');
+
+    // A first attempt in flight is a new push: still not read, as before.
+    const newPush = runsFile('new-push', [
+      { id: 64, conclusion: '', status: 'in_progress', attempt: 1, sha: 'd'.repeat(40) },
+      { id: 63, conclusion: 'success', sha: 'e'.repeat(40) },
+    ]);
+    const n = check(s, [], { FAKE_GH_MAIN: newPush });
+    expect(n.out).toContain("main's CI: green (run 63 on eeeeeee)");
+    expect(n.code).toBe(0);
+
+    // The rerun that completes red is the red it was.
+    const rerunRed = runsFile('rerun-red', [
+      { id: 66, conclusion: 'failure', attempt: 2, sha: 'd'.repeat(40) },
+      { id: 65, conclusion: 'success', sha: 'e'.repeat(40) },
+    ]);
+    expect(check(s, [], { FAKE_GH_MAIN: rerunRed }).out).toContain("main's CI: RED");
   });
 
   // Never read silence as green: a failed read, and a page with no run that passed or

@@ -78,7 +78,10 @@
 #     Other hand-numbered lists (the §C / §P entries of engineering-lessons.md) are not.
 #   - Main's CI is the latest COMPLETED run of ci.yml on a push to the base branch that
 #     passed or failed (a cancelled run says neither). A run still in flight is not read,
-#     so a main that is about to go red reads green. "This PR is the fix" is judged by
+#     so a main that is about to go red reads green. The one exception is a RERUN in
+#     flight (attempt 2 or later, which ci-rerun.yml starts on every failed main run,
+#     CUL-2860): it was red a moment ago, so it is REVIEW until it completes, never read
+#     past to an older green run. "This PR is the fix" is judged by
 #     file: the branch contains the red commit, touches a file changed between main's
 #     last green run and its red one, and its own CI passed on this head. A fix in a file no commit changed (a date-pinned test
 #     whose clock ran out) is not recognized; that REVIEW is cleared in writing.
@@ -524,6 +527,18 @@ decisive_run() {
          | select(. != null) | [.conclusion, (.id | tostring), .head_sha, .html_url] | @tsv' "$1"
 }
 
+# Main's page reads one more kind of run as decisive: a rerun still in flight (attempt 2 or
+# later, not completed), printed as "rerunning". It stands where the red it is rerunning
+# stood, so reading past it would turn a red main green for the rerun's length (CUL-2860).
+decisive_main_run() {
+  jq -r '[.workflow_runs[]?
+            | if .status != "completed" and (.run_attempt // 1) > 1 then .conclusion = "rerunning"
+              elif .status == "completed" then . else empty end
+            | select(.conclusion == "success" or .conclusion == "failure" or .conclusion == "rerunning"
+                     or .conclusion == "timed_out" or .conclusion == "startup_failure")][0]
+         | select(. != null) | [.conclusion, (.id | tostring), .head_sha, .html_url] | @tsv' "$1"
+}
+
 ci_red=0
 ci_line=""
 main_branch=$(branch_on_origin "$base_ref")
@@ -535,17 +550,20 @@ elif ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
   ci_line="main's CI: could not read (needs gh and jq on PATH); read it with actions_list before merging"
 else
   slug=$(repo_slug)
-  if ! gh api "repos/$slug/actions/workflows/$ci_workflow/runs?branch=$main_branch&event=push&status=completed&per_page=30" \
+  if ! gh api "repos/$slug/actions/workflows/$ci_workflow/runs?branch=$main_branch&event=push&per_page=30" \
     >"$tmp/main-runs.json" 2>"$tmp/gh.err" || ! jq -e '.workflow_runs | type == "array"' "$tmp/main-runs.json" >/dev/null 2>&1; then
     ci_red=1
     ci_line="main's CI: could not read ($(head -c 160 "$tmp/gh.err" | tr '\n' ' ')); read it with actions_list before merging"
   else
-    read -r concl run_id run_sha run_url < <(decisive_run "$tmp/main-runs.json")
+    read -r concl run_id run_sha run_url < <(decisive_main_run "$tmp/main-runs.json")
     if [ -z "${concl:-}" ]; then
       ci_red=1
       ci_line="main's CI: could not read (no passed or failed run of $ci_workflow on $main_branch in the latest page); silence is not green"
     elif [ "$concl" = "success" ]; then
       ci_line="main's CI: green (run $run_id on ${run_sha:0:7})"
+    elif [ "$concl" = "rerunning" ]; then
+      ci_red=1
+      ci_line="main's CI: RERUNNING (run $run_url on ${run_sha:0:7} is being run again); wait for it to complete"
     else
       # The suspects: every file changed between main's last green run and this red one.
       # No green run on the page, or a commit this clone lacks, leaves only the red commit.

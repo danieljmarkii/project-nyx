@@ -47,6 +47,9 @@ jobs:
     runs-on: ubuntu-latest
     # Eight sizes since CUL-2237 (four before): about twice the capture time.
     timeout-minutes: 50
+    env:
+      # The one place the version is written: the cache key and the install both read it.
+      PLAYWRIGHT_VERSION: 1.63.0
     steps:
       # Everything this job writes lives outside the checkout: Metro crawls the project root,
       # and a Deno cache or a second node_modules under it would be walked by the build.
@@ -81,11 +84,45 @@ jobs:
       # Playwright stays out of package.json: the app never needs it, and the browser is only
       # this job's. Installed beside the checkout at the version the cloud container carries,
       # so a capture here and one from a session photograph the same engine.
+      #
+      # Cached and retried (CUL-2860): the install was 23 of this workflow's 31 infrastructure
+      # failures (retro 5), a download that failed or stalled, never the code. The browser
+      # download is cached by its exact version, so a hit fetches nothing; the npm package and
+      # the system libraries still install every run, so each step is retried with backoff and
+      # a timeout, the shape ci.yml's Deno warm step uses. The version is the job's
+      # PLAYWRIGHT_VERSION, so the cache key and the install cannot drift apart.
+      - name: Restore the Playwright browser cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.0.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-chromium
+
       - name: Install Playwright and Chromium
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p "$WORK/pw"
-          npm install --prefix "$WORK/pw" --no-save --no-package-lock playwright@1.63.0
-          "$WORK/pw/node_modules/.bin/playwright" install --with-deps chromium
+          # 4 attempts, 10/20/40s apart, each capped so a stalled fetch reaches the retry.
+          retry() {
+            local attempt status
+            for attempt in 1 2 3 4; do
+              status=0
+              timeout 300 "$@" || status=$?
+              if [ "$status" -eq 0 ]; then return 0; fi
+              if [ "$attempt" -eq 4 ]; then
+                echo "::error::'$*' failed with exit $status on the final attempt: a download or mirror failure, not a code failure; re-run the job"
+                return 1
+              fi
+              echo "::warning::'$*' attempt $attempt failed with exit $status; retrying in $((10 * (2 ** (attempt - 1))))s"
+              sleep $((10 * (2 ** (attempt - 1))))
+            done
+          }
+          retry npm install --prefix "$WORK/pw" --no-save --no-package-lock playwright@"$PLAYWRIGHT_VERSION"
+          # The browser (a no-op on a cache hit), then the system libraries, separately, so a
+          # failed apt mirror retries without fetching Chromium again.
+          retry "$WORK/pw/node_modules/.bin/playwright" install chromium
+          # install-deps calls sudo itself, as --with-deps did.
+          retry "$WORK/pw/node_modules/.bin/playwright" install-deps chromium
 
       # Home's Signal lead: the shipped pipeline over the fixture's rows at the frozen instant.
       # Fails when a pet's lead differs from the one the fixture declares.

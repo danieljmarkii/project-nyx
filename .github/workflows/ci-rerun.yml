@@ -1,0 +1,48 @@
+# One automatic rerun of a failed CI run on main (CUL-2860).
+#
+# Retro 5 measured 0 of 5 failed main runs ever rerun, so main sat red 4.5 to 20 hours, and
+# every self-merge waited on it (scripts/steward/merge-check.sh reads main's latest decisive
+# run). Most of those reds were the network, not the code. So a failed push run on main gets
+# exactly one rerun of its failed jobs:
+#   - attempt 1 only: a rerun that fails again stays red, and that red is the verdict;
+#   - push runs only: a pull request's red belongs to its session;
+#   - failed jobs only (`--failed`), so the passed ones keep their result and their minutes.
+# While the rerun is in flight, merge-check reads that run as RERUNNING and holds every merge
+# until it completes, rather than reading past it to an older green run.
+name: CI rerun
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+# Rerunning a run is an Actions write. Nothing else: no checkout, no contents.
+permissions:
+  actions: write
+
+jobs:
+  rerun:
+    name: Rerun a failed main run once
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Rerun the failed jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          echo "Rerunning the failed jobs of $RUN_URL (attempt 1 failed)."
+          # Retried: the API can refuse a rerun for a few seconds after the completed event.
+          # A rerun lost to that race fails this job loudly rather than leaving main quietly red.
+          for attempt in 1 2 3; do
+            if gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"; then exit 0; fi
+            [ "$attempt" -lt 3 ] && sleep 15
+          done
+          echo "::error::could not start the rerun of $RUN_URL after 3 attempts; main stays red until someone reruns it"
+          exit 1
