@@ -1,0 +1,294 @@
+# Simulator smoke (CUL-2864, Workflow v2 PR-10; ruled as D6 on CUL-2854): build the app for
+# an iPhone simulator on a free GitHub Mac runner, install it, launch it and photograph the
+# first screen. Nothing is tested yet. This is step one of agents driving an iPhone: it
+# proves the unsigned simulator build works with the widget extension and the App Group,
+# and that the Mac image is offered to this repo.
+#
+# REPORTS, NEVER BLOCKS, on layout-captures.yml's terms: its own workflow so it can never
+# join the `main` ruleset's required checks by accident (those are named in ci.yml), and its
+# path filter scopes it to the PRs that can change what launches. It is not
+# `continue-on-error`: a build that fails or an app that dies on launch shows red, because a
+# green over a broken harness would read as "it launches". Red here holds no merge.
+#
+# The image. The app pins Xcode 27.1 (eas.json's `macos-tahoe-26.6-xcode-27.1`), which only
+# GitHub's `xcode-27` image carries (a preview label; macos-26 tops out at Xcode 26.x). A
+# manual run can name another runner and Xcode, for the day the preview label goes away.
+#
+# Native reuse. The built .app is cached on the native fingerprint (@expo/fingerprint) plus
+# the Xcode version. A change with no native code restores it and only rebuilds the JS, which
+# @expo/repack-app writes into a copy of the cached app; a native change pays the full
+# xcodebuild. The job summary says which, and how long each took.
+#
+# Fixture only, never a real account: the bundle points Supabase at a name that cannot
+# resolve (.invalid, RFC 6761), as scripts/web-capture/build.sh does. The landing screen
+# needs no account. Read-only token: nothing here comments, pushes or writes outside the run.
+name: Simulator smoke
+
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'components/**'
+      # Native config: anything the fingerprint reads that a PR can change.
+      - 'app.json'
+      - 'eas.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'plugins/**'
+      - 'widgets/**'
+      - 'patches/**'
+      - 'assets/**'
+      - '.github/workflows/sim-smoke.yml'
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner label (xcode-27 is the preview image carrying Xcode 27.1)'
+        default: 'xcode-27'
+      xcode:
+        description: 'Xcode version to select (falls back to the newest installed, with a warning)'
+        default: '27.1'
+
+concurrency:
+  group: sim-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Simulator smoke (reported, not gating)
+    runs-on: ${{ inputs.runner || 'xcode-27' }}
+    timeout-minutes: 90
+    env:
+      WANT_XCODE: ${{ inputs.xcode || '27.1' }}
+      EXPO_PUBLIC_SUPABASE_URL: https://fixture.nyx-capture.invalid
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: fixture-anon-key
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Work directories
+        run: |
+          {
+            echo "SIM=$RUNNER_TEMP/sim"
+            echo "APP_CACHE=$RUNNER_TEMP/sim/cached"
+            echo "APP_OUT=$RUNNER_TEMP/sim/out"
+            echo "SHOTS=$RUNNER_TEMP/sim/shots"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/sim/cached" "$RUNNER_TEMP/sim/out" "$RUNNER_TEMP/sim/shots"
+          echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The image and the Xcode, written to the summary either way: the row's second unknown.
+      - name: Select Xcode
+        id: xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          sw_vers || true
+          ls -d /Applications/Xcode*.app || true
+          want="/Applications/Xcode_${WANT_XCODE}.app"
+          if [ -d "$want" ]; then
+            pick="$want"
+          else
+            pick="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+            echo "::warning::Xcode ${WANT_XCODE} is not on this image; using $pick, the newest installed"
+          fi
+          sudo xcode-select -s "$pick/Contents/Developer"
+          # Read whole, never piped to head: under pipefail xcodebuild dies on the closed pipe.
+          xcodebuild -version > "$SIM/xcode-version.txt"
+          cat "$SIM/xcode-version.txt"
+          ver="$(awk 'NR==1{print $2}' "$SIM/xcode-version.txt")"
+          echo "Selected $pick ($ver)"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "XCODE_VERSION=$ver" >> "$GITHUB_ENV"
+
+      - name: Native fingerprint
+        id: fp
+        shell: bash
+        run: |
+          set -euo pipefail
+          hash="$(npx @expo/fingerprint fingerprint:generate --platform ios | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).hash))')"
+          echo "Fingerprint $hash"
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the built app
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.0.0
+        with:
+          path: ${{ runner.temp }}/sim/cached
+          key: sim-app-${{ runner.os }}-${{ runner.arch }}-xcode${{ steps.xcode.outputs.version }}-${{ steps.fp.outputs.hash }}
+
+      # One iPhone on the newest iOS runtime the selected Xcode carries. Picked before the
+      # build so xcodebuild builds the simulator's own architecture only.
+      - name: Pick a simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list runtimes
+          udid="$(xcrun simctl list devices available -j | node -e '
+            let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+              const devs = JSON.parse(s).devices;
+              const ios = Object.keys(devs).filter(k => /SimRuntime\.iOS-/.test(k))
+                .sort((a,b) => {
+                  const v = k => k.replace(/.*iOS-/, "").split("-").map(Number);
+                  const [x,y] = [v(a), v(b)];
+                  for (let i=0;i<Math.max(x.length,y.length);i++){ const d=(x[i]||0)-(y[i]||0); if(d) return d; }
+                  return 0;
+                });
+              for (const rt of ios.reverse()) {
+                // One screen only: a foldable (the iPhone Duo) has two displays, and
+                // `simctl io screenshot` refuses to pick one.
+                const phone = devs[rt].find(d => d.isAvailable && /^iPhone/.test(d.name) && !/Duo|Fold/i.test(d.name));
+                if (phone) { console.error(`Simulator: ${phone.name} on ${rt}`); process.stdout.write(phone.udid); return; }
+              }
+              process.exit(1);
+            })')"
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+          name="$(xcrun simctl list devices -j | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const l of Object.values(JSON.parse(s).devices))for(const d of l)if(d.udid===process.argv[1])process.stdout.write(d.name)})' "$udid")"
+          echo "SIM_NAME=$name" >> "$GITHUB_ENV"
+          # Boot now, in the background of the build.
+          xcrun simctl boot "$udid" || true
+
+      - name: Build for the simulator (cold)
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          t0=$(date +%s)
+          npx expo prebuild --platform ios --clean
+          ws="$(ls -d ios/*.xcworkspace | head -1)"
+          scheme="$(basename "$ws" .xcworkspace)"
+          echo "Workspace $ws, scheme $scheme"
+          # Updates off: a Release build with expo-updates on would fetch production's
+          # published update at launch and photograph that instead of this commit's JS.
+          find ios -name Expo.plist -not -path '*/Pods/*' -print -exec \
+            /usr/libexec/PlistBuddy -c 'Set :EXUpdatesEnabled false' {} \;
+          status=0
+          xcodebuild \
+            -workspace "$ws" -scheme "$scheme" -configuration Release \
+            -sdk iphonesimulator -destination "id=$SIM_UDID" \
+            -derivedDataPath "$SIM/dd" \
+            ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            build > "$SIM/xcodebuild.log" 2>&1 || status=$?
+          grep -E 'error:|\*\* BUILD' "$SIM/xcodebuild.log" | tail -40 || true
+          if [ "$status" -ne 0 ]; then
+            echo "::error::xcodebuild failed with exit $status; the tail of its log follows, the whole log is an artifact"
+            tail -80 "$SIM/xcodebuild.log"
+            exit "$status"
+          fi
+          app="$(ls -d "$SIM"/dd/Build/Products/Release-iphonesimulator/*.app | head -1)"
+          test -d "$app" || { echo "::error::xcodebuild produced no .app; see the xcodebuild log artifact"; tail -80 "$SIM/xcodebuild.log"; exit 1; }
+          ls "$app/PlugIns" 2>/dev/null && echo "Widget extension present" || echo "::warning::no PlugIns folder: the widget extension did not embed"
+          rm -rf "$APP_CACHE"/* && cp -R "$app" "$APP_CACHE/"
+          cp -R "$app" "$APP_OUT/"
+          echo "BUILD_KIND=cold (prebuild + xcodebuild)" >> "$GITHUB_ENV"
+          echo "BUILD_SECONDS=$(( $(date +%s) - t0 ))" >> "$GITHUB_ENV"
+
+      - name: Save the built app
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.0.0
+        with:
+          path: ${{ runner.temp }}/sim/cached
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      # No native change: the cached binary, this commit's JS. repack-app re-exports the
+      # bundle and writes it into a copy of the cached .app.
+      - name: Repack this commit's JS (warm)
+        if: steps.cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          t0=$(date +%s)
+          src="$(ls -d "$APP_CACHE"/*.app | head -1)"
+          out="$APP_OUT/$(basename "$src")"
+          npx --yes @expo/repack-app@0.10.4 --platform ios --source-app "$src" --output "$out" --working-directory "$SIM/repack" --verbose .
+          test -d "$out" || { echo "::error::repack produced no .app"; exit 1; }
+          echo "BUILD_KIND=warm (cached binary + repacked JS)" >> "$GITHUB_ENV"
+          echo "BUILD_SECONDS=$(( $(date +%s) - t0 ))" >> "$GITHUB_ENV"
+
+      - name: Install, launch, screenshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          app="$(ls -d "$APP_OUT"/*.app | head -1)"
+          bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
+          exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
+          xcrun simctl install "$SIM_UDID" "$app"
+          xcrun simctl launch "$SIM_UDID" "$bundle"
+          # The landing screen: give the JS a moment past the splash.
+          sleep 25
+          xcrun simctl io "$SIM_UDID" screenshot "$SHOTS/launch.png"
+          if ! pgrep -f "$exe.app/$exe" >/dev/null; then
+            echo "::error::the app is not running 25s after launch: it crashed or exited (see the device log artifact)"
+            exit 1
+          fi
+          echo "App $bundle is running"
+
+      - name: Device log
+        if: ${{ !cancelled() && env.SIM_UDID != '' }}
+        shell: bash
+        run: |
+          xcrun simctl spawn "$SIM_UDID" log show --last 5m --style compact \
+            --predicate 'process CONTAINS "Culprit" OR eventMessage CONTAINS "com.projectnyx"' > "$SIM/device.log" 2>&1 || true
+          tail -40 "$SIM/device.log" || true
+
+      - name: Upload the screenshot
+        id: shot
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/sim/shots/launch.png
+          archive: false
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload the logs
+        id: logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sim-smoke-logs-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/sim/xcodebuild.log
+            ${{ runner.temp }}/sim/device.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Summary
+        if: ${{ !cancelled() }}
+        env:
+          SHOT_URL: ${{ steps.shot.outputs.artifact-url }}
+          LOGS_URL: ${{ steps.logs.outputs.artifact-url }}
+          RUNNER_LABEL: ${{ inputs.runner || 'xcode-27' }}
+          FP: ${{ steps.fp.outputs.hash }}
+        run: |
+          total=$(( $(date +%s) - JOB_START ))
+          {
+            echo "## Simulator smoke"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Runner | \`$RUNNER_LABEL\` ($(sw_vers -productVersion 2>/dev/null)) |"
+            echo "| Xcode | ${XCODE_VERSION:-?} |"
+            echo "| Simulator | ${SIM_NAME:-?} |"
+            echo "| Build | ${BUILD_KIND:-did not finish} |"
+            echo "| Build time | ${BUILD_SECONDS:-?}s |"
+            echo "| Job time | ${total}s |"
+            echo "| Fingerprint | \`${FP:-?}\` |"
+            echo
+            if [ -n "$SHOT_URL" ]; then echo "- [Launch screenshot]($SHOT_URL)"; else echo "No screenshot was taken: see the failing step."; fi
+            if [ -n "$LOGS_URL" ]; then echo "- [Build and device logs]($LOGS_URL)"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
