@@ -23,12 +23,12 @@ _Moved here from `STATUS.md` → Runtime in Use (2026-08-22), because it is read
 
 **Installed TestFlight build: the 1.2.0 cut of 2026-08-29 (#730, `76d27a1`), on the old shared `production` channel; build number not recorded, so record it at the next cut (CUL-559).** Before it: 1.1.0 (35), 2026-07-25, first since SDK 57. **The next cut is the first on `--profile testflight`;** until it is installed, no test update reaches the PM's phone.
 
-**OTA to the installed build:** `eas update --branch testflight`, once the `testflight` build is installed.
+**OTA to the installed build:** `eas update --branch testflight`, once the `testflight` build is installed. `eas channel:view testflight` must show branch `testflight`; if not, `eas channel:edit testflight --branch testflight` once.
 
 ### Traps — each of these cost a session; do not repeat them
 
 - **SDK 58 OTA fence (PR-01, CUL-2236).** 1.2.0 → 1.3.0; the first post-PR-01 cut is a native `eas build`, never OTA (callout above). Every profile pins `ios.image` in `eas.json` to `macos-tahoe-26.6-xcode-27.1` (Xcode 27.1 RC, EAS's `sdk-58` image), the iOS 27 SDK that lets the iPhone Duo's unfolded screen size the app.
-- **Build the PM's TestFlight build with `testflight`, never `preview` or `production`.** `preview` is `distribution: internal` (ad-hoc) and can never be store-submitted. A `production` build is the App Store binary: it passes through TestFlight on its way to review, and installing it as the daily build puts the PM's phone on the public channel. After an update, Settings' version foot reads `testflight · <id>`; anything else is the wrong build.
+- **Build the PM's TestFlight build with `testflight`, never `preview` or `production`.** `preview` is `distribution: internal` (ad-hoc) and can never be store-submitted. A `production` build is the App Store binary: it passes through TestFlight on its way to review, and installing it as the daily build puts the PM's phone on the public channel. Once an update lands, Settings' version foot reads `testflight · <id>` (a fresh install reads `embedded`); anything else is the wrong build.
 - **Never submit with `eas submit --latest`.** It skips internal builds and re-uploads a stale store build — the "build number 8 already used" loop. Use `--auto-submit`, which binds the upload to the binary just built.
 - **"Build number N already used"** = the EAS counter is behind App Store Connect → `eas build:version:set --platform ios`, then rebuild. Build numbers live on EAS (`appVersionSource: remote`, `autoIncrement`).
 - **All three `eas.json` build profiles carry the `EXPO_PUBLIC_SUPABASE_*` `env` block** (#90). EAS cloud builds never see the gitignored `.env.local`; stripping it was the first crash-on-launch.

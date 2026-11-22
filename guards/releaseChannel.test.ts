@@ -44,17 +44,17 @@ export const PROMOTE_START = '<!-- promote-step:start -->';
 export const PROMOTE_END = '<!-- promote-step:end -->';
 
 /** Single files read at the repo root. */
-const ROOT_FILES = ['CLAUDE.md', 'STATUS.md', 'package.json', 'app.json', 'eas.json'];
+const ROOT_FILES = ['CLAUDE.md', 'STATUS.md', 'README.md', 'package.json', 'app.json', 'eas.json'];
 /** Trees read recursively: every place a session or the PM takes a command from. */
-const SCAN_DIRS = ['docs', '.claude', 'scripts', '.github', '.githooks'];
-const SCAN_EXT = new Set(['.md', '.sh', '.ts', '.js', '.mjs', '.cjs', '.yml', '.yaml', '.json', '.txt', '']);
+const SCAN_DIRS = ['docs', '.claude', 'scripts', '.github', '.githooks', 'operating-kit'];
+const SCAN_EXT = new Set(['.md', '.sh', '.ts', '.js', '.mjs', '.cjs', '.yml', '.yaml', '.json', '.txt', '.html', '']);
 /** Dated records: true when written, never followed as instructions. */
 const EXCLUDED = ['docs/sessions/', 'docs/research/', 'docs/backlog.md', 'docs/CLAUDE-md-history.md'];
 
 // Production as the DESTINATION of an update. `=` or whitespace, optional quote.
 const TARGET_PATTERNS: RegExp[] = [
   /--(?:destination-)?(?:branch|channel)(?:=|\s+)["']?production\b/,
-  /\bchannel:edit\s+["']?production\b/,
+  /\bchannel:(?:edit|rollout|delete|pause|resume)\s+["']?production\b/,
 ];
 
 export interface Violation {
@@ -82,12 +82,29 @@ export function listScanFiles(root: string): string[] {
   return out.sort();
 }
 
+export function joinContinuations(lines: string[]): string[] {
+  const out = [...lines];
+  for (let i = 0; i < out.length; i++) {
+    let j = i;
+    while (/\\\s*$/.test(out[i]) && j + 1 < out.length) {
+      j += 1;
+      out[i] = `${out[i].replace(/\\\s*$/, ' ')}${out[j].trimStart()}`;
+      out[j] = '';
+    }
+    i = j;
+  }
+  return out;
+}
+
 /** `root` is required: a default would re-point a self-test at the real tree (C-18). */
 export function findViolations(root: string): Violation[] {
   const violations: Violation[] = [];
   let blocks = 0;
   for (const rel of listScanFiles(root)) {
-    const lines = fs.readFileSync(path.join(root, rel), 'utf8').split(/\r?\n/);
+    // A shell continuation (`\` then a newline) joins onto its line first, so a flag whose
+    // value starts the next line is still one command. Line numbers stay those of the
+    // line the command starts on, since the joined text is blanked from its tail lines.
+    const lines = joinContinuations(fs.readFileSync(path.join(root, rel), 'utf8').split(/\r?\n/));
     let inBlock = false;
     lines.forEach((text, i) => {
       const line = i + 1;
@@ -229,11 +246,18 @@ describe('release channel split (CUL-2863)', () => {
       ["eas update --channel 'production'"],
       ['eas update:republish --group abc --destination-channel production'],
       ['eas channel:edit production --branch testflight'],
+      ['eas channel:edit production'],
+      ['eas channel:rollout production --branch testflight --percent 100'],
     ])('reds on a direct target: %s', (cmd) => {
       writeFixture(root, '.claude/commands/handoff.md', `Run:\n${cmd}\n`);
       const v = findViolations(root);
       expect(v).toHaveLength(1);
       expect(v[0]).toMatchObject({ file: '.claude/commands/handoff.md', line: 2, kind: 'TARGET' });
+    });
+
+    it('reds on a destination wrapped onto the next line', () => {
+      writeFixture(root, 'scripts/ship.sh', 'eas update:republish --group X \\\n  --destination-branch \\\n  production\n');
+      expect(findViolations(root)).toMatchObject([{ file: 'scripts/ship.sh', line: 1, kind: 'TARGET' }]);
     });
 
     it('reds on a target in the runbook outside the block', () => {
