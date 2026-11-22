@@ -39,6 +39,13 @@
 // And the constants side: gate() is driven at window start and window end, so
 // a RUN_WINDOW_MIN of 0 or a moved RUN_HOUR_UTC fails case 3 or 2.
 //
+// CUL-2897: migration 123 schedules the daily CHECK the same way ('sweep-orphaned-
+// storage-check', {"check": CHECK_MARKER} at CHECK_MINUTE_UTC CHECK_HOUR_UTC), and
+// every proof above runs over it too, against the check's own gate verdict. Its
+// table, sweep_check_results, is pinned server-only (RLS on, no policy, client
+// grants revoked), since the result read lets any anon caller reach what it holds
+// through the function, and a client grant would add a second, ungated door.
+//
 // BLIND SPOTS, stated. It reads the repo, not production: an unapplied 120,
 // a changed cron.timezone, a job edited by hand in the SQL Editor, or a key
 // rotated without a migration are invisible here (120's VERIFY block covers
@@ -50,6 +57,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { stripSqlComments } from './sqlComments';
 import {
+  CHECK_HOUR_UTC,
+  CHECK_MARKER,
+  CHECK_MINUTE_UTC,
+  CHECK_WINDOW_MIN,
   RUN_HOUR_UTC,
   RUN_MARKER,
   RUN_MINUTE_UTC,
@@ -60,7 +71,30 @@ import { SWEEP_REQUEST_LIMIT_MS } from '../supabase/functions/delete-account/pla
 
 const MIGRATIONS = path.resolve(__dirname, '..', 'supabase', 'migrations');
 const FILE = '120_sweep_orphaned_storage_schedule.sql';
+const CHECK_FILE = '123_sweep_orphaned_storage_check_schedule.sql';
 const JOB = 'sweep-orphaned-storage';
+const CHECK_JOB = 'sweep-orphaned-storage-check';
+// The function both jobs POST to (the check job's name is not the function's).
+const FUNCTION = 'sweep-orphaned-storage';
+
+interface JobSpec {
+  file: string;
+  job: string;
+  hour: number;
+  minute: number;
+  body: Record<string, string>;
+  verdict: 'run' | 'check';
+}
+
+const RUN_SPEC: JobSpec = { file: FILE, job: JOB, hour: RUN_HOUR_UTC, minute: RUN_MINUTE_UTC, body: { run: RUN_MARKER }, verdict: 'run' };
+const CHECK_SPEC: JobSpec = {
+  file: CHECK_FILE,
+  job: CHECK_JOB,
+  hour: CHECK_HOUR_UTC,
+  minute: CHECK_MINUTE_UTC,
+  body: { check: CHECK_MARKER },
+  verdict: 'check',
+};
 const PROJECT_REF = 'aigchluqluzuhtbfllgh';
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -110,21 +144,21 @@ function jwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-// Every way 120's text can disagree with the function, as named problems.
-// An empty list is the only pass.
-function scheduleProblems(sql: string): string[] {
+// Every way a schedule file's text can disagree with the function, as named
+// problems. An empty list is the only pass.
+function scheduleProblems(sql: string, spec: JobSpec = RUN_SPEC): string[] {
   const problems: string[] = [];
-  const mine = schedulesIn(sql).filter((s) => s.name === JOB);
-  if (mine.length !== 1) return [`expected one cron.schedule('${JOB}', …), found ${mine.length}`];
+  const mine = schedulesIn(sql).filter((s) => s.name === spec.job);
+  if (mine.length !== 1) return [`expected one cron.schedule('${spec.job}', …), found ${mine.length}`];
   const { expr, command } = mine[0];
 
   const cronCalls = stripSqlComments(sql).match(/cron\.\w+\s*\(/g) ?? [];
-  if (cronCalls.length !== 1) problems.push(`expected one cron call in 120, found ${cronCalls.length}`);
+  if (cronCalls.length !== 1) problems.push(`expected one cron call in ${spec.file}, found ${cronCalls.length}`);
   if (!/^\s*SELECT\s+net\.http_post\s*\([\s\S]*\)\s*;\s*$/.test(command)) {
     problems.push('the job command is not a bare net.http_post(...);');
   }
 
-  const want = `${RUN_MINUTE_UTC} ${RUN_HOUR_UTC} * * *`;
+  const want = `${spec.minute} ${spec.hour} * * *`;
   if (expr !== want) problems.push(`cron expression '${expr}' is not '${want}'`);
 
   const bodyMatch = command.match(/body\s*:=\s*'([^']*)'::jsonb/);
@@ -137,16 +171,17 @@ function scheduleProblems(sql: string): string[] {
       problems.push('body is not JSON');
     }
     const keys = body && typeof body === 'object' ? Object.keys(body as object) : [];
-    if (keys.length !== 1 || (body as { run?: unknown }).run !== RUN_MARKER) {
-      problems.push(`body ${bodyMatch[1]} is not {"run": "${RUN_MARKER}"}`);
+    const [wantKey, wantValue] = Object.entries(spec.body)[0];
+    if (keys.length !== 1 || (body as Record<string, unknown>)[wantKey] !== wantValue) {
+      problems.push(`body ${bodyMatch[1]} is not ${JSON.stringify(spec.body)}`);
     }
     // The function's own gate, at the instant the expression fires.
     const fires = Date.UTC(2026, 10, 5, Number(expr.split(' ')[1]), Number(expr.split(' ')[0]));
-    if (gate(body, fires) !== 'run') problems.push(`gate() refuses this body at ${new Date(fires).toISOString()}`);
+    if (gate(body, fires) !== spec.verdict) problems.push(`gate() refuses this body at ${new Date(fires).toISOString()}`);
   }
 
   const url = command.match(/url\s*:=\s*'([^']*)'/)?.[1];
-  const wantUrl = `https://${PROJECT_REF}.supabase.co/functions/v1/${JOB}`;
+  const wantUrl = `https://${PROJECT_REF}.supabase.co/functions/v1/${FUNCTION}`;
   if (url !== wantUrl) problems.push(`url ${url} is not ${wantUrl}`);
 
   const token = command.match(/'Bearer ([^']*)'/)?.[1];
@@ -179,7 +214,25 @@ describe('migration 120 schedules the sweep inside its gate', () => {
       files[f] = fs.readFileSync(path.join(MIGRATIONS, f), 'utf8');
     }
     expect(Object.keys(files).length).toBeGreaterThan(100); // non-vacuity: the real directory was read
-    expect(jobTouchers(files)).toEqual([FILE]);
+    expect(jobTouchers(files)).toEqual([FILE, CHECK_FILE].sort());
+  });
+
+  it('123 schedules the check inside its gate (CUL-2897)', () => {
+    expect(scheduleProblems(fs.readFileSync(path.join(MIGRATIONS, CHECK_FILE), 'utf8'), CHECK_SPEC)).toEqual([]);
+  });
+
+  it('120 holds no check job and 123 no run job', () => {
+    expect(schedulesIn(real).map((s) => s.name)).toEqual([JOB]);
+    expect(schedulesIn(fs.readFileSync(path.join(MIGRATIONS, CHECK_FILE), 'utf8')).map((s) => s.name)).toEqual([CHECK_JOB]);
+  });
+
+  it('the check fires inside its window, which is the run\'s fifteen minutes', () => {
+    const start = Date.UTC(2026, 10, 5, CHECK_HOUR_UTC, CHECK_MINUTE_UTC);
+    const marker = { check: CHECK_MARKER };
+    expect(CHECK_WINDOW_MIN).toBe(RUN_WINDOW_MIN);
+    expect(gate(marker, start)).toBe('check');
+    expect(gate(marker, start + (CHECK_WINDOW_MIN - 1) * 60_000)).toBe('check');
+    expect(gate(marker, start + CHECK_WINDOW_MIN * 60_000)).toBe('outside_window');
   });
 
   it('fires inside the window the gate opens, not at its edge', () => {
@@ -259,5 +312,63 @@ describe('mutation proof: each drift from the gate is caught', () => {
       JSON.stringify({ iss: 'supabase', ref: PROJECT_REF, role: 'service_role' }),
     ).toString('base64url');
     expect(scheduleProblems(real.replace(token, `${h}.${forged}.${s}`)).length).toBeGreaterThan(0);
+  });
+});
+
+// CUL-2897: migration 123, the check's schedule and the table it stores into.
+const checkSql = fs.readFileSync(path.join(MIGRATIONS, CHECK_FILE), 'utf8');
+
+function tableProblems(sql: string): string[] {
+  const code = stripSqlComments(sql);
+  const problems: string[] = [];
+  if (!/CREATE TABLE IF NOT EXISTS public\.sweep_check_results\s*\(/.test(code)) problems.push('no sweep_check_results table');
+  if (!/ALTER TABLE public\.sweep_check_results ENABLE ROW LEVEL SECURITY;/.test(code)) problems.push('RLS not enabled');
+  if (/CREATE POLICY/i.test(code)) problems.push('a policy opens the table to a client role');
+  if (/\bGRANT\b/i.test(code)) problems.push('a GRANT in 123');
+  for (const role of ['PUBLIC', 'anon', 'authenticated']) {
+    if (!new RegExp(`REVOKE ALL ON TABLE public\\.sweep_check_results FROM ${role};`).test(code)) {
+      problems.push(`grants not revoked from ${role}`);
+    }
+  }
+  if (!/REVOKE DELETE, TRUNCATE ON TABLE public\.sweep_check_results FROM service_role;/.test(code)) {
+    problems.push('service_role can erase a day\'s answer');
+  }
+  return problems;
+}
+
+describe('migration 123 keeps the check answer server-only (CUL-2897)', () => {
+  it('has no table problems', () => {
+    expect(tableProblems(checkSql)).toEqual([]);
+  });
+
+  it.each([
+    ['RLS line removed', 'ALTER TABLE public.sweep_check_results ENABLE ROW LEVEL SECURITY;', ''],
+    ['anon revoke removed', 'REVOKE ALL ON TABLE public.sweep_check_results FROM anon;', ''],
+    ['authenticated revoke removed', 'REVOKE ALL ON TABLE public.sweep_check_results FROM authenticated;', ''],
+    ['a read policy added', 'COMMENT ON TABLE', 'CREATE POLICY x ON public.sweep_check_results FOR SELECT USING (true);\nCOMMENT ON TABLE'],
+    ['a grant added', 'COMMENT ON TABLE', 'GRANT SELECT ON public.sweep_check_results TO anon;\nCOMMENT ON TABLE'],
+    ['service_role delete kept', 'REVOKE DELETE, TRUNCATE ON TABLE public.sweep_check_results FROM service_role;', ''],
+  ])('mutant: %s', (_label, from, to) => {
+    expect(checkSql.includes(from)).toBe(true);
+    expect(tableProblems(checkSql.replace(from, to)).length).toBeGreaterThan(0);
+  });
+
+  const callStart = checkSql.indexOf('\nSELECT cron.schedule(');
+  const callEnd = checkSql.indexOf('$job$\n);', callStart);
+  const inCall = (from: string, to: string): string =>
+    checkSql.slice(0, callStart) + checkSql.slice(callStart, callEnd).replace(from, to) + checkSql.slice(callEnd);
+
+  it.each([
+    ['minute moved', `'7 12 * * *'`, `'8 12 * * *'`],
+    ['back to GitHub\'s late hour', `'7 12 * * *'`, `'7 18 * * *'`],
+    ['the run body (a check job that deletes)', `{"check": "overdue"}`, `{"run": "sweep-orphaned-storage"}`],
+    ['the result body (stores nothing)', `{"check": "overdue"}`, `{"result": "overdue"}`],
+    ['URL to another function', `/functions/v1/sweep-orphaned-storage'`, `/functions/v1/reap-report-drafts'`],
+    ['timeout cut', 'timeout_milliseconds := 160000', 'timeout_milliseconds := 30000'],
+    ['job renamed', `'sweep-orphaned-storage-check',`, `'sweep-check',`],
+  ])('mutant: %s', (_label, from, to) => {
+    expect(callStart).toBeGreaterThan(0);
+    expect(checkSql.slice(callStart, callEnd).includes(from)).toBe(true);
+    expect(scheduleProblems(inCall(from, to), CHECK_SPEC).length).toBeGreaterThan(0);
   });
 });
