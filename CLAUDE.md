@@ -344,7 +344,7 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 
 **When to file an issue:** any time you're about to say "we should do X later," "noted for future," or the PM says any of those phrases. File it immediately, in-session, before continuing the conversation — via the Linear MCP tools (`mcp__Linear__save_issue`). Do not batch-file at session end and do not wait for PM approval — filing an issue is reversible and cheap; losing the item is not.
 
-**The filing rule: leave it better (CUL-2656, ruled 2026-11-07).** A find along the way is fixed in the session's own PR when all hold: (1) it sits in a file the PR already touches, or the change is about 20 lines at most; (2) it is off the never-list (clinical, a safety invariant, privacy / RLS / Storage / deletion / export, money or Pets > $, schema, App Store, irreversible), and uncertain counts as on it; (3) a test covers it, existing or added in the PR; (4) the PR body lists it under `## Along the way`, one line each. Otherwise comment on an open issue of the same class, else file **one class issue** listing the instances; never one issue per instance. `guards/filingRule.test.ts` holds this text. _(why: `docs/engineering-lessons.md` §P-19)_
+**The filing rule: leave it better (CUL-2656, ruled 2026-11-07).** A find along the way is fixed in the session's own PR when all hold: (1) it sits in a file the PR already touches, or the change is about 20 lines at most; (2) it is off the kept list (below), and uncertain counts as on it; (3) a test covers it, existing or added in the PR; (4) the PR body lists it under `## Along the way`, one line each. Otherwise comment on an open issue of the same class, else file **one class issue** listing the instances; never one issue per instance. `guards/filingRule.test.ts` holds this text. _(why: `docs/engineering-lessons.md` §P-19)_
 
 **Issue shape:**
 
@@ -361,12 +361,13 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 
 **Distinction from Open Questions:** an unresolved decision goes in `docs/open-questions.md`; a resolved deferral (we know what, not when) goes in Linear.
 
-**The PM queue is the `Waiting on PM` label (CUL-1366; PM rulings 2026-09-27, 2026-10-02).** Before adding to it:
-- **Decide what is yours.** Off the never-list, copy inside `nyx-voice`, UX detail inside a ratified spec or mock round, and a doc edit that only matches shipped code are team calls: the persona decides, logs it on the issue, and the PM can reverse it. A persona conflict still escalates.
+**The kept list is what stays the PM's (CUL-2886, ruled 2026-11-21); `scripts/kept/kept.ts` is its one definition, read by every caller.** **Stakes** (the never-list): clinical and the two safety invariants; privacy, RLS, Storage, deletion, export, share links; money or Pets > $; schema; App Store and legal; irreversible (a revert PR or a Linear edit cannot undo it). **Taste:** a visual or motion choice outside a mock round the PM ratified, a reaction to a mock, brand. **Scope:** in or out of a project, priority between tracks, a spec edit, a brief past its forecast. Uncertain counts as kept. Everything else is a **team call**: the owning persona decides at once and logs it on the issue (first line `**Team call**`, the lens, the option not taken), never in `Waiting on PM`; the weekly pass lists them, a PM reply reverses one. A persona conflict still escalates.
+
+**The PM queue is the `Waiting on PM` label (CUL-1366).** Before adding to it:
 - **One issue per review round**, never one per finding; **device checks file per TestFlight cut**, never per PR.
-- **WIP cap 30, counted on the label.** Over it, a low-risk call carrying your recommendation is applied and logged, not filed. The never-list always files: clinical, safety invariant, privacy/RLS, money / Pets > $, schema, App Store, irreversible.
-- **A ruling travels with its work (D2, CUL-1858).** A finding gets the label only when it is `Live harm` touching safety or privacy (or unclaimed 24h), or when pulled into a run order; a dark gate is ruled at its go-live. Never-list findings never expire.
-- Draining it (six lanes, the 72h default window, the dockets, the 21-day rule) is `backlog-groomer` step 12.
+- **WIP cap 30, counted on the label;** a kept call files whatever the count (A7, 2026-11-22, unseats the 2026-09-27 over-cap rule).
+- **A ruling travels with its work (D2, CUL-1858).** A finding gets the label only when it is `Live harm` touching safety or privacy (or unclaimed 24h), or when pulled into a run order; a dark gate is ruled at its go-live. Stakes findings never expire.
+- Draining it (the lanes, the dockets, the 21-day rule) is `backlog-groomer` step 12.
 
 **Working the issues in Linear — the per-issue trail (instituted 2026-08-16).** Decisions and scope changes live **on the issue**, where the next session looks first:
 
