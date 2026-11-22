@@ -170,6 +170,25 @@ import { clearRemovalNotices, noteRemoval } from '../../lib/removalNotice';
 
 // ── The record ──────────────────────────────────────────────────────────────────
 
+// The suite's clock is pinned (C-29, the time axis; CUL-2861). TODAY was read from the real
+// clock at import, so a run that crossed local midnight held yesterday's key while the list
+// rendered today's, and the suite went red on main at 00:04 UTC (sectionIndex 11 for 10).
+// Local noon, built from local components, is mid-day in every zone the non-UTC job runs.
+// Only Date is faked: the timers the reads, animations and waitFor run on stay real. Pinned
+// at module scope, not in beforeAll, because TODAY below is read when the module loads.
+const PINNED_NOW = new Date(2026, 10, 18, 12, 0, 0);
+jest.useFakeTimers({
+  doNotFake: [
+    'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame',
+    'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'setImmediate',
+    'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+  ],
+});
+jest.setSystemTime(PINNED_NOW);
+afterAll(() => {
+  jest.useRealTimers();
+});
+
 const TODAY = toLocalDayKey(new Date());
 const dayAgo = (n: number) => shiftDay(TODAY, -n);
 /** An instant on a local day, from its local components (B-514). */
