@@ -343,7 +343,7 @@ export function parsePage(raw: string): Page {
     hasBoard: !!boardStart,
     alias: /^Alias:\s*(.+)$/m.exec(plain)?.[1]?.trim(),
     doneMeans: parseDoneMeans(plain),
-    shipBar: /^\**Ship bar:\**\s*(.+)$/m.exec(plain.split('\n').map((l) => l.trim()).join('\n'))?.[1]?.trim(),
+    shipBar: parseShipBar(plain),
     plain,
   };
 }
@@ -360,6 +360,12 @@ export function parseDoneMeans(plain: string): RowId[] | undefined {
     .map((t) => /(?:PR-)?(\d{2}[a-z]?)\b/.exec(t.trim())?.[1])
     .filter((x): x is string => !!x)
     .map(normRow);
+}
+
+// `Ship bar: <text>`. A placeholder (`TBD`, `none`, a dash) states no bar: the gate stays off.
+export function parseShipBar(plain: string): string | undefined {
+  const v = /^\**Ship bar:\**\s*(.+)$/m.exec(plain.split('\n').map((l) => l.trim()).join('\n'))?.[1]?.replace(/\*\*/g, '').trim();
+  return v && !/^(tbd|todo|none|n\/a|[-—–.?]+)\.?$/i.test(v) ? v : undefined;
 }
 
 function withoutBoard(lines: string[]): string[] {

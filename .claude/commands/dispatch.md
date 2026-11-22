@@ -37,7 +37,7 @@ Every finding a session files (a reviewer's, a build's own, a dispatcher's) goes
 
 **1 · The tag.** The filer tags each finding with its direction, in the review's own words (CLAUDE.md DoD, P-16): **QUIET** if it can drop, soften or delay a warning, **LOUD** if it errs toward an extra, earlier or louder one, or **neither**. The tag goes on the issue's first line after the TL;DR (`Direction: QUIET`). **No tag counts as QUIET.**
 
-**1b · The likelihood gate, ahead of door 1** (the ship bar, PM 2026-10-22, CUL-2123). Before a project ships, harm is fixed now only if one owner on one phone hits it in a normal week, it is a regression, or it can leak or lose data. A finding of this project, on a page with a `Ship bar:` line, fails it when it cannot expose or lose data, a line of its own reads `Trigger: rare (two phones | timing | storage failure | clock skew)`, and nothing else in it names a trigger or a regression: door 4, kind `rare`, `Direction:` kept, `Live harm` removed, a gate label and go-live `blocks` kept. Every other shape passes. The gate decides fix now or park, never who rules: a clinical finding that passes still needs its ruling.
+**1b · The likelihood gate, ahead of door 1** (the ship bar, PM 2026-10-22, CUL-2123). Before a project ships, harm is fixed now only if one owner on one phone hits it in a normal week, it is a regression, or it can leak or lose data. A finding of this project, on a page with a `Ship bar:` line, fails it when it cannot expose or lose data, a line of its own reads `Trigger: rare (two phones | timing | storage failure | clock skew)`, and nothing else in it (title included) names a trigger, a regression, a leak or a loss: door 4, kind `rare`, `Direction:` kept, `Live harm` removed, a gate label and go-live `blocks` kept. Every other shape passes. The gate decides fix now or park, never who rules: a clinical finding that passes still needs its ruling.
 
 **2 · The four doors.** The first that fits wins:
 
@@ -114,7 +114,7 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
 
      A **finding** is an issue in either population that carries a `Direction:` tag (in any shape: a list item, a heading, a table cell, mid-line), `Live harm`, `Gate: clinical` or `Gate: privacy`, a `relatedTo` to its source, or sits in a *Found along the way* milestone. An issue that is none of these is asked-for work and skips to (c).
 
-     **(a) The harm read.** A finding is **harm** when it carries `Live harm`, `Gate: clinical` or `Gate: privacy`, is tagged `Direction: QUIET` (with any separator or none, or as a table column; once any Direction tag is present, the word quiet anywhere in the issue makes it QUIET, whatever order the lines come in: a class goes by its worst instance), can expose, lose or corrupt data whatever its tag, or is untagged and its own text does not plainly show it is LOUD-only, polish or a process idea (a hypothetical still counts: every counterexample is written as one). An explicit QUIET tag is never read away. Judgment here may only move a finding toward harm, never away. A harm finding the likelihood gate fails (§ The sort, 1b) parks; every other one gets the live-or-dark read (below):
+     **(a) The harm read.** A finding is **harm** when it carries `Live harm`, `Gate: clinical` or `Gate: privacy`, is tagged `Direction: QUIET` (with any separator or none, or as a table column; once any Direction tag is present, the word quiet anywhere in the issue makes it QUIET, whatever order the lines come in: a class goes by its worst instance), can expose, lose or corrupt data whatever its tag, or is untagged and its own text does not plainly show it is LOUD-only, polish or a process idea (a hypothetical still counts: every counterexample is written as one). An explicit QUIET tag is never read away. Judgment here may only move a finding toward harm, never away. A harm finding the gate (§ The sort, 1b) fails parks; every other one gets the live-or-dark read (below):
      - **Live** → **door 1.** Add `Live harm` (and a comment quoting the read) if it lacks it. It is counted as a live fix in the digest and offered as a `--row` launch (step 7b), never as a row, whether or not the page names it, a `Skipped` comment exists, or it carries `Waiting on PM`. One with no live claim 24 hours after it was created gets `Waiting on PM` and a comment saying so.
      - **Proven dark, with a `blocks` relation to every go-live it sits behind** → **door 2**, counted as a gate on that go-live. Remove `Live harm` if it carries it, with a comment quoting the production read (proof is the only thing that moves a finding quieter). Its keys are re-read every run: an account added, a go-live target closed, or a read that now fails makes it door 1 again.
      - **Proven dark, but a go-live it sits behind has no `blocks`** → door 1 until the relation exists.
@@ -187,11 +187,12 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
    - Tag it on the line after its TL;DR: `Direction: QUIET` (it can drop, soften or delay
      a warning), `LOUD` (it errs toward an extra, earlier or louder one) or `neither`.
      No tag counts as QUIET.
-   - The likelihood gate, ahead of `Live harm`: a finding that needs two phones, precise
-     timing, a storage failure or clock skew, and cannot expose or lose data, carries
-     `Trigger: rare (timing)`, or its cause, under Direction and goes under the last bullet, uncapped.
-     One a single owner on one phone hits in a normal week, or a regression, carries
-     `Trigger: normal` or `regression` and is sorted below; a clinical one still needs its ruling.
+   - The likelihood gate, ahead of `Live harm`, only on a page with a `Ship bar:` line: a
+     finding whose one cause is two phones, precise timing, a storage failure or clock skew,
+     that is no regression and cannot expose or lose data, carries one line
+     `Trigger: rare (timing)` (or whichever one of the four), names no other trigger, and
+     goes under the last bullet, uncapped. Each instance carries its own line; one normal
+     instance, or any doubt, is sorted below. A clinical one still needs its ruling.
    - First check whether it is one instance of a class (another write path, surface or
      state that can move the same fact). If so, file the class once, listing every
      instance; it goes by its worst instance, and a live instance is its own issue.
@@ -328,7 +329,7 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
    | **d · a cycle** | After and arrow-chain edges that form a loop | none; report the loop and the PM edits the page |
    | **e · mark auto** | a row that is ready, or that another U line frees, unmarked, on the `Done means (rows):` path, and **auto-eligible** by step 5's gate predicate | adds ` auto` to its PR cell and records the row on the status update's `Auto:` line, which confirms it (step 6) |
    | **f · a gate already ruled** | an After item naming a ruling or PM action that a newer comment on the row's issue, or on the ruling's own issue, says is ruled or done | removes it from After; the U line quotes the comment and its date |
-   | **g · no Done means line** | the page has no `Done means (rows):` line | adds one after the page's critical-path lines, listing every row a critical path names, by PR number; the U line prints the list in full, since the PM's `fix` is the ruling that fixes it (rule 6). Never includes a findings milestone's rows. A page with no `Ship bar:` line gets the line from Page format too |
+   | **g · no Done means line** | the page has no `Done means (rows):` line | adds one after the page's critical-path lines, listing every row a critical path names, by PR number; the U line prints the list in full, since the PM's `fix` is the ruling that fixes it (rule 6). Never includes a findings milestone's rows. No `Ship bar:` line gets one too |
 
    Writes go through one `save_project` `patch` on a fresh read (step 8's re-read rule), each anchored on that row's or build note's **raw** line from the read just taken; relation changes go through `save_issue`. After applying, re-run steps 3–5b for the freed rows and propose them in a follow-up confirmation (step 6).
 

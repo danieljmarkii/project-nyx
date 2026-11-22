@@ -39,11 +39,12 @@ in this project, \`relatedTo\` <CUL-NNN> and never its sub-issue:
 - Tag it on the line after its TL;DR: \`Direction: QUIET\` (it can drop, soften or delay
   a warning), \`LOUD\` (it errs toward an extra, earlier or louder one) or \`neither\`.
   No tag counts as QUIET.
-- The likelihood gate, ahead of \`Live harm\`: a finding that needs two phones, precise
-  timing, a storage failure or clock skew, and cannot expose or lose data, carries
-  \`Trigger: rare (timing)\`, or its cause, under Direction and goes under the last bullet, uncapped.
-  One a single owner on one phone hits in a normal week, or a regression, carries
-  \`Trigger: normal\` or \`regression\` and is sorted below; a clinical one still needs its ruling.
+- The likelihood gate, ahead of \`Live harm\`, only on a page with a \`Ship bar:\` line: a
+  finding whose one cause is two phones, precise timing, a storage failure or clock skew,
+  that is no regression and cannot expose or lose data, carries one line
+  \`Trigger: rare (timing)\` (or whichever one of the four), names no other trigger, and
+  goes under the last bullet, uncapped. Each instance carries its own line; one normal
+  instance, or any doubt, is sorted below. A clinical one still needs its ruling.
 - First check whether it is one instance of a class (another write path, surface or
   state that can move the same fact). If so, file the class once, listing every
   instance; it goes by its worst instance, and a live instance is its own issue.

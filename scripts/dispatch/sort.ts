@@ -181,19 +181,25 @@ export function directionOf(description: string): Direction | undefined {
 // harm finding is fixed now only if one owner on one phone hits it in a normal week, it is
 // a regression, or it can leak or lose data. It parks only on a CLEAN line of its own,
 // `Trigger: rare (<cause>)` with exactly one of the ruling's four causes in the brackets
-// (list, bold, quote or heading marks before it are fine). Every other shape errs loud and
-// passes: no clean line; any other mention of trigger(s) anywhere (a second instance in any
-// shape, a DB trigger in prose, a quoted rule, a table cell), since the sort cannot tell a
-// passing instance from prose; any form of "regress"; a negation or an unlisted cause.
-// Returns the clean rare value, or undefined: it passes.
-const CLEAN_RARE = /^[\s>*_#-]*Trigger[*_`]*\s*:[*_`]*\s*(rare\s*\(\s*(?:two phones|timing|storage failure|clock skew)\s*\))[*_`]*\s*\.?\s*$/i;
-export function rareTrigger(description: string): string | undefined {
-  if (/\bregress/i.test(description)) return undefined;
-  const lines = description.split('\n');
-  const clean = lines.map((l) => CLEAN_RARE.exec(l)?.[1]);
-  if (!clean.some(Boolean)) return undefined;
-  if (lines.some((l, i) => !clean[i] && /\btriggers?\b/i.test(l))) return undefined;
-  return clean.find(Boolean);
+// (list, bold or heading marks before it are fine; a `>` quote or a fenced line is a copy,
+// never its own). Every other shape errs loud and passes: no clean line; any other line
+// with "trigger" anywhere in it (`Triggered`, `meal_rollup_trigger`, a second instance in
+// any shape, a quoted rule), since the sort cannot tell a passing instance from prose; any
+// form of "regress"; any word for a leak or a loss; a negation or an unlisted cause.
+// `text` is the title and description together. Returns the clean value, or undefined.
+const CLEAN_RARE = /^[\s*_#-]*Trigger[*_`]*\s*:[*_`]*\s*(rare\s*\(\s*(?:two phones|timing|storage failure|clock skew)\s*\))[*_`]*\s*\.?\s*$/i;
+const LEAK_OR_LOSS = /\b(leak|expos|lose|loses|losing|loss|lost|delet|wipe|erase|overwrit)/i;
+export function rareTrigger(text: string): string | undefined {
+  if (/regress/i.test(text) || LEAK_OR_LOSS.test(text)) return undefined;
+  let fenced = false;
+  let found: string | undefined;
+  for (const l of text.split('\n')) {
+    if (/^\s*(```|~~~)/.test(l)) fenced = !fenced;
+    const clean = fenced ? undefined : CLEAN_RARE.exec(l)?.[1];
+    if (clean) found ??= clean;
+    else if (/trigger/i.test(l)) return undefined;
+  }
+  return found;
 }
 
 // A parked finding holds nothing: its parent and `blocks` targets are offered for unlink.
@@ -308,7 +314,8 @@ export function sortFindings(input: SortInput): SortResult {
         // never who rules: a clinical finding that passes still needs its ruling below.
         // Scoped as ruled: this project's own findings, on a page that states its Ship bar.
         // Another project's finding is that project's dispatcher's to gate.
-        const rare = c.inProject && input.page.shipBar ? rareTrigger(c.description) : undefined;
+        const regressLabel = c.labels.some((l) => /regress/i.test(l));
+        const rare = c.inProject && input.page.shipBar && !regressLabel ? rareTrigger(`${c.title}\n${c.description}`) : undefined;
         const leak = c.harm === 'exposure' || c.harm === 'loss' || hasLabel(c.labels, 'Gate: privacy');
         if (rare && !leak) {
           s.door = 4;

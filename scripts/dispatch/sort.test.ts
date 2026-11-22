@@ -583,6 +583,27 @@ describe('the likelihood gate (CUL-2123)', () => {
       expect(door([finding('CUL-3030', { description: d, keys: [] })], 'CUL-3030')).toBe(4);
   });
 
+  it('adversarial pass 2: other word forms, the title, a label, a leak or loss in words, a copy, a fence all pass', () => {
+    const passes: Partial<Candidate>[] = [
+      { description: rare('timing', '\nTriggered on every app reopen by one owner.') },
+      { description: rare('timing', '\nThe meal_rollup_trigger fires on every insert.') },
+      { description: rare('timing'), title: 'Regression: dose reminder silenced on reopen' },
+      { description: rare('timing'), labels: ['Regression'] },
+      { description: rare('storage failure', '\nThe meal log is lost for good.') },
+      { description: rare('two phones', '\nThe other phone deletes the meal.') },
+      { description: 'Direction: QUIET\n> Trigger: rare (clock skew)\nHere it happens on one phone every day.' },
+      { description: 'Direction: QUIET\n```\nTrigger: rare (clock skew)\n```' },
+      { description: 'Direction: QUIET\nTrigger: rare (timing, two phones)' },
+    ];
+    for (const [i, over] of passes.entries()) expect([i, door([finding(`CUL-31${10 + i}`, { keys: [], ...over })], `CUL-31${10 + i}`)]).toEqual([i, 1]);
+  });
+
+  it('adversarial pass 2: a placeholder Ship bar states no bar', () => {
+    for (const v of ['TBD', 'none', '—', 'n/a.']) expect(parsePage(`Ship bar: ${v}`).shipBar).toBeUndefined();
+    const tbd = { name: 'Engines v3', description: `${PAGE}\n\nShip bar: TBD` };
+    expect(planDispatch(input({ findings: [finding('CUL-3120', { description: rare(), keys: [] })], project: tbd })).sort!.sorted[0].door).toBe(1);
+  });
+
   it('adversarial pass 1: scoped as ruled, to this project on a page with a Ship bar', () => {
     // Another project's finding, read team-wide, is not this dispatcher's to park.
     const out = run([finding('CUL-3002', { description: rare('clock skew'), inProject: false, project: 'Out of beta', labels: ['Live harm'], keys: [] })]);
@@ -631,7 +652,7 @@ describe('the likelihood gate in the rules a child reads (CUL-2123)', () => {
     expect(text).toContain('cannot expose or lose data');
     expect(text).toContain('a clinical finding that passes still needs its ruling');
     expect(text).toContain('A finding of this project, on a page with a `Ship bar:` line');
-    expect(text).toContain('nothing else in it names a trigger or a regression');
+    expect(text).toContain('nothing else in it (title included) names a trigger, a regression, a leak or a loss');
     expect(text).toContain('a gate label and go-live `blocks` kept');
     expect(sort).toContain('A QUIET or harm finding parks only through the gate');
   });
@@ -641,7 +662,9 @@ describe('the likelihood gate in the rules a child reads (CUL-2123)', () => {
     const gate = block.indexOf('- The likelihood gate, ahead of `Live harm`');
     expect(gate).toBeGreaterThan(-1);
     expect(gate).toBeLessThan(block.indexOf('label `Live harm`'));
-    expect(block).toContain('a clinical one still needs its ruling');
+    expect(block).toContain('A clinical one still needs its ruling');
+    expect(block).toContain('only on a page with a `Ship bar:` line');
+    expect(block).toContain('Each instance carries its own line; one normal\n     instance, or any doubt, is sorted below');
     expect(block).toContain('never goes in the last bullet unless the gate parks it');
     expect(block).toContain('goes under the last bullet, uncapped');
   });
