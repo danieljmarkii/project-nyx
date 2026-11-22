@@ -43,8 +43,8 @@ in this project, \`relatedTo\` <CUL-NNN> and never its sub-issue:
   finding whose one cause is two phones, precise timing, a storage failure or clock skew,
   that is no regression and cannot expose or lose data, carries one line
   \`Trigger: rare (timing)\` (or whichever one of the four), names no other trigger, and
-  goes under the last bullet, uncapped. Each instance carries its own line; one normal
-  instance, or any doubt, is sorted below. A clinical one still needs its ruling.
+  goes under the last bullet, uncapped. A class, or any doubt, is sorted below. A
+  clinical one still needs its ruling.
 - First check whether it is one instance of a class (another write path, surface or
   state that can move the same fact). If so, file the class once, listing every
   instance; it goes by its worst instance, and a live instance is its own issue.

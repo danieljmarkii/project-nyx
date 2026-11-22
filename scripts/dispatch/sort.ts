@@ -44,9 +44,9 @@
 //   - The likelihood gate trusts the filer's `Trigger:` line as it trusts the tag. A rare
 //     line over a bug one owner hits weekly parks it; the source PR's adversarial pass is
 //     what checks the line. No line, or a cause outside the ruling's four, passes. What
-//     rests on the filer: a regression or a second instance written with no "regress" or
-//     "trigger" in it (the child prompt asks one Trigger line per instance), and a
-//     correction made only in a comment, which the sort never reads.
+//     rests on the filer: a regression written with no "regress" in it, a class written
+//     with no "instance" or "class" in it, and a correction made only in a comment, which
+//     the sort never reads.
 
 import { normRow, type Page, type RowId } from './page.ts';
 
@@ -192,8 +192,11 @@ export function directionOf(description: string): Direction | undefined {
 // `text` is the title and description together. Returns the clean value, or undefined.
 const CLEAN_RARE = /^[\s*_#-]*Trigger[*_`]*\s*:[*_`]*\s*(rare\s*\(\s*(?:two phones|timing|storage failure|clock skew)\s*\))[*_`]*\s*\.?\s*$/i;
 const LEAK_OR_LOSS = /\b(leak|expos|lose|loses|losing|loss|lost|delet|wipe|erase|overwrit)/i;
+// A class (it names instances, or calls itself one) always passes: one instance a normal
+// owner hits makes the class fixed now, and an instance need not say "trigger" (pass 2).
+const CLASS = /\b(instances?|class)\b/i;
 export function rareTrigger(text: string): string | undefined {
-  if (/regress/i.test(text) || LEAK_OR_LOSS.test(text)) return undefined;
+  if (/regress/i.test(text) || LEAK_OR_LOSS.test(text) || CLASS.test(text)) return undefined;
   let fenced = false;
   let found: string | undefined;
   for (const l of text.split('\n')) {

@@ -568,7 +568,7 @@ describe('the likelihood gate (CUL-2123)', () => {
       'Direction: QUIET\nTrigger: rare (a slow network delays the timing)',
       // A second instance in any shape the clean line does not cover.
       rare('timing', '\nTrigger (instance 2): normal'),
-      rare('timing', '\nInstance 2 — Trigger — normal'),
+      rare('timing', '\nAlso — Trigger — normal'),
       rare('timing', '\n**Trigger** normal'),
       rare('timing', '\nTriggers for B: normal'),
       'Direction: QUIET\nTrigger:\n- path A: rare (two phones)\n- path B: normal',
@@ -594,6 +594,8 @@ describe('the likelihood gate (CUL-2123)', () => {
       { description: 'Direction: QUIET\n> Trigger: rare (clock skew)\nHere it happens on one phone every day.' },
       { description: 'Direction: QUIET\n```\nTrigger: rare (clock skew)\n```' },
       { description: 'Direction: QUIET\nTrigger: rare (timing, two phones)' },
+      { description: rare('two phones', '\nInstance 2: one phone, every breakfast.') },
+      { description: rare('two phones', '\nThe class covers both write paths.') },
     ];
     for (const [i, over] of passes.entries()) expect([i, door([finding(`CUL-31${10 + i}`, { keys: [], ...over })], `CUL-31${10 + i}`)]).toEqual([i, 1]);
   });
@@ -662,9 +664,9 @@ describe('the likelihood gate in the rules a child reads (CUL-2123)', () => {
     const gate = block.indexOf('- The likelihood gate, ahead of `Live harm`');
     expect(gate).toBeGreaterThan(-1);
     expect(gate).toBeLessThan(block.indexOf('label `Live harm`'));
-    expect(block).toContain('A clinical one still needs its ruling');
+    expect(block).toContain('clinical one still needs its ruling');
     expect(block).toContain('only on a page with a `Ship bar:` line');
-    expect(block).toContain('Each instance carries its own line; one normal\n     instance, or any doubt, is sorted below');
+    expect(block).toContain('A class, or any doubt, is sorted below');
     expect(block).toContain('never goes in the last bullet unless the gate parks it');
     expect(block).toContain('goes under the last bullet, uncapped');
   });
