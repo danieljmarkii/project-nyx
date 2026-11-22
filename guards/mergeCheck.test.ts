@@ -336,6 +336,8 @@ beforeAll(() => {
       'for a in "$@"; do case "$a" in repos/*) endpoint=$a ;; esac; done',
       'case "${endpoint:-}" in',
       '  *edge-deploy.yml*) src=${FAKE_GH_DEPLOY:-} ;;',
+      // GitHub answers head_sha with status= by an empty page (measured 2026-11-22), so the stub does too.
+      '  *head_sha=*status=*) echo \'{"total_count":0,"workflow_runs":[]}\'; exit 0 ;;',
       '  *head_sha=*) src=${FAKE_GH_OWN:-} ;;',
       '  *branch=*) src=${FAKE_GH_MAIN:-} ;;',
       '  *) src= ;;',

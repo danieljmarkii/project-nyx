@@ -615,8 +615,11 @@ else
       # Only a branch that CONTAINS the red commit can be its fix: then its own green run
       # tested a tree with the breakage in it. A branch cut before main went red passes
       # its CI without ever meeting the failure.
+      # No `status=` on the own-runs read: GitHub returns zero runs when it is combined with
+      # head_sha (measured 2026-11-22, CUL-2234), which hid every fix. decisive_run reads
+      # completed runs only.
       if [ -n "$fix_files" ] && git merge-base --is-ancestor "$run_sha" "$head" 2>/dev/null &&
-        gh api "repos/$slug/actions/workflows/$ci_workflow/runs?head_sha=$head&status=completed&per_page=30" \
+        gh api "repos/$slug/actions/workflows/$ci_workflow/runs?head_sha=$head&per_page=30" \
           >"$tmp/own-runs.json" 2>/dev/null; then
         own_green=$(decisive_run "$tmp/own-runs.json" | awk -F'\t' '$1 == "success" { print $2 }')
       fi
