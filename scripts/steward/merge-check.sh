@@ -109,7 +109,9 @@
 #     is still CI's to catch on main.
 #   - --verify checks the landing against THIS clone's node_modules, so a landing whose
 #     package.json or package-lock.json differs from this branch's is exit 3: typed against
-#     the old dependencies it could pass with an API main's bump removed (code review). Its
+#     the old dependencies it could pass with an API main's bump removed (code review). It
+#     assumes node_modules was installed from the head's lock: merging main's bump in and
+#     skipping `npm ci` types against stale modules unreported. Its
 #     Deno steps are the `run:` lines of ci.yml's "Deno check (functions)" and "Deno check
 #     (scripts)" steps as the landing has them, matched by exact name: either step renamed,
 #     quoted or missing is exit 3. A step whose `run:` is a block (`run: |`) is exit 3.
