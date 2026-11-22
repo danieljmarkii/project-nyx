@@ -29,14 +29,15 @@ Without `--dry-run`, a run (and `--row`) writes exactly these: step 0's release 
 - **Every issue a PR names can close when it merges, and so can every issue its BRANCH names** (CUL-1397, CUL-1508, measured: `claude/cul-1134-pr28-0930` closed CUL-1134 through #992). Rows name their own sub-issue in the PR, and the branch names no issue at all (step 7). A merge that closes something else is caught by the child's read-back (step 5) or the next run's step 0.
 - **The Board is last-writer-wins.** Step 8 replaces the whole `## Board` section every run. Anything written there by hand is lost; guidance a session needs belongs in the row's build note.
 - **`auto` is the PM's word, not a test.** A row marked `auto` launches without a separate pick if it passes the hard limits in step 6. Dispatch proposes the marker (Unblock, step 5b, kind *e*); it never sets one without a `fix`.
-- **The sort trusts the filer's tag** (§ The sort). A finding tagged LOUD that can in fact quiet a warning parks; the adversarial pass on the source PR is what checks the tag. The default leans safe (untagged counts as QUIET), but an issue with no `Direction:` line, no `relatedTo` and no gate label is indistinguishable from asked-for work, so outside the project it is seen only by the groomer's *Misrouted* report (step 18), never by a run. Since CUL-1872 the doors are the script's (`sort.ts`); what it cannot see is which keys, migrations and live surfaces a finding's code sits behind, which the dispatcher reads into the facts file, and which `no key named` makes live.
-- **Two dispatchers read the same team-wide `Live harm` issue.** The claim re-check (step 7.1) keeps them from both launching it, one Linear write wide.
+- **The sort trusts the filer's `Direction:` tag and `Trigger:` line** (§ The sort); the source PR's adversarial pass is what checks them. Its other blind spots (an untagged issue outside the project; which keys a finding's code sits behind) head `sort.ts`.
 
 ## The sort (D1 to D3, retro 4, ruled A 2026-10-11, CUL-1858)
 
 Every finding a session files (a reviewer's, a build's own, a dispatcher's) goes through this, in a child's session, an interactive one (`/wrap` step 4) or this one. Flag everything; schedule only what blocks. Each rule is a field or a relation a script reads, because the prose version never fired.
 
 **1 · The tag.** The filer tags each finding with its direction, in the review's own words (CLAUDE.md DoD, P-16): **QUIET** if it can drop, soften or delay a warning, **LOUD** if it errs toward an extra, earlier or louder one, or **neither**. The tag goes on the issue's first line after the TL;DR (`Direction: QUIET`). **No tag counts as QUIET.**
+
+**1b · The likelihood gate, ahead of door 1** (the ship bar, PM 2026-10-22, CUL-2123). Before a project ships, harm is fixed now only if one owner on one phone hits it in a normal week, it is a regression, or it can leak or lose data. A finding of this project, on a page with a `Ship bar:` line, fails it when it cannot expose or lose data, a line of its own reads `Trigger: rare (two phones | timing | storage failure | clock skew)`, and nothing else in it (title included) names a trigger, a regression, a leak or a loss: door 4, kind `rare`, `Direction:` kept, `Live harm` removed, a gate label and go-live `blocks` kept. Every other shape passes. The gate decides fix now or park, never who rules: a clinical finding that passes still needs its ruling.
 
 **2 · The four doors.** The first that fits wins:
 
@@ -49,7 +50,7 @@ Every finding a session files (a reviewer's, a build's own, a dispatcher's) goes
 
 A **stopgap** fails toward the louder output: the louder behaviour forced on where the quieter one shows (the quieter variant switched off so the louder one renders), or the leaking path switched off. It never removes a warning surface unless something at least as loud replaces it in the same change: an intake card that says "worth watching" when it should say "call the vet" is made louder, never deleted.
 
-A **class** goes by its worst instance, and any one live instance splits out of it as its own door-1 issue. A QUIET or harm finding never parks; a LOUD-only one never gates.
+A **class** goes by its worst instance, and any one live instance splits out of it as its own door-1 issue. A QUIET or harm finding parks only through the gate; a LOUD-only one never gates.
 
 **3 · File the class, not the instance.** Before filing, check whether the finding is one instance of a class (another write path, another surface, another state that can move the same fact). If it is, file the class once, listing every instance found.
 
@@ -61,7 +62,7 @@ A **class** goes by its worst instance, and any one live instance splits out of 
 
 While a fork is re-posed, the feature's **quieter output is replaced by its stopgap wherever it is on** (the dispatcher files it as a `Live harm` issue, step 3), so the louder behaviour holds until the PM rules. No alarm holds a door-1 fix or a door-2 gate.
 
-**6 · Done means is fixed at kickoff.** The page's `Done means (rows):` line names the rows by PR number, changes only by the PM's re-scope (on Loose ends, each sweep's batch), and never includes a findings milestone. A row on it is **on the path**; every other row is **off the path**.
+**6 · Done means is fixed at kickoff.** The page's `Done means (rows):` line names the rows by PR number, changes only by the PM's re-scope (on Loose ends, each sweep's batch), and never includes a findings milestone. Its `Ship bar:` line (Page format) is where hardening ends. A row on it is **on the path**; every other row is **off the path**.
 
 ## Steps
 
@@ -113,12 +114,12 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
 
      A **finding** is an issue in either population that carries a `Direction:` tag (in any shape: a list item, a heading, a table cell, mid-line), `Live harm`, `Gate: clinical` or `Gate: privacy`, a `relatedTo` to its source, or sits in a *Found along the way* milestone. An issue that is none of these is asked-for work and skips to (c).
 
-     **(a) The harm read.** A finding is **harm** when it carries `Live harm`, `Gate: clinical` or `Gate: privacy`, is tagged `Direction: QUIET` (with any separator or none, or as a table column; once any Direction tag is present, the word quiet anywhere in the issue makes it QUIET, whatever order the lines come in: a class goes by its worst instance), can expose, lose or corrupt data whatever its tag, or is untagged and its own text does not plainly show it is LOUD-only, polish or a process idea (a hypothetical still counts: every counterexample is written as one). An explicit QUIET tag is never read away. Judgment here may only move a finding toward harm, never away. Every harm finding then gets the live-or-dark read (below):
+     **(a) The harm read.** A finding is **harm** when it carries `Live harm`, `Gate: clinical` or `Gate: privacy`, is tagged `Direction: QUIET` (with any separator or none, or as a table column; once any Direction tag is present, the word quiet anywhere in the issue makes it QUIET, whatever order the lines come in: a class goes by its worst instance), can expose, lose or corrupt data whatever its tag, or is untagged and its own text does not plainly show it is LOUD-only, polish or a process idea (a hypothetical still counts: every counterexample is written as one). An explicit QUIET tag is never read away. Judgment here may only move a finding toward harm, never away. A harm finding the gate (§ The sort, 1b) fails parks; every other one gets the live-or-dark read (below):
      - **Live** → **door 1.** Add `Live harm` (and a comment quoting the read) if it lacks it. It is counted as a live fix in the digest and offered as a `--row` launch (step 7b), never as a row, whether or not the page names it, a `Skipped` comment exists, or it carries `Waiting on PM`. One with no live claim 24 hours after it was created gets `Waiting on PM` and a comment saying so.
      - **Proven dark, with a `blocks` relation to every go-live it sits behind** → **door 2**, counted as a gate on that go-live. Remove `Live harm` if it carries it, with a comment quoting the production read (proof is the only thing that moves a finding quieter). Its keys are re-read every run: an account added, a go-live target closed, or a read that now fails makes it door 1 again.
      - **Proven dark, but a go-live it sits behind has no `blocks`** → door 1 until the relation exists.
 
-     **Live or proven dark** is read from production: `execute_sql` `select key, value from app_config` (read-only) for every key the finding's code sits behind, plus `list_migrations` for any migration, trigger or policy it names or any `supabase/migrations/` file on `main` its code depends on. A key is **dark** only when its value is `false`, or `{"enabled": false}` with an empty allowlist **and** the code reads that key through the allowlist resolver (a kill switch read by `resolveFlagValue` turns every non-boolean into its fallback, which is on, so the object shape is dark only for an allowlist-read key); the code must be in the flag's **on** arm (the off arm is what every account runs, and an unstated arm reads live); and a named migration is dark only when it matches a file still only in an open PR and unapplied (a trigger, a policy or an unmatched name reads live). Any other shape (`true`, `{"enabled": true, …}` with or without an allowlist, an allowlist naming any account) is live. No key identified, a key absent from production, an applied migration, or a read that fails → live. Record the read in the facts file (`appConfig`: the rows as `{ key: value }`, or `null` when the read failed; `goLives`: each key's go-live issue; the keys the code reads through the allowlist resolver are never a fact: `cli.ts` reads them from `lib/appConfig.ts` ALLOWLIST_FLAG_KEYS and `_shared/engineFlags.ts` ENGINE_KEYS, and fails the run if it cannot; per finding `keys`, `arm`, `migrations`, `liveSurfaces`, `harm`, and an untagged one's quoted `reading`): `cli.ts plan` decides every door and prints the writes with their reasons, the door-3 offers, the live fixes, the `unlink` list and the digest line (`sortFindings`, CUL-1872). None is decided by hand.
+     **Live or proven dark** is read from production: `execute_sql` `select key, value from app_config` (read-only) for every key the finding's code sits behind, plus `list_migrations` for any migration, trigger or policy it names or any `supabase/migrations/` file on `main` its code depends on. Dark is `keyDark` and `liveReasons` in `sort.ts`: a key `false`, or `{"enabled": false}` with an empty allowlist on a key read through the allowlist resolver; code in the flag's **on** arm; a named migration only in an open PR and unapplied. Any other shape, arm or name is live. No key identified, a key absent from production, an applied migration, or a read that fails → live. Record the read in the facts file (`appConfig`: the rows as `{ key: value }`, or `null` when the read failed; `goLives`: each key's go-live issue; the keys the code reads through the allowlist resolver are never a fact: `cli.ts` reads them from `lib/appConfig.ts` ALLOWLIST_FLAG_KEYS and `_shared/engineFlags.ts` ENGINE_KEYS, and fails the run if it cannot; per finding `keys`, `arm`, `migrations`, `liveSurfaces`, `harm`, and an untagged one's quoted `reading`): `cli.ts plan` decides every door and prints the writes with their reasons, the door-3 offers, the live fixes, the `unlink` list and the digest line (`sortFindings`, CUL-1872). None is decided by hand.
 
      **(b) Not harm.** A finding tagged `neither` with an open `blocks` relation to the issue of an unmerged on-path row is **door 3**, a **no-row** candidate (unless covered, below), named by its `CUL-NNN` in step 6, never by a number; only these are proposed as rows, and one filed outside the project is marked *filed outside the project*. Everything else is **parked**: counted, split by kind (`err loud`, `polish`, `other`), never offered one by one. A parked finding that has a parent, or a `blocks` relation (CUL-1741's shape: it holds a row's issue open), is listed in step 6 with `unlink CUL-NNN`, which replaces both with `relatedTo` on the PM's typed word.
 
@@ -186,6 +187,12 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
    - Tag it on the line after its TL;DR: `Direction: QUIET` (it can drop, soften or delay
      a warning), `LOUD` (it errs toward an extra, earlier or louder one) or `neither`.
      No tag counts as QUIET.
+   - The likelihood gate, ahead of `Live harm`, only on a page with a `Ship bar:` line: a
+     finding whose one cause is two phones, precise timing, a storage failure or clock skew,
+     that is no regression and cannot expose or lose data, carries one line
+     `Trigger: rare (timing)` (or whichever one of the four), names no other trigger, and
+     goes under the last bullet, uncapped. A class, or any doubt, is sorted below. A
+     clinical one still needs its ruling.
    - First check whether it is one instance of a class (another write path, surface or
      state that can move the same fact). If so, file the class once, listing every
      instance; it goes by its worst instance, and a live instance is its own issue.
@@ -206,7 +213,7 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
    While a fork you raised waits on the PM, the quieter behaviour stays off: never build or
    switch on the quieter output to finish this row.
    A finding that is harm (QUIET, untagged and not plainly LOUD-only or polish, or able to
-   expose, lose or corrupt data) never goes in the last bullet.
+   expose, lose or corrupt data) never goes in the last bullet unless the gate parks it.
    File at most three issues under the last bullet; harm is never capped. Put any other
    finding in one comment on <CUL-NNN> headed `**Parked findings**`, one line each.
 
@@ -322,7 +329,7 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
    | **d · a cycle** | After and arrow-chain edges that form a loop | none; report the loop and the PM edits the page |
    | **e · mark auto** | a row that is ready, or that another U line frees, unmarked, on the `Done means (rows):` path, and **auto-eligible** by step 5's gate predicate | adds ` auto` to its PR cell and records the row on the status update's `Auto:` line, which confirms it (step 6) |
    | **f · a gate already ruled** | an After item naming a ruling or PM action that a newer comment on the row's issue, or on the ruling's own issue, says is ruled or done | removes it from After; the U line quotes the comment and its date |
-   | **g · no Done means line** | the page has no `Done means (rows):` line | adds one after the page's critical-path lines, listing every row a critical path names, by PR number; the U line prints the list in full, since the PM's `fix` is the ruling that fixes it (rule 6). Never includes a findings milestone's rows |
+   | **g · no Done means line** | the page has no `Done means (rows):` line | adds one after the page's critical-path lines, listing every row a critical path names, by PR number; the U line prints the list in full, since the PM's `fix` is the ruling that fixes it (rule 6). Never includes a findings milestone's rows. No `Ship bar:` line gets one too |
 
    Writes go through one `save_project` `patch` on a fresh read (step 8's re-read rule), each anchored on that row's or build note's **raw** line from the read just taken; relation changes go through `save_issue`. After applying, re-run steps 3–5b for the freed rows and propose them in a follow-up confirmation (step 6).
 
@@ -483,6 +490,7 @@ PM ruling (b), 2026-10-06: a progress block at the top of every round digest, pl
 - **Never at the same time** uses `A → B → C` for strict order and `A, B, C, one at a time` for mutual exclusion; the **Allowed, and named** line lists rows that may run together despite sharing a lane.
 - **Critical path** lines (`**Critical path to …:** PR-11b → PR-09 → PR-13a`) set the ranking.
 - **`Done means (rows):`** one line, the rows by PR number (`Done means (rows): 11b, 09, 13a, 41`), fixed at kickoff and changed only by the PM's re-scope (§ The sort rule 6). A row on it is on the path; only on-path rows are recommended, marked `auto` or queued (step 6). It never names a findings milestone's rows. Missing → Unblock kind *g*.
+- **`Ship bar:`** one line under Done means: the project ships when every row on it has merged with no harm open that passed the gate (§ The sort, 1b). Missing → Unblock kind *g*.
 - **A *Found along the way* milestone** holds the project's parked findings (§ The sort, door 4). It is never on the run order and never in Done means; step 1 counts it.
 - **Build notes** per PR carry done-when, verification, any `Merge gate:` / `GA gate:` lines, and a `Hotspot:` line naming a guard registry, `CLAUDE.md`, `STATUS.md`, `generate-signal/pipeline.ts` or a `steward` §8 shared file when the row touches one. The note is the plan a routine row builds from without asking (step 5), so it names the files and the approach; a row that needs RLS, deletion, a clinical surface, a migration or a Tier-2 edit says so, which plan-gates it; **bundle prompts** for `⧉` rows carry the whole session prompt excerpt.
 - **New work found mid-build** needs no hand edit: file it through § The sort, `relatedTo` its source row's issue and never its sub-issue. The next run counts it, and offers a row only for a door-3 finding (step 1).

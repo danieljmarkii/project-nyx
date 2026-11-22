@@ -39,6 +39,12 @@ in this project, \`relatedTo\` <CUL-NNN> and never its sub-issue:
 - Tag it on the line after its TL;DR: \`Direction: QUIET\` (it can drop, soften or delay
   a warning), \`LOUD\` (it errs toward an extra, earlier or louder one) or \`neither\`.
   No tag counts as QUIET.
+- The likelihood gate, ahead of \`Live harm\`, only on a page with a \`Ship bar:\` line: a
+  finding whose one cause is two phones, precise timing, a storage failure or clock skew,
+  that is no regression and cannot expose or lose data, carries one line
+  \`Trigger: rare (timing)\` (or whichever one of the four), names no other trigger, and
+  goes under the last bullet, uncapped. A class, or any doubt, is sorted below. A
+  clinical one still needs its ruling.
 - First check whether it is one instance of a class (another write path, surface or
   state that can move the same fact). If so, file the class once, listing every
   instance; it goes by its worst instance, and a live instance is its own issue.
@@ -59,7 +65,7 @@ in this project, \`relatedTo\` <CUL-NNN> and never its sub-issue:
 While a fork you raised waits on the PM, the quieter behaviour stays off: never build or
 switch on the quieter output to finish this row.
 A finding that is harm (QUIET, untagged and not plainly LOUD-only or polish, or able to
-expose, lose or corrupt data) never goes in the last bullet.
+expose, lose or corrupt data) never goes in the last bullet unless the gate parks it.
 File at most three issues under the last bullet; harm is never capped. Put any other
 finding in one comment on <CUL-NNN> headed \`**Parked findings**\`, one line each.`,
   routine: `Build from the plan excerpt without waiting for a plan approval: the

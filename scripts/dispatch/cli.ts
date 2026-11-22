@@ -125,6 +125,7 @@ function plan(f: Facts, shape: BoardShape): string {
   say();
   say(`Proposed (rank order): ${p.proposal.map((r) => `PR-${r}`).join(', ') || 'none'}`);
   say(`Recommended (on the path): ${p.recommended.map((r) => `PR-${r}`).join(', ') || (p.page.doneMeans ? 'none' : 'none: the page has no Done means (rows): line (Unblock kind g)')}`);
+  if (!p.page.shipBar) say('Ship bar: the page has no Ship bar: line, so hardening has no stated end (Unblock kind g)');
   for (const r of p.proposal) {
     const v = p.verdicts.find((x) => x.row === r)!;
     const g = v.gate;

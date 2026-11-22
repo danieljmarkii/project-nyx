@@ -18,7 +18,12 @@
 // The daily check (CUL-2521): `{ check: 'overdue' }`, in its own window (plan.ts gate),
 // runs the same pass with a remove that deletes nothing and answers 204 (nothing due was
 // left) or 200 `{ overdue, incomplete }`. It reveals two bits, never a count, a path or
-// an id.
+// an id. pg_cron sends it (migration 123), so nobody reads that reply: the check also
+// stores the two bits in sweep_check_results (CUL-2897).
+//
+// The result read (CUL-2897): `{ result: 'overdue' }`, any time, is what GitHub's watcher
+// sends. It runs no pass; it reads the newest stored row and answers 204 (clean), 200
+// `{ overdue, incomplete }`, or 404 when the latest 12:07 UTC check stored no answer.
 //
 // One run at a time per worker: a second request while one runs gets 204 and does
 // nothing, so a burst of calls cannot multiply the Storage load. Two workers can still
@@ -27,7 +32,18 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sweepBudget, userProbeOf } from '../delete-account/plan.ts'
-import { checkLine, checkVerdict, gate, runLine, runStartOf, runSweep, type SweepIO, type TimedLister } from './plan.ts'
+import {
+  checkLine,
+  checkVerdict,
+  gate,
+  resultAnswer,
+  runLine,
+  runStartOf,
+  runSweep,
+  type StoredCheck,
+  type SweepIO,
+  type TimedLister,
+} from './plan.ts'
 
 const WORKER_STARTED_AT = Date.now()
 let running = false
@@ -96,6 +112,28 @@ function sweepIO(admin: SupabaseClient): SweepIO {
   }
 }
 
+// CUL-2897: the check's answer, kept for the watcher. One row per UTC day; a second check
+// the same day (a hand-run in the window) replaces it. Returns false on any error, which
+// the caller logs: a missing row reads as "no recent check" to the watcher, never clean.
+async function storeCheck(admin: SupabaseClient, at: number, overdue: boolean, incomplete: boolean): Promise<boolean> {
+  const checkedAt = new Date(at).toISOString()
+  const { error } = await admin
+    .from('sweep_check_results')
+    .upsert({ checked_on: checkedAt.slice(0, 10), checked_at: checkedAt, overdue, incomplete }, { onConflict: 'checked_on' })
+  return !error
+}
+
+async function newestCheck(admin: SupabaseClient): Promise<StoredCheck | null | 'error'> {
+  const { data, error } = await admin
+    .from('sweep_check_results')
+    .select('checked_at, overdue, incomplete')
+    .order('checked_at', { ascending: false })
+    .limit(1)
+  if (error) return 'error'
+  const row = (data ?? [])[0] as { checked_at: string; overdue: boolean; incomplete: boolean } | undefined
+  return row ? { checkedAt: row.checked_at, overdue: row.overdue, incomplete: row.incomplete } : null
+}
+
 Deno.serve(async (req: Request) => {
   const startedAt = Date.now()
   let body: unknown = null
@@ -107,9 +145,6 @@ Deno.serve(async (req: Request) => {
   const verdict = gate(body, startedAt)
   if (verdict === 'not_a_run') return Response.json({ error: 'Not a scheduled sweep run' }, { status: 400 })
   if (verdict === 'outside_window') return Response.json({ error: 'Outside the run window' }, { status: 400 })
-  // A check that finds the worker busy cannot answer; 503 reads as "could not run" to
-  // the check, never as the clean 204.
-  if (running) return new Response(null, { status: verdict === 'check' ? 503 : 204 })
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -117,6 +152,21 @@ Deno.serve(async (req: Request) => {
     console.error('sweep-orphaned-storage: missing required env (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)')
     return new Response(null, { status: 500 })
   }
+
+  if (verdict === 'result') {
+    // No pass, no `running` claim: one read of the newest stored answer.
+    const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
+    const row = await newestCheck(admin)
+    if (row === 'error') return new Response(null, { status: 503 })
+    const answer = resultAnswer(row, Date.now())
+    if (answer.kind === 'clean') return new Response(null, { status: 204 })
+    if (answer.kind === 'no_recent_check') return Response.json({ error: 'No answer from the latest scheduled check' }, { status: 404 })
+    return Response.json({ overdue: answer.overdue, incomplete: answer.incomplete }, { status: 200 })
+  }
+
+  // A check that finds the worker busy cannot answer; 503 reads as "could not run" to
+  // the check, never as the clean 204. It stores nothing, so the watcher's read is a 404.
+  if (running) return new Response(null, { status: verdict === 'check' ? 503 : 204 })
 
   running = true
   try {
@@ -127,6 +177,9 @@ Deno.serve(async (req: Request) => {
       const report = await runSweep(checkIO(admin), { now: Date.now, deadline, cutoff, asOf: runStartOf(startedAt) })
       console.log(checkLine(report))
       const { overdue, incomplete } = checkVerdict(report)
+      if (!(await storeCheck(admin, startedAt, overdue, incomplete))) {
+        console.error('sweep-orphaned-storage: the check could not store its answer')
+      }
       // Two bits and no counts: a caller learns only whether to call a person.
       if (!overdue && !incomplete) return new Response(null, { status: 204 })
       return Response.json({ overdue, incomplete }, { status: 200 })
