@@ -85,6 +85,32 @@
 //   ✗ a deploy-run finding never moving the verdict
 //   ✗ wrap.md dropped from the gate paths
 //
+// MUTANTS added with CUL-2234 (--verify, the landing's type check), run against the real
+// script 2026-11-22, every one killed:
+//
+//   ✗ the "current" skip dropped (every landing type checked, CI's own tree included)
+//   ✗ the "current" skip widened to every landing (a broken landing skipped)
+//   ✗ the branch's own tree checked instead of the landing
+//   ✗ tsc run in the session's working tree instead of the landing
+//   ✗ a tsc type error never moving the verdict
+//   ✗ a deno check type error never moving the verdict
+//   ✗ a broken landing reported as REVIEW (clearable in writing) instead of CONFLICT
+//   ✗ the step's glob quoted (scripts/*.deno.ts passed literally, never expanded)
+//   ✗ the Deno version check dropped (a check at another version read as CI's)
+//   ✗ a missing deno read as a pass
+//   ✗ a missing node_modules read as a pass
+//   ✗ a deno failure that names no type error (offline) read as a pass
+//   ✗ the same read as a broken landing (exit 1) instead of a check that did not run
+//   ✗ a ci.yml run: line with shell syntax run anyway
+//
+// HOW DENO IS FAKED. CI's jest job has no Deno, so --verify's Deno is a stub named by
+// MERGE_CHECK_DENO: a toy checker that fails when a file it is asked to check holds
+// `use:NAME` and no checked-in file under supabase/ or scripts/ holds `def:NAME`, which is
+// enough to build two trees that pass apart and fail together. Its `--version` reports
+// FAKE_DENO_VERSION (default CI's 2.9.4), FAKE_DENO_OFFLINE makes it fail the way an
+// unreachable registry does, and FAKE_DENO_LOG records each call's directory and
+// arguments. tsc is the REAL one, this repo's, linked into each fixture clone.
+//
 // HOW MAIN'S CI IS FAKED. The script reads it with `gh api`, and every case runs with a
 // stub `gh` first on PATH (written under the fixture root) that serves a JSON file named
 // by FAKE_GH_MAIN for main's runs and FAKE_GH_OWN for this branch's, and fails like a
@@ -304,6 +330,35 @@ beforeAll(() => {
       'esac',
       'if [ -z "$src" ]; then echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi',
       'cat "$src"',
+      '',
+    ].join('\n'),
+    { encoding: 'utf8', mode: 0o755 },
+  );
+  fs.writeFileSync(
+    path.join(ghBin, 'deno'),
+    [
+      '#!/usr/bin/env bash',
+      '# A stand-in for `deno` (see the header): --version, and a toy `deno check`.',
+      'if [ "${1:-}" = "--version" ]; then echo "deno ${FAKE_DENO_VERSION:-2.9.4} (stub)"; exit 0; fi',
+      '[ "${1:-}" = "check" ] || { echo "stub deno: unexpected $*" >&2; exit 64; }',
+      'shift',
+      'if [ -n "${FAKE_DENO_LOG:-}" ]; then echo "$PWD :: $*" >>"$FAKE_DENO_LOG"; fi',
+      'if [ -n "${FAKE_DENO_OFFLINE:-}" ]; then echo "error: Import \'https://deno.land/std/x.ts\' failed: connection refused" >&2; exit 1; fi',
+      'files=()',
+      'for a in "$@"; do',
+      '  case "$a" in --*) continue ;; esac',
+      '  if [ -d "$a" ]; then while IFS= read -r f; do files+=("$f"); done < <(find "$a" -type f -name "*.ts" | sort)',
+      '  elif [ -f "$a" ]; then files+=("$a")',
+      '  else echo "error: Module not found \"$a\"" >&2; exit 1; fi',
+      'done',
+      'defs=$(grep -rhoE "def:[a-z]+" supabase scripts 2>/dev/null | sed "s/def://" | sort -u)',
+      'bad=0',
+      'for f in ${files[@]+"${files[@]}"}; do',
+      '  for u in $(grep -hoE "use:[a-z]+" "$f" | sed "s/use://"); do',
+      '    if ! printf "%s\\n" "$defs" | grep -qx "$u"; then echo "TS2304 [ERROR]: Cannot find name \'$u\'."; echo "    at file://$PWD/$f:1:1"; bad=1; fi',
+      '  done',
+      'done',
+      'if [ "$bad" -ne 0 ]; then echo "error: Type checking failed."; exit 1; fi',
       '',
     ].join('\n'),
     { encoding: 'utf8', mode: 0o755 },
@@ -946,6 +1001,167 @@ describe('scripts/steward/merge-check.sh', () => {
       const r = check(fx.mainClone, ['--head', 'origin/main']);
       expect(r.out).not.toContain('production:');
       expect(r.code).toBe(0);
+    });
+  });
+
+  describe('--verify, the landing type check (CUL-2234)', () => {
+    // ci.yml as the script reads it: the pin, and the two Deno steps by name, the first with
+    // a comment between its name and its run: line (the shape the real file has).
+    const CI_YML = lines(
+      'jobs:',
+      '  edge-functions:',
+      '    steps:',
+      '      - uses: denoland/setup-deno@0000000000000000000000000000000000000000 # v2',
+      '        with:',
+      '          deno-version: 2.9.4',
+      '      - name: Deno check (functions)',
+      '        # the whole tree',
+      '        run: deno check --lock=deno.lock supabase/functions/',
+      '      - name: Deno check (scripts)',
+      '        run: deno check --lock=deno.lock scripts/*.deno.ts',
+    );
+    const TYPED: Record<string, string> = {
+      '.github/workflows/ci.yml': CI_YML,
+      'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, noEmit: true, types: [] }, include: ['src'] }),
+      'src/greet.ts': 'export function greet(name: string): string {\n  return `hi ${name}`;\n}\n',
+      'supabase/functions/notify/index.ts': 'def:send\nuse:send\n',
+      'scripts/tool.deno.ts': 'use:send\n',
+    };
+
+    function typedFixture(): Fixture {
+      const fx = fixture();
+      landOnMain(fx, TYPED, 'a typed base');
+      return fx;
+    }
+
+    /** A session whose clone carries this repo's node_modules, as `npm ci` would leave it. */
+    function typedSession(fx: Fixture, branch: string, files: Record<string, string>, modules = true): string {
+      const s = session(fx, branch, files);
+      if (modules) {
+        fs.symlinkSync(path.join(REPO_ROOT, 'node_modules'), path.join(s, 'node_modules'));
+        fs.appendFileSync(path.join(s, '.git', 'info', 'exclude'), 'node_modules\n');
+      }
+      return s;
+    }
+
+    const denoLog = (): string => path.join(root, `deno-log-${(seq += 1)}.txt`);
+    const read = (file: string): string => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
+    const verify = (dir: string, extra: Record<string, string> = {}): Run =>
+      check(dir, ['--verify'], { MERGE_CHECK_DENO: path.join(ghBin, 'deno'), ...extra });
+
+    it('skips a landing that is the branch\'s own tree, before and after main is brought in', () => {
+      const fx = typedFixture();
+      const s = typedSession(fx, 'claude/feature', { 'src/extra.ts': 'export const extra = 1;\n' });
+      const log = denoLog();
+      const r = verify(s, { FAKE_DENO_LOG: log });
+      expect(r.out).toContain("landing types: skipped (current: landing it lands this branch's own tree, which its CI type checked)");
+      expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
+      expect(r.code).toBe(0);
+
+      landOnMain(fx, { 'app.txt': lines('one', 'two', 'three', 'four') }, 'another PR lands');
+      expect(mergeMain(s)).toBe(0);
+      const after = verify(s, { FAKE_DENO_LOG: log });
+      expect(after.out).toContain('(2 ahead, 0 behind)');
+      expect(after.out).toContain('landing types: skipped (current');
+      expect(after.code).toBe(0);
+      // A skip that still ran the checker would be no skip.
+      expect(read(log)).toBe('');
+    });
+
+    it('a landing main moved under that still types is CLEAN, checked in the landing with each CI step and its glob expanded', () => {
+      const fx = typedFixture();
+      const s = typedSession(fx, 'claude/feature', { 'src/use.ts': "import { greet } from './greet';\nexport const msg: string = greet('Nyx');\n" });
+      landOnMain(fx, { 'app.txt': lines('one', 'two', 'three', 'four') }, 'another PR lands');
+      const index = sha(path.join(s, '.git', 'index'));
+      const headBefore = git(s, ['rev-parse', 'HEAD']);
+      const log = denoLog();
+
+      const r = verify(s, { FAKE_DENO_LOG: log });
+      expect(r.out).toContain('landing types: tsc and 2 deno check step(s) pass on the simulated landing (1 behind, deno 2.9.4)');
+      expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
+      expect(r.code).toBe(0);
+      const calls = read(log).trimEnd().split('\n');
+      expect(calls).toHaveLength(2);
+      for (const c of calls) expect(c.startsWith(`${s} ::`)).toBe(false);
+      expect(calls[0]).toMatch(/ :: --lock=deno\.lock supabase\/functions\/$/);
+      expect(calls[1]).toMatch(/ :: --lock=deno\.lock scripts\/tool\.deno\.ts$/);
+      expect(sha(path.join(s, '.git', 'index'))).toBe(index);
+      expect(git(s, ['rev-parse', 'HEAD'])).toBe(headBefore);
+      expect(git(s, ['status', '--porcelain'])).toBe('');
+    });
+
+    // THE CASE THE FLAG EXISTS FOR. The branch calls greet(); main renames it. Each tree
+    // types on its own, git merges them without a word, and the landing does not compile.
+    it('a branch and main that type check apart and fail together are CONFLICT naming the error; fixing it after merging main is CLEAN', () => {
+      const fx = typedFixture();
+      const s = typedSession(fx, 'claude/feature', { 'src/use.ts': "import { greet } from './greet';\nexport const msg: string = greet('Nyx');\n" });
+      landOnMain(fx, { 'src/greet.ts': 'export function salute(name: string): string {\n  return `hi ${name}`;\n}\n' }, 'rename greet');
+
+      const plain = check(s);
+      expect(plain.out).toContain('main: clean');
+      expect(plain.out).not.toContain('landing types');
+      expect(plain.code).toBe(0);
+
+      const r = verify(s);
+      expect(r.out).toContain('landing types: BROKEN; this branch and origin/main pass apart and fail together (1 behind)');
+      expect(r.out).toMatch(/\n {2}tsc: src\/use\.ts\(1,10\): error TS2305: [^\n]*greet/);
+      expect(r.out).toContain('next: git merge origin/main, fix the type errors above, push, let CI pass, then run this again with --verify');
+      expect(lastLine(r.out)).toBe('MERGE CHECK: CONFLICT');
+      expect(r.code).toBe(1);
+
+      expect(mergeMain(s)).toBe(0);
+      write(s, 'src/use.ts', "import { salute } from './greet';\nexport const msg: string = salute('Nyx');\n");
+      commitAll(s, 'follow the rename');
+      const fixed = verify(s);
+      expect(fixed.out).toContain('landing types: skipped (current');
+      expect(fixed.code).toBe(0);
+    });
+
+    it('a landing that fails deno check alone is CONFLICT naming the missing name', () => {
+      const fx = typedFixture();
+      const s = typedSession(fx, 'claude/feature', { 'supabase/functions/remind/index.ts': 'use:send\n' });
+      landOnMain(
+        fx,
+        { 'supabase/functions/notify/index.ts': 'def:post\nuse:post\n', 'scripts/tool.deno.ts': 'use:post\n' },
+        'rename send',
+      );
+      const r = verify(s);
+      expect(r.out).toContain('landing types: BROKEN');
+      expect(r.out).toContain("  deno: TS2304 [ERROR]: Cannot find name 'send'.");
+      expect(r.out).not.toContain('  tsc:');
+      expect(r.code).toBe(1);
+    });
+
+    it('never passes when it cannot run: no deno, the wrong deno, no node_modules, an offline registry, a run: line with shell syntax', () => {
+      const fx = typedFixture();
+      const files = { 'src/extra.ts': 'export const extra = 1;\n' };
+      const s = typedSession(fx, 'claude/feature', files);
+      const bare = typedSession(fx, 'claude/bare', files, false);
+      landOnMain(fx, { 'app.txt': lines('one', 'two', 'three', 'four') }, 'another PR lands');
+
+      const cases: Array<[string, Run, RegExp]> = [
+        ['no deno', verify(s, { MERGE_CHECK_DENO: path.join(root, 'no-such-deno') }), /--verify: no .*no-such-deno on PATH/],
+        ['the wrong deno', verify(s, { FAKE_DENO_VERSION: '2.9.3' }), /--verify: deno 2\.9\.3 here, CI pins 2\.9\.4/],
+        ['no node_modules', verify(bare), /--verify: no node_modules\/typescript under /],
+        ['an offline registry', verify(s, { FAKE_DENO_OFFLINE: '1' }), /--verify: deno check --lock=deno\.lock supabase\/functions\/ did not run on the landing \(exit 1\)/],
+      ];
+      for (const [label, r, why] of cases) {
+        expect([label, r.code]).toEqual([label, 3]);
+        expect([label, why.test(r.out)]).toEqual([label, true]);
+        expect(r.out).not.toContain('MERGE CHECK: CLEAN');
+      }
+
+      landOnMain(
+        fx,
+        { '.github/workflows/ci.yml': CI_YML.replace('supabase/functions/\n', 'supabase/functions/; curl example.invalid\n') },
+        'a ci.yml with shell syntax',
+      );
+      const shell = verify(s);
+      expect(shell.code).toBe(3);
+      expect(shell.out).toContain('run: line has shell syntax; refusing to run it');
+
+      // The same landings without --verify: the flag is what runs the check.
+      expect(check(bare).code).toBe(0);
     });
   });
 });
