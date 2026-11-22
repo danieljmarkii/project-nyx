@@ -186,7 +186,7 @@ const MUTANTS: Mutant[] = [
   { check: "a follow-up stopgap reads every one of the row's issues", file: 'alarms.ts', from: 'const s = stopgapFor(r.issues.map((i) => input.rowOutputs?.[i]), input.liveOf);', to: 'const s = stopgapFor([input.rowOutputs?.[r.issues[0]]], input.liveOf);' },
   // The gate reads the kept list (CUL-2886).
   { check: 'auto needs nothing kept', file: 'plan.ts', from: "g.mode === 'BUILD' && g.kept === 'none' &&", to: "g.mode === 'BUILD' &&" },
-  { check: 'the gate passes labels to the kept list', file: 'plan.ts', from: 'keptOf({ labels: issue?.labels ?? [], text,', to: 'keptOf({ labels: [], text,' },
+  { check: 'the gate passes labels to the kept list', file: 'plan.ts', from: 'keptOf({ labels: issue?.labels ?? [], files:', to: 'keptOf({ labels: [], files:' },
   // pathsIn itself lives in scripts/kept/kept.ts and is proven by scripts/kept/mutants.ts.
   { check: 'the gate reads the paths a note names', file: 'plan.ts', from: 'files: pathsIn(text), text,', to: 'text,' },
   { check: 'taste does not plan-gate a DISCOVERY row', file: 'plan.ts', from: "    if (why.startsWith('taste:') && mode === 'DISCOVERY') continue;\n", to: '' },
