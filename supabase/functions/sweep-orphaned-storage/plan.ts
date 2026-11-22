@@ -551,10 +551,11 @@ export const CHECK_WINDOW_MIN = 15
 
 // CUL-2897 — reading the check's answer. `{ result: CHECK_MARKER }`, any time of day.
 // It starts no Storage pass: one read of the newest sweep_check_results row. It reveals
-// what the check's own reply already did (two bits), plus whether a check ran in the
-// last RESULT_MAX_AGE_MS. A missing or older row answers "no recent check", which the
-// watcher reports as a check that could not run, never as clean.
-export const RESULT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+// what the check's own reply already did (two bits) and the day that answer is for. The
+// answer counts only when it is from the LATEST scheduled check (latestCheckStart): a
+// read at 12:10, while today's check is still running, does not get yesterday's clean
+// row (rls-privacy-reviewer F1 on CUL-2897). It gets "no recent check", which the watcher
+// reports as a check that could not run, never as clean.
 
 export type GateVerdict = 'run' | 'check' | 'result' | 'not_a_run' | 'outside_window'
 
@@ -586,15 +587,26 @@ export interface StoredCheck {
 
 export type ResultAnswer = { kind: 'clean' } | { kind: 'found'; overdue: boolean; incomplete: boolean } | { kind: 'no_recent_check' }
 
+// The start of the most recent scheduled check at or before `now`: today's 12:07 UTC from
+// 12:07 on, else yesterday's. From 12:07 until today's row is stored, no stored answer
+// satisfies it, which is the loud side of that gap.
+export function latestCheckStart(now: number): number {
+  const d = new Date(now)
+  const today = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), CHECK_HOUR_UTC, CHECK_MINUTE_UTC)
+  return now >= today ? today : today - 24 * 60 * 60 * 1000
+}
+
+// Clock skew allowed between the worker that stored a row and the one reading it.
+const SKEW_MS = 5 * 60_000
+
 // What a result read answers, from the newest stored row (or none). Anything that is not
-// a parseable, recent row is "no recent check": a dead pg_cron, a check that threw before
-// it stored, a row write that failed, a clock or parse surprise. All of them reach a
-// person; none reads as clean.
+// a parseable row from the latest scheduled check is "no recent check": a dead pg_cron, a
+// check that threw before it stored, a row write that failed, today's check still running,
+// a clock or parse surprise. All of them reach a person; none reads as clean.
 export function resultAnswer(row: StoredCheck | null, now: number): ResultAnswer {
   if (!row) return { kind: 'no_recent_check' }
   const at = Date.parse(row.checkedAt)
-  // A row from the future past a few minutes of clock skew is not trusted either.
-  if (!Number.isFinite(at) || at - now > 5 * 60_000 || now - at > RESULT_MAX_AGE_MS) return { kind: 'no_recent_check' }
+  if (!Number.isFinite(at) || at - now > SKEW_MS || at < latestCheckStart(now) - SKEW_MS) return { kind: 'no_recent_check' }
   if (typeof row.overdue !== 'boolean' || typeof row.incomplete !== 'boolean') return { kind: 'no_recent_check' }
   if (!row.overdue && !row.incomplete) return { kind: 'clean' }
   return { kind: 'found', overdue: row.overdue, incomplete: row.incomplete }

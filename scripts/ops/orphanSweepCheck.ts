@@ -15,7 +15,7 @@
 // WHO RUNS WHAT (CUL-2897). The check itself runs from pg_cron at 12:07 UTC (migration 123) and stores its
 // two bits; it first ran from GitHub, which started it 5 to 10 hours late every day, past its window, so it
 // never ran once. This script, still on GitHub, only READS the stored answer, at any hour. A dead pg_cron
-// does not pass for clean: no answer stored in the last 24 h is a 404, reported as a check that could not run.
+// does not pass for clean: no answer from the latest 12:07 check is a 404, reported as a check that could not run.
 //
 // WHAT IT CANNOT SEE, stated. A stopped sweep with nothing to remove raises nothing, because nothing is at risk;
 // the first file past due raises it the same day. Files no run can ever remove (an unexpected key depth, a
@@ -70,9 +70,9 @@ export async function askSweep(fetchFn: FetchLike, anonKey: string, timeoutMs: n
       }
       return { kind: 'unreachable', detail: 'HTTP 200 with an unexpected body' }
     }
-    // 404: no check stored an answer in the last 24 h (pg_cron's 12:07 UTC job did not run, or the check
-    // failed before it stored). Still "could not run", named so the triage starts in the right place.
-    if (res.status === 404) return { kind: 'unreachable', detail: 'HTTP 404: no check answer stored in the last 24 hours' }
+    // 404: the latest 12:07 UTC check stored no answer (pg_cron's job did not run, the check failed before it
+    // stored, or it is still running: a read in the minutes after 12:07 is loud, never yesterday's clean). Still "could not run", named so the triage starts in the right place.
+    if (res.status === 404) return { kind: 'unreachable', detail: 'HTTP 404: no answer stored by the latest 12:07 UTC check' }
     return { kind: 'unreachable', detail: `HTTP ${res.status}` }
   } catch (e) {
     const aborted = e instanceof Error && e.name === 'AbortError'
@@ -150,7 +150,8 @@ export async function runCheck(deps: {
 }): Promise<number> {
   const outcome = await askSweep(deps.fetchFn, deps.anonKey)
   if (outcome.kind === 'none') {
-    deps.log('Nothing the morning sweep should have removed is still stored, and the check read everything.')
+    // The answer is the LATEST 12:07 check's: before 12:07 that is yesterday's, so the line names no day.
+    deps.log('The latest daily check (12:07 UTC) found nothing the sweep should have removed still stored, and it read everything.')
     return 0
   }
   const text = findingText(outcome, deps.dayIso, deps.runUrl)

@@ -23,7 +23,7 @@
 //
 // The result read (CUL-2897): `{ result: 'overdue' }`, any time, is what GitHub's watcher
 // sends. It runs no pass; it reads the newest stored row and answers 204 (clean), 200
-// `{ overdue, incomplete }`, or 404 when no check stored an answer in the last 24 h.
+// `{ overdue, incomplete }`, or 404 when the latest 12:07 UTC check stored no answer.
 //
 // One run at a time per worker: a second request while one runs gets 204 and does
 // nothing, so a burst of calls cannot multiply the Storage load. Two workers can still
@@ -160,7 +160,7 @@ Deno.serve(async (req: Request) => {
     if (row === 'error') return new Response(null, { status: 503 })
     const answer = resultAnswer(row, Date.now())
     if (answer.kind === 'clean') return new Response(null, { status: 204 })
-    if (answer.kind === 'no_recent_check') return Response.json({ error: 'No check in the last 24 hours' }, { status: 404 })
+    if (answer.kind === 'no_recent_check') return Response.json({ error: 'No answer from the latest scheduled check' }, { status: 404 })
     return Response.json({ overdue: answer.overdue, incomplete: answer.incomplete }, { status: 200 })
   }
 

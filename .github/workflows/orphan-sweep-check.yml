@@ -2,7 +2,7 @@
 #
 # Reads the answer the daily check stored (pg_cron runs the check at 12:07 UTC, migration 123): whether any file
 # the 09:23 UTC run should have removed is still stored, whether the check could not read everything, or whether
-# no check stored an answer in the last 24 hours. Opens a Linear issue
+# the latest 12:07 check stored no answer. Opens a Linear issue
 # (team Culprit) when either holds or the function cannot answer; a later day comments on the open issue instead
 # of opening another. Why it reads the outcome rather than the run's log line is scripts/ops/orphanSweepCheck.ts.
 #
@@ -16,7 +16,7 @@ name: Orphaned storage check
 
 on:
   schedule:
-    # Daily, 14:37 UTC: after the 12:07 check. A late start is harmless: the answer is read for 24 hours.
+    # Daily, 14:37 UTC: after the 12:07 check. A late start is harmless: it reads the latest check's answer.
     - cron: '37 14 * * *'
   workflow_dispatch:
 

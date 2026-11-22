@@ -59,7 +59,10 @@
 -- but stores no row (that code is not live), so the old workflow, until the
 -- merge replaces it, keeps reporting as it does today. Merging BEFORE applying
 -- is the wrong order: the result read finds no table and answers 503, and the
--- check's store fails (logged); both are loud, neither is clean.
+-- check's store fails (logged); both are loud, neither is clean. A merge that
+-- lands between 12:07 and the 14:37 watcher finds no row for that day and
+-- files one "could not run": a false alarm, loud; merge before 12:07 UTC to
+-- avoid it.
 --
 -- Migration Safety Pre-flight
 -- ------------------------------------------------------------
@@ -134,6 +137,10 @@ SELECT cron.schedule(
 --               has_table_privilege('authenticated', 'public.sweep_check_results', 'SELECT'),
 --               has_table_privilege('service_role', 'public.sweep_check_results', 'DELETE');
 --      -> f, f, f.
+--        SELECT has_table_privilege('service_role', 'public.sweep_check_results', 'SELECT'),
+--               has_table_privilege('service_role', 'public.sweep_check_results', 'INSERT'),
+--               has_table_privilege('service_role', 'public.sweep_check_results', 'UPDATE');
+--      -> t, t, t (the check's upsert needs all three; an f here is a daily 404).
 --   3. After the first 12:07 UTC (pg_net keeps responses for pg_net.ttl):
 --        SELECT status_code, timed_out, created FROM net._http_response
 --         WHERE created >= now()::date + time '12:07'

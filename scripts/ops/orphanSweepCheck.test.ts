@@ -115,7 +115,7 @@ describe('the daily orphaned-storage check (CUL-2521)', () => {
   });
 
   it.each([
-    ['a 404 (no check stored an answer in 24 h: pg_cron did not run it)', { status: 404 }, /HTTP 404: no check answer stored/],
+    ['a 404 (the latest 12:07 check stored no answer: pg_cron did not run it)', { status: 404 }, /HTTP 404: no answer stored by the latest 12:07 UTC check/],
     ['a 400 (the gate moved, or the body)', { status: 400 }, /HTTP 400/],
     ['a 401 (the anon key rotated)', { status: 401 }, /HTTP 401/],
     ['a 503 (the worker was busy)', { status: 503 }, /HTTP 503/],

@@ -25,7 +25,7 @@ import {
   isSweepableRoot,
   KEY_SEGMENTS,
   gate,
-  RESULT_MAX_AGE_MS,
+  latestCheckStart,
   resultAnswer,
   rotatedRules,
   RUN_HOUR_UTC,
@@ -645,12 +645,19 @@ Deno.test('CUL-2897: resultAnswer never reads clean without a recent, well-forme
   assertEquals(resultAnswer({ checkedAt: at(today - 86_400_000), overdue: false, incomplete: false }, now), {
     kind: 'no_recent_check',
   })
-  // The edge: exactly the max age still answers; a minute past does not.
-  assertEquals(resultAnswer({ checkedAt: at(now - RESULT_MAX_AGE_MS), overdue: false, incomplete: false }, now).kind, 'clean')
-  assertEquals(
-    resultAnswer({ checkedAt: at(now - RESULT_MAX_AGE_MS - 60_000), overdue: false, incomplete: false }, now).kind,
-    'no_recent_check',
-  )
+  // rls-privacy-reviewer F1: at 12:08, today's check is still running. Yesterday's clean
+  // row is under 24 h old and must NOT answer clean; it is "no recent check" (loud).
+  const yesterday = today - 86_400_000
+  assertEquals(resultAnswer({ checkedAt: at(yesterday), overdue: false, incomplete: false }, atCheck(12, 8)).kind, 'no_recent_check')
+  // Before 12:07 the latest scheduled check is yesterday's, so its row answers.
+  assertEquals(resultAnswer({ checkedAt: at(yesterday + 120_000), overdue: false, incomplete: false }, atCheck(11, 0)).kind, 'clean')
+  // A watcher started 21.5 h late (next day, 12:05) still reads that day's 12:07 row...
+  assertEquals(resultAnswer({ checkedAt: at(today + 120_000), overdue: false, incomplete: false }, today + 86_400_000 - 120_000).kind, 'clean')
+  // ...and one minute past the next 12:07, the same row no longer answers.
+  assertEquals(resultAnswer({ checkedAt: at(today + 120_000), overdue: false, incomplete: false }, today + 86_400_000 + 60_000).kind, 'no_recent_check')
+  // latestCheckStart flips exactly at 12:07.
+  assertEquals(latestCheckStart(today), today)
+  assertEquals(latestCheckStart(today - 1), yesterday)
   // Unparseable, far-future, or malformed bits: never clean.
   assertEquals(resultAnswer({ checkedAt: 'not a time', overdue: false, incomplete: false }, now).kind, 'no_recent_check')
   assertEquals(resultAnswer({ checkedAt: at(now + 3_600_000), overdue: false, incomplete: false }, now).kind, 'no_recent_check')
