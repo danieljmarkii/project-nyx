@@ -179,17 +179,21 @@ export function directionOf(description: string): Direction | undefined {
 
 // The ship bar's likelihood gate (PM ruling 2026-10-22, CUL-2123). Before a project ships a
 // harm finding is fixed now only if one owner on one phone hits it in a normal week, it is
-// a regression, or it can leak or lose data. It parks only on an explicit
-// `Trigger: rare (<cause>)` naming one of the ruling's four causes; every Trigger value must
-// say so (a class goes by its worst instance), and `normal`, `regression`, an unreadable
-// value or no line at all passes. Returns the quoted rare value, or undefined: it passes.
-const TRIGGER = /\bTrigger\b[*_`\s]*[:|][*_`|\s]*([^\n|]*)/gi;
-export const RARE_CAUSES = /\b(two phones|timing|storage failure|clock skew)\b/i;
+// a regression, or it can leak or lose data. It parks only on a CLEAN line of its own,
+// `Trigger: rare (<cause>)` with exactly one of the ruling's four causes in the brackets
+// (list, bold, quote or heading marks before it are fine). Every other shape errs loud and
+// passes: no clean line; any other mention of trigger(s) anywhere (a second instance in any
+// shape, a DB trigger in prose, a quoted rule, a table cell), since the sort cannot tell a
+// passing instance from prose; any form of "regress"; a negation or an unlisted cause.
+// Returns the clean rare value, or undefined: it passes.
+const CLEAN_RARE = /^[\s>*_#-]*Trigger[*_`]*\s*:[*_`]*\s*(rare\s*\(\s*(?:two phones|timing|storage failure|clock skew)\s*\))[*_`]*\s*\.?\s*$/i;
 export function rareTrigger(description: string): string | undefined {
-  const values = [...description.matchAll(TRIGGER)].map((m) => m[1].replace(/[*_`]/g, '').trim());
-  if (!values.length) return undefined;
-  for (const v of values) if (/\b(normal|regression)\b/i.test(v) || !/\brare\b/i.test(v) || !RARE_CAUSES.test(v)) return undefined;
-  return values[0];
+  if (/\bregress/i.test(description)) return undefined;
+  const lines = description.split('\n');
+  const clean = lines.map((l) => CLEAN_RARE.exec(l)?.[1]);
+  if (!clean.some(Boolean)) return undefined;
+  if (lines.some((l, i) => !clean[i] && /\btriggers?\b/i.test(l))) return undefined;
+  return clean.find(Boolean);
 }
 
 // A parked finding holds nothing: its parent and `blocks` targets are offered for unlink.
@@ -302,7 +306,9 @@ export function sortFindings(input: SortInput): SortResult {
         // The likelihood gate, ahead of the Live harm door: a rare trigger parks, unless the
         // finding can leak or lose data (rule 3 of the ruling). It decides fix now or park,
         // never who rules: a clinical finding that passes still needs its ruling below.
-        const rare = rareTrigger(c.description);
+        // Scoped as ruled: this project's own findings, on a page that states its Ship bar.
+        // Another project's finding is that project's dispatcher's to gate.
+        const rare = c.inProject && input.page.shipBar ? rareTrigger(c.description) : undefined;
         const leak = c.harm === 'exposure' || c.harm === 'loss' || hasLabel(c.labels, 'Gate: privacy');
         if (rare && !leak) {
           s.door = 4;
@@ -310,7 +316,10 @@ export function sortFindings(input: SortInput): SortResult {
           s.why.push(`fails the likelihood gate: Trigger "${rare}"; parked, Direction kept`);
           const wasLive = hasLabel(c.labels, LIVE_HARM);
           if (wasLive) writes.push({ issue: c.id, write: `remove label ${LIVE_HARM}`, why: s.why.join('; ') });
-          if (unlinkOf(c).length) s.unlink = unlinkOf(c);
+          // A go-live it gates keeps its blocks: parking never ships a known QUIET finding.
+          const goLiveIds = new Set(Object.values(input.goLives ?? {}));
+          const rareUnlink = unlinkOf(c).filter((t) => !goLiveIds.has(t));
+          if (rareUnlink.length) s.unlink = rareUnlink;
           continue;
         }
         const live = liveReasons(c, input);

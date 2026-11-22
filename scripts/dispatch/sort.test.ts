@@ -3,7 +3,7 @@
 // CUL-1438 and CUL-1741 shapes, and the population, order and door-3 rules. Each case
 // drives the real planner over a page shaped like Engines v3's, never a re-derivation.
 
-import { APP_CONFIG, NOW, PM_UUID, UNTAGGED, finding, input, tagged } from './fixtures/sort-retro4.ts';
+import { APP_CONFIG, NOW, PAGE, PM_UUID, UNTAGGED, finding, input, tagged } from './fixtures/sort-retro4.ts';
 import { parsePage } from './page.ts';
 import { planDispatch, type PlanInput } from './plan.ts';
 import { scopeFromIssues, scopeFromPlan, scopeLine } from './progress.ts';
@@ -506,6 +506,10 @@ describe('Q5: the allowlist-read keys come from the code', () => {
 // Live harm door, parks only an explicit rare trigger, and never decides who rules.
 describe('the likelihood gate (CUL-2123)', () => {
   const rare = (cause = 'two phones', extra = '') => `TL;DR — plain English: a finding.\n\nDirection: QUIET\nTrigger: rare (${cause})${extra}\n\n---\n\nBody.`;
+  // The gate runs only on a page that states its Ship bar (the ruling's "before a project ships").
+  const SHIPPING = { name: 'Engines v3: the record that reads itself', description: `${PAGE}\n\n**Ship bar:** every Done means row merged, no gate-passing harm open` };
+  const run = (findings: Candidate[], over: Partial<PlanInput> = {}) => planDispatch(input({ findings, project: SHIPPING, ...over })).sort!;
+  const door = (findings: Candidate[], id: string, over: Partial<PlanInput> = {}) => run(findings, over).sorted.find((s) => s.id === id)?.door;
 
   it('a QUIET finding whose trigger is rare parks as rare, Direction kept, never Live harm', () => {
     for (const cause of ['two phones', 'timing', 'storage failure', 'clock skew']) {
@@ -553,6 +557,47 @@ describe('the likelihood gate (CUL-2123)', () => {
     expect(r.writes.map((w) => w.write)).toEqual(['add label Live harm', 'add label Waiting on PM']);
   });
 
+  it('adversarial pass 1: every shape it cannot read cleanly passes (errs loud)', () => {
+    const passes = [
+      // A DB trigger in prose, with no Trigger line of its own.
+      'TL;DR. Direction: QUIET\n\nThe Postgres trigger: `meal_rollup` has a rare timing race; one owner hits it every breakfast.',
+      // Negation, regression in any word form, a cause word inside an unlisted cause.
+      'Direction: QUIET\nTrigger: not rare, one phone, timing of the daily log',
+      'Direction: QUIET\nTrigger: not rare (timing)',
+      rare('timing', '\nThis regressed in 1.4; it worked in 1.3.'),
+      'Direction: QUIET\nTrigger: rare (a slow network delays the timing)',
+      // A second instance in any shape the clean line does not cover.
+      rare('timing', '\nTrigger (instance 2): normal'),
+      rare('timing', '\nInstance 2 — Trigger — normal'),
+      rare('timing', '\n**Trigger** normal'),
+      rare('timing', '\nTriggers for B: normal'),
+      'Direction: QUIET\nTrigger:\n- path A: rare (two phones)\n- path B: normal',
+      'Direction: QUIET\n| Trigger | rare (timing) | normal |',
+      // A rule quoted mid-line is not a line of its own.
+      'Direction: QUIET\nThe block says `Trigger: rare (timing)`, or its cause.',
+      'Direction: QUIET\nInstance A — Trigger: rare (timing)',
+    ];
+    for (const [i, d] of passes.entries()) expect([i, door([finding(`CUL-30${10 + i}`, { description: d, keys: [] })], `CUL-30${10 + i}`)]).toEqual([i, 1]);
+    // The clean shapes park: bold, a list item, a trailing full stop.
+    for (const d of ['Direction: QUIET\n**Trigger:** rare (timing)', 'Direction: QUIET\n- Trigger: rare (clock skew).', rare('storage failure', '\nTrigger: rare (two phones)')])
+      expect(door([finding('CUL-3030', { description: d, keys: [] })], 'CUL-3030')).toBe(4);
+  });
+
+  it('adversarial pass 1: scoped as ruled, to this project on a page with a Ship bar', () => {
+    // Another project's finding, read team-wide, is not this dispatcher's to park.
+    const out = run([finding('CUL-3002', { description: rare('clock skew'), inProject: false, project: 'Out of beta', labels: ['Live harm'], keys: [] })]);
+    expect(out.sorted[0].door).toBe(1);
+    expect(out.writes.some((w) => w.write === 'remove label Live harm')).toBe(false);
+    // A page with no Ship bar line has not opted in: the doors run as before.
+    expect(planDispatch(input({ findings: [finding('CUL-3003', { description: rare(), keys: [] })] })).sort!.sorted[0].door).toBe(1);
+  });
+
+  it('adversarial pass 1: a rare park keeps the go-live it gates; only its parent and row links are offered for unlink', () => {
+    const r = run([finding('CUL-3004', { description: rare('timing'), labels: ['Gate: clinical'], blocks: ['CUL-1500', 'CUL-1432'], parentId: 'CUL-1300' })]);
+    expect(r.sorted[0].door).toBe(4);
+    expect(r.unlink).toEqual([{ id: 'CUL-3004', targets: ['CUL-1300', 'CUL-1432'] }]);
+  });
+
   it('a parked rare finding with a parent or a blocks relation is offered for unlink, and counts in the digest', () => {
     const r = run([finding('CUL-2915', { description: rare(), blocks: ['CUL-1432'], keys: [] })]);
     expect(r.unlink).toEqual([{ id: 'CUL-2915', targets: ['CUL-1432'] }]);
@@ -585,6 +630,9 @@ describe('the likelihood gate in the rules a child reads (CUL-2123)', () => {
     expect(text).toContain('rare (two phones | timing | storage failure | clock skew)');
     expect(text).toContain('cannot expose or lose data');
     expect(text).toContain('a clinical finding that passes still needs its ruling');
+    expect(text).toContain('A finding of this project, on a page with a `Ship bar:` line');
+    expect(text).toContain('nothing else in it names a trigger or a regression');
+    expect(text).toContain('a gate label and go-live `blocks` kept');
     expect(sort).toContain('A QUIET or harm finding parks only through the gate');
   });
 
@@ -595,6 +643,7 @@ describe('the likelihood gate in the rules a child reads (CUL-2123)', () => {
     expect(gate).toBeLessThan(block.indexOf('label `Live harm`'));
     expect(block).toContain('a clinical one still needs its ruling');
     expect(block).toContain('never goes in the last bullet unless the gate parks it');
+    expect(block).toContain('goes under the last bullet, uncapped');
   });
 
   it('the page template carries a Done means line and a stated Ship bar', () => {

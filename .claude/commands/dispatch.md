@@ -30,7 +30,6 @@ Without `--dry-run`, a run (and `--row`) writes exactly these: step 0's release 
 - **The Board is last-writer-wins.** Step 8 replaces the whole `## Board` section every run. Anything written there by hand is lost; guidance a session needs belongs in the row's build note.
 - **`auto` is the PM's word, not a test.** A row marked `auto` launches without a separate pick if it passes the hard limits in step 6. Dispatch proposes the marker (Unblock, step 5b, kind *e*); it never sets one without a `fix`.
 - **The sort trusts the filer's `Direction:` tag and `Trigger:` line** (§ The sort); the source PR's adversarial pass is what checks them. Its other blind spots (an untagged issue outside the project; which keys a finding's code sits behind) head `sort.ts`.
-- **Two dispatchers read the same team-wide `Live harm` issue.** The claim re-check (step 7.1) keeps them from both launching it, one Linear write wide.
 
 ## The sort (D1 to D3, retro 4, ruled A 2026-10-11, CUL-1858)
 
@@ -38,7 +37,7 @@ Every finding a session files (a reviewer's, a build's own, a dispatcher's) goes
 
 **1 · The tag.** The filer tags each finding with its direction, in the review's own words (CLAUDE.md DoD, P-16): **QUIET** if it can drop, soften or delay a warning, **LOUD** if it errs toward an extra, earlier or louder one, or **neither**. The tag goes on the issue's first line after the TL;DR (`Direction: QUIET`). **No tag counts as QUIET.**
 
-**1b · The likelihood gate, ahead of door 1** (the ship bar, PM 2026-10-22, CUL-2123). Before a project ships, harm is fixed now only if one owner on one phone hits it in a normal week, it is a regression, or it can leak or lose data. A finding whose every `Trigger:` line reads `rare (two phones | timing | storage failure | clock skew)`, and that cannot expose or lose data, fails it: door 4, kind `rare`, `Direction:` kept, `Live harm` removed, a gate label kept. No line, `normal`, `regression` or any other cause passes. The gate decides fix now or park, never who rules: a clinical finding that passes still needs its ruling.
+**1b · The likelihood gate, ahead of door 1** (the ship bar, PM 2026-10-22, CUL-2123). Before a project ships, harm is fixed now only if one owner on one phone hits it in a normal week, it is a regression, or it can leak or lose data. A finding of this project, on a page with a `Ship bar:` line, fails it when it cannot expose or lose data, a line of its own reads `Trigger: rare (two phones | timing | storage failure | clock skew)`, and nothing else in it names a trigger or a regression: door 4, kind `rare`, `Direction:` kept, `Live harm` removed, a gate label and go-live `blocks` kept. Every other shape passes. The gate decides fix now or park, never who rules: a clinical finding that passes still needs its ruling.
 
 **2 · The four doors.** The first that fits wins:
 
@@ -190,7 +189,7 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
      No tag counts as QUIET.
    - The likelihood gate, ahead of `Live harm`: a finding that needs two phones, precise
      timing, a storage failure or clock skew, and cannot expose or lose data, carries
-     `Trigger: rare (timing)`, or its cause, under Direction and goes under the last bullet.
+     `Trigger: rare (timing)`, or its cause, under Direction and goes under the last bullet, uncapped.
      One a single owner on one phone hits in a normal week, or a regression, carries
      `Trigger: normal` or `regression` and is sorted below; a clinical one still needs its ruling.
    - First check whether it is one instance of a class (another write path, surface or

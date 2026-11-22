@@ -41,7 +41,7 @@ in this project, \`relatedTo\` <CUL-NNN> and never its sub-issue:
   No tag counts as QUIET.
 - The likelihood gate, ahead of \`Live harm\`: a finding that needs two phones, precise
   timing, a storage failure or clock skew, and cannot expose or lose data, carries
-  \`Trigger: rare (timing)\`, or its cause, under Direction and goes under the last bullet.
+  \`Trigger: rare (timing)\`, or its cause, under Direction and goes under the last bullet, uncapped.
   One a single owner on one phone hits in a normal week, or a regression, carries
   \`Trigger: normal\` or \`regression\` and is sorted below; a clinical one still needs its ruling.
 - First check whether it is one instance of a class (another write path, surface or
