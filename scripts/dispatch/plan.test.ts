@@ -111,19 +111,34 @@ describe('the sub-limits hold a ready row', () => {
   });
 });
 
-describe('the gate predicate', () => {
+describe('the gate predicate reads the kept list (CUL-2886)', () => {
   it('plan-gates a migration, RLS, a clinical surface and a Tier-2 edit', () => {
     expect(gateOf({ what: 'x', note: '', migration: true }).planGated).toEqual(['migration']);
-    expect(gateOf({ what: 'x', note: 'rls-privacy-reviewer.', migration: false }).planGated).toEqual(['RLS, Storage, deletion or export']);
-    expect(gateOf({ what: 'x', note: '', migration: false }, { labels: ['Gate: clinical'] }).planGated).toEqual(['clinical']);
-    expect(gateOf({ what: 'x', note: 'the Tier-2 edits', migration: false }).planGated).toEqual(['Tier-2 spec edit']);
+    expect(gateOf({ what: 'x', note: 'rls-privacy-reviewer.', migration: false }).planGated).toEqual(['stakes: privacy, RLS, Storage, deletion, export or share links']);
+    expect(gateOf({ what: 'x', note: '', migration: false }, { labels: ['Gate: clinical'] }).planGated).toEqual(['stakes: clinical (label Gate: clinical)']);
+    expect(gateOf({ what: 'x', note: 'the Tier-2 edits', migration: false }).planGated).toEqual(['scope: scope (in or out of a project, priority between tracks, a spec edit)']);
   });
 
-  it('auto-eligible only when BUILD, routine, copy-free, privilege-free and no migration', () => {
+  it('plan-gates money, App Store and the irreversible, which the old predicate missed', () => {
+    expect(gateOf({ what: 'a paywall on Ask', note: '', migration: false }).kept).toBe('stakes');
+    expect(gateOf({ what: 'x', note: 'ships through App Review.', migration: false }).kept).toBe('stakes');
+    expect(gateOf({ what: 'x', note: 'purge the drafts.', migration: false }).kept).toBe('stakes');
+  });
+
+  it('a taste call plan-gates a BUILD row; a DISCOVERY row is the thing the PM reacts to', () => {
+    expect(gateOf({ what: 'a new layout for the header', note: '', migration: false }).planGated).toEqual(['taste: a visual or motion choice']);
+    const mock = gateOf({ what: 'a mock round for the header', note: '', migration: false });
+    expect(mock).toMatchObject({ mode: 'DISCOVERY', planGated: [], kept: 'taste' });
+    expect(autoEligible(mock)).toBe(false);
+  });
+
+  it('auto-eligible only when BUILD, nothing kept, privilege-free and no migration', () => {
     expect(autoEligible(gateOf({ what: 'A refused meal keeps counting', note: '`lib/analytics.ts`.', migration: false }))).toBe(true);
-    expect(autoEligible(gateOf({ what: 'x', note: 'nyx-voice.', migration: false }))).toBe(false);
+    // Copy inside nyx-voice is a team call now: the old keyword match held this row (CUL-2886 item 4).
+    expect(autoEligible(gateOf({ what: 'x', note: 'nyx-voice copy for the toast; the label string.', migration: false }))).toBe(true);
     expect(autoEligible(gateOf({ what: 'x', note: 'merging redeploys `generate-report`.', migration: false }))).toBe(false);
     expect(autoEligible(gateOf({ what: 'a mock round', note: '', migration: false }))).toBe(false);
+    expect(autoEligible(gateOf({ what: 'x', note: 'tighten the clinical copy.', migration: false }))).toBe(false);
   });
 });
 

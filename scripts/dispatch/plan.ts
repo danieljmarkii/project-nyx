@@ -25,6 +25,7 @@
 import { findAlarms, type Alarm, type FollowUpFact, type Root } from './alarms.ts';
 import { aliasOf, normRow, parsePage, slugOf, type AfterItem, type Page, type PageRow, type RowId } from './page.ts';
 import { LIVE_HARM, WAITING_ON_PM, liveReasons, sortFindings, type Candidate, type LiveFacts, type SortResult } from './sort.ts';
+import { keptOf, type Kept } from '../kept/kept.ts';
 
 export const CAP = 6;
 export const SUB_LIMITS = { waitingOnPm: 3, writesProduction: 3, migrations: 1 } as const;
@@ -101,7 +102,8 @@ export type PlanInput = {
 export type Gate = {
   mode: 'BUILD' | 'DISCOVERY';
   planGated: string[]; // reasons, empty when routine
-  copyBearing: string[];
+  kept: Kept; // the kept list's answer (scripts/kept/kept.ts), CUL-2886
+  keptReasons: string[];
   privileged: string[]; // the sentences that name a privileged verb
   migration: boolean;
 };
@@ -180,27 +182,32 @@ export type Plan = {
 // and again at launch.
 
 const PRIVILEGED = /\b(apply_migration|execute_sql|(?:re)?deploy\w*|merg(?:e|es|ed|ing)|create_session|send\w*|share\w*|secret\w*|token\w*)\b/i;
-const COPY = /\b(nyx-voice|copy|wording|string|label|mock|frame)\b/i;
-
+// The kept list decides what waits on the PM (CUL-2886): one module, read here, by the
+// sweep, by merge-check and by the groomer. A stakes or scope call plan-gates a row; a
+// taste call plan-gates a BUILD row (a DISCOVERY row's deliverable is the thing the PM
+// reacts to). Copy inside nyx-voice and UX inside a ratified round are team calls now, so
+// the old keyword match on `copy`, `string`, `label`, `mock`, `frame` is gone.
 export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?: Pick<IssueFact, 'labels'>): Gate {
   const text = `${row.what} ${row.note}`;
+  const mode = /\b(spec|mock|brief|research|discovery)\b/i.test(text) ? 'DISCOVERY' : 'BUILD';
+  const k = keptOf({ labels: issue?.labels ?? [], text, migration: row.migration });
   const planGated: string[] = [];
   if (row.migration) planGated.push('migration');
-  if (/\bRLS\b|\bpolic(y|ies)\b|\bStorage\b|\bdeletion\b|\bexport\b|rls-privacy-reviewer/.test(text)) planGated.push('RLS, Storage, deletion or export');
-  if ((issue?.labels ?? []).includes('Gate: clinical') || /adversarial-reviewer/.test(text)) planGated.push('clinical');
-  if (/\bTier-2\b|\bTier 2\b/.test(text) || /docs\/[\w./-]+\.md/.test(text)) planGated.push('Tier-2 spec edit');
-  const copyBearing = [...new Set([...text.matchAll(new RegExp(COPY.source, 'gi'))].map((m) => m[0].toLowerCase()))];
+  for (const why of k.reasons) {
+    if (why.startsWith('stakes: schema') && row.migration) continue; // the migration flag says it once
+    if (why.startsWith('taste:') && mode === 'DISCOVERY') continue;
+    planGated.push(why);
+  }
   const privileged = text
     .split(/(?<=[.;])\s+/)
     .filter((s) => PRIVILEGED.test(s))
     .map((s) => s.trim());
-  const mode = /\b(spec|mock|brief|research|discovery)\b/i.test(text) ? 'DISCOVERY' : 'BUILD';
-  return { mode, planGated, copyBearing, privileged, migration: row.migration };
+  return { mode, planGated, kept: k.kept, keptReasons: k.reasons, privileged, migration: row.migration };
 }
 
-// A row may carry `auto` only when this holds (dispatch.md step 5).
+// A row may carry `auto` only when this holds (dispatch.md step 5): nothing on it is kept.
 export function autoEligible(g: Gate): boolean {
-  return g.mode === 'BUILD' && !g.planGated.length && !g.copyBearing.length && !g.privileged.length && !g.migration;
+  return g.mode === 'BUILD' && g.kept === 'none' && !g.privileged.length && !g.migration;
 }
 
 // A merge the check will print `production:` for: a landing that deploys an Edge Function
