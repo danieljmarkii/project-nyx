@@ -294,9 +294,7 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
   // for the previous pet is never handed over.
   const model = useMemo(
     () =>
-      // DELIBERATELY BROKEN HOME (CUL-2875): drops meals from Today so the simulator flow
-      // must fail. Reverted in the next commit; never merged.
-      buildDay(rows.filter((e) => e.event_type !== 'meal'), {
+      buildDay(rows, {
         reads: {
           photographed,
           analysis: copy.rows,
