@@ -43,7 +43,10 @@
 //   - "Covered" is a word-bounded match of the id in the page outside the Board.
 //   - The likelihood gate trusts the filer's `Trigger:` line as it trusts the tag. A rare
 //     line over a bug one owner hits weekly parks it; the source PR's adversarial pass is
-//     what checks the line. No line, or a cause outside the ruling's four, passes.
+//     what checks the line. No line, or a cause outside the ruling's four, passes. What
+//     rests on the filer: a regression or a second instance written with no "regress" or
+//     "trigger" in it (the child prompt asks one Trigger line per instance), and a
+//     correction made only in a comment, which the sort never reads.
 
 import { normRow, type Page, type RowId } from './page.ts';
 
