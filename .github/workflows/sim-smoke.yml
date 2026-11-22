@@ -1,8 +1,14 @@
 # Simulator smoke (CUL-2864, Workflow v2 PR-10; ruled as D6 on CUL-2854): build the app for
 # an iPhone simulator on a free GitHub Mac runner, install it, launch it and photograph the
-# first screen. Nothing is tested yet. This is step one of agents driving an iPhone: it
-# proves the unsigned simulator build works with the widget extension and the App Group,
-# and that the Mac image is offered to this repo.
+# first screen. Step one proved the unsigned simulator build works with the widget extension
+# and the App Group, and that the Mac image is offered to this repo.
+#
+# Step two (CUL-2875, PR-11): one real flow. `.maestro/golden-meal.yaml` signs in as the
+# fixture owner, logs a meal from the plus button and checks it on Home's Today card, with
+# the screen recorded (`simctl io recordVideo`) and the video, the screenshots and the logs
+# linked from the job summary. One retry at most, and the summary says when it was used: a
+# flaky step is fixed, never quarantined. A pass is a smoke reading, never a review: it
+# clears nothing on a never-list surface.
 #
 # REPORTS, NEVER BLOCKS, on layout-captures.yml's terms: its own workflow so it can never
 # join the `main` ruleset's required checks by accident (those are named in ci.yml), and its
@@ -19,9 +25,10 @@
 # @expo/repack-app writes into a copy of the cached app; a native change pays the full
 # xcodebuild. The job summary says which, and how long each took.
 #
-# Fixture only, never a real account: the bundle points Supabase at a name that cannot
-# resolve (.invalid, RFC 6761), as scripts/web-capture/build.sh does. The landing screen
-# needs no account. Read-only token: nothing here comments, pushes or writes outside the run.
+# Fixture only, never a real account: the bundle points Supabase at http://127.0.0.1:54321,
+# where scripts/sim/fixtureServer.ts answers from the device-pass fixture story (the capture
+# path's fixtureRest.ts). The simulator shares the runner's loopback, and the prebuild
+# template allows local HTTP. Nothing else on the runner listens there. Read-only token: nothing here comments, pushes or writes outside the run.
 name: Simulator smoke
 
 on:
@@ -38,6 +45,16 @@ on:
       - 'widgets/**'
       - 'patches/**'
       - 'assets/**'
+      # The flow reads Home, so what Home reads can break it too.
+      - 'lib/**'
+      - 'store/**'
+      - 'hooks/**'
+      - 'constants/**'
+      - '.maestro/**'
+      - 'scripts/sim/**'
+      - 'scripts/fixture/**'
+      - 'scripts/demo/**'
+      - 'scripts/web-capture/fixtureRest.ts'
       - '.github/workflows/sim-smoke.yml'
   workflow_dispatch:
     inputs:
@@ -62,7 +79,10 @@ jobs:
     timeout-minutes: 90
     env:
       WANT_XCODE: ${{ inputs.xcode || '27.1' }}
-      EXPO_PUBLIC_SUPABASE_URL: https://fixture.nyx-capture.invalid
+      EXPO_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      FIXTURE_PORT: '54321'
+      # Released 2026-10-26; the installer fetches exactly this tag.
+      MAESTRO_VERSION: 2.12.0
       EXPO_PUBLIC_SUPABASE_ANON_KEY: fixture-anon-key
       CI: '1'
       EXPO_NO_TELEMETRY: '1'
@@ -218,6 +238,45 @@ jobs:
           echo "BUILD_KIND=warm (cached binary + repacked JS)" >> "$GITHUB_ENV"
           echo "BUILD_SECONDS=$(( $(date +%s) - t0 ))" >> "$GITHUB_ENV"
 
+      # Password AutoFill off before anything types a password (the row's first known trap):
+      # its bar and its "Save password?" sheet steal the password field's taps. The setting
+      # is the simulator's configuration profile, written while it is shut down and read on
+      # the next boot. The files exist once the device has booted, which it did above.
+      - name: Simulator settings (Password AutoFill off)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          xcrun simctl shutdown "$SIM_UDID"
+          dir="$HOME/Library/Developer/CoreSimulator/Devices/$SIM_UDID/data/Containers/Shared/SystemGroup/systemgroup.com.apple.configurationprofiles/Library/ConfigurationProfiles"
+          mkdir -p "$dir/PublicInfo"
+          for f in "$dir/UserSettings.plist" "$dir/EffectiveUserSettings.plist" "$dir/PublicInfo/PublicEffectiveUserSettings.plist"; do
+            [ -f "$f" ] || plutil -create xml1 "$f"
+            /usr/libexec/PlistBuddy -c 'Delete :restrictedBool:allowPasswordAutoFill' "$f" >/dev/null 2>&1 || true
+            /usr/libexec/PlistBuddy -c 'Add :restrictedBool dict' "$f" >/dev/null 2>&1 || true
+            /usr/libexec/PlistBuddy -c 'Add :restrictedBool:allowPasswordAutoFill dict' "$f"
+            /usr/libexec/PlistBuddy -c 'Add :restrictedBool:allowPasswordAutoFill:value bool false' "$f"
+            echo "$(basename "$f"): allowPasswordAutoFill=$(/usr/libexec/PlistBuddy -c 'Print :restrictedBool:allowPasswordAutoFill:value' "$f")"
+          done
+          xcrun simctl boot "$SIM_UDID"
+          xcrun simctl bootstatus "$SIM_UDID" -b
+
+      # Maestro drives the simulator through XCUITest and runs on the JVM the image carries.
+      - name: Install Maestro
+        shell: bash
+        run: |
+          set -euo pipefail
+          for v in 21 17; do
+            for arch in arm64 X64; do
+              var="JAVA_HOME_${v}_${arch}"
+              if [ -n "${!var:-}" ]; then echo "JAVA_HOME=${!var}" >> "$GITHUB_ENV"; export JAVA_HOME="${!var}"; break 2; fi
+            done
+          done
+          java -version
+          curl -fsSL https://get.maestro.mobile.dev | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          "$HOME/.maestro/bin/maestro" --version
+
       - name: Install, launch, screenshot
         shell: bash
         run: |
@@ -236,12 +295,57 @@ jobs:
             exit 1
           fi
           echo "App $bundle is running"
+          echo "APP_ID=$bundle" >> "$GITHUB_ENV"
+
+      # The golden meal. Each attempt gets a fresh fixture host (the first attempt's pushed meal
+      # would otherwise come back on the second's pull and fill Today before the log) and a
+      # video of its own. One retry at most; FLOW_RESULT and FLOW_ATTEMPTS reach the summary.
+      - name: Golden flow (sign in, log a meal, see it on Home)
+        id: flow
+        shell: bash
+        run: |
+          set -uo pipefail
+          FIXTURE_EMAIL="$(node --experimental-strip-types -e 'import("./scripts/web-capture/fixtureRest.ts").then(m => process.stdout.write(m.FIXTURE_EMAIL))' 2>/dev/null)"
+          FIXTURE_PASSWORD="$(node --experimental-strip-types -e 'import("./scripts/sim/fixtureServer.ts").then(m => process.stdout.write(m.FIXTURE_PASSWORD))' 2>/dev/null)"
+          [ -n "$FIXTURE_EMAIL" ] && [ -n "$FIXTURE_PASSWORD" ] || { echo "::error::could not read the fixture credentials"; exit 1; }
+          flow="$GITHUB_WORKSPACE/.maestro/golden-meal.yaml"
+          result=failed
+          for n in 1 2; do
+            echo "::group::Attempt $n"
+            node --experimental-strip-types scripts/sim/fixtureServer.ts "$FIXTURE_PORT" > "$SIM/fixture-$n.log" 2>&1 &
+            fx=$!
+            for _ in $(seq 1 40); do curl -fs "http://127.0.0.1:$FIXTURE_PORT/auth/v1/user" >/dev/null && break; sleep 0.5; done
+            curl -fs "http://127.0.0.1:$FIXTURE_PORT/auth/v1/user" >/dev/null || { echo "::error::the fixture host did not start"; cat "$SIM/fixture-$n.log"; kill "$fx" 2>/dev/null; exit 1; }
+            mkdir -p "$SHOTS/attempt-$n"
+            xcrun simctl io "$SIM_UDID" recordVideo --codec=h264 --force "$SHOTS/golden-meal-$n.mp4" > "$SIM/record-$n.log" 2>&1 &
+            rec=$!
+            sleep 2
+            # Run from the attempt's folder: takeScreenshot writes relative to it.
+            ( cd "$SHOTS/attempt-$n" && maestro test \
+                --format junit --output "$SIM/maestro-$n.xml" \
+                --test-output-dir "$SHOTS/attempt-$n" --debug-output "$SIM/maestro-debug-$n" \
+                -e APP_ID="$APP_ID" -e FIXTURE_EMAIL="$FIXTURE_EMAIL" -e FIXTURE_PASSWORD="$FIXTURE_PASSWORD" \
+                "$flow" )
+            code=$?
+            sleep 1
+            kill -INT "$rec" 2>/dev/null; wait "$rec" 2>/dev/null
+            kill "$fx" 2>/dev/null; wait "$fx" 2>/dev/null
+            echo "Fixture writes: $(grep -c ' write ' "$SIM/fixture-$n.log" || true) ($(grep -o 'write [a-z_]*' "$SIM/fixture-$n.log" | sort | uniq -c | tr '\n' ';'))"
+            echo "::endgroup::"
+            echo "FLOW_ATTEMPTS=$n" >> "$GITHUB_ENV"
+            echo "VIDEO=$SHOTS/golden-meal-$n.mp4" >> "$GITHUB_ENV"
+            echo "MEAL_WRITES=$(grep -c ' write meals ' "$SIM/fixture-$n.log" || true)" >> "$GITHUB_ENV"
+            if [ "$code" -eq 0 ]; then result=passed; break; fi
+            echo "::warning::attempt $n of the golden flow failed (exit $code)"
+          done
+          echo "FLOW_RESULT=$result" >> "$GITHUB_ENV"
+          [ "$result" = passed ] || { echo "::error::the golden flow failed on both attempts: see the video and the Maestro debug output"; exit 1; }
 
       - name: Device log
         if: ${{ !cancelled() && env.SIM_UDID != '' }}
         shell: bash
         run: |
-          xcrun simctl spawn "$SIM_UDID" log show --last 5m --style compact \
+          xcrun simctl spawn "$SIM_UDID" log show --last 15m --style compact \
             --predicate 'process CONTAINS "Culprit" OR eventMessage CONTAINS "com.projectnyx"' > "$SIM/device.log" 2>&1 || true
           tail -40 "$SIM/device.log" || true
 
@@ -255,6 +359,29 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+      # The last attempt's video, unzipped so the summary's link plays it.
+      - name: Upload the video
+        id: video
+        if: ${{ !cancelled() && env.VIDEO != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ env.VIDEO }}
+          archive: false
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload the flow's screenshots
+        id: flowshots
+        if: ${{ !cancelled() && env.FLOW_ATTEMPTS != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sim-smoke-flow-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/sim/shots/attempt-*/**/*.png
+            ${{ runner.temp }}/sim/shots/golden-meal-*.mp4
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Upload the logs
         id: logs
         if: ${{ !cancelled() }}
@@ -264,6 +391,9 @@ jobs:
           path: |
             ${{ runner.temp }}/sim/xcodebuild.log
             ${{ runner.temp }}/sim/device.log
+            ${{ runner.temp }}/sim/fixture-*.log
+            ${{ runner.temp }}/sim/maestro-*.xml
+            ${{ runner.temp }}/sim/maestro-debug-*/**
           if-no-files-found: ignore
           retention-days: 14
 
@@ -272,6 +402,8 @@ jobs:
         env:
           SHOT_URL: ${{ steps.shot.outputs.artifact-url }}
           LOGS_URL: ${{ steps.logs.outputs.artifact-url }}
+          VIDEO_URL: ${{ steps.video.outputs.artifact-url }}
+          FLOWSHOTS_URL: ${{ steps.flowshots.outputs.artifact-url }}
           RUNNER_LABEL: ${{ inputs.runner || 'xcode-27' }}
           FP: ${{ steps.fp.outputs.hash }}
         run: |
@@ -288,7 +420,12 @@ jobs:
             echo "| Build time | ${BUILD_SECONDS:-?}s |"
             echo "| Job time | ${total}s |"
             echo "| Fingerprint | \`${FP:-?}\` |"
+            echo "| Golden meal | ${FLOW_RESULT:-did not run}${FLOW_ATTEMPTS:+ (attempt $FLOW_ATTEMPTS of 2)} |"
+            echo "| Meal rows pushed to the fixture | ${MEAL_WRITES:-?} |"
             echo
+            if [ "${FLOW_ATTEMPTS:-1}" = 2 ]; then echo "> The first attempt failed and the retry ran: a flaky step is fixed, never quarantined (CUL-2875)."; echo; fi
+            if [ -n "$VIDEO_URL" ]; then echo "- [Video of the golden meal]($VIDEO_URL)"; fi
+            if [ -n "$FLOWSHOTS_URL" ]; then echo "- [The flow's screenshots and every attempt's video]($FLOWSHOTS_URL)"; fi
             if [ -n "$SHOT_URL" ]; then echo "- [Launch screenshot]($SHOT_URL)"; else echo "No screenshot was taken: see the failing step."; fi
             if [ -n "$LOGS_URL" ]; then echo "- [Build and device logs]($LOGS_URL)"; fi
           } >> "$GITHUB_STEP_SUMMARY"
