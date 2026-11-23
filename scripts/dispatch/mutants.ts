@@ -220,6 +220,18 @@ const MUTANTS: Mutant[] = [
   { check: 'the page template carries the Ship bar', file: '../../.claude/commands/dispatch.md', from: '- **`Ship bar:`** one line under Done means', to: '- **Ship bar** under Done means' },
   { check: '/wrap names the gate', file: '../../.claude/commands/wrap.md', from: 'the likelihood gate (§ The sort, 1b)', to: 'the gate' },
   { check: 'the groomer does not re-sort a rare park', file: '../../.claude/skills/backlog-groomer/SKILL.md', from: 'unless its every `Trigger:` line is rare', to: 'unless rare' },
+  // The filing precheck (PR-15, CUL-2876): the shield is checked first and every reason holds.
+  { check: 'an untagged finding is shielded', file: 'precheck.ts', from: "  if (f.direction === undefined) why.push('untagged (counts as QUIET)');\n  else if", to: '  if' },
+  { check: 'a QUIET finding is shielded', file: 'precheck.ts', from: "else if (f.direction === 'QUIET') why.push('QUIET');", to: "else if (false) why.push('QUIET');" },
+  { check: 'an untagged bundle item is shielded (CUL-2406)', file: 'precheck.ts', from: 'if (it.direction === undefined) why.push', to: 'if (false) why.push' },
+  { check: 'a QUIET bundle item is shielded', file: 'precheck.ts', from: "else if (it.direction === 'QUIET') why.push", to: 'else if (false) why.push' },
+  { check: 'harm is shielded', file: 'precheck.ts', from: 'if (f.harm) why.push', to: 'if (false) why.push' },
+  { check: 'Live harm and Gate labels are shielded', file: 'precheck.ts', from: 'if (PROTECTED_LABEL.test(l)) why.push', to: 'if (false) why.push' },
+  { check: 'the shield is checked before any reroute', file: 'precheck.ts', from: 'if (shield.length) {', to: 'if (false) {' },
+  { check: 'the category bar is unset until the PM sets it', file: 'precheck.ts', from: 'export const FILING_BAR: number | null = null;', to: 'export const FILING_BAR: number | null = 0.99;' },
+  { check: 'on main goes to the standing issue', file: 'precheck.ts', from: "if (f.origin === 'main' || isRare(f)) {", to: 'if (isRare(f)) {' },
+  { check: 'a duplicate needs its shared file or a near-identical title', file: 'precheck.ts', from: '(sameFile && t >= 0.4) || t >= 0.8', to: 't >= 0.4' },
+  { check: 'fixed needs every cited line gone', file: 'precheck.ts', from: 'cites.every((c) => !ctx.mainHas!(c.file, c.snippet))', to: 'cites.some((c) => !ctx.mainHas!(c.file, c.snippet))' },
 ];
 
 function suiteGreen(): boolean {
