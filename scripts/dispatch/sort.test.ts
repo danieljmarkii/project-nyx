@@ -338,7 +338,7 @@ describe('the cost line: Asks you ≈ N (rule 4, from the gate predicate)', () =
     p.issues['CUL-1601'] = { ...p.issues['CUL-1601'], labels: ['Waiting on PM'] };
     expect(v(planDispatch(p), '27e').asks).toEqual({
       n: 5,
-      parts: ['the pick', 'its plan, then a go typed in its session (plan-gated: migration, RLS, Storage, deletion or export)', 'apply <NNN>', 'merge', 'the pending ruling'],
+      parts: ['the pick', 'its plan, then a go typed in its session (plan-gated: migration, stakes: irreversible (SQL against a database), stakes: clinical surface (by name), stakes: privacy, Storage, deletion, export or share links (by name), stakes: server code over health data (supabase/), stakes: clinical, stakes: privacy, RLS, Storage, deletion, export or share links)', 'apply <NNN>', 'merge', 'the pending ruling'],
     });
   });
 

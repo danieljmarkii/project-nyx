@@ -184,6 +184,13 @@ const MUTANTS: Mutant[] = [
   { check: 'labels compare case-insensitively', file: 'sort.ts', from: "const labelKey = (l: string) => l.toLowerCase().replace(/\\s+/g, '');", to: 'const labelKey = (l: string) => l;' },
   { check: "a forecast stopgap reads the rows under the root", file: 'alarms.ts', from: 'const s = stopgapFor([root, ...rowFacts], input.liveOf);', to: 'const s = stopgapFor([root], input.liveOf);' },
   { check: "a follow-up stopgap reads every one of the row's issues", file: 'alarms.ts', from: 'const s = stopgapFor(r.issues.map((i) => input.rowOutputs?.[i]), input.liveOf);', to: 'const s = stopgapFor([input.rowOutputs?.[r.issues[0]]], input.liveOf);' },
+  // The gate reads the kept list (CUL-2886).
+  { check: 'auto needs nothing kept', file: 'plan.ts', from: "g.mode === 'BUILD' && g.kept === 'none' &&", to: "g.mode === 'BUILD' &&" },
+  { check: 'the gate passes labels to the kept list', file: 'plan.ts', from: 'keptOf({ labels: issue?.labels ?? [], files:', to: 'keptOf({ labels: [], files:' },
+  // pathsIn itself lives in scripts/kept/kept.ts and is proven by scripts/kept/mutants.ts.
+  { check: 'the gate reads the paths a note names', file: 'plan.ts', from: 'files: pathsIn(text), text,', to: 'text,' },
+  { check: 'taste does not plan-gate a DISCOVERY row', file: 'plan.ts', from: "    if (why.startsWith('taste:') && mode === 'DISCOVERY') continue;\n", to: '' },
+  { check: 'taste plan-gates a BUILD row', file: 'plan.ts', from: "if (why.startsWith('taste:') && mode === 'DISCOVERY') continue;", to: "if (why.startsWith('taste:')) continue;" },
   { check: 'the allowlist-read keys include the engine keys', file: 'codeFacts.ts', from: "[...a, ...b]", to: '[...a]' },
   // The likelihood gate (CUL-2123): ahead of the Live harm door, only an explicit rare
   // trigger parks, a leak or loss always passes, and the rule text a child reads says so.

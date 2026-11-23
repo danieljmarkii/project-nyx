@@ -52,8 +52,7 @@ const HEADING = '`## Along the way`';
 const RULE_PHRASES = [
   'a file the PR already touches',
   'about 20 lines',
-  'off the never-list',
-  'privacy / RLS / Storage / deletion / export',
+  'off the kept list',
   'uncertain counts as on it',
   'a test covers it',
   HEADING,
