@@ -1437,8 +1437,10 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
   // card's own four-week halves say recent > prior. Those halves count as a rise too, pending the
   // PM's ruling on what "getting worse" means under Ruling A. Louder only: it can never quiet.
   const chronicRising = (f: Finding, sign: SymptomType): boolean => {
-    const compare = (f as { compare?: { recentCount: number; priorCount: number } }).compare
+    const compare = (f as { compare?: { recentCount: number; priorCount: number; comparable: boolean } }).compare
     if (compare && compare.recentCount > compare.priorCount) return true
+    // Pass 2, R3c: halves logged unlike each other cannot say "steady" (didn't log is not didn't happen).
+    if (compare && compare.comparable === false) return true
     return risingFor(sign) !== 'not_rising'
   }
   const decorated = findings.map((r) => {

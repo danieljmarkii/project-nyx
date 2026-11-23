@@ -1466,8 +1466,8 @@ Deno.test('CUL-2898: the read is per sign, asked only for a card a booking would
 
 Deno.test('CUL-2898 stopgap: a card whose own four-week halves rose keeps its ask, though ④ never read a rise', () => {
   // Every 14 days, then weekly (adversarial pass 1, Q12): under two a week, so ④'s test never fires.
-  const withCompare = (recentCount: number, priorCount: number) =>
-    ({ ...chronicity(), compare: { halfDays: 28, recentCount, priorCount, recentLoggingDays: 28, priorLoggingDays: 28, comparable: true } } as unknown as Finding)
+  const withCompare = (recentCount: number, priorCount: number, comparable = true) =>
+    ({ ...chronicity(), compare: { halfDays: 28, recentCount, priorCount, recentLoggingDays: comparable ? 28 : 16, priorLoggingDays: 28, comparable } } as unknown as Finding)
   const booked = { appointments: [apptAt({ daysAhead: 5 })] }
   const s = stateOf({ findings: [withCompare(4, 2)], symptoms: STABLE, record: booked })
   assertStrictEquals(s.state, 'raised')
@@ -1477,4 +1477,9 @@ Deno.test('CUL-2898 stopgap: a card whose own four-week halves rose keeps its as
   // The differential: level or falling halves, with ④ reading no rise, still quiet.
   assertStrictEquals(stateOf({ findings: [withCompare(3, 3)], symptoms: STABLE, record: booked }).state, 'visit_booked')
   assertStrictEquals(stateOf({ findings: [withCompare(2, 4)], symptoms: STABLE, record: booked }).state, 'visit_booked')
+  // Any rise at all keeps the ask, one episode included (pass 2, R4b: a steady course can flip by
+  // phase; louder, filed with the ruling on CUL-2907).
+  assertStrictEquals(stateOf({ findings: [withCompare(4, 3)], symptoms: STABLE, record: booked }).state, 'raised')
+  // Halves logged unlike each other cannot say steady (pass 2, R3c): equal counts still keep the ask.
+  assertStrictEquals(stateOf({ findings: [withCompare(4, 4, false)], symptoms: STABLE, record: booked }).state, 'raised')
 })
