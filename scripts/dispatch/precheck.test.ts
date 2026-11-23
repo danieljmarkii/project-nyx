@@ -132,3 +132,22 @@ const EXPECTED: Record<string, string> = {
   'CUL-2694': 'standing:on main', 'CUL-2706': 'standing:on main', 'CUL-2714': 'file', 'CUL-2752': 'file', 'CUL-2793': 'file',
   'CUL-2801': 'file', 'CUL-2810': 'file', 'CUL-2831': 'standing:rare', 'CUL-2842': 'file', 'CUL-2850': 'standing:on main',
 };
+
+// The reviewers write the fields precheck reads: one line, the same words in all five.
+describe('every reviewer carries the field line (CUL-2876)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('fs') as typeof import('fs');
+  const FIELDS = 'Direction: QUIET|LOUD|neither · Origin: diff|main (there without this diff) <file:line> · Devices: 1|2+ · Timing: any|race|clock · Precondition: none|abnormal <what>';
+  for (const a of ['adversarial-reviewer', 'code-reviewer', 'rls-privacy-reviewer', 'vet-report-cold-read', 'pm-feature-review']) {
+    it(a, () => {
+      const s = fs.readFileSync(`${__dirname}/../../.claude/agents/${a}.md`, 'utf8');
+      expect(s).toContain(FIELDS);
+      expect(s).toMatch(/Untagged counts as QUIET/);
+    });
+  }
+  it('and the adversarial reviewer still blocks every QUIET break', () => {
+    const s = fs.readFileSync(`${__dirname}/../../.claude/agents/adversarial-reviewer.md`, 'utf8');
+    expect(s).toContain('Every QUIET break is blocking');
+    expect(s).toContain('a QUIET finding stays Blocking');
+  });
+});

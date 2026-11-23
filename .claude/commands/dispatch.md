@@ -52,7 +52,7 @@ A **stopgap** fails toward the louder output: the louder behaviour forced on whe
 
 A **class** goes by its worst instance, and any one live instance splits out of it as its own door-1 issue. A QUIET or harm finding parks only through the gate; a LOUD-only one never gates.
 
-**3 · File the class, not the instance.** Before filing, check whether the finding is one instance of a class (another write path, another surface, another state that can move the same fact). If it is, file the class once, listing every instance found.
+**3 · File the class, after the precheck (D3, CUL-2876).** If the finding is one instance of a class (another write path, surface or state that can move the same fact), file the class once, listing every instance. Then run `scripts/dispatch/precheckCli.ts` on it. A QUIET, untagged, harm, `Live harm` or `Gate:` finding always files; a duplicate or fixed hit is a note in it. Anything else: a duplicate comments on that issue, a fixed one on its source PR, one already on `main` or rare (two phones, race, clock skew, abnormal precondition) on its surface's `Standing · <surface>` issue (door 4, filed once), one in a category under the PM's bar (unset until a PR-03 readout) comments only. A bundle tags each item; an untagged item counts as QUIET.
 
 **4 · A ruling travels with its work (D2).** A parked finding asks the PM nothing until it is pulled into a run order; its question then comes beside the proposed row, with the row's cost. Rulings on door 1 are asked at once, on door 2 at its go-live. A never-list finding never expires: it leaves the board by being fixed or by the PM's ruling (Pets > $).
 

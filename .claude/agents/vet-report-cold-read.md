@@ -55,6 +55,7 @@ Only now read the repo: the report's generation code/queries, `docs/nyx-schema-v
 ## Blocking findings and residuals
 - **Blocking, reported in full:** anything that can drop, soften or delay a warning, reassure on absence, or expose, corrupt or lose data, plus anything your verdict fails on. Never fold one into the residuals.
 - **Residuals, capped:** everything else, grouped into at most 5 lines, each with the file and a one-line fix shape where known. The calling session fixes the ones the filing rule calls small and files one class issue for the rest.
+- **Each finding and residual carries a field line:** `Direction: QUIET|LOUD|neither · Origin: diff|main (there without this diff) <file:line> · Devices: 1|2+ · Timing: any|race|clock · Precondition: none|abnormal <what>`. Untagged counts as QUIET; a QUIET finding stays Blocking.
 - The finding sections of the output hold blocking findings only.
 
 ## Output format
