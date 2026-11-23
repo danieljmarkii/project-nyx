@@ -100,3 +100,16 @@ Deno.test('CUL-2898: a passed visit does not quiet it either, and names no date'
   assertStrictEquals(s.state, 'raised')
   assertStrictEquals('bookedVisit' in s, false)
 })
+
+// Adversarial pass 1, Q12: every 14 days, then weekly. Under two a week, so ④'s own test never
+// reads a rise, while the card's four-week halves say 4 against 2. The stopgap keeps the ask.
+const DOUBLING_SLOWLY = [3, 10, 17, 24, 38, 52, 66, 80].map(vomit)
+
+Deno.test('CUL-2898 stopgap: a low-rate course that doubles keeps its ask past a booking', () => {
+  const card = chronicVomit(run(DOUBLING_SLOWLY, [BOOKING]).findings)
+  const compare = (card as { compare?: { recentCount: number; priorCount: number } }).compare
+  assertEquals([compare?.recentCount, compare?.priorCount], [4, 2], 'the card itself shows the doubling')
+  const s = careStateOf(card)!
+  assertStrictEquals(s.state, 'raised')
+  assertEquals(s.bookedVisit, { on: '2026-09-15', appointmentId: 'appt-5', passed: false })
+})

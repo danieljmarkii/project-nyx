@@ -1432,6 +1432,15 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     rising.set(sign, read)
     return read
   }
+  // CUL-2898 stopgap (adversarial pass 1, Q12): ④'s test needs two episodes in a week, so a course
+  // that doubles at under two a week (every 14 days, then weekly) never reads 'rising', while the
+  // card's own four-week halves say recent > prior. Those halves count as a rise too, pending the
+  // PM's ruling on what "getting worse" means under Ruling A. Louder only: it can never quiet.
+  const chronicRising = (f: Finding, sign: SymptomType): boolean => {
+    const compare = (f as { compare?: { recentCount: number; priorCount: number } }).compare
+    if (compare && compare.recentCount > compare.priorCount) return true
+    return risingFor(sign) !== 'not_rising'
+  }
   const decorated = findings.map((r) => {
     const sign = concernSignOf(r.finding)
     // CUL-2829: the weight card quiets only on `quietBooking`, so a booking whose visit was a call
@@ -1444,7 +1453,7 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     // CUL-2898: the same holds for a chronicity card whose own sign is rising, read per sign (a ④
     // folded into it, a rise behind a steeper sign's card, a rise below ④'s card floor). Only
     // 'not_rising' may quiet; 'not_measured' (or no read wired) keeps the ask.
-    if (fact.state === 'visit_booked' && (r.finding.type === 'symptom_worsening' || (r.finding.type === 'symptom_chronicity' && risingFor(sign) !== 'not_rising'))) {
+    if (fact.state === 'visit_booked' && (r.finding.type === 'symptom_worsening' || (r.finding.type === 'symptom_chronicity' && chronicRising(r.finding, sign)))) {
       const { bookedVisit: _drop, ...rest } = fact
       const loud: CareStateFact = { ...rest, state: 'raised', text: null, ...(upcoming ? { bookedVisit: upcoming.fact } : {}) }
       return { ...r, finding: { ...r.finding, careState: loud } as unknown as Finding }
