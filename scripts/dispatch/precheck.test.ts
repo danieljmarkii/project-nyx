@@ -4,7 +4,7 @@
 import { SAMPLE } from './fixtures/findings-sample-2026-11.ts';
 import { FILING_BAR, precheck, protectedReasons, rerouted, titleOverlap, triggerLine, type ProposedFinding, type Route } from './precheck.ts';
 
-const base: ProposedFinding = { title: 'A thing on the report', direction: 'neither', origin: 'diff', devices: 1, timing: 'any', precondition: 'none', surface: 'vet report', category: 'adversarial-reviewer' };
+const base: ProposedFinding = { title: 'A thing on the report', direction: 'neither', origin: 'diff', devices: 1, timing: 'any', precondition: 'none', harm: 'none', surface: 'vet report', category: 'adversarial-reviewer' };
 const ctx = { open: [], standing: { 'vet report': 'CUL-9001' } };
 const at = (over: Partial<ProposedFinding>, c: Partial<Parameters<typeof precheck>[1]> = {}) => precheck({ ...base, ...over }, { ...ctx, ...c });
 
@@ -17,7 +17,7 @@ describe('the shield: a finding that could quiet a warning is never rerouted', (
     ['clock skew', { timing: 'clock' }, {}],
     ['abnormal precondition', { precondition: 'abnormal' }, {}],
     ['a duplicate', { cites: [{ file: 'a.ts', snippet: 'x' }] }, { open: [{ id: 'CUL-1', title: 'A thing on the report', cites: ['a.ts'] }] }],
-    ['already fixed', { cites: [{ file: 'a.ts', snippet: 'x' }] }, { mainHas: () => false }],
+    ['already fixed', { origin: 'main', cites: [{ file: 'a.ts', snippet: 'x' }] }, { mainHas: () => false }],
     ['under the bar', {}, { bar: 0.5, rates: { 'adversarial-reviewer': 0.1 } }],
   ];
   const shields: [string, Partial<ProposedFinding>][] = [
@@ -25,6 +25,10 @@ describe('the shield: a finding that could quiet a warning is never rerouted', (
     ['untagged', { direction: undefined }],
     ['a QUIET bundle item under a LOUD tag (CUL-2406)', { direction: 'LOUD', items: [{ text: 'a', direction: 'LOUD' }, { text: 'b', direction: 'QUIET' }] }],
     ['an untagged bundle item', { items: [{ text: 'a', direction: 'neither' }, { text: 'b' }] }],
+    ['harm untagged', { harm: undefined }],
+    ['the words say quiet, the tag says LOUD', { direction: 'LOUD', title: 'The decline card goes quiet after 48 hours' }],
+    ['a QUIET Direction line in the text, neither in the fields', { text: 'Direction: QUIET' }],
+    ['a Harm line in the text, none in the fields', { text: 'Harm: exposure' }],
     ['exposure', { harm: 'exposure' }],
     ['loss', { harm: 'loss' }],
     ['corruption', { harm: 'corruption' }],
@@ -38,10 +42,11 @@ describe('the shield: a finding that could quiet a warning is never rerouted', (
     }
   }
   it('a shielded duplicate or fixed hit is a note on the filing, never a skip', () => {
-    const r = at({ direction: 'QUIET', cites: [{ file: 'a.ts', snippet: 'x' }] }, { open: [{ id: 'CUL-1', title: 'A thing on the report', cites: ['a.ts'] }], mainHas: () => false }) as Extract<Route, { route: 'file' }>;
+    const r = at({ direction: 'QUIET', origin: 'main', cites: [{ file: 'a.ts', snippet: 'x' }] }, { open: [{ id: 'CUL-1', title: 'A thing on the report', cites: ['a.ts'] }], mainHas: () => false }) as Extract<Route, { route: 'file' }>;
     expect(r.notes.join(' ')).toMatch(/possible duplicate of CUL-1/);
     expect(r.notes.join(' ')).toMatch(/gone from main/);
   });
+  it('an untagged Harm field is its own reason', () => expect(protectedReasons({ ...base, harm: undefined })).toEqual(['harm untagged (counts as harm)']));
   it('LOUD and neither with no bundle are not shielded', () => {
     expect(protectedReasons({ ...base, direction: 'LOUD' })).toEqual([]);
     expect(protectedReasons(base)).toEqual([]);
@@ -58,12 +63,23 @@ describe('routes for an unshielded finding', () => {
     expect(at({ title: 'Phone guard: check paint, opacity, clip and transform', cites: [{ file: 'other.ts', snippet: '' }] }, { open }).route).toBe('file');
     expect(titleOverlap('Sync banner ages', 'Sync banner ages')).toBe(1);
   });
-  it('fixed only when every cited line is gone from main', () => {
+  it('fixed only when a defect on main has every cited line gone from main', () => {
     const cites = [{ file: 'a.ts', snippet: 'x' }, { file: 'b.ts', snippet: 'y' }];
-    expect(at({ cites }, { mainHas: () => false }).route).toBe('fixed');
-    expect(at({ cites }, { mainHas: (f) => f === 'b.ts' }).route).toBe('file');
-    expect(at({}, { mainHas: () => false }).route).toBe('file');
+    expect(at({ origin: 'main', cites }, { mainHas: () => false }).route).toBe('fixed');
+    expect(at({ origin: 'main', cites }, { mainHas: (f) => f === 'b.ts' }).route).toBe('standing');
+    expect(at({ origin: 'main' }, { mainHas: () => false }).route).toBe('standing');
+    expect(at({ origin: 'main', cites: [{ file: 'a.ts', snippet: '' }] }, { mainHas: () => false }).route).toBe('standing');
   });
+  it('a line this diff adds is never "fixed": it is not on main before merge (pass 1)', () => {
+    expect(at({ cites: [{ file: 'lib/newReport.ts', snippet: 'if (pets > 1) return []' }] }, { mainHas: () => false }).route).toBe('file');
+  });
+  it('a closed issue, or one on another surface by title alone, absorbs nothing', () => {
+    const t = 'Intake refusal count wrong';
+    expect(at({ title: t }, { open: [{ id: 'CUL-1', title: t, state: 'Done' }] }).route).toBe('file');
+    expect(at({ title: t }, { open: [{ id: 'CUL-1', title: t, surface: 'Home' }] }).route).toBe('file');
+    expect(at({ title: t }, { open: [{ id: 'CUL-1', title: t, surface: 'vet report' }] }).route).toBe('duplicate');
+  });
+  it('a class is never rare: it files', () => expect(at({ title: 'Three instances of a stale date', devices: 2 }).route).toBe('file'));
   it('the trigger line the sort reads (CUL-2123) maps onto its four causes only', () => {
     expect(triggerLine({ ...base, devices: 2 })).toBe('Trigger: rare (two phones)');
     expect(triggerLine({ ...base, timing: 'race' })).toBe('Trigger: rare (timing)');
@@ -71,6 +87,13 @@ describe('routes for an unshielded finding', () => {
     expect(triggerLine({ ...base, precondition: 'abnormal', preconditionCause: 'storage failure' })).toBe('Trigger: rare (storage failure)');
     expect(triggerLine({ ...base, precondition: 'abnormal', preconditionCause: 'other' })).toBeUndefined();
     expect(triggerLine(base)).toBeUndefined();
+  });
+  it('no trigger line for a bundle, a class or harm: the sort must never park those (pass 1)', () => {
+    expect(at({ devices: 2, items: [{ text: 'weekly', direction: 'QUIET' }, { text: 'rare', direction: 'LOUD' }] })).toMatchObject({ route: 'file', trigger: undefined });
+    expect(at({ direction: 'QUIET', timing: 'race', harm: 'loss' })).toMatchObject({ route: 'file', trigger: undefined });
+    expect(at({ direction: 'QUIET', timing: 'race', text: 'Harm: loss' })).toMatchObject({ route: 'file', trigger: undefined });
+    expect(triggerLine({ ...base, devices: 2, title: 'One class, two instances' })).toBeUndefined();
+    expect(at({ direction: 'QUIET', timing: 'race' })).toMatchObject({ route: 'file', trigger: 'Trigger: rare (timing)' });
   });
 });
 
@@ -87,9 +110,13 @@ describe('the category bar waits for the PM', () => {
 });
 
 describe('replay: 60 recorded findings against the retro (CUL-2876)', () => {
-  // Each finding sees every earlier sample finding as an open issue, as a filer would have.
-  const open = SAMPLE.map((s) => ({ id: s.id, title: s.f.title, cites: (s.f.cites ?? []).map((c) => c.file) }));
-  const routes = SAMPLE.map((s, i) => ({ ...s, r: precheck(s.f, { open: open.slice(0, i), standing: {} }) }));
+  // Each finding sees, as open issues, the earlier sample findings the precheck filed.
+  const open: { id: string; title: string; cites: string[]; surface: string }[] = [];
+  const routes = SAMPLE.map((s) => {
+    const r = precheck(s.f, { open: [...open], standing: {} });
+    if (r.route === 'file') open.push({ id: s.id, title: s.f.title, cites: (s.f.cites ?? []).map((c) => c.file), surface: s.f.surface });
+    return { ...s, r };
+  });
   const of = (score: string) => routes.filter((x) => x.score === score);
 
   it('is the sample it says it is', () => {
@@ -125,7 +152,7 @@ const EXPECTED: Record<string, string> = {
   'CUL-2323': 'file', 'CUL-2331': 'file', 'CUL-2340': 'file', 'CUL-2351': 'file', 'CUL-2361': 'file', 'CUL-2369': 'standing:on main',
   'CUL-2378': 'file', 'CUL-2389': 'standing:rare', 'CUL-2399': 'standing:rare', 'CUL-2409': 'file', 'CUL-2418': 'standing:rare',
   'CUL-2426': 'standing:rare', 'CUL-2433': 'duplicate', 'CUL-2442': 'file', 'CUL-2452': 'standing:rare', 'CUL-2465': 'file',
-  'CUL-2473': 'file', 'CUL-2483': 'standing:on main', 'CUL-2493': 'duplicate', 'CUL-2501': 'file', 'CUL-2510': 'file',
+  'CUL-2473': 'file', 'CUL-2483': 'standing:on main', 'CUL-2493': 'standing:on main', 'CUL-2501': 'file', 'CUL-2510': 'file',
   'CUL-2519': 'file', 'CUL-2528': 'file', 'CUL-2547': 'file', 'CUL-2557': 'standing:on main', 'CUL-2567': 'standing:rare',
   'CUL-2575': 'file', 'CUL-2584': 'standing:rare', 'CUL-2593': 'file', 'CUL-2600': 'standing:rare', 'CUL-2608': 'file',
   'CUL-2618': 'file', 'CUL-2640': 'standing:on main', 'CUL-2648': 'file', 'CUL-2677': 'standing:on main', 'CUL-2686': 'file',
@@ -137,17 +164,18 @@ const EXPECTED: Record<string, string> = {
 describe('every reviewer carries the field line (CUL-2876)', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('fs') as typeof import('fs');
-  const FIELDS = 'Direction: QUIET|LOUD|neither · Origin: diff|main (there without this diff) <file:line> · Devices: 1|2+ · Timing: any|race|clock · Precondition: none|abnormal <what>';
+  const FIELDS = 'Direction: QUIET|LOUD|neither · Origin: diff|main (there without this diff) <file:line> · Devices: 1|2+ · Timing: any|race|clock · Precondition: none|abnormal <what> · Harm: none|exposure|loss|corruption';
   for (const a of ['adversarial-reviewer', 'code-reviewer', 'rls-privacy-reviewer', 'vet-report-cold-read', 'pm-feature-review']) {
     it(a, () => {
       const s = fs.readFileSync(`${__dirname}/../../.claude/agents/${a}.md`, 'utf8');
       expect(s).toContain(FIELDS);
-      expect(s).toMatch(/Untagged counts as QUIET/);
+      expect(s).toMatch(/Untagged counts as QUIET and as harm/);
     });
   }
   it('and the adversarial reviewer still blocks every QUIET break', () => {
     const s = fs.readFileSync(`${__dirname}/../../.claude/agents/adversarial-reviewer.md`, 'utf8');
     expect(s).toContain('Every QUIET break is blocking');
     expect(s).toContain('a QUIET finding stays Blocking');
+    expect(s).toContain('A QUIET break blocks at any pass.');
   });
 });

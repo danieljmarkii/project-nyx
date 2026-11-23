@@ -42,7 +42,7 @@ Clinically- or statistically-load-bearing logic: correlation/detection engines, 
 ## Blocking findings and residuals
 - **Blocking, reported in full:** anything that can drop, soften or delay a warning, reassure on absence, or expose, corrupt or lose data, plus anything your verdict fails on. Every QUIET break is blocking; a LOUD one is a residual. Never fold one into the residuals.
 - **Residuals, capped:** everything else, grouped into at most 5 lines, each with the file and a one-line fix shape where known. The calling session fixes the ones the filing rule calls small and files one class issue for the rest.
-- **Each finding and residual carries a field line:** `Direction: QUIET|LOUD|neither · Origin: diff|main (there without this diff) <file:line> · Devices: 1|2+ · Timing: any|race|clock · Precondition: none|abnormal <what>`. Untagged counts as QUIET; a QUIET finding stays Blocking.
+- **Each finding and residual carries a field line:** `Direction: QUIET|LOUD|neither · Origin: diff|main (there without this diff) <file:line> · Devices: 1|2+ · Timing: any|race|clock · Precondition: none|abnormal <what> · Harm: none|exposure|loss|corruption`. Untagged counts as QUIET and as harm; a QUIET finding stays Blocking.
 
 ## Output format
 ```
@@ -66,6 +66,6 @@ Clinically- or statistically-load-bearing logic: correlation/detection engines, 
 <e.g. "Biostatistician: tried a daily staple + sporadic treat → staple correctly washes out (no discordant pairs) ✓; tried attention-biased control logging → logging-eligibility guard holds ✓">
 ```
 
-The PR's pass cap is two (above): if the invoker says this is pass 2, end the verdict with one line, `Ships at the cap: yes` when every break is LOUD, `no` when any is QUIET.
+The PR's pass cap is two (above): if the invoker says this is pass 2, end the verdict with one line, `Ships at the cap: yes` when every break is LOUD, `no` when any is QUIET. A QUIET break blocks at any pass.
 
 If you cannot name a single falsification attempt for a piece of logic, say so plainly — that means it has not been reviewed, and you must not imply otherwise.

@@ -16,7 +16,10 @@
 // put in the new field line. A judgement call is noted on its row.
 //
 // The retro predicted, on its sample: 20 to 24 of 29 low value rerouted (69% to 83%), none of
-// 25 worth fixing, no QUIET one. replay.test.ts holds this sample to those shares.
+// 25 worth fixing, no QUIET one. precheck.test.ts holds this sample (30 low, 24 worth) to
+// those shares. Harm is `none` unless a row says otherwise: each issue's text was read for it.
+// One author scored the sample and wrote the rules, so the replay shows the rules agree with
+// that reading; a second scorer would make it a test of the reading too.
 
 import type { ProposedFinding } from '../precheck.ts';
 
@@ -27,7 +30,7 @@ const row = (id: string, score: Score, f: Partial<ProposedFinding> & Pick<Propos
   id,
   score,
   note,
-  f: { origin: 'diff', devices: 1, timing: 'any', precondition: 'none', category: 'adversarial-reviewer', ...f },
+  f: { origin: 'diff', devices: 1, timing: 'any', precondition: 'none', harm: 'none', category: 'adversarial-reviewer', ...f },
 });
 
 const HARM = ['Live harm'];
@@ -36,7 +39,7 @@ export const SAMPLE: SampleRow[] = [
   row('CUL-2091', 'other', { title: "Sync: retire meal_components' double upload once migration 107 is applied", direction: 'neither', surface: 'sync', category: 'build:cleanup' }),
   row('CUL-2098', 'worth', { title: "Moving a warned meal's time to before the trial leaves its food's trial heads-up used up", direction: 'QUIET', surface: 'trial' }),
   row('CUL-2106', 'worth', { title: "A fresh log's trial heads-up is lost when a newer log replaces its card before it shows", direction: 'QUIET', labels: HARM, surface: 'trial' }),
-  row('CUL-2114', 'low', { title: "anon keeps the platform's default grants on events, pets, vet_visits and the other public tables", direction: 'neither', origin: 'main', surface: 'privacy guards', category: 'rls-privacy-reviewer:guard' }),
+  row('CUL-2114', 'low', { title: "anon keeps the platform's default grants on events, pets, vet_visits and the other public tables", direction: 'neither', text: 'The access rules refuse every one of those writes and reads, so nothing leaks today. Direction: neither (a second-order guard)', origin: 'main', surface: 'privacy guards', category: 'rls-privacy-reviewer:guard' }),
   row('CUL-2122', 'worth', { title: 'Mixed meals: a bowl read as last recorded is still only half-used by the intake, treat and detection readers', direction: 'QUIET', timing: 'race', surface: 'intake', items: [{ text: 'all-treat bowl hides a refusal', direction: 'QUIET' }, { text: 'treat missing from the report list', direction: 'QUIET' }] }, 'a sync race, so rare, but QUIET: never rerouted'),
   row('CUL-2131', 'low', { title: 'Vet report: "of a 56-day window" reads as the report window when the two lengths match', direction: 'neither', origin: 'main', surface: 'vet report', category: 'vet-report-cold-read' }),
   row('CUL-2147', 'low', { title: 'VomitAnalysisSection suite: a stored fold seeded with setObservationFold may never be read back', direction: 'neither', origin: 'main', surface: 'tests', category: 'build:test' }),
@@ -65,7 +68,7 @@ export const SAMPLE: SampleRow[] = [
   row('CUL-2465', 'worth', { title: 'Vet report draft reaper: a stopped or stalled sweep is seen by no one', labels: [...HARM, 'Gate: privacy'], surface: 'storage', category: 'rls-privacy-reviewer' }),
   row('CUL-2473', 'worth', { title: 'Report WebViews: navigations that still skip the load check', labels: HARM, harm: 'exposure', surface: 'vet report', category: 'rls-privacy-reviewer' }),
   row('CUL-2483', 'low', { title: 'Vet report: trial and medication polish from the CUL-2440 cold read', direction: 'neither', origin: 'main', surface: 'vet report', category: 'vet-report-cold-read', items: [{ text: 'two halving schemes', direction: 'neither' }, { text: "Motozol's route", direction: 'neither' }, { text: 'sheet 1 spills to a page 2', direction: 'neither' }] }),
-  row('CUL-2493', 'low', { title: 'Vet report: cold-read polish on the trial pages', direction: 'LOUD', origin: 'main', surface: 'vet report', category: 'vet-report-cold-read', items: [{ text: 'refusal wording over 2 of 4', direction: 'LOUD' }, { text: 'untraceable denominator', direction: 'neither' }, { text: '"this copy"', direction: 'neither' }, { text: 'collapsed treat dates', direction: 'neither' }, { text: 'post-trial vomits counted', direction: 'neither' }, { text: 'demo meals at 03:00', direction: 'neither' }] }, 'same class as CUL-2483 (cold-read polish on the trial pages), so its items join that issue'),
+  row('CUL-2493', 'low', { title: 'Vet report: cold-read polish on the trial pages', direction: 'LOUD', origin: 'main', surface: 'vet report', category: 'vet-report-cold-read', items: [{ text: 'refusal wording over 2 of 4', direction: 'LOUD' }, { text: 'untraceable denominator', direction: 'neither' }, { text: '"this copy"', direction: 'neither' }, { text: 'collapsed treat dates', direction: 'neither' }, { text: 'post-trial vomits counted', direction: 'neither' }, { text: 'demo meals at 03:00', direction: 'neither' }] }, 'the same class as CUL-2483, which itself went to the standing issue, so both land there'),
   row('CUL-2501', 'worth', { title: 'Android: can the vet document viewer drop a PDF into public Downloads?', direction: 'QUIET', labels: HARM, harm: 'exposure', surface: 'vet files', category: 'rls-privacy-reviewer' }),
   row('CUL-2510', 'worth', { title: 'Vet report: the chronicity flag says "44 days is a floor" while the trial block counts the same signs 52 days earlier', labels: HARM, surface: 'vet report', category: 'vet-report-cold-read' }),
   row('CUL-2519', 'low', { title: 'Vet report drafts: the overdue check cannot see a stored report file left behind with no draft row', direction: 'QUIET', precondition: 'abnormal', surface: 'storage', category: 'rls-privacy-reviewer' }, 'low value (no code path makes the orphan) but tagged QUIET, so it files'),

@@ -225,13 +225,20 @@ const MUTANTS: Mutant[] = [
   { check: 'a QUIET finding is shielded', file: 'precheck.ts', from: "else if (f.direction === 'QUIET') why.push('QUIET');", to: "else if (false) why.push('QUIET');" },
   { check: 'an untagged bundle item is shielded (CUL-2406)', file: 'precheck.ts', from: 'if (it.direction === undefined) why.push', to: 'if (false) why.push' },
   { check: 'a QUIET bundle item is shielded', file: 'precheck.ts', from: "else if (it.direction === 'QUIET') why.push", to: 'else if (false) why.push' },
-  { check: 'harm is shielded', file: 'precheck.ts', from: 'if (f.harm) why.push', to: 'if (false) why.push' },
+  { check: 'untagged harm is shielded', file: 'precheck.ts', from: "if (f.harm === undefined) why.push", to: 'if (false) why.push' },
+  { check: 'harm is shielded', file: 'precheck.ts', from: "else if (f.harm !== 'none') why.push", to: 'else if (false) why.push' },
+  { check: 'the words saying quiet shield', file: 'precheck.ts', from: "if (/\\bquiet/i.test(text) || (f.text && directionOf(f.text) === 'QUIET')) why.push", to: 'if (false) why.push' },
+  { check: 'a Harm field in the text shields', file: 'precheck.ts', from: "if (fl.harm && fl.harm !== 'none') why.push", to: 'if (false) why.push' },
+  { check: 'a diff-caused finding is never fixed', file: 'precheck.ts', from: "const fixed = f.origin === 'main' && ", to: 'const fixed = ' },
+  { check: 'no trigger line for a bundle, a class or harm', file: 'precheck.ts', from: "if (f.items?.length || isClass(f) || f.harm !== 'none' || (textHarm && textHarm !== 'none')) return undefined;", to: '' },
+  { check: 'a class is never rare', file: 'precheck.ts', from: '!isClass(f) && (', to: '(' },
+  { check: 'a closed issue absorbs nothing', file: 'precheck.ts', from: 'if (o.state && CLOSED.test(o.state)) continue;', to: '' },
   { check: 'Live harm and Gate labels are shielded', file: 'precheck.ts', from: 'if (PROTECTED_LABEL.test(l)) why.push', to: 'if (false) why.push' },
   { check: 'the shield is checked before any reroute', file: 'precheck.ts', from: 'if (shield.length) {', to: 'if (false) {' },
   { check: 'the category bar is unset until the PM sets it', file: 'precheck.ts', from: 'export const FILING_BAR: number | null = null;', to: 'export const FILING_BAR: number | null = 0.99;' },
   { check: 'on main goes to the standing issue', file: 'precheck.ts', from: "if (f.origin === 'main' || isRare(f)) {", to: 'if (isRare(f)) {' },
-  { check: 'a duplicate needs its shared file or a near-identical title', file: 'precheck.ts', from: '(sameFile && t >= 0.4) || t >= 0.8', to: 't >= 0.4' },
-  { check: 'fixed needs every cited line gone', file: 'precheck.ts', from: 'cites.every((c) => !ctx.mainHas!(c.file, c.snippet))', to: 'cites.some((c) => !ctx.mainHas!(c.file, c.snippet))' },
+  { check: 'a duplicate needs its shared file or a near-identical title', file: 'precheck.ts', from: '(sameFile && t >= 0.4) || (!otherSurface && t >= 0.8)', to: 't >= 0.4' },
+  { check: 'fixed needs every cited line gone', file: 'precheck.ts', from: "cites.every((c) => c.snippet !== '' && !ctx.mainHas!(c.file, c.snippet))", to: "cites.some((c) => c.snippet !== '' && !ctx.mainHas!(c.file, c.snippet))" },
 ];
 
 function suiteGreen(): boolean {
