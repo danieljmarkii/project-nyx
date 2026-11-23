@@ -245,6 +245,13 @@ Deno.test('CUL-2900: consent withdrawn at the second checker, after a repair: no
   assert.deepEqual([f.writes[0].text, f.writes[0].verdict.sentences, f.writes[0].verdict.checker], [null, null, null])
 })
 
+Deno.test('CUL-2900: a re-read that throws before the keep fails closed: the lead is never kept', async () => {
+  const f = fake({ gate: withdrawingGate(2, 'throw'), answers: [writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.deepEqual(r, { outcome: 'declined', reason: 'ai_boundary' })
+  assert.deepEqual([f.writes[0].text, f.writes[0].model, f.writes[0].verdict.sentences, f.writes[0].verdict.checker], [null, null, null, null])
+})
+
 Deno.test('CUL-2900: consent withdrawn while the checker was answering: the lead is never kept', async () => {
   const f = fake({ gate: withdrawingGate(2), answers: [writer(GOOD), checker()] })
   const r = await runAiLead(f.io, FACTS, { leaveOut: false })
