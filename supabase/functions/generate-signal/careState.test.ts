@@ -80,6 +80,9 @@ interface Case {
   lastVisitOn?: string | null
   lastContactOn?: string | null
   nowMs?: number
+  /** CUL-2898: the per-sign rise read. Every fixture here is a steady course unless it says
+   *  otherwise; the step's own default (no read wired) is the loud one, tested on its own. */
+  risingOnSign?: CareStateArgs['risingOnSign'] | null
 }
 
 // CUL-1667: an answer is given on a concern card, so a case with no prior row of its own carries
@@ -108,6 +111,7 @@ function args(c: Case): CareStateArgs {
     recencyDaysFor: () => 14,
     priorFindings: held ? heldRow(c) : c.priorFindings ?? null,
     priorGeneratedAtMs: held && !('priorGeneratedAtMs' in c) ? now - DAY : c.priorGeneratedAtMs ?? null,
+    ...(c.risingOnSign === null ? {} : { risingOnSign: c.risingOnSign ?? (() => 'not_rising' as const) }),
   }
 }
 
@@ -1404,3 +1408,50 @@ Deno.test('CUL-2841 adv pass 2 B2: a re-raised concern whose answer is corrected
   }
 })
 
+
+// ── CUL-2898: a chronicity card whose own sign is rising keeps Ruling A's ask past a booking ──
+// The read is per sign (detection's `foldedWorsening`): a ④ folded into the card, a rise behind a
+// steeper sign's ④ card, and a rise below ④'s card floor all read 'rising'. Only 'not_rising' quiets.
+
+Deno.test('CUL-2898: a rising or unmeasured chronicity card keeps its ask over an upcoming booking, with the date beside it', () => {
+  for (const read of ['rising', 'not_measured'] as const) {
+    const s = stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7 })] }, risingOnSign: () => read })
+    assertStrictEquals(s.state, 'raised', read)
+    assertStrictEquals(s.text, null, `${read}: the lane's own ask stands`)
+    assertEquals(s.bookedVisit, { on: '2026-10-07', appointmentId: 'appt-7', passed: false }, read)
+  }
+  // The differential: the same card, not rising, goes quiet.
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7 })] }, risingOnSign: () => 'not_rising' }).state, 'visit_booked')
+})
+
+Deno.test('CUL-2898: a passed visit never quiets a rising chronicity card, and names no date', () => {
+  const s = stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: -2 })] }, risingOnSign: () => 'rising' })
+  assertStrictEquals(s.state, 'raised')
+  assertStrictEquals('bookedVisit' in s, false)
+})
+
+Deno.test('CUL-2898: no rise read wired counts as not measured (loud)', () => {
+  assertStrictEquals(stateOf({ symptoms: STABLE, record: { appointments: [apptAt({ daysAhead: 7 })] }, risingOnSign: null }).state, 'raised')
+})
+
+Deno.test('CUL-2898: the read is per sign, asked only for a card a booking would quiet, and once per sign', () => {
+  const asked: SymptomType[] = []
+  const read = (sign: SymptomType) => {
+    asked.push(sign)
+    return sign === 'vomit' ? 'rising' as const : 'not_rising' as const
+  }
+  const rows = step({
+    findings: [chronicity('vomit'), chronicity('cough')],
+    symptoms: [...STABLE, ...events('cough', everyNth(7, 160), 9)],
+    record: { appointments: [apptAt({ daysAhead: 7 })] },
+    risingOnSign: read,
+  } as Case)
+  const of = (sign: SymptomType) => careStateOf(rows.find((r) => (r.finding as { symptomType?: string }).symptomType === sign)!.finding)!
+  assertStrictEquals(of('vomit').state, 'raised', 'the rising sign keeps its ask')
+  assertStrictEquals(of('cough').state, 'visit_booked', 'the steady sign beside it goes quiet')
+  assertEquals(asked.sort(), ['cough', 'vomit'])
+  // No booking: nothing would quiet, so the read (four weeks of replayed detection) is never asked.
+  asked.length = 0
+  step({ findings: [chronicity('vomit')], symptoms: STABLE, risingOnSign: read })
+  assertEquals(asked, [])
+})
