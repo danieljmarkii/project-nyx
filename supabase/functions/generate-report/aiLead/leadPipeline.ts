@@ -307,13 +307,13 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
     verdict.attempts += role === 'checker' ? 0 : 1
     return io.send(role, requestBody(role, payload), ticket, Math.min(ROLE_TIMEOUT_MS[role], left))
   }
-  const fail = (reason: string) => {
-    if (withdrawn) {
-      const g = gateOutcome(withdrawn)
-      return record({ ...verdict, outcome: g.outcome, reason: g.reason })
-    }
-    return record({ ...verdict, outcome: 'failed', reason })
+  // A withdrawn run keeps no model output on the row: no sentences, no checker verdict. Migration
+  // 118's trigger refuses a row carrying them once a yes is gone, which would lose the outcome.
+  const refused = (g: Extract<SummaryGate, { allow: false }>) => {
+    const out = gateOutcome(g)
+    return record({ ...verdict, outcome: out.outcome, reason: out.reason, sentences: null, checker: null })
   }
+  const fail = (reason: string) => (withdrawn ? refused(withdrawn) : record({ ...verdict, outcome: 'failed', reason }))
   const reject = (reason: string) => record({ ...verdict, outcome: 'rejected', reason })
 
   // 6. Write, verify, repair once.
@@ -377,7 +377,15 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
     break
   }
 
-  // 8. Keep it on the draft row.
+  // 8. Keep it on the draft row, once the gate still allows it (CUL-2900): a yes withdrawn while
+  // the last call was in flight keeps no lead, whatever the database's own trigger would do.
+  let still: SummaryGate
+  try {
+    still = await io.runGate(false)
+  } catch {
+    still = { allow: false, reason: 'consent_declined', scope: 'ai_boundary', unread: true }
+  }
+  if (!still.allow) return refused(still)
   // The verdict keeps the PRINTED sentences, the ones verified, so text, verdict and page agree.
   const printed = printedSentences(summary)
   const sentences = summary.sentences.map((s, i) => ({ text: printed[i], cites: s.cites }))
