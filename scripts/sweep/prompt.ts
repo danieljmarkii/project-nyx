@@ -85,11 +85,11 @@ the PR and what to type, nothing more. Restore the title when you resume.`,
 these holds on a fresh read taken immediately before the merge: it is not a draft; every
 check on its head commit has completed and passed (Claude Approvals included, where it
 runs); GitHub reports it mergeable with no conflict; the head is the commit those checks
-ran on and the one \`scripts/steward/merge-check.sh\` called CLEAN (or whose REVIEW you
-cleared in writing, per the steward skill §5, which a \`production:\` line never is); the
-issue's Definition of Done passes,
-adversarial review included where the issue requires it; and the PR holds no migration
-that is unapplied and needs none.
+ran on and the one \`scripts/steward/merge-check.sh --verify\`, run immediately before,
+called CLEAN (or whose REVIEW you cleared in writing, per the steward skill §5, which a
+\`production:\` line never is); the issue's Definition of Done passes, adversarial review
+included where the issue requires it; the PR holds no migration that is unapplied and
+needs none; and no device check the issue's QA names is pending.
 Anything short of that, leave the PR for the PM and say which condition failed.`,
 } as const;
 
