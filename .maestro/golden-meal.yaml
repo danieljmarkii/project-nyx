@@ -1,0 +1,80 @@
+# The golden meal (CUL-2875, Workflow v2 PR-11): sign in as the fixture owner, log a meal
+# from the plus button, and see it on Home. Run by .github/workflows/sim-smoke.yml against
+# scripts/sim/fixtureServer.ts on 127.0.0.1; never against a real project or account.
+#
+# The proof is the Today card's change of state. The fixture's record ends yesterday, so
+# Today opens empty (`today-empty`); after the log it must hold a meal row naming the food
+# and the day's count line. A Home that drops the meal fails at "Home shows the meal".
+#
+# Traps, from the row's build note: Password AutoFill is switched off on the simulator by
+# the workflow before boot, and the keyboard is never dismissed with hideKeyboard (unreliable
+# on iOS): the password field's Go key submits the form, which is what an owner does.
+appId: ${APP_ID}
+name: Golden meal
+env:
+  # The tile's spoken name is brand and product; a regex, as Maestro matches the whole label.
+  FOOD_TILE: ".*Fieldstone Venison & Potato.*"
+  # Inside the Today card only: the trial card elsewhere on Home names the same food.
+  FOOD_ROW: ".*Venison & Potato.*"
+---
+# The session lives in the Keychain, which clearState does not touch and a reinstall keeps:
+# without this, a retry after a sign-in would open on Home and never see the landing.
+- clearKeychain
+- launchApp:
+    clearState: true
+    permissions:
+      all: deny
+- extendedWaitUntil:
+    visible:
+      id: landing-log-in
+    timeout: 90000
+- takeScreenshot: 01-landing
+- tapOn:
+    id: landing-log-in
+- tapOn:
+    id: login-email
+- inputText: ${FIXTURE_EMAIL}
+- tapOn:
+    id: login-password
+- inputText: ${FIXTURE_PASSWORD}
+- takeScreenshot: 02-login
+- pressKey: Enter
+# iOS may still offer to save the password; an owner says Not Now.
+- runFlow:
+    when:
+      visible: Not Now
+    commands:
+      - tapOn: Not Now
+- extendedWaitUntil:
+    visible:
+      id: today-empty
+    timeout: 90000
+- takeScreenshot: 03-home-before
+- tapOn: Log event
+- tapOn:
+    id: fab-pill-log-food
+- extendedWaitUntil:
+    visible: Tap a food to log it now.
+    timeout: 20000
+- takeScreenshot: 04-food-picker
+# The trial pet's library can sit below the fold on a small phone.
+- scrollUntilVisible:
+    element:
+      text: ${FOOD_TILE}
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    text: ${FOOD_TILE}
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: today-count-line
+    timeout: 30000
+- assertNotVisible:
+    id: today-empty
+- assertVisible:
+    text: ${FOOD_ROW}
+    childOf:
+      id: today-card
+    label: Home shows the meal
+- takeScreenshot: 05-home-after
