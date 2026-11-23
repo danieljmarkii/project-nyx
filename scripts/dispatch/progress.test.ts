@@ -102,7 +102,7 @@ describe('an issue\'s state, when the project has no run-order table', () => {
 });
 
 describe('a run order (Engines v3 at 21:10Z on 10/5)', () => {
-  const plan = planDispatch({
+  const plan0 = () => ({
     now: '2026-10-05T21:10:19Z',
     project: E.ENGINES_V3,
     others: [E.OUT_OF_BETA],
@@ -115,8 +115,11 @@ describe('a run order (Engines v3 at 21:10Z on 10/5)', () => {
     appliedMigrations: ['vet_call_cover'],
     productionLib: E.PRODUCTION_LIB,
   });
+  const plan = planDispatch(plan0());
   const units = unitsFromPlan(plan, E.MERGED);
   const state = (id: string) => units.find((u) => u.id === id)?.state;
+  const freed = planDispatch({ ...plan0(), prs: [...E.MERGED, E.PR_1064], sessions: {}, launches: [] });
+  const stateIn = (p: typeof plan, id: string) => unitsFromPlan(p, E.MERGED).find((u) => u.id === id)?.state;
 
   it('one unit per numbered row, in the page\'s waves', () => {
     expect(units.length).toBe(plan.verdicts.filter((v) => v.row).length);
@@ -126,8 +129,11 @@ describe('a run order (Engines v3 at 21:10Z on 10/5)', () => {
   it('reads each row\'s state from its verdict', () => {
     expect(state('PR-36')).toBe('open');
     expect(state('PR-23c')).toBe('held'); // a live claim, not a PM hold
-    expect(state('PR-23a')).toBe('ready');
-    expect(state('PR-27b')).toBe('ready');
+    // Held by the PM-waiting sub-limit since the kept list (CUL-2886): the engine rows are
+    // clinical. The ready mapping is read on the freed plan below.
+    expect(state('PR-23a')).toBe('held');
+    expect(state('PR-27b')).toBe('held');
+    expect(stateIn(freed, 'PR-23a')).toBe('ready');
     expect(state('PR-33')).toBe('held');
     expect(units.filter((u) => u.state === 'merged').length).toBe(plan.verdicts.filter((v) => v.state.kind === 'merged').length);
   });
@@ -144,7 +150,9 @@ describe('a run order (Engines v3 at 21:10Z on 10/5)', () => {
 
   it('next: the ready rows now, then a row waiting only on unmerged PRs, on their merge', () => {
     const next = nextFromPlan(plan);
-    expect(next.filter((n) => n.on === 'now').map((n) => n.id)).toEqual(['PR-23a', 'PR-27b']);
+    expect(next.filter((n) => n.on === 'now').map((n) => n.id)).toEqual([]);
+    // With the in-flight engine rows gone, the PM-waiting places free and the ready rows go now.
+    expect(nextFromPlan(freed).filter((n) => n.on === 'now').map((n) => n.id)).toEqual(['PR-23a', 'PR-36']);
     expect(next).toContainEqual({ id: 'PR-33', on: 'PR-31 merging' });
     for (const h of plan.pmHolds) for (const r of h.freesOutright) expect(next).toContainEqual({ id: `PR-${r}`, on: `your ruling: ${h.key}` });
   });
