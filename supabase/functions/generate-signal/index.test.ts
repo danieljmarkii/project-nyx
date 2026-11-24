@@ -742,7 +742,7 @@ Deno.test('CUL-552 wiring — consent is read service-role for the verified uid 
   // Every phrasing call receives the gated value, and phrasing is reached only after it.
   assertStrictEquals(/const phraseWithModel = phrasingEnabled && /.test(src), true, 'the finding phrasing no longer reads the gate')
   assertStrictEquals(/phraseFinding\(r\.finding, result\.petName, phraseWithModel\)/.test(src), true, 'a finding is phrased without the gate')
-  assertStrictEquals(/phraseSummaryText\(result\.summaryPacket, phrasingEnabled\)/.test(src), true, 'the summary is phrased without the gate')
+  assertStrictEquals(/phraseSummaryText\(result\.summaryPacket, phrasingEnabled, consentNow\)/.test(src), true, 'the summary is phrased without the gate')
   assertStrictEquals((src.match(/\bphraseFinding\(/g) ?? []).length, 2, 'a second phraseFinding call site exists')
   assertStrictEquals((src.match(/\bphraseSummaryText\(/g) ?? []).length, 2, 'a second phraseSummaryText call site exists')
   // Both functions return their template before any model request when the gate is shut,
@@ -754,4 +754,31 @@ Deno.test('CUL-552 wiring — consent is read service-role for the verified uid 
     assertStrictEquals(/phrasingEnabled = true/.test(src.slice(start, start + 200)), false, `${name} defaults the gate open`)
   }
   assertStrictEquals(src.split('api.anthropic.com').length - 1, 2, 'a model request exists outside the two gated phrasing functions')
+})
+
+// ── CUL-2900: the yes is read again right before each send ─────────────────────────────────
+// The read at 0b is as old as the detection pipeline by the time a phrasing call goes out. A
+// revoke in between must stop the sends, so the owner's yes is re-read, service-role for the
+// verified uid, after detection and before the finding batch, and again inside the summary's
+// function right before its request. Pinned on the source, like CUL-552's wiring above.
+Deno.test('CUL-2900 — consent is re-read after detection, before every phrasing send', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  const reread = 'const consentNow = () => readAiBoundaryConsent(serviceClient(), user.id)'
+  assertStrictEquals(src.split(reread).length - 1, 1, 'the re-read is not service-role for the verified uid')
+  // The finding batch: the fresh read is part of the gate every finding receives, and it sits
+  // after detection and before the first phrasing call.
+  assertStrictEquals(
+    /const phraseWithModel = phrasingEnabled && result\.incompleteDisclosure === null && \(await consentNow\(\)\)/.test(src),
+    true,
+    'the finding phrasing does not re-read consent',
+  )
+  const detect = src.indexOf('const result = runSignalPipeline(')
+  const at = src.indexOf(reread)
+  const firstPhrase = src.indexOf('phraseFinding(r.finding')
+  assertStrictEquals(detect >= 0 && detect < at && at < firstPhrase, true, 'the re-read is not between detection and the phrasing calls')
+  // The summary: re-read inside the function, after its other gates and before its request.
+  const start = src.indexOf('async function phraseSummaryText(')
+  const body = src.slice(start, src.indexOf('api.anthropic.com', start))
+  assertStrictEquals(/if \(!\(await consentNow\(\)\)\) return templated\s*try \{/.test(body), true, 'the summary request does not re-read consent right before it')
 })

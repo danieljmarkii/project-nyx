@@ -313,7 +313,11 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled:
 // in the packet, any reassurance/causal/disease/preference drift, and (on a safety summary)
 // the silent removal of vet-routing. Any failure → the deterministic template. Never throws,
 // never reassures, never blank.
-async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled: boolean): Promise<CachedSummary> {
+async function phraseSummaryText(
+  packet: SummaryFactPacket,
+  phrasingEnabled: boolean,
+  consentNow: () => Promise<boolean>,
+): Promise<CachedSummary> {
   // The deterministic form lives in ./pipeline.ts, so the harness and this function build it
   // one way. Every return below is it except the one validated model sentence.
   const templated = templateSummary(packet)
@@ -334,6 +338,9 @@ async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled: boo
     console.warn('generate-signal: ANTHROPIC_API_KEY unset — summary using template')
     return templated
   }
+  // CUL-2900: the owner's yes is read again right before this send, after the detection
+  // pipeline and the finding phrasing ran. A no (or a failed read) is the template.
+  if (!(await consentNow())) return templated
   try {
     const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -961,7 +968,11 @@ const handler = async (req: Request): Promise<Response> => {
     //    failed (§2): a failed call yields the template, not a dropped card.
     //    CUL-989: over an incomplete read every card is its template, which is where the
     //    "at least N" lives; a model sentence could restate a floor as a total.
-    const phraseWithModel = phrasingEnabled && result.incompleteDisclosure === null
+    // CUL-2900: the yes read at 0b is as old as the detection pipeline. It is read again here,
+    // right before the phrasing calls (they start together, so one read covers them), and a no
+    // or a failed read puts every card on its template, as a decline at 0b does.
+    const consentNow = () => readAiBoundaryConsent(serviceClient(), user.id)
+    const phraseWithModel = phrasingEnabled && result.incompleteDisclosure === null && (await consentNow())
     const texts = await Promise.all(
       result.findings.map((r) => phraseFinding(r.finding, result.petName, phraseWithModel)),
     )
@@ -970,7 +981,7 @@ const handler = async (req: Request): Promise<Response> => {
     //     Over an incomplete read the pipeline hands the disclosure instead (CUL-989 step 3:
     //     it withholds and SAYS SO), and there is no packet to phrase.
     const summary: CachedSummary | null = result.incompleteDisclosure
-      ?? (result.summaryPacket ? await phraseSummaryText(result.summaryPacket, phrasingEnabled) : null)
+      ?? (result.summaryPacket ? await phraseSummaryText(result.summaryPacket, phrasingEnabled, consentNow) : null)
 
     // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
     const payload = assembleSignal(result, texts, summary)

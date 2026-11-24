@@ -110,7 +110,8 @@ Deno.test('the golden path: written, verified, checked, kept on the draft with i
   const f = fake({ answers: [writer(GOOD), checker()] })
   const r = await runAiLead(f.io, FACTS, { leaveOut: false })
   assert.equal(r.outcome, 'printed')
-  assert.deepEqual(f.gates, [true])
+  // One spending gate, a re-read without spending before each send and one before the keep (CUL-2900).
+  assert.deepEqual(f.gates, [true, false, false, false])
   assert.deepEqual(f.sends.map((s) => s.role), ['writer', 'checker'])
   assert.equal(f.writes.length, 1)
   const w = f.writes[0]
@@ -201,7 +202,86 @@ Deno.test('withdrawal: a cached lead is cleared, never served, once the owner sa
 Deno.test('changed facts miss the cache and run again', async () => {
   const f = fake({ draft: { found: true, text: 'x', verdict: { outcome: 'printed', fact_hash: 'stale', sentences: GOOD } }, answers: [writer(GOOD), checker()] })
   assert.equal((await runAiLead(f.io, FACTS, { leaveOut: false })).outcome, 'printed')
-  assert.deepEqual(f.gates, [true])
+  assert.deepEqual(f.gates, [true, false, false, false])
+})
+
+// CUL-2900: the gate answers once, the sends run for up to a minute. A yes withdrawn (or a flag
+// turned off, or a read that fails) between two sends stops every send after it, and the run records
+// the gate's outcome with no lead. `withdrawAfter` = how many re-reads still say yes.
+const DECLINED: SummaryGate = { allow: false, reason: 'consent_declined', scope: 'ai_boundary' }
+function withdrawingGate(withdrawAfter: number, refusal: SummaryGate | 'throw' = DECLINED) {
+  let rereads = 0
+  return (spend: boolean): SummaryGate => {
+    if (spend) return { allow: true } as SummaryGate
+    if (rereads++ < withdrawAfter) return { allow: true } as SummaryGate
+    if (refusal === 'throw') throw new Error('ai_consent read threw')
+    return refusal
+  }
+}
+
+Deno.test('CUL-2900: consent withdrawn before the first send: nothing is sent, declined, no lead', async () => {
+  const f = fake({ gate: withdrawingGate(0), answers: [writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.deepEqual(r, { outcome: 'declined', reason: 'ai_boundary' })
+  assert.deepEqual([f.gates, f.sends.length], [[true, false], 0])
+  assert.deepEqual([f.writes.length, f.writes[0].text, f.writes[0].verdict.outcome, f.writes[0].model], [1, null, 'declined', null])
+})
+
+Deno.test('CUL-2900: consent withdrawn after the writer: the checker is never sent, declined, no lead', async () => {
+  const f = fake({ gate: withdrawingGate(1), answers: [writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.deepEqual(r, { outcome: 'declined', reason: 'ai_boundary' })
+  assert.deepEqual(f.sends.map((s) => s.role), ['writer'])
+  assert.deepEqual([f.writes.length, f.writes[0].text, f.writes[0].verdict.outcome], [1, null, 'declined'])
+  // No model output stays on the row: migration 118 refuses one that carries it once the yes is gone.
+  assert.deepEqual([f.writes[0].verdict.sentences, f.writes[0].verdict.checker], [null, null])
+})
+
+Deno.test('CUL-2900: consent withdrawn at the second checker, after a repair: no third send, nothing kept', async () => {
+  const f = fake({ gate: withdrawingGate(3), answers: [writer(GOOD), checker({ H1: 'minor' }), writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.deepEqual(r, { outcome: 'declined', reason: 'ai_boundary' })
+  assert.deepEqual(f.sends.map((s) => s.role), ['writer', 'checker', 'repair'])
+  assert.deepEqual([f.writes[0].text, f.writes[0].verdict.sentences, f.writes[0].verdict.checker], [null, null, null])
+})
+
+Deno.test('CUL-2900: a re-read that throws before the keep fails closed: the lead is never kept', async () => {
+  const f = fake({ gate: withdrawingGate(2, 'throw'), answers: [writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.deepEqual(r, { outcome: 'declined', reason: 'ai_boundary' })
+  assert.deepEqual([f.writes[0].text, f.writes[0].model, f.writes[0].verdict.sentences, f.writes[0].verdict.checker], [null, null, null, null])
+})
+
+Deno.test('CUL-2900: consent withdrawn while the checker was answering: the lead is never kept', async () => {
+  const f = fake({ gate: withdrawingGate(2), answers: [writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.deepEqual(r, { outcome: 'declined', reason: 'ai_boundary' })
+  assert.deepEqual(f.sends.map((s) => s.role), ['writer', 'checker'])
+  assert.deepEqual([f.writes.length, f.writes[0].text, f.writes[0].model, f.writes[0].verdict.sentences, f.writes[0].verdict.checker], [1, null, null, null, null])
+})
+
+Deno.test('CUL-2900: the summary yes withdrawn after a failed verify: the repair is never sent', async () => {
+  const f = fake({ gate: withdrawingGate(1, { allow: false, reason: 'consent_declined', scope: 'report_summary' }), answers: [writer(BAD), writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.deepEqual(r, { outcome: 'declined', reason: 'report_summary' })
+  assert.deepEqual(f.sends.map((s) => s.role), ['writer'])
+  assert.equal(f.writes[0].text, null)
+})
+
+Deno.test('CUL-2900: a flag turned off mid-run stops the next send and records flag_off', async () => {
+  const f = fake({ gate: withdrawingGate(1, { allow: false, reason: 'flag_off', flag: 'report_ai_lead' }), answers: [writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.equal(r.outcome, 'flag_off')
+  assert.deepEqual(f.sends.map((s) => s.role), ['writer'])
+  assert.equal(f.writes[0].text, null)
+})
+
+Deno.test('CUL-2900: a re-read that throws fails closed: no further send, declined, no lead', async () => {
+  const f = fake({ gate: withdrawingGate(1, 'throw'), answers: [writer(GOOD), checker()] })
+  const r = await runAiLead(f.io, FACTS, { leaveOut: false })
+  assert.deepEqual(r, { outcome: 'declined', reason: 'ai_boundary' })
+  assert.deepEqual(f.sends.map((s) => s.role), ['writer'])
+  assert.equal(f.writes[0].text, null)
 })
 
 Deno.test('the verifier rejects, one repair is made, and a passing repair prints', async () => {

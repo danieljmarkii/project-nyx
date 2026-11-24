@@ -283,13 +283,37 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
   const verdict = base('failed', null, hash)
   verdict.writer_model = modelFor('writer')
 
+  // CUL-2900: the gate above answered once, and the sends below run for up to the wall clock.
+  // So the gate is read again, without spending, immediately before EVERY send: a yes withdrawn
+  // at either scope, a flag turned off, or a read that fails stops the run before the next call
+  // leaves. The run then records the gate's own outcome (`declined`, `flag_off`) and no lead,
+  // whatever step it had reached; `fail` below is the one exit every refused send reaches.
+  let withdrawn: Extract<SummaryGate, { allow: false }> | null = null
   const call = async (role: Role, payload: object): Promise<ModelResult> => {
+    if (withdrawn) return { ok: false, reason: 'payload_refused', servedModel: null }
+    let still: SummaryGate
+    try {
+      still = await io.runGate(false)
+    } catch {
+      still = { allow: false, reason: 'consent_declined', scope: 'ai_boundary', unread: true }
+    }
+    if (!still.allow) {
+      withdrawn = still
+      return { ok: false, reason: 'payload_refused', servedModel: null }
+    }
+    // The clock is read AFTER the re-read, so the time the re-read took comes off this call.
     const left = deadline - io.now()
     if (left < MIN_CALL_MS) return { ok: false, reason: 'timeout', servedModel: null }
     verdict.attempts += role === 'checker' ? 0 : 1
     return io.send(role, requestBody(role, payload), ticket, Math.min(ROLE_TIMEOUT_MS[role], left))
   }
-  const fail = (reason: string) => record({ ...verdict, outcome: 'failed', reason })
+  // A withdrawn run keeps no model output on the row: no sentences, no checker verdict. Migration
+  // 118's trigger refuses a row carrying them once a yes is gone, which would lose the outcome.
+  const refused = (g: Extract<SummaryGate, { allow: false }>) => {
+    const out = gateOutcome(g)
+    return record({ ...verdict, outcome: out.outcome, reason: out.reason, sentences: null, checker: null })
+  }
+  const fail = (reason: string) => (withdrawn ? refused(withdrawn) : record({ ...verdict, outcome: 'failed', reason }))
   const reject = (reason: string) => record({ ...verdict, outcome: 'rejected', reason })
 
   // 6. Write, verify, repair once.
@@ -353,7 +377,15 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
     break
   }
 
-  // 8. Keep it on the draft row.
+  // 8. Keep it on the draft row, once the gate still allows it (CUL-2900): a yes withdrawn while
+  // the last call was in flight keeps no lead, whatever the database's own trigger would do.
+  let still: SummaryGate
+  try {
+    still = await io.runGate(false)
+  } catch {
+    still = { allow: false, reason: 'consent_declined', scope: 'ai_boundary', unread: true }
+  }
+  if (!still.allow) return refused(still)
   // The verdict keeps the PRINTED sentences, the ones verified, so text, verdict and page agree.
   const printed = printedSentences(summary)
   const sentences = summary.sentences.map((s, i) => ({ text: printed[i], cites: s.cites }))
