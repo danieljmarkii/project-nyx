@@ -217,8 +217,7 @@ const totalBytes = totalFiles.reduce((sum, f) => sum + fs.statSync(path.join(REP
  * (CLAUDE.md 136,073 + `.claude/**\/*.md` 323,482 + the runbook 15,554); after the
  * split it weighed 466,421 B, and 469,080 B once CUL-1873 (#1197, which grew `wrap.md`
  * before this ratchet existed) was merged in. That merged figure is the starting value.
- * Lowered to 464,159 B after #1597's trim (CUL-2886). Same ratchet discipline: lower it
- * after a trim, never raise it.
+ * Same ratchet discipline: lower it after a trim, never raise it.
  */
 const TOTAL_CEILING_BYTES = 464_159;
 
