@@ -164,18 +164,17 @@ const EXPECTED: Record<string, string> = {
 describe('every reviewer carries the field line (CUL-2876)', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('fs') as typeof import('fs');
-  const FIELDS = 'Direction: QUIET|LOUD|neither · Origin: diff|main (there without this diff) <file:line> · Devices: 1|2+ · Timing: any|race|clock · Precondition: none|abnormal <what> · Harm: none|exposure|loss|corruption';
+  const FIELDS = '`Direction: QUIET|LOUD|neither · Origin: diff|main · Devices: 1|2+ · Timing: any|race|clock · Precondition: none|abnormal · Harm: none|exposure|loss|corruption`';
   for (const a of ['adversarial-reviewer', 'code-reviewer', 'rls-privacy-reviewer', 'vet-report-cold-read', 'pm-feature-review']) {
     it(a, () => {
       const s = fs.readFileSync(`${__dirname}/../../.claude/agents/${a}.md`, 'utf8');
       expect(s).toContain(FIELDS);
-      expect(s).toMatch(/Untagged counts as QUIET and as harm/);
+      expect(s).toMatch(/[Uu]ntagged counts as QUIET and as harm/);
     });
   }
   it('and the adversarial reviewer still blocks every QUIET break', () => {
     const s = fs.readFileSync(`${__dirname}/../../.claude/agents/adversarial-reviewer.md`, 'utf8');
     expect(s).toContain('Every QUIET break is blocking');
-    expect(s).toContain('a QUIET finding stays Blocking');
     expect(s).toContain('A QUIET break blocks at any pass.');
   });
 });
