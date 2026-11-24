@@ -18,6 +18,12 @@ if (!file) {
 }
 type Facts = Omit<PrecheckContext, 'mainHas'> & { finding: ProposedFinding; mainFiles?: Record<string, string> };
 const facts = JSON.parse(fs.readFileSync(file, 'utf8')) as Facts;
+// The reviewer's own words are required: they outrank every hand-built field.
+if (typeof facts.finding?.text !== 'string' || !facts.finding.text.trim()) {
+  console.error("precheckCli: finding.text (the reviewer's words, field line included) is required");
+  process.exit(2);
+}
 const mainFiles = facts.mainFiles;
-const mainHas = mainFiles ? (f: string, s: string) => (mainFiles[f] ?? '').includes(s) : undefined;
+// A cited file absent from mainFiles is never read as fixed: unknown is not gone.
+const mainHas = mainFiles ? (f: string, s: string) => !(f in mainFiles) || mainFiles[f].includes(s) : undefined;
 console.log(JSON.stringify(precheck(facts.finding, { ...facts, mainHas }), null, 2));

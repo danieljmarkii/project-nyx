@@ -30,8 +30,15 @@ const row = (id: string, score: Score, f: Partial<ProposedFinding> & Pick<Propos
   id,
   score,
   note,
-  f: { origin: 'diff', devices: 1, timing: 'any', precondition: 'none', harm: 'none', category: 'adversarial-reviewer', ...f },
+  f: withWords({ origin: 'diff', devices: 1, timing: 'any', precondition: 'none', harm: 'none', category: 'adversarial-reviewer', ...f }),
 });
+
+// The reviewer's words for a row: its own text, if the row records one, then the field line
+// the reviewer would have written from these fields (an untagged row writes no Direction).
+function withWords(f: ProposedFinding): ProposedFinding {
+  const dir = f.direction ? `Direction: ${f.direction} · ` : '';
+  return { ...f, text: `${f.text ? `${f.text}\n` : ''}${dir}Origin: ${f.origin} · Harm: ${f.harm ?? 'none'}` };
+}
 
 const HARM = ['Live harm'];
 
@@ -39,7 +46,7 @@ export const SAMPLE: SampleRow[] = [
   row('CUL-2091', 'other', { title: "Sync: retire meal_components' double upload once migration 107 is applied", direction: 'neither', surface: 'sync', category: 'build:cleanup' }),
   row('CUL-2098', 'worth', { title: "Moving a warned meal's time to before the trial leaves its food's trial heads-up used up", direction: 'QUIET', surface: 'trial' }),
   row('CUL-2106', 'worth', { title: "A fresh log's trial heads-up is lost when a newer log replaces its card before it shows", direction: 'QUIET', labels: HARM, surface: 'trial' }),
-  row('CUL-2114', 'low', { title: "anon keeps the platform's default grants on events, pets, vet_visits and the other public tables", direction: 'neither', text: 'The access rules refuse every one of those writes and reads, so nothing leaks today. Direction: neither (a second-order guard)', origin: 'main', surface: 'privacy guards', category: 'rls-privacy-reviewer:guard' }),
+  row('CUL-2114', 'low', { title: "anon keeps the platform's default grants on events, pets, vet_visits and the other public tables", direction: 'neither', text: 'The access rules refuse every one of those writes and reads, so nothing reaches another account today (a second-order guard).', origin: 'main', surface: 'privacy guards', category: 'rls-privacy-reviewer:guard' }),
   row('CUL-2122', 'worth', { title: 'Mixed meals: a bowl read as last recorded is still only half-used by the intake, treat and detection readers', direction: 'QUIET', timing: 'race', surface: 'intake', items: [{ text: 'all-treat bowl hides a refusal', direction: 'QUIET' }, { text: 'treat missing from the report list', direction: 'QUIET' }] }, 'a sync race, so rare, but QUIET: never rerouted'),
   row('CUL-2131', 'low', { title: 'Vet report: "of a 56-day window" reads as the report window when the two lengths match', direction: 'neither', origin: 'main', surface: 'vet report', category: 'vet-report-cold-read' }),
   row('CUL-2147', 'low', { title: 'VomitAnalysisSection suite: a stored fold seeded with setObservationFold may never be read back', direction: 'neither', origin: 'main', surface: 'tests', category: 'build:test' }),

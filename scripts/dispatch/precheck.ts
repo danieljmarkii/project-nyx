@@ -42,7 +42,8 @@ export type ProposedFinding = {
   preconditionCause?: 'storage failure' | 'other';
   /** From the field line. Missing means untagged, which shields like harm. */
   harm?: 'none' | Harm;
-  /** The finding as the reviewer wrote it, field line included. Read for a QUIET the fields missed. */
+  /** The finding as the reviewer wrote it, field line included. The words outrank the fields;
+   *  the CLI refuses a finding without them. */
   text?: string;
   labels?: string[];
   /** The surface a standing issue is kept for: `vet report`, `Home`, `sync`, `tests`... */
@@ -80,37 +81,41 @@ export const FILING_BAR: number | null = null;
 
 export const PROTECTED_LABEL = /^(Live harm|Gate:)/i;
 
+// A value off the hand-built JSON is trusted only when it is exactly a safe one after trimming
+// and case: `null`, `"quiet"`, `"TBD"` and a typo all shield (pass 2, B1).
+const norm = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
+const SAFE_DIRECTION = new Set(['loud', 'neither']);
+
+// Words that describe a quieter warning, under whatever tag (pass 2, B3): a mis-tag the fields
+// cannot show still files. Errs loud: a LOUD finding that says "drops the summary" files too.
+const SOFTEN_THEN_WARNING = /\b(drop|soften|delay|suppress|hid|hide|silenc|mute|stand\w* down|miss)\w*\b[^.\n]{0,60}\b(warn|flag|card|alert|ask|call|banner|heads-up|floor|escalat)/i;
+const WARNING_THEN_SOFTEN = /\b(warn|flag|card|alert|banner|heads-up|floor|escalat)\w*\b[^.\n]{0,60}\b(drop|soften|delay|suppress|hid|hidden|silenc|mute|disappear|vanish|stays? (?:up|down)|lost)\w*/i;
+
+/** Every `Harm:` value written in the finding's words, trimmed and lower-cased. */
+export const harmValues = (words: string) => [...words.matchAll(/\bHarm\b[*_`\s]*:[*_`\s]*([^\n·|`*]*)/gi)].map((m) => norm(m[1]));
+
 export function protectedReasons(f: ProposedFinding): string[] {
   const why: string[] = [];
-  if (f.direction === undefined) why.push('untagged (counts as QUIET)');
-  else if (f.direction === 'QUIET') why.push('QUIET');
+  const d = norm(f.direction);
+  if (!SAFE_DIRECTION.has(d)) why.push(d === 'quiet' ? 'QUIET' : 'untagged (counts as QUIET)');
   for (const it of f.items ?? []) {
-    if (it.direction === undefined) why.push(`bundle item untagged: ${it.text}`);
-    else if (it.direction === 'QUIET') why.push(`bundle item QUIET: ${it.text}`);
+    const id = norm(it.direction);
+    if (!SAFE_DIRECTION.has(id)) why.push(`bundle item ${id === 'quiet' ? 'QUIET' : 'untagged'}: ${it.text}`);
   }
-  if (f.harm === undefined) why.push('harm untagged (counts as harm)');
-  else if (f.harm !== 'none') why.push(`can ${f.harm === 'exposure' ? 'expose' : f.harm === 'loss' ? 'lose' : 'corrupt'} data`);
-  for (const l of f.labels ?? []) if (PROTECTED_LABEL.test(l)) why.push(`label ${l}`);
-  // The words outrank the fields: the sort reads "quiet" anywhere as QUIET (sort.ts
-  // directionOf), so the precheck does too, and a field line in the text that names QUIET
-  // or harm shields whatever the hand-built fields say.
-  const text = `${f.title}\n${f.text ?? ''}`;
-  if (/\bquiet/i.test(text) || (f.text && directionOf(f.text) === 'QUIET')) why.push('its words say quiet');
-  const fl = parseFieldLine(f.text ?? '');
-  if (fl.harm && fl.harm !== 'none') why.push(`its field line names ${fl.harm}`);
+  if (f.harm === undefined || f.harm === null) why.push('harm untagged (counts as harm)');
+  else if (norm(f.harm) !== 'none') why.push(`can ${f.harm === 'exposure' ? 'expose' : f.harm === 'loss' ? 'lose' : 'corrupt'} data`);
+  for (const l of f.labels ?? []) if (PROTECTED_LABEL.test(String(l).trim())) why.push(`label ${l}`);
+  // The reviewer's words outrank the fields (pass 2, B2). They must carry a readable LOUD or
+  // neither tag (the sort's own reading, sort.ts directionOf: "quiet" anywhere is QUIET) and
+  // Harm: none on every Harm line; anything else, a missing line included, shields.
+  const words = `${f.title}\n${f.text ?? ''}`;
+  const wd = directionOf(words);
+  if (wd !== 'LOUD' && wd !== 'neither') why.push(wd === 'QUIET' ? 'its words say quiet' : 'its words carry no readable Direction');
+  const hs = harmValues(words);
+  if (!hs.length) why.push('its words carry no Harm line');
+  else if (hs.some((h) => h !== 'none')) why.push(`its words name harm: ${hs.filter((h) => h !== 'none').join(', ')}`);
+  if (SOFTEN_THEN_WARNING.test(words) || WARNING_THEN_SOFTEN.test(words)) why.push('its words describe a quieter warning');
   return why;
-}
-
-/** The reviewer's field line, as far as it can be read; a field it cannot read is left out. */
-export function parseFieldLine(text: string): Partial<Pick<ProposedFinding, 'direction' | 'origin' | 'harm'>> {
-  const out: Partial<Pick<ProposedFinding, 'direction' | 'origin' | 'harm'>> = {};
-  const d = /Direction:\s*(QUIET|LOUD|neither)\b/i.exec(text)?.[1];
-  if (d) out.direction = (d.toUpperCase() === 'NEITHER' ? 'neither' : d.toUpperCase()) as Direction;
-  const o = /Origin:\s*(diff|main)\b/i.exec(text)?.[1];
-  if (o) out.origin = o.toLowerCase() as 'diff' | 'main';
-  const h = /Harm:\s*(none|exposure|loss|corruption)\b/i.exec(text)?.[1];
-  if (h) out.harm = h.toLowerCase() as ProposedFinding['harm'];
-  return out;
 }
 
 const CLASS = /\b(instances?|class)\b/i;
@@ -143,16 +148,21 @@ export function duplicateOf(f: ProposedFinding, open: OpenIssue[]): string | und
 
 // A class is never rare: one instance a normal owner hits makes the class (the sort's rule 1b).
 const isClass = (f: ProposedFinding) => CLASS.test(`${f.title}\n${f.text ?? ''}`);
-export const isRare = (f: ProposedFinding) => !isClass(f) && (f.devices > 1 || f.timing !== 'any' || f.precondition === 'abnormal');
+// A text `Origin: diff` outranks a field `main`: diff is the louder reading (never fixed, never
+// on main), so a mismatch errs toward filing.
+const onMain = (f: ProposedFinding) => f.origin === 'main' && !/\bOrigin\b[*_`\s]*:\s*diff\b/i.test(f.text ?? '');
+// The sort's own refusals to park (sort.ts rareTrigger): a regression, a leak or a loss.
+const NEVER_PARKS = /regress|leak|expos|\blos[est]|\bloss|delet|wipe|erase|overwrit/i;
+export const isRare = (f: ProposedFinding) => !isClass(f) && (Number(String(f.devices).replace('+', '')) > 1 || f.timing !== 'any' || f.precondition === 'abnormal');
 
 /** The sort's own `Trigger: rare (...)` line (CUL-2123), when a cause maps onto its four. */
 // Never for a bundle (the fields are the finding's, the shield may be one item's), a class,
 // or anything that can expose, lose or corrupt data: the sort never parks those.
 export function triggerLine(f: ProposedFinding): string | undefined {
-  const textHarm = parseFieldLine(f.text ?? '').harm;
-  if (f.items?.length || isClass(f) || f.harm !== 'none' || (textHarm && textHarm !== 'none')) return undefined;
+  const words = `${f.title}\n${f.text ?? ''}`;
+  if (f.items?.length || isClass(f) || norm(f.harm) !== 'none' || harmValues(words).some((h) => h !== 'none') || NEVER_PARKS.test(words)) return undefined;
   const cause =
-    f.devices > 1 ? 'two phones' : f.timing === 'race' ? 'timing' : f.timing === 'clock' ? 'clock skew' : f.preconditionCause === 'storage failure' ? 'storage failure' : undefined;
+    Number(String(f.devices).replace('+', '')) > 1 ? 'two phones' : f.timing === 'race' ? 'timing' : f.timing === 'clock' ? 'clock skew' : f.preconditionCause === 'storage failure' ? 'storage failure' : undefined;
   return cause ? `Trigger: rare (${cause})` : undefined;
 }
 
@@ -161,7 +171,7 @@ export function precheck(f: ProposedFinding, ctx: PrecheckContext): Route {
   const cites = f.cites ?? [];
   // Only a defect already on main can be fixed there: a line this diff adds is never on main
   // before merge, so reading it as "fixed" would drop every diff-caused finding.
-  const fixed = f.origin === 'main' && !!ctx.mainHas && cites.length > 0 && cites.every((c) => c.snippet !== '' && !ctx.mainHas!(c.file, c.snippet));
+  const fixed = onMain(f) && !!ctx.mainHas && cites.length > 0 && cites.every((c) => c.snippet !== '' && !ctx.mainHas!(c.file, c.snippet));
 
   const shield = protectedReasons(f);
   if (shield.length) {
@@ -172,8 +182,8 @@ export function precheck(f: ProposedFinding, ctx: PrecheckContext): Route {
   }
   if (dup) return { route: 'duplicate', issue: dup };
   if (fixed) return { route: 'fixed' };
-  if (f.origin === 'main' || isRare(f)) {
-    return { route: 'standing', surface: f.surface, issue: ctx.standing[f.surface], why: f.origin === 'main' ? 'on main' : 'rare' };
+  if (onMain(f) || isRare(f)) {
+    return { route: 'standing', surface: f.surface, issue: ctx.standing[f.surface], why: onMain(f) ? 'on main' : 'rare' };
   }
   const bar = ctx.bar === undefined ? FILING_BAR : ctx.bar;
   const rate = ctx.rates?.[f.category];

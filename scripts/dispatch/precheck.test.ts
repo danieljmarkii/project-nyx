@@ -4,7 +4,7 @@
 import { SAMPLE } from './fixtures/findings-sample-2026-11.ts';
 import { FILING_BAR, precheck, protectedReasons, rerouted, titleOverlap, triggerLine, type ProposedFinding, type Route } from './precheck.ts';
 
-const base: ProposedFinding = { title: 'A thing on the report', direction: 'neither', origin: 'diff', devices: 1, timing: 'any', precondition: 'none', harm: 'none', surface: 'vet report', category: 'adversarial-reviewer' };
+const base: ProposedFinding = { title: 'A thing on the report', direction: 'neither', origin: 'diff', devices: 1, timing: 'any', precondition: 'none', harm: 'none', surface: 'vet report', category: 'adversarial-reviewer', text: 'Direction: neither · Harm: none' };
 const ctx = { open: [], standing: { 'vet report': 'CUL-9001' } };
 const at = (over: Partial<ProposedFinding>, c: Partial<Parameters<typeof precheck>[1]> = {}) => precheck({ ...base, ...over }, { ...ctx, ...c });
 
@@ -178,4 +178,39 @@ describe('every reviewer carries the field line (CUL-2876)', () => {
     expect(s).toContain('a QUIET finding stays Blocking');
     expect(s).toContain('A QUIET break blocks at any pass.');
   });
+});
+
+// Adversarial pass 2 (the cap): each break as a named case, every shape on main so an
+// unshielded finding would leave for the standing issue.
+describe('pass 2: hand-built JSON and the words never outrank a quieter reading', () => {
+  const onMain = (over: Record<string, unknown>) => at({ origin: 'main', text: 'Direction: neither · Origin: main · Harm: none', ...(over as Partial<ProposedFinding>) }).route;
+  it.each([
+    ['direction null (JSON untagged)', { direction: null }],
+    ['direction "quiet"', { direction: 'quiet' }],
+    ['direction "Quiet"', { direction: 'Quiet' }],
+    ['direction "TBD"', { direction: 'TBD' }],
+    ['a bundle item with direction null', { items: [{ text: 'a', direction: 'neither' }, { text: 'b', direction: null }] }],
+    ['a label with a stray space', { labels: [' Live harm'] }],
+    ['harm null', { harm: null }],
+  ])('B1 %s → file', (_n, over) => expect(onMain(over)).toBe('file'));
+  it.each([
+    ['an unreadable Direction in the words', 'Decline flag check.\nDirection: TBD · Origin: main · Harm: none'],
+    ['no Direction line in the words', 'The 48h check runs a day late. Origin: main · Harm: none'],
+    ['no Harm line in the words', 'Direction: neither · Origin: main'],
+    ['a Harm value it cannot read', 'Direction: neither · Origin: main · Harm: data loss'],
+    ['a second Harm line naming harm', 'Direction: neither · Origin: main · Harm: none\nHarm: loss'],
+  ])('B2 %s → file', (_n, text) => expect(onMain({ text })).toBe('file'));
+  it('B2 a Harm line in the title → file', () => expect(onMain({ title: 'Export skips a pet. Harm: exposure' })).toBe('file'));
+  it.each([
+    ['softens the call-the-vet line', 'It softens the call-the-vet line to worth watching.'],
+    ['delays the refusal flag', 'The refusal flag can be delayed a day.'],
+    ['the card disappears', 'The decline card disappears after a sync.'],
+  ])('B3 a LOUD tag over words that %s → file', (_n, words) => expect(onMain({ direction: 'LOUD', text: `${words}\nDirection: LOUD · Origin: main · Harm: none` })).toBe('file'));
+  it('a text Origin: diff outranks a field main: never fixed, never standing', () => {
+    expect(at({ origin: 'main', text: 'Direction: neither · Origin: diff · Harm: none', cites: [{ file: 'a.ts', snippet: 'x' }] }, { mainHas: () => false }).route).toBe('file');
+  });
+  it('no trigger line when the words name a loss, a leak or a regression', () => {
+    expect(at({ direction: 'QUIET', timing: 'race', text: 'The vomit log is lost on retry.\nDirection: QUIET · Harm: none' })).toMatchObject({ route: 'file', trigger: undefined });
+  });
+  it('the template\'s own "2+" reads as two devices', () => expect(at({ devices: '2+' as unknown as 2 }).route).toBe('standing'));
 });
