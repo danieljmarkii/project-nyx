@@ -42,9 +42,8 @@
 //   ✗ killed — the `createdAt` contract-date condition removed from the row (1 red)
 //   ✗ killed — the section heading renamed, so no table is found (4 red)
 //
-// A writable row is not always a FIELD edit: step 12's team call and default posted
-// write a comment only, and their artifact cell opens with `—`. That is why the guard
-// pins halves by step, not by artifact shape.
+// The guard pins halves by step, not by artifact shape: a report row's artifact cell
+// opens with `—`, and so may a writable row's.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -103,9 +102,6 @@ const WRITABLE = [
   '4 · abandoned claim',
   '6 · dead-label **strip**',
   "12 · *Not the PM's*, moot",
-  '12 · team call',
-  '12 · default posted',
-  '12 · default applied after its window',
   '13 · `Propose close` **add**, from 13a / 13b / 13c only, reason `obsolete` or `stale`',
   '14 · cancel after the window',
   '16 · gates are relations, `blocks` **add**',
@@ -123,6 +119,9 @@ const REPORT = [
   '11 · what\'s relevant now',
   '12 · lane sort, docket, device sitting, clinical docket, 21-day proposals',
   "12 · *Not the PM's*, no PM step left",
+  // CUL-2886 (A7, PM 2026-11-22): the default lane is gone, and an unattended pass never
+  // writes a team call; an attended pass makes it at once.
+  '12 · team call',
   '13 · `superseded by` · `won\'t do`',
   '13 · project moves, `relatedTo` for *Dies at*',
   '14 · engaged proposals',
