@@ -152,7 +152,26 @@ export function recordFrom(fn: string, d: GhDeployment, statuses: GhStatus[], ke
 const PAGE_SIZE = 100;
 const PAGE_CAP = 10;
 
+// A signed failure record of ours: an attempt that reached the deploy script and failed.
+// Its code may be live (a failure at verify), so it is what makes a rollback redeploy.
+export function failureFrom(fn: string, d: GhDeployment, statuses: GhStatus[], key: Buffer): boolean {
+  if (typeof d.id !== 'number' || d.task !== recordTask(fn) || d.environment !== RECORD_ENVIRONMENT) return false;
+  if (!d.creator || d.creator.login !== RECORD_CREATOR) return false;
+  const payload = parsePayload(fn, d.payload);
+  if (!payload || !signatureValid(payload, (d.payload as { mac?: unknown }).mac, key)) return false;
+  return statuses.some((s) => s.state === 'failure') && !statuses.some((s) => s.state === 'success');
+}
+
+// `failedSince`: a signed failure is newer than the last success, so what is live may be
+// neither that success nor main (CUL-2885). Without it a revert that puts main back on
+// the last success's fingerprint reads `unchanged`, and a broken upload stays live.
+export type RecordHistory = { last: DeployRecord | undefined; failedSince: boolean };
+
 export async function lastSuccessfulRecord(gh: Gh, repo: string, fn: string, key: Buffer): Promise<DeployRecord | undefined> {
+  return (await recordHistory(gh, repo, fn, key)).last;
+}
+
+export async function recordHistory(gh: Gh, repo: string, fn: string, key: Buffer): Promise<RecordHistory> {
   const q = `environment=${encodeURIComponent(RECORD_ENVIRONMENT)}&task=${encodeURIComponent(recordTask(fn))}&per_page=${PAGE_SIZE}`;
   const all: GhDeployment[] = [];
   for (let page = 1; page <= PAGE_CAP; page++) {
@@ -164,14 +183,16 @@ export async function lastSuccessfulRecord(gh: Gh, repo: string, fn: string, key
   const deployments = all
     .filter((d) => typeof d.id === 'number')
     .sort((a, b) => (b.id as number) - (a.id as number));
+  let failedSince = false;
   for (const d of deployments) {
     if (d.task !== recordTask(fn) || !d.creator || d.creator.login !== RECORD_CREATOR) continue;
     const statuses = await gh.get(`/repos/${repo}/deployments/${d.id as number}/statuses?per_page=30`);
     if (!Array.isArray(statuses)) throw new Error(`GitHub returned no status list for deployment ${String(d.id)}`);
     const record = recordFrom(fn, d, statuses as GhStatus[], key);
-    if (record) return record;
+    if (record) return { last: record, failedSince };
+    if (failureFrom(fn, d, statuses as GhStatus[], key)) failedSince = true;
   }
-  return undefined;
+  return { last: undefined, failedSince };
 }
 
 const clip = (s: string, n: number) => (s.length <= n ? s : s.slice(0, n - 1) + '…');
