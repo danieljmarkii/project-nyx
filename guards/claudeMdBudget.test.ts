@@ -219,7 +219,7 @@ const totalBytes = totalFiles.reduce((sum, f) => sum + fs.statSync(path.join(REP
  * before this ratchet existed) was merged in. That merged figure is the starting value.
  * Same ratchet discipline: lower it after a trim, never raise it.
  */
-const TOTAL_CEILING_BYTES = 469_080;
+const TOTAL_CEILING_BYTES = 464_159;
 
 /** Wider than the core's slack: the total spans ~40 files edited by many sessions. */
 const TOTAL_SLACK_BYTES = 4_096;

@@ -57,7 +57,7 @@ import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { dayKeyFromIndex, localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 import { maskingSpansFor, windowTouchesSpan, type MaskCourse } from '../../../lib/maskingSpans.ts'
-import type { Finding, SymptomEvent, SymptomType } from './detection.ts'
+import type { Finding, SymptomEvent, SymptomType, WorseningOnSign } from './detection.ts'
 import { SYMPTOM_LABEL, templateForFinding } from './phrasing.ts'
 import { formatDay, ZERO_COVERAGE_FLOOR } from './careContext.ts'
 
@@ -310,6 +310,10 @@ export interface CareStateArgs {
    *  runs detection over the events up to then). Absent in unit tests: the pair falls back to
    *  the other sign's first onset. */
   wasChronicAt?: (sign: SymptomType, ms: number) => boolean
+  /** CUL-2898: is `sign` rising on its own stats (detection's `foldedWorsening`)? A chronicity card
+   *  whose sign reads anything but 'not_rising' keeps Ruling A's no-quiet exemption. Absent counts
+   *  as 'not_measured': a missed wiring is louder, never quieter. */
+  risingOnSign?: (sign: SymptomType) => WorseningOnSign
   config?: CareStateConfig
 }
 
@@ -1419,6 +1423,26 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     bySign.set(sign, fact)
     return fact
   }
+  // CUL-2898: read lazily and once per sign (the read replays four weeks of detection).
+  const rising = new Map<SymptomType, WorseningOnSign>()
+  const risingFor = (sign: SymptomType): WorseningOnSign => {
+    const cached = rising.get(sign)
+    if (cached) return cached
+    const read = args.risingOnSign ? args.risingOnSign(sign) : 'not_measured'
+    rising.set(sign, read)
+    return read
+  }
+  // CUL-2898 stopgap (adversarial pass 1, Q12): ④'s test needs two episodes in a week, so a course
+  // that doubles at under two a week (every 14 days, then weekly) never reads 'rising', while the
+  // card's own four-week halves say recent > prior. Those halves count as a rise too, pending the
+  // PM's ruling on what "getting worse" means under Ruling A. Louder only: it can never quiet.
+  const chronicRising = (f: Finding, sign: SymptomType): boolean => {
+    const compare = (f as { compare?: { recentCount: number; priorCount: number; comparable: boolean } }).compare
+    if (compare && compare.recentCount > compare.priorCount) return true
+    // Pass 2, R3c: halves logged unlike each other cannot say "steady" (didn't log is not didn't happen).
+    if (compare && compare.comparable === false) return true
+    return risingFor(sign) !== 'not_rising'
+  }
   const decorated = findings.map((r) => {
     const sign = concernSignOf(r.finding)
     // CUL-2829: the weight card quiets only on `quietBooking`, so a booking whose visit was a call
@@ -1428,7 +1452,10 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     // Ruling A (worsening brief, 2026-11-07): a firing worsening lane IS "coming more often", and a
     // never-answered concern has no reference to re-raise from, so a booking never quiets it. The
     // card stays raised, ask intact, and carries the upcoming date only (none once it has passed).
-    if (fact.state === 'visit_booked' && r.finding.type === 'symptom_worsening') {
+    // CUL-2898: the same holds for a chronicity card whose own sign is rising, read per sign (a ④
+    // folded into it, a rise behind a steeper sign's card, a rise below ④'s card floor). Only
+    // 'not_rising' may quiet; 'not_measured' (or no read wired) keeps the ask.
+    if (fact.state === 'visit_booked' && (r.finding.type === 'symptom_worsening' || (r.finding.type === 'symptom_chronicity' && chronicRising(r.finding, sign)))) {
       const { bookedVisit: _drop, ...rest } = fact
       const loud: CareStateFact = { ...rest, state: 'raised', text: null, ...(upcoming ? { bookedVisit: upcoming.fact } : {}) }
       return { ...r, finding: { ...r.finding, careState: loud } as unknown as Finding }

@@ -39,6 +39,7 @@ import {
   chronicSymptomTypes,
   compareSafetyFindings,
   detectSignals,
+  foldedWorsening,
   detectWorsening,
   detectCoverage,
   chronicityFloorsFor,
@@ -930,6 +931,8 @@ export function runSignalPipeline(
         priorGeneratedAtMs: priorMs(priorSignal),
         priorReadFailed: args.priorReadFailed,
         wasChronicAt: chronicAsOf(input, config),
+        // CUL-2898: a chronicity card whose sign is rising on its own stats keeps its ask past a booking.
+        risingOnSign: (sign) => foldedWorsening(input, config, sign),
       })
       : withContext
   // CUL-1600: a run that skips the step under the key still writes the row the next run reads.

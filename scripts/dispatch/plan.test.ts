@@ -2,7 +2,7 @@
 // the 084 clash, and the rules the prose kept dropping.
 
 import * as F from './fixtures/facts-2026-10-05.ts';
-import { autoEligible, gateOf, planDispatch, type PlanInput } from './plan.ts';
+import { autoEligible, gateOf, pathsIn, planDispatch, type PlanInput } from './plan.ts';
 
 const AT_2110 = '2026-10-05T21:10:19Z';
 
@@ -38,7 +38,11 @@ describe('the 10/5 21:10Z Engines v3 slot arithmetic', () => {
     expect(old.arithmetic).toBe('3 − PR-36 (#1072) − PR-36a (#1074) − PR-23c (claim, claude/engines-v3-pr23b-10051806) = 0');
     expect(old.slots).toBe(0);
     expect(old.proposal).toEqual([]);
-    expect(old.overCap).toEqual(['23a', '27b']); // "PR-27b and PR-23a ready, over the cap"
+    // In 2026-10 these two were "ready, over the cap". Since the kept list (CUL-2886) every
+    // Engines v3 row is clinical, so the PM-waiting sub-limit (filled by the engine rows in
+    // flight) is their one hold; nothing else the arithmetic reads holds them.
+    expect(old.overCap).toEqual([]);
+    for (const r of ['23a', '27b']) expect(old.verdicts.find((v) => v.row === r)!.reasons).toEqual(['waiting on the PM: 3 of 3']);
   });
 
   it('parks Out of beta PR-60: no slot, files and its migration number reserved', () => {
@@ -51,8 +55,12 @@ describe('the 10/5 21:10Z Engines v3 slot arithmetic', () => {
   });
 
   it('proposes the two ready rows and holds the rest with a reason in words', () => {
-    expect(p.proposal).toEqual(['23a', '27b']);
     const why = (r: string) => p.verdicts.find((v) => v.row === r)!.reasons;
+    // The two rows that were ready are held only by the PM-waiting sub-limit (CUL-2886: the
+    // engine rows are clinical, so each waits on the PM).
+    expect(p.proposal).toEqual([]);
+    expect(why('23a')).toEqual(['waiting on the PM: 3 of 3']);
+    expect(why('27b')).toEqual(['waiting on the PM: 3 of 3']);
     expect(why('23c')).toEqual(['a live claim on CUL-1600 (claude/engines-v3-pr23b-10051806, 2026-10-05T19:06:00Z)']);
     expect(why('13b')).toEqual(['a release gate in After: "rides the first build after 1.2.0" (move it to a Merge gate)']);
     expect(why('33')).toEqual(['after PR-31, not merged']);
@@ -68,7 +76,8 @@ describe('the 10/5 21:10Z Engines v3 slot arithmetic', () => {
   it('a stale claim (over 24 hours, no open PR) holds nothing and takes no slot', () => {
     const q = planDispatch(enginesAt2110({ claims: [{ ...F.CLAIMS_AT_2110[0], at: '2026-10-04T19:00:00Z' }] }));
     expect(q.arithmetic).toBe('6 − PR-36 (#1072) − PR-36a (#1074) = 4');
-    expect(q.verdicts.find((v) => v.row === '23c')!.ready).toBe(true);
+    // The stale claim no longer holds it; only the PM-waiting sub-limit does (CUL-2886).
+    expect(q.verdicts.find((v) => v.row === '23c')!.reasons).toEqual(['waiting on the PM: 3 of 3']);
   });
 });
 
@@ -84,7 +93,9 @@ describe('the 084 clash', () => {
   it('tells a ready migration row the next free number, past every reserved one', () => {
     const p = planDispatch(enginesAt2110({ prs: [...F.MERGED, F.PR_1064] }));
     expect(p.nextMigration).toBe('085');
-    expect(p.verdicts.find((v) => v.row === '36a')!.ready).toBe(true);
+    // No clash holds it. Since the kept list (CUL-2886) the Engines v3 rows in flight are
+    // clinical, so they wait on the PM, and that sub-limit is its only hold.
+    expect(p.verdicts.find((v) => v.row === '36a')!.reasons).toEqual(['waiting on the PM: 3 of 3']);
   });
 
   it('once main carries 084, the parked PR is the one that renumbers', () => {
@@ -111,19 +122,40 @@ describe('the sub-limits hold a ready row', () => {
   });
 });
 
-describe('the gate predicate', () => {
+describe('the gate predicate reads the kept list (CUL-2886)', () => {
   it('plan-gates a migration, RLS, a clinical surface and a Tier-2 edit', () => {
     expect(gateOf({ what: 'x', note: '', migration: true }).planGated).toEqual(['migration']);
-    expect(gateOf({ what: 'x', note: 'rls-privacy-reviewer.', migration: false }).planGated).toEqual(['RLS, Storage, deletion or export']);
-    expect(gateOf({ what: 'x', note: '', migration: false }, { labels: ['Gate: clinical'] }).planGated).toEqual(['clinical']);
-    expect(gateOf({ what: 'x', note: 'the Tier-2 edits', migration: false }).planGated).toEqual(['Tier-2 spec edit']);
+    expect(gateOf({ what: 'x', note: 'rls-privacy-reviewer, in `scripts/dispatch/plan.ts`.', migration: false }).planGated).toEqual(['stakes: privacy, RLS, Storage, deletion, export or share links']);
+    expect(gateOf({ what: 'x', note: '`scripts/dispatch/plan.ts`', migration: false }, { labels: ['Gate: clinical'] }).planGated).toEqual(['stakes: clinical (label Gate: clinical)']);
+    expect(gateOf({ what: 'x', note: 'the Tier-2 edits in `scripts/dispatch/plan.ts`', migration: false }).planGated).toEqual(['scope: scope (in or out of a project, priority between tracks, a spec edit)']);
   });
 
-  it('auto-eligible only when BUILD, routine, copy-free, privilege-free and no migration', () => {
-    expect(autoEligible(gateOf({ what: 'A refused meal keeps counting', note: '`lib/analytics.ts`.', migration: false }))).toBe(true);
-    expect(autoEligible(gateOf({ what: 'x', note: 'nyx-voice.', migration: false }))).toBe(false);
+  it('plan-gates money, App Store and the irreversible, which the old predicate missed', () => {
+    expect(gateOf({ what: 'a paywall on Ask', note: '', migration: false }).kept).toBe('stakes');
+    expect(gateOf({ what: 'x', note: 'ships through App Review.', migration: false }).kept).toBe('stakes');
+    expect(gateOf({ what: 'x', note: 'purge the drafts.', migration: false }).kept).toBe('stakes');
+  });
+
+  it('a taste call plan-gates a BUILD row; a DISCOVERY row is the thing the PM reacts to', () => {
+    expect(gateOf({ what: 'a new layout for the header', note: '`lib/haptics.ts`', migration: false }).planGated).toEqual(['taste: a visual or motion choice']);
+    const mock = gateOf({ what: 'a mock round for the header', note: '`docs/home-mockups.html`', migration: false });
+    expect(mock).toMatchObject({ mode: 'DISCOVERY', planGated: [], kept: 'taste' });
+    expect(autoEligible(mock)).toBe(false);
+  });
+
+  it('auto-eligible only when BUILD, nothing kept, privilege-free and no migration', () => {
+    expect(autoEligible(gateOf({ what: 'The board keeps a stale row', note: '`scripts/dispatch/board.ts`.', migration: false }))).toBe(true);
+    // A refused meal is intake, and the note's file is read too (adversarial pass 1, Q1).
+    expect(autoEligible(gateOf({ what: 'A refused meal keeps counting', note: '`lib/utils.ts`.', migration: false }))).toBe(false);
+    expect(gateOf({ what: 'Stop the extra line', note: 'edit supabase/functions/_shared/incident-tier.ts', migration: false }).kept).toBe('stakes');
+    expect(pathsIn('edit `lib/freeFedIntake.ts`, then supabase/functions/_shared/ and app.json.')).toEqual(['lib/freeFedIntake.ts', 'supabase/functions/_shared/', 'app.json']);
+    // Copy inside nyx-voice is a team call now: the old keyword match held this row (CUL-2886 item 4).
+    expect(autoEligible(gateOf({ what: 'x', note: 'nyx-voice copy for the toast; the label string, in `lib/haptics.ts`.', migration: false }))).toBe(true);
+    // A row that names no file cannot be read for its surface, so it keeps (adversarial pass 2).
+    expect(autoEligible(gateOf({ what: 'The board keeps a stale row', note: '', migration: false }))).toBe(false);
     expect(autoEligible(gateOf({ what: 'x', note: 'merging redeploys `generate-report`.', migration: false }))).toBe(false);
     expect(autoEligible(gateOf({ what: 'a mock round', note: '', migration: false }))).toBe(false);
+    expect(autoEligible(gateOf({ what: 'x', note: 'tighten the clinical copy.', migration: false }))).toBe(false);
   });
 });
 
@@ -135,7 +167,9 @@ it('drops merged rows from Auto (Out of beta carried five merged ones)', () => {
 it('a first dispatch has one slot, whatever the arithmetic', () => {
   const p = planDispatch(enginesAt2110({ project: { ...F.ENGINES_V3, firstDispatch: true } }));
   expect(p.slots).toBe(1);
-  expect(p.proposal).toEqual(['23a']);
+  // One slot; 23a would take it but for the PM-waiting sub-limit (CUL-2886).
+  expect(p.proposal).toEqual([]);
+  expect(p.verdicts.find((v) => v.row === '23a')!.reasons).toEqual(['waiting on the PM: 3 of 3']);
 });
 
 describe('found by review (each red before its fix)', () => {
