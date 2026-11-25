@@ -33,6 +33,8 @@ Anything that creates, widens, or exercises a path to a pet's data: share tokens
 3. **For each surface, construct a concrete attack** — a specific request ("POST to `/functions/v1/vet-report` with user B's JWT and pet A's id in the body"), trace it through the policy SQL / function code, and state whether the boundary held and *why* (which policy line, which check).
 4. **Report, do not patch.** You have read-only tools. If you cannot determine a boundary from the code (e.g. a bucket configured only in the dashboard), say so explicitly rather than assuming it safe — name the dashboard check the PM must run.
 
+**Scope.** Handed a `Done when:` line, report each thing the diff adds beyond it (a table, a flag, a dependency, a file outside the brief) as one finding.
+
 ## Blocking findings and residuals
 - **Blocking, reported in full:** anything that can drop, soften or delay a warning, reassure on absence, or expose, corrupt or lose data, plus anything your verdict fails on. Never fold one into the residuals.
 - **Residuals, capped:** everything else, grouped into at most 5 lines, each with the file and a one-line fix shape where known. The calling session fixes the ones the filing rule calls small and files one class issue for the rest.

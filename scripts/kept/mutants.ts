@@ -100,6 +100,20 @@ const MUTANTS: Mutant[] = [
   { check: 'the paragraph lists it under Parked for you', file: 'scripts/sweep/prompt.ts', from: 'under \\`## Parked for you\\`', to: 'under \\`## Notes\\`' },
   { check: 'Waiting on PM only when it gates a go-live', file: 'scripts/sweep/prompt.ts', from: 'only if it gates a go-live', to: 'always' },
   { check: 'dispatch.md carries the paragraph', file: '.claude/commands/dispatch.md', from: '   per row; a second returns the fork to the PM as a stop.', to: '   per row.' },
+  // PR-27 (CUL-2871): the check against the brief, the reviewers' scope, two red CI rounds then stop.
+  { check: 'dispatch lists the extras against Done when', file: '.claude/commands/dispatch.md', from: '   dependencies, files outside the build note) against the Done when line, and remove\n', to: '   dependencies) before review, and remove\n' },
+  { check: 'dispatch names the extras under Beyond the brief', file: '.claude/commands/dispatch.md', from: 'in the PR body under `## Beyond the brief`. Hand every reviewer', to: 'in the PR body. Hand every reviewer' },
+  { check: 'dispatch hands reviewers the Done when line', file: '.claude/commands/dispatch.md', from: '   subagent you run the Done when line. A second red', to: '   subagent you run the diff. A second red' },
+  { check: 'dispatch stops on the second red round', file: '.claude/commands/dispatch.md', from: 'A second red CI round on the same cause is a\n   stop, not a third try', to: 'A third red CI round on the same cause is a\n   stop, not a fourth try' },
+  { check: 'dispatch gives the paragraph to BUILD rows', file: '.claude/commands/dispatch.md', from: '   <BUILD rows:> Before you open your PR', to: '   Before you open your PR' },
+  { check: 'the page format names the Done when line', file: '.claude/commands/dispatch.md', from: 'carry a `Done when:` line (the one test a reviewer holds the diff to),', to: 'carry done-when,' },
+  { check: 'the sweep paragraph stops as a ruling', file: 'scripts/sweep/prompt.ts', from: 'raise Needs you with \\`ruling\\`, naming the cause.`', to: 'try again.`' },
+  { check: 'the sweep paragraph removes or names each extra', file: 'scripts/sweep/prompt.ts', from: 'each extra or name it in the PR body', to: 'each extra in the PR body' },
+  { check: 'build and plan sweep prompts carry the brief check', file: 'scripts/sweep/prompt.ts', from: "${pick.kind === 'shape' ? '' : `\\n${f(SHARED.brief)}`}", to: '' },
+  { check: 'a shaping sweep prompt has no brief check', file: 'scripts/sweep/prompt.ts', from: "${pick.kind === 'shape' ? '' : `\\n${f(SHARED.brief)}`}", to: '${`\\n${f(SHARED.brief)}`}' },
+  { check: 'the code reviewer reads scope against Done when', file: '.claude/agents/code-reviewer.md', from: '**Scope.** Handed a `Done when:` line', to: '**Scope.** Handed a build note' },
+  { check: 'the adversarial reviewer reads scope against Done when', file: '.claude/agents/adversarial-reviewer.md', from: 'a file outside the brief) as one finding.', to: 'a file outside the brief).' },
+  { check: 'the RLS reviewer reads scope against Done when', file: '.claude/agents/rls-privacy-reviewer.md', from: '(a table, a flag, a dependency,', to: '(a table, a dependency,' },
 ];
 
 function suiteGreen(): boolean {

@@ -153,6 +153,39 @@ describe('a question the work raises', () => {
   });
 });
 
+// PR-27 (CUL-2871): the check against the brief, the reviewers' scope, and two red CI
+// rounds then stop. Mutation proof: scripts/kept/mutants.ts.
+describe('a child holds its diff to the brief', () => {
+  const AGENTS = ['code-reviewer', 'adversarial-reviewer', 'rls-privacy-reviewer'].map((a) =>
+    norm(fs.readFileSync(path.resolve(__dirname, `../../.claude/agents/${a}.md`), 'utf8')),
+  );
+
+  it('the paragraph lists the extras against the Done when line, before the PR opens', () => {
+    const t = norm(SHARED.brief);
+    expect(t).toContain('Before you open your PR, list what your diff adds (tables, flags, dependencies, files outside the build note) against the Done when line');
+    expect(t).toContain('remove each extra or name it in the PR body under `## Beyond the brief`');
+  });
+
+  it('every reviewer the child runs is handed the Done when line', () => {
+    expect(norm(SHARED.brief)).toContain('Hand every reviewer subagent you run the Done when line.');
+    for (const a of AGENTS) expect(a).toContain('**Scope.** Handed a `Done when:` line, report each thing the diff adds beyond it (a table, a flag, a dependency, a file outside the brief) as one finding.');
+  });
+
+  it('a second red CI round on one cause stops the child as a ruling', () => {
+    expect(norm(SHARED.brief)).toContain('A second red CI round on the same cause is a stop, not a third try: raise Needs you with `ruling`, naming the cause.');
+  });
+
+  it('dispatch gives it to BUILD rows, after Done when; the sweep to build and plan picks, never a shaping one', () => {
+    expect(TEMPLATE).toContain(norm(`(typecheck, the touched tests)">. <BUILD rows:> ${SHARED.brief}`));
+    for (const k of ['build', 'plan'] as const) expect(norm(render(pick({ kind: k })))).toContain(`Edge Function test you touch. ${norm(SHARED.brief)}`);
+    expect(render(pick({ kind: 'shape', files: [] }))).not.toContain('Beyond the brief');
+  });
+
+  it('the page format names the Done when line a build note carries', () => {
+    expect(norm(DISPATCH)).toContain('**Build notes** per PR carry a `Done when:` line (the one test a reviewer holds the diff to)');
+  });
+});
+
 describe('a batch of prompts', () => {
   const picks = [pick({ issues: ['CUL-1797'], kind: 'shape', files: [] }), pick(), pick({ issues: ['CUL-1286'], files: ['components/profile/EditPetModal.tsx'] })];
   const out = renderPrompts(picks, 7, '2026-11-10T14:05:00Z', ['#1500 (PR-05): lib/x.ts'], true);
