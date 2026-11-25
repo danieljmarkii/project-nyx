@@ -18,7 +18,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 
-import { deployVerdict, digestLine, LEDGER, ledgerProblems, refusal, TRAILER, type Commit, type LedgerEntry, type Run } from './rollback.ts';
+import { deployVerdict, digestLine, LEDGER, ledgerAddsOne, ledgerProblems, MIGRATIONS, refusal, TRAILER, type Commit, type LedgerEntry, type Run } from './rollback.ts';
 
 const BASE = 'origin/main';
 const git = (args: string[]) => execFileSync('git', ['-c', 'core.quotePath=false', ...args], { encoding: 'utf8', maxBuffer: 1 << 28 }).trim();
@@ -38,13 +38,25 @@ function readCommit(sha: string, base: string): Commit {
     if (r.status === 0) revertTree = r.stdout.split('\n')[0].trim();
     else if (r.status !== 1) throw new Unknown(`git merge-tree failed: ${r.stderr.trim()}`);
   }
-  return { sha, subject: git(['log', '-1', '--format=%s', sha]), parents, files, revertTree, mainTree: git(['rev-parse', `${base}^{tree}`]) };
+  const laterMigrations = [
+    ...new Set(git(['log', '--first-parent', '--format=', '--name-only', `${sha}..${base}`]).split('\n').filter((f) => f && MIGRATIONS.test(f))),
+  ].sort();
+  return {
+    sha,
+    subject: git(['log', '-1', '--format=%s', sha]),
+    body: git(['log', '-1', '--format=%b', sha]),
+    parents,
+    files,
+    revertTree,
+    mainTree: git(['rev-parse', `${base}^{tree}`]),
+    laterMigrations,
+  };
 }
 
 /** The squash commit of PR #n on main's first parent line. */
-function findMerge(pr: number): string {
+function findMerge(pr: number, base = BASE): string {
   const suffix = ` (#${pr})`;
-  const hits = git(['log', '--first-parent', '--format=%H%x09%s', BASE])
+  const hits = git(['log', '--first-parent', '--format=%H%x09%s', base])
     .split('\n')
     .filter((l) => l.endsWith(suffix))
     .map((l) => l.split('\t')[0]);
@@ -66,7 +78,10 @@ function apply(pr: number, why: string): void {
   const c = check(pr);
   if (git(['status', '--porcelain'])) throw new Unknown('the working tree has changes; commit or stash them first');
   if (git(['rev-parse', 'HEAD']) !== git(['rev-parse', BASE])) throw new Unknown(`start from a fresh branch at ${BASE}`);
-  if (!ok(['revert', '--no-edit', '--no-commit', c.sha])) throw new Refused('git revert did not apply cleanly');
+  if (!ok(['revert', '--no-edit', '--no-commit', c.sha])) {
+    ok(['revert', '--abort']);
+    throw new Refused('git revert did not apply cleanly');
+  }
   const raw: unknown = JSON.parse(fs.readFileSync(LEDGER, 'utf8'));
   const entry: LedgerEntry = { pr, sha: c.sha, subject: c.subject, files: c.files, why: why.trim(), date: new Date().toISOString().slice(0, 10) };
   (raw as { rollbacks: LedgerEntry[] }).rollbacks.push(entry);
@@ -91,7 +106,11 @@ function landing(base: string, head: string, landedTree: string): string {
   if (named.size !== 1) throw new Refused(`${named.size} ${TRAILER} trailers on the branch, not one`);
   const sha = [...named][0];
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Refused(`${TRAILER} names ${sha}, not a full sha`);
-  if (!ok(['merge-base', '--is-ancestor', sha, base])) throw new Refused(`${sha.slice(0, 7)} is not on ${base}`);
+  // The same commit `apply` would pick: PR #n's one squash merge on main's first parent
+  // line, never a side branch commit or any other ancestor.
+  const pr = /\(#(\d+)\)$/.exec(git(['log', '-1', '--format=%s', sha]))?.[1];
+  if (!pr) throw new Refused(`${sha.slice(0, 7)} names no PR`);
+  if (findMerge(Number(pr), base) !== sha) throw new Refused(`${sha.slice(0, 7)} is not #${pr}'s squash merge on ${base}`);
   const c = readCommit(sha, base);
   const why = refusal(c);
   if (why) throw new Refused(why);
@@ -99,8 +118,13 @@ function landing(base: string, head: string, landedTree: string): string {
   // Filtered here, not by an exclude pathspec: merge-check exports GIT_LITERAL_PATHSPECS.
   const extra = git(['diff', '--name-only', '--no-renames', c.revertTree as string, landedTree]).split('\n').filter((f) => f && f !== LEDGER);
   if (extra.length) throw new Refused(`the landing changes more than the revert: ${extra.join(', ')}`);
-  const pr = /\(#(\d+)\)$/.exec(c.subject)?.[1];
-  return `${sha}\t${pr ? `#${pr}` : '(no PR number)'}`;
+  const read = (tree: string): unknown => {
+    const r = spawnSync('git', ['show', `${tree}:${LEDGER}`], { encoding: 'utf8' });
+    return r.status === 0 ? JSON.parse(r.stdout) : undefined;
+  };
+  const ledger = ledgerAddsOne(read(base), read(landedTree), sha);
+  if (ledger) throw new Refused(ledger);
+  return `${sha}\t#${pr}`;
 }
 
 function deployed(args: string[]): number {
@@ -138,7 +162,7 @@ function main(): number {
     }
     case 'apply': {
       const i = args.indexOf('--why');
-      if (!Number.isInteger(pr) || pr < 1 || i === -1) throw new Unknown('usage: apply <pr> --why "<text>"');
+      if (!Number.isInteger(pr) || pr < 1 || i === -1 || (args[i + 1] ?? '--').startsWith('--')) throw new Unknown('usage: apply <pr> --why "<text>"');
       apply(pr, args[i + 1] ?? '');
       return 0;
     }

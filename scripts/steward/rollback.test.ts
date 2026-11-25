@@ -4,7 +4,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { deployVerdict, digestLine, LEDGER, ledgerProblems, NO_RUN_MINUTES, refusal, type Commit, type Run } from './rollback.ts';
+import { deployVerdict, digestLine, LEDGER, ledgerAddsOne, ledgerProblems, NO_RUN_MINUTES, refusal, type Commit, type Run } from './rollback.ts';
 
 const SHA = 'a'.repeat(40);
 const LATER = 'b'.repeat(40);
@@ -12,10 +12,12 @@ const LATER = 'b'.repeat(40);
 const commit = (over: Partial<Commit> = {}): Commit => ({
   sha: SHA,
   subject: 'Change (#41)',
+  body: '',
   parents: 1,
   files: ['lib/shared.ts'],
   revertTree: 't1',
   mainTree: 't2',
+  laterMigrations: [],
   ...over,
 });
 
@@ -29,6 +31,17 @@ describe('refusal', () => {
     expect(refusal(commit({ revertTree: null }))).toMatch(/a later merge touched the same lines/);
     expect(refusal(commit({ parents: 2 }))).toMatch(/not a squash commit/);
     expect(refusal(commit({ revertTree: 't2' }))).toMatch(/already rolled back/);
+  });
+
+  it('any SQL file counts as a migration, its own or a later merge\'s', () => {
+    expect(refusal(commit({ files: ['scripts/backfill/fix.sql'] }))).toMatch(/carried a migration/);
+    expect(refusal(commit({ laterMigrations: ['supabase/migrations/091_drop.sql'] }))).toMatch(/a later merge carried a migration \(supabase\/migrations\/091_drop\.sql\)/);
+  });
+
+  it('a rollback or a revert is never undone without the PM', () => {
+    expect(refusal(commit({ subject: 'Rollback #41: Change (#41) (#50)' }))).toMatch(/itself a rollback or a revert/);
+    expect(refusal(commit({ subject: 'Revert "Change (#41)" (#50)' }))).toMatch(/itself a rollback or a revert/);
+    expect(refusal(commit({ subject: 'Undo it (#50)', body: `x\n\nRollback-Of: ${SHA}` }))).toMatch(/itself a rollback or a revert/);
   });
 });
 
@@ -75,6 +88,16 @@ describe('the ledger', () => {
     expect(ledgerProblems({})).toHaveLength(1);
     expect(ledgerProblems({ rollbacks: [{ ...entry, why: ' ' }] })).toHaveLength(1);
     expect(ledgerProblems({ rollbacks: [{ ...entry, sha: 'abc' }] })).toHaveLength(1);
+  });
+
+  it("a landing adds exactly one entry, for its own rollback, and keeps main's", () => {
+    const base = { rollbacks: [{ ...entry, pr: 7, sha: LATER }] };
+    expect(ledgerAddsOne(base, { rollbacks: [...base.rollbacks, entry] }, SHA)).toBeNull();
+    expect(ledgerAddsOne(base, base, SHA)).toMatch(/gains 0 entries/);
+    expect(ledgerAddsOne(base, { rollbacks: [...base.rollbacks, entry, entry] }, SHA)).toMatch(/gains 2 entries/);
+    expect(ledgerAddsOne(base, { rollbacks: [{ ...entry, pr: 8, sha: LATER }, entry] }, SHA)).toMatch(/rewrites main's entries/);
+    expect(ledgerAddsOne(base, { rollbacks: [...base.rollbacks, { ...entry, sha: LATER }] }, SHA)).toMatch(/new entry names/);
+    expect(ledgerAddsOne(base, undefined, SHA)).toMatch(/no `rollbacks` array/);
   });
 
   // The fixtures the self merge gate's tests read (CUL-2874): every rollback lands one.

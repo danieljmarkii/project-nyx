@@ -1129,8 +1129,10 @@ describe('scripts/steward/merge-check.sh', () => {
       expect(rollback(s, ['apply', '42', '--why', 'x']).code).toBe(1);
       expect(head(s)).toBe(bad);
 
+      // A perfect landing in every other respect: the revert and its one ledger line.
       git(s, ['revert', '--no-edit', bad]);
-      git(s, ['commit', '--quiet', '--amend', '-m', `Revert by hand\n\nRollback-Of: ${bad}`]);
+      write(s, 'scripts/steward/rollbacks.json', JSON.stringify({ rollbacks: [{ pr: 42, sha: bad, subject: 'Add a table (#42)', files: ['lib/shared.ts', 'supabase/migrations/003_add.sql'], why: 'x', date: '2026-11-24' }] }, null, 2) + '\n');
+      commitAll(s, `Revert by hand\n\nRollback-Of: ${bad}`);
       git(s, ['push', '--quiet', '-u', 'origin', 'claude/rollback']);
       const r = check(s);
       expect(r.out).not.toContain('production: a rollback of');
@@ -1157,6 +1159,61 @@ describe('scripts/steward/merge-check.sh', () => {
       expect(rollback(s, ['apply', '41', '--why', 'deploy check failed']).code).toBe(0);
       write(s, 'lib/shared.ts', FILES['lib/shared.ts'].replace('four = 4', 'four = 5'));
       commitAll(s, 'and a fix');
+      git(s, ['push', '--quiet', '-u', 'origin', 'claude/rollback']);
+      const r = check(s);
+      expect(r.out).not.toContain('production: a rollback of');
+      expect(r.code).toBe(2);
+    });
+
+    // The isolated review's bypasses: a trailer naming a commit `apply` would never pick,
+    // undoing a rollback, a later migration, and a ledger that is not one new line.
+    it('a trailer naming a side branch commit is no rollback', () => {
+      const fx = fixture();
+      landOnMain(fx, FILES, 'functions (#40)');
+      const side = cloneOf(fx, 'side');
+      git(side, ['checkout', '--quiet', '-b', 'side']);
+      write(side, 'lib/shared.ts', BAD);
+      commitAll(side, 'Side change (#46)');
+      const sideSha = head(side);
+      git(fx.mainClone, ['pull', '--quiet', '--ff-only', 'origin', 'main']);
+      git(fx.mainClone, ['fetch', '--quiet', side, 'side']);
+      git(fx.mainClone, ['merge', '--quiet', '--no-ff', '-m', 'Merge side (#46)', 'FETCH_HEAD']);
+      git(fx.mainClone, ['push', '--quiet', 'origin', 'main']);
+      const s = rollbackBranch(fx);
+      git(s, ['revert', '--no-edit', sideSha]);
+      write(s, 'scripts/steward/rollbacks.json', JSON.stringify({ rollbacks: [{ pr: 46, sha: sideSha, subject: 'Side change (#46)', files: ['lib/shared.ts'], why: 'x', date: '2026-11-24' }] }, null, 2) + '\n');
+      commitAll(s, `Rollback\n\nRollback-Of: ${sideSha}`);
+      git(s, ['push', '--quiet', '-u', 'origin', 'claude/rollback']);
+      const r = check(s);
+      expect(r.out).not.toContain('production: a rollback of');
+      expect(r.code).toBe(2);
+    });
+
+    it('undoing a rollback is refused', () => {
+      const { fx } = deployedBadChange();
+      const s = rollbackBranch(fx);
+      expect(rollback(s, ['apply', '41', '--why', 'deploy check failed']).code).toBe(0);
+      git(s, ['commit', '--quiet', '--amend', '-m', `${git(s, ['log', '-1', '--format=%B']).trim().replace(/^Rollback #41: Make shared two \(#41\)/, 'Rollback #41: Make shared two (#41) (#47)')}`]);
+      git(s, ['push', '--quiet', 'origin', 'HEAD:main']);
+      const again = cloneOf(fx, 'again');
+      const c = rollback(again, ['check', '47']);
+      expect(c.out).toContain('REFUSED: it is itself a rollback or a revert');
+      expect(c.code).toBe(1);
+    });
+
+    it('a later merge that carried a migration is refused', () => {
+      const { fx } = deployedBadChange();
+      landOnMain(fx, { 'supabase/migrations/003_drop.sql': 'alter table a drop column x;\n' }, 'Drop a column (#48)');
+      const c = rollback(cloneOf(fx, 'later'), ['check', '41']);
+      expect(c.out).toContain('REFUSED: a later merge carried a migration (supabase/migrations/003_drop.sql)');
+      expect(c.code).toBe(1);
+    });
+
+    it('a rollback whose ledger is not exactly one new line for it is no rollback', () => {
+      const { fx, bad } = deployedBadChange();
+      const s = rollbackBranch(fx);
+      git(s, ['revert', '--no-edit', bad]);
+      git(s, ['commit', '--quiet', '--amend', '-m', `Rollback by hand\n\nRollback-Of: ${bad}`]);
       git(s, ['push', '--quiet', '-u', 'origin', 'claude/rollback']);
       const r = check(s);
       expect(r.out).not.toContain('production: a rollback of');

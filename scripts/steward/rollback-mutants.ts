@@ -26,6 +26,11 @@ const MUTANTS: Mutant[] = [
   { check: 'a later merge on the same lines is refused', file: R, from: 'if (c.revertTree === null) return', to: 'if (c.revertTree === "never") return' },
   { check: 'a merge commit is refused', file: R, from: 'if (c.parents !== 1) return', to: 'if (c.parents > 2) return' },
   { check: 'the landing check refuses what check refuses', file: CLI, from: "  if (why) throw new Refused(why);\n  // The ledger line", to: '  // The ledger line' },
+  { check: 'any SQL file is a migration', file: R, from: '|\\.sql$/;', to: '/;' },
+  { check: 'a later migration is refused', file: R, from: 'if (c.laterMigrations.length) return', to: 'if (c.laterMigrations.length < 0) return' },
+  { check: 'undoing a rollback is refused', file: R, from: "if (/^(Rollback #|Revert \")/.test(c.subject) ||", to: 'if (' },
+  { check: 'the landing names only the PR\'s own squash merge', file: CLI, from: "  if (findMerge(Number(pr), base) !== sha) throw new Refused(`${sha.slice(0, 7)} is not #${pr}'s squash merge on ${base}`);\n", to: '' },
+  { check: 'the landing ledger is one new line for it', file: CLI, from: '  if (ledger) throw new Refused(ledger);\n', to: '' },
   { check: 'a landing with more than the revert is no rollback', file: CLI, from: 'if (extra.length) throw', to: 'if (extra.length < 0) throw' },
   { check: 'apply writes the ledger line', file: CLI, from: '(raw as { rollbacks: LedgerEntry[] }).rollbacks.push(entry);', to: '' },
   // Detection: what counts as the deploy check failing.
@@ -34,7 +39,7 @@ const MUTANTS: Mutant[] = [
   { check: 'a cancelled run is not a pass or a failure', file: R, from: "r.conclusion !== 'cancelled' && ", to: '' },
   { check: 'only push runs count', file: R, from: "r.event === 'push' && ", to: '' },
   // merge-check: who needs the typed word.
-  { check: 'a pure rollback needs no typed word', file: MC, from: 'if [ -n "$rollback_of" ]; then\n    echo "production: a rollback', to: 'if false; then\n    echo "production: a rollback' },
+  { check: 'a pure rollback needs no typed word', file: MC, from: 'if [ -n "$rollback_of" ]; then\n    tab=', to: 'if false; then\n    tab=' },
   { check: 'a rollback that edits a gate file still waits', file: MC, from: 'deploy_fns="" deploy_unknown="" deploy_state=""', to: 'deploy_fns="" deploy_unknown="" deploy_state="" gate_files=""' },
   // The redeploy: a failed attempt since the last success makes main owed.
   { check: 'a failure since the last success redeploys', file: PLAN, from: 'if (input.failedSince?.[fn]) return', to: 'if (input.failedSince?.[fn] && false) return' },

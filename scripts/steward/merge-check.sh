@@ -698,7 +698,8 @@ if [ -n "$landed_tree" ] && [ "$merged" -eq 0 ]; then
     rollback_of=$(node --experimental-strip-types --no-warnings "$script_dir/rollback-cli.ts" landing "$base" "$head" "$landed_tree" 2>/dev/null) || rollback_of=""
   fi
   if [ -n "$rollback_of" ]; then
-    echo "production: a rollback of ${rollback_of%%	*} (${rollback_of##*	}) restores code main held; its deploy needs no typed word (CUL-2885)"
+    tab=$'\t'
+    echo "production: a rollback of ${rollback_of%%"$tab"*} (${rollback_of##*"$tab"}) restores code main held; its deploy needs no typed word (CUL-2885)"
     [ -n "$deploy_fns" ] && echo "  redeploys $(printf '%s\n' "$deploy_lines" | sed '/^$/d' | cut -f1 | paste -sd, - | sed 's/,/, /g')"
     [ -n "$deploy_state" ] && echo "  redeploys $deploy_state"
     deploy_fns="" deploy_unknown="" deploy_state=""

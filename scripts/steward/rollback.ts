@@ -17,10 +17,16 @@
 // Stated blind spots:
 //  - A run that failed on ANOTHER merge's function reads as this merge failing, and rolls
 //    this one back too. Loud, never quiet.
+//  - A revert of an older commit, past later merges on OTHER lines, lands a tree main never
+//    held. The rollback PR's own CI and the steward skill's `--verify` type check it, as
+//    every merge; a later migration is refused outright.
+//  - A deploy record left without a terminal status (a run killed mid upload) is not read
+//    as a failure, so a revert would not redeploy over it (rare: timing).
 //  - A function that answers but answers wrongly passes. The deploy checks see status
 //    codes, not content (CUL-2874's 1.2.0 checkpoint exists for this).
 
-export const MIGRATIONS = /^supabase\/migrations\//;
+// Any SQL is database facing (scripts/**/*.sql included), and the database does not revert.
+export const MIGRATIONS = /^supabase\/migrations\/|\.sql$/;
 export const LEDGER = 'scripts/steward/rollbacks.json';
 // No deploy run for the merge this long after it counts as a failure: the push trigger
 // starts one within seconds, and the job's own timeout is 60 minutes once it starts.
@@ -30,11 +36,14 @@ export const TRAILER = 'Rollback-Of';
 export type Commit = {
   sha: string;
   subject: string;
+  body: string;
   parents: number;
   files: string[];
   // The revert, applied to today's main: null when it conflicts.
   revertTree: string | null;
   mainTree: string;
+  // Database facing files any later commit on main's first parent line touched.
+  laterMigrations: string[];
 };
 
 /** Why a commit may not be rolled back without the PM, or null when it may. */
@@ -42,6 +51,10 @@ export function refusal(c: Commit): string | null {
   if (c.parents !== 1) return `${c.sha.slice(0, 7)} is not a squash commit (${c.parents} parents); a rollback reverts one squash merge`;
   const migrations = c.files.filter((f) => MIGRATIONS.test(f));
   if (migrations.length) return `it carried a migration (${migrations.join(', ')}); the database does not roll back with the code, so this goes to the PM`;
+  if (/^(Rollback #|Revert ")/.test(c.subject) || new RegExp(`^${TRAILER}:`, 'm').test(c.body)) {
+    return 'it is itself a rollback or a revert; undoing it re-lands code that was taken out, so this goes to the PM';
+  }
+  if (c.laterMigrations.length) return `a later merge carried a migration (${c.laterMigrations.join(', ')}); old code over a newer schema goes to the PM`;
   if (c.revertTree === null) return 'a later merge touched the same lines, so the revert no longer restores a state main held; this goes to the PM';
   if (c.revertTree === c.mainTree) return 'main no longer holds any of its change (already rolled back?)';
   return null;
@@ -114,4 +127,16 @@ export function ledgerProblems(raw: unknown): string[] {
       !/^\d{4}-\d{2}-\d{2}$/.test(e.date);
     return bad ? [`rollbacks[${i}] is malformed: ${JSON.stringify(e)}`] : [];
   });
+}
+
+/** A landing's ledger must be main's plus exactly one well formed entry for this rollback. */
+export function ledgerAddsOne(base: unknown, landed: unknown, sha: string): string | null {
+  const problems = ledgerProblems(landed);
+  if (problems.length) return problems.join('; ');
+  const before = ((base as { rollbacks?: unknown[] })?.rollbacks ?? []) as unknown[];
+  const after = (landed as { rollbacks: LedgerEntry[] }).rollbacks;
+  if (after.length !== before.length + 1) return `the ledger gains ${after.length - before.length} entries, not one`;
+  if (JSON.stringify(after.slice(0, before.length)) !== JSON.stringify(before)) return "the ledger rewrites main's entries";
+  if (after[after.length - 1].sha !== sha) return `the ledger's new entry names ${after[after.length - 1].sha.slice(0, 7)}, not ${sha.slice(0, 7)}`;
+  return null;
 }
