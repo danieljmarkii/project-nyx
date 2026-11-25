@@ -1,8 +1,8 @@
 ---
 name: vet-report-cold-read
 description: >-
-  Use once Step 9 produces a rendered vet report (PDF/HTML/image) — and on every
-  meaningful change to the report's content or layout after that. This agent is
+  Use on a rendered vet report (PDF/HTML/image) after every meaningful change
+  to its content or layout. This agent is
   Dr. Chen reading the artifact COLD: it must be given the rendered output, not the
   generation code, because the real consumer is a vet who scans the report in 60
   seconds for a patient they have never met. Returns CLINIC-READY / NOT READY against
@@ -55,6 +55,7 @@ Only now read the repo: the report's generation code/queries, `docs/nyx-schema-v
 ## Blocking findings and residuals
 - **Blocking, reported in full:** anything that can drop, soften or delay a warning, reassure on absence, or expose, corrupt or lose data, plus anything your verdict fails on. Never fold one into the residuals.
 - **Residuals, capped:** everything else, grouped into at most 5 lines, each with the file and a one-line fix shape where known. The calling session fixes the ones the filing rule calls small and files one class issue for the rest.
+- **Each finding and residual ends with** `Direction: QUIET|LOUD|neither · Origin: diff|main · Devices: 1|2+ · Timing: any|race|clock · Precondition: none|abnormal · Harm: none|exposure|loss|corruption`; untagged counts as QUIET and as harm.
 - The finding sections of the output hold blocking findings only.
 
 ## Output format
