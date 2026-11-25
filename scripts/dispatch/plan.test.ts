@@ -180,6 +180,9 @@ describe('the gate predicate reads the kept list (CUL-2886)', () => {
     ['a new table', 'Migration `supabase/migrations/122_add_logs.sql` creates a new table.'],
     ['a retire', 'Migration `supabase/migrations/119_add_x.sql` retires the legacy logs table.'],
     ['no file named', 'Widen the food logs.'],
+    // Only the name rule catches this one, and only the unnamed rule the next (mutation proof).
+    ['a name that is not add_', 'Migration `supabase/migrations/105_food_note.sql`.'],
+    ['a migration named only as a flag', 'The read in `scripts/dispatch/plan.ts`.'],
   ])('%s waits for its go', (_k, note) => {
     expect(gateOf({ what: 'x', note, migration: true }).line).toBe('plan');
   });
