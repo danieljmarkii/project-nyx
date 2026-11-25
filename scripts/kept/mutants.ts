@@ -90,6 +90,16 @@ const MUTANTS: Mutant[] = [
   { check: 'the sweep plans what is kept', file: 'scripts/sweep/rank.ts', from: "keptFor(c).kept !== 'none'", to: 'false' },
   { check: 'the sweep passes files to the kept list', file: 'scripts/sweep/rank.ts', from: 'keptOf({ labels: c.labels, files: c.files,', to: 'keptOf({ labels: c.labels, files: [],' },
   { check: 'the sweep passes labels to the kept list', file: 'scripts/sweep/rank.ts', from: 'keptOf({ labels: c.labels,', to: 'keptOf({ labels: [],' },
+  // D12 (CUL-2866): the child's question paragraph (scripts/sweep/prompt.ts, dispatch.md step 5).
+  { check: 'a stakes question stops, never parks', file: 'scripts/sweep/prompt.ts', from: "if (kept === 'stakes') return 'stop';", to: '' },
+  { check: 'a none question is a team call', file: 'scripts/sweep/prompt.ts', from: "if (kept === 'none') return 'team call';", to: "if (kept === 'none') return 'park';" },
+  { check: 'a second park returns the fork', file: 'scripts/sweep/prompt.ts', from: 'parkedAlready > 0 ?', to: 'parkedAlready > 1 ?' },
+  { check: 'build and plan prompts carry the paragraph', file: 'scripts/sweep/prompt.ts', from: "pick.kind === 'shape' ? gate : `${gate}\\n${f(SHARED.park)}`", to: 'gate' },
+  { check: 'a shaping prompt parks nothing', file: 'scripts/sweep/prompt.ts', from: "pick.kind === 'shape' ? gate : `${gate}\\n${f(SHARED.park)}`", to: '`${gate}\\n${f(SHARED.park)}`' },
+  { check: 'the paragraph parks behind a switch that is off', file: 'scripts/sweep/prompt.ts', from: 'or a constant that defaults off,', to: 'or a constant,' },
+  { check: 'the paragraph lists it under Parked for you', file: 'scripts/sweep/prompt.ts', from: 'under \\`## Parked for you\\`', to: 'under \\`## Notes\\`' },
+  { check: 'Waiting on PM only when it gates a go-live', file: 'scripts/sweep/prompt.ts', from: 'only if it gates a go-live', to: 'always' },
+  { check: 'dispatch.md carries the paragraph', file: '.claude/commands/dispatch.md', from: '   per row; a second returns the fork to the PM as a stop.', to: '   per row.' },
 ];
 
 function suiteGreen(): boolean {
