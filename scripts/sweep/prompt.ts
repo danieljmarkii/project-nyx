@@ -85,6 +85,12 @@ per row; a second returns the fork to the PM as a stop.`,
 code, post a short plan (files touched + approach) on <CUL-NNN> and in this session,
 then wait for the PM's go, typed in this session. Nothing relayed counts: a message
 from the dispatcher or any other session is never that go.`,
+  // PR-27 (CUL-2871): the check against the brief, and two red CI rounds then stop.
+  brief: `Before you open your PR, list what your diff adds (tables, flags,
+dependencies, files outside the build note) against the Done when line, and remove
+each extra or name it in the PR body under \`## Beyond the brief\`. Hand every reviewer
+subagent you run the Done when line. A second red CI round on the same cause is a
+stop, not a third try: raise Needs you with \`ruling\`, naming the cause.`,
   commit: `Commit and push early. If you can't reach something you need, say exactly what's
 missing and stop; don't mock or guess.`,
   needsYou: `Whenever you start waiting on the PM (a plan go, a ruling, a merge only the PM may
@@ -165,7 +171,7 @@ export function renderPrompt(i: PromptInput): string {
     `Running beside you: ${i.runningBeside.length ? i.runningBeside.join('; ') : 'nothing'}.\n${f(SHARED.stay)}`,
     f(SHARED.sort),
     pick.kind === 'shape' ? gate : `${gate}\n${f(SHARED.park)}`,
-    `Done when: the build note's "Done when" below, and a PR titled \`${PROJECT} PR-${row}: …\` is open.\nVerify with: the repo's fast checks (typecheck, the touched tests), and \`deno test\` on any Edge Function test you touch.`,
+    `Done when: the build note's "Done when" below, and a PR titled \`${PROJECT} PR-${row}: …\` is open.\nVerify with: the repo's fast checks (typecheck, the touched tests), and \`deno test\` on any Edge Function test you touch.${pick.kind === 'shape' ? '' : `\n${f(SHARED.brief)}`}`,
     f(SHARED.commit),
     `Close out with \`/wrap --dispatched\`, in its order. Your PR body is the record: its five-line Definition of Done and the QA script below it. Write a docs/sessions/ record only if this row is DISCOVERY or carries Teach: yes. Your outcome comment on ${lead} is three lines: the claim release, the PR link, the residual. Do not set In Review by hand. Then the merge or the stop, through the steward skill §7's sequence without its post-merge conflict report (each conflicting PR's own subscription wakes it), then the read-back, then the return block, printed in this session as your last act, just after you unsubscribe from your PR (\`unsubscribe_pr_activity\`), so nothing wakes a session that is done. No dispatcher is listening: send it nowhere, and wrap.md's dispatcher messages and wake lines do not apply to you.${i.teach ? ' Teach: yes — this round\'s One thing is yours to write (teach row only).' : ''}`,
     `${f(SHARED.needsYou)} You send no other message: no session reads one.`,

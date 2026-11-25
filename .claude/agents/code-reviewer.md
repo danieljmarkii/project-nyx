@@ -32,6 +32,8 @@ You are the **Code Reviewer** for Project Nyx. Review the current diff for corre
    - **Conventions** — TS strict, no `any`, absolute imports, naming, tests for store/Edge-Function/`lib/` logic.
 3. **Defer** deep statistical/clinical correctness to the `adversarial-reviewer` subagent — if the diff touches detection/correlation/AI-read/escalation logic, say so and recommend that pass rather than rubber-stamping it.
 
+**Scope.** Handed a `Done when:` line, report each thing the diff adds beyond it (a table, a flag, a dependency, a file outside the brief) as one finding.
+
 ## Output format
 ```
 ## Code review — <branch>

@@ -39,6 +39,8 @@ Clinically- or statistically-load-bearing logic: correlation/detection engines, 
 3. **For each failure mode, construct a concrete counterexample** — specific data (e.g. "chicken 3×/day for 14 days, 4 vomits, no chicken-free day") — trace it through the code, and state whether the logic held and *why*.
 4. **Report**, do not patch. You have read-only tools.
 
+**Scope.** Handed a `Done when:` line, report each thing the diff adds beyond it (a table, a flag, a dependency, a file outside the brief) as one finding.
+
 ## Blocking findings and residuals
 - **Blocking, reported in full:** anything that can drop, soften or delay a warning, reassure on absence, or expose, corrupt or lose data, plus anything your verdict fails on. Every QUIET break is blocking; a LOUD one is a residual. Never fold one into the residuals.
 - **Residuals, capped:** everything else, grouped into at most 5 lines, each with the file and a one-line fix shape where known. The calling session fixes the ones the filing rule calls small and files one class issue for the rest.
