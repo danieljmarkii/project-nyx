@@ -130,6 +130,35 @@ describe('the gate predicate reads the kept list (CUL-2886)', () => {
     expect(gateOf({ what: 'x', note: 'the Tier-2 edits in `scripts/dispatch/plan.ts`', migration: false }).planGated).toEqual(['scope: scope (in or out of a project, priority between tracks, a spec edit)']);
   });
 
+  // A6 (a), CUL-2887: a plan is posted and built; a migration row asks one word, `apply`.
+  // Mutation proof: scripts/dispatch/mutants.ts (PR-31).
+  it('a routine row posts and builds; a clinical row still waits for its go', () => {
+    expect(gateOf({ what: 'The board keeps a stale row', note: '`scripts/dispatch/board.ts`.', migration: false })).toMatchObject({ line: 'routine', planWait: [] });
+    const clinical = gateOf({ what: 'x', note: '`scripts/dispatch/plan.ts`', migration: false }, { labels: ['Gate: clinical'] });
+    expect(clinical).toMatchObject({ line: 'plan', planWait: ['stakes: clinical (label Gate: clinical)'] });
+    expect(gateOf({ what: 'x', note: 'edit `lib/dietTrial.ts`.', migration: false }).line).toBe('plan');
+  });
+
+  it('a migration row with nothing else kept asks for no plan go', () => {
+    const note = 'Migration `supabase/migrations/105_add_food_note.sql` adds a nullable column, and `scripts/dispatch/plan.ts` reads it.';
+    expect(gateOf({ what: 'x', note, migration: true })).toMatchObject({ line: 'migration', planWait: [] });
+    expect(gateOf({ what: 'x', note: '', migration: true }).line).toBe('migration');
+    // The migration is still kept: it plan-gates for display and is never auto.
+    expect(gateOf({ what: 'x', note, migration: true }).planGated[0]).toBe('migration');
+    expect(autoEligible(gateOf({ what: 'x', note, migration: true }))).toBe(false);
+  });
+
+  it('a migration row anything else keeps still waits for its go', () => {
+    const m = (note: string, labels: string[] = []) => gateOf({ what: 'x', note, migration: true }, { labels });
+    expect(m('Migration `supabase/migrations/105_add_note.sql`.', ['Gate: clinical'])).toMatchObject({ line: 'plan', planWait: ['stakes: clinical (label Gate: clinical)'] });
+    expect(m('Migration `supabase/migrations/105_add_note.sql` and `lib/dietTrial.ts`.').planWait).toEqual(['stakes: clinical surface (by name)']);
+    expect(m('Migration `supabase/migrations/105_add_note.sql`, with an RLS policy.').planWait).toEqual(['stakes: privacy, RLS, Storage, deletion, export or share links']);
+    // The migration's own name is read: a storage or meal migration holds.
+    expect(m('Migration `supabase/migrations/106_storage_bucket.sql`.').planWait).toEqual(['stakes: privacy, Storage, deletion, export or share links (by name)']);
+    expect(m('Migration `supabase/migrations/105_may_wait.sql`.').planWait).toEqual(['stakes: clinical surface (by name)']);
+    expect(m('Migration `supabase/migrations/105_add_note.sql`; backfill the old rows.').line).toBe('plan');
+  });
+
   it('plan-gates money, App Store and the irreversible, which the old predicate missed', () => {
     expect(gateOf({ what: 'a paywall on Ask', note: '', migration: false }).kept).toBe('stakes');
     expect(gateOf({ what: 'x', note: 'ships through App Review.', migration: false }).kept).toBe('stakes');

@@ -103,7 +103,11 @@ export type PlanInput = {
 
 export type Gate = {
   mode: 'BUILD' | 'DISCOVERY';
-  planGated: string[]; // reasons, empty when routine
+  planGated: string[]; // every kept reason, empty when routine
+  // Which gate line the prompt carries (PR-31, CUL-2887): `plan` waits for a typed go;
+  // `migration` posts its plan, builds and stops for `apply`; `routine` posts and builds.
+  line: 'routine' | 'migration' | 'plan';
+  planWait: string[]; // the reasons a plan go is waited on; empty unless line is `plan`
   kept: Kept; // the kept list's answer (scripts/kept/kept.ts), CUL-2886
   keptReasons: string[];
   privileged: string[]; // the sentences that name a privileged verb
@@ -200,11 +204,32 @@ export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?
     if (why.startsWith('taste:') && mode === 'DISCOVERY') continue;
     planGated.push(why);
   }
+  const planWait = row.migration ? migrationWait(issue?.labels ?? [], text, mode) : planGated;
+  const line = planWait.length ? 'plan' : row.migration ? 'migration' : 'routine';
   const privileged = text
     .split(/(?<=[.;])\s+/)
     .filter((s) => PRIVILEGED.test(s))
     .map((s) => s.trim());
-  return { mode, planGated, kept: k.kept, keptReasons: k.reasons, privileged, migration: row.migration };
+  return { mode, planGated, line, planWait, kept: k.kept, keptReasons: k.reasons, privileged, migration: row.migration };
+}
+
+// What still holds a migration row's plan once the migration itself is set aside (A6 (a),
+// PM 2026-11-25): a migration is kept as schema, and its `apply` is where the PM reads it,
+// so that one reason asks one word. Anything else the row is kept for still waits for a go.
+// Every migration file reads as schema, SQL and (by the `supabase` stem) privacy, so those
+// files are read twice over: dropped from the row's read, and their own names read as
+// product code, so `105_storage_bucket.sql` or `106_meal_tier.sql` still holds. Errs loud:
+// a reason this cannot place keeps the wait.
+const MIGRATION_FILE = /^supabase\/migrations\/[^/]+$/;
+function migrationWait(labels: string[], text: string, mode: Gate['mode']): string[] {
+  const files = pathsIn(text);
+  const others = files.filter((f) => !MIGRATION_FILE.test(f));
+  const names = files.filter((f) => MIGRATION_FILE.test(f)).map((f) => `lib/${f.slice('supabase/migrations/'.length).replace(/\.sql$/, '')}.ts`);
+  const rest = keptOf({ labels, files: others, text }).reasons.filter(
+    (why) => !why.startsWith('stakes: schema') && !(why.includes('no files named') && others.length === 0),
+  );
+  const byName = names.flatMap((f) => keptOf({ labels: [], files: [f], text: '' }).reasons).filter((why) => !why.includes('uncertain'));
+  return [...new Set([...rest, ...byName])].filter((why) => !(why.startsWith('taste:') && mode === 'DISCOVERY'));
 }
 
 // A row may carry `auto` only when this holds (dispatch.md step 5): nothing on it is kept.
@@ -223,7 +248,7 @@ export function asksOf(
 ): Asks {
   const parts: string[] = [];
   if (!opts.autoConfirmed) parts.push('the pick');
-  if (gate.planGated.length) parts.push(`its plan, then a go typed in its session (plan-gated: ${gate.planGated.join(', ')})`);
+  if (gate.line === 'plan') parts.push(`its plan, then a go typed in its session (plan-gated: ${gate.planGated.join(', ')})`);
   // One `apply` per migration file the note names (at least one when the row is a migration).
   const files = new Set([...`${row.what} ${row.note}`.matchAll(/supabase\/migrations\/(\d+[a-z]?)_/g)].map((m) => m[1]));
   if (gate.migration) for (let i = 0; i < Math.max(1, files.size); i++) parts.push('apply <NNN>');

@@ -94,6 +94,26 @@ describe('a rendered prompt', () => {
     expect(norm(shape)).not.toContain('the build note is the plan');
   });
 
+  // A6 (a), CUL-2887: post the plan and build; a migration row asks only `apply`.
+  // Mutation proof: scripts/kept/mutants.ts (PR-31).
+  it('a routine row posts its plan and builds; a plan-gated one still waits', () => {
+    const routine = norm(render(pick()));
+    expect(routine).toContain('Post a short plan (files touched + approach) on CUL-1917 and in this session, then build without waiting for a go');
+    expect(routine).not.toContain("wait for the PM's go");
+    expect(norm(render(pick({ kind: 'plan', size: 'L' })))).toContain("then wait for the PM's go, typed in this session");
+  });
+
+  it('dispatch carries three gate lines, the migration one asking only apply', () => {
+    expect(TEMPLATE).toContain(norm(`<routine rows:> ${SHARED.routine} <migration rows:> ${SHARED.migration} <plan-gated rows:> ${SHARED.plan}`));
+    expect(norm(SHARED.migration)).toContain("build up to the unapplied migration without waiting for a go, and stop: the PM's typed `apply <NNN>` is its one ask");
+  });
+
+  it('a sweep migration pick keeps its plan wait, since a pick carries no labels', () => {
+    const m = norm(render(pick({ kind: 'plan', files: ['supabase/migrations/090_x.sql'] })));
+    expect(m).toContain("then wait for the PM's go, typed in this session");
+    expect(m).not.toContain(norm(SHARED.migration).slice(0, 60));
+  });
+
   it('a bundle names every issue in the claim and the PR, and the lead everywhere else', () => {
     const p = render(pick({ issues: ['CUL-1', 'CUL-2', 'CUL-3'] }));
     expect(p).toContain('Your spec is CUL-1, with CUL-2 and CUL-3 in the same PR');
