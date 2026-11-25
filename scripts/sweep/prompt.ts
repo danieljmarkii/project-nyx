@@ -16,6 +16,7 @@
 // Every other paragraph is dispatch's own text: SHARED blocks are copied verbatim, with
 // dispatch's placeholders, and prompt.test.ts fails when one drifts from dispatch.md.
 
+import { keptOf, type KeptInput } from '../kept/kept.ts';
 import { pageRows, type SweepPick } from './rank.ts';
 
 export const PROJECT = 'Loose ends';
@@ -71,6 +72,15 @@ finding in one comment on <CUL-NNN> headed \`**Parked findings**\`, one line eac
   routine: `Build from the plan excerpt without waiting for a plan approval: the
 build note is the plan. If the work turns out to need a migration, an RLS, Storage,
 deletion or export change, a clinical surface or a Tier-2 spec edit, stop and say so.`,
+  // D12 (CUL-2866): park the judgment call, ship the rest. routeQuestion below is the same
+  // rule in code, so a fixture can hold that a never-list question still stops the row.
+  park: `A question the work raises goes by the kept list: a
+stakes one stops the row. A \`none\` one is a team call: the owning persona decides it at
+once and logs \`**Team call**\` on <CUL-NNN> (the lens, the option not taken). A taste or
+scope one is parked: build the team's recommendation behind an existing per-account flag
+or a constant that defaults off, post its decision brief on <CUL-NNN> (\`Waiting on PM\`
+only if it gates a go-live), and list it in the PR body under \`## Parked for you\`. One
+per row; a second returns the fork to the PM as a stop.`,
   plan: `This row is plan-gated (<the reasons, from step 5>). Before writing
 code, post a short plan (files touched + approach) on <CUL-NNN> and in this session,
 then wait for the PM's go, typed in this session. Nothing relayed counts: a message
@@ -92,6 +102,16 @@ included where the issue requires it; the PR holds no migration that is unapplie
 needs none; and no device check the issue's QA names is pending.
 Anything short of that, leave the PR for the PM and say which condition failed.`,
 } as const;
+
+export type QuestionRoute = 'stop' | 'team call' | 'park' | 'return the fork';
+
+// SHARED.park as a function: what a child does with a question, given how many it parked.
+export function routeQuestion(q: KeptInput, parkedAlready: number): QuestionRoute {
+  const { kept } = keptOf(q);
+  if (kept === 'stakes') return 'stop';
+  if (kept === 'none') return 'team call';
+  return parkedAlready > 0 ? 'return the fork' : 'park';
+}
 
 export type PromptInput = {
   pick: SweepPick;
@@ -144,7 +164,7 @@ export function renderPrompt(i: PromptInput): string {
     `Every issue your PR's title or body names goes Done when it merges. Name ${all}, and any other issue this PR finishes outright, and nothing else. An issue you find, file or touch goes in a Linear comment, never in the PR. After your PR merges, read back every issue it named: any that went Done without being finished, set back to its earlier state and say why in a comment. Title the PR \`${PROJECT} PR-${row}: …\`.`,
     `Running beside you: ${i.runningBeside.length ? i.runningBeside.join('; ') : 'nothing'}.\n${f(SHARED.stay)}`,
     f(SHARED.sort),
-    gate,
+    pick.kind === 'shape' ? gate : `${gate}\n${f(SHARED.park)}`,
     `Done when: the build note's "Done when" below, and a PR titled \`${PROJECT} PR-${row}: …\` is open.\nVerify with: the repo's fast checks (typecheck, the touched tests), and \`deno test\` on any Edge Function test you touch.`,
     f(SHARED.commit),
     `Close out with \`/wrap --dispatched\`, in its order. Your PR body is the record: its five-line Definition of Done and the QA script below it. Write a docs/sessions/ record only if this row is DISCOVERY or carries Teach: yes. Your outcome comment on ${lead} is three lines: the claim release, the PR link, the residual. Do not set In Review by hand. Then the merge or the stop, through the steward skill §7's sequence without its post-merge conflict report (each conflicting PR's own subscription wakes it), then the read-back, then the return block, printed in this session as your last act, just after you unsubscribe from your PR (\`unsubscribe_pr_activity\`), so nothing wakes a session that is done. No dispatcher is listening: send it nowhere, and wrap.md's dispatcher messages and wake lines do not apply to you.${i.teach ? ' Teach: yes — this round\'s One thing is yours to write (teach row only).' : ''}`,
