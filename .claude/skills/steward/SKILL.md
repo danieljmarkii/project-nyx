@@ -7,19 +7,19 @@ description: Use when a Nyx branch needs `main` brought in, a PR shows a merge c
 
 ## Why this exists
 
-Every part of a project is its own branch off `main`, and a session's `/wrap` merges its PR. Until CUL-1497 the merge was improvised. Clean merges were never the risk; the resolution is, and a session never notices one that dropped someone else's lines. So resolving is a procedure here and the script checks the result (measurements: `docs/engineering-lessons.md` §P-15).
+Clean merges were never the risk; a resolution is, and a session never notices one that dropped someone else's lines. So resolving is a procedure and the script checks the result (`docs/engineering-lessons.md` §P-15).
 
 ## 1. The model
 
 - **Each part branches off `main` and merges back on its own**, one PR per session. No project branch: unfinished work ships dark behind its flag (the flag-off guards make that safe), Edge Functions deploy on merge, and migrations apply live, so `main` has to stay the truth.
 - **Squash merge.** A branch's own history is discarded at merge, so there is nothing on it to keep tidy.
-- **Don't stack** (part 2 cut from part 1's branch). Most PRs merge the day they open, so waiting for part 1 is cheaper. If part 2 truly cannot wait, ask the PM first. A stack is the one place this repo rebases: once part 1 squash merges, `git rebase --onto origin/main <part 1's last commit> <your branch>` and `git push --force-with-lease`, only on a branch you created, and say so, because anyone holding a checkout of that branch (the PM's phone runtime included) must reset it rather than pull.
+- **Don't stack** (part 2 cut from part 1's branch). Most PRs merge the day they open, so waiting for part 1 is cheaper. If part 2 truly cannot wait, ask the PM first. A stack is the one place this repo rebases: once part 1 squash merges, `git rebase --onto origin/main <part 1's last commit> <your branch>` and `git push --force-with-lease`, only on your own branch, and say so: anyone holding a checkout of it (the PM's phone included) must reset, not pull.
 
 ## 2. When to update a branch
 
-**Only when it conflicts with `main`, or when it needs code that landed there.** Behind is fine: an update with nothing to resolve costs a CI run and a session turn and buys nothing.
+**Only when it conflicts with `main`, or when it needs code that landed there.** Behind is fine: an update with nothing to resolve costs a CI run and buys nothing.
 
-To know, run `scripts/steward/merge-check.sh` (from anywhere in the repo). It fetches, then reads: no working tree, index or branch is touched.
+To know, run `scripts/steward/merge-check.sh` (anywhere in the repo). It fetches and reads; it touches no tree, index or branch.
 
 ## 3. How to update
 
@@ -46,7 +46,7 @@ A merge commit, never a rebase of a pushed branch (the stack in §1 is the one e
 
 **Outside the lockfile and session record rows, never resolve a file both sides changed by taking one side wholesale** (`git checkout --ours` / `--theirs`, or "accept current" over a whole file). That is how a fix reverts merged work, and it also throws away every non-conflicting hunk `main` had in that file.
 
-Two new migrations with the same number never conflict as text, and git says nothing; the script reports it, against `main` and against every open PR you name, and the required `migration-numbers` CI job checks every open PR on each push (CUL-1522). The job fails both PRs of a clash (a green left standing on either side could merge a duplicate); the one opened later renumbers, and the other re-runs its check once that lands. A number already on `main` always wins. The live database keys a migration by its apply timestamp and name (`list_migrations`), never by the file's number, so renaming an unmerged file is safe even after `apply_migration` ran.
+Two new migrations with the same number never conflict as text, and git says nothing; the script reports it, against `main` and against every open PR you name, and the required `migration-numbers` CI job checks every open PR on each push (CUL-1522). The job fails both PRs of a clash (a green left standing on either side could merge a duplicate); the one opened later renumbers, and the other re-runs its check once that lands. A number already on `main` always wins. The live database keys a migration by apply timestamp and name, never by number, so renaming an unmerged file is safe even after `apply_migration`.
 
 ## 5. The check, and how to read it
 
@@ -62,7 +62,7 @@ Run `scripts/steward/merge-check.sh` again after resolving, and before any merge
   - `production:` (landing deploys an Edge Function, or edits the production gate, the deploy path or this check; CUL-1654): **never cleared in writing.** Only the PM's typed `merge` clears it (§7). The lines under it name the functions and why each deploys (`shipping code changed`, `new function`, `hold released`, or `could not tell`, which counts as deploying) and the gate files.
   - `main's CI: RED`: do not land on it. Wait for the fix, or be it: a branch that contains the red commit, touches a file changed since `main` was last green, and has its own CI passed on that head reads as the fix and stays `CLEAN`. A fix the check cannot see (a date-pinned test, nothing changed) is cleared in writing. `could not read` is never green: read `main`'s latest CI run with `actions_list` and say what it was.
 
-  Clear a `REVIEW` in writing (every kind but `production:`): the merge commit message or the PR body says which lines were rewritten or moved on purpose, one line each or one per group. On the record, careful resolutions almost never delete a line outright, so a `deleted` line is the one to doubt first.
+  Clear a `REVIEW` in writing (every kind but `production:`): the merge commit message or the PR body says which lines were rewritten or moved on purpose, one line each or one per group. Doubt a `deleted` line first.
 - **Exit 3 is never a pass.** It means the check could not run: a shallow clone (`git fetch --unshallow origin`), a file name it refuses, an unknown ref. Fix the cause and run it again.
 
 ## 6. Proving it before the push
@@ -90,14 +90,14 @@ Anything short of that: do not merge, and say which condition failed as the firs
 
 1. Everything that rides in the PR is committed and pushed, the session record included with its learning line (`/wrap` writes both before the merge).
 2. At the first push, run the check with the head branches of the other open PRs updated in the last 7 days (`list_pull_requests`); when your PR adds a migration, pass every open PR's head branch, since a parked PR still holds its number. `CONFLICT` sends you through §3 to §6 and back here.
-3. Mark the PR ready, then wait for the checks: in a cloud session, subscribe to the PR's activity and end the turn; elsewhere, a Monitor until-loop on the check runs. A wake can be one suite finishing, never the whole PR (CUL-1623), so read every check run on each wake, and **if the main suite has not reported 20 minutes after ready, read the runs yourself**. A `/dispatch` child's missed wake is the dispatcher's stalled-child note (`dispatch.md` step 9.9). Never a bare sleep, never an empty commit to retrigger CI, never auto merge (it skips step 4).
+3. Mark the PR ready, then wait for the checks: in a cloud session, subscribe to the PR's activity and end the turn; elsewhere, a Monitor until-loop on the check runs. A wake can be one suite finishing, never the whole PR (CUL-1623), so read every check run on each wake, and **if the main suite has not reported 20 minutes after ready, read the runs yourself**. A `/dispatch` child's missed wake is the dispatcher's stalled-child note (`dispatch.md` step 9.9). Never a bare sleep, an empty commit to retrigger CI, or auto merge (it skips step 4).
 4. **Immediately before the merge, run the check again with `--verify`**: when `main` moved since CI ran, it type checks the simulated landing (`tsc`, and CI's `deno check` steps at CI's pinned Deno), the conflict git cannot see (72918c0, 2026-10-03). A broken landing is `CONFLICT` (§3); exit 3 is never a pass. Then the fresh read, the gate, the squash merge, title unchanged.
 5. **Report.** Run the check again with `--head origin/main` and the same branch list, and give the PM one line naming each open PR that now conflicts with `main`. Its own session resolves it at its own wrap.
 6. `/wrap` step 4's read-back of every issue the PR named.
 
 ## 8. Planning parallel parts
 
-When a project's run order splits work into PRs that run as parallel sessions, **the files more than one PR touches decide what can run side by side.** Every merge between 2026-09-12 and 09-25 that conflicted in real code hit at least one of these shapes:
+When a project's run order splits work into PRs that run as parallel sessions, **the files more than one PR touches decide what can run side by side.** Real-code conflicts (2026-09-12 to 09-25) hit these shapes:
 
 - an index file that re-exports a namespace (`components/designV2/index.ts`)
 - the beta shelf, `app/settings/beta.tsx`
@@ -106,9 +106,13 @@ When a project's run order splits work into PRs that run as parallel sessions, *
 - a screen several parts edit (`app/(tabs)/history.tsx`)
 - the shared sync module (`lib/sync.ts`)
 
-The project's own spec is the one shared file that stays parallel. Each part writes its rulings into it, so two parts bump the header to the same version and add a changelog row at the same spot; that conflict is mechanical (§4), so expect it and resolve it by the rule rather than serializing the lanes.
+The project's own spec stays parallel: two parts bumping its header and changelog is a mechanical conflict (§4), resolved by the rule, never by serializing the lanes.
 
-`/dispatch` keeps the files in the list one at a time across the whole repo, beside migrations, `CLAUDE.md`, `STATUS.md`, guard registries and `supabase/functions/generate-signal/pipeline.ts`, reading every open PR's changed files from GitHub (a parked PR keeps holding its files). When writing the run order, either give every shared file to part 0 (it adds each later part's entry up front, so the later parts touch only their own files), or put the parts that share a file in strict order." (record: `docs/engineering-lessons.md` §P-15).
+`/dispatch` keeps the files in the list one at a time across the whole repo, beside migrations, `CLAUDE.md`, `STATUS.md`, guard registries and `supabase/functions/generate-signal/pipeline.ts`, reading every open PR's changed files from GitHub (a parked PR keeps holding its files). When writing the run order, either give every shared file to part 0 (it adds each later part's entry up front, so the later parts touch only their own files), or put the parts that share a file in strict order.
+
+## 9. Rollback (CUL-2885)
+
+`rollback #<n>` (any session, or on its own merge): on a fresh branch at `origin/main`, `scripts/steward/rollback-cli.ts apply <n> --why "<what failed>"`, then its PR and §7. A pure revert with no migration needs no typed word, and the deploy on merge restores the old code. `REFUSED` (a migration, a later merge on its lines) goes to the PM. After a self merged deploy, pipe `edge-deploy.yml`'s `actions_list` into `rollback-cli.ts deployed <sha> --merged-at <iso>`: `FAIL` means roll back and post its `Needs you` line; the PR body carries `apply`'s digest line.
 
 ## Never
 

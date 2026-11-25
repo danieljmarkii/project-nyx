@@ -181,6 +181,19 @@ revert, or a hold next**: the first merge that touches the function's closure
 deploys `main` over the rollback, and if `main` still carries the bad change, that
 merge puts it back. Every run's summary flags a live rollback until then.
 
+**The usual path is a revert, not a manual run (CUL-2885).** `rollback #<n>` in a
+session runs `scripts/steward/rollback-cli.ts apply <n>`: the revert of that squash
+merge, with a line in `scripts/steward/rollbacks.json`. It needs no typed word when the
+revert is pure and the PR carried no migration (a migration, or a later merge on the
+same lines, is refused and goes to the PM). Its merge deploys the old code through this
+workflow. A function whose last deploy *failed* is redeployed even though `main` is
+back on its last successful fingerprint (`after failure` in the summary), so a broken
+upload never stays live behind a revert. The steward skill §9 has the steps, including
+the check after a self merged deploy (this workflow's own verify stage).
+
+**Over the air updates, once the test channel exists (CUL-2863):** the same rollback is
+republishing the previous update to the channel (`eas update:republish`). Not built yet.
+
 ### When a deploy fails
 
 The run is red and its summary says which function failed, at which stage
