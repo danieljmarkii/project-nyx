@@ -135,9 +135,12 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createFixtureRoot, removeFixtureRoot } from './fixtureRoot';
+import { fingerprintFunctions } from '../scripts/edge-deploy/fingerprint';
+import { planDeploys } from '../scripts/edge-deploy/plan';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SCRIPT = path.join(REPO_ROOT, 'scripts', 'steward', 'merge-check.sh');
+const ROLLBACK = path.join(REPO_ROOT, 'scripts', 'steward', 'rollback-cli.ts');
 
 jest.setTimeout(180_000);
 
@@ -951,6 +954,8 @@ describe('scripts/steward/merge-check.sh', () => {
       ['scripts/edge-deploy/plan.ts'],
       ['scripts/steward/merge-check.sh'],
       ['scripts/steward/deploys.ts'],
+      ['scripts/steward/rollback.ts'],
+      ['scripts/steward/rollback-cli.ts'],
       ['.claude/skills/steward/SKILL.md'],
       ['.claude/commands/dispatch.md'],
       ['.claude/commands/wrap.md'],
@@ -1020,6 +1025,155 @@ describe('scripts/steward/merge-check.sh', () => {
       const r = check(fx.mainClone, ['--head', 'origin/main']);
       expect(r.out).not.toContain('production:');
       expect(r.code).toBe(0);
+    });
+  });
+
+  // CUL-2885: rollback in one step. The Done-when fixtures: a deploying self merge whose
+  // deploy check fails is reverted and redeployed with no input, and a rollback of a PR
+  // that carried a migration is refused. Mutation proof: scripts/steward/rollback-mutants.ts.
+  describe('rollback (CUL-2885)', () => {
+    const FILES: Record<string, string> = {
+      'supabase/functions/fn-a/index.ts': "import { shared } from '../../../lib/shared.ts';\nexport const a = shared;\n",
+      'supabase/functions/deploy-manifest.json': JSON.stringify({ holds: {} }),
+      'lib/shared.ts': lines('export const one = 1;', 'export const two = 2;', 'export const three = 3;', 'export const four = 4;', 'export const shared = 1;'),
+      'scripts/steward/rollbacks.json': '{\n  "rollbacks": []\n}\n',
+    };
+    const BAD = lines('export const one = 1;', 'export const two = 2;', 'export const three = 3;', 'export const four = 4;', 'export const shared = 2;');
+
+    function rollback(cwd: string, args: string[], stdin = ''): Run {
+      try {
+        const out = execFileSync('node', ['--experimental-strip-types', '--no-warnings', ROLLBACK, ...args], {
+          cwd,
+          encoding: 'utf8',
+          env: gitEnv(),
+          input: stdin,
+          stdio: 'pipe',
+        });
+        return { code: 0, out };
+      } catch (e) {
+        const err = e as { status?: number; stdout?: string; stderr?: string };
+        return { code: err.status ?? -1, out: `${err.stdout ?? ''}${err.stderr ?? ''}` };
+      }
+    }
+
+    const head = (dir: string) => git(dir, ['rev-parse', 'HEAD']).trim();
+
+    /** main with the functions, then PR #41's deploying squash merge on top. */
+    function deployedBadChange(): { fx: Fixture; good: string; bad: string } {
+      const fx = fixture();
+      landOnMain(fx, FILES, 'functions (#40)');
+      const good = head(fx.mainClone);
+      landOnMain(fx, { 'lib/shared.ts': BAD }, 'Make shared two (#41)');
+      return { fx, good, bad: head(fx.mainClone) };
+    }
+
+    function rollbackBranch(fx: Fixture): string {
+      const dir = cloneOf(fx, 'rollback');
+      git(dir, ['checkout', '--quiet', '-b', 'claude/rollback']);
+      return dir;
+    }
+
+    it('a deploying self merge whose deploy run fails is reverted and redeployed with no input', () => {
+      const { fx, good, bad } = deployedBadChange();
+      // 1. Detection: the deploy run for the merge failed its checks.
+      const runs = JSON.stringify({ workflow_runs: [{ head_sha: bad, event: 'push', status: 'completed', conclusion: 'failure', created_at: '2026-11-24T10:01:00Z', html_url: 'https://ci.example.invalid/runs/90' }] });
+      const d = rollback(fx.mainClone, ['deployed', bad, '--merged-at', '2026-11-24T10:00:00Z', '--now', '2026-11-24T10:10:00Z'], runs);
+      expect(d.out).toContain('FAIL: the deploy run ended failure (https://ci.example.invalid/runs/90)');
+      expect(d.out).toContain(`Needs you · rolled back ${bad.slice(0, 7)}`);
+      expect(d.code).toBe(1);
+
+      // 2. The rollback: one command makes the revert, the ledger line and the trailer.
+      const s = rollbackBranch(fx);
+      const a = rollback(s, ['apply', '41', '--why', 'deploy check failed']);
+      expect(a.out).toContain(`ROLLED BACK ${bad} #41 Make shared two (#41)`);
+      expect(a.out).toContain('digest: rollback · #41 Make shared two (#41) · deploy check failed');
+      expect(a.code).toBe(0);
+      expect(fs.readFileSync(path.join(s, 'lib/shared.ts'), 'utf8')).toBe(FILES['lib/shared.ts']);
+      expect(JSON.parse(fs.readFileSync(path.join(s, 'scripts/steward/rollbacks.json'), 'utf8')).rollbacks).toEqual([
+        expect.objectContaining({ pr: 41, sha: bad, files: ['lib/shared.ts'], why: 'deploy check failed' }),
+      ]);
+      git(s, ['push', '--quiet', '-u', 'origin', 'claude/rollback']);
+
+      // 3. Its merge needs no typed word, though it deploys and main's last deploy run is red.
+      const red = runsFile('deploy-red', [{ id: 90, conclusion: 'failure', sha: bad }]);
+      const r = check(s, [], { FAKE_GH_DEPLOY: red });
+      expect(r.out).toContain(`production: a rollback of ${bad} (#41) restores code main held; its deploy needs no typed word (CUL-2885)`);
+      expect(r.out).toContain('  redeploys fn-a\n');
+      expect(r.out).not.toContain('a self-merge waits for the PM');
+      expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
+      expect(r.code).toBe(0);
+
+      // 4. The redeploy: main is back on what last deployed, and the failed attempt since
+      // makes the planner put it back over the broken upload.
+      const prints = (dir: string) => fingerprintFunctions(dir)['fn-a'].fingerprint;
+      const goodClone = cloneOf(fx, 'good');
+      git(goodClone, ['checkout', '--quiet', good]);
+      const old = prints(goodClone);
+      expect(prints(s)).toBe(old);
+      const last = { schema: 1 as const, function: 'fn-a', sourceSha: good, fingerprint: old, mainSha: good, mainFingerprint: old, version: 3, bundleSha256: 'c'.repeat(64), runUrl: 'u', trigger: 't', deploymentId: 1, createdAt: '' };
+      const plan = (failedSince: Record<string, boolean>) =>
+        planDeploys({ functions: ['fn-a'], fingerprints: { 'fn-a': prints(s) }, ledger: { order: [], holds: {} }, records: { 'fn-a': last }, failedSince, headSha: head(s), request: { kind: 'changed', bootstrapGate: true } });
+      expect(plan({ 'fn-a': true }).deploys).toEqual([{ fn: 'fn-a', sourceSha: head(s), reason: 'after-failure' }]);
+      expect(plan({}).deploys).toEqual([]);
+    });
+
+    it('a rollback of a PR that carried a migration is refused, and a hand made revert of it still waits for the PM', () => {
+      const fx = fixture();
+      landOnMain(fx, FILES, 'functions (#40)');
+      landOnMain(fx, { 'lib/shared.ts': BAD, 'supabase/migrations/003_add.sql': 'create table d ();\n' }, 'Add a table (#42)');
+      const bad = head(fx.mainClone);
+      const s = rollbackBranch(fx);
+      const c = rollback(s, ['check', '42']);
+      expect(c.out).toContain('REFUSED: it carried a migration (supabase/migrations/003_add.sql)');
+      expect(c.code).toBe(1);
+      expect(rollback(s, ['apply', '42', '--why', 'x']).code).toBe(1);
+      expect(head(s)).toBe(bad);
+
+      git(s, ['revert', '--no-edit', bad]);
+      git(s, ['commit', '--quiet', '--amend', '-m', `Revert by hand\n\nRollback-Of: ${bad}`]);
+      git(s, ['push', '--quiet', '-u', 'origin', 'claude/rollback']);
+      const r = check(s);
+      expect(r.out).not.toContain('production: a rollback of');
+      expect(r.out).toContain("production: landing it is a production write; a self-merge waits for the PM's typed merge");
+      expect(r.code).toBe(2);
+    });
+
+    it('a later merge on the same lines is refused; one elsewhere in the file is not', () => {
+      const { fx } = deployedBadChange();
+      const near = cloneOf(fx, 'near');
+      landOnMain(fx, { 'lib/shared.ts': BAD.replace('shared = 2', 'shared = 3') }, 'Touch the same line (#43)');
+      expect(rollback(near, ['check', '41']).out).toContain('REFUSED: a later merge touched the same lines');
+
+      const far = deployedBadChange();
+      landOnMain(far.fx, { 'lib/shared.ts': BAD.replace('one = 1', 'one = 10') }, 'Touch another line (#44)');
+      const ok = rollback(cloneOf(far.fx, 'far'), ['check', '41']);
+      expect(ok.out).toContain(`ROLLBACK ${far.bad} #41`);
+      expect(ok.code).toBe(0);
+    });
+
+    it('a rollback branch that also changes something else is not a rollback', () => {
+      const { fx } = deployedBadChange();
+      const s = rollbackBranch(fx);
+      expect(rollback(s, ['apply', '41', '--why', 'deploy check failed']).code).toBe(0);
+      write(s, 'lib/shared.ts', FILES['lib/shared.ts'].replace('four = 4', 'four = 5'));
+      commitAll(s, 'and a fix');
+      git(s, ['push', '--quiet', '-u', 'origin', 'claude/rollback']);
+      const r = check(s);
+      expect(r.out).not.toContain('production: a rollback of');
+      expect(r.code).toBe(2);
+    });
+
+    it('a rollback that restores a gate file still waits for the PM', () => {
+      const fx = fixture();
+      landOnMain(fx, { ...FILES, '.claude/settings.json': '{}\n' }, 'functions (#40)');
+      landOnMain(fx, { 'lib/shared.ts': BAD, '.claude/settings.json': '{"x":1}\n' }, 'Gate and code (#45)');
+      const s = rollbackBranch(fx);
+      expect(rollback(s, ['apply', '45', '--why', 'deploy check failed']).code).toBe(0);
+      git(s, ['push', '--quiet', '-u', 'origin', 'claude/rollback']);
+      const r = check(s);
+      expect(r.out).toContain('production: a rollback of');
+      expect(r.out).toContain('  edits     .claude/settings.json\n');
+      expect(r.code).toBe(2);
     });
   });
 
