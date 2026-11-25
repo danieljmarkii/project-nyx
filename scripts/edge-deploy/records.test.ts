@@ -3,6 +3,7 @@
 
 import {
   lastSuccessfulRecord,
+  recordHistory,
   parsePayload,
   recordFrom,
   RECORD_CREATOR,
@@ -227,5 +228,34 @@ describe('writeRecord', () => {
   it('throws when GitHub returns no id, rather than writing a status to nowhere', async () => {
     const gh: Gh = { get: async () => [], post: async () => ({}) };
     await expect(writeRecord(gh, 'o/r', payload(), 'success', 'x', 'u', KEY)).rejects.toThrow(/did not return a deployment id/);
+  });
+});
+
+// CUL-2885: a revert puts main back on the last success's fingerprint, so the planner
+// needs to know a signed failure came after it, or a broken upload stays live.
+describe('recordHistory', () => {
+  const failed = (id: number) => deployment(id, { payload: signed(payload({ version: null, bundleSha256: null })) });
+
+  it('flags a signed failure newer than the last success', async () => {
+    const { gh } = fakeGh([deployment(6), failed(8)], { 8: [{ state: 'failure' }], 6: [{ state: 'success' }] });
+    const h = await recordHistory(gh, 'o/r', 'ask', KEY);
+    expect(h.last?.deploymentId).toBe(6);
+    expect(h.failedSince).toBe(true);
+  });
+
+  it('a failure older than the last success, a foreign one or an unsigned one flags nothing', async () => {
+    const list = [
+      deployment(9, { creator: { login: 'someone' }, payload: signed(payload({ version: null, bundleSha256: null })) }),
+      deployment(8, { payload: signed(payload({ version: null, bundleSha256: null }), OTHER_KEY) }),
+      deployment(6),
+      failed(4),
+    ];
+    const { gh } = fakeGh(list, { 9: [{ state: 'failure' }], 8: [{ state: 'failure' }], 6: [{ state: 'success' }], 4: [{ state: 'failure' }] });
+    expect(await recordHistory(gh, 'o/r', 'ask', KEY)).toMatchObject({ failedSince: false });
+  });
+
+  it('a failure with nothing successful before it still flags', async () => {
+    const { gh } = fakeGh([failed(2)], { 2: [{ state: 'failure' }] });
+    expect(await recordHistory(gh, 'o/r', 'ask', KEY)).toEqual({ last: undefined, failedSince: true });
   });
 });

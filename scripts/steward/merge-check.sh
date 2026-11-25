@@ -648,7 +648,7 @@ echo "$ci_line"
 # merge (the steward skill, dispatch.md, wrap.md), so a branch cannot quietly edit the
 # rule it is judged by. A branch that edits this script still runs its own copy; the line
 # below is what an honest copy says about it.
-GATE_PATHS='^\.claude/hooks/|^\.claude/settings[^/]*\.json$|^\.github/workflows/edge-deploy\.yml$|^scripts/deploy-edge\.sh$|^scripts/edge-deploy/|^scripts/steward/(merge-check\.sh|deploys(-cli)?\.ts)$|^\.claude/skills/steward/SKILL\.md$|^\.claude/commands/(dispatch|wrap)\.md$'
+GATE_PATHS='^\.claude/hooks/|^\.claude/settings[^/]*\.json$|^\.github/workflows/edge-deploy\.yml$|^scripts/deploy-edge\.sh$|^scripts/edge-deploy/|^scripts/steward/(merge-check\.sh|deploys(-cli)?\.ts|rollback(-cli)?\.ts)$|^\.claude/skills/steward/SKILL\.md$|^\.claude/commands/(dispatch|wrap)\.md$'
 production=0
 production_next="next: a production line is never cleared in writing; only the PM's typed merge, in the session that merges, clears it (the steward skill §7)"
 if [ -n "$landed_tree" ] && [ "$merged" -eq 0 ]; then
@@ -689,8 +689,23 @@ if [ -n "$landed_tree" ] && [ "$merged" -eq 0 ]; then
       deploy_state="main's last deploy run was a manual one ($d_url): this merge redeploys every function main changed since its last recorded deploy, a rollback included"
     fi
   fi
+  # A rollback (CUL-2885): the landing is exactly the revert of one squash commit on main
+  # that carried no migration, so what it deploys is code main already held and deployed,
+  # and it needs no typed word. rollback-cli.ts decides; any doubt is "not a rollback".
+  # Gate files still stop for the PM: restoring an old gate is still a gate change.
+  rollback_of=""
+  if [ -n "$deploy_fns$deploy_unknown$deploy_state" ]; then
+    rollback_of=$(node --experimental-strip-types --no-warnings "$script_dir/rollback-cli.ts" landing "$base" "$head" "$landed_tree" 2>/dev/null) || rollback_of=""
+  fi
+  if [ -n "$rollback_of" ]; then
+    tab=$'\t'
+    echo "production: a rollback of ${rollback_of%%"$tab"*} (${rollback_of##*"$tab"}) restores code main held; its deploy needs no typed word (CUL-2885)"
+    [ -n "$deploy_fns" ] && echo "  redeploys $(printf '%s\n' "$deploy_lines" | sed '/^$/d' | cut -f1 | paste -sd, - | sed 's/,/, /g')"
+    [ -n "$deploy_state" ] && echo "  redeploys $deploy_state"
+    deploy_fns="" deploy_unknown="" deploy_state=""
+  fi
   if [ -z "$gate_files" ] && [ -z "$deploy_fns" ] && [ -z "$deploy_unknown" ] && [ -z "$deploy_state" ]; then
-    echo "production: landing deploys no Edge Function and edits no gate file"
+    [ -n "$rollback_of" ] || echo "production: landing deploys no Edge Function and edits no gate file"
   else
     production=1
     echo "production: landing it is a production write; a self-merge waits for the PM's typed merge"

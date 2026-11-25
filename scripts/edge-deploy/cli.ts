@@ -22,7 +22,7 @@ import { runDeploys, type DeployDeps } from './deploy.ts';
 import { fingerprintEntry, fingerprintFunctions, functionsDir } from './fingerprint.ts';
 import { LEDGER_REL, ledgerProblems, parseLedger, type Ledger } from './ledger.ts';
 import { ALL_CHANGED, planDeploys, type DeployItem, type Request } from './plan.ts';
-import { lastSuccessfulRecord, recordKey, writeRecord, type DeployRecord, type Gh } from './records.ts';
+import { recordHistory, recordKey, writeRecord, type DeployRecord, type Gh } from './records.ts';
 import { planSummary, resultSummary, type SummaryContext } from './summary.ts';
 import { parseMeta, settled, type FunctionMeta, type HttpResult } from './verify.ts';
 
@@ -91,8 +91,9 @@ function githubClient(): Gh {
 
 async function readRecords(gh: Gh, repo: string, functions: string[], key: Buffer) {
   const records: Record<string, DeployRecord | undefined> = {};
-  for (const fn of functions) records[fn] = await lastSuccessfulRecord(gh, repo, fn, key);
-  return records;
+  const failedSince: Record<string, boolean> = {};
+  for (const fn of functions) ({ last: records[fn], failedSince: failedSince[fn] } = await recordHistory(gh, repo, fn, key));
+  return { records, failedSince };
 }
 
 // The record-signing key, from the token only the `production` environment holds.
@@ -160,6 +161,7 @@ async function plan(args: string[]) {
   const ledger = readLedger(repoRoot, Object.fromEntries(functions.map((fn) => [fn, { fingerprint: fingerprints[fn] }])));
 
   let records: Record<string, DeployRecord | undefined> = {};
+  let failedSince: Record<string, boolean> = {};
   let request: Request = { kind: 'changed', bootstrapGate: true };
   let trigger = 'local dry run';
   if (local) {
@@ -169,10 +171,10 @@ async function plan(args: string[]) {
     const repo = process.env.GITHUB_REPOSITORY;
     if (!repo) fail('GITHUB_REPOSITORY is not set.');
     ({ request, trigger } = resolveRequest(repoRoot, headSha, functions));
-    records = await readRecords(githubClient(), repo, functions, signingKey());
+    ({ records, failedSince } = await readRecords(githubClient(), repo, functions, signingKey()));
   }
 
-  const result = planDeploys({ functions, fingerprints, ledger, records, headSha, request });
+  const result = planDeploys({ functions, fingerprints, ledger, records, failedSince, headSha, request });
   const md = planSummary(result, summaryContext(headSha, trigger));
   console.log(md);
   appendTo('GITHUB_STEP_SUMMARY', md);
@@ -203,7 +205,7 @@ function parsePlanned(json: string | undefined, functions: string[]): DeployItem
       !functions.includes(e.fn) ||
       typeof e.sourceSha !== 'string' ||
       !SHA40.test(e.sourceSha) ||
-      !['first', 'changed', 'requested', 'rollback'].includes(String(e.reason))
+      !['first', 'changed', 'requested', 'rollback', 'after-failure'].includes(String(e.reason))
     ) {
       fail(`PLAN has an entry this job will not deploy: ${JSON.stringify(entry)}`);
     }
@@ -244,7 +246,7 @@ async function deploy() {
   const server = process.env.GITHUB_SERVER_URL || 'https://github.com';
   const runUrl = `${server}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID ?? ''}`;
   const tempRoot = process.env.RUNNER_TEMP || fs.mkdtempSync(path.join(os.tmpdir(), 'edge-src-'));
-  const lastRecords = await readRecords(gh, repo, [...new Set(items.map((i) => i.fn))], key);
+  const lastRecords = (await readRecords(gh, repo, [...new Set(items.map((i) => i.fn))], key)).records;
 
   const readMetaOnce = async (fn: string): Promise<FunctionMeta | null> => {
     const res = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/functions/${encodeURIComponent(fn)}`, {
