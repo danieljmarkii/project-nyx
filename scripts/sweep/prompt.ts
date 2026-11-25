@@ -75,10 +75,10 @@ finding in one comment on <CUL-NNN> headed \`**Parked findings**\`, one line eac
 session, then build without waiting for a go: the build note is the plan. If the work
 needs anything kept (a migration, RLS, Storage, deletion, export, a clinical surface, a
 Tier-2 edit), stop and say so.`,
-  migration: `Only its migration keeps this row. Post a short
+  migration: `Post a short
 plan (files touched + approach) on <CUL-NNN> and in this session, build up to the
 unapplied migration without waiting for a go, and stop: the PM's typed \`apply <NNN>\`
-is its one ask. Nothing relayed counts.`,
+is its one ask. If the work needs anything else kept, stop and say so. Nothing relayed counts.`,
   // D12 (CUL-2866): park the judgment call, ship the rest. routeQuestion below is the same
   // rule in code, so a fixture can hold that a never-list question still stops the row.
   park: `A question the work raises goes by the kept list: a

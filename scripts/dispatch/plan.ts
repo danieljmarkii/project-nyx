@@ -193,7 +193,7 @@ const PRIVILEGED = /\b(apply_migration|execute_sql|(?:re)?deploy\w*|merg(?:e|es|
 // taste call plan-gates a BUILD row (a DISCOVERY row's deliverable is the thing the PM
 // reacts to). Copy inside nyx-voice and UX inside a ratified round are team calls now, so
 // the old keyword match on `copy`, `string`, `label`, `mock`, `frame` is gone.
-export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?: Pick<IssueFact, 'labels'>): Gate {
+export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?: Pick<IssueFact, 'labels'> & { unread?: boolean }): Gate {
   const text = `${row.what} ${row.note}`;
   const mode = /\b(spec|mock|brief|research|discovery)\b/i.test(text) ? 'DISCOVERY' : 'BUILD';
   const k = keptOf({ labels: issue?.labels ?? [], files: pathsIn(text), text, migration: row.migration });
@@ -204,7 +204,7 @@ export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?
     if (why.startsWith('taste:') && mode === 'DISCOVERY') continue;
     planGated.push(why);
   }
-  const planWait = row.migration ? migrationWait(issue?.labels ?? [], text, mode) : planGated;
+  const planWait = row.migration ? migrationWait(issue?.labels ?? [], text, mode, !!issue?.unread) : planGated;
   const line = planWait.length ? 'plan' : row.migration ? 'migration' : 'routine';
   const privileged = text
     .split(/(?<=[.;])\s+/)
@@ -213,23 +213,35 @@ export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?
   return { mode, planGated, line, planWait, kept: k.kept, keptReasons: k.reasons, privileged, migration: row.migration };
 }
 
-// What still holds a migration row's plan once the migration itself is set aside (A6 (a),
-// PM 2026-11-25): a migration is kept as schema, and its `apply` is where the PM reads it,
-// so that one reason asks one word. Anything else the row is kept for still waits for a go.
-// Every migration file reads as schema, SQL and (by the `supabase` stem) privacy, so those
-// files are read twice over: dropped from the row's read, and their own names read as
-// product code, so `105_storage_bucket.sql` or `106_meal_tier.sql` still holds. Errs loud:
-// a reason this cannot place keeps the wait.
+// What still holds a migration row's plan (A6 (a), PM 2026-11-25): a migration is kept as
+// schema, and its `apply` is where the PM reads it, so that one reason asks one word. The
+// burden is on the row (adversarial pass 1, PR-31): the plan go is dropped only on positive
+// evidence that the migration is purely additive, and anything this cannot prove waits.
+//   - every migration file is named, and each is `<n>_add_<what>.sql`;
+//   - no word in its names or the row's text says it is not additive (snake_case split);
+//   - the names, read as product code, hit no kept stem (`106_add_storage_bucket.sql` holds);
+//   - the rest of the row (labels of every issue on it, its other files, its text) is
+//     kept for nothing but schema, and every issue on it was read.
 const MIGRATION_FILE = /^supabase\/migrations\/[^/]+$/;
-function migrationWait(labels: string[], text: string, mode: Gate['mode']): string[] {
+const ADDITIVE_NAME = /^\d+[a-z]?_add_[a-z0-9_]+\.sql$/;
+const NOT_ADDITIVE =
+  /\b(drop\w*|renam\w*|delet\w*|remov\w*|retir\w*|purg\w*|truncat\w*|wip(e|es|ed|ing)|grant\w*|revok\w*|polic(y|ies)|rls|definer|security|triggers?|cron|schedul\w*|backfill\w*|rewrit\w*|updat\w*|replac\w*|cascad\w*|anon\w*|alter\w*|not null|uniqu\w*|constraints?|views?|functions?|rpc|buckets?|storage|widgets?|caps?|subscriptions?|usage|thresholds?|alerts?|types?|enums?|defaults?|mov(e|es|ed|ing)|merg\w*|split\w*|cop(y|ies|ied)|convert\w*|transform\w*|seed\w*|insert\w*|rows?|data|(create|creates|new) (\w+ )?tables?)\b/i;
+const UNPROVEN = 'stakes: a migration this cannot prove purely additive (uncertain counts as kept)';
+function migrationWait(labels: string[], text: string, mode: Gate['mode'], unread: boolean): string[] {
   const files = pathsIn(text);
   const others = files.filter((f) => !MIGRATION_FILE.test(f));
-  const names = files.filter((f) => MIGRATION_FILE.test(f)).map((f) => `lib/${f.slice('supabase/migrations/'.length).replace(/\.sql$/, '')}.ts`);
-  const rest = keptOf({ labels, files: others, text }).reasons.filter(
-    (why) => !why.startsWith('stakes: schema') && !(why.includes('no files named') && others.length === 0),
+  const migrations = files.filter((f) => MIGRATION_FILE.test(f)).map((f) => f.slice('supabase/migrations/'.length));
+  const spaced = text.replace(/_/g, ' ');
+  const out: string[] = [];
+  if (unread) out.push('stakes: an issue on the row was not read (uncertain counts as kept)');
+  if (!migrations.length || !migrations.every((m) => ADDITIVE_NAME.test(m)) || NOT_ADDITIVE.test(spaced)) out.push(UNPROVEN);
+  const rest = keptOf({ labels, files: others, text: spaced }).reasons.filter(
+    (why) => !why.startsWith('stakes: schema') && !(why.includes('no files named') && others.length === 0 && migrations.length > 0),
   );
-  const byName = names.flatMap((f) => keptOf({ labels: [], files: [f], text: '' }).reasons).filter((why) => !why.includes('uncertain'));
-  return [...new Set([...rest, ...byName])].filter((why) => !(why.startsWith('taste:') && mode === 'DISCOVERY'));
+  const byName = migrations
+    .flatMap((m) => keptOf({ labels: [], files: [`lib/${m.replace(/\.sql$/, '')}.ts`], text: '' }).reasons)
+    .filter((why) => !why.includes('uncertain'));
+  return [...new Set([...out, ...rest, ...byName])].filter((why) => !(why.startsWith('taste:') && mode === 'DISCOVERY'));
 }
 
 // A row may carry `auto` only when this holds (dispatch.md step 5): nothing on it is kept.
@@ -554,7 +566,9 @@ export function planDispatch(input: PlanInput): Plan {
   const confirmedAuto = new Set((input.previousAuto ?? []).map(normRow));
   for (const row of me.page.rows) {
     const issue = row.issues[0];
-    const gate = gateOf(row, issue ? input.issues[issue] : undefined);
+    // Every issue on the row is read, and one with no facts is unread (adversarial pass 1, B3).
+    const facts = row.issues.map((i) => input.issues[i]);
+    const gate = gateOf(row, { labels: [...new Set(facts.flatMap((f) => f?.labels ?? []))], unread: facts.some((f) => !f) });
     const state = row.id ? states.get(row.id)! : ({ kind: 'none' } as RowState);
     const onPath = !!row.id && partsOf(row.id).some((p) => onPathSet.has(p));
     const v: Verdict = {

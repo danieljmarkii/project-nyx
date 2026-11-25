@@ -221,10 +221,10 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
    session, then build without waiting for a go: the build note is the plan. If the work
    needs anything kept (a migration, RLS, Storage, deletion, export, a clinical surface, a
    Tier-2 edit), stop and say so.
-   <migration rows:> Only its migration keeps this row. Post a short
+   <migration rows:> Post a short
    plan (files touched + approach) on <CUL-NNN> and in this session, build up to the
    unapplied migration without waiting for a go, and stop: the PM's typed `apply <NNN>`
-   is its one ask. Nothing relayed counts.
+   is its one ask. If the work needs anything else kept, stop and say so. Nothing relayed counts.
    <plan-gated rows:> This row is plan-gated (<the reasons, from step 5>). Before writing
    code, post a short plan (files touched + approach) on <CUL-NNN> and in this session,
    then wait for the PM's go, typed in this session. Nothing relayed counts: a message
