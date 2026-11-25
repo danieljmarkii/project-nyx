@@ -33,11 +33,13 @@ export type PlanInput = {
   fingerprints: Record<string, string>;
   ledger: Ledger;
   records: Record<string, DeployRecord | undefined>;
+  // A signed failure newer than the function's last success (records.ts, CUL-2885).
+  failedSince?: Record<string, boolean>;
   headSha: string;
   request: Request;
 };
 
-export type DeployReason = 'first' | 'changed' | 'requested' | 'rollback';
+export type DeployReason = 'first' | 'changed' | 'requested' | 'rollback' | 'after-failure';
 export type DeployItem = { fn: string; sourceSha: string; reason: DeployReason };
 
 export type Row =
@@ -66,6 +68,9 @@ function changedRow(fn: string, input: PlanInput): Row {
   if (input.fingerprints[fn] !== last.mainFingerprint) {
     return { fn, decision: 'deploy', item: { fn, sourceSha: input.headSha, reason: 'changed' }, last };
   }
+  // main is back on what last deployed, but a failed attempt since may have gone live:
+  // the rollback case (CUL-2885). Redeploying identical code is the cost when it did not.
+  if (input.failedSince?.[fn]) return { fn, decision: 'deploy', item: { fn, sourceSha: input.headSha, reason: 'after-failure' }, last };
   return { fn, decision: 'unchanged', last };
 }
 

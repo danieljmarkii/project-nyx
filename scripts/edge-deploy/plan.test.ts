@@ -156,3 +156,21 @@ describe('planDeploys: a manual run for one function', () => {
     expect(plan).toMatchObject({ mode: 'refused', deploys: [] });
   });
 });
+
+// CUL-2885: a rollback's revert must put the old code back over a failed deploy.
+describe('planDeploys: after a failed deploy', () => {
+  const records = Object.fromEntries(FUNCTIONS.map((fn) => [fn, record(fn, fp('1'))]));
+
+  it('redeploys main when a failure is newer than the last success, though main matches it', () => {
+    const plan = planDeploys(input({ records, failedSince: { ask: true } }));
+    expect(plan.deploys).toEqual([{ fn: 'ask', sourceSha: HEAD, reason: 'after-failure' }]);
+    expect(decision(plan.rows, 'generate-report')).toBe('unchanged');
+  });
+
+  it('a changed function still reads as changed, and a held one never deploys', () => {
+    const fingerprints = { ...input().fingerprints, ask: fp('2') };
+    const ledger: Ledger = { order: ORDER, holds: { 'delete-account': { ref: 'CUL-1', reason: 'x', fingerprint: fp('1') } } };
+    const plan = planDeploys(input({ records, fingerprints, ledger, failedSince: { ask: true, 'delete-account': true } }));
+    expect(plan.deploys).toEqual([{ fn: 'ask', sourceSha: HEAD, reason: 'changed' }]);
+  });
+});

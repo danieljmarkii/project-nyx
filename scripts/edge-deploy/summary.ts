@@ -36,6 +36,7 @@ function decisionCell(row: Row, mode: Plan['mode']): string {
         changed: 'code changed since its last deploy',
         requested: 'requested by hand',
         rollback: `rollback to \`${short(row.item.sourceSha)}\``,
+        'after-failure': 'a failed deploy since its last success may be live',
       }[row.item.reason];
       return `${verb} (${why})`;
     }
