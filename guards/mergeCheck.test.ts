@@ -220,9 +220,13 @@ function runsFile(name: string, runs: CiRun[]): string {
   return file;
 }
 
+// Every case passes the named issues' labels as none unless it says otherwise: left out,
+// the self merge verdict holds (CUL-2874), which `NO_LABELS` asks for by name.
+const NO_LABELS = '--no-labels-passed';
 function check(cwd: string, args: string[] = [], extra: Record<string, string> = {}): Run {
+  const withLabels = args.includes(NO_LABELS) ? args.filter((a) => a !== NO_LABELS) : args.includes('--labels') ? args : [...args, '--labels', ''];
   try {
-    const out = execFileSync('bash', [SCRIPT, ...args], {
+    const out = execFileSync('bash', [SCRIPT, ...withLabels], {
       cwd,
       encoding: 'utf8',
       env: gitEnv({ PATH: `${ghBin}:${process.env.PATH ?? ''}`, FAKE_GH_MAIN: greenMain, FAKE_GH_DEPLOY: greenDeploy, ...extra }),
@@ -554,7 +558,8 @@ describe('scripts/steward/merge-check.sh', () => {
     expect(c.code).toBe(2);
     expect(lastLine(a.out)).toBe('MERGE CHECK: REVIEW');
 
-    const b = check(ok);
+    // The PM's `apply 004` is the merge word for a migration PR alone (CUL-2874).
+    const b = check(ok, ['--applied', '004']);
     expect(b.code).toBe(0);
     expect(b.out).toContain('migration numbers: no new duplicates');
   });
@@ -756,7 +761,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     git(s, ['mv', 'supabase/migrations/003_s.sql', 'supabase/migrations/006_s.sql']);
     commitAll(s, 'renumber 003 -> 006');
-    const b = check(s, others);
+    const b = check(s, [...others, '--applied', '006']);
     expect(b.out).not.toContain('migration numbers shared with another open PR');
     expect(b.code).toBe(0);
     expect(lastLine(b.out)).toBe('MERGE CHECK: CLEAN');
@@ -883,7 +888,7 @@ describe('scripts/steward/merge-check.sh', () => {
       'supabase/functions/fn-held/index.ts': "export const held = 1;\n",
       'supabase/functions/deploy-manifest.json': JSON.stringify({ holds: { 'fn-held': { ref: 'CUL-1' } } }),
       'lib/shared.ts': 'export const shared = 1;\n',
-      'lib/unused.ts': 'export const unused = 1;\n',
+      'lib/haptics.ts': 'export const unused = 1;\n',
     };
 
     /** A fixture whose main already carries the functions above. */
@@ -895,7 +900,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('a landing that changes no function and no gate file says so and stays CLEAN', () => {
       const fx = withFunctions();
-      const s = session(fx, 'claude/feature', { 'lib/unused.ts': 'export const unused = 2;\n', 'feature.txt': 'x\n' });
+      const s = session(fx, 'claude/feature', { 'lib/haptics.ts': 'export const unused = 2;\n', 'feature.txt': 'x\n' });
       const r = check(s);
       expect(r.out).toContain('production: landing deploys no Edge Function and edits no gate file');
       expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
@@ -918,7 +923,9 @@ describe('scripts/steward/merge-check.sh', () => {
       const held = session(fx, 'claude/held', { 'supabase/functions/fn-held/index.ts': 'export const held = 2;\n' });
       const r = check(held);
       expect(r.out).toContain('production: landing deploys no Edge Function');
-      expect(r.code).toBe(0);
+      // Deploying nothing does not open it: an Edge Function is on the deny list (CUL-2874).
+      expect(r.out).toContain('  held      supabase/functions/fn-held/index.ts: an Edge Function the list does not name (fn-held)\n');
+      expect(r.code).toBe(2);
 
       const release = session(fx, 'claude/release', { 'supabase/functions/deploy-manifest.json': JSON.stringify({ holds: {} }) });
       const q = check(release);
@@ -968,16 +975,25 @@ describe('scripts/steward/merge-check.sh', () => {
       expect(r.code).toBe(2);
     });
 
-    it.each([['.claude/skills/other/SKILL.md'], ['.claude/commands/kickoff.md'], ['.github/workflows/ci.yml'], ['scripts/steward/migration-numbers.sh']])(
-      'an edit to %s is not a gate file',
-      (rel) => {
-        const fx = fixture();
-        const s = session(fx, 'claude/not-gate', { [rel]: 'changed\n' });
-        const r = check(s);
-        expect(r.out).toContain('production: landing deploys no Edge Function and edits no gate file');
-        expect(r.code).toBe(0);
-      },
-    );
+    it.each([['.claude/skills/other/SKILL.md'], ['.claude/commands/kickoff.md']])('an edit to %s is not a gate file', (rel) => {
+      const fx = fixture();
+      const s = session(fx, 'claude/not-gate', { [rel]: 'changed\n' });
+      const r = check(s);
+      expect(r.out).toContain('production: landing deploys no Edge Function and edits no gate file');
+      expect(r.out).toContain('self-merge: open\n');
+      expect(r.code).toBe(0);
+    });
+
+    // CI and the steward's other scripts are no production write, but they are the gate's
+    // own files on the self merge deny list (CUL-2874): green is what CI says it is.
+    it.each([['.github/workflows/ci.yml'], ['scripts/steward/migration-numbers.sh']])('an edit to %s prints no production line and still holds', (rel) => {
+      const fx = fixture();
+      const s = session(fx, 'claude/not-gate', { [rel]: 'changed\n' });
+      const r = check(s);
+      expect(r.out).toContain('production: landing deploys no Edge Function and edits no gate file');
+      expect(r.out).toContain(`self-merge: held\n  held      ${rel}: the gate's own files\n`);
+      expect(r.code).toBe(2);
+    });
 
     // The review's false CLEAN: a helper killed by a signal prints nothing on stderr, and
     // silence must never read as "deploys nothing".
@@ -1025,6 +1041,94 @@ describe('scripts/steward/merge-check.sh', () => {
       const r = check(fx.mainClone, ['--head', 'origin/main']);
       expect(r.out).not.toContain('production:');
       expect(r.code).toBe(0);
+    });
+  });
+
+  // CUL-2874: wide self merge. The Done-when fixtures, end to end through the real script:
+  // a deploying copy change on open paths merges itself, a clinical path never does, and a
+  // migration PR merges on the PM's `apply <NNN>` alone. Mutation proof:
+  // scripts/steward/selfMerge-mutants.ts.
+  describe('self merge (CUL-2874)', () => {
+    const FNS: Record<string, string> = {
+      'supabase/functions/generate-signal/index.ts': "import { say } from '../../../lib/utils.ts';\nimport { tier } from '../../../lib/signalCopy.ts';\nexport const a = [say, tier];\n",
+      'lib/utils.ts': "export const say = 'Something went wrong. Try again.';\n",
+      'lib/signalCopy.ts': "export const tier = 'Worth a call';\n",
+    };
+    function withFns(): Fixture {
+      const fx = fixture();
+      landOnMain(fx, FNS, 'functions');
+      return fx;
+    }
+
+    it('a deploying copy change on open paths merges itself, deploy and all', () => {
+      const fx = withFns();
+      const s = session(fx, 'claude/copy', { 'lib/utils.ts': "export const say = 'That did not save. Try again.';\n" });
+      const r = check(s);
+      expect(r.out).not.toContain('production: landing it is a production write');
+      expect(r.out).toContain('self-merge: open\n  deploys   generate-signal (shipping code changed); every path it touches is open, so it merges itself (CUL-2874)\n');
+      expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
+      expect(r.code).toBe(0);
+    });
+
+    it('a clinical path never qualifies, deploying or not', () => {
+      const fx = withFns();
+      const s = session(fx, 'claude/clinical', { 'lib/signalCopy.ts': "export const tier = 'Call your vet today';\n" });
+      const r = check(s);
+      expect(r.out).toContain("production: landing it is a production write; a self-merge waits for the PM's typed merge");
+      expect(r.out).toContain('self-merge: held\n  held      lib/signalCopy.ts: clinical surface (by name)');
+      expect(r.out).toContain('never cleared in writing');
+      expect(lastLine(r.out)).toBe('MERGE CHECK: REVIEW');
+      expect(r.code).toBe(2);
+
+      // A screen that deploys nothing still holds on a clinical string it changes.
+      const t = session(fx, 'claude/screen', { 'components/home/HomeHeader.tsx': "export const t = 'Vomited twice today';\n" });
+      const q = check(t);
+      expect(q.out).toContain('production: landing deploys no Edge Function and edits no gate file');
+      expect(q.out).toContain('  held      components/home/HomeHeader.tsx: a changed string holds a clinical word');
+      expect(q.code).toBe(2);
+    });
+
+    it('labels left out hold, and a Live harm label holds open paths', () => {
+      const fx = withFns();
+      const s = session(fx, 'claude/copy', { 'lib/utils.ts': "export const say = 'Try again.';\n" });
+      const unread = check(s, [NO_LABELS]);
+      expect(unread.out).toContain('labels were not passed (--labels)');
+      expect(unread.code).toBe(2);
+      const harm = check(s, ['--labels', 'Area: Copy/Voice,Live harm']);
+      expect(harm.out).toContain('  held      a named issue is labelled Live harm\n');
+      expect(harm.code).toBe(2);
+    });
+
+    it('an applied, green migration PR merges on `apply` alone; an unapplied one does not', () => {
+      const fx = fixture();
+      const s = session(fx, 'claude/schema', { 'supabase/migrations/004_add.sql': 'create table e ();\n' });
+      const unapplied = check(s);
+      expect(unapplied.out).toContain("  held      supabase/migrations/004_add.sql: a migration (merges on the PM's `apply <NNN>`)\n");
+      expect(lastLine(unapplied.out)).toBe('MERGE CHECK: REVIEW');
+      expect(unapplied.code).toBe(2);
+
+      const applied = check(s, ['--applied', '004']);
+      expect(applied.out).toContain('self-merge: open\n');
+      expect(lastLine(applied.out)).toBe('MERGE CHECK: CLEAN');
+      expect(applied.code).toBe(0);
+
+      expect(check(s, ['--applied', '005']).code).toBe(2);
+      const mixed = session(fx, 'claude/mixed', { 'supabase/migrations/004_add.sql': 'create table e ();\n', 'lib/haptics.ts': 'export const h = 1;\n' });
+      const m = check(mixed, ['--applied', '004']);
+      expect(m.out).toContain('covers a migration PR alone');
+      expect(m.code).toBe(2);
+    });
+
+    it('a verdict the helper cannot give holds', () => {
+      const fx = withFns();
+      const s = session(fx, 'claude/copy', { 'lib/utils.ts': "export const say = 'Try again.';\n" });
+      const bin = path.join(root, `half-node-${(seq += 1)}`);
+      fs.mkdirSync(bin, { recursive: true });
+      // A node that answers the deploy helper and dies on the verdict.
+      fs.writeFileSync(path.join(bin, 'node'), `#!/usr/bin/env bash\ncase "$*" in *selfMerge-cli*) exit 137 ;; esac\nexec ${process.execPath} "$@"\n`, { encoding: 'utf8', mode: 0o755 });
+      const r = check(s, [], { PATH: `${bin}:${ghBin}:${process.env.PATH ?? ''}` });
+      expect(r.out).toContain('self-merge: held\n  held      the verdict could not be read (the helper exited 137 with no message), so it holds');
+      expect(r.code).toBe(2);
     });
   });
 
@@ -1252,8 +1356,8 @@ describe('scripts/steward/merge-check.sh', () => {
     );
     const TYPED: Record<string, string> = {
       '.github/workflows/ci.yml': CI_YML,
-      'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, noEmit: true, types: [] }, include: ['src'] }),
-      'src/greet.ts': 'export function greet(name: string): string {\n  return `hi ${name}`;\n}\n',
+      'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, noEmit: true, types: [] }, include: ['scripts/dispatch'] }),
+      'scripts/dispatch/greet.ts': 'export function greet(name: string): string {\n  return `hi ${name}`;\n}\n',
       'supabase/functions/notify/index.ts': 'def:send\nuse:send\n',
       'scripts/tool.deno.ts': 'use:send\n',
     };
@@ -1281,7 +1385,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('skips a landing that is the branch\'s own tree, before and after main is brought in', () => {
       const fx = typedFixture();
-      const s = typedSession(fx, 'claude/feature', { 'src/extra.ts': 'export const extra = 1;\n' });
+      const s = typedSession(fx, 'claude/feature', { 'scripts/dispatch/extra.ts': 'export const extra = 1;\n' });
       const log = denoLog();
       const r = verify(s, { FAKE_DENO_LOG: log });
       expect(r.out).toContain("landing types: skipped (current: landing it lands this branch's own tree, which its CI type checked)");
@@ -1300,7 +1404,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('a landing main moved under that still types is CLEAN, checked in the landing with each CI step and its glob expanded', () => {
       const fx = typedFixture();
-      const s = typedSession(fx, 'claude/feature', { 'src/use.ts': "import { greet } from './greet';\nexport const msg: string = greet('Nyx');\n" });
+      const s = typedSession(fx, 'claude/feature', { 'scripts/dispatch/use.ts': "import { greet } from './greet';\nexport const msg: string = greet('Nyx');\n" });
       landOnMain(fx, { 'app.txt': lines('one', 'two', 'three', 'four') }, 'another PR lands');
       const index = sha(path.join(s, '.git', 'index'));
       const headBefore = git(s, ['rev-parse', 'HEAD']);
@@ -1324,8 +1428,8 @@ describe('scripts/steward/merge-check.sh', () => {
     // types on its own, git merges them without a word, and the landing does not compile.
     it('a branch and main that type check apart and fail together are CONFLICT naming the error; fixing it after merging main is CLEAN', () => {
       const fx = typedFixture();
-      const s = typedSession(fx, 'claude/feature', { 'src/use.ts': "import { greet } from './greet';\nexport const msg: string = greet('Nyx');\n" });
-      landOnMain(fx, { 'src/greet.ts': 'export function salute(name: string): string {\n  return `hi ${name}`;\n}\n' }, 'rename greet');
+      const s = typedSession(fx, 'claude/feature', { 'scripts/dispatch/use.ts': "import { greet } from './greet';\nexport const msg: string = greet('Nyx');\n" });
+      landOnMain(fx, { 'scripts/dispatch/greet.ts': 'export function salute(name: string): string {\n  return `hi ${name}`;\n}\n' }, 'rename greet');
 
       const plain = check(s);
       expect(plain.out).toContain('main: clean');
@@ -1334,13 +1438,13 @@ describe('scripts/steward/merge-check.sh', () => {
 
       const r = verify(s);
       expect(r.out).toContain('landing types: BROKEN; this branch and origin/main pass apart and fail together (1 behind)');
-      expect(r.out).toMatch(/\n {2}tsc: src\/use\.ts\(1,10\): error TS2305: [^\n]*greet/);
+      expect(r.out).toMatch(/\n {2}tsc: scripts\/dispatch\/use\.ts\(1,10\): error TS2305: [^\n]*greet/);
       expect(r.out).toContain('next: git merge origin/main, fix the type errors above, push, let CI pass, then run this again with --verify');
       expect(lastLine(r.out)).toBe('MERGE CHECK: CONFLICT');
       expect(r.code).toBe(1);
 
       expect(mergeMain(s)).toBe(0);
-      write(s, 'src/use.ts', "import { salute } from './greet';\nexport const msg: string = salute('Nyx');\n");
+      write(s, 'scripts/dispatch/use.ts', "import { salute } from './greet';\nexport const msg: string = salute('Nyx');\n");
       commitAll(s, 'follow the rename');
       const fixed = verify(s);
       expect(fixed.out).toContain('landing types: skipped (current');
@@ -1375,14 +1479,14 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('a landing that changes the dependencies, or whose ci.yml lost the scripts step by its exact name, is exit 3', () => {
       const fx = typedFixture();
-      const s = typedSession(fx, 'claude/feature', { 'src/extra.ts': 'export const extra = 1;\n' });
+      const s = typedSession(fx, 'claude/feature', { 'scripts/dispatch/extra.ts': 'export const extra = 1;\n' });
       landOnMain(fx, { 'package-lock.json': '{"lockfileVersion": 3}\n' }, 'main bumps a dependency');
       const deps = verify(s);
       expect(deps.code).toBe(3);
       expect(deps.out).toContain('--verify: the landing changes package-lock.json');
 
       const fx2 = typedFixture();
-      const s2 = typedSession(fx2, 'claude/feature', { 'src/extra.ts': 'export const extra = 1;\n' });
+      const s2 = typedSession(fx2, 'claude/feature', { 'scripts/dispatch/extra.ts': 'export const extra = 1;\n' });
       landOnMain(fx2, { '.github/workflows/ci.yml': CI_YML.replace('- name: Deno check (scripts)', '- name: "Deno check (scripts)"') }, 'quote the step name');
       const step = verify(s2);
       expect(step.code).toBe(3);
@@ -1391,7 +1495,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('never passes when it cannot run: no deno, the wrong deno, no node_modules, an offline registry, a run: line with shell syntax', () => {
       const fx = typedFixture();
-      const files = { 'src/extra.ts': 'export const extra = 1;\n' };
+      const files = { 'scripts/dispatch/extra.ts': 'export const extra = 1;\n' };
       const s = typedSession(fx, 'claude/feature', files);
       const bare = typedSession(fx, 'claude/bare', files, false);
       landOnMain(fx, { 'app.txt': lines('one', 'two', 'three', 'four') }, 'another PR lands');

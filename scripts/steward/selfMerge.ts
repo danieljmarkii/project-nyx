@@ -148,7 +148,7 @@ export function selfMerge(input: SelfMergeInput): SelfMerge {
   const rest = files.filter((f) => !MIGRATION.test(f) && !f.startsWith('docs/sessions/'));
   const numbers = new Set(migrations.map(migrationNumber));
   const applied = input.applied ? String(Number(input.applied)) : null;
-  const applyCovers = Boolean(applied) && migrations.length > 0 && rest.length === 0 && numbers.size === 1 && applied !== null && numbers.has(applied);
+  const applyCovers = applied !== null && migrations.length > 0 && rest.length === 0 && numbers.size === 1 && numbers.has(applied);
   if (input.applied && !applyCovers) {
     reasons.push(
       migrations.length === 0

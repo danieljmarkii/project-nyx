@@ -148,7 +148,8 @@ describe('`apply` is the merge word for a migration PR', () => {
     expect(selfMerge(input({ files: [...mig, 'docs/sessions/2026-11-25-x.md'], applied: '95' })).verdict).toBe('open');
   });
 
-  it('an unapplied one does not', () => {
+  it('an unapplied one does not, numbered or not', () => {
+    expect(selfMerge(input({ files: ['scripts/backfill/fix.sql'] })).verdict).toBe('held');
     const r = selfMerge(input({ files: mig }));
     expect(r.verdict).toBe('held');
     expect(r.reasons).toEqual(["supabase/migrations/095_add_x.sql: a migration (merges on the PM's `apply <NNN>`)"]);
