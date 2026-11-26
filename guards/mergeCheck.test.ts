@@ -900,7 +900,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('a landing that changes no function and no gate file says so and stays CLEAN', () => {
       const fx = withFunctions();
-      const s = session(fx, 'claude/feature', { 'lib/haptics.ts': 'export const unused = 2;\n', 'feature.txt': 'x\n' });
+      const s = session(fx, 'claude/feature', { 'docs/notes.md': 'notes\n', 'feature.txt': 'x\n' });
       const r = check(s);
       expect(r.out).toContain('production: landing deploys no Edge Function and edits no gate file');
       expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
@@ -975,7 +975,7 @@ describe('scripts/steward/merge-check.sh', () => {
       expect(r.code).toBe(2);
     });
 
-    it.each([['.claude/skills/other/SKILL.md'], ['.claude/commands/kickoff.md']])('an edit to %s is not a gate file', (rel) => {
+    it.each([['.claude/skills/other/SKILL.md'], ['docs/notes.md']])('an edit to %s is not a gate file', (rel) => {
       const fx = fixture();
       const s = session(fx, 'claude/not-gate', { [rel]: 'changed\n' });
       const r = check(s);
@@ -986,7 +986,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     // CI and the steward's other scripts are no production write, but they are the gate's
     // own files on the self merge deny list (CUL-2874): green is what CI says it is.
-    it.each([['.github/workflows/ci.yml'], ['scripts/steward/migration-numbers.sh']])('an edit to %s prints no production line and still holds', (rel) => {
+    it.each([['.github/workflows/ci.yml'], ['scripts/steward/migration-numbers.sh'], ['.claude/commands/kickoff.md']])('an edit to %s prints no production line and still holds', (rel) => {
       const fx = fixture();
       const s = session(fx, 'claude/not-gate', { [rel]: 'changed\n' });
       const r = check(s);
@@ -1074,7 +1074,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('a change that deploys nothing on open paths merges itself', () => {
       const fx = withFns();
-      const s = session(fx, 'claude/fonts', { 'lib/fonts.ts': 'export const size = 14;\n', 'docs/sessions/2026-11-26-x.md': 'record\n' });
+      const s = session(fx, 'claude/fonts', { 'docs/notes.md': 'notes\n', 'docs/sessions/2026-11-26-x.md': 'record\n' });
       const r = check(s);
       expect(r.out).toContain('production: landing deploys no Edge Function and edits no gate file\nself-merge: open\n');
       expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
@@ -1095,14 +1095,14 @@ describe('scripts/steward/merge-check.sh', () => {
       const t = session(fx, 'claude/screen', { 'components/home/HomeHeader.tsx': 'export const t = <Text>Vomited twice today</Text>;\n' });
       const q = check(t);
       expect(q.out).toContain('production: landing deploys no Edge Function and edits no gate file');
-      expect(q.out).toContain('  held      components/home/HomeHeader.tsx: product code off the UI mechanics list');
+      expect(q.out).toContain('  held      components/home/HomeHeader.tsx: product code OPEN_PRODUCT does not name');
       expect(q.out).toContain('  held      components/home/HomeHeader.tsx: a changed line holds a clinical word');
       expect(q.code).toBe(2);
     });
 
     it('labels left out hold, and a Live harm label holds open paths', () => {
       const fx = withFns();
-      const s = session(fx, 'claude/copy', { 'lib/fonts.ts': "export const say = 'Try again.';\n" });
+      const s = session(fx, 'claude/copy', { 'docs/notes.md': 'Try again.\n' });
       const unread = check(s, [NO_LABELS]);
       expect(unread.out).toContain('labels were not passed (--labels)');
       expect(unread.code).toBe(2);
@@ -1135,7 +1135,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('a verdict the helper cannot give holds', () => {
       const fx = withFns();
-      const s = session(fx, 'claude/copy', { 'lib/fonts.ts': "export const say = 'Try again.';\n" });
+      const s = session(fx, 'claude/copy', { 'docs/notes.md': 'Try again.\n' });
       const bin = path.join(root, `half-node-${(seq += 1)}`);
       fs.mkdirSync(bin, { recursive: true });
       // A node that answers the deploy helper and dies on the verdict.
@@ -1370,8 +1370,8 @@ describe('scripts/steward/merge-check.sh', () => {
     );
     const TYPED: Record<string, string> = {
       '.github/workflows/ci.yml': CI_YML,
-      'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, noEmit: true, types: [] }, include: ['scripts/dispatch'] }),
-      'scripts/dispatch/greet.ts': 'export function greet(name: string): string {\n  return `hi ${name}`;\n}\n',
+      'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, noEmit: true, types: [] }, include: ['scripts/web-capture'] }),
+      'scripts/web-capture/greet.ts': 'export function greet(name: string): string {\n  return `hi ${name}`;\n}\n',
       'supabase/functions/notify/index.ts': 'def:send\nuse:send\n',
       'scripts/tool.deno.ts': 'use:send\n',
     };
@@ -1399,7 +1399,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('skips a landing that is the branch\'s own tree, before and after main is brought in', () => {
       const fx = typedFixture();
-      const s = typedSession(fx, 'claude/feature', { 'scripts/dispatch/extra.ts': 'export const extra = 1;\n' });
+      const s = typedSession(fx, 'claude/feature', { 'scripts/web-capture/extra.ts': 'export const extra = 1;\n' });
       const log = denoLog();
       const r = verify(s, { FAKE_DENO_LOG: log });
       expect(r.out).toContain("landing types: skipped (current: landing it lands this branch's own tree, which its CI type checked)");
@@ -1418,7 +1418,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('a landing main moved under that still types is CLEAN, checked in the landing with each CI step and its glob expanded', () => {
       const fx = typedFixture();
-      const s = typedSession(fx, 'claude/feature', { 'scripts/dispatch/use.ts': "import { greet } from './greet';\nexport const msg: string = greet('Nyx');\n" });
+      const s = typedSession(fx, 'claude/feature', { 'scripts/web-capture/use.ts': "import { greet } from './greet';\nexport const msg: string = greet('Nyx');\n" });
       landOnMain(fx, { 'app.txt': lines('one', 'two', 'three', 'four') }, 'another PR lands');
       const index = sha(path.join(s, '.git', 'index'));
       const headBefore = git(s, ['rev-parse', 'HEAD']);
@@ -1442,8 +1442,8 @@ describe('scripts/steward/merge-check.sh', () => {
     // types on its own, git merges them without a word, and the landing does not compile.
     it('a branch and main that type check apart and fail together are CONFLICT naming the error; fixing it after merging main is CLEAN', () => {
       const fx = typedFixture();
-      const s = typedSession(fx, 'claude/feature', { 'scripts/dispatch/use.ts': "import { greet } from './greet';\nexport const msg: string = greet('Nyx');\n" });
-      landOnMain(fx, { 'scripts/dispatch/greet.ts': 'export function salute(name: string): string {\n  return `hi ${name}`;\n}\n' }, 'rename greet');
+      const s = typedSession(fx, 'claude/feature', { 'scripts/web-capture/use.ts': "import { greet } from './greet';\nexport const msg: string = greet('Nyx');\n" });
+      landOnMain(fx, { 'scripts/web-capture/greet.ts': 'export function salute(name: string): string {\n  return `hi ${name}`;\n}\n' }, 'rename greet');
 
       const plain = check(s);
       expect(plain.out).toContain('main: clean');
@@ -1452,13 +1452,13 @@ describe('scripts/steward/merge-check.sh', () => {
 
       const r = verify(s);
       expect(r.out).toContain('landing types: BROKEN; this branch and origin/main pass apart and fail together (1 behind)');
-      expect(r.out).toMatch(/\n {2}tsc: scripts\/dispatch\/use\.ts\(1,10\): error TS2305: [^\n]*greet/);
+      expect(r.out).toMatch(/\n {2}tsc: scripts\/web-capture\/use\.ts\(1,10\): error TS2305: [^\n]*greet/);
       expect(r.out).toContain('next: git merge origin/main, fix the type errors above, push, let CI pass, then run this again with --verify');
       expect(lastLine(r.out)).toBe('MERGE CHECK: CONFLICT');
       expect(r.code).toBe(1);
 
       expect(mergeMain(s)).toBe(0);
-      write(s, 'scripts/dispatch/use.ts', "import { salute } from './greet';\nexport const msg: string = salute('Nyx');\n");
+      write(s, 'scripts/web-capture/use.ts', "import { salute } from './greet';\nexport const msg: string = salute('Nyx');\n");
       commitAll(s, 'follow the rename');
       const fixed = verify(s);
       expect(fixed.out).toContain('landing types: skipped (current');
@@ -1493,14 +1493,14 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('a landing that changes the dependencies, or whose ci.yml lost the scripts step by its exact name, is exit 3', () => {
       const fx = typedFixture();
-      const s = typedSession(fx, 'claude/feature', { 'scripts/dispatch/extra.ts': 'export const extra = 1;\n' });
+      const s = typedSession(fx, 'claude/feature', { 'scripts/web-capture/extra.ts': 'export const extra = 1;\n' });
       landOnMain(fx, { 'package-lock.json': '{"lockfileVersion": 3}\n' }, 'main bumps a dependency');
       const deps = verify(s);
       expect(deps.code).toBe(3);
       expect(deps.out).toContain('--verify: the landing changes package-lock.json');
 
       const fx2 = typedFixture();
-      const s2 = typedSession(fx2, 'claude/feature', { 'scripts/dispatch/extra.ts': 'export const extra = 1;\n' });
+      const s2 = typedSession(fx2, 'claude/feature', { 'scripts/web-capture/extra.ts': 'export const extra = 1;\n' });
       landOnMain(fx2, { '.github/workflows/ci.yml': CI_YML.replace('- name: Deno check (scripts)', '- name: "Deno check (scripts)"') }, 'quote the step name');
       const step = verify(s2);
       expect(step.code).toBe(3);
@@ -1509,7 +1509,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('never passes when it cannot run: no deno, the wrong deno, no node_modules, an offline registry, a run: line with shell syntax', () => {
       const fx = typedFixture();
-      const files = { 'scripts/dispatch/extra.ts': 'export const extra = 1;\n' };
+      const files = { 'scripts/web-capture/extra.ts': 'export const extra = 1;\n' };
       const s = typedSession(fx, 'claude/feature', files);
       const bare = typedSession(fx, 'claude/bare', files, false);
       landOnMain(fx, { 'app.txt': lines('one', 'two', 'three', 'four') }, 'another PR lands');

@@ -2,13 +2,13 @@
 // is driven against fixture repositories in guards/mergeCheck.test.ts § self merge.
 // Mutation proof: scripts/steward/selfMerge-mutants.ts.
 
-import { DEPLOY_SELF_MERGE_RECONFIRMED, fileHold, FUNCTIONS, OPEN_FUNCTIONS, PUBLIC_BUILD_SHIPPED, RELEASE, selfMerge, type SelfMergeInput } from './selfMerge.ts';
+import { DEPLOY_SELF_MERGE_RECONFIRMED, fileHold, FUNCTIONS, OPEN_FUNCTIONS, OPEN_PRODUCT, PUBLIC_BUILD_SHIPPED, RELEASE, selfMerge, type SelfMergeInput } from './selfMerge.ts';
 
 const OPEN_RELEASE = { shipped: false, reconfirmed: null };
 const SHIPPED = { shipped: true, reconfirmed: null };
 const RECONFIRMED = { shipped: true, reconfirmed: { on: '2027-01-10', issue: 'CUL-2883' } };
 
-const input = (over: Partial<SelfMergeInput> = {}): SelfMergeInput => ({ files: ['lib/fonts.ts'], deploys: [], changedLines: [], labels: [], applied: null, release: OPEN_RELEASE, ...over });
+const input = (over: Partial<SelfMergeInput> = {}): SelfMergeInput => ({ files: ['docs/git-first-aid.md'], deploys: [], changedLines: [], labels: [], applied: null, release: OPEN_RELEASE, ...over });
 
 describe('a clinical path never qualifies', () => {
   it.each([
@@ -34,7 +34,7 @@ describe('a clinical path never qualifies', () => {
   });
 
   it('a clinical file held alongside open ones still holds the whole PR', () => {
-    expect(selfMerge(input({ files: ['lib/fonts.ts', 'docs/sessions/x.md', 'lib/signalCopy.ts'] })).verdict).toBe('held');
+    expect(selfMerge(input({ files: ['docs/git-first-aid.md', 'docs/sessions/x.md', 'lib/signalCopy.ts'] })).verdict).toBe('held');
   });
 
   // The first adversarial pass (2026-11-25): six ways a clinical change opened. Each holds now.
@@ -53,18 +53,30 @@ describe('a clinical path never qualifies', () => {
     ['.claude/agents/code-reviewer.md', 'a reviewer'],
     ['docs/nyx-ai-signal-requirements.md', 'a clinical spec'],
     ['docs/research/feline-intake.md', 'a research brief'],
+    // The second pass (2026-11-26): kept.ts's UI mechanics sit on write, sync and deletion paths.
+    ['hooks/useSubmitGuard.ts', 'the symptom and intake write path'],
+    ['lib/network.ts', 'sync and the deletion flow'],
+    ['store/snackbarStore.ts', 'every failed save'],
+    ['lib/fonts.ts', 'a mechanic, held until the PM opens it'],
+    ['patches/@supabase+storage-js+2.0.0.patch', 'a patch to the Storage client'],
+    ['scripts/sweep/prompt.ts', "the sweep child's merge rule"],
+    ['scripts/dispatch/plan.ts', 'the plan gate'],
+    ['.claude/commands/kickoff.md', 'a start gate'],
+    ['.maestro/golden-meal.yaml', 'an end to end flow'],
+    ['docs/vet-report-v3-discovery/fixtures/nyx-live.snapshot.json', 'a fixture a vet report test imports'],
   ])('%s holds (%s)', (f) => {
     expect(fileHold(f)).not.toBeNull();
   });
 
-  it('a UI mechanic holds when any changed line carries a clinical word, JSX text and split template lines included', () => {
+  it('no product file opens today, and any changed product line with a clinical word adds its reason, JSX text and split template lines included', () => {
+    expect(OPEN_PRODUCT).toEqual({});
     const file = 'lib/fonts.ts';
-    expect(selfMerge(input({ files: [file] })).verdict).toBe('open');
+    expect(selfMerge(input({ files: [file] })).reasons).toEqual(['lib/fonts.ts: product code OPEN_PRODUCT does not name (a screen or a mechanic is held whatever its words)']);
     for (const line of ["  title: 'Vomiting three times today',", '<Text>No need to call the vet</Text>', '  eating normally', "const copy = 'No concerns today';"]) {
       const r = selfMerge(input({ files: [file], changedLines: [{ file, line }] }));
-      expect(r.reasons).toEqual(['lib/fonts.ts: a changed line holds a clinical word (owner or vet facing health text)']);
+      expect(r.reasons).toContain('lib/fonts.ts: a changed line holds a clinical word (owner or vet facing health text)');
     }
-    expect(selfMerge(input({ files: [file], changedLines: [{ file, line: 'const size = 14;' }] })).verdict).toBe('open');
+    expect(selfMerge(input({ files: [file], changedLines: [{ file, line: 'const size = 14;' }] })).reasons).toHaveLength(1);
   });
 
   it('a held label holds whatever the paths, however it is spelled; Gate: deploy alone does not', () => {
@@ -89,11 +101,13 @@ describe('a clinical path never qualifies', () => {
 
 describe('a deploying copy change does qualify, for a function the PM has opened', () => {
   const copy = {
-    files: ['lib/fonts.ts', 'docs/sessions/2026-11-25-x.md'],
+    files: ['docs/git-first-aid.md', 'docs/sessions/2026-11-25-x.md'],
     deploys: ['notify'],
-    changedLines: [{ file: 'lib/fonts.ts', line: "  return 'That did not save. Try again.';" }],
+    changedLines: [{ file: 'docs/git-first-aid.md', line: 'That did not save. Try again.' }],
   };
-  it('a plain string on open paths merges itself, deploy and all, when OPEN_FUNCTIONS names the function', () => {
+  // Every path a deploy reads (supabase/, lib/, constants/) holds today, so this is the
+  // verdict's arithmetic, not a case main can produce until the PM opens a file and a function.
+  it('a copy change on open paths merges itself, deploy and all, when OPEN_FUNCTIONS names the function', () => {
     expect(selfMerge(input({ ...copy, openFunctions: { notify: 'opened by the PM (test)' } }))).toEqual({ verdict: 'open', reasons: [], deploys: true });
   });
 
@@ -133,7 +147,7 @@ describe('the gate and the paths the list cannot place', () => {
     expect(fileHold('types/far.ts')).toMatch(/does not know/);
     expect(fileHold('scripts/backfill-weights.ts')).not.toBeNull();
     expect(fileHold('lib/brandNewThing.ts')).toMatch(/cannot place/);
-    for (const f of ['README.md', 'notes.txt', 'docs/sessions/x.md', 'docs/git-first-aid.md', 'scripts/dispatch/plan.ts', 'guards/claudeMdBudget.test.ts', 'lib/haptics.ts', 'lib/haptics.test.ts']) {
+    for (const f of ['README.md', 'notes.txt', 'docs/sessions/x.md', 'docs/git-first-aid.md', 'scripts/web-capture/run.ts', 'guards/claudeMdBudget.test.ts', '.claude/skills/learning/SKILL.md']) {
       expect(fileHold(f)).toBeNull();
     }
   });
@@ -180,10 +194,10 @@ describe('`apply` is the merge word for a migration PR', () => {
 
   it('`apply` covers that number only, and a PR that is only that migration', () => {
     expect(selfMerge(input({ files: mig, applied: '096' })).reasons[0]).toMatch(/does not name this landing's migration \(95\)/);
-    expect(selfMerge(input({ files: [...mig, 'lib/fonts.ts'], applied: '095' })).reasons[0]).toMatch(/covers a migration PR alone/);
+    expect(selfMerge(input({ files: [...mig, 'docs/git-first-aid.md'], applied: '095' })).reasons[0]).toMatch(/covers a migration PR alone/);
     expect(selfMerge(input({ files: [...mig, 'supabase/migrations/096_y.sql'], applied: '095' })).verdict).toBe('held');
     expect(selfMerge(input({ files: [...mig, 'supabase/migrations/095_z.sql'], applied: '095' })).reasons[0]).toMatch(/covers one migration, and this landing carries 2/);
-    expect(selfMerge(input({ files: ['lib/fonts.ts'], applied: '095' })).reasons[0]).toMatch(/does not carry/);
+    expect(selfMerge(input({ files: ['docs/git-first-aid.md'], applied: '095' })).reasons[0]).toMatch(/does not carry/);
     expect(selfMerge(input({ files: ['scripts/backfill/fix.sql'], applied: '095' })).verdict).toBe('held');
   });
 

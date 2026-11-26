@@ -22,9 +22,10 @@
 //   5. CLAUDE.md, .claude/rules/ and .claude/agents/, the guarding skills, every guard but
 //      the budget and filing ones, research briefs, and a doc named for a clinical or
 //      privacy surface: what future clinical work is held to;
-//   6. product code off kept.ts's UI mechanics list (less lib/utils.ts, whose day counters
-//      the detection engine reads), read by every word of the whole path; a screen kept.ts
-//      calls taste holds here, since a withhold rule needs no clinical word in its name;
+//   6. every product file OPEN_PRODUCT (empty) does not name: screens, mechanics and the
+//      UI mechanics list included, since the second adversarial pass found that list on
+//      the write, sync and deletion paths; patches, end to end flows, every command file
+//      and the planning scripts are gate files (rule 1);
 //   7. any changed line in product code with a clinical word, quoted or not;
 //   8. a named issue labelled Gate: clinical, Gate: privacy, Area: Privacy/RLS,
 //      Area: Correctness or Live harm, however spelled; labels not passed, or passed empty
@@ -46,12 +47,12 @@
 //     `list_migrations` shows it applied; the check cannot read the database.
 //   - Labels are what the session passes; leaving them out holds, passing a short list
 //     does not. The replay (CUL-2874's PR) found every labelled PR already held by path.
-//   - Rule 7 reads words, not meaning: a clinical sentence with no clinical word in it is
-//     not seen. It matters only on the UI mechanics files, since rule 6 holds the rest.
+//   - Rule 7 reads words, not meaning. Today it only adds a reason, since rule 6 holds
+//     every product file; it is there for the day the PM opens one.
 //   - PUBLIC_BUILD_SHIPPED is flipped by a person at release. A release that forgets the
 //     flip leaves deploys self merging; CUL-2859's release checklist carries the line.
 
-import { CLINICAL_WORDS, keptOf, NAME_STEMS, UI_MECHANICS } from '../kept/kept.ts';
+import { CLINICAL_WORDS, keptOf, NAME_STEMS } from '../kept/kept.ts';
 
 // ---- the 1.2.0 checkpoint -----------------------------------------------------------
 /** True from the day the first public (App Store) build ships. Flipped by the release. */
@@ -77,7 +78,7 @@ export type SelfMergeInput = {
 export type SelfMerge = { verdict: 'open' | 'held'; reasons: string[]; deploys: boolean };
 
 // ---- 1. the gate's own files ----------------------------------------------------------
-const GATE = /^\.claude\/hooks\/|^(jest|babel|metro)[\w.-]*\.js$|(^|\/)__mocks__\/|^\.claude\/settings[^/]*\.json$|^\.github\/workflows\/|^\.githooks\/|^scripts\/deploy-edge\.sh$|^scripts\/edge-deploy\/|^scripts\/steward\/|^scripts\/kept\/|^\.claude\/skills\/steward\/|^\.claude\/commands\/(dispatch|wrap)\.md$|^jest\.config\.js$|^package(-lock)?\.json$|^tsconfig\.json$|^guards\/(mergeCheck|fixtureRoot|fixtureDiscipline)\b/;
+const GATE = /^patches\/|^\.maestro\/|^e2e\/|^scripts\/(dispatch|sweep|groom|ci)\/|^\.claude\/commands\/|^\.claude\/hooks\/|^(jest|babel|metro)[\w.-]*\.js$|(^|\/)__mocks__\/|^\.claude\/settings[^/]*\.json$|^\.github\/workflows\/|^\.githooks\/|^scripts\/deploy-edge\.sh$|^scripts\/edge-deploy\/|^scripts\/steward\/|^scripts\/kept\/|^\.claude\/skills\/steward\/|^\.claude\/commands\/(dispatch|wrap)\.md$|^jest\.config\.js$|^package(-lock)?\.json$|^tsconfig\.json$|^guards\/(mergeCheck|fixtureRoot|fixtureDiscipline)\b/;
 
 // ---- 4. supabase/functions, function by function ------------------------------------
 // Every function deployed today, and why it is held. A function or folder not listed is
@@ -111,13 +112,16 @@ const GUARDIANS = /^CLAUDE\.md$|^\.claude\/(rules|agents)\/|^\.claude\/skills\/(
 // which read instruction text, not product code.
 const OPEN_GUARDS = new Set(['guards/claudeMdBudget.test.ts', 'guards/filingRule.test.ts', 'guards/styleLiteralBudget.test.ts']);
 
-// ---- 6. product code: only the UI mechanics open ---------------------------------------
+// ---- 6. product code: none opens ---------------------------------------------------------
 // kept.ts calls an unplaced screen taste, which is the PM's call on a plan, not a reason
-// a merge is safe: a Home screen can hold a withhold rule with no clinical word in it. So
-// for the merge, product code opens only on kept.ts's UI mechanics list (and its tests),
-// less lib/utils.ts, which holds the day counters the detection engine reads.
+// a merge is safe: a Home screen can hold a withhold rule with no clinical word in it
+// (adversarial pass 1). And kept.ts's UI mechanics list is no safe set either: the submit
+// guard sits on the symptom and intake write path, the network check on sync and deletion,
+// the snackbar store on every failed save (pass 2). So for the merge no product file opens
+// until the PM names it here, each with the reason it is safe; a gate-file merge, like
+// OPEN_FUNCTIONS. Unsure counts as held.
 const PRODUCT = /^(app|components|constants|hooks|lib|store|supabase|widgets)\//;
-const MERGE_OPEN = new Set([...UI_MECHANICS].filter((f) => f !== 'lib/utils.ts'));
+export const OPEN_PRODUCT: Record<string, string> = {};
 // Every word of a path, the whole basename included (`index.intakeDecline.test.tsx` reads
 // index · intake · decline · test).
 const allWords = (f: string) =>
@@ -154,6 +158,8 @@ export function fileHold(f: string): string | null {
   if (GUARDIANS.test(f)) return 'a rule, reviewer or skill that clinical or privacy work is held to';
   if (f.startsWith('guards/')) return OPEN_GUARDS.has(f) ? null : 'a guard (guards are held; only the instruction budget and filing guards open)';
   if (f.startsWith('docs/research/')) return 'a clinical research brief';
+  // Docs that are not prose can be test fixtures (a vet report snapshot a test imports).
+  if (/^docs\/.+\.(tsx?|jsx?|mjs|json|py|sh|sql)$/.test(f)) return 'code or data under docs/ (a test can import it)';
   if (/^docs\/.+\.md$/.test(f) && !f.startsWith('docs/sessions/')) {
     const hit = stemHit(f.slice('docs/'.length));
     if (hit) return `a spec or doc over a ${hit.why} (by name)`;
@@ -161,9 +167,9 @@ export function fileHold(f: string): string | null {
   if (ROOT_PROSE.test(f)) return null;
   const stakes = keptOf({ files: [f] }).reasons.filter((r) => r.startsWith('stakes: ')).map((r) => r.slice('stakes: '.length));
   if (stakes.length) return stakes.join('; ');
-  if (PRODUCT.test(f) && !MERGE_OPEN.has(f.replace(/\.test(\.\w+)$/, '$1'))) {
+  if (PRODUCT.test(f) && !(f.replace(/\.test(\.\w+)$/, '$1') in OPEN_PRODUCT)) {
     const hit = stemHit(f);
-    return hit ? `${hit.why} (by its whole name)` : 'product code off the UI mechanics list (a screen is held whatever its words)';
+    return hit ? `${hit.why} (by its whole name)` : 'product code OPEN_PRODUCT does not name (a screen or a mechanic is held whatever its words)';
   }
   return null;
 }

@@ -22,11 +22,13 @@ const MC = 'scripts/steward/merge-check.sh';
 
 const MUTANTS: Mutant[] = [
   // Opens what must hold.
-  { check: 'a clinical path never qualifies (the kept list read)', file: S, from: "return stakes.length ? stakes.join('; ') : null;", to: 'return null;' },
+  { check: 'a clinical path never qualifies (the kept list read)', file: S, from: "if (stakes.length) return stakes.join('; ');", to: '' },
   { check: 'every Edge Function holds', file: S, from: 'if (fn) return FUNCTIONS[fn[1]]', to: 'if (fn) return null; if (fn) return FUNCTIONS[fn[1]]' },
   { check: 'a changed clinical line holds, quoted or not', file: S, from: 'PRODUCT.test(l.file) && CLINICAL_WORDS.test(l.line)', to: "PRODUCT.test(l.file) && /['\"`]/.test(l.line) && CLINICAL_WORDS.test(l.line)" },
-  { check: 'product code off the UI mechanics list holds (a screen is not taste here)', file: S, from: "return hit ? `${hit.why} (by its whole name)` : 'product code off the UI mechanics list", to: "return hit ? `${hit.why} (by its whole name)` : null; ('product code off the UI mechanics list" },
-  { check: 'lib/utils.ts is off the open side', file: S, from: ".filter((f) => f !== 'lib/utils.ts')", to: '' },
+  { check: 'product code no stem names holds (a screen is not taste here)', file: S, from: "return hit ? `${hit.why} (by its whole name)` : 'product code OPEN_PRODUCT", to: "return hit ? `${hit.why} (by its whole name)` : null; ('product code OPEN_PRODUCT" },
+  { check: 'no product file opens (the UI mechanics list included)', file: S, from: "&& !(f.replace(/\\.test(\\.\\w+)$/, '$1') in OPEN_PRODUCT)) {", to: '&& false) {' },
+  { check: 'patches, flows, commands and the planning scripts hold', file: S, from: 'const GATE = /^patches\\/|^\\.maestro\\/|^e2e\\/|^scripts\\/(dispatch|sweep|groom|ci)\\/|^\\.claude\\/commands\\/|', to: 'const GATE = /' },
+  { check: 'code and data under docs/ hold', file: S, from: "if (/^docs\\/.+\\.(tsx?|jsx?|mjs|json|py|sh|sql)$/.test(f)) return", to: 'if (false) return' },
   { check: 'guards hold', file: S, from: "return OPEN_GUARDS.has(f) ? null : 'a guard", to: "return null; ('a guard" },
   { check: 'CLAUDE.md, the rules and the reviewers hold', file: S, from: "const GUARDIANS = /^CLAUDE\\.md$|^\\.claude\\/(rules|agents)\\/|", to: 'const GUARDIANS = /' },
   { check: 'a clinical spec holds', file: S, from: 'if (hit) return `a spec or doc over', to: 'if (false) return `a spec or doc over' },
@@ -46,11 +48,10 @@ const MUTANTS: Mutant[] = [
   { check: 'nothing read never opens', file: S, from: "if (!files.length) reasons.push(", to: 'if (false) reasons.push(' },
   { check: 'merge-check: a held verdict moves the verdict', file: MC, from: 'if [ "$sm_rc" -eq 1 ]; then\n      production=1', to: 'if [ "$sm_rc" -eq 1 ]; then\n      true' },
   { check: 'merge-check: a verdict it cannot read holds', file: MC, from: '      sm_rc=1\n    fi', to: '      sm_rc=0\n    fi' },
-  { check: 'merge-check: labels left out reach the verdict as left out', file: MC, from: '[ "$labels_set" -eq 1 ] && sm_args+=(--labels "$labels")', to: 'sm_args+=(--labels "$labels")' },
+  { check: 'an empty label list holds (`none` is the word for none)', file: 'scripts/steward/selfMerge-cli.ts', from: "labelsRaw === undefined || labelsRaw.trim() === '' ? null", to: 'labelsRaw === undefined ? null' },
   // Holds what must open.
   { check: 'a deploying copy change for an opened function qualifies', file: S, from: 'if (input.deployUnread) reasons.push(', to: 'if (deploys) reasons.push(' },
   { check: 'an opened function is read from the table', file: S, from: 'const open = input.openFunctions ?? OPEN_FUNCTIONS;', to: 'const open = OPEN_FUNCTIONS;' },
-  { check: 'merge-check: a change that deploys nothing on open paths is CLEAN', file: MC, from: 'elif [ "$sm_rc" -eq 1 ] || [ -n "$gate_files" ]; then', to: 'else' },
   { check: 'merge-check: `--applied` reaches the verdict', file: MC, from: '[ -n "$applied" ] && sm_args+=(--applied "$applied")\n', to: '' },
 ];
 
