@@ -224,7 +224,7 @@ function runsFile(name: string, runs: CiRun[]): string {
 // the self merge verdict holds (CUL-2874), which `NO_LABELS` asks for by name.
 const NO_LABELS = '--no-labels-passed';
 function check(cwd: string, args: string[] = [], extra: Record<string, string> = {}): Run {
-  const withLabels = args.includes(NO_LABELS) ? args.filter((a) => a !== NO_LABELS) : args.includes('--labels') ? args : [...args, '--labels', ''];
+  const withLabels = args.includes(NO_LABELS) ? args.filter((a) => a !== NO_LABELS) : args.includes('--labels') ? args : [...args, '--labels', 'none'];
   try {
     const out = execFileSync('bash', [SCRIPT, ...withLabels], {
       cwd,
@@ -1060,12 +1060,23 @@ describe('scripts/steward/merge-check.sh', () => {
       return fx;
     }
 
-    it('a deploying copy change on open paths merges itself, deploy and all', () => {
+    // A deploying copy change opens only for a function OPEN_FUNCTIONS names, and none is
+    // named today (every function is clinical or privacy): the pure suite proves the open
+    // side with a function the test opens; end to end, a deploy holds and says why.
+    it('a deploy holds until the PM opens its function, and says which', () => {
       const fx = withFns();
-      const s = session(fx, 'claude/copy', { 'lib/utils.ts': "export const say = 'That did not save. Try again.';\n" });
+      const s = session(fx, 'claude/copy', { 'lib/fonts.ts': "export const say = 'That did not save. Try again.';\n", 'lib/utils.ts': "export const say = 'That did not save. Try again.';\n" });
       const r = check(s);
-      expect(r.out).not.toContain('production: landing it is a production write');
-      expect(r.out).toContain('self-merge: open\n  deploys   generate-signal (shipping code changed); every path it touches is open, so it merges itself (CUL-2874)\n');
+      expect(r.out).toContain("production: landing it is a production write; a self-merge waits for the PM's typed merge");
+      expect(r.out).toContain('  held      deploys generate-signal: clinical (the detection engine); a deploy merges itself only for a function OPEN_FUNCTIONS names');
+      expect(r.code).toBe(2);
+    });
+
+    it('a change that deploys nothing on open paths merges itself', () => {
+      const fx = withFns();
+      const s = session(fx, 'claude/fonts', { 'lib/fonts.ts': 'export const size = 14;\n', 'docs/sessions/2026-11-26-x.md': 'record\n' });
+      const r = check(s);
+      expect(r.out).toContain('production: landing deploys no Edge Function and edits no gate file\nself-merge: open\n');
       expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
       expect(r.code).toBe(0);
     });
@@ -1081,19 +1092,22 @@ describe('scripts/steward/merge-check.sh', () => {
       expect(r.code).toBe(2);
 
       // A screen that deploys nothing still holds on a clinical string it changes.
-      const t = session(fx, 'claude/screen', { 'components/home/HomeHeader.tsx': "export const t = 'Vomited twice today';\n" });
+      const t = session(fx, 'claude/screen', { 'components/home/HomeHeader.tsx': 'export const t = <Text>Vomited twice today</Text>;\n' });
       const q = check(t);
       expect(q.out).toContain('production: landing deploys no Edge Function and edits no gate file');
-      expect(q.out).toContain('  held      components/home/HomeHeader.tsx: a changed string holds a clinical word');
+      expect(q.out).toContain('  held      components/home/HomeHeader.tsx: product code off the UI mechanics list');
+      expect(q.out).toContain('  held      components/home/HomeHeader.tsx: a changed line holds a clinical word');
       expect(q.code).toBe(2);
     });
 
     it('labels left out hold, and a Live harm label holds open paths', () => {
       const fx = withFns();
-      const s = session(fx, 'claude/copy', { 'lib/utils.ts': "export const say = 'Try again.';\n" });
+      const s = session(fx, 'claude/copy', { 'lib/fonts.ts': "export const say = 'Try again.';\n" });
       const unread = check(s, [NO_LABELS]);
       expect(unread.out).toContain('labels were not passed (--labels)');
       expect(unread.code).toBe(2);
+      expect(check(s, ['--labels', '']).code).toBe(2);
+      expect(check(s, ['--labels', 'none']).code).toBe(0);
       const harm = check(s, ['--labels', 'Area: Copy/Voice,Live harm']);
       expect(harm.out).toContain('  held      a named issue is labelled Live harm\n');
       expect(harm.code).toBe(2);
@@ -1121,7 +1135,7 @@ describe('scripts/steward/merge-check.sh', () => {
 
     it('a verdict the helper cannot give holds', () => {
       const fx = withFns();
-      const s = session(fx, 'claude/copy', { 'lib/utils.ts': "export const say = 'Try again.';\n" });
+      const s = session(fx, 'claude/copy', { 'lib/fonts.ts': "export const say = 'Try again.';\n" });
       const bin = path.join(root, `half-node-${(seq += 1)}`);
       fs.mkdirSync(bin, { recursive: true });
       // A node that answers the deploy helper and dies on the verdict.

@@ -88,7 +88,7 @@ const labelKey = (l: string) => l.toLowerCase().replace(/\s+/g, '');
 const PRODUCT = /^(lib|store|hooks|app|components|constants|supabase|widgets)(\/|$)/;
 // UI mechanics: product code that holds no health data, money or copy. A file here is a
 // team call; every other product file keeps. Add a file only with the reason it is safe.
-const UI_MECHANICS = new Set([
+export const UI_MECHANICS = new Set([
   'lib/utils.ts', 'lib/haptics.ts', 'lib/textWidth.ts', 'lib/a11yFocus.ts', 'lib/fonts.ts', 'lib/tapTarget.ts',
   'lib/measureNode.ts', 'lib/layoutCaps.ts', 'lib/revealInScroll.ts', 'lib/screenOrientation.ts', 'lib/rateContrast.ts',
   'lib/fabFootprint.ts', 'lib/network.ts', 'lib/appInfo.ts', 'hooks/useReducedMotion.ts', 'hooks/useLayoutClass.ts',

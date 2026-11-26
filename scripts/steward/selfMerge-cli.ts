@@ -5,8 +5,8 @@
 //     [--deploys fn-a,fn-b] [--deploy-unread <why>] [--labels 'Gate: clinical,Area: Copy'] [--applied <NNN>]
 //
 // Prints `self-merge: open` or `self-merge: held`, then one reason per line. Exit 0 open,
-// 1 held, 3 when the landing cannot be read (never a pass). `--labels` absent holds;
-// `--labels ''` says the named issues carry no labels.
+// 1 held, 3 when the landing cannot be read (never a pass). `--labels` absent or empty
+// holds; `--labels none` says the named issues carry no labels.
 
 import { readLanding } from './landing.ts';
 import { selfMerge } from './selfMerge.ts';
@@ -42,7 +42,8 @@ const r = selfMerge({
   deploys: list(opt('--deploys')),
   deployUnread: opt('--deploy-unread') || undefined,
   changedLines,
-  labels: labelsRaw === undefined ? null : list(labelsRaw),
+  // `none` says the named issues carry no labels; an empty value says nothing, so it holds.
+  labels: labelsRaw === undefined || labelsRaw.trim() === '' ? null : labelsRaw.trim().toLowerCase() === 'none' ? [] : list(labelsRaw),
   applied: opt('--applied') ?? null,
 });
 console.log(`self-merge: ${r.verdict}`);

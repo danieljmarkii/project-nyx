@@ -77,7 +77,8 @@ for (const entry of log) {
   const deploys = d.status === 0 ? d.stdout.split('\n').filter(Boolean).map((l) => l.split('\t')[0]) : [];
   const deployUnread = d.status === 0 ? '' : (d.stderr.trim().split('\n')[0] || `exit ${d.status}`);
   const r = selfMerge({ files, deploys, deployUnread: deployUnread || undefined, changedLines, labels, applied: null });
-  const healthText = changedLines.some((l) => PRODUCT.test(l.file) && /['"`]/.test(l.line) && CLINICAL_WORDS.test(l.line));
+  // Any changed product line with a clinical word, quoted or not (JSX text has no quote).
+  const healthText = changedLines.some((l) => PRODUCT.test(l.file) && CLINICAL_WORDS.test(l.line));
   rows.push({
     sha,
     pr,
