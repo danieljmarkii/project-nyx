@@ -344,10 +344,9 @@ describe('the cost line: Asks you ≈ N (rule 4, from the gate predicate)', () =
 
   // A6 (a), CUL-2887. Mutation proof: scripts/dispatch/mutants.ts (PR-31).
   it('a migration row asks once: the pick and its apply, never a plan go', () => {
-    const desc = input().project.description.replace(
-      '**PR-27e:** the read, per CUL-1611 option A.',
-      '**PR-27e:** the read. Migration `supabase/migrations/105_add_food_note.sql`, read by `scripts/dispatch/plan.ts`.',
-    );
+    const desc = input()
+      .project.description.replace('may_wait read', 'food_note read')
+      .replace('**PR-27e:** the read, per CUL-1611 option A.', '**PR-27e:** the read. Migration `supabase/migrations/105_add_food_note.sql`, read by `scripts/dispatch/plan.ts`.');
     const p = input();
     p.project = { ...p.project, description: desc };
     expect(v(planDispatch(p), '27e').asks).toEqual({ n: 2, parts: ['the pick', 'apply <NNN>'] });
@@ -357,6 +356,7 @@ describe('the cost line: Asks you ≈ N (rule 4, from the gate predicate)', () =
   it('a migration bundle waits on a clinical label on its second issue, or an unread one', () => {
     const desc = input()
       .project.description.replace('| 27e | CUL-1601 (of CUL-1611)', '| 27e | CUL-1601 + CUL-1604 (of CUL-1611)')
+      .replace('may_wait read', 'food_note read')
       .replace('**PR-27e:** the read, per CUL-1611 option A.', '**PR-27e:** the read. Migration `supabase/migrations/105_add_food_note.sql`, read by `scripts/dispatch/plan.ts`.');
     const p = input();
     p.project = { ...p.project, description: desc };

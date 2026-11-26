@@ -183,6 +183,17 @@ describe('the gate predicate reads the kept list (CUL-2886)', () => {
     // Only the name rule catches this one, and only the unnamed rule the next (mutation proof).
     ['a name that is not add_', 'Migration `supabase/migrations/105_food_note.sql`.'],
     ['a migration named only as a flag', 'The read in `scripts/dispatch/plan.ts`.'],
+    // Adversarial pass 2 (PR-31): synonyms a deny-list misses; only the allow-list holds them.
+    ['a reassurance surface', 'Migration `supabase/migrations/105_add_wellness_score.sql` stores a daily wellness score shown to the owner.'],
+    ['a data-loss synonym', 'Migration `supabase/migrations/105_add_guard.sql` nulls out free-text notes.'],
+    ['an access synonym', 'Migration `supabase/migrations/105_add_select_for_everyone.sql` so unauthenticated clients can select.'],
+    ['a table described as add', 'Migration `supabase/migrations/105_add_household_members.sql` adds a household_members table.'],
+    ['a fill of existing rows', 'Migration `supabase/migrations/105_add_species.sql` adds species and fills it for existing cats.'],
+    ['a homoglyph', 'Migration `supabase/migrations/105_add_note.sql` adds a nullable column and dr\u043ep the old one.'],
+    ['a zero-width space', 'Migration `supabase/migrations/105_add_note.sql` adds a nullable column, dr\u200bop.'],
+    // Only the ASCII check catches the first, only NOT_ADDITIVE the second (mutation proof).
+    ['a hidden character among plain words', 'Migration `supabase/migrations/105_add_note.sql` adds a nullable column\u200b.'],
+    ['a drop the name brings', 'Migration `supabase/migrations/105_add_drop_logs.sql` adds a nullable drop logs column.'],
   ])('%s waits for its go', (_k, note) => {
     expect(gateOf({ what: 'x', note, migration: true }).line).toBe('plan');
   });

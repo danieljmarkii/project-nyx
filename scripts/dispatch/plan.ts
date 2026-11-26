@@ -215,9 +215,11 @@ export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?
 
 // What still holds a migration row's plan (A6 (a), PM 2026-11-25): a migration is kept as
 // schema, and its `apply` is where the PM reads it, so that one reason asks one word. The
-// burden is on the row (adversarial pass 1, PR-31): the plan go is dropped only on positive
-// evidence that the migration is purely additive, and anything this cannot prove waits.
+// burden is on the row (adversarial passes 1 and 2, PR-31): the plan go is dropped only on
+// positive evidence that the migration is purely additive, and anything this cannot prove waits.
 //   - every migration file is named, and each is `<n>_add_<what>.sql`;
+//   - the row's text is printable ASCII and every word in it is PLAIN or a word of a path it
+//     names: an allow-list, because no deny-list over prose can prove "nothing else kept";
 //   - no word in its names or the row's text says it is not additive (snake_case split);
 //   - the names, read as product code, hit no kept stem (`106_add_storage_bucket.sql` holds);
 //   - the rest of the row (labels of every issue on it, its other files, its text) is
@@ -226,6 +228,12 @@ const MIGRATION_FILE = /^supabase\/migrations\/[^/]+$/;
 const ADDITIVE_NAME = /^\d+[a-z]?_add_[a-z0-9_]+\.sql$/;
 const NOT_ADDITIVE =
   /\b(drop\w*|renam\w*|delet\w*|remov\w*|retir\w*|purg\w*|truncat\w*|wip(e|es|ed|ing)|grant\w*|revok\w*|polic(y|ies)|rls|definer|security|triggers?|cron|schedul\w*|backfill\w*|rewrit\w*|updat\w*|replac\w*|cascad\w*|anon\w*|alter\w*|not null|uniqu\w*|constraints?|views?|functions?|rpc|buckets?|storage|widgets?|caps?|subscriptions?|usage|thresholds?|alerts?|types?|enums?|defaults?|mov(e|es|ed|ing)|merg\w*|split\w*|cop(y|ies|ied)|convert\w*|transform\w*|seed\w*|insert\w*|rows?|data|(create|creates|new) (\w+ )?tables?)\b/i;
+const PLAIN = new Set('a an the this it its add adds adding added nullable column columns index indexes to on of and for in by with migration migrations read reads pr'.split(' '));
+function plainOnly(text: string, files: string[]): boolean {
+  if (!/^[\x20-\x7e\n\t]*$/.test(text)) return false;
+  const named = new Set(files.flatMap((f) => f.toLowerCase().split(/[^a-z]+/)));
+  return (text.toLowerCase().match(/[a-z]+/g) ?? []).every((w) => w.length === 1 || PLAIN.has(w) || named.has(w));
+}
 const UNPROVEN = 'stakes: a migration this cannot prove purely additive (uncertain counts as kept)';
 function migrationWait(labels: string[], text: string, mode: Gate['mode'], unread: boolean): string[] {
   const files = pathsIn(text);
@@ -234,7 +242,7 @@ function migrationWait(labels: string[], text: string, mode: Gate['mode'], unrea
   const spaced = text.replace(/_/g, ' ');
   const out: string[] = [];
   if (unread) out.push('stakes: an issue on the row was not read (uncertain counts as kept)');
-  if (!migrations.length || !migrations.every((m) => ADDITIVE_NAME.test(m)) || NOT_ADDITIVE.test(spaced)) out.push(UNPROVEN);
+  if (!migrations.length || !migrations.every((m) => ADDITIVE_NAME.test(m)) || NOT_ADDITIVE.test(spaced) || !plainOnly(text, files)) out.push(UNPROVEN);
   const rest = keptOf({ labels, files: others, text: spaced }).reasons.filter(
     (why) => !why.startsWith('stakes: schema') && !(why.includes('no files named') && others.length === 0 && migrations.length > 0),
   );
