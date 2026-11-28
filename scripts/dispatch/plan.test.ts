@@ -130,77 +130,24 @@ describe('the gate predicate reads the kept list (CUL-2886)', () => {
     expect(gateOf({ what: 'x', note: 'the Tier-2 edits in `scripts/dispatch/plan.ts`', migration: false }).planGated).toEqual(['scope: scope (in or out of a project, priority between tracks, a spec edit)']);
   });
 
-  // A6 (a), CUL-2887: a plan is posted and built; a migration row asks one word, `apply`.
-  // Mutation proof: scripts/dispatch/mutants.ts (PR-31).
+  // A6 (a), CUL-2887: a routine plan is posted and built. CUL-2912: a migration row keeps
+  // its plan go (the PM's ruling (a)), whatever its words. Mutation proof: scripts/dispatch/mutants.ts.
   it('a routine row posts and builds; a clinical row still waits for its go', () => {
-    expect(gateOf({ what: 'The board keeps a stale row', note: '`scripts/dispatch/board.ts`.', migration: false })).toMatchObject({ line: 'routine', planWait: [] });
+    expect(gateOf({ what: 'The board keeps a stale row', note: '`scripts/dispatch/board.ts`.', migration: false })).toMatchObject({ line: 'routine', planGated: [] });
     const clinical = gateOf({ what: 'x', note: '`scripts/dispatch/plan.ts`', migration: false }, { labels: ['Gate: clinical'] });
-    expect(clinical).toMatchObject({ line: 'plan', planWait: ['stakes: clinical (label Gate: clinical)'] });
+    expect(clinical).toMatchObject({ line: 'plan', planGated: ['stakes: clinical (label Gate: clinical)'] });
     expect(gateOf({ what: 'x', note: 'edit `lib/dietTrial.ts`.', migration: false }).line).toBe('plan');
   });
 
-  it('a migration row with nothing else kept asks for no plan go', () => {
-    const note = 'Migration `supabase/migrations/105_add_food_note.sql` adds a nullable column, and `scripts/dispatch/plan.ts` reads it.';
-    expect(gateOf({ what: 'x', note, migration: true })).toMatchObject({ line: 'migration', planWait: [] });
-    // An unnamed migration is unread, so it waits (adversarial pass 1, B2).
-    expect(gateOf({ what: 'x', note: '', migration: true }).line).toBe('plan');
-    // The migration is still kept: it plan-gates for display and is never auto.
-    expect(gateOf({ what: 'x', note, migration: true }).planGated[0]).toBe('migration');
-    expect(autoEligible(gateOf({ what: 'x', note, migration: true }))).toBe(false);
-  });
-
-  it('a migration row anything else keeps still waits for its go', () => {
-    const m = (note: string, labels: string[] = []) => gateOf({ what: 'x', note, migration: true }, { labels });
-    expect(m('Migration `supabase/migrations/105_add_note.sql`.', ['Gate: clinical'])).toMatchObject({ line: 'plan', planWait: ['stakes: clinical (label Gate: clinical)'] });
-    expect(m('Migration `supabase/migrations/105_add_note.sql` and `lib/dietTrial.ts`.').planWait).toEqual(['stakes: clinical surface (by name)']);
-    expect(m('Migration `supabase/migrations/105_add_note.sql`, with an RLS policy.').planWait).toEqual(expect.arrayContaining(['stakes: privacy, RLS, Storage, deletion, export or share links']));
-    // The migration's own name is read: a storage or meal migration holds.
-    expect(m('Migration `supabase/migrations/106_storage_bucket.sql`.').planWait).toEqual(expect.arrayContaining(['stakes: privacy, Storage, deletion, export or share links (by name)']));
-    expect(m('Migration `supabase/migrations/105_may_wait.sql`.').planWait).toEqual(expect.arrayContaining(['stakes: clinical surface (by name)']));
-    expect(m('Migration `supabase/migrations/105_add_note.sql`; backfill the old rows.').line).toBe('plan');
-  });
-
-  // Adversarial pass 1 (PR-31): the burden is on the row, so each of these waits.
   it.each([
-    ['an RLS name', 'Migration `supabase/migrations/107_rls_tighten_food_logs.sql`.'],
-    ['a grant name', 'Migration `supabase/migrations/107_grant_select_anon.sql`.'],
-    ['a drop name', 'Migration `supabase/migrations/108_drop_legacy_column.sql`.'],
-    ['a purge name', 'Migration `supabase/migrations/109_purge_stale_rows.sql`.'],
-    ['a money name', 'Migration `supabase/migrations/110_subscription_status.sql`.'],
-    ['a usage cap name', 'Migration `supabase/migrations/111_ai_usage_cap.sql`.'],
-    ['a clinical threshold name', 'Migration `supabase/migrations/112_alert_thresholds.sql`.'],
-    ['an add name over an RLS word', 'Migration `supabase/migrations/112_add_rls_policy.sql`.'],
-    ['an add name over storage', 'Migration `supabase/migrations/106_add_storage_bucket.sql`.'],
-    ['a rename in prose', 'Migration `supabase/migrations/113_add_unit.sql` renames the column and drops the old one.'],
-    ['a backfill in meaning', 'Migration `supabase/migrations/117_add_unit.sql` updates every existing row to set unit = kg.'],
-    ['a grant in prose', 'Migration `supabase/migrations/114_add_x.sql`: grant select on food_logs to anon.'],
-    ['a definer in prose', 'Migration `supabase/migrations/114_add_x.sql` adds a security definer function.'],
-    ['a scheduled job', 'Migration `supabase/migrations/118_add_job.sql` schedules a nightly job.'],
-    ['a view for the widget', 'Migration `supabase/migrations/121_add_cats_summary.sql` adds a view over cats for the widget.'],
-    ['a new table', 'Migration `supabase/migrations/122_add_logs.sql` creates a new table.'],
-    ['a retire', 'Migration `supabase/migrations/119_add_x.sql` retires the legacy logs table.'],
-    ['no file named', 'Widen the food logs.'],
-    // Only the name rule catches this one, and only the unnamed rule the next (mutation proof).
-    ['a name that is not add_', 'Migration `supabase/migrations/105_food_note.sql`.'],
-    ['a migration named only as a flag', 'The read in `scripts/dispatch/plan.ts`.'],
-    // Adversarial pass 2 (PR-31): synonyms a deny-list misses; only the allow-list holds them.
-    ['a reassurance surface', 'Migration `supabase/migrations/105_add_wellness_score.sql` stores a daily wellness score shown to the owner.'],
-    ['a data-loss synonym', 'Migration `supabase/migrations/105_add_guard.sql` nulls out free-text notes.'],
-    ['an access synonym', 'Migration `supabase/migrations/105_add_select_for_everyone.sql` so unauthenticated clients can select.'],
-    ['a table described as add', 'Migration `supabase/migrations/105_add_household_members.sql` adds a household_members table.'],
-    ['a fill of existing rows', 'Migration `supabase/migrations/105_add_species.sql` adds species and fills it for existing cats.'],
-    ['a homoglyph', 'Migration `supabase/migrations/105_add_note.sql` adds a nullable column and dr\u043ep the old one.'],
-    ['a zero-width space', 'Migration `supabase/migrations/105_add_note.sql` adds a nullable column, dr\u200bop.'],
-    // Only the ASCII check catches the first, only NOT_ADDITIVE the second (mutation proof).
-    ['a hidden character among plain words', 'Migration `supabase/migrations/105_add_note.sql` adds a nullable column\u200b.'],
-    ['a drop the name brings', 'Migration `supabase/migrations/105_add_drop_logs.sql` adds a nullable drop logs column.'],
-  ])('%s waits for its go', (_k, note) => {
-    expect(gateOf({ what: 'x', note, migration: true }).line).toBe('plan');
-  });
-
-  it('a migration row reads every issue on it, and one it could not read waits', () => {
-    const note = 'Migration `supabase/migrations/105_add_food_note.sql` adds a nullable column.';
-    expect(gateOf({ what: 'x', note, migration: true }, { labels: [], unread: true }).line).toBe('plan');
+    ['plain additive words', 'Migration `supabase/migrations/105_add_food_note.sql` adds a nullable column, and `scripts/dispatch/plan.ts` reads it.'],
+    ['a clinical-sounding column', 'Migration `supabase/migrations/105_add_wellness_score.sql` adds a nullable column.'],
+    ['an unnamed migration', ''],
+  ])('a migration row with %s is plan-gated, never routine or auto', (_k, note) => {
+    const g = gateOf({ what: 'x', note, migration: true });
+    expect(g.line).toBe('plan');
+    expect(g.planGated[0]).toBe('migration');
+    expect(autoEligible(g)).toBe(false);
   });
 
   it('plan-gates money, App Store and the irreversible, which the old predicate missed', () => {
