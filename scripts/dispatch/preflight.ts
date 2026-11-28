@@ -36,7 +36,6 @@
 
 import { asksOf, autoEligible, planDispatch, type Plan, type PlanInput, type Verdict } from './plan.ts';
 import { normRow, type PageRow, type RowId } from './page.ts';
-import { NAME_STEMS, keptOf, pathsIn, wordsOf } from '../kept/kept.ts';
 
 export type Ruling = {
   key: string; // `PR-03` for a kept row; the hold's key for an After ruling
@@ -68,12 +67,6 @@ export type PreflightInput = PlanInput & { ruled?: Record<string, string> };
 
 // A migration row's schema and SQL reasons are its `apply`, listed under migrations; any
 // other kept reason on it (clinical, privacy, money) still needs a ruling.
-// What a migration's own path says about it, and nothing more: those reasons are its `apply`.
-const SCHEMA = new Set(['stakes: schema (a migration)', 'stakes: schema']);
-const SQL_REASON = 'stakes: irreversible (SQL against a database)';
-const SERVER_REASON = 'stakes: server code over health data (supabase/)';
-const PRIVACY_BY_NAME = 'stakes: privacy, Storage, deletion, export or share links (by name)';
-const isMigration = (f: string) => f.startsWith('supabase/migrations/');
 const DONE_WHEN = /\bDone when:/i;
 const VERIFY = /\bVerify(?: with)?:/i;
 const RATIFIED = /\bratified\b[^.]*?\b(R-\d+|round\s*\d+)\b/i;
@@ -132,30 +125,13 @@ function unreadyOf(plan: Plan, live: PageRow[]): Unready[] {
   return out;
 }
 
-// A migration row's `apply` covers only what its migration path alone says: schema, SQL, the
-// `supabase/` tree, and the privacy stem the folder name `supabase` hits. Every other reason
-// is read from the full text and stays a ruling, the file name's own words included
-// (`150_vomit_threshold.sql` is clinical by name; adversarial pass 1, case A), and so does a
-// SQL file that is not a migration (case C).
-function rulingReasons(v: Verdict, row: PageRow, labels: string[]): string[] {
-  if (!row.migration) return v.gate.kept === 'none' ? [] : v.gate.keptReasons;
-  const text = `${row.what} ${row.note}`;
-  const files = pathsIn(text);
-  const others = files.filter((f) => !isMigration(f));
-  const privacy = NAME_STEMS.find((n) => n.why.startsWith('privacy'))!.stems;
-  const ownWords = (f: string) => (isMigration(f) ? wordsOf(f.slice('supabase/migrations/'.length)) : wordsOf(f));
-  const privacyElsewhere = files.some((f) => /^(lib|store|hooks|app|components|constants|supabase|widgets)\//.test(f) && ownWords(f).some((w) => privacy.some((st) => w.startsWith(st))));
-  const covered = (r: string) =>
-    SCHEMA.has(r) ||
-    (r === SQL_REASON && !others.some((f) => /\.sql$/.test(f))) ||
-    (r === SERVER_REASON && !others.some((f) => f.startsWith('supabase/'))) ||
-    (r === PRIVACY_BY_NAME && !privacyElsewhere);
-  return keptOf({ labels, files, text, migration: true }).reasons.filter((r) => !covered(r));
-}
-
-function keptRuling(v: Verdict, row: PageRow, labels: string[]): Ruling | undefined {
-  const reasons = rulingReasons(v, row, labels);
-  if (!reasons.length) return undefined;
+// Every row the kept list keeps is a ruling, a migration row included: its schema change is
+// stakes, so the PM rules its shape before kickoff and types its `apply` when it lands.
+// (Exempting what a migration's path says was tried and broke twice in adversarial review:
+// a file name the lists cannot place, `151_rls_policies.sql`, read as no call at all.)
+function keptRuling(v: Verdict, row: PageRow): Ruling | undefined {
+  const reasons = v.gate.keptReasons;
+  if (v.gate.kept === 'none' || !reasons.length) return undefined;
   const needs = `PR-${row.id} is kept (${reasons.join('; ')})`;
   return {
     key: `PR-${row.id}`,
@@ -186,7 +162,7 @@ export function preflight(input: PreflightInput): Preflight {
   };
   for (const row of live) {
     const v = verdictOf(row.id);
-    const k = keptRuling(v, row, [...new Set(row.issues.flatMap((i) => input.issues[i]?.labels ?? []))]);
+    const k = keptRuling(v, row);
     if (k) add(k);
     // An After item that waits on a ruling or a PM action is a ruling the run would meet.
     // (`CUL-NNN merged` is a dependency, not a ruling: its hold is kind pm too, so the After

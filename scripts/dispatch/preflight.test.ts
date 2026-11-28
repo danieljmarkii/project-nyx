@@ -27,13 +27,14 @@ function facts(over: Partial<PreflightInput> = {}, page = PAGE): PreflightInput 
   };
 }
 
-const RULED = { 'PR-03': '(a) escalate after two logs in 24 hours, 2026-11-28' };
+const ONLY_03 = { 'PR-03': '(a) escalate after two logs in 24 hours, 2026-11-28' };
+const RULED = { 'PR-03': '(a) escalate after two logs in 24 hours, 2026-11-28', 'PR-04': '(a) the nullable column as written, 2026-11-28' };
 
 describe('preflight on the fixture project', () => {
   const pre = preflight(facts());
 
   it('lists the clinical row as a ruling to make before kickoff, in a decision brief', () => {
-    expect(pre.open.map((r) => r.key)).toEqual(['PR-03']);
+    expect(pre.open.map((r) => r.key)).toEqual(['PR-03', 'PR-04']);
     const r = pre.open[0];
     expect(r.needs).toMatch(/stakes: clinical/);
     expect(r.brief[0]).toMatch(/^Deciding: /);
@@ -41,9 +42,9 @@ describe('preflight on the fixture project', () => {
     expect(r.brief[2]).toMatch(/^Consequence: go project is refused/);
   });
 
-  it('lists the migration as an apply to come, and not as a ruling', () => {
+  it('lists the migration as an apply to come, and as a schema ruling before kickoff', () => {
     expect(pre.migrations).toEqual([{ row: '04', issue: 'CUL-9004', applies: ['apply 150'] }]);
-    expect(pre.rulings.map((r) => r.key)).not.toContain('PR-04');
+    expect(pre.open.find((r) => r.key === 'PR-04')!.needs).toMatch(/stakes: schema/);
   });
 
   it('lists the unready rows with why: no Done when, and a hotspot two unordered rows share', () => {
@@ -56,14 +57,14 @@ describe('preflight on the fixture project', () => {
   it('forecasts the rows and the typed inputs the run will need', () => {
     expect(pre.forecast.rows).toBe(7);
     // 01, 02: nothing once auto. 03: the pick and its plan go. 04: the pick, its plan go and
-    // `apply 150`. 05, 06, 07: the pick each. Plus `go project` and the one open ruling.
+    // `apply 150`. 05, 06, 07: the pick each. Plus `go project` and the two open rulings.
     expect(pre.forecast.perRow).toEqual({ '01': 0, '02': 0, '03': 2, '04': 3, '05': 1, '06': 1, '07': 1 });
-    expect(pre.forecast.inputs).toBe(1 + 1 + 8);
+    expect(pre.forecast.inputs).toBe(1 + 2 + 8);
   });
 
   it('prints every section', () => {
     const t = renderPreflight(pre);
-    expect(t).toMatch(/Rulings before kickoff: 1 open of 1/);
+    expect(t).toMatch(/Rulings before kickoff: 2 open of 2/);
     expect(t).toMatch(/PR-04: apply 150 to come/);
     expect(t).toMatch(/PR-05 — no `Done when`/);
     expect(t).toMatch(/go project is refused until every one is ruled/);
@@ -74,7 +75,8 @@ describe('go project', () => {
   it('is refused while a ruling is open, and names it', () => {
     const go = goProject(preflight(facts()));
     expect(go.ok).toBe(false);
-    expect(go.ok === false && go.refused).toEqual([expect.stringMatching(/^PR-03: PR-03 is kept/)]);
+    expect(go.ok === false && go.refused).toEqual([expect.stringMatching(/^PR-03: PR-03 is kept/), expect.stringMatching(/^PR-04: PR-04 is kept/)]);
+    expect(goProject(preflight(facts({ ruled: { 'PR-03': RULED['PR-03'] } }))).ok).toBe(false);
   });
 
   const go = goProject(preflight(facts({ ruled: RULED })));
@@ -168,7 +170,7 @@ describe('what makes a row unready or eligible', () => {
 
   it('a migration row that also carries a clinical call needs its ruling as well as its apply', () => {
     const page = PAGE.replace('Migration `supabase/migrations/150_fixture_col.sql`.', 'Migration `supabase/migrations/150_fixture_col.sql` so a vomit log escalates.');
-    const pre = preflight(facts({ ruled: RULED }, page));
+    const pre = preflight(facts({ ruled: ONLY_03 }, page));
     expect(pre.open.map((r) => r.key)).toEqual(['PR-04']);
     expect(pre.open[0].needs).toMatch(/stakes: clinical/);
     expect(pre.migrations.map((m) => m.row)).toEqual(['04']);
@@ -179,22 +181,32 @@ describe('what makes a row unready or eligible', () => {
     ['a clinical file name', 'supabase/migrations/150_vomit_threshold.sql', /stakes: clinical surface \(by name\)/],
     ['a privacy file name', 'supabase/migrations/150_pet_photo_tokens.sql', /stakes: privacy, Storage, deletion, export or share links \(by name\)/],
   ])('a migration row whose file has %s still needs its ruling', (_what, file, why) => {
-    const pre = preflight(facts({ ruled: RULED }, PAGE.replace('supabase/migrations/150_fixture_col.sql', file)));
+    const pre = preflight(facts({ ruled: ONLY_03 }, PAGE.replace('supabase/migrations/150_fixture_col.sql', file)));
     expect(pre.open.map((r) => r.key)).toEqual(['PR-04']);
     expect(pre.open[0].needs).toMatch(why);
     expect(goProject(pre).ok).toBe(false);
   });
 
+  // Adversarial pass 2: a file name the lists cannot place, or no file at all, still keeps.
+  it.each([
+    ['a name no list places', 'Migration `supabase/migrations/151_rls_policies.sql`.'],
+    ['no file named', 'A migration for new fields.'],
+  ])('a migration row with %s needs a ruling, and go project waits on it', (_what, note) => {
+    const pre = preflight(facts({ ruled: ONLY_03 }, PAGE.replace('Migration `supabase/migrations/150_fixture_col.sql`.', note)));
+    expect(pre.open.map((r) => r.key)).toEqual(['PR-04']);
+    expect(goProject(pre).ok).toBe(false);
+  });
+
   it('a migration row that also runs a SQL file that is not a migration still needs its ruling', () => {
     const page = PAGE.replace('Migration `supabase/migrations/150_fixture_col.sql`.', 'Migration `supabase/migrations/150_fixture_col.sql`, then `scripts/ops/reset_counts.sql`.');
-    const pre = preflight(facts({ ruled: RULED }, page));
+    const pre = preflight(facts({ ruled: ONLY_03 }, page));
     expect(pre.open.map((r) => r.key)).toEqual(['PR-04']);
     expect(pre.open[0].needs).toMatch(/irreversible \(SQL against a database\)/);
   });
 
   it('a migration row that also edits an Edge Function still needs its ruling', () => {
     const page = PAGE.replace('Migration `supabase/migrations/150_fixture_col.sql`.', 'Migration `supabase/migrations/150_fixture_col.sql`, and `supabase/functions/fixture/index.ts`.');
-    expect(preflight(facts({ ruled: RULED }, page)).open[0]?.needs).toMatch(/server code over health data/);
+    expect(preflight(facts({ ruled: ONLY_03 }, page)).open[0]?.needs).toMatch(/server code over health data/);
   });
 
   it('the go marks only the eligible rows whose PR cell lacks auto', () => {
