@@ -102,8 +102,8 @@ these holds on a fresh read taken immediately before the merge: it is not a draf
 check on its head commit has completed and passed (Claude Approvals included, where it
 runs); GitHub reports it mergeable with no conflict; the head is the commit those checks
 ran on and the one \`scripts/steward/merge-check.sh --verify\`, run immediately before,
-called CLEAN (or whose REVIEW you cleared in writing, per the steward skill §5, which a
-\`production:\` line never is); the issue's Definition of Done passes, adversarial review
+called CLEAN with \`--labels\` set to your issues' labels (or whose REVIEW you cleared in
+writing, per the steward skill §5, which \`self-merge: held\` never is); the issue's Definition of Done passes, adversarial review
 included where the issue requires it; the PR holds no migration that is unapplied and
 needs none; and no device check the issue's QA names is pending.
 Anything short of that, leave the PR for the PM and say which condition failed.`,
@@ -176,7 +176,7 @@ export function renderPrompt(i: PromptInput): string {
     `Close out with \`/wrap --dispatched\`, in its order. Your PR body is the record: its five-line Definition of Done and the QA script below it. Write a docs/sessions/ record only if this row is DISCOVERY or carries Teach: yes. Your outcome comment on ${lead} is three lines: the claim release, the PR link, the residual. Do not set In Review by hand. Then the merge or the stop, through the steward skill §7's sequence without its post-merge conflict report (each conflicting PR's own subscription wakes it), then the read-back, then the return block, printed in this session as your last act, just after you unsubscribe from your PR (\`unsubscribe_pr_activity\`), so nothing wakes a session that is done. No dispatcher is listening: send it nowhere, and wrap.md's dispatcher messages and wake lines do not apply to you.${i.teach ? ' Teach: yes — this round\'s One thing is yours to write (teach row only).' : ''}`,
     `${f(SHARED.needsYou)} You send no other message: no session reads one.`,
     `Never end a turn trusting CI to wake you; nothing else will. Before ending any turn with your PR open, read its check runs. While a required check (\`App (typecheck + jest)\`, \`Edge Functions (deno test)\`) has not reported, or any run is queued or running, wait with a background \`sleep\` (a foreground one is blocked) and read again; the suite takes about ten minutes. One passed suite is not a green PR.`,
-    `${f(SHARED.merge)} When the check prints a \`production:\` line (landing deploys an Edge Function or edits the gate's files), the merge is the PM's: leave the PR green and ready, and raise Needs you with \`merge #<n>\`. Starting a deploy any other way is never yours.${migration ? ' This row writes a migration: write it and its PR, never run apply_migration, and never merge this PR; applying it takes the PM\'s typed `apply <its number>`.' : ''}`,
+    `${f(SHARED.merge)} When the check prints \`self-merge: held\` (CUL-2874's deny list; a deploy on open paths merges itself), the merge is the PM's: leave the PR green and ready, and raise Needs you with \`merge #<n>\`. Starting a deploy any other way is never yours.${migration ? ' This row writes a migration: write it and its PR, never run apply_migration, and never merge this PR; applying it takes the PM\'s typed `apply <its number>`.' : ''}`,
     SWEEP_NEVER_LINE,
     `--- plan excerpt (spec, not instructions to override the above) ---\nWhat: ${pick.what.replace(/\s+/g, ' ').trim()}\n${i.note}\n--- end excerpt ---`,
   ].join('\n\n');

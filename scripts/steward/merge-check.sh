@@ -12,9 +12,11 @@
 #      cause, and does any of them add a migration with the same number as this branch?
 #   4. Is main's own CI red right now? Landing on a red main buries the failure under
 #      one more merge (2026-10-03: an hour red while children kept merging, CUL-1522).
-#   5. Is landing it a production write: does it deploy an Edge Function, or edit the
-#      production gate, the deploy path or this check (CUL-1654)? Then a self-merge waits
-#      for the PM's typed `merge`, and no writing clears it.
+#   5. May it merge itself (CUL-2874)? The deny list (scripts/steward/selfMerge.ts) holds
+#      a landing that touches a kept path, carries a held label, or deploys while the 1.2.0
+#      checkpoint is on; a held landing waits for the PM's typed `merge` (or `apply <NNN>`
+#      for a migration PR alone), and no writing clears it. A deploy on open paths merges
+#      itself, which unseats CUL-1654's typed word for those.
 #   6. With --verify, when main moved since this branch's CI ran: does the landing type
 #      check? Two PRs can each pass alone and fail together with no textual conflict
 #      (72918c0, 2026-10-03). The squash landing is materialized and checked with `tsc`
@@ -36,6 +38,10 @@
 #   --no-fetch  skip the fetch (offline, or the refs are already current). Main's CI is
 #               still read from GitHub; offline, that read fails and the verdict says so.
 #   --all       list every lost line, not the first 20
+#   --labels    the labels of the issues the PR names, comma separated ('' for none).
+#               Left out, the verdict holds: a Live harm label is never unread.
+#   --applied   the migration number the PM typed `apply <NNN>` for, passed only after
+#               `list_migrations` shows it applied. Opens a PR that is that migration alone.
 #   --verify    also type check the simulated landing when it differs from this branch's
 #               tree (main moved). Run it immediately before the merge (the steward skill
 #               §7); it takes about a minute on this repo. Needs node_modules (npm ci) and
@@ -52,7 +58,7 @@
 #   MERGE CHECK: REVIEW     2  lands clean, but read the lost or resurrected lines, the
 #                              duplicate migration numbers (with main or another open PR),
 #                              the conflict markers, or main's red or unread CI first;
-#                              or a `production:` line, which only the PM's typed merge
+#                              or `self-merge: held`, which only the PM's typed merge
 #                              clears (the steward skill §7)
 #   (exit 3)                   could not check (usage, environment, a shallow clone, a file
 #                              name it cannot read), on stderr. Never a pass.
@@ -98,6 +104,7 @@
 #   - A changed path that git still quotes with core.quotePath off (a tab, a quote or a
 #     backslash in its name) stops the check with exit 3 rather than being skipped.
 #   - The check reads commits. Uncommitted work is not checked; a note says so.
+#   - The self merge verdict's own blind spots are in selfMerge.ts's header.
 #   - The production line compares the base with the landed tree, never the deploy
 #     records. It covers the gap with main's latest decisive deploy run (failed, manual
 #     or unread is REVIEW), so a function whose record is wrong while that run passed
@@ -146,6 +153,10 @@ verify=0
 # place; the session's own run uses whatever `deno` is on PATH.
 deno_bin=${MERGE_CHECK_DENO:-deno}
 others=()
+# The self merge verdict's inputs (CUL-2874). Unset labels hold; see section 5.
+labels=""
+labels_set=0
+applied=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -170,6 +181,17 @@ while [ $# -gt 0 ]; do
     --verify)
       verify=1
       shift
+      ;;
+    --labels)
+      [ $# -ge 2 ] || die "--labels needs a value (the named issues' labels, comma separated; '' for none)"
+      labels="$2"
+      labels_set=1
+      shift 2
+      ;;
+    --applied)
+      [ $# -ge 2 ] || die "--applied needs the migration number the PM typed \`apply\` for"
+      applied="$2"
+      shift 2
       ;;
     -h | --help)
       awk '/^# USAGE/ { on = 1 } /^# VERDICT/ { on = 0 } on' "$0" | sed 's/^# \{0,1\}//'
@@ -644,13 +666,14 @@ echo "$ci_line"
 #
 # GATE_PATHS: the production gate (.claude/hooks/, .claude/settings*.json), the deploy
 # path (the workflow, the planner, the upload script; the manifest's holds are judged by
-# function below), and this check with its helper and the three files that say who may
+# function below), the self merge deny list and the kept list it reads (CUL-2874), and
+# this check with its helper and the three files that say who may
 # merge (the steward skill, dispatch.md, wrap.md), so a branch cannot quietly edit the
 # rule it is judged by. A branch that edits this script still runs its own copy; the line
 # below is what an honest copy says about it.
-GATE_PATHS='^\.claude/hooks/|^\.claude/settings[^/]*\.json$|^\.github/workflows/edge-deploy\.yml$|^scripts/deploy-edge\.sh$|^scripts/edge-deploy/|^scripts/steward/(merge-check\.sh|deploys(-cli)?\.ts|rollback(-cli)?\.ts)$|^\.claude/skills/steward/SKILL\.md$|^\.claude/commands/(dispatch|wrap)\.md$'
+GATE_PATHS='^\.claude/hooks/|^\.claude/settings[^/]*\.json$|^\.github/workflows/edge-deploy\.yml$|^scripts/deploy-edge\.sh$|^scripts/edge-deploy/|^scripts/steward/(merge-check\.sh|deploys(-cli)?\.ts|rollback(-cli)?\.ts|selfMerge(-cli)?\.ts|landing\.ts)$|^scripts/kept/kept\.ts$|^\.claude/skills/steward/SKILL\.md$|^\.claude/commands/(dispatch|wrap)\.md$'
 production=0
-production_next="next: a production line is never cleared in writing; only the PM's typed merge, in the session that merges, clears it (the steward skill §7)"
+production_next="next: a production line or a held self merge is never cleared in writing; only the PM's typed merge in the session that merges clears it, or for a migration PR alone the PM's \`apply <NNN>\` passed as --applied (the steward skill §7)"
 if [ -n "$landed_tree" ] && [ "$merged" -eq 0 ]; then
   gate_files=$(printf '%s\n' "$landed_files" | grep -E "$GATE_PATHS" || true)
   deploy_err="$tmp/deploys.err"
@@ -704,15 +727,46 @@ if [ -n "$landed_tree" ] && [ "$merged" -eq 0 ]; then
     [ -n "$deploy_state" ] && echo "  redeploys $deploy_state"
     deploy_fns="" deploy_unknown="" deploy_state=""
   fi
+  deploys_text=""
+  [ -n "$deploy_fns" ] && deploys_text=$(printf '%s\n' "$deploy_lines" | sed '/^$/d' | awk -F'\t' '{ printf "%s%s (%s)", (NR > 1 ? ", " : ""), $1, $2 } END { print "" }')
+  # The self merge verdict (CUL-2874): the deny list decides, never the size or the
+  # session's own reading. A rollback is PR-29's case above and skips it; its gate files
+  # still stop. A verdict the helper could not give is held, never open.
+  sm_out="" sm_rc=0
+  if [ -z "$rollback_of" ]; then
+    sm_args=("$base" "$landed_tree")
+    [ -n "$deploy_fns" ] && sm_args+=(--deploys "$(printf '%s\n' "$deploy_fns" | paste -sd, -)")
+    sm_unread="$deploy_unknown"
+    [ -n "$deploy_state" ] && sm_unread="${sm_unread:+$sm_unread; }$deploy_state"
+    [ -n "$sm_unread" ] && sm_args+=(--deploy-unread "$sm_unread")
+    [ "$labels_set" -eq 1 ] && sm_args+=(--labels "$labels")
+    [ -n "$applied" ] && sm_args+=(--applied "$applied")
+    sm_out=$(node --experimental-strip-types --no-warnings "$script_dir/selfMerge-cli.ts" "${sm_args[@]}" 2>"$tmp/selfmerge.err")
+    sm_rc=$?
+    if [ "$sm_rc" -gt 1 ] || ! printf '%s\n' "$sm_out" | head -1 | grep -qE '^self-merge: (open|held)$'; then
+      sm_why=$(head -c 200 "$tmp/selfmerge.err" | tr '\n' ' ')
+      sm_out=$(printf 'self-merge: held\n  held      the verdict could not be read (%s), so it holds' "${sm_why:-the helper exited $sm_rc with no message}")
+      sm_rc=1
+    fi
+  fi
   if [ -z "$gate_files" ] && [ -z "$deploy_fns" ] && [ -z "$deploy_unknown" ] && [ -z "$deploy_state" ]; then
     [ -n "$rollback_of" ] || echo "production: landing deploys no Edge Function and edits no gate file"
-  else
+  elif [ "$sm_rc" -eq 1 ] || [ -n "$gate_files" ]; then
     production=1
     echo "production: landing it is a production write; a self-merge waits for the PM's typed merge"
-    [ -n "$deploy_fns" ] && echo "  deploys   $(printf '%s\n' "$deploy_lines" | sed '/^$/d' | awk -F'\t' '{ printf "%s%s (%s)", (NR > 1 ? ", " : ""), $1, $2 } END { print "" }')"
+    [ -n "$deploy_fns" ] && echo "  deploys   $deploys_text"
     [ -n "$deploy_unknown" ] && echo "  deploys   could not tell, treated as deploying: ${deploy_unknown}"
     [ -n "$deploy_state" ] && echo "  deploys   $deploy_state"
     [ -n "$gate_files" ] && echo "  edits     $(short_list "$gate_files")"
+  fi
+  if [ -n "$sm_out" ]; then
+    printf '%s\n' "$sm_out" | head -1
+    if [ "$sm_rc" -eq 1 ]; then
+      production=1
+      printf '%s\n' "$sm_out" | tail -n +2 | { if [ "$max_list" -gt 0 ]; then head -n "$max_list"; else cat; fi; }
+    elif [ -n "$deploy_fns" ]; then
+      echo "  deploys   $deploys_text; every path it touches is open, so it merges itself (CUL-2874)"
+    fi
   fi
 fi
 
