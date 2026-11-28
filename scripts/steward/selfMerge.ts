@@ -22,7 +22,7 @@
 //   5. CLAUDE.md, .claude/rules/ and .claude/agents/, the guarding skills, every guard but
 //      the budget and filing ones, research briefs, and a doc named for a clinical or
 //      privacy surface: what future clinical work is held to;
-//   6. every product file OPEN_PRODUCT (empty) does not name: screens, mechanics and the
+//   6. every product file OPEN_PRODUCT (one layout file, CUL-2911) does not name: screens, mechanics and the
 //      UI mechanics list included, since the second adversarial pass found that list on
 //      the write, sync and deletion paths; patches, end to end flows, every command file
 //      and the planning scripts are gate files (rule 1);
@@ -47,8 +47,13 @@
 //     `list_migrations` shows it applied; the check cannot read the database.
 //   - Labels are what the session passes; leaving them out holds, passing a short list
 //     does not. The replay (CUL-2874's PR) found every labelled PR already held by path.
-//   - Rule 7 reads words, not meaning. Today it only adds a reason, since rule 6 holds
-//     every product file; it is there for the day the PM opens one.
+//   - Rule 7 reads words, not meaning, and the import hold reads import lines only. A
+//     change inside an opened file that moves a record without a clinical word, and without
+//     a new import, merges itself; CUL-2911's two adversarial passes found that reachable
+//     for six of the seven files first ruled, so those six hold. The opened file's own test
+//     opens with it, so its pins can be loosened in the same PR. lib/fabFootprint.ts's floor
+//     is read from the file by the held tests too, so an inset can fall to 0 (the last row
+//     sits partly under the + button: a visible fault, no record hidden).
 //   - PUBLIC_BUILD_SHIPPED is flipped by a person at release. A release that forgets the
 //     flip leaves deploys self merging; CUL-2859's release checklist carries the line.
 
@@ -120,8 +125,36 @@ const OPEN_GUARDS = new Set(['guards/claudeMdBudget.test.ts', 'guards/filingRule
 // the snackbar store on every failed save (pass 2). So for the merge no product file opens
 // until the PM names it here, each with the reason it is safe; a gate-file merge, like
 // OPEN_FUNCTIONS. Unsure counts as held.
+//
+// THE RULING (PM, 2026-11-28, typed in the CUL-2911 session: list A, seven files), cut
+// to one by the two adversarial passes the same day, erring loud pending the PM's re-ruling.
+// From the 30-day replay: product files that blocked a merge with no revert or hotfix, no
+// health text in any change or in the file, outside every Edge Function's import closure.
+// A file's test opens with it. Still held on the open side: a changed line with a clinical
+// word (rule 7), a changed import line (the import hold below), every other file in the PR.
+// Held after the pass, each with the quiet change it found:
+//   sheetMotion.ts: its crossfade is the failed-save snackbar's fade-in under Reduce Motion;
+//   LayoutColumn.tsx: it hosts the log sheet, the failed report-keep notice and the
+//     medication card, and wraps every root leaf route;
+//   ColdStartSilhouette.tsx: it draws at zIndex 100 over Home and the snackbar;
+//   app/onboarding/_layout.tsx: one redirect line skips the vet disclaimer or the paywall;
+//   IdentityRow.tsx: it renders the pet's name on the Pet tab;
+//   runRevealMotion.ts (pass 2): it owns the scroll Home and History hand it, so one line
+//     can open Home below its warning card, and no held test pins Home's scroll.
+// Held on purpose although they passed the brief's test: Snackbar (every failed save),
+// Home's layout caps (Principle 3), the History filters and rows (they can hide a record),
+// the tab layout (auth, AI consent, the sync banner) and any file with a clinical word.
 const PRODUCT = /^(app|components|constants|hooks|lib|store|supabase|widgets)\//;
-export const OPEN_PRODUCT: Record<string, string> = {};
+export const OPEN_PRODUCT: Record<string, string> = {
+  'lib/fabFootprint.ts': 'scroll insets for the log button; they reach paddingBottom only',
+};
+// An opened file that changes an import line holds: a new dependency can bring in behaviour
+// (a store subscription, a hidden snackbar) that the ruling never saw and rule 7 cannot read.
+// The words are read anywhere on the line (`;import x from …` after other code, a `require`
+// split over lines). A name added inside a multi-line import has no keyword on its line, so
+// a line that is only names, or only a string, or `} from '…'`, holds too, and so does any
+// way round a static import (eval, globalThis, Function). Holding a plain line errs loud.
+const IMPORT_LINE = /\bimport\b|\brequire\b|\bexport\b[^=]*\bfrom\b|\bfrom\s*['"`]|\beval\b|\bglobalThis\b|\bFunction\s*\(|^\s*(type\s+)?[\w$]+(\s+as\s+[\w$]+)?(\s*,\s*(type\s+)?[\w$]+(\s+as\s+[\w$]+)?)*\s*,?\s*(\/\/.*|\/\*.*)?$|^\s*\(?\s*['"`][^'"`]*['"`]\s*\)?\s*;?\s*$/;
 // Every word of a path, the whole basename included (`index.intakeDecline.test.tsx` reads
 // index · intake · decline · test).
 const allWords = (f: string) =>
@@ -211,6 +244,8 @@ export function selfMerge(input: SelfMergeInput): SelfMerge {
   const clinicalLines = (input.changedLines ?? []).filter((l) => PRODUCT.test(l.file) && CLINICAL_WORDS.test(l.line));
   const byFile = new Set(clinicalLines.map((l) => l.file));
   for (const f of byFile) reasons.push(`${f}: a changed line holds a clinical word (owner or vet facing health text)`);
+  const importFiles = new Set((input.changedLines ?? []).filter((l) => l.file in OPEN_PRODUCT && IMPORT_LINE.test(l.line)).map((l) => l.file));
+  for (const f of importFiles) reasons.push(`${f}: an opened file changes an import (a new dependency is not what the PM opened)`);
 
   if (input.labels === null) reasons.push('the named issues\' labels were not passed (--labels), so a clinical or Live harm label is unread');
   else {

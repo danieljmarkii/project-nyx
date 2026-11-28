@@ -49,9 +49,20 @@ const MUTANTS: Mutant[] = [
   { check: 'merge-check: a held verdict moves the verdict', file: MC, from: 'if [ "$sm_rc" -eq 1 ]; then\n      production=1', to: 'if [ "$sm_rc" -eq 1 ]; then\n      true' },
   { check: 'merge-check: a verdict it cannot read holds', file: MC, from: '      sm_rc=1\n    fi', to: '      sm_rc=0\n    fi' },
   { check: 'an empty label list holds (`none` is the word for none)', file: 'scripts/steward/selfMerge-cli.ts', from: "labelsRaw === undefined || labelsRaw.trim() === '' ? null", to: 'labelsRaw === undefined ? null' },
+  // The ruled list (CUL-2911): nothing joins it unruled.
+  { check: 'OPEN_PRODUCT opens nothing the PM did not rule (Snackbar added)', file: S, from: "  'lib/fabFootprint.ts': 'scroll insets", to: "  'components/ui/Snackbar.tsx': 'unruled',\n  'lib/fabFootprint.ts': 'scroll insets" },
+  { check: 'an opened file holds when it changes an import', file: S, from: 'for (const f of importFiles) reasons.push(', to: 'for (const f of [] as string[]) reasons.push(' },
+  { check: 'the import hold reads `import` and `require` anywhere on the line', file: S, from: 'IMPORT_LINE = /\\bimport\\b|\\brequire\\b|', to: 'IMPORT_LINE = /^\\s*import\\b|^\\s*const \\w+ = require\\(|' },
+  { check: 'the import hold reads `export … from` and `from \'…\'`', file: S, from: '|\\bexport\\b[^=]*\\bfrom\\b|\\bfrom\\s*[\'"`]|', to: '|' },
+  { check: 'the import hold reads eval, globalThis and Function', file: S, from: '|\\beval\\b|\\bglobalThis\\b|\\bFunction\\s*\\(|', to: '|' },
+  { check: 'the import hold reads a line of names inside a multi-line import', file: S, from: '|^\\s*(type\\s+)?[\\w$]+(\\s+as\\s+[\\w$]+)?(\\s*,\\s*(type\\s+)?[\\w$]+(\\s+as\\s+[\\w$]+)?)*\\s*,?\\s*(\\/\\/.*|\\/\\*.*)?$|', to: '|' },
+  { check: 'the import hold reads a lone string line (a split path)', file: S, from: '|^\\s*\\(?\\s*[\'"`][^\'"`]*[\'"`]\\s*\\)?\\s*;?\\s*$/;', to: '/;' },
+  { check: 'an opened file still holds on a clinical changed line', file: S, from: 'const clinicalLines = (input.changedLines ?? []).filter((l) => PRODUCT.test(l.file) && ', to: 'const clinicalLines = (input.changedLines ?? []).filter((l) => !(l.file in OPEN_PRODUCT) && PRODUCT.test(l.file) && ' },
   // Holds what must open.
   { check: 'a deploying copy change for an opened function qualifies', file: S, from: 'if (input.deployUnread) reasons.push(', to: 'if (deploys) reasons.push(' },
   { check: 'an opened function is read from the table', file: S, from: 'const open = input.openFunctions ?? OPEN_FUNCTIONS;', to: 'const open = OPEN_FUNCTIONS;' },
+  { check: 'the opened lib/fabFootprint.ts opens', file: S, from: "  'lib/fabFootprint.ts': ", to: "  'x/lib/fabFootprint.ts': " },
+  { check: 'an opened file\'s test opens with it', file: S, from: "f.replace(/\\.test(\\.\\w+)$/, '$1') in OPEN_PRODUCT", to: 'f in OPEN_PRODUCT' },
   { check: 'merge-check: `--applied` reaches the verdict', file: MC, from: '[ -n "$applied" ] && sm_args+=(--applied "$applied")\n', to: '' },
 ];
 
