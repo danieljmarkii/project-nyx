@@ -104,7 +104,7 @@ const TOOLING_ROOTS = /^(guards|\.claude|\.github|\.githooks|docs|e2e|\.maestro|
 // Stems, matched against the start of each word of every folder and the file's name
 // (`app/vet-visits/[id].tsx` reads as app · vet · visits · id). They name the reason; the
 // default for product code keeps a file they miss.
-const NAME_STEMS: { kept: Exclude<Kept, 'none'>; why: string; stems: string[] }[] = [
+export const NAME_STEMS: { kept: Exclude<Kept, 'none'>; why: string; stems: string[] }[] = [
   {
     kept: 'stakes',
     why: 'clinical surface',
@@ -119,7 +119,7 @@ const NAME_STEMS: { kept: Exclude<Kept, 'none'>; why: string; stems: string[] }[
   { kept: 'stakes', why: 'App Store or legal', stems: ['legal'] },
 ];
 
-const wordsOf = (f: string) =>
+export const wordsOf = (f: string) =>
   f
     .replace(/\.[\w.]+$/, '')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -199,11 +199,15 @@ export function pathsIn(text: string): string[] {
 // ---- text ---------------------------------------------------------------------------
 // Case-insensitive, stem-based. Every word here was either on the spec or found by one of
 // the two adversarial passes in wording a real issue would use.
+// Exported for the self merge deny list (scripts/steward/selfMerge.ts, CUL-2874), which
+// reads a diff's changed strings with it.
+export const CLINICAL_WORDS = /\bclinical\b|\bsafety invariants?\b|intake is not preference|\bn ?= ?1\b|adversarial-reviewer|clinical-guardrails|\bvet\b|\bvet[- ]reports?\b|\bescalat\w*|\breassur\w*|\bpicky\b|\bsoften\w*|\bwarn(s|ed|ing|ings)?\b|\bred[- ]flags?\b|\bthresholds?\b|\bappetite\b|\banorexi\w*|\blipidosis\b|\bvomit\w*|\bthrow\w* up\b|\bregurgitat\w*|\bstools?\b|\bpoop\w*|\blitter\b|\bblood\b|\bdiarrh\w*|\blethargi?\w*|\bsymptoms?\b|\bintake\b|\brefus\w*|\bdeclin\w*|\b(eat|eats|eating|eaten|ate)\b|\bskip\w* meals?\b|\bleft in the bowl\b|\bdiet[- ]trials?\b|\bfood trials?\b|\belimination\b|\bdoses?\b|\bmedications?\b|\bdetect(or|ion)s?\b|\bhealth flags?\b|\ball[- ]clear\b|\blooks? normal\b|\bno concerns?\b|\bcalm read\b|\bsingle[- ]sample\b|\bweight\b|\bseizures?\b|\bnausea\b|\bCKD\b|\bkidney\w*|\brenal\b|thyroid\w*|\bemergenc\w*|\burgent\w*|\balerts?\b|\bsignals?\b|\btiers? fires?\b|\bsignal tiers?\b|\bcorrelation\b|\bMcNemar\b|\bfalse[- ](positive|negative)s?\b|\bdiagnos\w*|\bsick\w*|\billness\b|\bpain\b|\bfever\b|\ballerg\w*/i;
+
 const TEXT: TextRule[] = [
   {
     kept: 'stakes',
     why: 'clinical',
-    re: /\bclinical\b|\bsafety invariants?\b|intake is not preference|\bn ?= ?1\b|adversarial-reviewer|clinical-guardrails|\bvet\b|\bvet[- ]reports?\b|\bescalat\w*|\breassur\w*|\bpicky\b|\bsoften\w*|\bwarn(s|ed|ing|ings)?\b|\bred[- ]flags?\b|\bthresholds?\b|\bappetite\b|\banorexi\w*|\blipidosis\b|\bvomit\w*|\bthrow\w* up\b|\bregurgitat\w*|\bstools?\b|\bpoop\w*|\blitter\b|\bblood\b|\bdiarrh\w*|\blethargi?\w*|\bsymptoms?\b|\bintake\b|\brefus\w*|\bdeclin\w*|\b(eat|eats|eating|eaten|ate)\b|\bskip\w* meals?\b|\bleft in the bowl\b|\bdiet[- ]trials?\b|\bfood trials?\b|\belimination\b|\bdoses?\b|\bmedications?\b|\bdetect(or|ion)s?\b|\bhealth flags?\b|\ball[- ]clear\b|\blooks? normal\b|\bno concerns?\b|\bcalm read\b|\bsingle[- ]sample\b|\bweight\b|\bseizures?\b|\bnausea\b|\bCKD\b|\bkidney\w*|\brenal\b|thyroid\w*|\bemergenc\w*|\burgent\w*|\balerts?\b|\bsignals?\b|\btiers? fires?\b|\bsignal tiers?\b|\bcorrelation\b|\bMcNemar\b|\bfalse[- ](positive|negative)s?\b|\bdiagnos\w*|\bsick\w*|\billness\b|\bpain\b|\bfever\b|\ballerg\w*/i,
+    re: CLINICAL_WORDS,
   },
   {
     kept: 'stakes',
