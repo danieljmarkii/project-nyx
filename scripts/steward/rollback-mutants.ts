@@ -33,6 +33,18 @@ const MUTANTS: Mutant[] = [
   { check: 'the landing ledger is one new line for it', file: CLI, from: '  if (ledger) throw new Refused(ledger);\n', to: '' },
   { check: 'a landing with more than the revert is no rollback', file: CLI, from: 'if (extra.length) throw', to: 'if (extra.length < 0) throw' },
   { check: 'apply writes the ledger line', file: CLI, from: '(raw as { rollbacks: LedgerEntry[] }).rollbacks.push(entry);', to: '' },
+  // A protected rollback reopens its issues (CUL-2910).
+  { check: 'a protected rollback owes writes', file: R, from: 'if (!r.reasons.length) return [];', to: 'if (r.reasons.length >= 0) return [];' },
+  { check: 'protection is the deny list verdict', file: R, from: 'return selfMerge({ files: c.files, deploys: [], changedLines, labels }).reasons;', to: 'return [];' },
+  { check: 'protection reads the labels', file: R, from: 'deploys: [], changedLines, labels })', to: 'deploys: [], changedLines, labels: [] })' },
+  { check: 'every named issue is reopened', file: R, from: "const issues = r.issues.length ? r.issues : [null];", to: "const issues = r.issues.slice(0, 1);" },
+  { check: 'no named issue files a new one', file: R, from: 'r.issues.length ? r.issues : [null]', to: 'r.issues' },
+  { check: 'the reopen adds Waiting on PM', file: R, from: "['Live harm', 'Waiting on PM']", to: "['Live harm']" },
+  { check: 'the body names its issues too', file: R, from: '`${subject}\\n${body}`.match(ISSUE)', to: 'subject.match(ISSUE)' },
+  { check: 'the rollback commit names no issue', file: CLI, from: "`Rollback #${pr}: ${subject}\\n", to: "`Rollback #${pr}: ${c.subject}\\n" },
+  { check: 'the rollback digest names no issue', file: CLI, from: 'const entry: LedgerEntry = { pr, sha: c.sha, subject, files', to: 'const entry: LedgerEntry = { pr, sha: c.sha, subject: c.subject, files' },
+  { check: 'apply prints the writes', file: CLI, from: '  for (const line of writeLines(writes, pr)) console.log(line);\n', to: '' },
+  { check: 'labels not passed count as protected', file: CLI, from: "raw === '' || raw.startsWith('--') ? null", to: "raw === '' || raw.startsWith('--') ? []" },
   // Detection: what counts as the deploy check failing.
   { check: 'a failed run is a failure', file: R, from: "done.conclusion === 'success'", to: "done.conclusion !== 'cancelled'" },
   { check: 'no run in the window is a failure', file: R, from: "verdict: 'FAIL', why: `no deploy run", to: "verdict: 'PASS', why: `no deploy run" },
@@ -60,7 +72,7 @@ for (const m of MUTANTS) {
   }
   fs.writeFileSync(abs, original.replace(m.from, m.to));
   try {
-    const r = spawnSync('npx', ['jest', '--silent', ...SUITES, '-t', 'rollback|recordHistory|after a failed deploy|refusal|deployVerdict|the ledger'], { cwd: ROOT, encoding: 'utf8' });
+    const r = spawnSync('npx', ['jest', '--silent', ...SUITES, '-t', 'rollback|recordHistory|after a failed deploy|refusal|deployVerdict|the ledger|CUL-2910'], { cwd: ROOT, encoding: 'utf8' });
     if (r.status === 0) {
       console.log(`✗ SURVIVED ${m.check}`);
       survived += 1;

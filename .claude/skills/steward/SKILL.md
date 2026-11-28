@@ -112,7 +112,7 @@ The project's own spec stays parallel: two parts bumping its header and changelo
 
 ## 9. Rollback (CUL-2885)
 
-`rollback #<n>` (any session, or on its own merge): on a fresh branch at `origin/main`, `scripts/steward/rollback-cli.ts apply <n> --why "<what failed>"`, then its PR and §7. A pure revert with no migration needs no typed word, and the deploy on merge restores the old code. `REFUSED` (a migration, a later merge on its lines) goes to the PM. After a self merged deploy, pipe `edge-deploy.yml`'s `actions_list` into `rollback-cli.ts deployed <sha> --merged-at <iso>`: `FAIL` means roll back and post its `Needs you` line; the PR body carries `apply`'s digest line.
+`rollback #<n>`: on a fresh branch at `origin/main`, `scripts/steward/rollback-cli.ts apply <n> --why "<what failed>" --labels '<#n's issue labels>|none'`, then its PR and §7; no typed word, and merging redeploys the old code. `REFUSED` goes to the PM. Make every write a `REQUIRED` block prints (a deny listed fix's issues reopen, CUL-2910) before it merges, and name none of them in its PR. After a self merged deploy, pipe `edge-deploy.yml`'s `actions_list` into `rollback-cli.ts deployed <sha> --merged-at <iso>`: `FAIL`: roll back, post its `Needs you` line; the PR body carries the digest.
 
 ## Never
 
