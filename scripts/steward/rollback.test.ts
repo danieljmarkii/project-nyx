@@ -1,10 +1,12 @@
 // The pure rules behind a rollback (CUL-2885). The I/O half is driven end to end against
 // fixture repositories in guards/mergeCheck.test.ts § rollback.
 
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { deployVerdict, digestLine, LEDGER, ledgerAddsOne, ledgerProblems, NO_RUN_MINUTES, refusal, type Commit, type Run } from './rollback.ts';
+import { deployVerdict, digestLine, issueWrites, LEDGER, ledgerAddsOne, ledgerProblems, namedIssues, NO_RUN_MINUTES, protection, refusal, withoutIssues, writeLines, type Commit, type Run } from './rollback.ts';
 
 const SHA = 'a'.repeat(40);
 const LATER = 'b'.repeat(40);
@@ -104,5 +106,119 @@ describe('the ledger', () => {
   it("the repository's ledger is well formed", () => {
     const raw: unknown = JSON.parse(fs.readFileSync(path.join(__dirname, '../..', LEDGER), 'utf8'));
     expect(ledgerProblems(raw)).toEqual([]);
+  });
+});
+
+// CUL-2910, ruled (c): a rollback of a PR the deny list would hold reopens its issues.
+describe('a protected rollback reopens its issues (CUL-2910)', () => {
+  it('reads every issue the reverted squash commit names, once each', () => {
+    expect(namedIssues('Fix the read (CUL-77) (#41)', '* part one (CUL-77)\n* part two (cul-9)\n\nCo-Authored-By: x')).toEqual(['CUL-9', 'CUL-77']);
+    expect(namedIssues('Docs (#42)', '')).toEqual([]);
+  });
+
+  it('leaves no issue token in what the rollback carries, so its merge closes nothing', () => {
+    expect(withoutIssues('Fix the read (CUL-77) (#41)')).toBe('Fix the read (#41)');
+    expect(withoutIssues('Two (CUL-77, CUL-78) (#41)')).toBe('Two (#41)');
+    expect(withoutIssues('see CUL-77 and [CUL-78](https://linear.app/x/issue/CUL-78)')).not.toMatch(/CUL-\d/i);
+    expect(withoutIssues('Keep (#41) and (a note)')).toBe('Keep (#41) and (a note)');
+  });
+
+  it('is protected exactly when the deny list would hold the reverted PR', () => {
+    expect(protection(commit({ files: ['docs/notes.md'] }), [])).toEqual([]);
+    expect(protection(commit({ files: ['lib/shared.ts'] }), []).join()).toMatch(/lib\/shared\.ts/);
+    expect(protection(commit({ files: ['docs/notes.md'] }), ['Live harm']).join()).toMatch(/Live harm/);
+    expect(protection(commit({ files: ['docs/notes.md'] }), ['Gate: clinical']).join()).toMatch(/Gate: clinical/);
+    expect(protection(commit({ files: ['docs/notes.md'] }), ['Gate: privacy']).join()).toMatch(/Gate: privacy/);
+    // Labels not read count as protected: unsure holds.
+    expect(protection(commit({ files: ['docs/notes.md'] }), null).join()).toMatch(/labels were not passed/);
+  });
+
+  const base = { pr: 41, sha: SHA, subject: 'Fix the read (CUL-77) (#41)', why: 'deploy check failed', date: '2026-11-28' };
+
+  it('reopens each named issue with Live harm and Waiting on PM and a comment naming the rollback', () => {
+    const w = issueWrites({ ...base, issues: ['CUL-77', 'CUL-78'], reasons: ['a named issue is labelled Live harm'] });
+    expect(w.map((x) => x.issue)).toEqual(['CUL-77', 'CUL-78']);
+    for (const x of w) {
+      expect(x.state).toBe('Todo');
+      expect(x.addLabels).toEqual(['Live harm', 'Waiting on PM']);
+      expect(x.comment).toMatch(/^\*\*Reopened by a rollback\*\* of #41 \(`aaaaaaa`, Fix the read \(#41\)\) on 2026-11-28: deploy check failed\./);
+      expect(x.comment).toContain('Protected because: a named issue is labelled Live harm');
+    }
+  });
+
+  it('a protected PR that names no issue files a new one, so nothing reverts unseen', () => {
+    const w = issueWrites({ ...base, issues: [], reasons: ['lib/shared.ts: product code'] });
+    expect(w).toHaveLength(1);
+    expect(w[0].issue).toBeNull();
+    expect(writeLines(w, 41).join('\n')).toMatch(/save_issue new .*labels \["Live harm","Waiting on PM"\]/);
+  });
+
+  it('an unprotected rollback owes no writes', () => {
+    expect(issueWrites({ ...base, issues: ['CUL-77'], reasons: [] })).toEqual([]);
+    expect(writeLines([], 41)).toEqual(['unprotected: the deny list would not hold the reverted PR; no issue writes']);
+  });
+
+  // The Done-when fixture: `apply` end to end against a throwaway repository with an origin.
+  describe('apply against a fixture repository', () => {
+    const CLI = path.join(__dirname, 'rollback-cli.ts');
+    const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+    const g = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
+    const put = (dir: string, files: Record<string, string>) => {
+      for (const [f, body] of Object.entries(files)) {
+        fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+        fs.writeFileSync(path.join(dir, f), body);
+      }
+    };
+    let work = '';
+    let tmp = '';
+
+    beforeAll(() => {
+      tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-2910-'));
+      const origin = path.join(tmp, 'origin.git');
+      const main = path.join(tmp, 'main');
+      g(tmp, ['init', '--quiet', '--bare', '-b', 'main', origin]);
+      g(tmp, ['clone', '--quiet', origin, main]);
+      const land = (files: Record<string, string>, msg: string) => {
+        put(main, files);
+        g(main, ['add', '-A']);
+        g(main, ['commit', '--quiet', '-m', msg]);
+      };
+      land({ 'lib/shared.ts': 'export const a = 1;\n', 'docs/notes.md': 'one\n', [LEDGER]: '{\n  "rollbacks": []\n}\n' }, 'Start (#40)');
+      land({ 'lib/shared.ts': 'export const a = 2;\n' }, 'Fix the read (CUL-77) (#41)\n\n* Fix the read (CUL-77)');
+      land({ 'docs/notes.md': 'two\n' }, 'Notes (CUL-78) (#42)');
+      g(main, ['push', '--quiet', 'origin', 'main']);
+      work = path.join(tmp, 'work');
+      g(tmp, ['clone', '--quiet', origin, work]);
+    });
+    afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+    const apply = (pr: number, labels: string) => {
+      g(work, ['checkout', '--quiet', '-B', `rb-${pr}`, 'origin/main']);
+      return execFileSync('node', ['--experimental-strip-types', '--no-warnings', CLI, 'apply', String(pr), '--why', 'deploy check failed (CUL-90)', '--labels', labels], { cwd: work, env, encoding: 'utf8' });
+    };
+
+    it('a rollback of a protected PR prints the reopen of its issue, and names no issue itself', () => {
+      const out = apply(41, 'Gate: clinical');
+      expect(out).toContain('REQUIRED before the rollback merges');
+      expect(out).toContain('save_issue CUL-77: state Todo, addLabels ["Live harm","Waiting on PM"]');
+      expect(out).toMatch(/save_comment CUL-77: \*\*Reopened by a rollback\*\* of #41 .*Protected because: lib\/shared\.ts: .*a named issue is labelled Gate: clinical/);
+      expect(out).toMatch(/^digest: rollback · #41 Fix the read \(#41\) · deploy check failed · /m);
+      expect(g(work, ['log', '-1', '--format=%B'])).not.toMatch(/CUL-\d/i);
+      expect(fs.readFileSync(path.join(work, LEDGER), 'utf8')).not.toMatch(/CUL-\d/i);
+    });
+
+    it('a rollback of an unprotected PR prints no writes', () => {
+      const out = apply(42, 'none');
+      expect(out).toContain('unprotected: the deny list would not hold the reverted PR; no issue writes');
+      expect(out).not.toContain('save_issue');
+      expect(out).not.toContain('REQUIRED');
+    });
+
+    it('the same unprotected PR with a Live harm issue, or labels unread, is protected', () => {
+      expect(apply(42, 'Live harm')).toContain('save_issue CUL-78: state Todo, addLabels ["Live harm","Waiting on PM"]');
+      g(work, ['checkout', '--quiet', '-B', 'rb-42b', 'origin/main']);
+      const unread = execFileSync('node', ['--experimental-strip-types', '--no-warnings', CLI, 'apply', '42', '--why', 'x'], { cwd: work, env, encoding: 'utf8' });
+      expect(unread).toContain('save_issue CUL-78');
+    });
   });
 });

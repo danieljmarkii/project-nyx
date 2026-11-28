@@ -24,6 +24,20 @@
 //    as a failure, so a revert would not redeploy over it (rare: timing).
 //  - A function that answers but answers wrongly passes. The deploy checks see status
 //    codes, not content (CUL-2874's 1.2.0 checkpoint exists for this).
+//  - The issue writes after a protected rollback (CUL-2910) are printed, not made: a script
+//    cannot reach Linear, so the session makes them before the rollback merges. The labels
+//    are the session's reading of the named issues; none passed counts as protected.
+//
+// WHY A PROTECTED ROLLBACK REOPENS ITS ISSUE (CUL-2910, ruled (c) by the PM, 2026-11-28).
+// The rollback stays automatic, since its trigger is an outage. But a revert of a PR the
+// self merge deny list would hold (clinical, privacy, Live harm) takes a fix off main, and a
+// fix that worked on content can trip the status check through another function's failure.
+// So each issue the reverted PR named is reopened with Live harm and Waiting on PM and a
+// comment naming the rollback: what must not happen is a reverted fix going unseen. And
+// the rollback names none of those issues itself: a CUL token in its PR closes the issue on
+// merge (CLAUDE.md, CUL-1397), which would undo the reopen.
+
+import { selfMerge } from './selfMerge.ts';
 
 // Any SQL is database facing (scripts/**/*.sql included), and the database does not revert.
 export const MIGRATIONS = /^supabase\/migrations\/|\.sql$/;
@@ -139,4 +153,54 @@ export function ledgerAddsOne(base: unknown, landed: unknown, sha: string): stri
   if (JSON.stringify(after.slice(0, before.length)) !== JSON.stringify(before)) return "the ledger rewrites main's entries";
   if (after[after.length - 1].sha !== sha) return `the ledger's new entry names ${after[after.length - 1].sha.slice(0, 7)}, not ${sha.slice(0, 7)}`;
   return null;
+}
+
+// ---- a protected rollback reopens its issues (CUL-2910) ------------------------------
+const ISSUE = /\bCUL-\d+\b/gi;
+
+/** Every issue the reverted squash commit names: its title and body are its PR's. */
+export function namedIssues(subject: string, body: string): string[] {
+  const ids = new Set(`${subject}\n${body}`.match(ISSUE)?.map((t) => t.toUpperCase()) ?? []);
+  return [...ids].sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)));
+}
+
+/** Text with no issue token left in it, for the rollback's own commit, ledger and PR. */
+export function withoutIssues(text: string): string {
+  return text
+    .replace(/\s*\((?:[\s,;&]|and|CUL-\d+)*\)/gi, (m) => (/CUL-\d+/i.test(m) ? '' : m))
+    .replace(ISSUE, 'its issue');
+}
+
+/** Why the deny list would hold the reverted PR, or [] when it is unprotected. */
+export function protection(c: Commit, labels: string[] | null, changedLines: { file: string; line: string }[] = []): string[] {
+  return selfMerge({ files: c.files, deploys: [], changedLines, labels }).reasons;
+}
+
+export const REOPEN_STATE = 'Todo';
+export const REOPEN_LABELS = ['Live harm', 'Waiting on PM'];
+export type IssueWrite = { issue: string | null; state: string; addLabels: string[]; comment: string };
+
+/** The Linear writes a protected rollback owes, one per named issue (a new issue if none). */
+export function issueWrites(r: { pr: number; sha: string; subject: string; why: string; date: string; issues: string[]; reasons: string[] }): IssueWrite[] {
+  if (!r.reasons.length) return [];
+  const shown = r.reasons.slice(0, 3).join('; ') + (r.reasons.length > 3 ? `; and ${r.reasons.length - 3} more` : '');
+  const comment =
+    `**Reopened by a rollback** of #${r.pr} (\`${r.sha.slice(0, 7)}\`, ${withoutIssues(r.subject)}) on ${r.date}: ${withoutIssues(r.why)}. ` +
+    `The fix this issue names is off main until a new PR lands it again. Protected because: ${shown}. (CUL-2910)`;
+  const issues = r.issues.length ? r.issues : [null];
+  return issues.map((issue) => ({ issue, state: REOPEN_STATE, addLabels: [...REOPEN_LABELS], comment }));
+}
+
+/** The lines `apply` prints: the required step, or that there is none. */
+export function writeLines(writes: IssueWrite[], pr: number): string[] {
+  if (!writes.length) return ['unprotected: the deny list would not hold the reverted PR; no issue writes'];
+  return [
+    'REQUIRED before the rollback merges: make these Linear writes with your Linear tools (CUL-2910)',
+    ...writes.flatMap((w) =>
+      w.issue
+        ? [`  save_issue ${w.issue}: state ${w.state}, addLabels ${JSON.stringify(w.addLabels)}`, `  save_comment ${w.issue}: ${w.comment}`]
+        : [`  save_issue new (team Culprit, #${pr} named no issue): title "A rollback took a protected fix off main (#${pr})", state ${w.state}, labels ${JSON.stringify(w.addLabels)}, description: ${w.comment}`],
+    ),
+    "  the rollback's PR title and body name none of these issues: a CUL token there closes them on merge",
+  ];
 }

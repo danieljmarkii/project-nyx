@@ -3,9 +3,12 @@
 //
 //   node --experimental-strip-types scripts/steward/rollback-cli.ts check <pr>
 //       ROLLBACK <sha> #<pr> <subject> (exit 0), or REFUSED: <why> (exit 1).
-//   node --experimental-strip-types scripts/steward/rollback-cli.ts apply <pr> --why "<text>"
+//   node --experimental-strip-types scripts/steward/rollback-cli.ts apply <pr> --why "<text>" --labels '<labels>|none'
 //       From a fresh branch at origin/main: the revert commit, with the ledger line in it
-//       and a `Rollback-Of:` trailer; prints the digest line. Refusals as `check`.
+//       and a `Rollback-Of:` trailer; prints the digest line. `--labels` is the reverted
+//       PR's named issues' labels (absent counts as protected). When the deny list would
+//       hold the reverted PR, prints the Linear writes the session must make before the
+//       rollback merges (CUL-2910). Nothing it writes names an issue. Refusals as `check`.
 //   node --experimental-strip-types scripts/steward/rollback-cli.ts deployed <merge-sha> --merged-at <iso> [--now <iso>] < runs.json
 //       Reads the deploy workflow's runs (actions_list output) and prints PASS (exit 0),
 //       WAIT (exit 2) or FAIL (exit 1) with the `Needs you` line to post.
@@ -18,7 +21,8 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 
-import { deployVerdict, digestLine, LEDGER, ledgerAddsOne, ledgerProblems, MIGRATIONS, refusal, TRAILER, type Commit, type LedgerEntry, type Run } from './rollback.ts';
+import { readLanding } from './landing.ts';
+import { deployVerdict, digestLine, issueWrites, LEDGER, ledgerAddsOne, ledgerProblems, MIGRATIONS, namedIssues, protection, refusal, TRAILER, withoutIssues, writeLines, type Commit, type LedgerEntry, type Run } from './rollback.ts';
 
 const BASE = 'origin/main';
 const git = (args: string[]) => execFileSync('git', ['-c', 'core.quotePath=false', ...args], { encoding: 'utf8', maxBuffer: 1 << 28 }).trim();
@@ -73,9 +77,12 @@ function check(pr: number): Commit {
   return c;
 }
 
-function apply(pr: number, why: string): void {
-  if (!why.trim()) throw new Unknown('apply needs --why "<what failed>"');
+function apply(pr: number, rawWhy: string, labels: string[] | null): void {
+  if (!rawWhy.trim()) throw new Unknown('apply needs --why "<what failed>"');
+  const why = withoutIssues(rawWhy.trim());
   const c = check(pr);
+  // Read before the revert: the reverted PR's own lines, for the deny list's word rule.
+  const reasons = protection(c, labels, readLanding(`${c.sha}^`, c.sha).changedLines);
   if (git(['status', '--porcelain'])) throw new Unknown('the working tree has changes; commit or stash them first');
   if (git(['rev-parse', 'HEAD']) !== git(['rev-parse', BASE])) throw new Unknown(`start from a fresh branch at ${BASE}`);
   if (!ok(['revert', '--no-edit', '--no-commit', c.sha])) {
@@ -83,15 +90,18 @@ function apply(pr: number, why: string): void {
     throw new Refused('git revert did not apply cleanly');
   }
   const raw: unknown = JSON.parse(fs.readFileSync(LEDGER, 'utf8'));
-  const entry: LedgerEntry = { pr, sha: c.sha, subject: c.subject, files: c.files, why: why.trim(), date: new Date().toISOString().slice(0, 10) };
+  const subject = withoutIssues(c.subject);
+  const entry: LedgerEntry = { pr, sha: c.sha, subject, files: c.files, why, date: new Date().toISOString().slice(0, 10) };
   (raw as { rollbacks: LedgerEntry[] }).rollbacks.push(entry);
   const problems = ledgerProblems(raw);
   if (problems.length) throw new Unknown(problems.join('\n'));
   fs.writeFileSync(LEDGER, JSON.stringify(raw, null, 2) + '\n');
   git(['add', LEDGER]);
-  git(['commit', '--quiet', '-m', `Rollback #${pr}: ${c.subject}\n\nThis reverts commit ${c.sha}.\n${why.trim()}\n\n${TRAILER}: ${c.sha}`]);
-  console.log(`ROLLED BACK ${c.sha} #${pr} ${c.subject}`);
+  git(['commit', '--quiet', '-m', `Rollback #${pr}: ${subject}\n\nThis reverts commit ${c.sha}.\n${why}\n\n${TRAILER}: ${c.sha}`]);
+  console.log(`ROLLED BACK ${c.sha} #${pr} ${subject}`);
   console.log(`digest: ${digestLine(entry)}`);
+  const writes = issueWrites({ pr, sha: c.sha, subject: c.subject, why, date: entry.date, issues: namedIssues(c.subject, c.body), reasons });
+  for (const line of writeLines(writes, pr)) console.log(line);
 }
 
 /** Exactly one `Rollback-Of:` commit on the branch, and the landing is its revert and nothing else. */
@@ -162,8 +172,13 @@ function main(): number {
     }
     case 'apply': {
       const i = args.indexOf('--why');
-      if (!Number.isInteger(pr) || pr < 1 || i === -1 || (args[i + 1] ?? '--').startsWith('--')) throw new Unknown('usage: apply <pr> --why "<text>"');
-      apply(pr, args[i + 1] ?? '');
+      const l = args.indexOf('--labels');
+      if (!Number.isInteger(pr) || pr < 1 || i === -1 || (args[i + 1] ?? '--').startsWith('--')) throw new Unknown('usage: apply <pr> --why "<text>" --labels \'<labels>|none\'');
+      // As selfMerge-cli: absent or empty says nothing, so it counts as protected; `none`
+      // says the named issues carry no labels.
+      const raw = l === -1 ? '' : (args[l + 1] ?? '').trim();
+      const labels = raw === '' || raw.startsWith('--') ? null : raw.toLowerCase() === 'none' ? [] : raw.split(',').map((x) => x.trim()).filter(Boolean);
+      apply(pr, args[i + 1] ?? '', labels);
       return 0;
     }
     case 'landing': {
