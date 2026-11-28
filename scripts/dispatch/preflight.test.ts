@@ -174,6 +174,29 @@ describe('what makes a row unready or eligible', () => {
     expect(pre.migrations.map((m) => m.row)).toEqual(['04']);
   });
 
+  // Adversarial pass 1: the migration's own file name, or another SQL file, carries the call.
+  it.each([
+    ['a clinical file name', 'supabase/migrations/150_vomit_threshold.sql', /stakes: clinical surface \(by name\)/],
+    ['a privacy file name', 'supabase/migrations/150_pet_photo_tokens.sql', /stakes: privacy, Storage, deletion, export or share links \(by name\)/],
+  ])('a migration row whose file has %s still needs its ruling', (_what, file, why) => {
+    const pre = preflight(facts({ ruled: RULED }, PAGE.replace('supabase/migrations/150_fixture_col.sql', file)));
+    expect(pre.open.map((r) => r.key)).toEqual(['PR-04']);
+    expect(pre.open[0].needs).toMatch(why);
+    expect(goProject(pre).ok).toBe(false);
+  });
+
+  it('a migration row that also runs a SQL file that is not a migration still needs its ruling', () => {
+    const page = PAGE.replace('Migration `supabase/migrations/150_fixture_col.sql`.', 'Migration `supabase/migrations/150_fixture_col.sql`, then `scripts/ops/reset_counts.sql`.');
+    const pre = preflight(facts({ ruled: RULED }, page));
+    expect(pre.open.map((r) => r.key)).toEqual(['PR-04']);
+    expect(pre.open[0].needs).toMatch(/irreversible \(SQL against a database\)/);
+  });
+
+  it('a migration row that also edits an Edge Function still needs its ruling', () => {
+    const page = PAGE.replace('Migration `supabase/migrations/150_fixture_col.sql`.', 'Migration `supabase/migrations/150_fixture_col.sql`, and `supabase/functions/fixture/index.ts`.');
+    expect(preflight(facts({ ruled: RULED }, page)).open[0]?.needs).toMatch(/server code over health data/);
+  });
+
   it('the go marks only the eligible rows whose PR cell lacks auto', () => {
     const go = goProject(preflight(facts({ ruled: RULED }, PAGE.replace('| 01 | CUL-9001', '| 01 auto | CUL-9001'))));
     expect(go.ok && go.marks).toEqual(['02']);

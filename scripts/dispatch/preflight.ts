@@ -10,11 +10,13 @@
 // on the `Done means (rows):` path. The confirmation is the status update's `Auto:` line,
 // exactly as before, so the launch check (dispatch.md step 6, step 7.1) does not change.
 //
-// WHAT A PROJECT GO NEVER DOES. It never confirms a kept row (ruled or not: ruling it up
+// WHAT A PROJECT GO NEVER DOES. It never newly confirms a kept row (ruled or not: ruling it up
 // front saves the child a stop, the row still needs its own word), a migration row, a
 // privileged row, an unready row, or a row off the path. A row added after the go is not
 // on its `Auto:` line; a row that stops being eligible is caught by the fresh gate read
-// every run and at launch. All of that errs toward an extra ask, never a silent launch.
+// every run and at launch. Rows the `Auto:` line already named are carried forward as
+// before, and that same fresh read is what keeps a carried row that is no longer eligible
+// from launching. All of that errs toward an extra ask, never a silent launch.
 //
 // Pure: the plan's facts plus `ruled` (a ruling key → the PM's words, read from the
 // `**Ruled before kickoff**` comment on the row's issue) come in; text comes out.
@@ -25,13 +27,16 @@
 //     words reads as unready. That is the loud direction.
 //   - "Ordered against" is the After graph and the page's *Never at the same time* rules.
 //     Two rows a human knows never overlap, with neither written, read as a clash.
+//   - `ruled` is what the dispatcher read from the `**Ruled before kickoff**` comments. The
+//     script cannot tell a comment the PM's typed ruling produced from one any session on
+//     the account posted; dispatch.md has the dispatcher write them only from the PM's reply.
 //   - A design surface is a row the kept list calls taste. Its round counts as ratified
 //     only when the note names one after the word `ratified` (`Ratified round: R-3`); the
 //     script cannot check that the PM ratified it (kept.ts's same blind spot).
 
 import { asksOf, autoEligible, planDispatch, type Plan, type PlanInput, type Verdict } from './plan.ts';
 import { normRow, type PageRow, type RowId } from './page.ts';
-import { keptOf, pathsIn } from '../kept/kept.ts';
+import { NAME_STEMS, keptOf, pathsIn, wordsOf } from '../kept/kept.ts';
 
 export type Ruling = {
   key: string; // `PR-03` for a kept row; the hold's key for an After ruling
@@ -63,7 +68,12 @@ export type PreflightInput = PlanInput & { ruled?: Record<string, string> };
 
 // A migration row's schema and SQL reasons are its `apply`, listed under migrations; any
 // other kept reason on it (clinical, privacy, money) still needs a ruling.
-const APPLY_COVERS = /^stakes: (schema\b|irreversible \(SQL\b)/;
+// What a migration's own path says about it, and nothing more: those reasons are its `apply`.
+const SCHEMA = new Set(['stakes: schema (a migration)', 'stakes: schema']);
+const SQL_REASON = 'stakes: irreversible (SQL against a database)';
+const SERVER_REASON = 'stakes: server code over health data (supabase/)';
+const PRIVACY_BY_NAME = 'stakes: privacy, Storage, deletion, export or share links (by name)';
+const isMigration = (f: string) => f.startsWith('supabase/migrations/');
 const DONE_WHEN = /\bDone when:/i;
 const VERIFY = /\bVerify(?: with)?:/i;
 const RATIFIED = /\bratified\b[^.]*?\b(R-\d+|round\s*\d+)\b/i;
@@ -122,13 +132,25 @@ function unreadyOf(plan: Plan, live: PageRow[]): Unready[] {
   return out;
 }
 
-// A migration row's own files (`supabase/migrations/…`) and its schema and SQL reasons are
-// its `apply`, listed under migrations. Everything else on it is read as for any row, so a
-// clinical, privacy or money call on a migration row still needs its ruling.
+// A migration row's `apply` covers only what its migration path alone says: schema, SQL, the
+// `supabase/` tree, and the privacy stem the folder name `supabase` hits. Every other reason
+// is read from the full text and stays a ruling, the file name's own words included
+// (`150_vomit_threshold.sql` is clinical by name; adversarial pass 1, case A), and so does a
+// SQL file that is not a migration (case C).
 function rulingReasons(v: Verdict, row: PageRow, labels: string[]): string[] {
   if (!row.migration) return v.gate.kept === 'none' ? [] : v.gate.keptReasons;
-  const text = `${row.what} ${row.note}`.replace(/\S*supabase\/migrations\/\S*/g, ' ');
-  return keptOf({ labels, files: pathsIn(text), text, migration: true }).reasons.filter((r) => !APPLY_COVERS.test(r));
+  const text = `${row.what} ${row.note}`;
+  const files = pathsIn(text);
+  const others = files.filter((f) => !isMigration(f));
+  const privacy = NAME_STEMS.find((n) => n.why.startsWith('privacy'))!.stems;
+  const ownWords = (f: string) => (isMigration(f) ? wordsOf(f.slice('supabase/migrations/'.length)) : wordsOf(f));
+  const privacyElsewhere = files.some((f) => /^(lib|store|hooks|app|components|constants|supabase|widgets)\//.test(f) && ownWords(f).some((w) => privacy.some((st) => w.startsWith(st))));
+  const covered = (r: string) =>
+    SCHEMA.has(r) ||
+    (r === SQL_REASON && !others.some((f) => /\.sql$/.test(f))) ||
+    (r === SERVER_REASON && !others.some((f) => f.startsWith('supabase/'))) ||
+    (r === PRIVACY_BY_NAME && !privacyElsewhere);
+  return keptOf({ labels, files, text, migration: true }).reasons.filter((r) => !covered(r));
 }
 
 function keptRuling(v: Verdict, row: PageRow, labels: string[]): Ruling | undefined {
