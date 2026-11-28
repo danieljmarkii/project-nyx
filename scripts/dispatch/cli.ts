@@ -131,7 +131,7 @@ function plan(f: Facts, shape: BoardShape): string {
     const g = v.gate;
     say(` PR-${r}  ${v.what}  · ${g.mode.toLowerCase()}`);
     say(`    ${v.onPath ? 'on the path' : 'off the path (never recommended, auto or queued)'}. Asks you ≈ ${v.asks.n}: ${v.asks.parts.join(', ') || 'nothing unless it stops'}.`);
-    say(`    ${g.line === 'plan' ? `plan-gated: ${g.planWait.join(', ')}` : g.line === 'migration' ? 'migration: posts its plan, builds, asks apply' : 'routine'}${g.kept === 'none' ? ' · kept: none' : ` · kept: ${g.kept}`} · auto-eligible: ${autoEligible(g) && v.onPath ? 'yes' : 'no'}${v.flags.length ? ` · ⚠ ${v.flags.join(' · ')}` : ''}`);
+    say(`    ${g.line === 'plan' ? `plan-gated: ${g.planGated.join(', ')}` : 'routine'}${g.kept === 'none' ? ' · kept: none' : ` · kept: ${g.kept}`} · auto-eligible: ${autoEligible(g) && v.onPath ? 'yes' : 'no'}${v.flags.length ? ` · ⚠ ${v.flags.join(' · ')}` : ''}`);
   }
   say(`Ready but over the cap: ${p.overCap.map((r) => `PR-${r}`).join(', ') || 'none'}`);
   say('Held:');
