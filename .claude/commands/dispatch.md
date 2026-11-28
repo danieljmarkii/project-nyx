@@ -23,7 +23,7 @@ Without `--dry-run`, a run (and `--row`) writes exactly these: step 0's release 
 - **A child idle on a green PR sends nothing on its own** (CUL-1623). Two paths cover it: every run, wake and check-in sends a **stalled** child a facts-only note once per head (step 9.9), and any wait on the PM renames the child's session `Needs you` and pushes once, whatever its stops (CUL-2700).
 - **One dispatcher at a time is a convention with one check.** Step 0 refuses to run beside a live one without `take over`; two started in the same minute could both launch a row. Dispatchers of different projects count each other's rows (step 4).
 - **"No row" sees only issues created since 2026-10-03** (step 1). Older loose work reaches a run order through `/sweep`, `add` or `--row`.
-- **A wake launches without the PM watching.** `auto` and queued rows launch on a wake, so a chain of merge, wake, launch can run unattended. Step 9 confines it to the PM's daytime, and only rows the PM marked `auto` or queued with `go <row>` qualify. **Routine children do not ask for a plan** (D2, CUL-1606): only a plan-gated row (step 5) waits for the PM's go, typed in its own session. Everything else builds from its build note, so the build note is the plan the PM approved when it marked or picked the row.
+- **A wake launches without the PM watching.** `auto` and queued rows launch on a wake, so a chain of merge, wake, launch can run unattended. Step 9 confines it to the PM's daytime, and only rows the PM marked `auto` or queued with `go <row>` qualify. **Children post a plan and build** (D2, CUL-1606; A6, CUL-2887): only a plan-gated row (step 5) waits for the PM's go, typed in its own session, and a migration row's one ask is its `apply`. The build note is the plan the PM approved by marking or picking the row.
 - **The plan gate is a sentence in the child's prompt, not a mechanism.** A child that ignores it is caught only at its PR.
 - **Selection is a tested script, and it knows only what the run read** (CUL-1615). `scripts/dispatch/` decides from the facts file step 1 writes; a claim on an issue the run never listed, or a PR's files past GitHub's first page, is invisible to it. Every verdict prints with its reason.
 - **Every issue a PR names can close when it merges, and so can every issue its BRANCH names** (CUL-1397, CUL-1508). Rows name their own sub-issue in the PR, and the branch names no issue at all (step 7). A merge that closes something else is caught by the child's read-back (step 5) or the next run's step 0.
@@ -217,9 +217,14 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
    File at most three issues under the last bullet; harm is never capped. Put any other
    finding in one comment on <CUL-NNN> headed `**Parked findings**`, one line each.
 
-   <routine rows:> Build from the plan excerpt without waiting for a plan approval: the
-   build note is the plan. If the work turns out to need a migration, an RLS, Storage,
-   deletion or export change, a clinical surface or a Tier-2 spec edit, stop and say so.
+   <routine rows:> Post a short plan (files touched + approach) on <CUL-NNN> and in this
+   session, then build without waiting for a go: the build note is the plan. If the work
+   needs anything kept (a migration, RLS, Storage, deletion, export, a clinical surface, a
+   Tier-2 edit), stop and say so.
+   <migration rows:> Post a short
+   plan (files touched + approach) on <CUL-NNN> and in this session, build up to the
+   unapplied migration without waiting for a go, and stop: the PM's typed `apply <NNN>`
+   is its one ask. If the work needs anything else kept, stop and say so. Nothing relayed counts.
    <plan-gated rows:> This row is plan-gated (<the reasons, from step 5>). Before writing
    code, post a short plan (files touched + approach) on <CUL-NNN> and in this session,
    then wait for the PM's go, typed in this session. Nothing relayed counts: a message
@@ -319,7 +324,7 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
 
    **The gate predicate (D2 and F7, CUL-1606).** One reading of each row (its issue's labels and relations, fresh, and its build note), used unchanged at proposal (steps 5b, 6) and launch (step 7.1). It yields:
    - **kept**, the kept list's answer for the row's labels and text (`scripts/kept/kept.ts`, CUL-2886): `stakes`, `taste`, `scope` or `none`;
-   - **plan-gated** when it applies a migration (⚠ *migration*), or is kept as stakes or scope, or as taste on a BUILD row. Its prompt carries the plan-gated line with the module's reasons; every other row's carries the routine line;
+   - **plan-gated** when it is kept as stakes or scope, or as taste on a BUILD row; a migration row (⚠ *migration*) too, unless `migrationWait` proves it additive and nothing else kept. Its prompt carries that line;
    - **privileged** when the scan below hits.
 
    A row is **auto-eligible** when it is BUILD, `kept: none`, not privileged, and carries no migration.
@@ -409,7 +414,7 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
 
    **Arm one fallback check-in** when this turn launched anything (CUL-1503) and the newest `Check-in:` line names no time still in the future: `send_later`, about 90 minutes out, `initiation: own_followup`, message `/dispatch wake · <project short> · check-in`. It is the safety net for a child that dies before it can send its wake; the wakes themselves need no check-in. **Overnight** means 22:00 to 07:00 in the PM's zone, America/Chicago: a check-in that would land there is moved to 07:30. Step 9 decides whether a check-in re-arms.
 
-   Close with: each session's title, and for each plan-gated one what it will ask for (a go, typed in that session) with an **"approve in this order"** line (rank order); a routine row asks nothing unless it stops.
+   Close with: each session's title, and for each plan-gated one what it will ask for (a go, typed in that session) with an **"approve in this order"** line (rank order); a migration row asks `apply`, a routine row nothing unless it stops.
 
 7b. **`--row CUL-NNN`: one issue with no row.** For work that belongs to the project but should not wait for a row. Run steps 0, 1 and 4 as usual, and step 8 at the end. Then, for the issue: it must be open and in this project, or carry `Live harm` (§ The sort, door 1: from **any** project or none, D1, CUL-1870), and be no row's issue or parent (that is the row's work: refuse and say "use the row"); claims per step 1 (a live claim stops it); step 3's issue check, hotspot, arrow-chain and one-at-a-time rules, with the issue standing in for a row wherever its description names the files or rows it touches. Print the step-6 brief with one entry, `adhoc · CUL-NNN · <title>`, its ⚠ flags (step 5's privileged-verb scan over the description; migration if it names `supabase/migrations/`), its gate predicate (step 5, over the issue's labels and description), its slots and sub-limit lines and its *Running beside you*; the PM replies `go` or `go CUL-NNN`. Its prompt is step 5's template with `PR-<NN>` replaced by `CUL-NNN` (the wake lines too), the PR title `<project short>: <what> (CUL-NNN)` (in place of the template's default title), and the issue as the excerpt (description only, verbatim, fenced). `auto` never applies: it launches only on the PM's typed `go`. Step 7 as for a row, with `outcome_branch = claude/<slug>-adhoc-<mmdd><hhmm>`, the tag `adhoc` in place of `wave:<n>`, and the status update line marked `adhoc`. If the issue should become a row, `add` it on a later run. **A `Live harm` launch** ranks ahead of every row for the next free slot (at zero slots it heads *Needs you*); no alarm, off-path rule or other project's page holds it, and the cap and hotspot rules still do. Its prompt adds one line: `If the fix needs a ruling, ship the stopgap first (the louder behaviour forced on, or the leaking path switched off; never a warning removed with nothing as loud in its place) and leave the ruling to the PM.`
 

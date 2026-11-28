@@ -342,6 +342,37 @@ describe('the cost line: Asks you ≈ N (rule 4, from the gate predicate)', () =
     });
   });
 
+  // A6 (a), CUL-2887. Mutation proof: scripts/dispatch/mutants.ts (PR-31).
+  it('a migration row asks once: the pick and its apply, never a plan go', () => {
+    const desc = input()
+      .project.description.replace('may_wait read', 'food_note read')
+      .replace('**PR-27e:** the read, per CUL-1611 option A.', '**PR-27e:** the read. Migration `supabase/migrations/105_add_food_note.sql`, read by `scripts/dispatch/plan.ts`.');
+    const p = input();
+    p.project = { ...p.project, description: desc };
+    expect(v(planDispatch(p), '27e').asks).toEqual({ n: 2, parts: ['the pick', 'apply <NNN>'] });
+  });
+
+  // Adversarial pass 1, B3: a bundle's later issue is read, and an issue with no facts waits.
+  it('a migration bundle waits on a clinical label on its second issue, or an unread one', () => {
+    const desc = input()
+      .project.description.replace('| 27e | CUL-1601 (of CUL-1611)', '| 27e | CUL-1601 + CUL-1604 (of CUL-1611)')
+      .replace('may_wait read', 'food_note read')
+      .replace('**PR-27e:** the read, per CUL-1611 option A.', '**PR-27e:** the read. Migration `supabase/migrations/105_add_food_note.sql`, read by `scripts/dispatch/plan.ts`.');
+    const p = input();
+    p.project = { ...p.project, description: desc };
+    expect(v(planDispatch(p), '27e').gate.line).toBe('plan'); // CUL-1604 has no facts
+    p.issues['CUL-1604'] = { ...p.issues['CUL-1601'], id: 'CUL-1604', labels: [] };
+    expect(v(planDispatch(p), '27e').gate.line).toBe('migration');
+    p.issues['CUL-1604'] = { ...p.issues['CUL-1604'], labels: ['Gate: clinical'] };
+    expect(v(planDispatch(p), '27e').gate.line).toBe('plan');
+  });
+
+  it('a clinical row still asks its plan go', () => {
+    const p = input();
+    p.issues['CUL-1601'] = { ...p.issues['CUL-1601'], labels: ['Gate: clinical'] };
+    expect(v(planDispatch(p), '27e').asks.parts.some((x) => x.startsWith('its plan, then a go') && x.includes('stakes: clinical (label Gate: clinical)'))).toBe(true);
+  });
+
   it('a page with no Done means line has no path: nothing is recommended', () => {
     const p = asks({}, input().project.description.replace('**Done means (rows):** 23, 27e, 27f, 27g, 41', ''));
     expect(p.proposal.length).toBeGreaterThan(0);

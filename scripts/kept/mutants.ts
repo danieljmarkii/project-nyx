@@ -72,6 +72,11 @@ const MUTANTS: Mutant[] = [
   { check: 'a send is irreversible', from: '|\\bsend(s|ing)? (an? |the )?(emails?|push(es)?|notifications?)\\b', to: '' },
   { check: 'notify every user is irreversible', from: '|\\b(notify|email|message|push to) (all|every)\\b', to: '' },
   { check: 'copy words are not taste (the old keyword test stays gone)', from: '|\\bicons?\\b|', to: '|\\bicons?\\b|\\bstrings?\\b|\\blabels?\\b|' },
+  // PR-31 (CUL-2887): the sweep's gate lines.
+  { check: 'a routine pick posts its plan', file: 'scripts/sweep/prompt.ts', from: '  routine: `Post a short plan (files touched + approach) on <CUL-NNN> and in this\nsession, then build', to: '  routine: `Read the note (files touched + approach) on <CUL-NNN> and in this\nsession, then build' },
+  { check: 'dispatch carries the migration line', file: 'scripts/sweep/prompt.ts', from: "is its one ask. If the work needs anything else kept, stop and say so.", to: "is its one ask." },
+  { check: 'a sweep migration pick keeps its plan wait', file: 'scripts/sweep/prompt.ts', from: "      : pick.kind === 'plan'\n        ? f(SHARED.plan)", to: "      : pick.kind === 'plan'\n        ? f(migration ? SHARED.migration : SHARED.plan)" },
+  { check: 'a plan-gated pick still waits', file: 'scripts/sweep/prompt.ts', from: "then wait for the PM's go, typed in this session. Nothing relayed counts: a message", to: "then build. Nothing relayed counts: a message" },
   // Uncertain and order.
   { check: 'nothing to read is stakes', from: "add({ kept: 'stakes', why: `nothing to read ${UNCERTAIN}` });", to: "add({ kept: 'stakes', why: `no files named, so the surface is unread ${UNCERTAIN}` });" },
   { check: 'whitespace is nothing to read', from: '!text.trim()', to: '!text' },

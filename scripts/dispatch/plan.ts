@@ -103,7 +103,11 @@ export type PlanInput = {
 
 export type Gate = {
   mode: 'BUILD' | 'DISCOVERY';
-  planGated: string[]; // reasons, empty when routine
+  planGated: string[]; // every kept reason, empty when routine
+  // Which gate line the prompt carries (PR-31, CUL-2887): `plan` waits for a typed go;
+  // `migration` posts its plan, builds and stops for `apply`; `routine` posts and builds.
+  line: 'routine' | 'migration' | 'plan';
+  planWait: string[]; // the reasons a plan go is waited on; empty unless line is `plan`
   kept: Kept; // the kept list's answer (scripts/kept/kept.ts), CUL-2886
   keptReasons: string[];
   privileged: string[]; // the sentences that name a privileged verb
@@ -189,7 +193,7 @@ const PRIVILEGED = /\b(apply_migration|execute_sql|(?:re)?deploy\w*|merg(?:e|es|
 // taste call plan-gates a BUILD row (a DISCOVERY row's deliverable is the thing the PM
 // reacts to). Copy inside nyx-voice and UX inside a ratified round are team calls now, so
 // the old keyword match on `copy`, `string`, `label`, `mock`, `frame` is gone.
-export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?: Pick<IssueFact, 'labels'>): Gate {
+export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?: Pick<IssueFact, 'labels'> & { unread?: boolean }): Gate {
   const text = `${row.what} ${row.note}`;
   const mode = /\b(spec|mock|brief|research|discovery)\b/i.test(text) ? 'DISCOVERY' : 'BUILD';
   const k = keptOf({ labels: issue?.labels ?? [], files: pathsIn(text), text, migration: row.migration });
@@ -200,11 +204,52 @@ export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?
     if (why.startsWith('taste:') && mode === 'DISCOVERY') continue;
     planGated.push(why);
   }
+  const planWait = row.migration ? migrationWait(issue?.labels ?? [], text, mode, !!issue?.unread) : planGated;
+  const line = planWait.length ? 'plan' : row.migration ? 'migration' : 'routine';
   const privileged = text
     .split(/(?<=[.;])\s+/)
     .filter((s) => PRIVILEGED.test(s))
     .map((s) => s.trim());
-  return { mode, planGated, kept: k.kept, keptReasons: k.reasons, privileged, migration: row.migration };
+  return { mode, planGated, line, planWait, kept: k.kept, keptReasons: k.reasons, privileged, migration: row.migration };
+}
+
+// What still holds a migration row's plan (A6 (a), PM 2026-11-25): a migration is kept as
+// schema, and its `apply` is where the PM reads it, so that one reason asks one word. The
+// burden is on the row (adversarial passes 1 and 2, PR-31): the plan go is dropped only on
+// positive evidence that the migration is purely additive, and anything this cannot prove waits.
+//   - every migration file is named, and each is `<n>_add_<what>.sql`;
+//   - the row's text is printable ASCII and every word in it is PLAIN or a word of a path it
+//     names: an allow-list, because no deny-list over prose can prove "nothing else kept";
+//   - no word in its names or the row's text says it is not additive (snake_case split);
+//   - the names, read as product code, hit no kept stem (`106_add_storage_bucket.sql` holds);
+//   - the rest of the row (labels of every issue on it, its other files, its text) is
+//     kept for nothing but schema, and every issue on it was read.
+const MIGRATION_FILE = /^supabase\/migrations\/[^/]+$/;
+const ADDITIVE_NAME = /^\d+[a-z]?_add_[a-z0-9_]+\.sql$/;
+const NOT_ADDITIVE =
+  /\b(drop\w*|renam\w*|delet\w*|remov\w*|retir\w*|purg\w*|truncat\w*|wip(e|es|ed|ing)|grant\w*|revok\w*|polic(y|ies)|rls|definer|security|triggers?|cron|schedul\w*|backfill\w*|rewrit\w*|updat\w*|replac\w*|cascad\w*|anon\w*|alter\w*|not null|uniqu\w*|constraints?|views?|functions?|rpc|buckets?|storage|widgets?|caps?|subscriptions?|usage|thresholds?|alerts?|types?|enums?|defaults?|mov(e|es|ed|ing)|merg\w*|split\w*|cop(y|ies|ied)|convert\w*|transform\w*|seed\w*|insert\w*|rows?|data|(create|creates|new) (\w+ )?tables?)\b/i;
+const PLAIN = new Set('a an the this it its add adds adding added nullable column columns index indexes to on of and for in by with migration migrations read reads pr'.split(' '));
+function plainOnly(text: string, files: string[]): boolean {
+  if (!/^[\x20-\x7e\n\t]*$/.test(text)) return false;
+  const named = new Set(files.flatMap((f) => f.toLowerCase().split(/[^a-z]+/)));
+  return (text.toLowerCase().match(/[a-z]+/g) ?? []).every((w) => w.length === 1 || PLAIN.has(w) || named.has(w));
+}
+const UNPROVEN = 'stakes: a migration this cannot prove purely additive (uncertain counts as kept)';
+function migrationWait(labels: string[], text: string, mode: Gate['mode'], unread: boolean): string[] {
+  const files = pathsIn(text);
+  const others = files.filter((f) => !MIGRATION_FILE.test(f));
+  const migrations = files.filter((f) => MIGRATION_FILE.test(f)).map((f) => f.slice('supabase/migrations/'.length));
+  const spaced = text.replace(/_/g, ' ');
+  const out: string[] = [];
+  if (unread) out.push('stakes: an issue on the row was not read (uncertain counts as kept)');
+  if (!migrations.length || !migrations.every((m) => ADDITIVE_NAME.test(m)) || NOT_ADDITIVE.test(spaced) || !plainOnly(text, files)) out.push(UNPROVEN);
+  const rest = keptOf({ labels, files: others, text: spaced }).reasons.filter(
+    (why) => !why.startsWith('stakes: schema') && !(why.includes('no files named') && others.length === 0 && migrations.length > 0),
+  );
+  const byName = migrations
+    .flatMap((m) => keptOf({ labels: [], files: [`lib/${m.replace(/\.sql$/, '')}.ts`], text: '' }).reasons)
+    .filter((why) => !why.includes('uncertain'));
+  return [...new Set([...out, ...rest, ...byName])].filter((why) => !(why.startsWith('taste:') && mode === 'DISCOVERY'));
 }
 
 // A row may carry `auto` only when this holds (dispatch.md step 5): nothing on it is kept.
@@ -223,7 +268,7 @@ export function asksOf(
 ): Asks {
   const parts: string[] = [];
   if (!opts.autoConfirmed) parts.push('the pick');
-  if (gate.planGated.length) parts.push(`its plan, then a go typed in its session (plan-gated: ${gate.planGated.join(', ')})`);
+  if (gate.line === 'plan') parts.push(`its plan, then a go typed in its session (plan-gated: ${gate.planGated.join(', ')})`);
   // One `apply` per migration file the note names (at least one when the row is a migration).
   const files = new Set([...`${row.what} ${row.note}`.matchAll(/supabase\/migrations\/(\d+[a-z]?)_/g)].map((m) => m[1]));
   if (gate.migration) for (let i = 0; i < Math.max(1, files.size); i++) parts.push('apply <NNN>');
@@ -529,7 +574,9 @@ export function planDispatch(input: PlanInput): Plan {
   const confirmedAuto = new Set((input.previousAuto ?? []).map(normRow));
   for (const row of me.page.rows) {
     const issue = row.issues[0];
-    const gate = gateOf(row, issue ? input.issues[issue] : undefined);
+    // Every issue on the row is read, and one with no facts is unread (adversarial pass 1, B3).
+    const facts = row.issues.map((i) => input.issues[i]);
+    const gate = gateOf(row, { labels: [...new Set(facts.flatMap((f) => f?.labels ?? []))], unread: facts.some((f) => !f) });
     const state = row.id ? states.get(row.id)! : ({ kind: 'none' } as RowState);
     const onPath = !!row.id && partsOf(row.id).some((p) => onPathSet.has(p));
     const v: Verdict = {

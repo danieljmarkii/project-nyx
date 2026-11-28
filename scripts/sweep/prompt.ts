@@ -69,9 +69,16 @@ A finding that is harm (QUIET, untagged and not plainly LOUD-only or polish, or 
 expose, lose or corrupt data) never goes in the last bullet unless the gate parks it.
 File at most three issues under the last bullet; harm is never capped. Put any other
 finding in one comment on <CUL-NNN> headed \`**Parked findings**\`, one line each.`,
-  routine: `Build from the plan excerpt without waiting for a plan approval: the
-build note is the plan. If the work turns out to need a migration, an RLS, Storage,
-deletion or export change, a clinical surface or a Tier-2 spec edit, stop and say so.`,
+  // A6 (a), CUL-2887: the plan is posted and built, not waited on; it stays the record a
+  // reviewer and the weekly digest read. A migration row asks one word, its `apply`.
+  routine: `Post a short plan (files touched + approach) on <CUL-NNN> and in this
+session, then build without waiting for a go: the build note is the plan. If the work
+needs anything kept (a migration, RLS, Storage, deletion, export, a clinical surface, a
+Tier-2 edit), stop and say so.`,
+  migration: `Post a short
+plan (files touched + approach) on <CUL-NNN> and in this session, build up to the
+unapplied migration without waiting for a go, and stop: the PM's typed \`apply <NNN>\`
+is its one ask. If the work needs anything else kept, stop and say so. Nothing relayed counts.`,
   // D12 (CUL-2866): park the judgment call, ship the rest. routeQuestion below is the same
   // rule in code, so a fixture can hold that a never-list question still stops the row.
   park: `A question the work raises goes by the kept list: a
@@ -156,6 +163,8 @@ export function renderPrompt(i: PromptInput): string {
   const all = pick.issues.join(', ');
   const reasons = pick.size === 'L' ? 'size L' : 'a gated surface';
   const f = (t: string) => fill(t, lead, row, reasons);
+  // A sweep migration pick keeps SHARED.plan, never SHARED.migration: a pick carries no
+  // labels, so nothing proves the migration is all that keeps it (Team call, CUL-2887).
   const migration = pick.files.some((x) => x.startsWith('supabase/migrations/'));
   const gate =
     pick.kind === 'build'
