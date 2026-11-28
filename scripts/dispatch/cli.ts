@@ -8,6 +8,7 @@
 //   node --experimental-strip-types scripts/dispatch/cli.ts check-update <update.md> <facts.json>
 //   node --experimental-strip-types scripts/dispatch/cli.ts check-board <board.md> <facts.json>
 //   node --experimental-strip-types scripts/dispatch/cli.ts progress <facts.json> [--for-pr [CUL-NNN …]] [--email <owner>]
+//   node --experimental-strip-types scripts/dispatch/cli.ts preflight|go-project|readout <facts.json>
 //
 // facts.json: PlanInput (plan.ts) with each project's `description` given inline or as
 // `descriptionFile` (a path), plus optional `updates` (the `**/dispatch run**` bodies,
@@ -30,6 +31,10 @@
 // `lastRun`, and each issue's `createdAt` (the scope line, the follow-up alarm). The script decides every door; the
 // dispatcher makes the writes it prints, with the reasons it prints.
 //
+// Project go (CUL-2888): `ruled` (a ruling key, `PR-NN` or an After hold's key → the PM's
+// words, from each `**Ruled before kickoff**` comment) feeds preflight and go-project;
+// go-project exits 1 while any ruling is open. `run` (preflight.ts RunFacts) feeds readout.
+//
 // `--for-pr [CUL-NNN …]` breaks every issue id but the ones listed, so the output can be
 // pasted into a PR body without its merge closing them (status.ts, prSafe).
 
@@ -37,6 +42,7 @@ import * as fs from 'node:fs';
 
 import { renderBoard, validateBoard, type BoardShape } from './board.ts';
 import { autoEligible, planDispatch, type PlanInput, type ProjectInput } from './plan.ts';
+import { goProject, preflight, readout, renderPreflight, type RunFacts } from './preflight.ts';
 import { cyclesFrom, holdsFromPlan, nextFromPlan, nextFromQueued, progressEmail, renderProgress, scopeFromIssues, scopeFromPlan, scopeLine, sinceOf, unitsFromIssues, unitsFromPlan, type ProjectIssue } from './progress.ts';
 import { allowlistKeysFromCode } from './codeFacts.ts';
 import { LIVE_HARM } from './sort.ts';
@@ -60,6 +66,8 @@ type Facts = Omit<PlanInput, 'project' | 'others'> & {
   wakes?: Wake[];
   notes?: Note[];
   contextTokens?: number;
+  ruled?: Record<string, string>;
+  run?: RunFacts;
 };
 
 function fail(msg: string): never {
@@ -268,6 +276,23 @@ if (cmd === 'plan' && a) {
     const keep = flags.includes('--for-pr') ? flags.slice(flags.indexOf('--for-pr') + 1).filter((x) => /^CUL-\d+$/.test(x)) : [];
     console.log(flags.includes('--for-pr') ? prSafe(text, keep) : text);
   }
+} else if (cmd === 'preflight' && a) {
+  console.log(renderPreflight(preflight(load(a))));
+} else if (cmd === 'go-project' && a) {
+  const f = load(a);
+  const go = goProject(preflight(f));
+  if (!go.ok) {
+    console.log(`REFUSED: go project waits on ${go.refused.length} open ruling${go.refused.length === 1 ? '' : 's'}:\n${go.refused.map((r) => ` - ${r}`).join('\n')}`);
+    process.exit(1);
+  }
+  const p = planDispatch(f);
+  console.log(`Mark auto on the page (one save_project patch, each on its row's raw line): ${go.marks.map((r) => `PR-${r}`).join(', ') || 'nothing'}`);
+  for (const w of go.withheld) console.log(`Withheld PR-${w.row}: ${w.why} (its own word)`);
+  console.log("Closing lines for this run's status update:");
+  for (const l of closingLines({ ...closingOf(f, p), auto: go.auto })) console.log(`  ${l}`);
+} else if (cmd === 'readout' && a) {
+  const f = load(a);
+  console.log(readout(planDispatch(f), f.run ?? fail('readout needs `run` in the facts file')));
 } else {
-  fail('usage: cli.ts plan <facts.json> [--board digest|table] [--for-pr] | check-update <update.md> <facts.json> | check-board <board.md> <facts.json> | progress <facts.json> [--for-pr] [--email <owner>]');
+  fail('usage: cli.ts plan <facts.json> [--board digest|table] [--for-pr] | check-update <update.md> <facts.json> | check-board <board.md> <facts.json> | progress <facts.json> [--for-pr] [--email <owner>] | preflight|go-project|readout <facts.json>');
 }

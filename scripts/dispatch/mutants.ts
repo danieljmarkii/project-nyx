@@ -3,7 +3,9 @@
 // reading the test). Each mutant replaces ONE exact string, runs this directory's jest
 // suite, expects it RED, and restores the file whatever happens.
 //
-//   node --experimental-strip-types scripts/dispatch/mutants.ts
+//   node --experimental-strip-types scripts/dispatch/mutants.ts [--only <file>]
+//
+// `--only preflight.ts` runs one file's mutants, for iterating; the full run is the proof.
 //
 // Exit 0 when every mutant is killed; 1 when one survives or a mutant's anchor no longer
 // matches exactly once (the anchor drifted from the source: fix the mutant, never skip it).
@@ -254,6 +256,28 @@ const MUTANTS: Mutant[] = [
   { check: 'a class is never rare', file: 'precheck.ts', from: '!isClass(f) && (', to: '(' },
   { check: 'no trigger line for a bundle, a class, harm, a leak or a loss', file: 'precheck.ts', from: "if (f.items?.length || isClass(f) || norm(f.harm) !== 'none' || harmValues(words).some((h) => h !== 'none') || NEVER_PARKS.test(words)) return undefined;", to: "if (f.items?.length || isClass(f) || norm(f.harm) !== 'none') return undefined;" },
   { check: 'no trigger line for a bundle', file: 'precheck.ts', from: "if (f.items?.length || isClass(f) || norm(f.harm) !== 'none' ||", to: "if (isClass(f) || norm(f.harm) !== 'none' ||" },
+  // Project go (PR-32, CUL-2888): preflight's lists and the go's refusal and confirmation.
+  { check: 'go project is refused while a ruling is open', file: 'preflight.ts', from: 'if (pre.open.length) return { ok: false', to: 'if (false) return { ok: false' },
+  { check: 'a ruled ruling is no longer open', file: 'preflight.ts', from: 'const open = rulings.filter((r) => !r.ruled);', to: 'const open = rulings;' },
+  { check: 'a kept row is a ruling before kickoff', file: 'preflight.ts', from: '    if (k) add(k);', to: '' },
+  { check: 'an After ruling is a ruling before kickoff', file: 'preflight.ts', from: "x.kind === 'waits' || ((x.kind === 'ruling'", to: "x.kind === 'waits' || ((false" },
+  { check: 'an issue merging is a dependency, not a ruling', file: 'preflight.ts', from: '&& asks.has(x.key))', to: ')' },
+  { check: "a migration's apply covers its schema reasons", file: 'preflight.ts', from: '.reasons.filter((r) => !APPLY_COVERS.test(r));', to: '.reasons;' },
+  { check: "a migration row's other reasons still need a ruling", file: 'preflight.ts', from: "  if (!row.migration) return v.gate.kept === 'none' ? [] : v.gate.keptReasons;", to: "  if (!row.migration) return v.gate.kept === 'none' ? [] : v.gate.keptReasons;\n  return [];" },
+  { check: 'every migration is listed as an apply', file: 'preflight.ts', from: '    .filter((r) => r.migration)\n', to: '    .filter((r) => r.migration && false)\n' },
+  { check: 'a row with no Done when is unready', file: 'preflight.ts', from: "if (!DONE_WHEN.test(row.note)) why.push", to: 'if (false) why.push' },
+  { check: 'a row with no verify line is unready', file: 'preflight.ts', from: "if (!VERIFY.test(row.note)) why.push", to: 'if (false) why.push' },
+  { check: 'a hotspot two unordered rows share is unready', file: 'preflight.ts', from: '&& !ordered(row.id, o.id));', to: '&& false);' },
+  { check: 'an After edge orders two rows', file: 'preflight.ts', from: "if (a.kind === 'pr') edge(r.id, owner.get(a.row));", to: '' },
+  { check: 'a chain rule orders two rows', file: 'preflight.ts', from: "if (rule.kind === 'chain') for (let i = 1;", to: "if (false) for (let i = 1;" },
+  { check: 'a design surface needs a ratified round', file: 'preflight.ts', from: 'if (taste.length && !RATIFIED.test(row.note)) why.push', to: 'if (false) why.push' },
+  { check: 'a project go confirms only on-path rows', file: 'preflight.ts', from: '    if (!v.onPath) continue;', to: '' },
+  { check: 'a project go never confirms a kept row', file: 'preflight.ts', from: "if (!why.length && autoEligible(v.gate)) eligible.push", to: "if (!why.slice(1).length) eligible.push" },
+  { check: 'a project go never confirms an unready row', file: 'preflight.ts', from: "if (unreadyRows.has(row.id)) why.push('not agent ready');", to: '' },
+  { check: 'the go marks only unmarked rows', file: 'preflight.ts', from: '.filter((r) => !pre.plan.page.rows.find((x) => x.id === r)?.auto)', to: '' },
+  { check: 'the Auto: line carries earlier confirmed rows', file: 'preflight.ts', from: '[...new Set([...pre.plan.autoRows, ...pre.eligible])]', to: '[...pre.eligible]' },
+  { check: 'the forecast counts go project and every open ruling', file: 'preflight.ts', from: 'const inputs = 1 + open.length +', to: 'const inputs = ' },
+  { check: 'the readout counts a merged row asked about as not quiet', file: 'preflight.ts', from: 'const quiet = merged.filter((r) => !asked.has(r));', to: 'const quiet = merged;' },
 ];
 
 function suiteGreen(): boolean {
@@ -266,8 +290,10 @@ if (!suiteGreen()) {
   process.exit(1);
 }
 
+const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : undefined;
+const RUN = MUTANTS.filter((m) => !only || m.file === only);
 let failed = 0;
-for (const m of MUTANTS) {
+for (const m of RUN) {
   const file = path.join(DIR, m.file);
   const original = fs.readFileSync(file, 'utf8');
   const hits = original.split(m.from).length - 1;
@@ -285,5 +311,5 @@ for (const m of MUTANTS) {
     fs.writeFileSync(file, original);
   }
 }
-console.log(`${MUTANTS.length - failed} of ${MUTANTS.length} mutants killed`);
+console.log(`${RUN.length - failed} of ${RUN.length} mutants killed`);
 process.exit(failed ? 1 : 0);
