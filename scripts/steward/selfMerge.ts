@@ -22,7 +22,7 @@
 //   5. CLAUDE.md, .claude/rules/ and .claude/agents/, the guarding skills, every guard but
 //      the budget and filing ones, research briefs, and a doc named for a clinical or
 //      privacy surface: what future clinical work is held to;
-//   6. every product file OPEN_PRODUCT (seven layout and motion files, CUL-2911) does not name: screens, mechanics and the
+//   6. every product file OPEN_PRODUCT (two layout and motion files, CUL-2911) does not name: screens, mechanics and the
 //      UI mechanics list included, since the second adversarial pass found that list on
 //      the write, sync and deletion paths; patches, end to end flows, every command file
 //      and the planning scripts are gate files (rule 1);
@@ -47,9 +47,11 @@
 //     `list_migrations` shows it applied; the check cannot read the database.
 //   - Labels are what the session passes; leaving them out holds, passing a short list
 //     does not. The replay (CUL-2874's PR) found every labelled PR already held by path.
-//   - Rule 7 reads words, not meaning. It is the only content check on the seven files
-//     OPEN_PRODUCT opens (CUL-2911): a change that makes one of them withhold or reorder a
-//     record without a clinical word in the diff would merge itself.
+//   - Rule 7 reads words, not meaning, and the import hold reads import lines only. A
+//     change inside an opened file that moves a record without a clinical word, and without
+//     a new import, merges itself; CUL-2911's adversarial pass found that reachable for five
+//     of the seven files first ruled, so those five hold. The opened file's own test opens
+//     with it, so its pins can be loosened in the same PR; the pins in held files stay.
 //   - PUBLIC_BUILD_SHIPPED is flipped by a person at release. A release that forgets the
 //     flip leaves deploys self merging; CUL-2859's release checklist carries the line.
 
@@ -122,24 +124,32 @@ const OPEN_GUARDS = new Set(['guards/claudeMdBudget.test.ts', 'guards/filingRule
 // until the PM names it here, each with the reason it is safe; a gate-file merge, like
 // OPEN_FUNCTIONS. Unsure counts as held.
 //
-// THE RULING (PM, 2026-11-28, typed in the CUL-2911 session: list A). From the 30-day
-// replay, the seven product files that blocked a merge with no revert or hotfix, no health
-// text in any change or in the file itself, outside every Edge Function's import closure,
-// and that are layout or motion only. A file's test opens with it. Still held on the open
-// side: a changed line with a clinical word (rule 7), and every other file in the PR.
+// THE RULING (PM, 2026-11-28, typed in the CUL-2911 session: list A, seven files), cut
+// to two by the adversarial pass the same day, which erred loud pending the PM's re-ruling.
+// From the 30-day replay: product files that blocked a merge with no revert or hotfix, no
+// health text in any change or in the file, outside every Edge Function's import closure.
+// A file's test opens with it. Still held on the open side: a changed line with a clinical
+// word (rule 7), a changed import line (the import hold below), every other file in the PR.
+// Held after the pass, each with the quiet change it found:
+//   sheetMotion.ts: its crossfade is the failed-save snackbar's fade-in under Reduce Motion;
+//   LayoutColumn.tsx: it hosts the log sheet, the failed report-keep notice and the
+//     medication card, and wraps every root leaf route;
+//   ColdStartSilhouette.tsx: it draws at zIndex 100 over Home and the snackbar;
+//   app/onboarding/_layout.tsx: one redirect line skips the vet disclaimer or the paywall;
+//   IdentityRow.tsx: it renders the pet's name on the Pet tab.
 // Held on purpose although they passed the brief's test: Snackbar (every failed save),
 // Home's layout caps (Principle 3), the History filters and rows (they can hide a record),
 // the tab layout (auth, AI consent, the sync banner) and any file with a clinical word.
 const PRODUCT = /^(app|components|constants|hooks|lib|store|supabase|widgets)\//;
 export const OPEN_PRODUCT: Record<string, string> = {
-  'components/motion/runRevealMotion.ts': 'motion timing for the reveal; draws no record',
-  'components/motion/sheetMotion.ts': 'motion timing for sheets; draws no record',
-  'components/surfaces/waits/ColdStartSilhouette.tsx': 'the cold start placeholder drawing; no data',
-  'app/onboarding/_layout.tsx': 'the onboarding stack layout; no auth or data',
-  'components/ui/LayoutColumn.tsx': 'the column width wrapper; layout only',
-  'components/ui/IdentityRow.tsx': 'a row layout primitive; renders what it is given',
-  'lib/fabFootprint.ts': 'the log button footprint arithmetic; layout only',
+  'components/motion/runRevealMotion.ts': 'the reveal scroll for Home and History; it moves a card, it cannot remove one',
+  'lib/fabFootprint.ts': 'scroll insets for the log button; the floor is pinned in held tests',
 };
+// An opened file that changes an import line holds: a new dependency can bring in behaviour
+// (a store subscription, a hidden snackbar) that the ruling never saw and rule 7 cannot read.
+// A name added inside a multi-line import has no keyword on its line, so a line that is a
+// lone name (or `} from '…'`) holds too; a shorthand object entry holding with it errs loud.
+const IMPORT_LINE = /^\s*(import\b|export\b[^=]*\bfrom\b)|\brequire\s*\(|\bimport\s*\(|^\s*\}?\s*from\s*['"`]|^\s*(type\s+)?[\w$]+(\s+as\s+[\w$]+)?\s*,?\s*$/;
 // Every word of a path, the whole basename included (`index.intakeDecline.test.tsx` reads
 // index · intake · decline · test).
 const allWords = (f: string) =>
@@ -229,6 +239,8 @@ export function selfMerge(input: SelfMergeInput): SelfMerge {
   const clinicalLines = (input.changedLines ?? []).filter((l) => PRODUCT.test(l.file) && CLINICAL_WORDS.test(l.line));
   const byFile = new Set(clinicalLines.map((l) => l.file));
   for (const f of byFile) reasons.push(`${f}: a changed line holds a clinical word (owner or vet facing health text)`);
+  const importFiles = new Set((input.changedLines ?? []).filter((l) => l.file in OPEN_PRODUCT && IMPORT_LINE.test(l.line)).map((l) => l.file));
+  for (const f of importFiles) reasons.push(`${f}: an opened file changes an import (a new dependency is not what the PM opened)`);
 
   if (input.labels === null) reasons.push('the named issues\' labels were not passed (--labels), so a clinical or Live harm label is unread');
   else {

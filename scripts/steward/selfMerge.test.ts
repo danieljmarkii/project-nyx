@@ -98,42 +98,62 @@ describe('a clinical path never qualifies', () => {
   });
 });
 
-describe('the opened product files (CUL-2911, the PM ruled list A on 2026-11-28)', () => {
-  const RULED = [
-    'components/motion/runRevealMotion.ts',
-    'components/motion/sheetMotion.ts',
-    'components/surfaces/waits/ColdStartSilhouette.tsx',
-    'app/onboarding/_layout.tsx',
-    'components/ui/LayoutColumn.tsx',
-    'components/ui/IdentityRow.tsx',
-    'lib/fabFootprint.ts',
-  ];
+describe('the opened product files (CUL-2911: the PM ruled list A on 2026-11-28; the adversarial pass cut it to two)', () => {
+  const OPENED = ['components/motion/runRevealMotion.ts', 'lib/fabFootprint.ts'];
 
-  it('OPEN_PRODUCT is exactly the ruled list, each with its reason', () => {
-    expect(Object.keys(OPEN_PRODUCT).sort()).toEqual([...RULED].sort());
-    for (const f of RULED) expect(OPEN_PRODUCT[f]).toMatch(/\w/);
+  it('OPEN_PRODUCT is exactly the two that survived the pass, each with its reason', () => {
+    expect(Object.keys(OPEN_PRODUCT).sort()).toEqual([...OPENED].sort());
+    for (const f of OPENED) expect(OPEN_PRODUCT[f]).toMatch(/\w/);
   });
 
   // One test per entry: the file merges itself alone, and so does its test file.
-  it.each(RULED)('%s opens, and its test with it', (f) => {
+  it.each(OPENED)('%s opens, and its test with it', (f) => {
     expect(fileHold(f)).toBeNull();
     const test = f.replace(/(\.tsx?)$/, '.test$1');
     expect(fileHold(test)).toBeNull();
     expect(selfMerge(input({ files: [f, test], changedLines: [{ file: f, line: 'const gap = theme.space.md;' }] }))).toEqual({ verdict: 'open', reasons: [], deploys: false });
   });
 
-  it.each(RULED)('%s still holds on a changed line with a clinical word', (f) => {
+  it.each(OPENED)('%s still holds on a changed line with a clinical word', (f) => {
     const r = selfMerge(input({ files: [f], changedLines: [{ file: f, line: "if (kind === 'vomit') return null;" }] }));
     expect(r.reasons).toEqual([`${f}: a changed line holds a clinical word (owner or vet facing health text)`]);
   });
 
-  it('an opened file never opens the rest of its PR', () => {
-    expect(selfMerge(input({ files: ['components/ui/LayoutColumn.tsx', 'components/ui/Snackbar.tsx'] })).verdict).toBe('held');
+  // The pass's first break: a new import carries behaviour with no clinical word in it.
+  it.each(OPENED.flatMap((f) => [
+    [f, "import { useSnackbarStore } from '../../store/snackbarStore';"],
+    [f, "  import { usePetStore } from '../store/petStore';"],
+    [f, "export { hide } from '../ui/Snackbar';"],
+    [f, "const s = require('../../store/syncStore');"],
+    [f, "const m = await import('../store/aiConsentStore');"],
+    [f, "import type { Pet } from '../types';"],
+    [f, '  useSnackbarStore,'],
+    [f, '  usePetStore as pets'],
+    [f, "} from '../../store/snackbarStore';"],
+  ]))('%s holds when it changes an import: %s', (f, line) => {
+    const r = selfMerge(input({ files: [f], changedLines: [{ file: f, line }] }));
+    expect(r.verdict).toBe('held');
+    expect(r.reasons).toEqual([`${f}: an opened file changes an import (a new dependency is not what the PM opened)`]);
   });
 
-  // The files that passed the brief's test but the team held, and the neighbours of the
-  // opened ones: none opens by sitting next to one.
+  it('the import hold reads opened files only, and not a line that merely mentions imports', () => {
+    const f = 'lib/fabFootprint.ts';
+    expect(selfMerge(input({ files: [f], changedLines: [{ file: f, line: '// the imported inset is 88' }, { file: f, line: 'export const FLOOR = 88;' }] })).verdict).toBe('open');
+    expect(selfMerge(input({ files: ['docs/git-first-aid.md'], changedLines: [{ file: 'docs/git-first-aid.md', line: "import x from 'y';" }] })).verdict).toBe('open');
+  });
+
+  it('an opened file never opens the rest of its PR', () => {
+    expect(selfMerge(input({ files: ['lib/fabFootprint.ts', 'components/ui/Snackbar.tsx'] })).verdict).toBe('held');
+  });
+
+  // The five the PM ruled and the pass broke, the files that passed the brief's test but the
+  // team held, and the neighbours of the opened ones: none opens.
   it.each([
+    ['components/motion/sheetMotion.ts', "the failed-save snackbar's fade-in (pass)"],
+    ['components/ui/LayoutColumn.tsx', 'hosts the log sheet and the failed report-keep notice (pass)'],
+    ['components/surfaces/waits/ColdStartSilhouette.tsx', 'draws over Home and the snackbar (pass)'],
+    ['app/onboarding/_layout.tsx', 'one redirect skips the vet disclaimer (pass)'],
+    ['components/ui/IdentityRow.tsx', "renders the pet's name (pass)"],
     ['components/ui/Snackbar.tsx', 'every failed save'],
     ['lib/layoutCaps.ts', "Home's layout caps"],
     ['components/home/homeFeedLayout.ts', 'Home composition'],
@@ -141,9 +161,8 @@ describe('the opened product files (CUL-2911, the PM ruled list A on 2026-11-28)
     ['components/historyV2/TypeSheet.tsx', 'a History filter'],
     ['app/(tabs)/_layout.tsx', 'auth, AI consent and the sync banner'],
     ['components/ColdStartOverlay.tsx', 'reads sync'],
-    ['components/motion/warningArrivalMotion.ts', 'a sibling of the opened motion files'],
+    ['components/motion/warningArrivalMotion.ts', 'a sibling of the opened motion file'],
     ['components/ui/SegmentedControl.tsx', "in reap-report-drafts' closure"],
-    ['app/onboarding/pet.tsx', 'a sibling of the opened layout'],
     ['lib/fabFootprint.extra.ts', 'a name that only starts like an opened one'],
   ])('%s stays held (%s)', (f) => {
     expect(fileHold(f)).not.toBeNull();
