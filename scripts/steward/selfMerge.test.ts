@@ -98,10 +98,10 @@ describe('a clinical path never qualifies', () => {
   });
 });
 
-describe('the opened product files (CUL-2911: the PM ruled list A on 2026-11-28; the adversarial pass cut it to two)', () => {
-  const OPENED = ['components/motion/runRevealMotion.ts', 'lib/fabFootprint.ts'];
+describe('the opened product files (CUL-2911: the PM ruled list A on 2026-11-28; two adversarial passes cut it to one)', () => {
+  const OPENED = ['lib/fabFootprint.ts'];
 
-  it('OPEN_PRODUCT is exactly the two that survived the pass, each with its reason', () => {
+  it('OPEN_PRODUCT is exactly the one that survived both passes, with its reason', () => {
     expect(Object.keys(OPEN_PRODUCT).sort()).toEqual([...OPENED].sort());
     for (const f of OPENED) expect(OPEN_PRODUCT[f]).toMatch(/\w/);
   });
@@ -130,6 +130,17 @@ describe('the opened product files (CUL-2911: the PM ruled list A on 2026-11-28;
     [f, '  useSnackbarStore,'],
     [f, '  usePetStore as pets'],
     [f, "} from '../../store/snackbarStore';"],
+    [f, ";import { useSnackbarStore } from '../store/snackbarStore';"],
+    [f, 'export const X = 1; import s from "../store/syncStore";'],
+    [f, "/* */ import s from '../store/syncStore';"],
+    [f, 'const r = require'],
+    [f, "  ('../store/x');"],
+    [f, "  '../../store/snackbarStore';"],
+    [f, '  useSnackbarStore, usePetStore,'],
+    [f, '  useSnackbarStore, // layout'],
+    [f, "const s = eval('requ' + 'ire');"],
+    [f, 'const s = globalThis.__store;'],
+    [f, "const g = Function('return this')();"],
   ]))('%s holds when it changes an import: %s', (f, line) => {
     const r = selfMerge(input({ files: [f], changedLines: [{ file: f, line }] }));
     expect(r.verdict).toBe('held');
@@ -149,6 +160,7 @@ describe('the opened product files (CUL-2911: the PM ruled list A on 2026-11-28;
   // The five the PM ruled and the pass broke, the files that passed the brief's test but the
   // team held, and the neighbours of the opened ones: none opens.
   it.each([
+    ['components/motion/runRevealMotion.ts', "owns Home's scroll; one line opens Home below its warning card (pass 2)"],
     ['components/motion/sheetMotion.ts', "the failed-save snackbar's fade-in (pass)"],
     ['components/ui/LayoutColumn.tsx', 'hosts the log sheet and the failed report-keep notice (pass)'],
     ['components/surfaces/waits/ColdStartSilhouette.tsx', 'draws over Home and the snackbar (pass)'],
@@ -161,7 +173,7 @@ describe('the opened product files (CUL-2911: the PM ruled list A on 2026-11-28;
     ['components/historyV2/TypeSheet.tsx', 'a History filter'],
     ['app/(tabs)/_layout.tsx', 'auth, AI consent and the sync banner'],
     ['components/ColdStartOverlay.tsx', 'reads sync'],
-    ['components/motion/warningArrivalMotion.ts', 'a sibling of the opened motion file'],
+    ['components/motion/warningArrivalMotion.ts', 'a motion file'],
     ['components/ui/SegmentedControl.tsx', "in reap-report-drafts' closure"],
     ['lib/fabFootprint.extra.ts', 'a name that only starts like an opened one'],
   ])('%s stays held (%s)', (f) => {
