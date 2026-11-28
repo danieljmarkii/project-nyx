@@ -68,8 +68,7 @@ describe('a clinical path never qualifies', () => {
     expect(fileHold(f)).not.toBeNull();
   });
 
-  it('no product file opens today, and any changed product line with a clinical word adds its reason, JSX text and split template lines included', () => {
-    expect(OPEN_PRODUCT).toEqual({});
+  it('a product file OPEN_PRODUCT does not name holds, and any changed product line with a clinical word adds its reason, JSX text and split template lines included', () => {
     const file = 'lib/fonts.ts';
     expect(selfMerge(input({ files: [file] })).reasons).toEqual(['lib/fonts.ts: product code OPEN_PRODUCT does not name (a screen or a mechanic is held whatever its words)']);
     for (const line of ["  title: 'Vomiting three times today',", '<Text>No need to call the vet</Text>', '  eating normally', "const copy = 'No concerns today';"]) {
@@ -96,6 +95,58 @@ describe('a clinical path never qualifies', () => {
     expect(Object.keys(FUNCTIONS)).toEqual(expect.arrayContaining(['analyze-stool', 'analyze-vomit', 'ask', 'delete-account', 'generate-report', 'generate-signal', 'report-visit-link', '_shared']));
     expect(fileHold('supabase/functions/brand-new/index.ts')).toMatch(/does not name \(brand-new\)/);
     expect(fileHold('supabase/config.toml')).toMatch(/does not place/);
+  });
+});
+
+describe('the opened product files (CUL-2911, the PM ruled list A on 2026-11-28)', () => {
+  const RULED = [
+    'components/motion/runRevealMotion.ts',
+    'components/motion/sheetMotion.ts',
+    'components/surfaces/waits/ColdStartSilhouette.tsx',
+    'app/onboarding/_layout.tsx',
+    'components/ui/LayoutColumn.tsx',
+    'components/ui/IdentityRow.tsx',
+    'lib/fabFootprint.ts',
+  ];
+
+  it('OPEN_PRODUCT is exactly the ruled list, each with its reason', () => {
+    expect(Object.keys(OPEN_PRODUCT).sort()).toEqual([...RULED].sort());
+    for (const f of RULED) expect(OPEN_PRODUCT[f]).toMatch(/\w/);
+  });
+
+  // One test per entry: the file merges itself alone, and so does its test file.
+  it.each(RULED)('%s opens, and its test with it', (f) => {
+    expect(fileHold(f)).toBeNull();
+    const test = f.replace(/(\.tsx?)$/, '.test$1');
+    expect(fileHold(test)).toBeNull();
+    expect(selfMerge(input({ files: [f, test], changedLines: [{ file: f, line: 'const gap = theme.space.md;' }] }))).toEqual({ verdict: 'open', reasons: [], deploys: false });
+  });
+
+  it.each(RULED)('%s still holds on a changed line with a clinical word', (f) => {
+    const r = selfMerge(input({ files: [f], changedLines: [{ file: f, line: "if (kind === 'vomit') return null;" }] }));
+    expect(r.reasons).toEqual([`${f}: a changed line holds a clinical word (owner or vet facing health text)`]);
+  });
+
+  it('an opened file never opens the rest of its PR', () => {
+    expect(selfMerge(input({ files: ['components/ui/LayoutColumn.tsx', 'components/ui/Snackbar.tsx'] })).verdict).toBe('held');
+  });
+
+  // The files that passed the brief's test but the team held, and the neighbours of the
+  // opened ones: none opens by sitting next to one.
+  it.each([
+    ['components/ui/Snackbar.tsx', 'every failed save'],
+    ['lib/layoutCaps.ts', "Home's layout caps"],
+    ['components/home/homeFeedLayout.ts', 'Home composition'],
+    ['components/historyV2/HistoryList.tsx', 'a list of health records'],
+    ['components/historyV2/TypeSheet.tsx', 'a History filter'],
+    ['app/(tabs)/_layout.tsx', 'auth, AI consent and the sync banner'],
+    ['components/ColdStartOverlay.tsx', 'reads sync'],
+    ['components/motion/warningArrivalMotion.ts', 'a sibling of the opened motion files'],
+    ['components/ui/SegmentedControl.tsx', "in reap-report-drafts' closure"],
+    ['app/onboarding/pet.tsx', 'a sibling of the opened layout'],
+    ['lib/fabFootprint.extra.ts', 'a name that only starts like an opened one'],
+  ])('%s stays held (%s)', (f) => {
+    expect(fileHold(f)).not.toBeNull();
   });
 });
 

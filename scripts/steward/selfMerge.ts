@@ -22,7 +22,7 @@
 //   5. CLAUDE.md, .claude/rules/ and .claude/agents/, the guarding skills, every guard but
 //      the budget and filing ones, research briefs, and a doc named for a clinical or
 //      privacy surface: what future clinical work is held to;
-//   6. every product file OPEN_PRODUCT (empty) does not name: screens, mechanics and the
+//   6. every product file OPEN_PRODUCT (seven layout and motion files, CUL-2911) does not name: screens, mechanics and the
 //      UI mechanics list included, since the second adversarial pass found that list on
 //      the write, sync and deletion paths; patches, end to end flows, every command file
 //      and the planning scripts are gate files (rule 1);
@@ -47,8 +47,9 @@
 //     `list_migrations` shows it applied; the check cannot read the database.
 //   - Labels are what the session passes; leaving them out holds, passing a short list
 //     does not. The replay (CUL-2874's PR) found every labelled PR already held by path.
-//   - Rule 7 reads words, not meaning. Today it only adds a reason, since rule 6 holds
-//     every product file; it is there for the day the PM opens one.
+//   - Rule 7 reads words, not meaning. It is the only content check on the seven files
+//     OPEN_PRODUCT opens (CUL-2911): a change that makes one of them withhold or reorder a
+//     record without a clinical word in the diff would merge itself.
 //   - PUBLIC_BUILD_SHIPPED is flipped by a person at release. A release that forgets the
 //     flip leaves deploys self merging; CUL-2859's release checklist carries the line.
 
@@ -120,8 +121,25 @@ const OPEN_GUARDS = new Set(['guards/claudeMdBudget.test.ts', 'guards/filingRule
 // the snackbar store on every failed save (pass 2). So for the merge no product file opens
 // until the PM names it here, each with the reason it is safe; a gate-file merge, like
 // OPEN_FUNCTIONS. Unsure counts as held.
+//
+// THE RULING (PM, 2026-11-28, typed in the CUL-2911 session: list A). From the 30-day
+// replay, the seven product files that blocked a merge with no revert or hotfix, no health
+// text in any change or in the file itself, outside every Edge Function's import closure,
+// and that are layout or motion only. A file's test opens with it. Still held on the open
+// side: a changed line with a clinical word (rule 7), and every other file in the PR.
+// Held on purpose although they passed the brief's test: Snackbar (every failed save),
+// Home's layout caps (Principle 3), the History filters and rows (they can hide a record),
+// the tab layout (auth, AI consent, the sync banner) and any file with a clinical word.
 const PRODUCT = /^(app|components|constants|hooks|lib|store|supabase|widgets)\//;
-export const OPEN_PRODUCT: Record<string, string> = {};
+export const OPEN_PRODUCT: Record<string, string> = {
+  'components/motion/runRevealMotion.ts': 'motion timing for the reveal; draws no record',
+  'components/motion/sheetMotion.ts': 'motion timing for sheets; draws no record',
+  'components/surfaces/waits/ColdStartSilhouette.tsx': 'the cold start placeholder drawing; no data',
+  'app/onboarding/_layout.tsx': 'the onboarding stack layout; no auth or data',
+  'components/ui/LayoutColumn.tsx': 'the column width wrapper; layout only',
+  'components/ui/IdentityRow.tsx': 'a row layout primitive; renders what it is given',
+  'lib/fabFootprint.ts': 'the log button footprint arithmetic; layout only',
+};
 // Every word of a path, the whole basename included (`index.intakeDecline.test.tsx` reads
 // index · intake · decline · test).
 const allWords = (f: string) =>
